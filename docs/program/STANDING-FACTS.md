@@ -1023,3 +1023,125 @@ STRUCTURAL, not a knob** — `robots.txt` disallows its `?page=` form and no pag
 found. **The cost is WALL CLOCK, not request count:** `Fetcher` already paces 1.0 s per host and
 LinkedIn is one host, so ~370 requests/run against ~74 is **~1 min → ~6.2 min** of a run. **The CI work does NOT weaken the original
 justification** — `make check` is still local and still contends.
+
+## Moved out of STATE on 2026-08-28e — CLOSED blocker rows, kept verbatim
+
+Three rows from STATE's `Live blockers and carried gaps` table that had reached `closed`/`done`.
+Moved rather than summarised, per STATE's own rule when it passes ~250 lines. Nothing was
+deleted and no wording was changed.
+
+| Item | Detail | Owner |
+|---|---|---|
+| **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump. **Re-raised 2026-08-21c; still Mit's.** D-268 corrects this row's replacement metric too: "0 of 62" had the 0 robust under every bounded rule (27/27/69/70 matched, 0 surviving) but the **62 unreproducible** — match rule and corpus size were never recorded beside it, and a bare substring gives 103 matched / **39 surviving**. A ratio now records its match rule AND corpus size. **CLOSED 2026-08-27 (D-323): artifact v7** — `leads[].locations` (`null`, never `[]`, when the posting names no place) + `leads[].location_class` from the production `classify_location`, and `manifest.location_filter_mode` so the verdicts are readable. The Markdown names its match rule and corpus size, per this row's own lesson | **closed** |
+| ~~Five boards GREEN-and-zero + 12 dead~~ **RESOLVED (D-300)** | Diagnosed 2026-08-24: root cause is ATS migration, not typos. The 5 empty — HubSpot→`greenhouse:hubspotjobs`, Plaid→`ashby:plaid`, Vercel→`greenhouse:vercel` recovered; Qualcomm/Snyk unwatched. The 12 error/dead were all Workday: **5 GATED (401/403, unrecoverable)**, 7 wrong-site (422, recovered walmart wd504 + veeva→lever + purestorage→greenhouse, rest unwatched). Watched 135→124, **0 dead/error/empty**. `doctor` now suggests migrations (D-301, #161). Backoff/quarantine still absent but the fleet is clean | done |
+| ~~`top`'s drain flags break in ~2 days~~ | **CLOSED by #145** (D-289): all six corpus-sized `IN` lists chunk through `store/param_chunks.id_chunks`, three merge shapes each mutation-tested, including `reopen_jobs`' summed rowcount | done |
+
+## Moved out of STATE on 2026-08-28e — settled GATE/CI/tooling procedure, kept verbatim
+
+Three long rows from STATE's `Live blockers and carried gaps` table. They are settled procedure a
+fresh session needs when it runs a gate, not standing that changes between sessions, so they belong
+here — STATE passed ~250 lines again and its own rule is to move settled blocks out rather than
+summarise them away. Nothing was deleted and no wording was changed. (STATE's duplicate
+`add-evidence` blocker row was also dropped; it is stated verbatim in STATE's owner-gated list.)
+
+| Item | Detail | Owner |
+|---|---|---|
+| **Disk pressure now costs GATE TIME, silently** | The same suite ran **4m51s** at ~7.4 GiB free and **34m40s** at 5.7 GiB / 98% — no error, nothing logged, and a bounded waiter timed out, which reads as a hang. Cause was pytest's own temp trees at **1.1 GB** across 5 runs in `/private/var/folders/*/*/T/pytest-of-mitsheth/`; clearing the stale ones (keep the newest, it is live) plus branch cleanup took the volume to **9.1 GiB / 96%**. **RE-MEASURED AND CLEARED 2026-08-27: the same trees had grown to 4.9 GB across 15 runs** — 4.5x the figure that first caused this — and removing all but the newest took them to **5.4 MB** and the volume from **15 GiB to 20 GiB free**. Do this after any session that runs several full gates; it is the cheapest gate-time win there is. **The "two stale store backups, 1.67 GB" clause is STALE and is retired here** — no `.db` backup exists beside the live 3.1 GB store, only small yaml/profile ones. **There is therefore still no rollback snapshot** (take one before any destructive operation) | **tooling** |
+| **CI is sharded and gates on ONE context (D-334)** | Branch protection requires `ci` and nothing else — not the six `test (3.x, ubuntu-latest)` contexts, which no longer exist. `ci` carries `always()` and derives what should have run from `github.event_name`, because **GitHub counts a SKIPPED required check as SUCCESS**. Two standing prohibitions are commented in `ci.yml` and are load-bearing: **no `if:` on `ci` beyond `always()`** (a condition there erases every gate at once) and **no `continue-on-error` on any job in its `needs`** (it makes a failed job report `success`). Shard count lives in ONE place, the `plan` job — a workflow-level `env` CANNOT be read from `jobs.<id>.strategy`. **Read CI job conclusions from `gh api .../actions/runs/<id>/jobs`, never `gh pr checks`**, which has misreported on this repo | tooling |
+| **`make check` must be launched DETACHED** | the Bash tool clamps `timeout` to ~10 min; a longer gate reads as `make: *** [test] Error 143` — that is SIGTERM, not a build break. **`setsid` does not exist on macOS**: use `nohup sh -c '<export PATH>; make check > LOG 2>&1; echo $? > DONE' & disown`, set PATH INSIDE the subshell, and gate on the sentinel file, never the launcher's exit code. The clamp is WALL-CLOCK, so CPU contention converts a comfortable run into a kill — a suite that ran 5m17s alone was SIGTERMed at 62% while one subagent ran its own pytest. Never pipe the gate through `head`/`tail` | tooling |
+
+### The mobile detail sheet's focus containment (moved from STATE 2026-08-28e, verbatim)
+
+**THE MOBILE DETAIL SHEET IS FOCUS-CONTAINED, THE ONE THING #213 DISCLOSED RATHER THAN SHIPPED
+(D-348, #216).** Below 64rem the pane is a full-screen sheet, i.e. a modal, and `Shift+Tab` reached a
+grid row behind it — after which the single-key `a` acted on a row the reader could not see. Fixed
+with the platform's `inert` on the four covered subtrees, **breakpoint-scoped**: zero inert subtrees
+at or above 64rem, where the pane is a side-by-side column and containing focus would break the
+Enter-then-↓ path. `SIDE_BY_SIDE` is exported and read by the pane's own focus effect so the Tailwind
+`lg:` variants and the inerting cannot disagree. **The toaster is deliberately NOT inerted** — it
+draws above the sheet and holds the only undo a mark-applied has. **Verified in a browser with a
+non-vacuity check**: stripping only the four attributes reproduces the bug (covered row 20483 gets
+focus and `a` marks it applied, 347→346). Chromium only; the pre-existing Escape-restores-focus bug
+was proved pre-existing and left alone.
+
+### The slate cap's body-less guard (moved from STATE 2026-08-28e, verbatim — D-345)
+
+**THE GUARD THAT MADE THE CAP SAFE WAS FOUND BY MEASUREMENT, NOT BY DESIGN.** `content_hash` is NOT
+NULL and never empty (0 of 96,767 open), so its presence proves nothing — **every body-less posting
+hashes the empty string.** All **245** body-less open postings carry the same `e3b0c442…855` digest
+and the corpus already holds **six colliding `(company, title, hash)` groups**, one of them a
+`software engineer frontend` pair that could reach delivery. Uncaught, the cap would have dropped a
+real distinct lead while claiming its JD matched. A body-less posting is therefore **never capped**,
+reusing the `body_empty` flag the ranker's select already computes. Fail-OPEN, for the reason a
+span-less `INELIGIBLE` downgrades to `ABSTAIN`.
+
+### Which eligibility policy you mean (moved from STATE 2026-08-28e, verbatim — D-350)
+
+**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350).** The catalog and the live profile diverge
+on **five of six** families: `rules.yaml` has `work_auth` as its only `blocker` default, the live store
+has all six. The divergence is BY DESIGN — the catalog is the multi-tenancy artefact and arming is a
+per-user act — but an unqualified severity claim is not checkable, and the gap is wide: #218's widened
+floors give **1,228 verdict flips under the live policy and 0 under the published default**. Read the
+store for what a RUN will do, `rules.yaml` for what a NEW USER gets, and record which one produced any
+verdict count.
+
+### Breadth re-check, 2026-08-28e — Mit's instruction was DOCUMENT NOW, ACT NEXT SESSION
+
+Measured by a parallel session (`boardwatch-52`) and handed over at its close. **Re-derived here where
+cheap; attributed where not** — the two figures below marked *verified* were counted independently
+against the live store, the rest are that session's and are owed a check before anything is built on
+them.
+
+| quantity | value | provenance |
+|---|---:|---|
+| watched boards (fleet) | **344** (was 346) | **verified** here |
+| open corpus | **96,767** (was 84,821) | **verified** here |
+| company reach vs job-apps | **~10.1%** — supersedes the stale **7.7%** | relayed by that session from a PRIOR one (two hops), **NOT re-derived — owed a check** |
+| fetch-latency backlog, deferred postings | **18,787 → 5,227** | **verified** here, both ends |
+
+**The backlog drain is monotonic, which the two endpoints alone did not show.** Summing
+`board_scans.detail_deferred` over `scan_kind='board'` per run:
+
+| run | boards | `detail_deferred` |
+|---|---:|---:|
+| 126 | 346 | **18,787** |
+| 127 | 346 | 17,411 |
+| 128 | 345 | 9,261 |
+| 129 | 344 | **5,227** |
+
+So the `detail_fetch_budget` 50 → 400 raise is draining the backlog rather than holding it flat, and
+**the drain is nearly done** — which matters for sizing the next run, because run 129 still carried
+~27 min of catch-up and run 130 should carry materially less. `7.7%` remains the only company-reach
+figure that has been counted twice; **~10.1% has been counted once, in a session that relayed it.**
+
+**Remaining reach work**, from `.agent/2026-08-28-coverage-dedup-session/B-discovery-miss.md`
+(~28 misses/day, and the class is **company reach, not ATS coverage**):
+
+- **~22 misses are addable by simply adding a supported-ATS board** — a named list is in that doc
+  (RTX, UCF, HP, Bosch, Siemens Healthineers, Domino's, ModMed, …). This is the cheap half.
+- **~122 aggregator-URL misses need a dereference step** on the linkedin/hiringcafe lanes; low volume
+  today.
+- **~33 are unsupported-ATS and OUT OF SCOPE** — no new adapters (D-272).
+
+**Do not start this without re-reading `CLAUDE.md`'s "Breadth is last".** Adding input multiplies
+whatever is downstream of it, and the slate cap (D-345) has not yet been observed on a single run.
+
+### The in-flight-run liveness probe (moved from STATE 2026-08-28e, verbatim — D-335/D-024)
+
+   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
+   ```sh
+   # ALIVE if this prints a PID; empty = idle.
+   ps -o pid,command -ax | awk '$2 ~ /\/python[0-9.]*$/ && /boardwatch run --project/ {print $1}'
+   ```
+   Anchored on **argv[0]**: a real run has `argv[0] = .../.venv/bin/python3`, every decoy shell has
+   `-c`. The `awk '$2==1'` form was WRONG in the dangerous direction (D-335) — it keeps only
+   launchd's direct children, so it reported IDLE for all 91 minutes of run 127, and manual
+   invocation is now the common case. On macOS do NOT use `ps -o comm` (truncated path, matches
+   nothing, false IDLE). `runs.finished_at` precedes process exit by ~90 s (D-024).
+
+   **`pkill -f "make check"` is NOT worktree-scoped** and will kill a parallel session's gate in a
+   sibling checkout, where it reads as an unexplained `Error 143`. Kill by PID.
+
+   **The scratchpad directory is SHARED with subagents, not per-agent.** A PR-body file written to a
+   fixed name was overwritten mid-task by a worktree agent this session. Name per-launch files
+   uniquely — gate logs, sentinels and PR bodies alike.

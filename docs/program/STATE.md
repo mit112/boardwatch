@@ -20,185 +20,200 @@
 
 ## Current standing
 
-**RUN 129 CUT THE RUN 132.4 → 44.7 MIN, AND THE GAIN IS DECOMPOSED RATHER THAN CLAIMED.** Two changes
-merged this session and both are validated by that run: **stage wall clock in the funnel (D-343)** and
-**host-diverse scan dispatch (D-344)**, #212. `scan_workers` is **8** in Mit's LOCAL config (backup
-`config.toml.bak-prescanworkers-20260828`); the code default stays 4 — a multi-tenancy call. Board scan
-**92.8 → 32.9 min**, 344 boards, **0 failed**. **`scan.fetch_cost` is concurrency-free, so it separates
-"less work" from "faster work" and only the second is ours:** work 20,907 → 13,205 s while effective
-parallelism went **3.75× → 6.69×**, i.e. **2.82× total = 1.58× backlog drain × 1.78× parallelism**. The
-1.78× is **89% of the theoretical doubling** from 4→8 workers; the 1.58× is the detail backlog draining and
-must never be quoted as this session's. `engine_version` unchanged (`1+118c640ea50c`, derive it — D-306) so
-no corpus re-evaluation; `config_hash` unchanged and that is CORRECT — `scan_workers` is in
-`_CONFIG_IRRELEVANT`. Full numbers under **METRICS 2026-08-28d**.
+**STATE §0 IS RULED AND SHIPPED: THE DELIVERY SLATE IS CAPPED AT ONE LEAD PER COMPANY, TITLE AND
+BYTE-IDENTICAL JD (D-345, #215).** Run 129 spent 9 of its 10 slots on one CGS Federal
+`ServiceNow Developer` — one `company_id`, one `normalized_title`, one byte-identical `content_hash`,
+nine cities — and nothing suppressed it because `exact_quad`, the only suppressing kind, **includes
+`locations`**. Mit's ruling: `(company_id, normalized_title, content_hash)` at **N=1**, delivery-time.
+Sized over DELIVERED leads, not the corpus: over runs 119-129's 110 delivered leads it frees **9
+slots, firing on exactly two runs (r120:1, r129:8), with ZERO collateral**. **The hash is in the key
+because of run 125**, whose two Evlo AI leads share company and title but carry DIFFERENT hashes —
+two real requisitions that a `(company, title)` key at N=1 would have cut to one. **This is NOT
+D-295** (identity suppression, refused three times): nothing asserts sameness, nothing is suppressed
+permanently, and a capped row is never recorded `seen` so it ranks again next run — **the re-entry
+path is the next run itself**, which is why this quarantine alone needs no scheduled drain. The cap
+sits INSIDE `kept < limit`, so freed slots **refill** and the slate never shrinks.
 
-**THE 26.8-MINUTE BLOCK RUN 128 COULD NOT ATTRIBUTE WAS ENTIRELY THE LANE STAGE.** The funnel's new
-`## Wall clock` table settles it on its first run: `projection` costs **0.0 min** — the `--project`
-preflight is free, a hypothesis this session carried and the artifact retired. `scan` 32.9 · `lanes` 6.5 ·
-`eligibility` 3.3 · `death_probe` 1.1 · `tailor` 0.7 · `liveness` 0.2 · `finalize` 0.0. **Lane cost swings
-4× run to run for MORE work** (run 129 issued ~276 lane requests in 6.5 min against run 128's ~223 in
-~26.8) — cause not established, LinkedIn throttling is the leading candidate. **Do not read run 128's lane
-cost as typical.** Reminder: the total is the run UP TO the artifact; the morning file and queue sync run
-after the last mark.
+**THE GUARD THAT MADE THE CAP SAFE WAS FOUND BY MEASUREMENT (D-345).** `content_hash` is NOT NULL
+and never empty, so its presence proves nothing — every body-less posting hashes the empty string, so
+all **245** share one digest and **six `(company,title,hash)` groups already collide**, one a
+`software engineer frontend` pair. Body-less postings are exempt, fail-OPEN. Detail in
+`STANDING-FACTS.md`.
 
-**THE SCAN IS NOW TAIL-BOUND ON ONE BOARD, WHICH RETIRES AN OWNER CALL.** 343 of 344 boards finished in
-**27.0 min; Lowes alone took 5.9 more** (`lowes.wd5` — 3,000 enumerated plus a detail budget, one host,
-one lock). D-344 predicted this shape and it arrived one run later. **Raising the `scan_workers` ceiling
-above `le=8` is therefore worth close to nothing** — it was sized at ~19 min against run 128's shape and
-buys almost none of that against a makespan set by a single serial host. **Do not spend the multi-tenancy
-argument on it.** What remains is per-board serial cost only: the pace (a real third-party load increase,
-owner's) and the per-board detail budget (a coverage trade, owner's).
+**EACH LANE NOW REPORTS ITS COST SPLIT INTO FETCHING AND APPLYING (D-346, #217), AND THAT SPLIT IS
+THE INSTRUMENT THAT CLOSES THE LANE QUESTION — NOT AN EXTRA.** D-343 left the lane stage's 6.5 min
+unexplained because a stage total cannot separate upstream throttling from contention on
+`apply_board`. `fetch_seconds`/`apply_seconds` per lane do, and the markdown names the fetch SHARE
+because the ratio is the diagnostic. `None` = NOT MEASURED, never `0.0`. `ARTIFACT_VERSION` stays 7.
+**No run has exercised it yet — read it on the next run before proposing anything else about lanes.**
 
-**NINE OF RUN 129'S TEN DELIVERED LEADS WERE ONE REQUISITION**, and it is measured three ways because
-each denominator says something different. `CGS Federal — ServiceNow Developer`: one `company_id`, one
-normalized title, **one byte-identical `content_hash`**, nine cities (all nine also list `Remote`).
-Nothing suppresses it because `exact_quad` — the only suppressing kind — includes `locations`.
-**End-of-line, runs 119-129: 9 of 110 delivered leads (8.2%) were a same-company/title/hash duplicate of
-another lead in the SAME run, and 8 of the 9 are run 129 alone.** So it is **not a chronic 8% tax but a
-rare catastrophic tail**: ten of eleven runs lost 0-1 slots, one lost 80% of the day. Frequency
-understates it; the corpus overstates it (13.59% corpus-wide is mostly T-Mobile retail that never
-reaches delivery).
+**THE LANE FETCHES NOW OVERLAP, AND THAT LEVER IS NOW CLOSED (D-347, #219).** `_collect_lane` split
+into `_fetch_lane` (off-thread) and `_apply_lane` (main thread only); fetches in a
+`ThreadPoolExecutor`, applies in the consuming loop — `scan/coordinator.py`'s shape.
+**`apply_board` remains the single writer** and a test COUNTS concurrent entries into it rather than
+reading the code. **This was not the owner-gated pacing change:** `Fetcher` holds a per-host
+`threading.Lock` for a request's full duration with `_pace` INSIDE it, so same-host requests still
+serialize and the 1 req/s contract is untouched — concurrency across lanes adds **no** third-party
+load. **Sized before building and the answer is modest:** run 129's hosts were ~85 (hiringcafe) and
+~166 (linkedin) requests, so the pacing floor moves from their sum (251 s of a 390 s stage) to their
+max (166 s) — **~2.2 min, ~4.9% of a 44.7 min run**. The stage is now **tail-bound on LinkedIn
+alone**, the same shape D-344 found for the scan and `lowes.wd5`. **A third lane would be nearly
+free; more lane parallelism buys nothing. Do not re-propose it.**
 
-**THE QUEUE UI's WCAG FAILURES ARE FIXED AND THE TRIAGE LIST IS KEYBOARD-FIRST (#213).** Measured in a
-browser, not argued: two tokens verified against `--color-bg` but painted on `--color-surface-2` (4.32:1
-and 2.90:1), an ARIA table whose `aria-sort` announced to nothing, **1,399 tab stops → 14**, no `h1`,
-focus obscured under a 61px sticky header, an undo toast on a timer the reader could not stop. Rows 53px →
-37px (18 on screen, not 12). **Which leads render, in what order, and their counts are UNCHANGED** — no
-Python touched, nothing lane-related moved (Phase 1b stays unruled). External review found six issues;
-five fixed, including destructive shortcuts firing on `Cmd+A`/`Cmd+S` and on **auto-repeat** (a held `a`
-walked a mark-applied down the queue). **NOT fixed and disclosed:** the mobile (<64rem) detail sheet is not
-focus-contained. Before/after screenshots: `.agent/2026-08-28d-runspeed/webui-shots/`.
+**THE MOBILE DETAIL SHEET IS FOCUS-CONTAINED (D-348, #216)** — the one thing #213 disclosed rather
+than shipped. `inert` on the four subtrees the sheet covers, **below 64rem only**; the toaster is
+deliberately excluded because it holds the only undo. Verified in a browser WITH a non-vacuity check
+(stripping the attributes reproduces the bug). **Closed, no follow-up owed**; the full account moved to
+`STANDING-FACTS.md` rather than being summarised away.
 
-**THIRTEEN CHANGES MERGED 2026-08-28 ACROSS FOUR SESSIONS.** #199 the generic prior-application
-importer · #200 location canonicalization (p6.2 → p6.3) · #201 the identity reaper and the funnel's `dedup`
-stage · #203 D-336..338 · #204 the slug case-collision guard · #205 LinkedIn pagination · #206 the scan's
-four-way board split · #207 D-339..341 · #208 the prior session close · **#209 the runs four-way split
-reaching store/`/api/runs`/web (D-342)** · #210 the D-339 `--company`/`remove` loose ends · #211 the prior
-session close · **#212 stage wall clock + host-diverse dispatch (D-343/D-344)** · **#213 the queue UI
-accessibility pass.** **Every one gated with a real exit code 0 and CI green.** The numbers live under
-**D-336 … D-344** and **METRICS 2026-08-28…28d**.
+**`degree` BLOCKING IS CONFIRMED BY THE OWNER — WHAT IS OWED IS AN AUDIT, NOT A REVERT (D-350 found
+it, D-351 rules it).** D-350 found `degree` armed where D-321 had recorded *"Owner's call, not taken"*;
+Mit confirmed he wanted it, so **the live six-blocker map is correct and is NOT to be reverted.** His
+constraint is about PRECISION: *"I just don't want it to reject jobs which are genuinely for me."*
+**So the 410 degree-attributed `ineligible` evaluations are owed an audit and the 298 on the
+`_in_field` rules are the target** — field-of-study matching, live-capable only since D-326, and a
+wrong field match is exactly the failure he named. **Soften nothing before the audit.**
 
-**Everything below this line is carried from the previous session and remains true.** The provisional
-pass was met by runs 119-123 and the owner is holding it; Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and
-is a HOLDING value (D-293); the fleet is 346 watched boards; breadth is argued on precision and
-capacity, never on an application count (D-312). Board cost is provider-weighted and **s/board is a
-lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock per board at
-`scan_workers = 4`; size every batch by provider mix, never by board count. Full tables in `METRICS.md`.
+**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on
+**five of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six).
+By design, but it makes an unqualified severity claim uncheckable, and the gap is wide: #218's floors
+give **1,228 verdict flips live vs 0 published**. Full rule in `STANDING-FACTS.md`.
+
+**FOUR MERGES FROM THIS SESSION, EVERY ONE GATED WITH A REAL EXIT CODE 0, PLUS ONE FROM A PARALLEL
+SESSION.** #215 the slate cap (D-345) · #216 the detail-sheet focus containment (D-348) · #217 the
+per-lane cost split (D-346) · #219 the lane fetch overlap (D-347). **#218 (years patterns, D-349) is a
+PARALLEL SESSION's.** #219 was re-gated AFTER an `--onto` rebase onto the post-#217 `main`, because
+#215 also touched `runner.py` so the merge candidate differed from the tree first gated — a clean
+rebase can still break semantically. **All five verified present in `main` by CONTENT, not the PR page**
+(pushing to a merged PR's branch lands nothing, silently): `main` `a1a69ff`.
+
+**No run was taken** — every number here is measured against the existing corpus or the runs 119-129
+delivery history, and says so. **Every new test was confirmed to FAIL against the wrong
+implementation** before being counted; the mutation table is in METRICS 2026-08-28e.
+
+**Everything below this line is carried and remains true.** The provisional pass is held by the owner
+(but see the restarted counter under Phase status); Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and is a
+HOLDING value (D-293); the fleet is 344 watched boards; breadth is argued on precision and capacity,
+never an application count (D-312). Board cost is provider-weighted and **s/board is a lying unit** —
+`workday` is ~73% of a run; size batches by provider mix, never board count. **Raising the
+`scan_workers` ceiling above `le=8` stays RETIRED** (D-344): run 129 finished 343 of 344 boards in
+27.0 min, `lowes.wd5` taking 5.9 more alone. Run 129 was **44.7 min** vs run 128's 132.4 — **2.82x =
+1.58x backlog drain x 1.78x parallelism**, only the 1.78x code. Numbers: `METRICS.md`.
 
 ---
 
 ## Next action
 
-1. **NOTHING IS IN FLIGHT.** Run 129 finished 13:14:07Z, `ok`, its funnel validated (Current standing /
-   METRICS 2026-08-28d). #212 and #213 are merged and CI-green; the primary checkout is pulled current
-   (verify with `git log`, not a sha — D-017), so the daily driver runs the merged code. The live store
-   is at alembic head. `lever:plaid` is **pruned**. `boardwatch web` (pid held by Mit) resolves
-   `static_root()` per request, so it serves the new bundle on a page RELOAD — no restart needed.
+1. **NOTHING IS IN FLIGHT AND NO RUN HAS EXERCISED THIS SESSION'S WORK.** Four changes merged
+   (#215, #216, #217, #219) and one landed from a parallel session (#218, eligibility). Runs are
+   **ON DEMAND** (Mit's 2026-08-27 ruling); the 04:00 tick is a fallback, do not wait for it.
+   **The next run is worth taking for three specific reads, in this order:**
 
-   **The speed question is answered and the next lever is NOT more workers.** See the tail-bound
-   paragraph in Current standing before proposing anything. **The open precision question is bigger than
-   the speed one was:** half of run 129's delivery went to one requisition.
+   - **`hidden_slate_cap` in the funnel's shortlist drops.** It equals the delivery slots the cap
+     freed. Expected 0 on most runs and non-zero on a location-split day — 0 is a MEASURED zero, not
+     a disarmed detector, because the bucket is never identity-gated.
+   - **`fetch_seconds`/`apply_seconds` per lane (D-346).** This is the number that closes the lane
+     stage's 4x swing. If the cost is mostly `apply`, the swing is contention on the single writer
+     and D-347 bought less than its estimate; if mostly `fetch`, it is upstream throttling and the
+     estimate holds. **Do not propose anything further about lanes before reading it.**
+   - **The eligibility recompute from #218's `rules_hash` bump.** Strictly stricter, so no drain is
+     owed, but it re-evaluates the corpus.
 
-   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
-   ```sh
-   # ALIVE if this prints a PID; empty = idle.
-   ps -o pid,command -ax | awk '$2 ~ /\/python[0-9.]*$/ && /boardwatch run --project/ {print $1}'
-   ```
-   **The form this file shipped before was WRONG in the dangerous direction (D-335).**
-   `awk '$2==1'` keeps only launchd's DIRECT children — true for a scheduled tick, false for a manual
-   run, which goes through a `nohup` wrapper so only the WRAPPER reparents to PID 1. It reported IDLE
-   for the entire 91 minutes of run 127. Since Mit's 2026-08-27 ruling moved this program to manual
-   invocation, that is now the common case. The form above anchors on **argv[0]**: a real run has
-   `argv[0] = .../.venv/bin/python3`, while every decoy shell has `-c`. Verified against three live
-   decoys — two `sh -c` and a Claude session's own zsh wrapper — where the older `[b]`-only form
-   returned FOUR pids for one real run. `--project` additionally excludes the long-lived
-   `boardwatch web --port 0` server. **On macOS do NOT reach for `ps -o comm`**: it returns the
-   truncated executable PATH, not `python3`, so a comm-based filter matches nothing and reports a
-   false IDLE.
-   `runs.finished_at` is written BEFORE the process exits — funnel and morning artifacts come from a
-   `finally` after the row closes (D-024). Run 127: `finished_at` 05:24:27, process gone 05:25:54 —
-   **87 seconds**, the same gap as run 125's 92.
+   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table** — the probe,
+   why the `awk '$2==1'` form was wrong in the dangerous direction (D-335), and why `ps -o comm` gives
+   a false IDLE on macOS are all in `STANDING-FACTS.md`. `runs.finished_at` precedes process exit by
+   ~90 s (D-024). **`pkill -f "make check"` is NOT worktree-scoped** — kill by PID.
 
-   **`pkill -f "make check"` is NOT worktree-scoped** and will kill a parallel agent's gate in a sibling
-   checkout, where it reads as an unexplained `Error 143` — i.e. as contention, so it gets misdiagnosed.
-   Kill by PID, or scope the pattern to the directory.
+   **The scratchpad directory is SHARED with subagents, not per-agent.** A fixed-name PR-body file was
+   overwritten mid-task by a worktree agent this session; a shared *sentinel* would be worse, since
+   reading it means reading someone else's exit code. Name every per-launch file uniquely.
 
-2. **Re-read the queue after the next run.** The D-333 band has moved 6,123 evaluations into
-   `uncertain`, and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness
-   (`lane_measure.py` for the delivered split). **`phase2_measure.py` now correctly reports 0 movers**
-   — that is "already moved", not a broken query. The positive evidence is the disposition flip in
-   **Current standing**; re-derive it that way, not from the absence.
+2. **THE PROVISIONAL PASS IS ALLOWED TO SLIP — Mit's ruling at this close: "work comes first"
+   (D-351).** #218 reset the 3-clean-post-fix-run counter and it is **not being chased** before he
+   steps back ~2026-08-31. **Read this as UNBLOCKING, and it is the more useful half:** eligibility is
+   **NOT frozen** — the freeze was only ever implied by wanting the 3 runs — so rules and eligibility
+   work may land freely, including whatever the `degree` audit turns up. **Stop pricing a `rules_hash`
+   bump as costly on this basis** until the owner reopens the pass. The P4 blind review remains passed
+   (2026-08-26) and does not repeat.
 
-3. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
+3. **The breadth re-check is DOCUMENTED and is the next session's, by Mit's instruction** ("document,
+   take on next session when both sessions are done"). Fleet **344** and open corpus **96,767** are
+   verified here, and so is the deferred backlog draining **18,787 → 5,227** (monotonic across runs
+   126-129, table in `STANDING-FACTS.md`) — so the detail catch-up that cost run 129 ~27 min is nearly
+   spent. Company reach **~10.1%** is **relayed from a prior session and owed a check**; 7.7% is the
+   only reach figure counted twice. The cheap half is **~22
+   misses/day addable by adding a supported-ATS board** (named list in
+   `.agent/2026-08-28-coverage-dedup-session/B-discovery-miss.md`); ~122 need lane dereference; ~33 are
+   out of scope (D-272). Numbers and caveats: `STANDING-FACTS.md`. **Read "Breadth is last" first — the
+   slate cap has not been observed on a single run yet.**
+
+4. **PHASE 1B IS RULED AND IS NEXT SESSION'S, TOGETHER WITH THE BREADTH WORK (D-351).** Mit took the
+   FULLER option: the web page **follows the queue split** — a review SECTION — **and he wants a wider
+   UI redesign**, not merely a marker on every set-aside lead. Scope beyond the split is his to shape.
+   Needs a React change plus `make web` and both committed. **Until it ships the defect stands, and it
+   is why the ruling went this way:** `api.py:248` is `off_target = facts.role == "not_swe"`, so of
+   ~204 review-lane leads only the `not_swe` ones carry any marker — a role-`uncertain` title or a
+   confirmed non-US location renders **indistinguishable from a clean lead**. **Never silently exclude
+   review leads from `queue_payload`.**
+
+5. **REQUEST-START PACING IS APPROVED AS A TRIAL (D-351).** Mit: *"lets try it. We'll measure the next
+   run … and then decide to revert if anything goes awry."* D-344 sized it at **28.4 min**, floor
+   **25.6 → 15.3** — the lever worker count cannot reach. **It IS a real third-party load increase
+   (0.6 → 1.0 req/s per host)**, hence the trial framing. **The revert trigger is DEFINED in D-351** so
+   "awry" is measurable before the run rather than judged after; read it before changing anything.
+   **LOCAL config only, never the code default**; back the config up first.
+
+6. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
+   and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
+   `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
+
+7. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
    cheap ones go in ONE batch; SmartRecruiters 107 ≈ +40 min; Workday 333 ≈ +122 min and must be
-   chunked at ~100. **Probe ~10 cold Workday boards first** — no cold Workday or SmartRecruiters board
-   has ever been timed, and they are the two providers that burn a per-posting detail budget on a first
-   scan. **Hold this off the next run**, which already carries the ~27 min detail-budget catch-up.
+   chunked at ~100. **Probe ~10 cold Workday boards first** — no cold Workday or SmartRecruiters
+   board has ever been timed, and they are the two providers that burn a per-posting detail budget on
+   a first scan.
 
-4. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
-   (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to green
-   a gate; re-run the job.** It fired once this session, on `test (3.11, macos-latest)` at 3.42s, and
-   passed on re-run. Note it now has MORE exposure per push, not less: macOS runs the suite unsharded,
-   so the test is no longer split away onto one shard of four.
+8. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
+   (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to
+   green a gate; re-run the job.** macOS runs the suite unsharded, so it has MORE exposure per push.
 
-5. **Deferred with numbers, do not re-derive:** the residual years-detection gap is **24 leads, ~8 real
-   (1.3%)** and widening the pattern rejects `18 years of age`; job-apps' preferred-vs-required HEADING
-   state machine is **2 of 286** and architectural (D-320).
-
-*(`.agent/` is gitignored working material — re-derive if pruned.)*
+9. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
+   is **2 of 286** and architectural (D-320). *(The residual years-detection gap was the other item
+   here; #218 addressed it — read that PR rather than the old 24-leads/1.3% figure.)*
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-5. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
-6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
-   authoring non-tech field content.
-7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-8. **Phase 1b — whether the WEB page follows the queue split (D-332). RAISED, NOT YET RULED — put it to
-   Mit before touching `queue_payload`; do not act on it unilaterally.** The folder tree now
-   holds review leads in `_review`, but `api.py::queue_payload` still lists them. **State the gap
-   precisely, because "they show up flagged `off_target`" is WRONG:** `api.py:248` is
-   `off_target = facts.role == "not_swe"`, and the docstring says outright that `off_target` is
-   `not_swe` only, **never `uncertain`** — deliberately, because "uncertain is not a veto" and badging it
-   would assert a decision the gate declined to make. So of the ~204 review-lane leads, only the
-   `not_swe` ones carry any marker; a role-`uncertain` title or a confirmed non-US location renders
-   **completely unmarked**. Filtering reverses that design and needs a review SECTION in the React UI
-   plus a bundle rebuild (`make web`, commit both). **Do not silently exclude review leads from
-   `queue_payload`** — that drops ~204 leads off the page with nowhere for the owner to see them.
-
+10. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+11. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
+   he steps back from active work (~2026-08-31, unattended after). **Not dropped — an accepted known
+   gap**, and the last multi-tenancy gap of its kind. Still owner-gated and still needs its own
+   brainstorm; D-054 forbids us authoring non-tech field content.
+12. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
+   one bundle.
 ## Open questions — Mit's, not to be resolved by fiat
 
-0. **How to cap the delivery slate when one requisition is split across cities — NEW, measured
-   2026-08-28d, not decided.** Run 129 lost 9 of 10 slots to one req. **The naive key is refuted:**
-   `(company_id, content_hash)` groups 13,154 redundant postings but **39.1% of its groups span more
-   than one title** — shared boilerplate, not a shared requisition. The tighter
-   `(company, title, content_hash)` — `exact_quad` minus locations — is 9,437 redundant (9.75% of the
-   open corpus), **+7,020 suppressions, 3.9× what suppresses today**, and a suppressed real lead is
-   unrecoverable. **Do not read this as re-proposing D-295**, which was `company_title_location`
-   IDENTITY suppression and was refused three times. The cheaper mechanism that bounds exactly the
-   observed failure is a **slate-diversity cap at delivery** (at most N leads sharing company+title per
-   run): it asserts nothing about sameness, suppresses nothing permanently, and needs no drain, no
-   `IDENTITY_ALGORITHM_VERSION` bump and no ledger migration. Numbers and the refutation are in
-   `.agent/2026-08-28d-runspeed/FINDINGS.md`. **Possibly upstream of all of it and unexamined:**
-   whether `ServiceNow Developer` should rank at all for a new-grad SWE target — role taxonomy, not
-   dedup.
-
-1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
-   projection manifest, and whether persona's `entries` list survives stage 2.
-2. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level token
-   abstains, so a level-named title is shortlisted carrying its reason. boardwatch ships no verifiable
-   claim about any company's ladder.
+1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate
+   the projection manifest, and whether persona's `entries` list survives stage 2.
+2. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level
+   token abstains, so a level-named title is shortlisted carrying its reason. boardwatch ships no
+   verifiable claim about any company's ladder.
 3. **Whether `censored` boards publish a coverage ratio, and the 17 silent boards.** The
-   `detail_fetch_budget` half moved on 2026-08-28: another session raised it **50 → 400 in Mit's local
-   config only** (never the code default — that is a multi-tenancy call). Its measurements of both fetch
-   ceilings land under **D-336 onward**, by that session, with its own evidence. **The "four censored
-   boards are short 18,927" figure is STALE against the 346-board fleet**: on 346 boards the class is
-   **15 boards and 43,371 postings that can never be listed at all** (run 127), against an 84,821-posting
-   open corpus. That half is now SIZED; **it is not solved, and no budget can solve it** — those postings
-   are never enumerated. See D-336.
+   `detail_fetch_budget` half moved 2026-08-28: raised **50 → 400 in Mit's local config only** (never
+   the code default — a multi-tenancy call). **The "four censored boards are short 18,927" figure is
+   STALE against the current fleet**: the class is **15 boards and 43,371 postings that can never be
+   listed at all** (run 127), against an ~84,821-posting open corpus. **Sized, not solved, and no
+   budget can solve it** — those postings are never enumerated. See D-336.
+4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Surfaced by
+   run 129's location-split failure and **left unexamined** — it is role TAXONOMY, not dedup, and
+   possibly upstream of the whole slate-cap question. D-345 bounds the delivery damage; it does not
+   answer this.
 
-*(Resolved and no longer open: whether `runner.py` should keep swallowing a funnel-write failure — D-288
-records it and the run still does not fail. Clearance IS a blocker (D-257). Seniority band = `entry`
-(D-258). The launchd trigger fires (D-254); its cadence is now once daily at 04:00 and is a fallback, not the thing to plan around.)*
+*(Resolved and no longer open: **how to cap the delivery slate when one requisition is split across
+cities — RULED by Mit and shipped as D-345**, `(company_id, normalized_title, content_hash)` at N=1;
+do not reopen it as identity suppression, which is D-295 and is refused. Whether `runner.py` should
+keep swallowing a funnel-write failure — D-288. Clearance IS a blocker (D-257). Seniority band =
+`entry` (D-258). The launchd trigger fires (D-254), once daily at 04:00, a fallback rather than the
+thing to plan around.)*
 
 ---
 
@@ -213,7 +228,7 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 | P4 Craft gate | **COMPLETE** (under-fill fixed D-303; objective anti-slop 0 violations, non-vacuous) | **MET** — objective half certified AND the owner's blind craft review passed cleanly 2026-08-26 (all 5 judged worse were job-apps decoys; all 3 judged better were boardwatch) |
 | P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
 | P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **MET — 4 of 4** (2026-08-27): liveness MET (D-281), leakage measurable over a true 7-day span and reading **0.00%**; see the clause table for the `exact_quad` caveat |
-| 14-day acceptance | not started | **HELD BY THE OWNER (2026-08-27)** — the provisional pass was MET by runs 119-123, and Mit ruled to keep fixing precision first rather than start the clock. Starting it freezes eligibility, profile and the résumé gate for 14 days |
+| 14-day acceptance | not started | **HELD BY THE OWNER (2026-08-27)** — the provisional pass was MET by runs 119-123, and Mit ruled to keep fixing precision first rather than start the clock. Starting it freezes eligibility, profile and the résumé gate for 14 days. **2026-08-28e: the provisional pass's remaining item — 3 clean post-fix runs — RESTARTED FROM ZERO**, because #218 bumps `rules_hash` and those runs are therefore pre-fix again. The P4 owner blind review is still PASSED (2026-08-26) and does not repeat. With runs on demand and Mit stepping back ~2026-08-31, that is 3 runs in ~3 days; **the trade (stricter eligibility now vs the pass possibly not closing before unattended operation) was raised to Mit and is his** |
 | P7 Breadth | **lane 1 (hiring.cafe) and Part 4b (LinkedIn) are BUILT AND ARMED and ran in run 122** (hiringcafe 70 attempted/56 resolved; linkedin 71/51) — the previous "not armed" text was stale. **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296) and NOW PARTLY ARMED**: 97 boards imported 2026-08-27, ~765 candidates still capped. Remaining lanes not started | unlock MET (D-271/272) |
 | *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
 
@@ -232,17 +247,10 @@ records it and the run still does not fail. Clearance IS a blocker (D-257). Seni
 
 | Item | Detail | Owner |
 |---|---|---|
-| **A metric that could not fail (D-267)** | `grep -ic buc funnel-N.json` was read as a Buc count; it counts the word "bucket" and is 4 on runs 61/63/65/66 regardless. The funnel enumerates **no ranked pool** and a `leads` row carries **no location** — so the hard location gate, the one gate whose failure is a visa-ineligible lead, leaves no trace in its own artifact. Closing it needs `locations` on `Lead` + an `artifact_version` bump. **Re-raised 2026-08-21c; still Mit's.** D-268 corrects this row's replacement metric too: "0 of 62" had the 0 robust under every bounded rule (27/27/69/70 matched, 0 surviving) but the **62 unreproducible** — match rule and corpus size were never recorded beside it, and a bare substring gives 103 matched / **39 surviving**. A ratio now records its match rule AND corpus size. **CLOSED 2026-08-27 (D-323): artifact v7** — `leads[].locations` (`null`, never `[]`, when the posting names no place) + `leads[].location_class` from the production `classify_location`, and `manifest.location_filter_mode` so the verdicts are readable. The Markdown names its match rule and corpus size, per this row's own lesson | **closed** |
-| **boardwatch cannot see 92% of job-apps' eligible yield** | 41 of 530 records (7.7%) at a watched company; 352 companies in the set, 24 watched. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
+| **boardwatch cannot see ~90% of job-apps' eligible yield** | 41 of 530 records (7.7%) at a watched company — **a parallel session re-measured reach at ~10.1% on the 344-board fleet on 2026-08-28; NOT re-derived here, so treat 7.7% as the reproducible figure and 10.1% as owed a check**; 352 companies in the set, 24 watched. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| ~~Five boards GREEN-and-zero + 12 dead~~ **RESOLVED (D-300)** | Diagnosed 2026-08-24: root cause is ATS migration, not typos. The 5 empty — HubSpot→`greenhouse:hubspotjobs`, Plaid→`ashby:plaid`, Vercel→`greenhouse:vercel` recovered; Qualcomm/Snyk unwatched. The 12 error/dead were all Workday: **5 GATED (401/403, unrecoverable)**, 7 wrong-site (422, recovered walmart wd504 + veeva→lever + purestorage→greenhouse, rest unwatched). Watched 135→124, **0 dead/error/empty**. `doctor` now suggests migrations (D-301, #161). Backoff/quarantine still absent but the fleet is clean | done |
 | **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
-| ~~`top`'s drain flags break in ~2 days~~ | **CLOSED by #145** (D-289): all six corpus-sized `IN` lists chunk through `store/param_chunks.id_chunks`, three merge shapes each mutation-tested, including `reopen_jobs`' summed rowcount | done |
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
-| **`add-evidence` takes no bundle lock** | two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **Disk pressure now costs GATE TIME, silently** | The same suite ran **4m51s** at ~7.4 GiB free and **34m40s** at 5.7 GiB / 98% — no error, nothing logged, and a bounded waiter timed out, which reads as a hang. Cause was pytest's own temp trees at **1.1 GB** across 5 runs in `/private/var/folders/*/*/T/pytest-of-mitsheth/`; clearing the stale ones (keep the newest, it is live) plus branch cleanup took the volume to **9.1 GiB / 96%**. **RE-MEASURED AND CLEARED 2026-08-27: the same trees had grown to 4.9 GB across 15 runs** — 4.5x the figure that first caused this — and removing all but the newest took them to **5.4 MB** and the volume from **15 GiB to 20 GiB free**. Do this after any session that runs several full gates; it is the cheapest gate-time win there is. **The "two stale store backups, 1.67 GB" clause is STALE and is retired here** — no `.db` backup exists beside the live 3.1 GB store, only small yaml/profile ones. **There is therefore still no rollback snapshot** (take one before any destructive operation) | **tooling** |
-| **CI is sharded and gates on ONE context (D-334)** | Branch protection requires `ci` and nothing else — not the six `test (3.x, ubuntu-latest)` contexts, which no longer exist. `ci` carries `always()` and derives what should have run from `github.event_name`, because **GitHub counts a SKIPPED required check as SUCCESS**. Two standing prohibitions are commented in `ci.yml` and are load-bearing: **no `if:` on `ci` beyond `always()`** (a condition there erases every gate at once) and **no `continue-on-error` on any job in its `needs`** (it makes a failed job report `success`). Shard count lives in ONE place, the `plan` job — a workflow-level `env` CANNOT be read from `jobs.<id>.strategy`. **Read CI job conclusions from `gh api .../actions/runs/<id>/jobs`, never `gh pr checks`**, which has misreported on this repo | tooling |
-| **`make check` must be launched DETACHED** | the Bash tool clamps `timeout` to ~10 min; a longer gate reads as `make: *** [test] Error 143` — that is SIGTERM, not a build break. **`setsid` does not exist on macOS**: use `nohup sh -c '<export PATH>; make check > LOG 2>&1; echo $? > DONE' & disown`, set PATH INSIDE the subshell, and gate on the sentinel file, never the launcher's exit code. The clamp is WALL-CLOCK, so CPU contention converts a comfortable run into a kill — a suite that ran 5m17s alone was SIGTERMed at 62% while one subagent ran its own pytest. Never pipe the gate through `head`/`tail` | tooling |
