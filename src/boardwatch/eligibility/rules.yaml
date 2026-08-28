@@ -789,7 +789,16 @@ families:
       - id: law
         surfaces: ["(?<!\\w)law(?!\\w)", "juris\\s+doctor"]
       - id: education
-        surfaces: ["education(?!al\\s+(?:background|requirement))"]
+        # `education` is also the MASS NOUN of equivalence and accreditation boilerplate --
+        # "an equivalent combination of education and experience", "or foreign education
+        # equivalent", "Accreditation Commission for Education" -- and reading those as the
+        # named FIELD decided `ineligible` on postings that named no field at all. The
+        # boilerplate frames are rejected by the word immediately before the noun; the field
+        # sense heads its own phrase ("Education", "Higher Education", "Special Education",
+        # or after a comma in a list) and never takes one of them. `educational` is never the
+        # field sense either, so the surface is whole-word.
+        surfaces:
+          - "(?<!\\bof\\s)(?<!\\bfor\\s)(?<!\\bin\\s)(?<!\\bformal\\s)(?<!\\bforeign\\s)(?<!\\bmilitary\\s)(?<!\\bnursing\\s)education(?!\\w)"
     # A REVIEWED PARTITION, not a similarity score. Membership is a statement that a hiring
     # process treats these fields as interchangeable, and it is only ever consulted when the
     # POSTING itself says it will take a neighbour (see related_field_escapes). Disjoint by
@@ -817,7 +826,10 @@ families:
       # slot is ONE GENERIC WORD rather than an enumeration: an enumerated list read "or a
       # related healthcare field" as a closed requirement and decided `unmet` where the posting
       # had plainly opened it, and the list would need a new token per industry forever.
-      - "or\\s+(?:an?\\s+)?(?:closely\\s+|highly\\s+)?(?:related|similar|relevant|comparable|allied|adjacent)\\s+(?:\\w+\\s+)?(?:field|discipline|area|major|subject|degree|program|stud(?:y|ies))s?"
+      # The article slot carries `other`/`another` as well as `a`/`an`: "or another related
+      # field" is the same escape, and `an?\s+` cannot consume either of them, so the escape
+      # went unseen and the row decided `unmet`.
+      - "or\\s+(?:(?:an?|(?:an)?other)\\s+)?(?:closely\\s+|highly\\s+)?(?:related|similar|relevant|comparable|allied|adjacent)\\s+(?:\\w+\\s+)?(?:field|discipline|area|major|subject|degree|program|stud(?:y|ies))s?"
       # "or a STEM field" -- an open CATEGORY named instead of the word `related`.
       - "or\\s+(?:an?\\s+)?(?:STEM|technical|quantitative|scientific|engineering|numerate|business|healthcare)\\s+(?:field|discipline|area|major|subject|degree)s?"
       # "a quantitative field such as Statistics or Physics": the enumeration is EXEMPLARY, so
