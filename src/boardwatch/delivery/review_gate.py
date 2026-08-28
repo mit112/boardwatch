@@ -15,6 +15,7 @@ it introduces no state that can drift from the DB (D-323).
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal, NamedTuple
 
 from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.role_gate import role_verdict
@@ -22,9 +23,38 @@ from boardwatch.rank.role_gate import role_verdict
 #: The review-lane drain directory. Registered in ``delivery.names.DRAIN_DIRS``.
 REVIEW_DIR = "_review"
 
+#: Why a lead is held. A CLOSED catalog: one member per branch of :func:`classify`, so a value
+#: outside it is a bug rather than a new bucket, and the page's map over it stays exhaustive.
+#:
+#: ``role_vetoed`` and ``role_unconfirmed`` are separate members on purpose. The role gate returns
+#: three answers and only ``not_swe`` is a veto; ``uncertain`` is an abstain, and reporting it as
+#: "not software" would assert the decision the gate declined to make — the same error as folding
+#: an abstain into a neighbour.
+ReviewReason = Literal[
+    "ineligible_verdict",
+    "non_us_location",
+    "role_vetoed",
+    "role_unconfirmed",
+]
 
-def lane(*, verdict: str | None, locations: Sequence[str], title: str) -> str:
-    """Return ``""`` for the apply queue or ``REVIEW_DIR`` for the review lane.
+
+class LaneDecision(NamedTuple):
+    """One lane call: the drain directory (``""`` for the apply queue) and why.
+
+    ``reason`` is non-``None`` **exactly** when ``lane`` is :data:`REVIEW_DIR`. The two travel as
+    one value from one function so nothing downstream can pair a lane with a reason derived
+    somewhere else.
+    """
+
+    lane: str
+    reason: ReviewReason | None
+
+
+def classify(*, verdict: str | None, locations: Sequence[str], title: str) -> LaneDecision:
+    """Decide the lane AND, in the same pass, which of the four reasons held the lead.
+
+    The single place either answer is computed. The reason is a by-product of the branch the
+    lane decision already takes, never a re-derivation, which is why the two cannot disagree.
 
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
@@ -48,11 +78,25 @@ def lane(*, verdict: str | None, locations: Sequence[str], title: str) -> str:
     ``ineligible`` (excluded) — never make a foreign or non-software lead appliable.
     """
     if verdict == "eligible":
-        return ""
+        return LaneDecision("", None)
     if verdict == "ineligible":
-        return REVIEW_DIR
+        return LaneDecision(REVIEW_DIR, "ineligible_verdict")
     if classify_location(list(locations)) == "non_us":
-        return REVIEW_DIR
-    if role_verdict(title)[0] != "swe":
-        return REVIEW_DIR
-    return ""
+        return LaneDecision(REVIEW_DIR, "non_us_location")
+    role = role_verdict(title)[0]
+    if role == "not_swe":
+        return LaneDecision(REVIEW_DIR, "role_vetoed")
+    if role != "swe":
+        return LaneDecision(REVIEW_DIR, "role_unconfirmed")
+    return LaneDecision("", None)
+
+
+def lane(*, verdict: str | None, locations: Sequence[str], title: str) -> str:
+    """Return ``""`` for the apply queue or :data:`REVIEW_DIR` for the review lane.
+
+    A one-line projection of :func:`classify`, and deliberately nothing more: the lane and the
+    reason are ONE decision, so the only way to be sure the folder tree and the page never
+    disagree about a lead is for both to read the same call. Re-deriving either here would be the
+    second opinion ``_review`` exists to prevent (D-332).
+    """
+    return classify(verdict=verdict, locations=locations, title=title).lane

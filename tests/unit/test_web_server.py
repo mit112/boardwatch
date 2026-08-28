@@ -223,6 +223,7 @@ def _deliver(
     delivered_at: datetime = NOW,
     title: str = "Software Engineer",
     watched: bool = True,
+    locations: list[str] | None = None,
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact."""
     company_id = int(
@@ -241,7 +242,8 @@ def _deliver(
             insert(postings).values(
                 company_id=company_id, job_id=job, provider_posting_id=key, title=title,
                 normalized_title=title.casefold(), url="https://boards.test/apply",
-                locations_json=["Boston, MA"], remote_policy="remote",
+                locations_json=locations if locations is not None else ["Boston, MA"],
+                remote_policy="remote",
                 posted_at=NOW - timedelta(days=3), first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=f"hash-{key}", body_text=body,
             )
@@ -661,6 +663,54 @@ def test_off_target_carries_the_role_gates_own_matched_text_and_uncertain_is_not
     assert review[unsure]["off_target_reason"] is None
     assert rows[software]["off_target"] is False
     assert rows[software]["off_target_reason"] is None
+
+
+def test_every_review_row_names_which_reason_held_it_and_apply_rows_carry_none(
+    live: Live, engine: Engine
+) -> None:
+    """`review_reason` on the wire, one member per branch of `review_gate.classify`.
+
+    Before it existed the only marker a review row could carry was `off_target`, which is
+    `not_swe` ALONE — so a lead held for a confirmed non-US location, and a lead held because the
+    role gate would not positively call its title software, both rendered indistinguishable from a
+    clean one. All three cases are asserted together here, because the defect was not any single
+    missing string: it was that two of the three lanes' reasons had nowhere to travel.
+
+    The apply row is in the same assertion for the same reason. `review_reason` being `None`
+    exactly off the review lane is what lets the page treat the field and the list as one fact
+    rather than two that happen to agree.
+    """
+    with engine.begin() as conn:
+        foreign, _ = _deliver(conn, "vilnius", title="Software Engineer",
+                              locations=["Kaunas, Lithuania"])
+        vetoed, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner")
+        unconfirmed, _ = _deliver(conn, "cpa", title="Tax CPA")
+        software, _ = _deliver(conn, "swe", title="Software Engineer")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    rows = {row["posting_id"]: row for row in payload["rows"]}
+    review = {row["posting_id"]: row for row in payload["review"]}
+
+    assert set(review) == {foreign, vetoed, unconfirmed}
+    assert review[foreign]["review_reason"] == "non_us_location"
+    assert review[vetoed]["review_reason"] == "role_vetoed"
+    assert review[unconfirmed]["review_reason"] == "role_unconfirmed"
+
+    # The abstain is NOT folded into the veto. These two are in the same list and only one of
+    # them is a decision the role gate made.
+    assert review[unconfirmed]["review_reason"] != review[vetoed]["review_reason"]
+    # And it is not reachable through `off_target`, which is why the field had to exist: two of
+    # the three held leads wear no badge at all.
+    assert review[foreign]["off_target"] is False
+    assert review[unconfirmed]["off_target"] is False
+
+    assert set(rows) == {software}
+    assert rows[software]["review_reason"] is None
+
+    # The detail pane serializes a row with no list around it, so the field has to survive there
+    # too — that endpoint is where the pane would otherwise have to guess.
+    pane = call(live, f"/api/queue/{foreign}", bearer=live.token).json()
+    assert pane["row"]["review_reason"] == "non_us_location"
 
 
 def test_a_review_lead_is_listed_not_dropped_and_the_band_reconciles(

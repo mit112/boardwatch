@@ -2,6 +2,7 @@ import type { QueueRow } from "../api/types";
 import { EM_DASH, formatAge, formatFraction, formatScore } from "../lib/format";
 import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
+import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
 
 /*
@@ -31,6 +32,10 @@ export const WIDE_ONLY = "hidden @min-[78rem]:block";
 function Flags({ row }: { row: QueueRow }) {
   return (
     <>
+      {/* FIRST, because it is the one flag that explains which of the page's two lists the row is
+          in. It renders on review rows only — `review_reason` is `null` off the lane — and it is
+          not the same question as `off target` below, which is `not_swe` alone. */}
+      <ReviewReasonBadge reason={row.review_reason} />
       {row.thin_jd ? (
         <Badge label="thin JD" reason="No coverage fraction could be computed." />
       ) : null}

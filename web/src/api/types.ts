@@ -30,6 +30,22 @@ export type Verdict = "eligible" | "uncertain" | "ineligible";
  */
 export type PostingStatus = "open" | "closed" | "unverifiable";
 
+/**
+ * Which of four reasons holds a lead in the review lane, from `delivery/review_gate.classify` —
+ * the same call the lane itself is a projection of, so a row's reason and the list it arrived in
+ * are one decision (D-332). A CLOSED set: the frontend's map over it is exhaustive, so adding a
+ * member server-side is a compile error here rather than a row that silently renders bare.
+ *
+ * `role_vetoed` and `role_unconfirmed` are separate members and must stay separate. The role gate
+ * returns three answers and only `not_swe` is a veto; `uncertain` is an abstain, and rendering it
+ * as "not software" would assert the decision the gate declined to make.
+ */
+export type ReviewReason =
+  | "ineligible_verdict"
+  | "non_us_location"
+  | "role_vetoed"
+  | "role_unconfirmed";
+
 export interface QueueRow {
   posting_id: number;
   job_id: number;
@@ -63,6 +79,13 @@ export interface QueueRow {
    * hand-written title pattern is a second, wrong opinion about a shipped gate.
    */
   off_target_reason: string | null;
+  /**
+   * Non-`null` EXACTLY on a review-lane row, so this and "the row arrived in `review`" are the
+   * same statement. Never re-derive it from `off_target`: that flag is `not_swe` alone, while the
+   * lane also holds a confirmed non-US location and a title the gate merely could not call
+   * software, so most review leads carry a reason and no badge.
+   */
+  review_reason: ReviewReason | null;
 }
 
 export interface QueueCounts {
@@ -103,7 +126,8 @@ export interface QueueResponse {
    *
    * Do NOT try to re-derive this from `off_target`. That flag is `not_swe` ONLY and never
    * `uncertain`, so most review leads carry no flag at all; the lane is the server's answer and
-   * the only one that matches the folder tree.
+   * the only one that matches the folder tree. Each row's `review_reason` says which reason held
+   * it, and is the only field that does.
    */
   review: QueueRow[];
   counts: QueueCounts;
