@@ -280,3 +280,61 @@ def test_request_error_is_not_retried(tmp_path: Path) -> None:
         with pytest.raises(FetchFailure):
             fetcher.get("https://loop.example.com/")
     assert route.call_count == 1
+
+
+def _timed_starts(tmp_path: Path, *, from_start: bool, work: float, n: int = 3) -> list[float]:
+    """Start times of `n` sequential same-host GETs, each taking `work` seconds to answer."""
+    settings = Settings(
+        data_dir=tmp_path,
+        config_dir=tmp_path,
+        per_host_delay_seconds=0.25,
+        pace_from_request_start=from_start,
+    )
+    starts: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        starts.append(time.monotonic())
+        time.sleep(work)
+        return httpx.Response(200)
+
+    with respx.mock:
+        respx.get("https://paced.example/x").mock(side_effect=handler)
+        fetcher = Fetcher(settings)
+        for _ in range(n):
+            fetcher.get("https://paced.example/x")
+    return starts
+
+
+def test_pacing_from_request_end_charges_the_response_time_on_top(tmp_path: Path) -> None:
+    """The shipped default: the gap is delay AFTER the previous request finished.
+
+    A 0.20 s response under a 0.25 s delay therefore yields ~0.45 s between starts, not 0.25 —
+    which is why a host sees ~0.6 req/s rather than the 1.0 the delay reads as.
+    """
+    starts = _timed_starts(tmp_path, from_start=False, work=0.20)
+    gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
+    assert all(gap >= 0.40 for gap in gaps), gaps
+
+
+def test_pacing_from_request_start_makes_the_delay_the_whole_interval(tmp_path: Path) -> None:
+    """With the flag on, the same 0.20 s response is ABSORBED by the 0.25 s delay.
+
+    This is the discriminating half: against the request-END implementation the gaps are ~0.45 s
+    and the upper bound below fails. The lower bound is kept so the flag cannot be mistaken for
+    a licence to drop the delay altogether — the floor still holds.
+    """
+    starts = _timed_starts(tmp_path, from_start=True, work=0.20)
+    gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
+    assert all(0.25 <= gap < 0.40 for gap in gaps), gaps
+
+
+def test_a_slow_response_still_paces_itself_when_measured_from_the_start(tmp_path: Path) -> None:
+    """A response SLOWER than the delay is its own pacing, so the flag cannot outrun it.
+
+    Without this the flag reads as "1/delay always"; a 0.40 s response under a 0.25 s delay can
+    only ever be one request per 0.40 s, and asserting otherwise would be asserting a rate the
+    transport cannot produce.
+    """
+    starts = _timed_starts(tmp_path, from_start=True, work=0.40)
+    gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
+    assert all(gap >= 0.40 for gap in gaps), gaps
