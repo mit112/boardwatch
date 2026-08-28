@@ -243,6 +243,12 @@ runs = Table(
     Column("finished_at", DateTime, nullable=True),
     Column("boards_attempted", Integer, nullable=False, default=0),
     Column("boards_complete", Integer, nullable=True),
+    # The rest of ScanSummary's four-way split (D-341). Nullable and NOT defaulted to 0: NULL
+    # means a run predating this column, or one whose scan never ran, which absent≠zero keeps
+    # distinct from a scan that genuinely found zero partial/unchanged/failed boards.
+    Column("boards_partial", Integer, nullable=True),
+    Column("boards_unchanged", Integer, nullable=True),
+    Column("boards_failed", Integer, nullable=True),
     Column("postings_seen", Integer, nullable=True),
     Column("new_count", Integer, nullable=True),
     Column("closed_count", Integer, nullable=True),

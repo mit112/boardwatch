@@ -172,6 +172,9 @@ export interface RunSummary {
   status: string | null;
   boards_attempted: number | null;
   boards_complete: number | null;
+  boards_partial: number | null;
+  boards_unchanged: number | null;
+  boards_failed: number | null;
   postings_seen: number | null;
   new_count: number | null;
   leads: number | null;
@@ -237,6 +240,8 @@ export interface RunFunnel {
     ran: boolean;
     boards_attempted: number | null;
     boards_complete: number | null;
+    boards_partial: number | null;
+    boards_unchanged: number | null;
     boards_failed: number | null;
     postings_seen: number | null;
   };

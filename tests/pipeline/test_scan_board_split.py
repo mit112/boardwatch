@@ -23,7 +23,7 @@ import httpx
 import pytest
 import respx
 from rich.console import Console
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import run_pipeline
@@ -129,3 +129,16 @@ def test_the_funnel_publishes_all_four_board_outcomes_and_they_sum_to_the_total(
 
     rendered = summary.funnel.markdown_path.read_text(encoding="utf-8")
     assert "4 boards attempted · 1 complete · 1 partial · 1 unchanged · 1 failed" in rendered
+
+    # The same split must reach the STORE, not only the artifact: the runs row carried just
+    # complete/attempted, so /api/runs and the web run list inherited the identical fold. This
+    # is the latest run (the priming company-filtered scan is an earlier, smaller row).
+    with get_engine(env).connect() as conn:
+        run_row = conn.execute(
+            select(tables.runs).order_by(tables.runs.c.id.desc()).limit(1)
+        ).one()
+    assert run_row.boards_attempted == 4
+    assert run_row.boards_complete == 1
+    assert run_row.boards_partial == 1
+    assert run_row.boards_unchanged == 1
+    assert run_row.boards_failed == 1

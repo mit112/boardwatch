@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Connection, Engine, func, insert, select
+from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery.api import ApiContext
@@ -1075,6 +1075,29 @@ def test_the_runs_payload_counts_leads_from_the_artifacts_that_recorded_them(
     assert run["postings_seen"] == 120
 
     assert call(live, f"/api/runs/{run_id}", bearer=live.token).status == 404
+
+
+def test_the_runs_payload_carries_the_four_way_board_split(
+    live: Live, engine: Engine
+) -> None:
+    """/api/runs must expose partial/unchanged/failed so the web run list can reconcile the
+    total; a run that never measured them reports NULL, never a fabricated 0 (D-341)."""
+    with engine.begin() as conn:
+        measured = _run(conn)
+        conn.execute(
+            update(runs)
+            .where(runs.c.id == measured)
+            .values(boards_partial=1, boards_unchanged=1, boards_failed=1)
+        )
+        unmeasured = _run(conn)
+
+    by_id = {r["id"]: r for r in call(live, "/api/runs", bearer=live.token).json()["runs"]}
+    assert by_id[measured]["boards_partial"] == 1
+    assert by_id[measured]["boards_unchanged"] == 1
+    assert by_id[measured]["boards_failed"] == 1
+    assert by_id[unmeasured]["boards_partial"] is None
+    assert by_id[unmeasured]["boards_unchanged"] is None
+    assert by_id[unmeasured]["boards_failed"] is None
 
 
 def test_a_runs_funnel_artifact_is_passed_through(

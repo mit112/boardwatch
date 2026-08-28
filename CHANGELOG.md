@@ -22,6 +22,19 @@ All notable changes to this project are documented here. The format follows
   are additive keys in a block that has existed since v1, on the `scan.fetch_cost` precedent, and no
   existing value changes meaning.
 
+- **The four-way board split now reaches the store, `/api/runs` and the web run list (D-341's other half).**
+  D-341 published `complete | partial | unchanged | failed` in the funnel artifact, but the `runs` table
+  kept only `boards_attempted` and `boards_complete`, so run 127 read "346 attempted / 145 complete" from
+  the row with the other 200 boards unaccounted — the same fold, one layer down, inherited by `/api/runs`
+  and the run list that read it. A migration (`p_runs_board_split`) adds `boards_partial`,
+  `boards_unchanged` and `boards_failed` to `runs` as **nullable** columns: NULL means a run predating the
+  column or one whose scan never ran, kept distinct from a measured 0 — a zero default would read every
+  historic run as a scan that found zero partial boards. `finalize_run` writes the three buckets from
+  `ScanSummary`, `/api/runs` serializes them, and the run list shows `partial`/`unchanged`/`failed` tiles
+  beside `boards` (an em-dash for a run that never measured them). The end-to-end scan test now asserts the
+  split reaches the row, not only the artifact — the wiring is where D-341's bug lived. No manifest change:
+  board counts are observations about a scan, not inputs to a verdict.
+
 - **Two spellings of one city are now one location (`IDENTITY_ALGORITHM_VERSION` p6.2 -> p6.3).**
   `normalized_locations` is a component of every location-bearing identity key, so a requisition
   published as `["Austin, TX"]` on one board and `["Austin, Texas, United States"]` on another held two

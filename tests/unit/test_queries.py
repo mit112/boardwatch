@@ -55,6 +55,43 @@ def test_finalize_run_records_derived_counts(engine: Engine) -> None:
     assert row.errors_json == ["acme: HTTP 503"]
 
 
+def test_finalize_run_records_the_four_way_board_split(engine: Engine) -> None:
+    """The store must carry partial/unchanged/failed, not only complete — otherwise the runs
+    row repeats the fold D-341 fixed in the funnel, where 145/346 read as 200 boards idle."""
+    run_id = insert_run(engine)
+    finalize_run(
+        engine, run_id,
+        boards_attempted=4, boards_complete=1, boards_partial=1,
+        boards_unchanged=1, boards_failed=1, postings_seen=40,
+        new_count=5, closed_count=1, reopened_count=0, errors=[],
+    )
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert row.boards_partial == 1
+    assert row.boards_unchanged == 1
+    assert row.boards_failed == 1
+    assert (
+        row.boards_complete + row.boards_partial + row.boards_unchanged + row.boards_failed
+        == row.boards_attempted
+    )
+
+
+def test_finalize_run_leaves_the_four_way_split_null_when_omitted(engine: Engine) -> None:
+    """Absent is not zero (D-341): a caller that did not measure the split writes NULL, so a
+    pre-instrumentation run is never misread as a scan that found zero partial boards."""
+    run_id = insert_run(engine)
+    finalize_run(
+        engine, run_id,
+        boards_attempted=3, boards_complete=2, postings_seen=40,
+        new_count=5, closed_count=1, reopened_count=0, errors=[],
+    )
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert row.boards_partial is None
+    assert row.boards_unchanged is None
+    assert row.boards_failed is None
+
+
 def _insert_run_row(
     engine: Engine,
     *,
