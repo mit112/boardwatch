@@ -303,6 +303,27 @@ families:
     fact: total_years_experience
     answer_type: int
     default_policy: preference
+    # The NEAR-MISS band (D-333). A `minimum`-style bar at or under this many years resolves
+    # UNKNOWN instead of UNMET, so the lead lands `uncertain` rather than being rejected.
+    #
+    # Why a band at all: the reject pile is never inspected, so a wrong `unmet` here is
+    # invisible by construction -- boardwatch never applies, so no outcome loop can ever
+    # contradict it. Measured on the live store, `experience_years` drives ~89% of the
+    # reject pile against a profile declaring ONE year, and 8,745 postings were rejected for
+    # needing 3 years or fewer. Internships, co-ops and course projects routinely clear a
+    # 2-3 year bar, and `total_years_experience` is a single integer that can represent none
+    # of them.
+    #
+    # Why UNKNOWN and not a `preference` severity: severity is resolved per FAMILY
+    # (`catalog.py`), so it cannot express a threshold, and a `preference` row leaves
+    # `engine.blocking()` entirely -- the verdict then falls through to `eligible`, which
+    # ASSERTS the candidate qualifies. `unknown` is caught by `blocking(UNKNOWN)` first and
+    # yields `uncertain`, so this band can never manufacture an `eligible`.
+    #
+    # 0 disables it, which is every other family. Raising it is not free: each extra year
+    # moves genuinely-too-senior postings into the delivered pool. Re-measure before moving
+    # it, and note the bound is CLOSED -- 3 abstains, 4 rejects.
+    near_miss_years_ceiling: 3
     question: "How many total years of professional experience do you have?"
     fields:
       - name: total_years_experience

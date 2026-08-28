@@ -134,6 +134,12 @@ class FamilySpec:
     superset_relations: tuple[dict[str, str], ...]
     tier: str
     applies_to: frozenset[str]
+    # The NEAR-MISS band (D-333). A `minimum`-style requirement at or under this many years
+    # abstains instead of resolving `unmet`, because a single declared total cannot represent
+    # the internships, co-ops and project work that clear an early-career bar. `0` disables
+    # the band, and every family that declares no ceiling parses to `0`, so a family or an
+    # override without one behaves exactly as before.
+    near_miss_years_ceiling: int = 0
     # The field-of-study vocabulary, its reviewed relatedness PARTITION, and the phrasings by
     # which a posting says it will accept a neighbouring field. All three are empty for every
     # family that declares none, so a family or an override without them behaves as before.
@@ -347,6 +353,20 @@ def _family(
     label = str(raw.get("label", "")).strip()
     if not label:
         raise CatalogError(f"{where} is missing 'label'")
+    # Validated rather than coerced: a ceiling that arrives as "3" or as -1 would silently
+    # disable or invert the band, and the band is invisible in the verdict counts (it moves
+    # rows between `ineligible` and `uncertain`, both of which are non-delivery states from
+    # the catalog's point of view), so a bad value would not surface anywhere.
+    raw_ceiling = raw.get("near_miss_years_ceiling", 0)
+    if isinstance(raw_ceiling, bool) or not isinstance(raw_ceiling, int):
+        raise CatalogError(
+            f"{where} has non-integer near_miss_years_ceiling {raw_ceiling!r}"
+        )
+    if raw_ceiling < 0:
+        raise CatalogError(
+            f"{where} has negative near_miss_years_ceiling {raw_ceiling!r}"
+        )
+    near_miss_years_ceiling = raw_ceiling
 
     tier = str(raw.get("tier", "")).strip()
     if not tier:
@@ -412,6 +432,7 @@ def _family(
         implies_vocabulary=declared, exclusive_groups=groups, patterns=tuple(patterns),
         superset_relations=tuple(relations),
         tier=tier, applies_to=applies_to,
+        near_miss_years_ceiling=near_miss_years_ceiling,
         fields_of_study=study_fields,
         related_fields_of_study=_groups(
             raw.get("related_fields_of_study"), where,

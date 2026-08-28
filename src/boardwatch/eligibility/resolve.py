@@ -19,7 +19,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from boardwatch.eligibility.catalog import FamilySpec, RulesCatalog
+from boardwatch.eligibility.catalog import FamilySpec, PatternSpec, RulesCatalog
 from boardwatch.eligibility.detect import Detection
 from boardwatch.eligibility.facts import ClearanceFact, Facts
 from boardwatch.store.eligibility import SupportItem
@@ -236,6 +236,39 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
 _SCOPED_YEARS = frozenset({"scoped_years_minimum", "activity_years_minimum"})
 
 
+def _is_near_miss(need: int, family: FamilySpec, pattern: PatternSpec) -> bool:
+    """Is this bar low enough that a miss says nothing reliable about the candidate?
+
+    The reject pile is never inspected, so a wrong `unmet` on an early-career bar is
+    invisible by construction -- there is no outcome loop that could ever contradict it.
+    Against that asymmetry a 2-3 year bar is not evidence of ineligibility: internships,
+    co-ops and course projects routinely clear one, and `total_years_experience` is a single
+    integer that cannot represent any of them.
+
+    This is applied at the RESOLVER, using the threshold this row captured, and that
+    placement is load-bearing. The two catalog-level alternatives are both wrong here:
+
+    * `abstain_by` is DOCUMENT-scoped (`detect._suppressed`, `inside_span=True`), so a
+      low-bar regex would also cancel a genuine "10 years required" elsewhere in the same
+      posting. The band must be per-ROW, and only the resolver sees a row's own `need`.
+    * Flipping the family to `preference` severity cannot express a threshold at all
+      (`catalog.py` resolves severity per FAMILY) and would remove the row from
+      `engine.blocking()` entirely, so the verdict falls through to `eligible` -- asserting
+      the candidate qualifies. `unknown` is caught by `blocking(UNKNOWN)` first and yields
+      `uncertain`, so the band can never manufacture an `eligible`.
+
+    Scoped to `required` rows ALONE. The band exists to stop a REJECTION, and only a
+    `required` row can produce one (`engine.blocking()` tests `requiredness == "required"`).
+    Applied to a `preferred` row it would change nothing about the verdict and would only
+    blur the evidence chain -- "you are under a stated preference" is a true and useful row,
+    and rewriting it to `unknown` discards a fact for no gain.
+
+    A ceiling of `0` disables the band, which is every family but this one.
+    """
+    ceiling = family.near_miss_years_ceiling
+    return ceiling > 0 and need <= ceiling and pattern.requiredness == "required"
+
+
 @resolver("experience_years", inputs=("total_years_experience",))
 def _resolve_experience_years(
     detection: Detection, facts: Facts, family: FamilySpec
@@ -257,12 +290,22 @@ def _resolve_experience_years(
         # 1-year profile read `eligible` against "Minimum of 12 years of experience in
         # software development"; this is the highest-volume pattern in the family.
         if total < need:
+            if _is_near_miss(need, family, pattern):
+                return Resolution(
+                    UNKNOWN, f"{total} total < {need} scoped to a skill, within the "
+                    f"{family.near_miss_years_ceiling}-year near-miss band", support,
+                )
             return Resolution(UNMET, f"{total} total < {need} scoped to a skill", support)
         return Resolution(
             UNKNOWN, "requirement is scoped to a skill; no per-skill durations stored"
         )
     if total >= need:
         return Resolution(MET, f"{total} >= {need}", support)
+    if _is_near_miss(need, family, pattern):
+        return Resolution(
+            UNKNOWN, f"{total} < {need}, within the "
+            f"{family.near_miss_years_ceiling}-year near-miss band", support,
+        )
     return Resolution(UNMET, f"{total} < {need}", support)
 
 

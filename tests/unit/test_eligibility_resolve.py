@@ -339,7 +339,6 @@ def test_a_scoped_requirement_still_abstains_when_the_total_allows_it(
 
 @pytest.mark.parametrize("body", [
     "5+ years building and deploying web applications.",
-    "3 years developing distributed systems.",
     "7+ years of architecting cloud platforms.",
 ])
 def test_an_activity_gerund_states_a_floor_with_no_experience_noun(catalog, body: str) -> None:
@@ -352,6 +351,66 @@ def test_an_activity_gerund_states_a_floor_with_no_experience_noun(catalog, body
     """
     assert _one(catalog, body, Facts(total_years_experience=1),
                 "scoped_years_activity") == "unmet"
+
+
+# ---- the NEAR-MISS band: a low bar abstains instead of rejecting (D-333)
+
+@pytest.mark.parametrize(("body", "pattern_id"), [
+    ("2+ years of experience required.", "total_years_minimum"),
+    ("3+ years of experience required.", "total_years_minimum"),
+    ("2-4 years of experience.", "range_years_minimum"),
+    ("3+ years of experience with Kubernetes.", "scoped_years_minimum"),
+    ("3 years developing distributed systems.", "scoped_years_activity"),
+])
+def test_a_bar_at_or_under_the_near_miss_ceiling_abstains(catalog, body, pattern_id) -> None:
+    """A 1-year profile against a 2-3 year bar is a NEAR MISS, not a rejection.
+
+    Internships, co-ops and project work routinely clear an early-career bar that a single
+    declared `total_years_experience` integer cannot represent, and the reject pile is never
+    inspected -- so a wrong `unmet` here is invisible by construction. Abstaining keeps the
+    row VISIBLE and undecidable for the two-stage gate, which is the same choice
+    `degree_alternative_to_years` already makes.
+
+    `unknown`, deliberately, NOT a severity flip to `preference`: a preference row leaves
+    `blocking()` entirely and the verdict falls through to `eligible`, asserting the
+    candidate qualifies. `unknown` is caught by `blocking(UNKNOWN)` first and yields
+    `uncertain`. The band can therefore never manufacture an `eligible`.
+    """
+    assert _one(catalog, body, Facts(total_years_experience=1), pattern_id) == "unknown"
+
+
+@pytest.mark.parametrize(("body", "pattern_id"), [
+    ("4+ years of experience required.", "total_years_minimum"),
+    ("4-6 years of experience.", "range_years_minimum"),
+    ("4+ years of experience with Kubernetes.", "scoped_years_minimum"),
+    ("4 years developing distributed systems.", "scoped_years_activity"),
+])
+def test_the_first_bar_above_the_ceiling_still_rejects(catalog, body, pattern_id) -> None:
+    """The boundary is CLOSED at the ceiling and the very next year still rejects.
+
+    Pinned one year either side because an off-by-one here is silent: it would widen the
+    band to 4 years and neither the verdict counts nor the gate would name the cause.
+    """
+    assert _one(catalog, body, Facts(total_years_experience=1), pattern_id) == "unmet"
+
+
+def test_the_near_miss_band_does_not_fire_when_the_total_already_clears(catalog) -> None:
+    """A bar inside the band that the profile MEETS still resolves `met`, not `unknown`.
+
+    The band only ever replaces an `unmet`; it must not swallow a genuine clear, which would
+    turn a qualifying lead into an abstention and cost recall in the opposite direction.
+    """
+    assert _one(catalog, "3+ years of experience required.",
+                Facts(total_years_experience=5), "total_years_minimum") == "met"
+
+
+def test_a_family_declaring_no_ceiling_is_unchanged(catalog) -> None:
+    """The ceiling is opt-in per family. Every other family parses without it and keeps a
+    zero ceiling, so no family that never declared one can start abstaining."""
+    assert catalog.family("experience_years").near_miss_years_ceiling == 3
+    for family in catalog.families:
+        if family.id != "experience_years":
+            assert family.near_miss_years_ceiling == 0, family.id
 
 
 def test_an_activity_gerund_on_the_company_side_is_suppressed(catalog) -> None:
