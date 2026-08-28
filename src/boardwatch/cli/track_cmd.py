@@ -7,6 +7,7 @@ there is no edit or delete verb.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import get_args
 
 import typer
@@ -14,6 +15,15 @@ from rich.console import Console
 from rich.table import Table
 
 from boardwatch.cli.context import build_context
+from boardwatch.store.application_history import (
+    COLUMNS,
+    DEFAULT_STATUS,
+    HistoryFormatError,
+    ImportBucket,
+    import_history,
+    parse_history,
+    write_import_report,
+)
 from boardwatch.store.applications import (
     ApplicationStatus,
     create_application,
@@ -132,6 +142,75 @@ def list_(
             str(row.attempt_no),
         )
     console.print(table)
+
+
+_IMPORT_HELP = (
+    "CSV or JSONL of prior applications, with columns "
+    f"{', '.join(COLUMNS)}. A row needs a url, or both a company and a title; "
+    f"status defaults to {DEFAULT_STATUS!r} and applied_at to now."
+)
+
+
+@track_app.command("import")
+def import_(
+    ctx: typer.Context,
+    path: Path = typer.Argument(  # noqa: B008
+        ..., exists=True, dir_okay=False, help=_IMPORT_HELP
+    ),
+    allow_title_match: bool = typer.Option(
+        False,
+        "--allow-title-match",
+        help="Also match on (company, title). Weaker than the url key: one title at a large "
+        "employer can cover several different requisitions.",
+    ),
+    report: Path | None = typer.Option(  # noqa: B008
+        None, "--report", help="Write a per-row JSONL audit here: bucket, matched key, job ids."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Match and report without writing any application."
+    ),
+) -> None:
+    """Record applications you made elsewhere, so those roles stop re-surfacing.
+
+    Rows are matched against the postings boardwatch holds; a role it never saw cannot be
+    recorded, because an application hangs off a stored job. Nothing is dropped silently —
+    every row is counted into exactly one bucket, and `--report` writes them all out.
+
+    Re-running the same file writes nothing: a job that already carries an application is
+    left alone, including one you withdrew.
+    """
+    try:
+        rows, malformed = parse_history(path)
+    except (HistoryFormatError, UnicodeDecodeError) as exc:
+        console.print(f"[red]cannot read {path}: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    app_ctx = build_context(ctx.obj)
+    with app_ctx.engine.connect() as conn:
+        result = import_history(
+            conn, rows, malformed, allow_title_match=allow_title_match, source="import"
+        )
+        if not dry_run:
+            conn.commit()
+    counts = result.counts()
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Bucket")
+    table.add_column("Rows", justify="right")
+    for bucket in ImportBucket:
+        table.add_row(str(bucket), str(counts[bucket]))
+    console.print(table)
+    written = sum(len(row.application_ids) for row in result.results)
+    if dry_run:
+        console.print(f"dry run: would write {written} application(s). Nothing was saved.")
+    else:
+        console.print(f"wrote {written} application(s) from {len(result.results)} row(s).")
+    if report is not None:
+        with report.open("w", encoding="utf-8") as stream:
+            write_import_report(result.results, stream)
+        console.print(f"per-row audit written to {report}")
+    elif counts[ImportBucket.UNMATCHED] or counts[ImportBucket.MALFORMED]:
+        console.print(
+            "re-run with --report <path> to see which rows did not land and why."
+        )
 
 
 @track_app.command("log")

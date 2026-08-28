@@ -65,8 +65,18 @@ def create_application(
     posting_version_id: int | None = None,
     status: ApplicationStatus = "interested",
     source: str = "user",
+    occurred_at: datetime | None = None,
 ) -> int:
+    """Create attempt N+1 for a job.
+
+    `occurred_at` is when the application was *made*, defaulting to now. It moves
+    `submitted_at` and the created event's `occurred_at`, and it deliberately does NOT move
+    `created_at`/`updated_at`/`recorded_at`, which record when boardwatch learned of it. That
+    split already exists in `application_events` (`occurred_at` vs `recorded_at`); this makes
+    it reachable, so importing a history applied to in March does not stamp every row today.
+    """
     now = utcnow()
+    occurred = occurred_at or now
     next_attempt = int(
         conn.execute(
             select(func.coalesce(func.max(applications.c.attempt_no), 0) + 1).where(
@@ -79,13 +89,13 @@ def create_application(
             insert(applications).values(
                 job_id=job_id, posting_version_id=posting_version_id, attempt_no=next_attempt,
                 status=status, created_at=now, updated_at=now,
-                submitted_at=now if status == "applied" else None,
+                submitted_at=occurred if status == "applied" else None,
             )
         ).inserted_primary_key[0]  # type: ignore[index]
     )
     append_application_event(
         conn, application_id=app_id, event_type="created", to_status=status,
-        source=source, occurred_at=now,
+        source=source, occurred_at=occurred,
     )
     return app_id
 
