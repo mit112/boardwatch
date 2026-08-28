@@ -300,7 +300,9 @@ def get_watched_companies(
 ) -> list[Row[Any]]:
     stmt = select(companies).where(companies.c.watched.is_(True))
     if slug is not None:
-        stmt = stmt.where(companies.c.slug == slug)
+        # Case-folded in SQL, the way `stored_slug` compares (D-339): `--company KAYAK` must
+        # reach the board stored as `kayak`. A Python `.lower()` disagrees above ASCII.
+        stmt = stmt.where(func.lower(companies.c.slug) == func.lower(slug))
     if provider is not None:
         stmt = stmt.where(companies.c.provider == provider)
     return list(conn.execute(stmt).all())

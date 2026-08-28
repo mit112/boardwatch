@@ -236,6 +236,18 @@ def test_removing_a_case_variant_unwatches_the_stored_board(tmp_path) -> None:
     assert _watch_count(tmp_path, "ashby", "kayak")[0].watched is False
 
 
+def test_removing_a_case_variant_echoes_the_stored_spelling(tmp_path) -> None:
+    """The removal already resolves case (unwatch -> stored_slug), but the echo lagged and named
+    the typed `KAYAK` rather than the stored `kayak` — the same mismatch `add`/`import` avoid
+    (D-339 loose end)."""
+    base = _base(tmp_path)
+    runner.invoke(app, [*base, "companies", "add", "ashby:kayak"])
+    result = runner.invoke(app, [*base, "companies", "remove", "ashby:KAYAK"])
+    assert result.exit_code == 0
+    assert "ashby:kayak" in result.stdout
+    assert "ashby:KAYAK" not in result.stdout
+
+
 def test_adding_a_greenhouse_board_emits_no_such_warning(tmp_path) -> None:
     base = _base(tmp_path)
     result = runner.invoke(app, [*base, "companies", "add", "greenhouse:stripe"])

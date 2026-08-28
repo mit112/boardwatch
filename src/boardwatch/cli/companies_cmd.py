@@ -24,7 +24,13 @@ from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
-from boardwatch.store.queries import company_exists, list_watches, unwatch, upsert_watch
+from boardwatch.store.queries import (
+    company_exists,
+    list_watches,
+    stored_slug,
+    unwatch,
+    upsert_watch,
+)
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
@@ -137,8 +143,11 @@ def remove(ctx: typer.Context, target: str) -> None:
     provider, slug = parse_board_target(target)
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.begin() as conn:
+        # unwatch already resolves case via stored_slug; echo the STORED spelling, not the
+        # typed one, so `remove ashby:KAYAK` reports `ashby:kayak` like add/import (D-339).
+        stored = stored_slug(conn, provider=provider, slug=slug)
         changed = unwatch(conn, provider=provider, slug=slug)
-    console.print(f"Unwatched {provider}:{slug}." if changed else "No such watch.")
+    console.print(f"Unwatched {provider}:{stored}." if changed else "No such watch.")
 
 
 @companies_app.command("search")
