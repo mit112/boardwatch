@@ -84,6 +84,20 @@ All notable changes to this project are documented here. The format follows
   appends no event, and a job that was **withdrawn** is left withdrawn rather than silently
   re-applied. A role boardwatch never saw cannot be recorded at all, since `applications.job_id` is
   a foreign key to `jobs`; that is why `unmatched` is a reported bucket rather than an error.
+- **`boardwatch identities reap` removes the identity rows a version bump leaves behind.**
+  `write_identities` only rewrites a posting's rows at the CURRENT
+  `IDENTITY_ALGORITHM_VERSION`, so a bump writes a whole new generation beside the old one and
+  nothing ever removed the old one. `posting_identities` held **476,277 rows** on 2026-08-28,
+  about five per posting, and every reader filters to the current version — so the next bump
+  would take it past 950k with half of it permanently unread. Reaping the p6.2 generation on a
+  scratch copy of the live store deleted **476,277 rows across 95,336 postings in 4.5 s** and
+  returned **121 MiB** to SQLite's free list (the file itself shrinks only under a separate
+  `VACUUM`, which the command deliberately does not run). It reports by default and deletes only
+  under `--apply`, and nothing else in the CLI reaps as a side effect. **Only retired generations
+  are in scope.** 11.0% of the table sits on closed postings and reaping that looks like the
+  bigger win, but postings reopen — run 127 alone reopened 18 — and `identities_complete()` gates
+  suppression over all open postings, so a reopened posting with no identity rows would silently
+  disarm dedup store-wide until the next backfill.
 
 - **The delivery queue splits into an APPLY lane and a REVIEW lane (D-332).** The queue root is a
   *blind-apply* surface — you open a folder, read the rendered PDF and apply — but 82% of it was

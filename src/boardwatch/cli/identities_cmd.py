@@ -1,4 +1,4 @@
-"""`boardwatch identities backfill|regroup|verify|leakage` (design §6.3, §7)."""
+"""`boardwatch identities backfill|reap|regroup|verify|leakage` (design §6.3, §7)."""
 
 from __future__ import annotations
 
@@ -10,10 +10,13 @@ import typer
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import resolve_duplicates
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.reports.leakage import DEFAULT_WINDOW_DAYS, compute_leakage_report
 from boardwatch.store.identity_queries import (
+    count_stale_identities,
+    delete_stale_identities,
     identities_complete,
     load_identities,
     load_identity_inputs,
@@ -34,6 +37,59 @@ def backfill(ctx: typer.Context) -> None:
         for row in load_identity_inputs(conn):
             written += write_identities(conn, row.posting_id, compute_identities(row), now=now)
     typer.echo(f"identities: wrote {written} rows")
+
+
+@identities_app.command("reap")
+def reap(
+    ctx: typer.Context,
+    apply_: bool = typer.Option(
+        False, "--apply", help="Actually delete. Without it this only reports."
+    ),
+) -> None:
+    """Delete identity rows left behind by a retired IDENTITY_ALGORITHM_VERSION.
+
+    `write_identities` only rewrites a posting's rows at the CURRENT version, so a version
+    bump writes a whole new generation BESIDE the old one and nothing ever removes the old
+    one. The live table held 476,277 rows at a single version on 2026-08-28 (~5 per posting);
+    the next bump takes it past 950k with half of it permanently unread, because every reader
+    filters to the current version.
+
+    **Only retired generations are reaped.** Rows on CLOSED postings at the current version
+    are left alone on purpose: postings reopen (run 127 reopened 18), `identities_complete()`
+    gates suppression over ALL open postings, and a reopened posting with no identity rows
+    drops the corpus below complete — silently disarming dedup store-wide until a backfill.
+    See `store/identity_queries.count_stale_identities`.
+
+    Reports by default and deletes only under `--apply`, and nothing else in the CLI reaps as
+    a side effect: this is the only path that removes an identity row.
+    """
+    engine = build_context(ctx.obj).engine
+    with engine.begin() as conn:
+        generations = count_stale_identities(conn)
+        total = sum(g.rows for g in generations)
+        deleted = delete_stale_identities(conn) if apply_ and total else 0
+    if not generations:
+        typer.echo(
+            f"reap: nothing stale — every identity row is at {IDENTITY_ALGORITHM_VERSION}. "
+            "Rows on closed postings at the current version are NOT reapable; see --help."
+        )
+        return
+    for generation in generations:
+        typer.echo(
+            f"  {generation.algorithm_version}: {generation.rows} row(s) across "
+            f"{generation.postings} posting(s)"
+        )
+    if apply_:
+        typer.echo(f"reap: deleted {deleted} row(s) at {len(generations)} retired version(s)")
+        typer.echo(
+            "  space returned to SQLite's free list and is reused by later inserts; run "
+            "VACUUM separately to shrink the file itself"
+        )
+        return
+    typer.echo(
+        f"reap: would delete {total} row(s) at {len(generations)} retired version(s). "
+        "Re-run with --apply to delete."
+    )
 
 
 @identities_app.command("regroup")

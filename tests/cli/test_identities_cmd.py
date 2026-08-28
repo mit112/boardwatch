@@ -1,15 +1,16 @@
 """backfill writes identities; verify catches a stale one (design §6.3, §7)."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import update
+from sqlalchemy import insert, select, update
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.regroup import job_anchors
-from boardwatch.store.tables import postings
+from boardwatch.store.tables import posting_identities, postings
 
 
 def _run(data_dir: Path, args: list[str]):
@@ -76,3 +77,51 @@ def test_leakage_json_reports_the_collision_rate(seed_dedup):
     assert payload["distinct_groups"] == 1
     assert payload["redundant"] == 1
     assert payload["rate"] == 0.5
+
+
+def _stale_generation(engine, posting_id: int) -> None:
+    """An identity row at a retired algorithm version, as a bump would leave behind."""
+    with engine.begin() as conn:
+        conn.execute(
+            insert(posting_identities).values(
+                posting_id=posting_id,
+                kind="exact_quad",
+                identity_key="retired" + "0" * 57,
+                algorithm_version="p6.0-retired",
+                created_at=datetime(2026, 1, 1),
+            )
+        )
+
+
+def _identity_rows(engine) -> int:
+    with engine.connect() as conn:
+        return len(conn.execute(select(posting_identities.c.id)).all())
+
+
+def test_reap_reports_without_deleting_and_deletes_only_under_apply(seed_dedup):
+    """Default is a report. Deleting is opt-in, and no other command reaps as a side effect."""
+    seed = seed_dedup(count=2)
+    assert _run(seed.data_dir, ["identities", "backfill"]).exit_code == 0
+    _stale_generation(seed.engine, seed.posting_ids[0])
+    before = _identity_rows(seed.engine)
+
+    report = _run(seed.data_dir, ["identities", "reap"])
+    assert report.exit_code == 0
+    assert "would delete 1 row" in report.output
+    assert "p6.0-retired" in report.output
+    assert _identity_rows(seed.engine) == before
+
+    applied = _run(seed.data_dir, ["identities", "reap", "--apply"])
+    assert applied.exit_code == 0
+    assert "deleted 1 row" in applied.output
+    assert _identity_rows(seed.engine) == before - 1
+
+
+def test_reap_on_a_single_generation_says_nothing_is_stale(seed_dedup):
+    seed = seed_dedup(count=2)
+    assert _run(seed.data_dir, ["identities", "backfill"]).exit_code == 0
+    before = _identity_rows(seed.engine)
+    result = _run(seed.data_dir, ["identities", "reap", "--apply"])
+    assert result.exit_code == 0
+    assert "nothing stale" in result.output
+    assert _identity_rows(seed.engine) == before
