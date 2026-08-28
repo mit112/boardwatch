@@ -20,85 +20,63 @@
 
 ## Current standing
 
-**RUN 128 VALIDATED ALL FOUR MERGED CHANGES; THE STORE FOUR-WAY SPLIT (D-342, #209) AND THE D-339 LOOSE
-ENDS (#210) MERGED THIS SESSION.** The primary checkout is pulled current to `main`, so the daily driver
-runs it (verify with `git log`, not a sha — D-017). Run 128 (`ok`, **2h12m**) is the check the previous close set up and it passed on all
-four: the scan block published all four buckets and **reconciled** (345 = 168 complete + 25 partial + 151
-unchanged + 1 failed, `boards_reconciled: True`); the `dedup` stage is **instrumented** (entered 93,036 /
-advanced 90,698 / 2,338 suppressed); LinkedIn attempted **288 vs 69** (14 facets × 5 pages); the run took
-**132 min vs 91**, the detail-budget drain plus pagination, not a regression. Full numbers under **METRICS
-2026-08-28c**. **The store four-way columns are NOT yet populated:** run 128 started on the old code (before
-#209 existed) and the live store is still on `p_death_probe`; they fill on the NEXT run, which will
-`alembic upgrade head`. **Correction to the previous close — the detail budget is NOT a one-off:**
-`board_scans.detail_deferred` is still **9,261** after run 128, so runs stay ~2h+ every run, not once.
+**RUN 129 CUT THE RUN 132.4 → 44.7 MIN, AND THE GAIN IS DECOMPOSED RATHER THAN CLAIMED.** Two changes
+merged this session and both are validated by that run: **stage wall clock in the funnel (D-343)** and
+**host-diverse scan dispatch (D-344)**, #212. `scan_workers` is **8** in Mit's LOCAL config (backup
+`config.toml.bak-prescanworkers-20260828`); the code default stays 4 — a multi-tenancy call. Board scan
+**92.8 → 32.9 min**, 344 boards, **0 failed**. **`scan.fetch_cost` is concurrency-free, so it separates
+"less work" from "faster work" and only the second is ours:** work 20,907 → 13,205 s while effective
+parallelism went **3.75× → 6.69×**, i.e. **2.82× total = 1.58× backlog drain × 1.78× parallelism**. The
+1.78× is **89% of the theoretical doubling** from 4→8 workers; the 1.58× is the detail backlog draining and
+must never be quoted as this session's. `engine_version` unchanged (`1+118c640ea50c`, derive it — D-306) so
+no corpus re-evaluation; `config_hash` unchanged and that is CORRECT — `scan_workers` is in
+`_CONFIG_IRRELEVANT`. Full numbers under **METRICS 2026-08-28d**.
 
-**RUN 127 LANDED THE WHOLE ELIGIBILITY STACK AND D-333 IS CONFIRMED BY MEASUREMENT.** Run 127 is the
-first tick on engine `1+118c640ea50c` (derive it, never quote it — D-306): `ok`, **91m03s** against a
-~116 min projection, 346 boards, 13,518 postings seen, 1,418 new, 340 closed. **Every required years
-row with a threshold ≤ 3 flipped disposition `unmet` → `unknown`** — 10,757 → **0** unmet, 10,880
-unknown — and **6,123 evaluations moved `ineligible` → `uncertain`** against D-333's predicted 5,980
-(within 2.4%; the population itself grew by 126 in the same span). Corpus-wide `ineligible` fell
-36,141 → 30,068. **Zero of those 9,324 evaluations became `eligible`**, which is the first EMPIRICAL
-confirmation of D-333's central claim — until now it was only a code argument about `blocking(UNKNOWN)`
-being tested before the `eligible` fallthrough. The 91-vs-116-minute result also means the linear
-scaling model **over-predicts by ~22%**; do not size off it without that correction.
+**THE 26.8-MINUTE BLOCK RUN 128 COULD NOT ATTRIBUTE WAS ENTIRELY THE LANE STAGE.** The funnel's new
+`## Wall clock` table settles it on its first run: `projection` costs **0.0 min** — the `--project`
+preflight is free, a hypothesis this session carried and the artifact retired. `scan` 32.9 · `lanes` 6.5 ·
+`eligibility` 3.3 · `death_probe` 1.1 · `tailor` 0.7 · `liveness` 0.2 · `finalize` 0.0. **Lane cost swings
+4× run to run for MORE work** (run 129 issued ~276 lane requests in 6.5 min against run 128's ~223 in
+~26.8) — cause not established, LinkedIn throttling is the leading candidate. **Do not read run 128's lane
+cost as typical.** Reminder: the total is the run UP TO the artifact; the morning file and queue sync run
+after the last mark.
 
-**CI IS SHARDED AND THE PR LOOP IS 3.3x FASTER (D-334, #198).** A pull request was **30-42 min**;
-per-step timings showed the whole of it was one step (`pytest -n auto` at 1764/2480/1903s, everything
-else totalling ~20s) on a **4 vCPU** runner. There was no hot spot to remove — the slowest single test
-is **1.5%** of total CPU and the top 25 are **9%** — so the suite is split 4 ways per Python by SHA-256
-of the node id. **Measured: 10.6 min.** Lint, all three `type` jobs, gitleaks, perf, generalization and
-web bundle now report in **under a minute** instead of behind a 30-minute job. **Branch protection now
-requires ONE context, `ci`** — not the six `test (3.x, ubuntu-latest)` ones. Shard count is **4 and that
-is measured**: at 8, seven jobs queued behind the ~20-job concurrency ceiling, and since wall clock is
-bounded by concurrency rather than by slicing, 8 paid double the per-job setup for the same ten minutes.
+**THE SCAN IS NOW TAIL-BOUND ON ONE BOARD, WHICH RETIRES AN OWNER CALL.** 343 of 344 boards finished in
+**27.0 min; Lowes alone took 5.9 more** (`lowes.wd5` — 3,000 enumerated plus a detail budget, one host,
+one lock). D-344 predicted this shape and it arrived one run later. **Raising the `scan_workers` ceiling
+above `le=8` is therefore worth close to nothing** — it was sized at ~19 min against run 128's shape and
+buys almost none of that against a makespan set by a single serial host. **Do not spend the multi-tenancy
+argument on it.** What remains is per-board serial cost only: the pace (a real third-party load increase,
+owner's) and the per-board detail budget (a coverage trade, owner's).
 
-**ELEVEN CHANGES MERGED 2026-08-28 ACROSS THE LAST THREE SESSIONS.** #199 the generic prior-application
+**NINE OF RUN 129'S TEN DELIVERED LEADS WERE ONE REQUISITION**, and it is measured three ways because
+each denominator says something different. `CGS Federal — ServiceNow Developer`: one `company_id`, one
+normalized title, **one byte-identical `content_hash`**, nine cities (all nine also list `Remote`).
+Nothing suppresses it because `exact_quad` — the only suppressing kind — includes `locations`.
+**End-of-line, runs 119-129: 9 of 110 delivered leads (8.2%) were a same-company/title/hash duplicate of
+another lead in the SAME run, and 8 of the 9 are run 129 alone.** So it is **not a chronic 8% tax but a
+rare catastrophic tail**: ten of eleven runs lost 0-1 slots, one lost 80% of the day. Frequency
+understates it; the corpus overstates it (13.59% corpus-wide is mostly T-Mobile retail that never
+reaches delivery).
+
+**THE QUEUE UI's WCAG FAILURES ARE FIXED AND THE TRIAGE LIST IS KEYBOARD-FIRST (#213).** Measured in a
+browser, not argued: two tokens verified against `--color-bg` but painted on `--color-surface-2` (4.32:1
+and 2.90:1), an ARIA table whose `aria-sort` announced to nothing, **1,399 tab stops → 14**, no `h1`,
+focus obscured under a 61px sticky header, an undo toast on a timer the reader could not stop. Rows 53px →
+37px (18 on screen, not 12). **Which leads render, in what order, and their counts are UNCHANGED** — no
+Python touched, nothing lane-related moved (Phase 1b stays unruled). External review found six issues;
+five fixed, including destructive shortcuts firing on `Cmd+A`/`Cmd+S` and on **auto-repeat** (a held `a`
+walked a mark-applied down the queue). **NOT fixed and disclosed:** the mobile (<64rem) detail sheet is not
+focus-contained. Before/after screenshots: `.agent/2026-08-28d-runspeed/webui-shots/`.
+
+**THIRTEEN CHANGES MERGED 2026-08-28 ACROSS FOUR SESSIONS.** #199 the generic prior-application
 importer · #200 location canonicalization (p6.2 → p6.3) · #201 the identity reaper and the funnel's `dedup`
 stage · #203 D-336..338 · #204 the slug case-collision guard · #205 LinkedIn pagination · #206 the scan's
 four-way board split · #207 D-339..341 · #208 the prior session close · **#209 the runs four-way split
-reaching store/`/api/runs`/web (D-342)** · **#210 the D-339 `--company`/`remove` loose ends.** **Every one
-gated with a real exit code 0 and CI green.** The paragraphs below that say "another session" refer to this
-work; the numbers live under **D-336 … D-342** and **METRICS 2026-08-28…28c**.
-
-**THE LIVENESS PROBE THIS FILE SHIPPED WAS WRONG, AND IT FAILED TOWARD "SAFE TO WRITE" (D-335).** The
-`awk '$2==1'` form below reported IDLE for the whole of run 127. Use the argv[0]-anchored form; the
-reasoning is in D-335 and the block under **Next action** now carries the correct one.
-
-**ANOTHER SESSION RAISED `detail_fetch_budget` 50 → 400 IN THE LIVE CONFIG (2026-08-28, not this
-session).** Mit's local config only — deliberately NOT the code default, which would change behaviour
-for every user of the published package. Backup: `config.toml.bak-predetailbudget-20260828`. **MEASURED on run
-128: it is NOT a one-off.** The run took **132 min (+41 over baseline)** — workday alone burned 19,225 s of
-cumulative fetch (~80 min wall at 4 workers) — and `board_scans.detail_deferred` is **still 9,261 after the
-run**, so the budget is a per-run ceiling that does not drain the backlog. Runs stay ~2h+ every run, not
-once. **`lane_search_pages = 5` and `lane_posting_budget = 300` are set in the same local config** (D-340).
-The measurements land under **D-336 onward** and **METRICS 2026-08-28c**; this file does not restate them.
-
-**THE LIVE STORE WAS WRITTEN BY ANOTHER SESSION AFTER RUN 127 (2026-08-28).** Prior application
-history imported (`applications` 0 → 22, all `attempt_no = 1`), and `identities backfill` run for the
-p6.3 bump. **The backfill wrote p6.3 BESIDE p6.2 rather than replacing it** — `write_identities` only
-deletes rows at the SAME version — so there is no window where suppression is off and old and new code
-both work. **The dead generation has since been REAPED (#201):** `posting_identities` went 899,983 →
-**423,706 rows, one generation**, in 9 s, and suppression stayed armed throughout (84,821 of 84,821 open
-postings carry a p6.3 identity). `boardwatch identities reap` reports by default and deletes only under
-`--apply`; it reaps **retired VERSIONS only** and deliberately never touches a closed posting's
-current-version rows, because a reopen would take the corpus below `identities_complete()` and disarm
-dedup store-wide. **It does not VACUUM** — pages return to SQLite's free list, the file does not shrink.
-Numbers and reasoning are that session's, under **D-336 onward**; this file does not restate them.
-
-**THE CADENCE CHANGE CUT AGGREGATOR INTAKE ~8x, AND THE MECHANISM IS RUN COUNT, NOT A BUDGET.** Moving
-from ~8x/day to 1x/day on 2026-08-27 was decided on gate-speed grounds (local runs contend with the
-local gate: the same suite measures 4m51s idle and 34m40s under load) and the intake consequence was
-never costed. **Do not attribute it to `lane_posting_budget`** — that was checked and is NOT binding:
-`body_fetched` was 55 on run 126 and 56 on run 127 against a budget of 60 (LinkedIn 49 and 53). What
-caps a lane is that neither paginated its search. **THE LINKEDIN HALF IS NOW FIXED (D-340, #205):**
-`Settings.lane_search_pages` ships defaulting to **1 — byte-for-byte the old behaviour**, page 0 emits
-the URL unchanged rather than `&start=0`, so no other user's request SHAPE moves. Mit ruled **5 pages
-+ `lane_posting_budget` 300**, both set in LOCAL config. **hiring.cafe stays one page and that is
-STRUCTURAL, not a knob** — `robots.txt` disallows its `?page=` form and no pagination parameter was ever
-found. **The cost is WALL CLOCK, not request count:** `Fetcher` already paces 1.0 s per host and
-LinkedIn is one host, so ~370 requests/run against ~74 is **~1 min → ~6.2 min** of a run. **The CI work does NOT weaken the original
-justification** — `make check` is still local and still contends.
+reaching store/`/api/runs`/web (D-342)** · #210 the D-339 `--company`/`remove` loose ends · #211 the prior
+session close · **#212 stage wall clock + host-diverse dispatch (D-343/D-344)** · **#213 the queue UI
+accessibility pass.** **Every one gated with a real exit code 0 and CI green.** The numbers live under
+**D-336 … D-344** and **METRICS 2026-08-28…28d**.
 
 **Everything below this line is carried from the previous session and remains true.** The provisional
 pass was met by runs 119-123 and the owner is holding it; Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and
@@ -111,12 +89,15 @@ lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock p
 
 ## Next action
 
-1. **NOTHING IS IN FLIGHT.** Run 128 finished 11:12:28Z (process exited 11:14:00Z — the 92 s D-024 gap),
-   its funnel is validated (Current standing / METRICS 2026-08-28c), and #209/#210 are merged, CI green.
-   The primary checkout is pulled current (verify with `git log`, not a sha — D-017). **The next run will
-   `alembic upgrade head`** (live store is on `p_death_probe`) — it is the first to populate the store
-   four-way columns (D-342) and to exercise the `--company` case-fold and `remove` echo (#210). **One
-   stale watch to prune:** `lever:plaid` returned HTTP 404 on run 128 (Plaid moved to `ashby:plaid`, D-300).
+1. **NOTHING IS IN FLIGHT.** Run 129 finished 13:14:07Z, `ok`, its funnel validated (Current standing /
+   METRICS 2026-08-28d). #212 and #213 are merged and CI-green; the primary checkout is pulled current
+   (verify with `git log`, not a sha — D-017), so the daily driver runs the merged code. The live store
+   is at alembic head. `lever:plaid` is **pruned**. `boardwatch web` (pid held by Mit) resolves
+   `static_root()` per request, so it serves the new bundle on a page RELOAD — no restart needed.
+
+   **The speed question is answered and the next lever is NOT more workers.** See the tail-bound
+   paragraph in Current standing before proposing anything. **The open precision question is bigger than
+   the speed one was:** half of run 129's delivery went to one requisition.
 
    **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
    ```sh
@@ -137,6 +118,10 @@ lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock p
    `runs.finished_at` is written BEFORE the process exits — funnel and morning artifacts come from a
    `finally` after the row closes (D-024). Run 127: `finished_at` 05:24:27, process gone 05:25:54 —
    **87 seconds**, the same gap as run 125's 92.
+
+   **`pkill -f "make check"` is NOT worktree-scoped** and will kill a parallel agent's gate in a sibling
+   checkout, where it reads as an unexplained `Error 143` — i.e. as contention, so it gets misdiagnosed.
+   Kill by PID, or scope the pattern to the directory.
 
 2. **Re-read the queue after the next run.** The D-333 band has moved 6,123 evaluations into
    `uncertain`, and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness
@@ -181,6 +166,21 @@ lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock p
    `queue_payload`** — that drops ~204 leads off the page with nowhere for the owner to see them.
 
 ## Open questions — Mit's, not to be resolved by fiat
+
+0. **How to cap the delivery slate when one requisition is split across cities — NEW, measured
+   2026-08-28d, not decided.** Run 129 lost 9 of 10 slots to one req. **The naive key is refuted:**
+   `(company_id, content_hash)` groups 13,154 redundant postings but **39.1% of its groups span more
+   than one title** — shared boilerplate, not a shared requisition. The tighter
+   `(company, title, content_hash)` — `exact_quad` minus locations — is 9,437 redundant (9.75% of the
+   open corpus), **+7,020 suppressions, 3.9× what suppresses today**, and a suppressed real lead is
+   unrecoverable. **Do not read this as re-proposing D-295**, which was `company_title_location`
+   IDENTITY suppression and was refused three times. The cheaper mechanism that bounds exactly the
+   observed failure is a **slate-diversity cap at delivery** (at most N leads sharing company+title per
+   run): it asserts nothing about sameness, suppresses nothing permanently, and needs no drain, no
+   `IDENTITY_ALGORITHM_VERSION` bump and no ledger migration. Numbers and the refutation are in
+   `.agent/2026-08-28d-runspeed/FINDINGS.md`. **Possibly upstream of all of it and unexamined:**
+   whether `ServiceNow Developer` should rank at all for a new-grad SWE target — role taxonomy, not
+   dedup.
 
 1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.
