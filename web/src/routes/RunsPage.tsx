@@ -225,6 +225,9 @@ export function RunsPage() {
           <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded border border-divider bg-surface">
             {[
               ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`],
+              ["partial", formatCount(selected.boards_partial)],
+              ["unchanged", formatCount(selected.boards_unchanged)],
+              ["failed", formatCount(selected.boards_failed)],
               ["postings seen", formatCount(selected.postings_seen)],
               ["new", formatCount(selected.new_count)],
               ["leads", formatCount(selected.leads)],
