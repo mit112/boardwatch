@@ -63,30 +63,32 @@ max (166 s) — **~2.2 min, ~4.9% of a 44.7 min run**. The stage is now **tail-b
 alone**, the same shape D-344 found for the scan and `lowes.wd5`. **A third lane would be nearly
 free; more lane parallelism buys nothing. Do not re-propose it.**
 
-**THE MOBILE DETAIL SHEET IS FOCUS-CONTAINED, THE ONE THING #213 DISCLOSED RATHER THAN SHIPPED
-(D-348, #216).** Below 64rem the pane is a full-screen sheet, i.e. a modal, and `Shift+Tab` reached a
-grid row behind it — after which the single-key `a` acted on a row the reader could not see. Fixed
-with the platform's `inert` on the four covered subtrees, **breakpoint-scoped**: zero inert subtrees
-at or above 64rem, where the pane is a side-by-side column and containing focus would break the
-Enter-then-↓ path. `SIDE_BY_SIDE` is exported and read by the pane's own focus effect so the Tailwind
-`lg:` variants and the inerting cannot disagree. **The toaster is deliberately NOT inerted** — it
-draws above the sheet and holds the only undo a mark-applied has. **Verified in a browser with a
-non-vacuity check**: stripping only the four attributes reproduces the bug (covered row 20483 gets
-focus and `a` marks it applied, 347→346). Chromium only; the pre-existing Escape-restores-focus bug
-was proved pre-existing and left alone.
+**THE MOBILE DETAIL SHEET IS FOCUS-CONTAINED (D-348, #216)** — the one thing #213 disclosed rather
+than shipped. `inert` on the four subtrees the sheet covers, **below 64rem only**; the toaster is
+deliberately excluded because it holds the only undo. Verified in a browser WITH a non-vacuity check
+(stripping the attributes reproduces the bug). **Closed, no follow-up owed**; the full account moved to
+`STANDING-FACTS.md` rather than being summarised away.
 
-**THREE MERGES AND ONE PR IN FLIGHT, EVERY ONE GATED WITH A REAL EXIT CODE 0.** **MERGED:** #215 the
-slate cap (D-345) · #216 the detail-sheet focus containment (D-348) · #217 the per-lane cost split
-(D-346). **OPEN, gated green, auto-merge armed, CI clean at session close:** **#219** the lane fetch
-overlap (D-347) — re-gated AFTER rebasing onto the post-#217 `main` with `--onto`, because #215 also
-touched `runner.py` so the merge candidate differed from the tree first gated (a clean rebase can
-still break semantically). **Verify #219 actually landed by `main`'s CONTENT, not by the PR page** —
-pushing to a merged PR's branch lands nothing, silently. A fourth PR, **#218 (eligibility years
-patterns), is a PARALLEL SESSION's**, not this one's.
+**`degree` IS ARMED ON THE LIVE PROFILE AND D-321 RESERVED THAT FOR MIT (D-350).** Found while
+verifying a parallel session's severity claim. D-321 (2026-08-26 21:45) recorded the live map as
+**five** blockers and said of the sixth, in terms: *"`degree` is deliberately LEFT at `preference` …
+it is the one family whose blast radius a small measurement mis-states … **Owner's call, not taken.**"*
+The live policy now has **six**, `degree` among them; `profile.updated_at` is **2026-08-27 22:52:33**,
+after D-321, and **no decision entry records arming it** (D-326/D-328 are degree DETECTION, not
+severity). **D-321's warning was right:** it sized the family at **1 lead**, and degree-attributed
+`ineligible` evaluations now number **410** — 187 `bachelor_in_field_required`, 114
+`doctorate_required`, 78 `doctorate_in_field_required`, 33 `master_in_field_required` — with **298 of
+them on the `_in_field` rules**, the exact class it flagged. **This is NOT a claim the 410 are wrong**
+(a doctorate-required role correctly excludes a master's holder); it is that a family the log records
+as not armed is armed in production. **Raised to Mit — confirming or reverting is his.**
 
-**No run was taken** — every number above is measured against the existing corpus or the runs 119-129
-delivery history, and says so. **Every new test was confirmed to FAIL against the wrong
-implementation** before being counted; the mutation table is in METRICS 2026-08-28e.
+**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350).** The catalog and the live profile diverge
+on **five of six** families: `rules.yaml` has `work_auth` as its only `blocker` default, the live store
+has all six. The divergence is BY DESIGN — the catalog is the multi-tenancy artefact and arming is a
+per-user act — but an unqualified severity claim is not checkable, and the gap is wide: #218's widened
+floors give **1,228 verdict flips under the live policy and 0 under the published default**. Read the
+store for what a RUN will do, `rules.yaml` for what a NEW USER gets, and record which one produced any
+verdict count.
 
 **Everything below this line is carried from the previous session and remains true.** The provisional
 pass was met by runs 119-123 and the owner is holding it; Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and
@@ -243,8 +245,4 @@ thing to plan around.)*
 | **No external missed-window alarm** | nothing outside a run can detect a missed 08:00; the funnel heartbeat is only written from inside `runner.py` | P3 |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
-| **`add-evidence` takes no bundle lock** | two concurrent captures race on up to 13 files (D-143) | owner-gated |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **Disk pressure now costs GATE TIME, silently** | The same suite ran **4m51s** at ~7.4 GiB free and **34m40s** at 5.7 GiB / 98% — no error, nothing logged, and a bounded waiter timed out, which reads as a hang. Cause was pytest's own temp trees at **1.1 GB** across 5 runs in `/private/var/folders/*/*/T/pytest-of-mitsheth/`; clearing the stale ones (keep the newest, it is live) plus branch cleanup took the volume to **9.1 GiB / 96%**. **RE-MEASURED AND CLEARED 2026-08-27: the same trees had grown to 4.9 GB across 15 runs** — 4.5x the figure that first caused this — and removing all but the newest took them to **5.4 MB** and the volume from **15 GiB to 20 GiB free**. Do this after any session that runs several full gates; it is the cheapest gate-time win there is. **The "two stale store backups, 1.67 GB" clause is STALE and is retired here** — no `.db` backup exists beside the live 3.1 GB store, only small yaml/profile ones. **There is therefore still no rollback snapshot** (take one before any destructive operation) | **tooling** |
-| **CI is sharded and gates on ONE context (D-334)** | Branch protection requires `ci` and nothing else — not the six `test (3.x, ubuntu-latest)` contexts, which no longer exist. `ci` carries `always()` and derives what should have run from `github.event_name`, because **GitHub counts a SKIPPED required check as SUCCESS**. Two standing prohibitions are commented in `ci.yml` and are load-bearing: **no `if:` on `ci` beyond `always()`** (a condition there erases every gate at once) and **no `continue-on-error` on any job in its `needs`** (it makes a failed job report `success`). Shard count lives in ONE place, the `plan` job — a workflow-level `env` CANNOT be read from `jobs.<id>.strategy`. **Read CI job conclusions from `gh api .../actions/runs/<id>/jobs`, never `gh pr checks`**, which has misreported on this repo | tooling |
-| **`make check` must be launched DETACHED** | the Bash tool clamps `timeout` to ~10 min; a longer gate reads as `make: *** [test] Error 143` — that is SIGTERM, not a build break. **`setsid` does not exist on macOS**: use `nohup sh -c '<export PATH>; make check > LOG 2>&1; echo $? > DONE' & disown`, set PATH INSIDE the subshell, and gate on the sentinel file, never the launcher's exit code. The clamp is WALL-CLOCK, so CPU contention converts a comfortable run into a kill — a suite that ran 5m17s alone was SIGTERMed at 62% while one subagent ran its own pytest. Never pipe the gate through `head`/`tail` | tooling |

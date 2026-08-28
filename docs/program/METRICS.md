@@ -8244,6 +8244,58 @@ shape D-344 produced for the board scan and `lowes.wd5` — so lane parallelism 
 an open one. D-346 replaces this inference with a measurement on the next run; read it before
 proposing anything further here.
 
+### (e) #218's years-pattern widening — a PARALLEL session's change, verified here
+
+Its numbers, its measurement; the pattern diff, the content-pin bump and the three tests were checked
+against the diff before D-349 was written. Live open corpus, **96,522 postings with a body**.
+
+| quantity | value |
+|---|---:|
+| ≥4-year mentions no floor pattern matched (before) | **11,379** |
+| of those, real floors missed by three phrasings | ~4,571 |
+| of those, AGE phrasings (`18 years old`) — the FP class | ~4,599 |
+| postings gaining any `experience_years` floor detection | **+2,426** |
+| the stricter subset that can drive a blocking flip | **1,500** |
+| age false-floors introduced | **0** |
+| recovery from the DROPPED bare domain-noun pattern | +192 (rejected) |
+
+**Verdict flips depend entirely on which policy you quote (D-350), and this is the number to be
+careful with:**
+
+| policy | uncertain→ineligible | eligible→ineligible | eligible→uncertain | total |
+|---|---:|---:|---:|---:|
+| **Mit's LIVE all-blocker policy** (`total_years_experience=1`) | 1,075 | 144 | 9 | **1,228** |
+| **Published catalog default** (`experience_years = preference`) | — | — | — | **0** (detection-only) |
+
+Verified independently against the live store: `profile.eligibility_policy_json` is
+`{work_auth, clearance, experience_years, internship, contract_not_fte, degree}` **all `blocker`**,
+while `rules.yaml` has `work_auth` as the ONLY `blocker` default.
+
+**That verification turned up a bigger item than the doc question — see D-350.** D-321 recorded the
+live map as **five** blockers and said `degree` was **"deliberately LEFT at `preference` … Owner's
+call, not taken."** It is now armed (`profile.updated_at` **2026-08-27 22:52:33**, after D-321) and
+**no decision entry records it.** D-321 sized that family at **1 lead** and warned the number
+understated the blast radius; measured now, degree-attributed `ineligible` evaluations are:
+
+| rule | ineligible evaluations |
+|---|---:|
+| `degree:bachelor_in_field_required` | 187 |
+| `degree:doctorate_required` | 114 |
+| `degree:doctorate_in_field_required` | 78 |
+| `degree:master_in_field_required` | 33 |
+| **any unmet `degree:*`** | **410** |
+
+against 117,785 `ineligible` evaluations overall, **298 of the 410 on the `_in_field` rules** — the
+class D-321 flagged, live-capable only once D-326 supplied the field-of-study fact. **No claim here
+that the 410 are wrong**; the finding is that an unarmed-by-record family is armed in production.
+**Raised to Mit.**
+
+*(The "`internship`/`contract_not_fte`/`degree` still `preference`" note was attributed to `STATE.md`
+and is **not in STATE** — it is in this project's session memory store. Corrected there.)*
+
+`rules_hash` `a3b2e014dc5b` → `6fa2ef35ad99`; R7 content-pin `ee46231c3d4a` → `9283b7e4ff4b`;
+`engine_version` unchanged. Its own gate: **8,340 passed.**
+
 ### (d) Gates and verification
 
 | change | PR | `make check` | suite |
@@ -8252,6 +8304,7 @@ proposing anything further here.
 | detail-sheet focus (D-348) | #216 | **exit 0** | 8337 passed, 4 xfailed, 7m57s |
 | per-lane cost (D-346) | #217 | **exit 0** | 8344 passed, 4 xfailed, 6m15s |
 | lane fetch overlap (D-347) | #219 | **exit 0** | 8355 passed, 4 xfailed, 6m23s (post-rebase) |
+| *years patterns (D-349) — parallel session* | *#218* | *exit 0 (theirs)* | *8340 passed* |
 
 Every new test was confirmed to FAIL against the wrong implementation before being counted as done
 (the repo's own rule, and the reason these are listed):

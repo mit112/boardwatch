@@ -176,6 +176,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The experience-years floor patterns now read possessive and qualified phrasings.** The floor
+  patterns anchored on the literal word `experience` immediately after an optional whitelisted
+  adjective, so three common phrasings never registered as floors at all: the possessive
+  `5 years' experience`, where the word-boundary after `years` fell before the apostrophe; a
+  qualifier the whitelist did not carry, such as `demonstrated` or `proven`; and such a qualifier
+  ahead of a multi-word scope. Across the open corpus, 11,379 postings carried a four-year-or-more
+  mention that no pattern matched, of which roughly 4,571 were real floors — and roughly 4,599 were
+  ages rather than experience, which is why the obvious widening had been held back. An age guard now
+  makes `N years of age` structurally incapable of reading as an experience floor. The published
+  default for this family is unchanged, so on a stock configuration this changes what is *detected*
+  and no verdicts; it tightens verdicts only where the family has been configured to block.
+
 - **Focus is now contained in the queue detail sheet at the tier where it is a modal.** Below 64rem
   the detail pane is a full-screen sheet, and focus could leave it: `Shift+Tab` reached a row of the
   triage grid *behind* the opaque sheet, after which the single-key mark-applied shortcut acted on a
