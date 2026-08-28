@@ -46,11 +46,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Raise or lower this ONE number to retune. 8 is a starting point to be measured, not
-          # a conclusion: the free tier caps concurrent jobs at 20 (Pro 40), so if the shard
-          # jobs do not all start within seconds of each other they are queueing, and a smaller
-          # shard count would reach the same wall clock with fewer jobs.
-          SHARDS=8
+          # Raise or lower this ONE number to retune. 4 is MEASURED, not guessed: at 8 shards
+          # (24 jobs) seven of them queued, the start stagger was 262s, and the shards took
+          # 10.1 min wall clock against a median 290s of actual work each.
+          #
+          # Wall clock here is bounded by CONCURRENCY, not by shard count. Roughly twenty slots
+          # are available, and the suite's total work is fixed, so wall clock is about
+          # work / 20 however finely it is sliced — 4 shards and 8 shards both land near ten
+          # minutes. What differs is overhead: every job pays ~40s of checkout, uv sync and
+          # typesetting, so 24 jobs burn ~960s of setup where 12 burn ~480s, and while
+          # concurrency-bound that difference is wall clock rather than free parallelism.
+          #
+          # Raising this only helps if the concurrent-job ceiling rises too.
+          SHARDS=4
           PYTHONS='3.11 3.12 3.13'
           shards_json=$(seq 1 "$SHARDS" | paste -sd, - | sed 's/^/[/; s/$/]/')
           pythons_json=$(printf '%s\n' $PYTHONS | sed 's/.*/"&"/' | paste -sd, - | sed 's/^/[/; s/$/]/')
@@ -94,9 +102,9 @@ jobs:
             --shard-manifest "$RUNNER_TEMP/manifest-py${{ matrix.python }}-shard${{ matrix.shard }}.json" \
             --cov-fail-under=0 --cov-report=
       # pytest-cov combines its own xdist workers, so a shard leaves exactly ONE `.coverage` —
-      # not the `.coverage.*` the naming might suggest. Renaming per shard is what lets eight of
-      # them land in one directory without colliding, and `mv` failing is a real signal that the
-      # run produced no coverage at all.
+      # not the `.coverage.*` the naming might suggest. Renaming per shard is what lets every
+      # shard's database land in one directory without colliding, and `mv` failing is a real
+      # signal that the run produced no coverage at all.
       - name: Name this shard's coverage database
         run: mv .coverage ".coverage.py${{ matrix.python }}.shard${{ matrix.shard }}"
       # `include-hidden-files` because these are dotfiles and v4 excludes them by default;
@@ -119,7 +127,7 @@ jobs:
   # macOS and Windows run the WHOLE suite, unsharded, and keep their own ruff/mypy steps.
   #
   # Not sharded because sharding buys parallelism at the cost of jobs, and these platforms are
-  # rationed: both Free and Pro allow only five concurrent macOS jobs, so an 8-way split would
+  # rationed: both Free and Pro allow only five concurrent macOS jobs, so splitting them would
   # queue into waves and finish no sooner. They also keep `mypy --strict` locally because mypy's
   # platform defaults follow the machine it runs on — hoisting it to a single Ubuntu job would
   # silently drop the macOS and Windows type-checking axes that exist today.
@@ -250,7 +258,11 @@ jobs:
               exit 1
             fi
             cp "${files[@]}" "combined/$version/"
-            export COVERAGE_FILE="combined/$version/.combined"
+            # COVERAGE_FILE must be named `.coverage`. `coverage combine <dir>` does NOT glob
+            # `.coverage.*` literally — it globs `<basename of COVERAGE_FILE>.*`. Naming this
+            # `.combined` made it look for `.combined.*`, match nothing, and report "No data to
+            # combine" even with all eight databases sitting in the directory.
+            export COVERAGE_FILE="combined/$version/.coverage"
             uv run coverage combine "combined/$version"
             echo "--- Python $version ---"
             uv run coverage report --fail-under=85

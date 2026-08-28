@@ -16444,7 +16444,15 @@ because mypy's platform defaults follow the machine it runs on and hoisting it t
 silently drop those axes (only ruff is safe to hoist; `type` keeps a per-Python matrix). **This change
 targets PULL REQUEST latency: pushes and the nightly are still bounded by those full-suite jobs.**
 
-**Shard count is 8, as a starting point to be measured, not a conclusion.** The free tier caps
-concurrent jobs at 20 (Pro 40) and the plan here is personal. The measurement is the **start-time
-stagger** across the shard jobs: if they do not all start within seconds of each other they are
-queueing, and a smaller count reaches the same wall clock with fewer jobs.
+**Shard count is 4, and that is MEASURED rather than chosen.** 8 was tried first and the run
+settled it: 24 shard jobs, **7 of them queued**, a **262s start stagger**, median **290s** of real
+work per shard, and **10.1 min** of shard wall clock inside a **10.6 min** run — against 30-42 min
+before, so a **3.3x** improvement even carrying the queue penalty.
+
+The surprise in that data is that **wall clock is bounded by CONCURRENCY, not by shard count.**
+Roughly twenty slots are available and the suite's total work is fixed, so wall clock is about
+`work / 20` however finely it is sliced, and 4 and 8 both land near ten minutes. What differs is
+overhead: every job pays ~40s of checkout, `uv sync` and typesetting, so 24 jobs burn **~960s** of
+setup where 12 burn **~480s** — and while concurrency-bound, that difference is wall clock rather
+than free parallelism. **4 therefore wins on the same wall clock with half the jobs.** Raising the
+count again only helps if the concurrent-job ceiling rises too.
