@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import sleep
 
 import pytest
 from rich.console import Console
@@ -59,15 +60,22 @@ class StubLane:
         *,
         outcomes: tuple[str, ...] = ("body_inline",),
         raises: Exception | None = None,
+        delay: float = 0.0,
     ) -> None:
         self._companies = companies
         self._outcomes = outcomes
         self._raises = raises
+        # Spent inside `collect`, so it lands on the FETCH side of the timing boundary and
+        # nowhere else. This is what lets a test locate the boundary rather than merely
+        # observe that two numbers were produced.
+        self._delay = delay
         self.seen: list[tuple[str, str]] = []
         self.landed: list[tuple[str, str]] = []
         self.fetcher: Fetcher | None = None
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
+        if self._delay:
+            sleep(self._delay)
         if self._raises is not None:
             raise self._raises
         self.fetcher = fetcher
@@ -667,3 +675,90 @@ def test_no_profile_row_at_all_leaves_the_lane_unfaceted_rather_than_failing(
     """A store with no profile is every store before onboarding runs. The lane must still run:
     breadth is additive, and a missing profile is not a lane failure."""
     assert _facets_handed_to_the_lane(engine, tmp_path, monkeypatch) == [()]
+
+
+# --------------------------------------------------------------------------------------
+# Per-lane cost (D-346)
+# --------------------------------------------------------------------------------------
+
+# Long enough to dominate scheduler noise and a local SQLite apply, short enough not to slow
+# the suite. The assertions below compare the two halves against EACH OTHER as well as against
+# this, so a machine that is merely slow cannot make the test pass for the wrong reason.
+FETCH_DELAY = 0.30
+# Deliberately DIFFERENT from FETCH_DELAY, so transposed halves are detectable.
+APPLY_DELAY = 0.10
+
+
+def test_a_lane_reports_both_halves_of_its_cost(engine: Engine, tmp_path: Path) -> None:
+    """D-343 timed the lane STAGE; it could not say whether the cost was fetching or applying.
+
+    `None` would mean NOT MEASURED, so asserting both are real numbers is what pins the wiring.
+    """
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path),
+        StubLane([("hiringcafe", "src:a")]),
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+    assert report.fetch_seconds is not None
+    assert report.apply_seconds is not None
+    assert report.fetch_seconds >= 0.0
+    assert report.apply_seconds >= 0.0
+
+
+def test_the_cost_boundary_sits_between_fetching_and_applying(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The test that LOCATES the boundary rather than detecting that two numbers exist.
+
+    Both halves are given measurable, DIFFERENT amounts of work — the stub sleeps inside
+    `collect`, and `apply_board` is spied to sleep a different amount — because one-sided delay
+    is not enough. With only a fetch delay, an implementation that timed the whole function as
+    `fetch_seconds` and reported `apply_seconds = 0` passes every assertion; it is caught here
+    only by the upper bounds, which no single-sided version of this test can express.
+
+    Each half is therefore bounded on BOTH sides, and the bounds exclude the three plausible
+    wrong implementations: transposed halves (fetch reads ~APPLY_DELAY, below its floor),
+    fetch-absorbs-everything and apply-absorbs-everything (either reads ~the total, above its
+    ceiling). The ceiling is deliberately tighter than the total so "absorbed everything" cannot
+    slip under it.
+    """
+    real = runner_mod.apply_board
+
+    def slow_apply(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+        sleep(APPLY_DELAY)
+        return real(engine_, snapshot, company_id, run_id, scan_kind)
+
+    monkeypatch.setattr(runner_mod, "apply_board", slow_apply)
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path),
+        StubLane([("hiringcafe", "src:a")], delay=FETCH_DELAY),
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+    assert report.fetch_seconds is not None
+    assert report.apply_seconds is not None
+    # Anything above this means the half absorbed work belonging to the other one.
+    ceiling = FETCH_DELAY + APPLY_DELAY / 2
+    assert FETCH_DELAY <= report.fetch_seconds < ceiling
+    assert APPLY_DELAY <= report.apply_seconds < ceiling
+
+
+def test_a_lane_that_raises_reports_no_cost_rather_than_a_free_lane(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A lane that raises is absent from the reported list entirely (a lane may never fail the
+    run), so no `LaneReport` — and therefore no 0.0s — is ever fabricated for it. Pinned here
+    because the alternative implementation, catching inside `_collect_lane` and returning a
+    partial report, would publish a lane that cost nothing and attempted nothing."""
+    reports, errors = _run_lanes(
+        engine,
+        _settings(tmp_path, lanes_enabled=["stub"]),
+        insert_run(engine),
+    )
+    # `stub` is not a registered lane, so this exercises the same "absent, not zeroed" path.
+    assert reports == []
+    assert len(errors) == 1
