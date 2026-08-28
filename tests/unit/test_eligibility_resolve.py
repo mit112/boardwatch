@@ -706,6 +706,70 @@ def test_an_unrelated_named_field_with_an_escape_abstains(catalog) -> None:
                 "bachelor_in_field_required") == "unknown"
 
 
+@pytest.mark.parametrize("article", ["another", "other"])
+def test_the_relatedness_escape_reads_other_and_another(catalog, article) -> None:
+    """`or another related field` is the same escape as `or a related field`, and an article
+    slot that only held `a`/`an` could not consume either word -- so the posting had opened
+    the requirement and the row decided `unmet` anyway."""
+    body = f"Bachelor's degree in Nursing or {article} related field is required."
+    assert _one(catalog, body, _degree(field_of_study="computer_science"),
+                "bachelor_in_field_required") == "unknown"
+
+
+#: What precedes `education` when it is the equivalence/accreditation MASS NOUN rather than
+#: the named field. Measured over the open postings: `equivalent combination of` is the bulk
+#: of it, the accreditation bodies and the military/lieu-of frames the rest.
+_EDUCATION_BOILERPLATE = [
+    "Engineering or educational equivalent is ",
+    "Biology or an equivalent combination of education ",
+    "Computer Science or foreign education equivalent",
+    "Nursing from a program accredited by the Commission on Collegiate Nursing Education",
+    "Nursing accredited by the Accreditation Commission for Education in Nursing",
+    "Business or combination of formal education ",
+    "Engineering or equivalent military education ",
+    "Engineering, experience in lieu of education ",
+    "Engineering or the equivalent in education",
+    "Business or combination of education ",
+]
+
+#: The field sense, which heads its own noun phrase. These must keep matching.
+_EDUCATION_FIELD = [
+    "Education",
+    "Higher Education",
+    "Early Childhood Education",
+    "Instructional Design, Education",
+    "Social Work, Education",
+    "Special Education",
+]
+
+
+def _education_surfaces(catalog):
+    spec = next(s for s in catalog.family("degree").fields_of_study if s.id == "education")
+    return spec.surfaces
+
+
+@pytest.mark.parametrize("phrase", _EDUCATION_BOILERPLATE)
+def test_the_education_surface_rejects_equivalence_boilerplate(catalog, phrase) -> None:
+    """Reading the mass noun as the named field decided `ineligible` against postings that
+    named no field at all -- "or educational equivalent" is not a degree in education."""
+    assert not any(rx.search(phrase) for rx in _education_surfaces(catalog))
+
+
+@pytest.mark.parametrize("phrase", _EDUCATION_FIELD)
+def test_the_education_surface_still_reads_the_field_sense(catalog, phrase) -> None:
+    """The other half of the same regex: narrowing it must not delete the field itself."""
+    assert any(rx.search(phrase) for rx in _education_surfaces(catalog))
+
+
+def test_equivalence_boilerplate_names_no_field_of_study(catalog) -> None:
+    """End to end, on the live sentence that produced the wrong `unmet`: the only catalogued
+    field the phrase appeared to name was the boilerplate `education`, so removing it leaves
+    the posting naming nothing and the row abstains instead of blocking."""
+    body = "Bachelor of Science Degree in Engineering or educational equivalent is required."
+    assert _one(catalog, body, _degree(field_of_study="computer_science"),
+                "bachelor_in_field_required") == "unknown"
+
+
 def test_a_field_the_catalog_does_not_know_abstains(catalog) -> None:
     """Out of catalog is a FAILURE, never a new bucket: an unrecognised phrase cannot be
     compared, so it can neither clear nor block."""
