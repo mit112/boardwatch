@@ -132,14 +132,15 @@ def test_an_activity_row_elsewhere_does_not_dissolve_a_total_years_block(catalog
     is why `scoped_years_activity` carries its own `activity_years_minimum` value instead of
     reusing `scoped_years_minimum`.
 
-    Measured on the real posting this is taken from: a Disney "Software Engineer I" stating "A
-    minimum of 3 years of relevant experience" was correctly `ineligible`, and adding an
-    activity pattern that shared the scoped value turned it `uncertain` -- delivered -- because
-    a different line read "3 year of developing cloud native applications".
+    Taken from a Disney "Software Engineer I" posting where adding an activity pattern that shared
+    the scoped value turned a correct `ineligible` into `uncertain` -- delivered. The floor here is
+    set BEYOND the experience soft margin (5 vs a 1-year profile) on purpose: it isolates the
+    exclusive-group behavior from the margin's own abstain, so a dissolved block can only be the
+    group bug, not a small-shortfall surface.
     """
     body = (
-        "A minimum of 3 years of relevant experience.\n"
-        "A minimum of 3 year of developing cloud native applications, preferably in AWS.\n"
+        "A minimum of 5 years of relevant experience.\n"
+        "A minimum of 5 year of developing cloud native applications, preferably in AWS.\n"
     )
     facts = Facts(total_years_experience=1)
     policy = Policy(families={"experience_years": "blocker"})

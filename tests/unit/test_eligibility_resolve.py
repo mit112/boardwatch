@@ -301,7 +301,9 @@ def test_needs_sponsorship_bit_does_not_leak_into_citizen_or_lpr_branch(catalog)
 
 # ---- experience_years
 
-@pytest.mark.parametrize(("total", "expected"), [(8, "met"), (5, "met"), (4, "unmet")])
+# total 2 (not 4) for the unmet case: a 1-off shortfall now surfaces within the soft margin, so the
+# blocking case has to sit beyond it. The inclusive-at-`need` boundary (5 -> met) is what this pins.
+@pytest.mark.parametrize(("total", "expected"), [(8, "met"), (5, "met"), (2, "unmet")])
 def test_total_years_comparison_is_inclusive(catalog, total: int, expected: str) -> None:
     facts = Facts(total_years_experience=total)
     assert _one(catalog, "5+ years of experience required.", facts,
@@ -313,7 +315,8 @@ def test_a_range_resolves_on_its_lower_bound(catalog) -> None:
                 "range_years_minimum") == "met"
 
 
-@pytest.mark.parametrize("total", [0, 1, 4])
+# totals kept beyond the soft margin (need is 5): a scoped shortfall within the margin now surfaces.
+@pytest.mark.parametrize("total", [0, 1, 2])
 def test_a_scoped_requirement_is_unmet_when_it_exceeds_total_experience(
     catalog, total: int
 ) -> None:
@@ -339,7 +342,7 @@ def test_a_scoped_requirement_still_abstains_when_the_total_allows_it(
 
 @pytest.mark.parametrize("body", [
     "5+ years building and deploying web applications.",
-    "3 years developing distributed systems.",
+    "4 years developing distributed systems.",
     "7+ years of architecting cloud platforms.",
 ])
 def test_an_activity_gerund_states_a_floor_with_no_experience_noun(catalog, body: str) -> None:
@@ -352,6 +355,22 @@ def test_an_activity_gerund_states_a_floor_with_no_experience_noun(catalog, body
     """
     assert _one(catalog, body, Facts(total_years_experience=1),
                 "scoped_years_activity") == "unmet"
+
+
+@pytest.mark.parametrize(("body", "pattern_id", "expected"), [
+    # gap 2 (need 3, total 1) -> within the soft margin -> surfaced for review, not blocked.
+    ("3+ years of experience required.", "total_years_minimum", "unknown"),
+    ("3+ years of experience with Kubernetes.", "scoped_years_minimum", "unknown"),
+    # gap 3 (need 4) -> beyond the margin -> still blocks.
+    ("4+ years of experience required.", "total_years_minimum", "unmet"),
+    # a `preferred` shortfall is NOT softened: it already does not block, so abstaining it would
+    # demote a clean non-blocking miss to `uncertain`.
+    ("3+ years of experience preferred.", "total_years_preferred", "unmet"),
+])
+def test_a_required_shortfall_within_the_soft_margin_surfaces(
+    catalog, body: str, pattern_id: str, expected: str
+) -> None:
+    assert _one(catalog, body, Facts(total_years_experience=1), pattern_id) == expected
 
 
 def test_an_activity_gerund_on_the_company_side_is_suppressed(catalog) -> None:

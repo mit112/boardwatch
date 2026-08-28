@@ -235,6 +235,15 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
 # document-wide, so only `scoped_years_minimum` may sit in that group.
 _SCOPED_YEARS = frozenset({"scoped_years_minimum", "activity_years_minimum"})
 
+#: A required-years ask within this many years OVER the declared total is ABSTAINED (surfaced for
+#: review) rather than blocked. A 1-year profile against a "2-3 years" ask is an early-career reach,
+#: not a disqualifier: hard-dropping it was the largest false-negative surface in the reject pile
+#: (~8,600 postings blocked solely on a <=3yr ask). The margin is applied to the GAP over the
+#: declared `total_years_experience`, so it scales per user and is not a fixed year threshold.
+#: A gap beyond it still blocks -> ineligible. Abstaining -> uncertain, never eligible (an
+#: abstain is never folded), so this only moves ineligible -> uncertain, never a wrong clear.
+_YEARS_SOFT_MARGIN = 2
+
 
 @resolver("experience_years", inputs=("total_years_experience",))
 def _resolve_experience_years(
@@ -248,21 +257,39 @@ def _resolve_experience_years(
     # cannot name the same group twice, and a hedge can sit either side of the number.
     need = int(detection.values.get("years") or detection.values["years_alt"])
     support = _fact_support("total_years_experience", total)
+    gap = need - total
+    # A small shortfall on a REQUIRED ask is an early-career reach: surface it (abstain ->
+    # uncertain) instead of blocking (unmet -> ineligible). Only `required` patterns can block, so
+    # only they are softened; a `preferred`/`bonus` shortfall already does not block and MUST keep
+    # reading `unmet`, or it would abstain a clean non-blocking miss into `uncertain`.
+    surfaces = pattern.requiredness == "required" and 0 < gap <= _YEARS_SOFT_MARGIN
     if pattern.implies in _SCOPED_YEARS:
         # ONE direction is forced without any per-skill data: a duration scoped to a single
-        # skill cannot exceed the career it sits inside, so `total < need` is unmet. The
-        # other direction is not forced -- `total >= need` says nothing about THIS skill,
-        # and a `met` there would be a wrong clear, the worst failure this design can
-        # produce -- so it keeps abstaining. Abstaining in BOTH directions is what let a
-        # 1-year profile read `eligible` against "Minimum of 12 years of experience in
-        # software development"; this is the highest-volume pattern in the family.
-        if total < need:
+        # skill cannot exceed the career it sits inside, so `total < need` is unmet -- UNLESS the
+        # required gap is within the soft margin, an early-career reach surfaced not blocked. The
+        # other direction is not forced -- `total >= need` says nothing about THIS skill, and a
+        # `met` there would be a wrong clear -- so it keeps abstaining. Abstaining in BOTH
+        # directions is what let a 1-year profile read `eligible` against "Minimum of 12 years";
+        # that gap is well beyond the margin and blocks.
+        if surfaces:
+            return Resolution(
+                UNKNOWN,
+                f"{total} vs {need} scoped -- within {_YEARS_SOFT_MARGIN}y, surfaced for review",
+                support,
+            )
+        if gap > 0:
             return Resolution(UNMET, f"{total} total < {need} scoped to a skill", support)
         return Resolution(
             UNKNOWN, "requirement is scoped to a skill; no per-skill durations stored"
         )
-    if total >= need:
+    if gap <= 0:
         return Resolution(MET, f"{total} >= {need}", support)
+    if surfaces:
+        return Resolution(
+            UNKNOWN,
+            f"{total} vs {need} -- within {_YEARS_SOFT_MARGIN}y of the ask, surfaced for review",
+            support,
+        )
     return Resolution(UNMET, f"{total} < {need}", support)
 
 
