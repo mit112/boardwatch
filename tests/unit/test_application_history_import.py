@@ -342,3 +342,15 @@ def test_one_row_matching_several_jobs_writes_to_all_of_them(
         report = import_history(conn, rows, malformed, allow_title_match=True)
     assert report.results[0].job_ids == tuple(sorted((first, second)))
     assert len(report.results[0].application_ids) == 2
+
+
+def test_a_quoted_newline_stays_inside_its_field(tmp_path: Path) -> None:
+    """A record is not always one line, and the reported line number must survive that."""
+    rows, malformed = parse_history(
+        _write(
+            tmp_path, "h.csv",
+            'company,title,url\n"Acme\nHoldings",SWE,https://x.test/1\nBeta,SRE,https://x.test/2\n',
+        )
+    )
+    assert malformed == []
+    assert [(row.line_no, row.company) for row in rows] == [(3, "Acme\nHoldings"), (4, "Beta")]

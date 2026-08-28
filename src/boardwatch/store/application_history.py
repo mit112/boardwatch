@@ -2,7 +2,7 @@
 
 The ranker already suppresses a job that carries a submitted application: `applied_job_ids`
 feeds `hidden_applied` in `cli/top_cmd.py`, and `delivered_unapplied` keeps the same job out
-of the delivery queue. On a store whose owner applied through a different tool that machinery
+of the delivery queue. On a store whose user applied through a different tool that machinery
 is starved — `applications` is empty, so a role that was applied to months ago re-surfaces and
 is re-tailored on every run. This module is the one path that fills it from outside.
 
@@ -26,7 +26,7 @@ Two keys, kept apart and never blended, because they have different confidence:
   so it can match a different req at the same company. It is off unless the caller passes
   `allow_title_match`, and the key that matched is recorded per row so a human can check it.
 
-Matching runs against **every** posting, open or closed. `applications` records what the owner
+Matching runs against **every** posting, open or closed. `applications` records what the user
 did, keyed on the canonical `job_id`, and restricting the index to open postings would make
 the same file import differently depending on the day it was run.
 """
@@ -34,6 +34,7 @@ the same file import differently depending on the day it was run.
 from __future__ import annotations
 
 import csv
+import io
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
@@ -181,7 +182,11 @@ def _read_row(line_no: int, raw: dict[str, str]) -> HistoryRow | MalformedRow:
 
 
 def _parse_csv(text: str) -> tuple[list[HistoryRow], list[MalformedRow]]:
-    reader = csv.DictReader(text.splitlines())
+    # StringIO rather than splitlines(): a quoted field may contain a newline, and only a
+    # source that keeps its line endings lets csv reassemble it. `reader.line_num` is used for
+    # the same reason — a record is not always one line, so counting records would misreport
+    # which line of the file a malformed row is on.
+    reader = csv.DictReader(io.StringIO(text))
     header = {(name or "").strip().lower() for name in (reader.fieldnames or [])}
     if "url" not in header and not {"company", "title"} <= header:
         raise HistoryFormatError(
@@ -190,13 +195,13 @@ def _parse_csv(text: str) -> tuple[list[HistoryRow], list[MalformedRow]]:
         )
     rows: list[HistoryRow] = []
     malformed: list[MalformedRow] = []
-    for line_no, record in enumerate(reader, start=2):
+    for record in reader:
         cleaned = {
             (name or "").strip().lower(): value
             for name, value in record.items()
             if isinstance(name, str) and isinstance(value, str)
         }
-        read = _read_row(line_no, cleaned)
+        read = _read_row(reader.line_num, cleaned)
         (rows if isinstance(read, HistoryRow) else malformed).append(read)  # type: ignore[arg-type]
     return rows, malformed
 
