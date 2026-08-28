@@ -32,13 +32,34 @@ function NavTab({
 
 export function App() {
   const [route, setRoute] = useHashRoute();
-  const { toasts, push, dismiss } = useToasts();
+  const { toasts, push, dismiss, hold, release } = useToasts();
 
   return (
     <div className="min-h-screen bg-bg">
+      {/*
+        * SC 2.4.1 Bypass Blocks. Visible on focus, never otherwise.
+        *
+        * A BUTTON, not the usual `<a href="#view">`, and the reason is this application's URL
+        * fragment: it is both the router AND the channel the CLI hands the bearer token over
+        * (`api/token.ts`), where any fragment that does not begin with `/` is READ AS A TOKEN. A
+        * skip link would leave `#view` in the address bar, and the next reload would send
+        * `Authorization: Bearer view`. Moving focus without touching the fragment avoids that
+        * outright, and it also stops the link resetting the route from Runs back to Queue.
+        */}
+      <button
+        type="button"
+        onClick={() => {
+          document.getElementById("view")?.focus();
+        }}
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:inline-flex focus-visible:min-h-11 focus-visible:items-center focus-visible:rounded focus-visible:border focus-visible:border-fg-2 focus-visible:bg-surface-2 focus-visible:px-3 focus-visible:text-sm focus-visible:text-fg"
+      >
+        Skip to content
+      </button>
       <header className="sticky top-0 z-30 border-b border-divider bg-bg/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[110rem] flex-wrap items-center gap-4 px-4 py-2">
-          <span className="text-sm tracking-wide text-fg">boardwatch</span>
+          {/* A real `h1`, not a styled span: it is the only document-level heading either route
+              has, and without it a screen reader's heading list starts at `h2` under nothing. */}
+          <h1 className="text-sm tracking-wide text-fg">boardwatch</h1>
           <nav aria-label="Views" className="flex items-center gap-1">
             <NavTab
               label="Queue"
@@ -69,11 +90,11 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[110rem] px-4 py-4">
+      <main id="view" tabIndex={-1} className="mx-auto max-w-[110rem] px-4 py-4">
         {route === "queue" ? <QueuePage push={push} /> : <RunsPage />}
       </main>
 
-      <Toaster toasts={toasts} onDismiss={dismiss} />
+      <Toaster toasts={toasts} onDismiss={dismiss} onHold={hold} onRelease={release} />
     </div>
   );
 }

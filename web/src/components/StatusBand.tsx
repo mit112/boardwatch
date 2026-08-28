@@ -85,7 +85,16 @@ export function StatusBand({
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
       />
-      <div className="ml-auto flex items-center px-4 py-3 text-sm text-fg-2 tabular-nums">
+      {/*
+        * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead
+        * space, leaving a hairline floating 600px from the nearest content. `role="status"` because
+        * this is the only readout that answers "did my filter match anything", and a count that
+        * changes silently is a change a screen-reader reader never learns about (SC 4.1.3).
+        */}
+      <div
+        role="status"
+        className="ml-auto flex items-center border-l-0 px-4 py-3 text-sm text-fg-2 tabular-nums"
+      >
         Showing {showing.toLocaleString()} of {total.toLocaleString()}
       </div>
     </section>

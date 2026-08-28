@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Toast } from "../hooks/useToasts";
 
 /*
@@ -6,7 +6,17 @@ import type { Toast } from "../hooks/useToasts";
  * or a skip is otherwise unrecoverable from the page, and a mis-click on a 540-row list is not a
  * hypothetical.
  */
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
+function ToastItem({
+  toast,
+  onDismiss,
+  onHold,
+  onRelease,
+}: {
+  toast: Toast;
+  onDismiss: (id: number) => void;
+  onHold: (id: number) => void;
+  onRelease: (id: number) => void;
+}) {
   const [shown, setShown] = useState(false);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -17,10 +27,39 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     };
   }, []);
 
+  // Refs, not state: nothing renders from them, and a re-render between a hover and a focus
+  // would drop the other hold on the floor.
+  const pointer = useRef(false);
+  const keyboard = useRef(false);
+
   const border = toast.tone === "error" ? "border-fg-2" : "border-control";
 
   return (
     <div
+      /*
+       * Pointer and keyboard are two INDEPENDENT holds and releasing one must not release the
+       * other. Hovering a toast, tabbing to its Undo, then moving the mouse away fired
+       * `onMouseLeave` -> `release`, which rearmed the full timer while focus was still sitting
+       * on Undo — so the toast expired out from under the focused control, which is the exact
+       * SC 2.2.1 failure the hold was added to fix. Held while EITHER is engaged; released only
+       * when both are gone.
+       */
+      onMouseEnter={() => {
+        pointer.current = true;
+        onHold(toast.id);
+      }}
+      onMouseLeave={() => {
+        pointer.current = false;
+        if (!keyboard.current) onRelease(toast.id);
+      }}
+      onFocusCapture={() => {
+        keyboard.current = true;
+        onHold(toast.id);
+      }}
+      onBlurCapture={() => {
+        keyboard.current = false;
+        if (!pointer.current) onRelease(toast.id);
+      }}
       className={`flex items-center gap-4 rounded border ${border} bg-surface-2 px-4 py-3 shadow-lg transition-[opacity,translate] duration-[180ms] ease-out ${
         shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
       }`}
@@ -60,19 +99,35 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
 export function Toaster({
   toasts,
   onDismiss,
+  onHold,
+  onRelease,
 }: {
   toasts: Toast[];
   onDismiss: (id: number) => void;
+  onHold: (id: number) => void;
+  onRelease: (id: number) => void;
 }) {
   return (
     <div
       className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4"
       role="status"
       aria-live="polite"
+      /*
+       * `role="status"` is implicitly `aria-atomic="true"`, so inserting a second toast while the
+       * first is still up re-announces the WHOLE region — the earlier message and its controls
+       * again. On keyboard triage, where two marks inside the seven-second TTL is normal, that
+       * compounds. `false` announces only what was added.
+       */
+      aria-atomic="false"
     >
       {toasts.map((toast) => (
         <div key={toast.id} className="pointer-events-auto w-full max-w-xl">
-          <ToastItem toast={toast} onDismiss={onDismiss} />
+          <ToastItem
+            toast={toast}
+            onDismiss={onDismiss}
+            onHold={onHold}
+            onRelease={onRelease}
+          />
         </div>
       ))}
     </div>

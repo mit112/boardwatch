@@ -223,18 +223,24 @@ export function RunsPage() {
 
         {selected === null ? null : (
           <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded border border-divider bg-surface">
-            {[
-              ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`],
-              ["partial", formatCount(selected.boards_partial)],
-              ["unchanged", formatCount(selected.boards_unchanged)],
-              ["failed", formatCount(selected.boards_failed)],
-              ["postings seen", formatCount(selected.postings_seen)],
-              ["new", formatCount(selected.new_count)],
-              ["leads", formatCount(selected.leads)],
-            ].map(([label, value]) => (
+            {(
+              [
+                ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`, false],
+                ["partial", formatCount(selected.boards_partial), false],
+                ["unchanged", formatCount(selected.boards_unchanged), false],
+                // The ONE cell in this row whose value changes what you should do about the run,
+                // and it was rendered in the same weight as the zeros beside it.
+                ["failed", formatCount(selected.boards_failed), (selected.boards_failed ?? 0) > 0],
+                ["postings seen", formatCount(selected.postings_seen), false],
+                ["new", formatCount(selected.new_count), false],
+                ["leads", formatCount(selected.leads), false],
+              ] as [string, string, boolean][]
+            ).map(([label, value, emphasis]) => (
               <div key={label} className="flex min-w-28 flex-col gap-1 px-4 py-2">
                 <dt className="text-[11px] tracking-wide text-fg-3 uppercase">{label}</dt>
-                <dd className="text-lg text-fg-2 tabular-nums">{value}</dd>
+                <dd className={`text-lg tabular-nums ${emphasis ? "text-fg" : "text-fg-2"}`}>
+                  {value}
+                </dd>
               </div>
             ))}
           </dl>
@@ -242,9 +248,14 @@ export function RunsPage() {
       </div>
 
       {error !== null ? (
-        <p className="rounded border border-fg-2 bg-surface p-4 text-sm text-fg">{error}</p>
+        // Announced, not just printed: this replaces the whole funnel with no other signal.
+        <p role="alert" className="rounded border border-fg-2 bg-surface p-4 text-sm text-fg">
+          {error}
+        </p>
       ) : funnel === null ? (
-        <p className="p-4 text-sm text-fg-2">Loading the run's funnel artifact…</p>
+        <p role="status" className="p-4 text-sm text-fg-2">
+          Loading the run&apos;s funnel artifact…
+        </p>
       ) : (
         <>
           {funnel.fatal || funnel.errors.length > 0 ? (
@@ -269,7 +280,10 @@ export function RunsPage() {
               funnel · artifact v{funnel.artifact_version} ·{" "}
               {funnel.reconciles ? "reconciles" : "does NOT reconcile"}
             </h2>
-            <ol className="flex flex-col gap-3">
+            {/* Bounded measure. At full width a stage card was a 1,568px box holding "38
+                malformed_payload", with a `divide-y` rule running the whole way across it — the
+                numbers and their labels ended up a screen apart. */}
+            <ol className="flex max-w-5xl flex-col gap-3">
               {funnel.stages.map((stage, index) => (
                 <StageCard
                   key={stage.name}
