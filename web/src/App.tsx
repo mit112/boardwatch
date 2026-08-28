@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { FIXTURE_MODE } from "./api/client";
 import { Toaster } from "./components/Toaster";
 import { useHashRoute } from "./hooks/useHashRoute";
@@ -33,6 +35,14 @@ function NavTab({
 export function App() {
   const [route, setRoute] = useHashRoute();
   const { toasts, push, dismiss, hold, release } = useToasts();
+  /*
+   * True only while the queue's detail pane is the full-screen SHEET it becomes below `lg`. The
+   * sheet covers the header and the skip link, so both are inert for as long as it is up — a skip
+   * link that moves focus behind an opaque modal is worse than none. The toaster is deliberately
+   * not inerted: it draws above the sheet and holds the only undo a mark-applied has. `QueuePage`
+   * reports the state, because the breakpoint belongs to the pane rather than here.
+   */
+  const [sheet, setSheet] = useState(false);
 
   return (
     <div className="min-h-screen bg-bg">
@@ -48,6 +58,7 @@ export function App() {
         */}
       <button
         type="button"
+        inert={sheet}
         onClick={() => {
           document.getElementById("view")?.focus();
         }}
@@ -55,7 +66,7 @@ export function App() {
       >
         Skip to content
       </button>
-      <header className="sticky top-0 z-30 border-b border-divider bg-bg/95 backdrop-blur-sm">
+      <header inert={sheet} className="sticky top-0 z-30 border-b border-divider bg-bg/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[110rem] flex-wrap items-center gap-4 px-4 py-2">
           {/* A real `h1`, not a styled span: it is the only document-level heading either route
               has, and without it a screen reader's heading list starts at `h2` under nothing. */}
@@ -91,7 +102,7 @@ export function App() {
       </header>
 
       <main id="view" tabIndex={-1} className="mx-auto max-w-[110rem] px-4 py-4">
-        {route === "queue" ? <QueuePage push={push} /> : <RunsPage />}
+        {route === "queue" ? <QueuePage push={push} onSheet={setSheet} /> : <RunsPage />}
       </main>
 
       <Toaster toasts={toasts} onDismiss={dismiss} onHold={hold} onRelease={release} />

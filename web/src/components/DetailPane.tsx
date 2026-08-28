@@ -17,6 +17,14 @@ import { Badge } from "./Badge";
 import { CopyButton } from "./CopyButton";
 import { VerdictChip } from "./VerdictChip";
 
+/**
+ * The `lg` breakpoint the pane's own `lg:` variants below are written against. When it MATCHES the
+ * pane is a column beside the list; when it does not, the pane is `fixed inset-0` — an opaque
+ * full-screen sheet, which makes it a modal. Exported because the page has to inert what the sheet
+ * covers, and the two must never disagree about where the sheet begins.
+ */
+export const SIDE_BY_SIDE = "(min-width: 64rem)";
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -179,10 +187,13 @@ export function DetailPane({
    * it is a column beside the list, and stealing focus there would break the fast path the list
    * exists for: Enter to look, ↓ to carry on down the queue.
    *
+   * The other half is in `QueuePage`, which inerts what the sheet covers at that same tier: moving
+   * focus in is worth nothing if Shift+Tab walks straight back out to a row behind the sheet.
+   *
    * The trigger row is refocused on close so the cursor does not fall back to `<body>`.
    */
   useEffect(() => {
-    if (window.matchMedia("(min-width: 64rem)").matches) return;
+    if (window.matchMedia(SIDE_BY_SIDE).matches) return;
     const opener = document.activeElement as HTMLElement | null;
     pane.current?.focus();
     return () => {

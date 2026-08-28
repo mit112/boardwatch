@@ -10,10 +10,11 @@ import {
 } from "../api/client";
 import type { Answers, QueueCounts, QueueDetail, QueueResponse, QueueRow } from "../api/types";
 import { openApplyUrl } from "../components/ApplyLink";
-import { DetailPane } from "../components/DetailPane";
+import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { QueueTable } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
 import { StatusBand } from "../components/StatusBand";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ToastRequest } from "../hooks/useToasts";
 import { matchesQuery, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
@@ -27,7 +28,13 @@ function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
 }
 
-export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
+export function QueuePage({
+  push,
+  onSheet,
+}: {
+  push: (request: ToastRequest) => void;
+  onSheet: (open: boolean) => void;
+}) {
   const [data, setData] = useState<QueueResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [removed, setRemoved] = useState<Map<number, Removal>>(new Map());
@@ -145,6 +152,27 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
   }, [selected, answers]);
 
   const detailLoading = selected !== null && detail === null && detailError === null;
+
+  /*
+   * Below `lg` the detail pane is an opaque full-screen sheet, so it is a modal and everything it
+   * covers has to be `inert` — the platform's own containment, no focus-trap dependency. Without
+   * it, Shift+Tab out of the open sheet landed on a grid row BEHIND it, where `a` marks the lead
+   * applied: a write the reader cannot see the target of, whose only undo is a toast. At `lg` and
+   * up the pane is a column beside a list that stays fully usable, nothing is covered, and nothing
+   * is inerted — Enter to look then ↓ to carry on down the queue is the whole point of that tier.
+   *
+   * The header and the skip link are covered too and are not in this subtree, so the sheet's state
+   * is reported up to `App`. The toaster is deliberately NOT inerted: it draws above the sheet and
+   * carries the only undo a mark-applied has.
+   */
+  const sideBySide = useMediaQuery(SIDE_BY_SIDE);
+  const sheetOpen = selected !== null && !sideBySide;
+  useEffect(() => {
+    onSheet(sheetOpen);
+    return () => {
+      onSheet(false);
+    };
+  }, [onSheet, sheetOpen]);
 
   /*
    * Rank is the array POSITION, and there are now two arrays — so each lane is ranked within
@@ -415,29 +443,33 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <StatusBand counts={bandCounts} showing={visible.length} total={data.rows.length} />
-      <QueueToolbar
-        query={query}
-        onQuery={setQuery}
-        minScore={minScore}
-        onMinScore={setMinScore}
-      />
+      {/* Grouped, and carrying its own `gap-4` so the spacing is unchanged, only so that the band,
+          the toolbar and the refresh line take ONE `inert` while the sheet covers them. */}
+      <div className="flex flex-col gap-4" inert={sheetOpen}>
+        <StatusBand counts={bandCounts} showing={visible.length} total={data.rows.length} />
+        <QueueToolbar
+          query={query}
+          onQuery={setQuery}
+          minScore={minScore}
+          onMinScore={setMinScore}
+        />
 
-      {newCount > 0 && stashed !== null ? (
-        <p className="flex items-center gap-3 text-sm text-fg-2">
-          <span className="tabular-nums">{newCount} new</span>
-          <button
-            type="button"
-            onClick={() => {
-              adopt(stashed);
-            }}
-            className="min-h-11 rounded border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
-          >
-            refresh
-          </button>
-          <span className="text-fg-3">Nothing moves until you ask it to.</span>
-        </p>
-      ) : null}
+        {newCount > 0 && stashed !== null ? (
+          <p className="flex items-center gap-3 text-sm text-fg-2">
+            <span className="tabular-nums">{newCount} new</span>
+            <button
+              type="button"
+              onClick={() => {
+                adopt(stashed);
+              }}
+              className="min-h-11 rounded border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+            >
+              refresh
+            </button>
+            <span className="text-fg-3">Nothing moves until you ask it to.</span>
+          </p>
+        ) : null}
+      </div>
 
       <div
         className={
@@ -446,7 +478,9 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
             : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,32rem)] lg:items-start"
         }
       >
-        <div className="min-w-0">
+        {/* The triage grid, and the row `a`/`s` writes with it, behind the sheet at the narrow
+            tier. */}
+        <div className="min-w-0" inert={sheetOpen}>
           {/*
             * BOTH lanes, because `rows` is now the apply lane alone. With every delivered lead in
             * review this said "the queue is empty … this is not a filter result" directly above a
