@@ -49,10 +49,15 @@ buys almost none of that against a makespan set by a single serial host. **Do no
 argument on it.** What remains is per-board serial cost only: the pace (a real third-party load increase,
 owner's) and the per-board detail budget (a coverage trade, owner's).
 
-**HALF OF RUN 129'S DELIVERY WENT TO ONE REQUISITION.** 5 of the 10 leads are `CGS Federal — ServiceNow
-Developer`, the same req split across locations. That is the known location-split class — 66% of queue
-redundancy, invisible to every suppressing kind because `exact_quad` keys on `company_id` and these share
-one. Untouched by this session and now demonstrably **costing more than the speed problem was**.
+**NINE OF RUN 129'S TEN DELIVERED LEADS WERE ONE REQUISITION**, and it is measured three ways because
+each denominator says something different. `CGS Federal — ServiceNow Developer`: one `company_id`, one
+normalized title, **one byte-identical `content_hash`**, nine cities (all nine also list `Remote`).
+Nothing suppresses it because `exact_quad` — the only suppressing kind — includes `locations`.
+**End-of-line, runs 119-129: 9 of 110 delivered leads (8.2%) were a same-company/title/hash duplicate of
+another lead in the SAME run, and 8 of the 9 are run 129 alone.** So it is **not a chronic 8% tax but a
+rare catastrophic tail**: ten of eleven runs lost 0-1 slots, one lost 80% of the day. Frequency
+understates it; the corpus overstates it (13.59% corpus-wide is mostly T-Mobile retail that never
+reaches delivery).
 
 **THE QUEUE UI's WCAG FAILURES ARE FIXED AND THE TRIAGE LIST IS KEYBOARD-FIRST (#213).** Measured in a
 browser, not argued: two tokens verified against `--color-bg` but painted on `--color-surface-2` (4.32:1
@@ -161,6 +166,21 @@ lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock p
    `queue_payload`** — that drops ~204 leads off the page with nowhere for the owner to see them.
 
 ## Open questions — Mit's, not to be resolved by fiat
+
+0. **How to cap the delivery slate when one requisition is split across cities — NEW, measured
+   2026-08-28d, not decided.** Run 129 lost 9 of 10 slots to one req. **The naive key is refuted:**
+   `(company_id, content_hash)` groups 13,154 redundant postings but **39.1% of its groups span more
+   than one title** — shared boilerplate, not a shared requisition. The tighter
+   `(company, title, content_hash)` — `exact_quad` minus locations — is 9,437 redundant (9.75% of the
+   open corpus), **+7,020 suppressions, 3.9× what suppresses today**, and a suppressed real lead is
+   unrecoverable. **Do not read this as re-proposing D-295**, which was `company_title_location`
+   IDENTITY suppression and was refused three times. The cheaper mechanism that bounds exactly the
+   observed failure is a **slate-diversity cap at delivery** (at most N leads sharing company+title per
+   run): it asserts nothing about sameness, suppresses nothing permanently, and needs no drain, no
+   `IDENTITY_ALGORITHM_VERSION` bump and no ledger migration. Numbers and the refutation are in
+   `.agent/2026-08-28d-runspeed/FINDINGS.md`. **Possibly upstream of all of it and unexamined:**
+   whether `ServiceNow Developer` should rank at all for a new-grad SWE target — role taxonomy, not
+   dedup.
 
 1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate the
    projection manifest, and whether persona's `entries` list survives stage 2.

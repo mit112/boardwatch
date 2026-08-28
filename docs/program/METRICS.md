@@ -8151,13 +8151,26 @@ host it buys almost none of that. **Do not spend the multi-tenancy argument on i
 per-board serial levers only — the pace (owner call, a real third-party load increase) and the
 per-board detail budget (a coverage trade, owner's).
 
-### (f) Delivery — half the slots went to ONE requisition
+### (f) Delivery — NINE of the ten slots went to ONE requisition, and the denominator matters
 
-10 leads delivered, 10 with PDF, queue synced (10 new / 10 updated / 498 unchanged). **5 of the 10 are
-`CGS Federal — ServiceNow Developer`**, the same req split across locations. That is the known
-location-split class — 66% of queue redundancy, invisible to every suppressing kind because
-`exact_quad` keys on `company_id` and these share one. Untouched by this session and now demonstrably
-costing more than the speed problem was: **half of a day's delivery capacity on one posting.**
+10 leads delivered, 10 with PDF, queue synced (10 new / 10 updated / 498 unchanged). **9 of the 10 are
+`CGS Federal — ServiceNow Developer`**: one `company_id`, one normalized title, **one byte-identical
+`content_hash`**, nine cities (all nine also list `Remote` and `Hybrid`). Nothing suppresses it —
+`exact_quad`, the only suppressing kind, includes `locations`.
+
+Measured three ways, because each denominator says something different:
+
+| denominator | redundant | reading |
+|---|---:|---|
+| open corpus, `(company, content_hash)` | 13,154 (13.59%) | **REFUTED as a key — 39.1% of its groups span >1 title** (shared boilerplate: `senior backend engineer deployment environments` with `…platform readiness`; three `retail route merchandiser` towns) |
+| open corpus, `(company, title, content_hash)` | 9,437 (9.75%) | `exact_quad` minus locations. **+7,020 suppressions = 3.9× what suppresses today.** Overstates delivery impact — mostly T-Mobile's 548 `mobile associate retail sales`, which never reach leads |
+| **delivered leads, runs 119-129** | **9 of 110 (8.2%)** | **THE END-OF-LINE NUMBER** — and 8 of the 9 are run 129 alone |
+
+**So it is not a chronic 8% tax but a rare catastrophic tail.** Ten of eleven runs lost 0-1 slots; one
+lost **80% of the day's delivery capacity to a single requisition**. Sizing by frequency understates
+it; sizing by the corpus overstates it. Carried as an **open question** (STATE §0) with a
+slate-diversity cap — which suppresses nothing permanently — as the mechanism to weigh, and
+explicitly NOT as a re-proposal of D-295's identity suppression.
 
 Board coverage 84.0% (67,662 held of 80,564 stated) · 149 measured · 6 censored · 0 dark · 153 stale.
 Death probe: 50 of 755 due, 705 refused by budget, 0 gone. Liveness 10/10 alive.
