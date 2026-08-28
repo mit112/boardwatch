@@ -8,6 +8,44 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The delivery slate is capped at one lead per company, title and byte-identical JD.** Run 129
+  delivered ten leads and nine were a single requisition — one CGS Federal `ServiceNow Developer`
+  posted to nine cities, with one `company_id`, one normalized title and one byte-identical
+  `content_hash`. Nothing suppressed it and nothing could: `exact_quad`, the only suppressing
+  identity kind, includes `locations`, so one requisition split across nine cities is nine groups
+  of one. The ranker now allows **one lead per `(company_id, normalized_title, content_hash)` per
+  run**. It is a delivery cap, not a claim that two postings are the same job: nothing is suppressed
+  permanently, a capped lead is never recorded `seen` so it ranks again on the very next run, and no
+  identity, ledger or `IDENTITY_ALGORITHM_VERSION` change is implied. Because the cap sits inside the
+  rank cutoff, the freed slot is **refilled** from further down the ranking — the same run now
+  delivers three distinct employers where it delivered three copies of one. Sized over delivered
+  leads rather than the corpus: across runs 119-129's 110 delivered leads it frees nine slots and
+  fires on two runs, with no collateral. The hash is part of the key because one run's two
+  same-company, same-title leads carried **different** hashes and were two genuinely distinct
+  requisitions. **A body-less posting is never capped** — `content_hash` is never null or empty, so
+  its presence proves nothing, and every body-less posting hashes the empty string: all 245 in the
+  corpus share one digest and six `(company, title, hash)` groups are already collisions of that
+  kind, one of them a `software engineer frontend` pair. `hidden_slate_cap` is its own never-folded
+  bucket, equal to the number of slots freed, listable with `top --include-slate-cap`, and each
+  drained row names the lead that displaced it.
+
+- **Each JD-acquisition lane now reports its cost split into paced fetching and serial applying.**
+  The lane stage cost 6.5 minutes on run 129 and swung fourfold run to run for *more* work, and a
+  stage total could not say why: upstream throttling and contention on the single writer produce the
+  same number. The funnel now carries `fetch_seconds` and `apply_seconds` per lane, and the `Lanes`
+  markdown names the fetch **share**, because the ratio is what tells you whether parallelism would
+  help. `null` means not measured and is never rendered as `0.0s`, so a lane that failed before it
+  was timed can never read as a lane that cost nothing.
+
+- **The lane fetches now overlap, while `apply_board` remains the single writer.** Lanes ran strictly
+  one after another, so hiring.cafe waited for LinkedIn even though they are different hosts and
+  politeness never required it. Each lane is now split into a paced fetch, which runs off the main
+  thread, and an apply, which does not — two lanes applying at once would put two writers on one
+  SQLite store. Per-host pacing is unchanged and unchangeable by this: the fetcher holds a lock per
+  host for a request's full duration and paces inside it, so requests to one host still serialize and
+  no third party sees a higher rate. The gain is bounded by the slowest lane rather than divided by
+  the lane count — about two minutes, after which the stage is tail-bound on LinkedIn alone.
+
 - **The queue UI's WCAG 2.2 AA failures are fixed and the triage list is keyboard-first.** The
   review page is worked top-down every morning against a few hundred leads, and measurement of the
   shipped bundle found it neither accessible nor fast to work. Each failure was measured in a
@@ -137,6 +175,14 @@ All notable changes to this project are documented here. The format follows
 
 
 ### Fixed
+
+- **Focus is now contained in the queue detail sheet at the tier where it is a modal.** Below 64rem
+  the detail pane is a full-screen sheet, and focus could leave it: `Shift+Tab` reached a row of the
+  triage grid *behind* the opaque sheet, after which the single-key mark-applied shortcut acted on a
+  row the reader could not see. The subtrees the sheet covers are now `inert` at that tier only — at
+  or above 64rem the pane is a column beside a list that must stay reachable, so nothing is inerted
+  there. The undo toast is deliberately excluded: it draws above the sheet and holds the only route
+  back from a mark-applied.
 
 - **A board slug differing only in case no longer becomes a second company row (D-339).**
   `companies` enforces `UNIQUE(provider, slug)` and SQLite compares that case-sensitively, so
