@@ -8244,7 +8244,7 @@ shape D-344 produced for the board scan and `lowes.wd5` — so lane parallelism 
 an open one. D-346 replaces this inference with a measurement on the next run; read it before
 proposing anything further here.
 
-### (e) #218's years-pattern widening — a PARALLEL session's change, verified here
+### (d) #218's years-pattern widening — a PARALLEL session's change, verified here
 
 Its numbers, its measurement; the pattern diff, the content-pin bump and the three tests were checked
 against the diff before D-349 was written. Live open corpus, **96,522 postings with a body**.
@@ -8296,7 +8296,31 @@ and is **not in STATE** — it is in this project's session memory store. Correc
 `rules_hash` `a3b2e014dc5b` → `6fa2ef35ad99`; R7 content-pin `ee46231c3d4a` → `9283b7e4ff4b`;
 `engine_version` unchanged. Its own gate: **8,340 passed.**
 
-### (d) Gates and verification
+### (e) Owner rulings at this close — four ruled, one left open (D-351)
+
+Recorded here because two of them change what a future session may spend, and a ruling that is not
+written down is re-litigated after a context reset. **All resulting work is next session's**; none was
+started.
+
+| item | ruling | what it costs or releases |
+|---|---|---|
+| `degree` blocking | **CONFIRMED as Mit's** — "i did want it" | Do NOT revert the six-blocker map. **An audit of the 298 `_in_field` rejections is owed**; his constraint is precision, not severity. Soften nothing first |
+| provisional pass | **ALLOWED TO SLIP** — "work comes first" | **RELEASES an implied freeze: eligibility is NOT frozen.** Stop pricing a `rules_hash` bump as costly on this basis |
+| Phase 1b (web queue split) | **RULED — split the page, and a wider UI redesign** | Closes a raised-not-ruled item; the fuller of the two options. Next session, with breadth |
+| request-START pacing | **APPROVED AS A TRIAL** | 28.4 min, floor 25.6 → 15.3. A real 0.6 → 1.0 req/s third-party increase. LOCAL config only; revert trigger defined in D-351 |
+| `ServiceNow Developer` ranking | **NOT ANSWERED** | Stays open. Role taxonomy, not dedup, and possibly upstream of D-345 |
+
+**The `degree` reframing is the substantive one.** D-350 measured it as a severity anomaly — a family
+armed against the record. Mit's answer moved it to a **precision** question: the arming is right, and
+what needs measuring is whether the **298** field-of-study rejections are correct. `doctorate_required`
+(114) is far likelier to be sound than `bachelor_in_field_required` (187), because a PhD requirement
+genuinely excludes a master's holder while a field mismatch may not.
+
+**No metric moved this session.** Every number in this section and in (a)-(d) is measured against the
+existing corpus or the runs 119-129 delivery history; **no run was taken**, so nothing here is a
+per-run result.
+
+### (f) Gates and verification
 
 | change | PR | `make check` | suite |
 |---|---|---|---|
