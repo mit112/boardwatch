@@ -121,6 +121,7 @@ def _accounted(results: RankedResults) -> int:
         + results.hidden_ineligible
         + results.hidden_below_cutoff
         + results.hidden_duplicate
+        + results.hidden_slate_cap
     )
 
 

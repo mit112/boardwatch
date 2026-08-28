@@ -110,7 +110,9 @@ def _shortlist_line(summary: PipelineSummary) -> str:
         f"{counts.hidden_ineligible} ineligible, {counts.hidden_non_swe} non-SWE, "
         f"{counts.hidden_zero_signal} zero signal, "
         f"{counts.hidden_over_seniority} over seniority, "
-        f"{counts.hidden_duplicate} duplicate, {counts.hidden_applied} already applied, "
+        f"{counts.hidden_duplicate} duplicate, "
+        f"{counts.hidden_slate_cap} slate-capped, "
+        f"{counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
         f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}{unmeasured}"
     )

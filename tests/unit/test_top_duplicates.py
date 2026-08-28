@@ -221,7 +221,15 @@ def test_postings_without_identity_rows_are_never_suppressed(seed_dedup):
     No backfill_identities call here, deliberately.
     """
     seed = seed_dedup(count=2)
-    r = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    # `include_slate_cap=True` isolates the completeness gate from the slate cap (D-345), the
+    # same way the drain test below isolates it from the ledger. The seed is a same-company,
+    # same-title, same-hash pair, so the cap would withhold one of them — deliberately, because
+    # it is NOT gated on identity completeness and takes the highest-RANKED row rather than
+    # electing a survivor by identity. That independence is the cap's point and is not what this
+    # test is about; leaving it armed here would make a dedup test fail for a non-dedup reason.
+    r = rank_open_postings(
+        seed.engine, _settings(seed.data_dir), limit=10, include_slate_cap=True
+    )
     assert r.hidden_duplicate == 0
     assert len(r.visible) == 2
 
@@ -236,6 +244,9 @@ def test_a_partial_backfill_suppresses_nothing_at_all(seed_dedup, backfill_ident
     """
     seed = seed_dedup(count=3)
     backfill_identities(seed, seed.posting_ids[:2])
-    r = rank_open_postings(seed.engine, _settings(seed.data_dir), limit=10)
+    # Isolated from the slate cap for the reason given in the test above.
+    r = rank_open_postings(
+        seed.engine, _settings(seed.data_dir), limit=10, include_slate_cap=True
+    )
     assert r.hidden_duplicate == 0
     assert len(r.visible) == 3
