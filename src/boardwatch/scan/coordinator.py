@@ -27,7 +27,7 @@ from sqlalchemy import Engine, func, select
 from boardwatch.core.clock import utcnow
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.core.models import BoardRequest, BoardSnapshot
-from boardwatch.core.politeness import Fetcher
+from boardwatch.core.politeness import Fetcher, host_key
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
@@ -150,6 +150,59 @@ class ScanSummary:
     # Set once the runs row exists. The pipeline reads it rather than minting its own, so the
     # INSERT stays inside the scan lock (see pipeline/runner.py).
     run_id: int = 0
+
+
+def host_diverse(
+    work: list[tuple[Any, Provider, BoardRequest]],
+) -> list[tuple[Any, Provider, BoardRequest]]:
+    """Reorder the boards so consecutive submissions target DIFFERENT hosts.
+
+    `Fetcher` serializes same-host requests for their full duration, so two boards on one host
+    can never overlap however many workers are running. Every worker that picks up the second
+    one blocks doing nothing — it is not slow work, it is no work.
+
+    The stored order is company rowid, which is the order boards were ADDED, and boards are
+    added in per-provider batches. Five of the six providers serve every board from a single
+    API host (`boards-api.greenhouse.io`, `api.ashbyhq.com`, `api.lever.co`,
+    `apply.workable.com`, `api.smartrecruiters.com`); only Workday has one host per tenant.
+    Measured on the run-128 fleet, the first SIXTEEN boards in rowid order are all on one host,
+    so a `scan_workers = 4` pool starts with three workers idle and an eight-wide pool with
+    seven.
+
+    Round-robin across hosts, largest bucket first. That both puts distinct hosts at the head
+    and spreads each shared-host provider as thinly as its bucket allows, which is the most
+    diversity any order can extract from this fleet.
+
+    Grouping is by `politeness.host_key`, the same key the lock uses — never by provider name,
+    which would put Workday's 105 distinct hosts in one bucket and serialize what already runs
+    in parallel.
+
+    Stable within a host, so a fleet whose hosts do not collide keeps its stored order and a
+    single-board scan is untouched.
+
+    **A static order, and a heuristic — not a guarantee.** Once a worker finishes a fast board
+    it takes whatever is next in the queue, which may be a host that is still busy, while an
+    idle host waits further down. A host-aware ready queue — submit a host's next board only
+    when its previous future completes — would dominate any static order and is deliberately
+    not built here. The measured value of this change already prices that loss in: the model
+    it was sized against simulates the locks themselves, workers blocking included.
+
+    **The reorder cannot change what a completed run persists.** `known_posting_ids` and
+    `detail_budget` are built for every board before this runs; the return is a permutation, so
+    the set of boards and their per-board closure sets are identical. Suppression is unaffected
+    because `exact_quad` — the only suppressing kind — keys on `company_id`, and two boards are
+    two `companies` rows, so no cross-host pair can ever collide. What DOES move is which
+    boards a run killed midway got through: each apply commits on its own, so an interrupted
+    run now leaves a different subset applied. Every one of them is still individually correct.
+    """
+    buckets: dict[str, list[tuple[Any, Provider, BoardRequest]]] = defaultdict(list)
+    for item in work:
+        buckets[host_key(item[2].url)].append(item)
+    queues = sorted(buckets.values(), key=len, reverse=True)
+    ordered: list[tuple[Any, Provider, BoardRequest]] = []
+    for index in range(max((len(q) for q in queues), default=0)):
+        ordered.extend(queue[index] for queue in queues if index < len(queue))
+    return ordered
 
 
 def default_providers() -> dict[str, Provider]:
@@ -304,7 +357,7 @@ def _scan_body(
     with ThreadPoolExecutor(max_workers=settings.scan_workers) as pool:
         future_map = {
             pool.submit(fetch_board_job, prov, fetcher, request): (row, request)
-            for row, prov, request in work
+            for row, prov, request in host_diverse(work)
         }
         for future in as_completed(future_map):
             row, request = future_map[future]

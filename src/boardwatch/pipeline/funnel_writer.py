@@ -43,6 +43,7 @@ from boardwatch.reports.run_funnel import (
     RunManifest,
     ScanContext,
     ShortlistCounts,
+    StageDuration,
     build_projection_counters,
     build_run_funnel,
 )
@@ -131,6 +132,11 @@ def collect_run_funnel(
     # rather than defaulted here, unlike in the pure builder: this module has exactly one caller
     # and a forgotten argument should be a type error rather than a silently lane-less artifact.
     lanes: Sequence[LaneReport],
+    # Timed by the CALLER (`runner._StageClock`) and passed straight through: stage wall clock
+    # is in-memory measurement of work the pipeline did, with nothing to read back out of the
+    # store. `None` means the run was not timed at all — the honest reading for a stored
+    # artifact written before this shipped — which is not the same as an empty sequence.
+    stage_durations: Sequence[StageDuration] | None,
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -290,6 +296,7 @@ def collect_run_funnel(
         coverages=coverages,
         board_coverage=board_coverage,
         lanes=lanes,
+        stage_durations=stage_durations,
         errors=errors,
         fatal=fatal,
     )

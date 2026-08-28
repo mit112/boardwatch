@@ -72,6 +72,14 @@ def _markdown(out_root: Path, kind: str) -> str:
     return found[0].read_text()
 
 
+def _coverage_section(markdown: str) -> str:
+    """Just the `## Board coverage` section, up to the next heading."""
+    _, _, rest = markdown.partition("## Board coverage")
+    assert rest, "the funnel rendered no board-coverage section at all"
+    head, _, _ = rest.partition("\n## ")
+    return head
+
+
 def _measured(ratio: float) -> list[BoardCoverage]:
     """One `measured` board whose ratio is whatever the caller asks for."""
     held = int(round(1000 * ratio))
@@ -217,7 +225,12 @@ def test_a_run_with_no_scan_rows_reports_not_measurable_never_zero(
     assert section["global_ratio"] is None
     assert section["bucket_counts"]["measured"] == 0
     assert "not measurable" in _markdown(out_root, "funnel")
-    assert "0.0%" not in _markdown(out_root, "funnel")
+    # SCOPED to the coverage section. The claim is about the coverage ratio, and asserting it
+    # over the whole document only held for as long as no other section rendered a percentage
+    # — the `## Wall clock` table (D-343) legitimately reports `0.0%` for a stage that took no
+    # measurable time. A document-scoped guard for a section-scoped claim is a tripwire for
+    # every unrelated change, not a stronger check.
+    assert "0.0%" not in _coverage_section(_markdown(out_root, "funnel"))
 
 
 def test_a_coverage_failure_costs_the_section_and_never_the_artifact(

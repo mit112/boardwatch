@@ -156,7 +156,9 @@ def test_taxonomy_drift_moves_both_identities(tmp_path: Path) -> None:
         funnel = collect_run_funnel(
             engine, settings, run_id=run_id, scan=ScanContext(ran=False), shortlist=None,
             tailored=[], tailor_failed=0, projection_ran=False, rewrite_rows=[],
-            lanes=[], errors=[], fatal=None,
+            # This synthetic funnel times no run, and `None` is the honest report for that —
+            # never `()`, which would claim a timed run that reached no stage boundary.
+            lanes=[], stage_durations=None, errors=[], fatal=None,
         )
         with engine.connect() as conn:
             return funnel.manifest.profile_row_hash, run_policy_version(conn, settings)
