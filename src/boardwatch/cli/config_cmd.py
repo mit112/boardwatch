@@ -76,6 +76,11 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
     ),
     "lane_posting_budget": (int, "next run", "JD-body requests one lane may make per run, ≥0"),
+    "lane_search_pages": (
+        int,
+        "next run",
+        "search pages one lane requests per facet, ≥1 (1 = the single page that shipped)",
+    ),
     "death_probe_budget": (
         int,
         "next run",

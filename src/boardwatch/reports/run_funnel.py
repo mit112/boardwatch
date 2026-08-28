@@ -778,6 +778,12 @@ class LaneReport:
     NOT already have, so its length is the reach this run ADDED rather than the companies the
     lane touched; a lane that spent its whole cap on companies already stored would otherwise
     report a full admission list and no new reach at all.
+
+    `search_pages` is `(search url, pages fetched)` per search the lane made, and it is here for
+    the one thing a posting count cannot say: whether a facet stopped because it RAN OUT of
+    results or because it hit the configured page ceiling. The second is reach the run left on
+    the table, and inferring it from a total would need the ceiling, the page size and the facet
+    count that produced it. Empty for a lane whose search does not paginate.
     """
 
     name: str
@@ -787,6 +793,7 @@ class LaneReport:
     is_silent_outage: bool
     admitted: tuple[tuple[str, str], ...]
     refused: tuple[tuple[str, str], ...]
+    search_pages: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1631,6 +1638,12 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 # only companies the store did not already hold, so it IS the reach added.
                 "admitted": [f"{provider}:{slug}" for provider, slug in lane.admitted],
                 "refused": [f"{provider}:{slug}" for provider, slug in lane.refused],
+                # Pages actually fetched per search. Additive, like `lanes` itself was: `[]` for
+                # a lane whose search does not paginate, so a reader can tell "no paging here"
+                # from "one page each" without consulting the configuration that produced it.
+                "search_pages": [
+                    {"url": url, "pages": pages} for url, pages in lane.search_pages
+                ],
             }
             for lane in funnel.lanes
         ],
@@ -1785,6 +1798,16 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
             f"- **admitted:** {_lane_companies(lane.admitted)}",
             f"- **refused:** {_lane_companies(lane.refused)}",
         ]
+        if lane.search_pages:
+            # Rendered only when the lane paginates. A facet showing fewer pages than the rest
+            # ran out of results; one showing the ceiling on every line is TRUNCATED, and that
+            # is the reading a posting count alone cannot support.
+            lines += [
+                "",
+                "| search | pages fetched |",
+                "|---|---:|",
+            ]
+            lines += [f"| {url} | {pages} |" for url, pages in lane.search_pages]
     return lines
 
 
