@@ -108,17 +108,23 @@ class RankedPosting:
     # reason is the text that decided it for humans.
     hard_filter: HardFilterClause | None = None
     hard_filter_reason: str = ""
+    # The lead already on this run's slate that used up this row's `(company_id,
+    # normalized_title, content_hash)` allowance, set only when it is surfaced by the
+    # `--include-slate-cap` drain. A normally-visible posting has None. Carries the
+    # survivor's posting_id rather than a bare bool for the same reason `duplicate_of`
+    # does: a cap the operator cannot trace to the row that displaced it is not auditable.
+    slate_capped_by: int | None = None
 
 
 @dataclass(frozen=True)
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the nine drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered` and the ten drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
     hidden_zero_signal + hidden_over_seniority + hidden_ineligible + hidden_duplicate +
-    hidden_applied + hidden_handled + hidden_below_cutoff`. Each is its own counter,
-    incremented where the posting actually leaves, never a remainder computed by subtraction —
+    hidden_applied + hidden_handled + hidden_slate_cap + hidden_below_cutoff`. Each is its own
+    counter, incremented where the posting actually leaves, never a remainder by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
 
@@ -224,6 +230,15 @@ class RankedResults:
     # `exact_quad` can land a posting here, and only when identities are COMPLETE — a
     # partial backfill suppresses nothing. Drained by `--include-duplicates`.
     hidden_duplicate: int = 0
+    # The delivery slate cap (D-345). Rows that cleared every filter, were inside the rank
+    # cutoff, and were displaced only because a byte-identical JD from the same company and
+    # title already held a slot this run. Its own bucket and never folded into
+    # `hidden_duplicate`: that one is gated on identity completeness and means the dedup
+    # subsystem elected a survivor, which is a claim this cap deliberately does not make.
+    #
+    # This count IS the number of delivery slots the cap freed, exactly — a capped row does
+    # not increment `kept`, so each one is refilled from further down the ranking.
+    hidden_slate_cap: int = 0
     # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
     # caller that forgets to set it gets "suppression disabled" rather than silently
     # claiming the subsystem ran. `hidden_duplicate == 0` on its own is ambiguous — it means
@@ -261,6 +276,28 @@ class RankedResults:
     surfaced_job_ids: tuple[int, ...] = ()
 
 
+SLATE_CAP_PER_KEY = 1
+"""How many leads per run may share one `(company_id, normalized_title, content_hash)` (D-345).
+
+A DELIVERY cap, not an identity claim and not a suppression. Run 129 spent 9 of its 10 slots on
+one CGS Federal requisition split across nine cities: one company, one normalized title, one
+byte-identical `content_hash`, and nothing suppressed it because `exact_quad` — the only
+suppressing identity kind — includes `locations`.
+
+**This is categorically not D-295**, which was `company_title_location` IDENTITY suppression and
+was refused three times. Nothing here asserts two postings are the same job, nothing is
+suppressed permanently, and no `IDENTITY_ALGORITHM_VERSION` bump or ledger migration is implied.
+A capped row is never recorded `seen`, so it ranks again on the very next run — the re-entry path
+is the next run itself, by construction, which is why this quarantine needs no scheduled drain.
+
+Why 1, measured over runs 119-129's 110 delivered leads rather than argued: this key at N=1 frees
+9 slots and fires on exactly two runs (r120:1, r129:8) with ZERO collateral. The looser
+`(company, title)` key at N=1 frees 10 but wrongly drops one of run 125's two Evlo AI
+`mobile engineer ios android` leads, which carry DIFFERENT content hashes and are two genuinely
+distinct JDs. Requiring the hash is what buys the zero-collateral result.
+"""
+
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -273,6 +310,7 @@ def rank_open_postings(
     include_over_seniority: bool = False,
     include_hard_filter: bool = False,
     include_duplicates: bool = False,
+    include_slate_cap: bool = False,
     include_handled: bool = False,
     include_applied: bool = False,
     only_new: bool = False,
@@ -319,6 +357,14 @@ def rank_open_postings(
                 postings.c.locations_json,
                 postings.c.remote_policy,
                 companies.c.name.label("company_name"),
+                # The slate cap's key (D-345). `company_id` rather than the company NAME
+                # because two providers can spell one employer differently, and
+                # `normalized_title` rather than `title` because one requisition's cities
+                # sometimes reach us with the city appended to the title. `content_hash` is
+                # what makes the claim falsifiable: equal hashes mean a byte-identical JD.
+                postings.c.company_id,
+                postings.c.normalized_title,
+                postings.c.content_hash,
                 # The seniority gate's binding key: a scheme is bound per company, and
                 # (provider, slug) is the pair the store and the registry agree on.
                 companies.c.provider,
@@ -362,6 +408,8 @@ def rank_open_postings(
         )
         new_ids = _new_posting_ids(conn) if only_new else None
     scored: list[RankedPosting] = []
+    # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
+    slate_keys: dict[int, tuple[int, str, str]] = {}
     hidden_non_swe = 0
     hidden_zero_signal = 0
     signal_unmeasured = 0
@@ -439,6 +487,23 @@ def rank_open_postings(
             settings.zero_skill_coverage_prior,
         )
         why = why_summary(score, row.posted_at, now)
+        # A BODY-LESS posting is uncappable, and this guard is the difference between the cap
+        # and a fabrication. `content_hash` is NOT NULL and never empty, so its presence proves
+        # nothing: every body-less posting hashes the empty string, so all 245 of them in the
+        # live corpus carry the SAME `e3b0c442...` digest. Six `(company, title, hash)` groups
+        # are already collisions of that kind — one of them a `software engineer frontend` pair
+        # that could reach delivery — so capping on it would drop a genuinely distinct lead
+        # while claiming its JD was byte-identical. Fail-open is the right direction here for the
+        # same reason a span-less INELIGIBLE downgrades to ABSTAIN: the cost of not firing is a
+        # duplicate slot, the cost of firing wrongly is a real lead nobody ever sees.
+        #
+        # `body_empty` is the flag the select already computes for the zero-signal rule; reused
+        # rather than re-derived, and it is the precise condition — an empty `normalized_title`
+        # (2 open postings) would collide the same way, so it is excluded too.
+        if row.normalized_title and not row.body_empty:
+            slate_keys[int(row.id)] = (
+                int(row.company_id), row.normalized_title, row.content_hash,
+            )
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
             score=score,
@@ -544,6 +609,11 @@ def rank_open_postings(
     # eligible posting lands in `visible` or `hidden_below_cutoff`; with it closed,
     # duplicates land in `hidden_duplicate` instead.
     kept = 0
+    hidden_slate_cap = 0
+    # `(company_id, normalized_title, content_hash)` -> the posting_ids already holding slots
+    # for it this run, in slate order. Scoped to one call, so the cap is per RUN and carries
+    # nothing forward.
+    slate_held_by: dict[tuple[int, str, str], list[int]] = {}
     hidden_handled = 0
     hidden_applied = 0
     hidden_handled_this_run = 0
@@ -596,6 +666,28 @@ def rank_open_postings(
             visible.append(posting)
             continue
         if kept < limit:
+            # The slate cap (D-345), and it sits HERE rather than earlier for two reasons.
+            # Inside `kept < limit`, so a row the rank cutoff would have dropped anyway is
+            # attributed to `hidden_below_cutoff` — the constraint that actually bound first —
+            # instead of being blamed on a cap that never decided anything. And after every
+            # quarantine `continue` above, so a capped row is by construction one that cleared
+            # all of them.
+            slate_key = slate_keys.get(posting.posting_id)
+            holders: list[int] = (
+                slate_held_by.get(slate_key, []) if slate_key is not None else []
+            )
+            if len(holders) >= SLATE_CAP_PER_KEY and not include_slate_cap:
+                # NOT surfaced and NOT counted against `limit`: the slot is refilled from
+                # further down the ranking, and because no `seen` is recorded this row ranks
+                # again on the next run. That is the whole re-entry path — the cap defers a
+                # lead by a day, it does not consume it.
+                hidden_slate_cap += 1
+                continue
+            if len(holders) >= SLATE_CAP_PER_KEY:
+                # Annotated with the FIRST holder: the row that displaced this one is the one
+                # that took the last allowance, and at N=1 it is the only one there is.
+                visible.append(replace(posting, slate_capped_by=holders[0]))
+                continue
             # A drained row is NOT surfaced. `--include-over-seniority`, `--include-non-swe` and
             # `--include-zero-signal` let you inspect a quarantine; recording those rows `seen`
             # would make looking into the bucket suppress them from later runs, so the drain
@@ -610,6 +702,8 @@ def rank_open_postings(
                 and posting.zero_signal != "veto"
             ):
                 surfaced_job_ids.append(job_id)
+            if slate_key is not None:
+                slate_held_by.setdefault(slate_key, []).append(posting.posting_id)
             visible.append(posting)
             kept += 1
         else:
@@ -634,6 +728,7 @@ def rank_open_postings(
         hidden_below_cutoff=hidden_below_cutoff,
         skipped_not_new=skipped_not_new,
         hidden_duplicate=hidden_duplicate,
+        hidden_slate_cap=hidden_slate_cap,
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
         hidden_applied=hidden_applied,
@@ -733,10 +828,13 @@ def _why_cell(posting: RankedPosting) -> str:
     # first match showed such a row as merely over-band, so the operator could not tell it was
     # also one they had already applied to — a suppression you cannot read is the leak this
     # column exists to close. The last three are mutually exclusive by construction (each
-    # `continue`s in the ranker), so at most three annotations ever appear (hard filter,
-    # zero signal, over band). `uncertain` and `zero_signal == "unmeasured"` are deliberately
-    # NOT annotated: neither is a drain, both are normally-visible rows, and an extraction
-    # outage would annotate the whole table with a fact the notice already states once.
+    # `continue`s in the ranker), and so are `hard_filter` and `slate_capped_by`: the hard-filter
+    # drain `continue`s before the rank cutoff, which is where the cap fires, and the last three
+    # `continue` before it too. So at most three annotations ever appear — either
+    # (hard filter, zero signal, over band) or (zero signal, over band, slate cap).
+    # `uncertain` and `zero_signal == "unmeasured"` are deliberately NOT annotated: neither is
+    # a drain, both are normally-visible rows, and an extraction outage would annotate the whole
+    # table with a fact the notice already states once.
     notes: list[str] = []
     if posting.hard_filter is not None:
         notes.append(f"hard filter: {posting.hard_filter} ({posting.hard_filter_reason})")
@@ -744,6 +842,8 @@ def _why_cell(posting: RankedPosting) -> str:
         notes.append(posting.zero_signal_reason)
     if posting.band == "above_band":
         notes.append(posting.band_reason)
+    if posting.slate_capped_by is not None:
+        notes.append(f"slate cap: same JD as {posting.slate_capped_by}")
     if posting.duplicate_of is not None:
         notes.append(f"duplicate of {posting.duplicate_of}")
     elif posting.applied_as is not None:
@@ -773,6 +873,7 @@ def _print_hidden_notices(
     include_over_seniority: bool,
     include_hard_filter: bool,
     include_duplicates: bool,
+    include_slate_cap: bool,
     include_handled: bool,
     include_applied: bool,
 ) -> None:
@@ -852,6 +953,13 @@ def _print_hidden_notices(
             "scheme in leveling-bindings.yaml.",
             markup=False,
         )
+    if results.hidden_slate_cap and not include_slate_cap:
+        target.print(
+            f"{results.hidden_slate_cap} slot(s) freed by the slate cap — one lead per "
+            "company, title and byte-identical JD per run. Deferred to the next run, not "
+            "dropped; see them with --include-slate-cap.",
+            markup=False,
+        )
     if results.hidden_duplicate and not include_duplicates:
         target.print(
             f"{results.hidden_duplicate} hidden as duplicates — see them with "
@@ -921,6 +1029,11 @@ def top(
     include_duplicates: bool = typer.Option(
         False, "--include-duplicates", help="Show postings suppressed as duplicates."
     ),
+    include_slate_cap: bool = typer.Option(
+        False,
+        "--include-slate-cap",
+        help="Show leads the per-run slate cap deferred (same company, title and JD).",
+    ),
     include_handled: bool = typer.Option(
         False,
         "--include-handled",
@@ -956,6 +1069,7 @@ def top(
             include_over_seniority=include_over_seniority,
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
+            include_slate_cap=include_slate_cap,
             include_handled=include_handled,
             include_applied=include_applied,
             only_new=new,
@@ -980,6 +1094,7 @@ def top(
             include_over_seniority=include_over_seniority,
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
+            include_slate_cap=include_slate_cap,
             include_handled=include_handled,
             include_applied=include_applied,
         )
@@ -999,6 +1114,7 @@ def top(
                         "zero_signal": p.zero_signal,
                         "band": p.band,
                         "duplicate_of": p.duplicate_of,
+                        "slate_capped_by": p.slate_capped_by,
                         "handled_as": p.handled_as,
                         "applied_as": p.applied_as,
                     }
@@ -1040,6 +1156,7 @@ def top(
             include_over_seniority=include_over_seniority,
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
+            include_slate_cap=include_slate_cap,
             include_handled=include_handled,
             include_applied=include_applied,
         )
@@ -1067,6 +1184,7 @@ def top(
         include_over_seniority=include_over_seniority,
         include_hard_filter=include_hard_filter,
         include_duplicates=include_duplicates,
+        include_slate_cap=include_slate_cap,
         include_handled=include_handled,
         include_applied=include_applied,
     )

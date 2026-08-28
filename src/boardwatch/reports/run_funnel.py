@@ -314,6 +314,13 @@ class ShortlistCounts:
     # complete — a partial backfill suppresses nothing, so 0 here can mean either "no
     # duplicates" or "not backfilled". `unique` in the per-source table distinguishes them.
     hidden_duplicate: int = 0
+    # D-345, the delivery slate cap: leads that cleared every filter and were inside the rank
+    # cutoff, displaced only because a byte-identical JD from the same company and title already
+    # held a slot THIS RUN. Never folded into `hidden_duplicate` — that one asserts the dedup
+    # subsystem elected a survivor, a claim this cap deliberately does not make. Not gated on
+    # identity completeness, so 0 here means 0. Equals the number of slots the cap freed and
+    # refilled, because a capped row never increments the ranker's `kept`.
+    hidden_slate_cap: int = 0
     # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
     # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
     # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
@@ -1205,6 +1212,15 @@ def build_run_funnel(
                     reason="hidden_duplicate",
                     count=shortlist.hidden_duplicate,
                     note="provable exact_quad duplicate; drain with `top --include-duplicates`",
+                ),
+                Drop(
+                    reason="hidden_slate_cap",
+                    count=shortlist.hidden_slate_cap,
+                    note=(
+                        "same company, title and byte-identical JD as a lead already on this "
+                        "run's slate; deferred to the next run, not suppressed — inspect with "
+                        "`top --include-slate-cap`"
+                    ),
                 ),
                 Drop(
                     reason="hidden_applied",
