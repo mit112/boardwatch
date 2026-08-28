@@ -48,9 +48,13 @@ U.S. citizenship"*. They drain themselves via D-321's `_ineligible` filter. `eng
 **THE WHOLE STACK IS MERGED; THE ENGINE MOVES ON THE NEXT PULL, ONCE.** #183 (D-323, lead locations + artifact v7) ·
 #184 (D-326, clearance-obtainability + field-of-study facts) · #185 (D-327, the near-duplicate
 measurement and the refused reversal) · #186 (D-324, `unverifiable` status) · #187 (D-325, measured-death
-close) · the degree-bridge fix (D-328). **`engine_version` moves the moment the primary tree is pulled** —
-it is DERIVED from the digested modules, so quote `doctor`, never a pinned constant (D-306). The live
-store is still on `1+af3a746837b1` because the tree is deliberately unpulled.
+close) · the degree-bridge fix (D-328). **`engine_version` is DERIVED from the digested
+modules, so quote `doctor`, never a pinned constant (D-306). THIS ALREADY HAPPENED — the tree was
+pulled and the store moved to `1+7485e3a85f38` at ~22:52Z; see the owner-facts paragraph below.** The
+earlier "still on `1+af3a746837b1`, tree deliberately unpulled" reading is STALE and is corrected here
+because D-332's central evidence depends on the opposite: every stored verdict went blank on that move,
+which is why a mid-run-126 snapshot reads 668 rows of `verdict = None` rather than being a broken
+measurement.
 
 **THE THREE OWNER FACTS ARE APPLIED, AND THE STORE IS ON THE NEW ENGINE (2026-08-27 ~22:52Z).**
 `security_clearance.obtainable=false`, `field_of_study=software_engineering`,
@@ -127,6 +131,27 @@ store deliberately and verify, rather than letting the next unattended tick disc
 rollback snapshot** — all three stale backups were verified redundant and deleted (2026-08-23b, ~2.9 GB
 reclaimed). Take one before any destructive operation rather than assuming one exists.
 
+**THE QUEUE ROOT IS NO LONGER A BLIND-APPLY SURFACE CARRYING UNVERIFIED LEADS (D-332, #192).** The
+queue was **82% `uncertain`** (314/383, only 27 `eligible`), and a lead is `uncertain` precisely BECAUSE
+a ranker gate failed open on it — the hard US gate passes location `unknown` (the visa ruling) and the
+role gate passes role `uncertain`. Live leaks, all US-located non-software delivered across runs 115-125:
+**Allstate "Field Auto Appraiser", Humana care-support, ITW "Recycle Operator", Hyatt "Front Office
+Agent"**. A fourth drain `_review` now sits beside `_ineligible`, and
+`delivery/review_gate.lane(verdict, locations, title)` is the **one** definition of the split, called by
+both writers. `eligible`→apply; `ineligible`→review (defensive); `uncertain` OR `None`→apply only if
+**confirmed US and confirmed SWE**. **`_review` is a sync-MANAGED lane, not an exclusion** — leads are
+BORN there and are drawn back up if their class changes, so it self-heals both ways. **Location fails
+OPEN, role does not**: demote on `== "non_us"`, NEVER `!= "us"` — bare `"Remote"` reads `unknown` and
+remote is most of the SWE set. Measured read-only mid-run-126: **668 rows → 464 apply / 204 review**, of
+which **198 are non-software titles** and 6 confirmed non-US. That same snapshot showed **all 668 rows at
+`verdict = None`** (every evaluation staled on the engine move), which is why `None` routes like
+`uncertain` — the alternative empties the whole queue. **No engine change, no migration, no drain.**
+**The web page is NOT filtered, and the split-brain is WIDER than "unfiltered" suggests — Phase 1b,
+owner-gated** (see below). `api.py:248` sets `off_target = facts.role == "not_swe"` and the module
+docstring is explicit that **`off_target` is `not_swe` only, never `uncertain`** — so a review lead
+demoted for a role-`uncertain` title (no role signal at all) or for a confirmed non-US location renders
+on the page with `off_target: false` and **no marker whatsoever**.
+
 **`DEFAULT_TOP_N` is 10 — a HOLDING value until the precision work lands (D-293).** Do **not** raise it
 before the precision work is merged, and do **not** set it to 0 (that fails B1 outright while Gate P3's
 counter keeps running). Lifting it is Mit's call and is informed on both sides — the measured uncapped
@@ -152,16 +177,28 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
 
    **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
    ```sh
-   pgrep -f "boardwatch run"   # empty = idle; any PID = still working, wait for it to exit
+   pgrep -f "bin/boardwatch run"   # empty = idle; any PID = still working, wait for it to exit
    ```
+   **Match on `bin/boardwatch run`, not `boardwatch run`.** `pgrep -f` matches full command lines, so the
+   bare pattern also matches the agent's OWN shell whenever the probe command contains that string — it
+   reports a phantom PID and a session waits forever for a run that already exited. Confirm any hit with
+   `ps -o pid,ppid,command -p <PID>`: the real run's parent is `1` (launchd) and its command line starts
+   with the venv's `python3`.
    `runs.finished_at` is written BEFORE the process exits — funnel and morning artifacts are emitted from
    a `finally` after the row closes (D-024). Run 125: `finished_at` 22:50:08.8, artifacts at 22:51,
    process gone at 22:51:40 — **92 seconds of work after the table read `ok`.**
 
-2. **NOTHING IS OPEN — the queue is drained.** #185 (D-327) 22:42Z, #190 (D-330) 23:13Z, #188
-   (STATE/METRICS/STANDING-FACTS) 23:52Z; **zero open PRs**, `main` `4e0c95b`, primary tree at `main`'s
-   head. Two rebase traps were paid for and now live in `STANDING-FACTS.md` § Process lessons — the
-   silent `CHANGELOG.md` one is the dangerous half.
+2. **#192 (D-332, the apply/review queue split) is the one thing open**, on
+   `feat/apply-review-queue-split`, auto-merge armed (squash). **It is based on `4e0c95b`, NOT on
+   current `main` `86da8cd`** — `main` moved under it when #191 landed at 01:08:54Z. No rebase is
+   required and that is luck, not design: #192 touches no file #191 touched, and GitHub squash-merges
+   against `main`'s head regardless. Verify with `git merge-base origin/feat/apply-review-queue-split
+   origin/main` before assuming otherwise. The earlier
+   stack all landed: #185 (D-327) 22:42Z, #190 (D-330) 23:13Z, #188 (STATE/METRICS/STANDING-FACTS)
+   23:52Z, #191 (the live write, the 92-second guard, the drained queue) 01:08:54Z. **Read CI job conclusions from
+   `gh api repos/mit112/boardwatch/actions/runs/<id>/jobs`, not `gh pr checks`** — the latter has
+   misreported on this repo. Two rebase traps were paid for and now live in `STANDING-FACTS.md`
+   § Process lessons — the silent `CHANGELOG.md` one is the dangerous half.
 
 3. **Batch 2 of the ~765 discover candidates is now a SIZING question with an answer** — see the
    provider-weighted table above and in `METRICS.md`. The ~325 cheap ones go in ONE batch. **Probe ~10
@@ -190,6 +227,17 @@ working material — re-derive if pruned.)*
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
+8. **Phase 1b — whether the WEB page follows the queue split (D-332). RAISED, NOT YET RULED — put it to
+   Mit before touching `queue_payload`; do not act on it unilaterally.** The folder tree now
+   holds review leads in `_review`, but `api.py::queue_payload` still lists them. **State the gap
+   precisely, because "they show up flagged `off_target`" is WRONG:** `api.py:248` is
+   `off_target = facts.role == "not_swe"`, and the docstring says outright that `off_target` is
+   `not_swe` only, **never `uncertain`** — deliberately, because "uncertain is not a veto" and badging it
+   would assert a decision the gate declined to make. So of the ~204 review-lane leads, only the
+   `not_swe` ones carry any marker; a role-`uncertain` title or a confirmed non-US location renders
+   **completely unmarked**. Filtering reverses that design and needs a review SECTION in the React UI
+   plus a bundle rebuild (`make web`, commit both). **Do not silently exclude review leads from
+   `queue_payload`** — that drops ~204 leads off the page with nowhere for the owner to see them.
 
 ## Open questions — Mit's, not to be resolved by fiat
 
