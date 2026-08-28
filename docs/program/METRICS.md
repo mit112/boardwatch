@@ -7933,9 +7933,13 @@ Corpus, 84,821 open, p6.2 → p6.3: `exact_quad` redundant **2,064 → 2,112 (+4
 Out-of-scope location classes, sized for a later ruling (groups / redundant): disjoint cities 2,199 / 11,285 ·
 different country 1,844 / 3,478 · partial overlap 606 / 1,998 · subset/superset 413 / 950.
 
-**Company-row split — the top remaining lever.** 20 company names hold 40 `companies` rows over **8,841 open
-postings**; every suppressing key is `company_id`-scoped, so dedup is blind across all of them. Salesforce
-1,562 · Genentech 1,474 · Cisco 1,238 · HPE 1,200 · Visa 748 · Stripe 581 · DoorDash 472.
+**Cross-company duplication — the EXPOSURE is 8,841, the DUPLICATION is 587. Quote 587.** 20 company names
+hold 40 `companies` rows over 8,841 open postings, but only **587 postings (513 groups)** actually share a
+`cross_host` key across more than one `company_id`. Provider pairs: workday+workday 559 · ashby 18 ·
+linkedin+anything 10. Split: **HPE 553** (same reqs on two Workday sites; boards **not nested** — 514
+shared bases, 86 unique to each, and Jobsathpe's unique set holds real SWE roles, so retiring one was
+rejected), **Lightfield 18** (true case-collision duplicate, fixed), remainder ~16 (lane shadows and
+genuinely distinct sibling boards).
 
 ### Identity table
 
