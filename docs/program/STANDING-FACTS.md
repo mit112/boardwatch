@@ -958,3 +958,68 @@ finished 01:21, pre-approval; a phantom run 91 took the id — see below), i.e. 
 the `tailor` REPORT path; the daily-run PROJECTION path is persona-blind and nothing maps
 role-family→`projection.<persona>.yaml` (those 3 files are dormant). D-303 fixed the under-fill uniformly, so
 per-persona projection is emphasis polish, not a fix — deferred; a real-discriminators redesign is future work.
+
+## Moved out of STATE on 2026-08-28d — settled, kept verbatim
+
+These blocks were true when written and remain true; they stopped being *what changed this session*.
+Nothing was summarised away (the STATE rule): each is the paragraph as it stood.
+
+**RUN 127 LANDED THE WHOLE ELIGIBILITY STACK AND D-333 IS CONFIRMED BY MEASUREMENT.** Run 127 is the
+first tick on engine `1+118c640ea50c` (derive it, never quote it — D-306): `ok`, **91m03s** against a
+~116 min projection, 346 boards, 13,518 postings seen, 1,418 new, 340 closed. **Every required years
+row with a threshold ≤ 3 flipped disposition `unmet` → `unknown`** — 10,757 → **0** unmet, 10,880
+unknown — and **6,123 evaluations moved `ineligible` → `uncertain`** against D-333's predicted 5,980
+(within 2.4%; the population itself grew by 126 in the same span). Corpus-wide `ineligible` fell
+36,141 → 30,068. **Zero of those 9,324 evaluations became `eligible`**, which is the first EMPIRICAL
+confirmation of D-333's central claim — until now it was only a code argument about `blocking(UNKNOWN)`
+being tested before the `eligible` fallthrough. The 91-vs-116-minute result also means the linear
+scaling model **over-predicts by ~22%**; do not size off it without that correction.
+
+**CI IS SHARDED AND THE PR LOOP IS 3.3x FASTER (D-334, #198).** A pull request was **30-42 min**;
+per-step timings showed the whole of it was one step (`pytest -n auto` at 1764/2480/1903s, everything
+else totalling ~20s) on a **4 vCPU** runner. There was no hot spot to remove — the slowest single test
+is **1.5%** of total CPU and the top 25 are **9%** — so the suite is split 4 ways per Python by SHA-256
+of the node id. **Measured: 10.6 min.** Lint, all three `type` jobs, gitleaks, perf, generalization and
+web bundle now report in **under a minute** instead of behind a 30-minute job. **Branch protection now
+requires ONE context, `ci`** — not the six `test (3.x, ubuntu-latest)` ones. Shard count is **4 and that
+is measured**: at 8, seven jobs queued behind the ~20-job concurrency ceiling, and since wall clock is
+bounded by concurrency rather than by slicing, 8 paid double the per-job setup for the same ten minutes.
+
+**THE LIVENESS PROBE THIS FILE SHIPPED WAS WRONG, AND IT FAILED TOWARD "SAFE TO WRITE" (D-335).** The
+`awk '$2==1'` form below reported IDLE for the whole of run 127. Use the argv[0]-anchored form; the
+reasoning is in D-335 and the block under **Next action** now carries the correct one.
+
+**ANOTHER SESSION RAISED `detail_fetch_budget` 50 → 400 IN THE LIVE CONFIG (2026-08-28, not this
+session).** Mit's local config only — deliberately NOT the code default, which would change behaviour
+for every user of the published package. Backup: `config.toml.bak-predetailbudget-20260828`. **MEASURED on run
+128: it is NOT a one-off.** The run took **132 min (+41 over baseline)** — workday alone burned 19,225 s of
+cumulative fetch (~80 min wall at 4 workers) — and `board_scans.detail_deferred` is **still 9,261 after the
+run**, so the budget is a per-run ceiling that does not drain the backlog. Runs stay ~2h+ every run, not
+once. **`lane_search_pages = 5` and `lane_posting_budget = 300` are set in the same local config** (D-340).
+The measurements land under **D-336 onward** and **METRICS 2026-08-28c**; this file does not restate them.
+
+**THE LIVE STORE WAS WRITTEN BY ANOTHER SESSION AFTER RUN 127 (2026-08-28).** Prior application
+history imported (`applications` 0 → 22, all `attempt_no = 1`), and `identities backfill` run for the
+p6.3 bump. **The backfill wrote p6.3 BESIDE p6.2 rather than replacing it** — `write_identities` only
+deletes rows at the SAME version — so there is no window where suppression is off and old and new code
+both work. **The dead generation has since been REAPED (#201):** `posting_identities` went 899,983 →
+**423,706 rows, one generation**, in 9 s, and suppression stayed armed throughout (84,821 of 84,821 open
+postings carry a p6.3 identity). `boardwatch identities reap` reports by default and deletes only under
+`--apply`; it reaps **retired VERSIONS only** and deliberately never touches a closed posting's
+current-version rows, because a reopen would take the corpus below `identities_complete()` and disarm
+dedup store-wide. **It does not VACUUM** — pages return to SQLite's free list, the file does not shrink.
+Numbers and reasoning are that session's, under **D-336 onward**; this file does not restate them.
+
+**THE CADENCE CHANGE CUT AGGREGATOR INTAKE ~8x, AND THE MECHANISM IS RUN COUNT, NOT A BUDGET.** Moving
+from ~8x/day to 1x/day on 2026-08-27 was decided on gate-speed grounds (local runs contend with the
+local gate: the same suite measures 4m51s idle and 34m40s under load) and the intake consequence was
+never costed. **Do not attribute it to `lane_posting_budget`** — that was checked and is NOT binding:
+`body_fetched` was 55 on run 126 and 56 on run 127 against a budget of 60 (LinkedIn 49 and 53). What
+caps a lane is that neither paginated its search. **THE LINKEDIN HALF IS NOW FIXED (D-340, #205):**
+`Settings.lane_search_pages` ships defaulting to **1 — byte-for-byte the old behaviour**, page 0 emits
+the URL unchanged rather than `&start=0`, so no other user's request SHAPE moves. Mit ruled **5 pages
++ `lane_posting_budget` 300**, both set in LOCAL config. **hiring.cafe stays one page and that is
+STRUCTURAL, not a knob** — `robots.txt` disallows its `?page=` form and no pagination parameter was ever
+found. **The cost is WALL CLOCK, not request count:** `Fetcher` already paces 1.0 s per host and
+LinkedIn is one host, so ~370 requests/run against ~74 is **~1 min → ~6.2 min** of a run. **The CI work does NOT weaken the original
+justification** — `make check` is still local and still contends.
