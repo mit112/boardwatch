@@ -22,6 +22,46 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The delivery queue splits into an APPLY lane and a REVIEW lane (D-332).** The queue root is a
+  *blind-apply* surface — you open a folder, read the rendered PDF and apply — but 82% of it was
+  `uncertain` (314 of 383 leads, only 27 `eligible`), and a lead is `uncertain` precisely *because* a
+  ranker gate failed open on it: the hard US gate passes an unplaceable location by the visa ruling,
+  and the role gate passes an unrecognised title. Live examples that reached the queue: an Allstate
+  "Field Auto Appraiser", a Humana care-support role, an ITW "Recycle Operator", a Hyatt "Front Office
+  Agent". A fourth drain `_review` now sits beside `_ineligible`, and
+  `delivery/review_gate.lane(verdict, locations, title)` is the single definition of the split, called
+  by both writers. `eligible` promotes; `uncertain` (and an unevaluated `None`) reaches the apply lane
+  only when it is **confirmed US and confirmed software**. Location fails *open* on `unknown` — a bare
+  `"Remote"` stays appliable, and only a confirmed non-US lead is demoted — while a title carrying no
+  positive software signal is held. `_review` is a managed second location, not an exclusion: leads are
+  created there and drawn back up if their class changes. Measured on the live store, roughly one lead
+  in three was in the blind-apply surface without a software title. No engine change.
+
+- **The queue page follows the same split, with its own Review section.** `GET /api/queue` returns
+  `rows` (the apply lane, exactly the queue root) and `review` (exactly `_review`), split by calling
+  the same `review_gate.lane` rather than re-deriving it, so the page and the folder tree cannot
+  disagree about a lead. The Review section is collapsed by default with its count always visible, and
+  each lane ranks and sorts independently. This matters more than "the page was unfiltered": the
+  `off_target` badge is `not_swe` **only, never `uncertain`** — deliberately, since badging an abstain
+  would assert a decision the gate declined to make — so most review leads previously rendered with
+  **no marker at all** and were indistinguishable from blindly-appliable ones. A review lead is listed,
+  never hidden; only `ineligible` is excluded-and-counted. The status band gains a `review` cell, so
+  `in queue`, `review` and `ineligible` account for every delivered lead.
+
+- **A near-miss experience-years bar abstains instead of rejecting (D-333).** `experience_years` drove
+  about 89% of the reject pile against a profile declaring **one** year, and 8,745 postings were
+  rejected for needing three years or fewer. That population is invisible by construction: the reject
+  pile is never inspected and boardwatch never applies, so a wrong `unmet` there has no outcome loop
+  that could contradict it — and internships, co-ops and course projects routinely clear an
+  early-career bar that a single declared integer cannot represent. A `required` bar at or under the
+  new `experience_years.near_miss_years_ceiling` (3) now resolves `unknown` rather than `unmet`, so the
+  lead becomes `uncertain` and reaches the review lane instead of being dropped. It **cannot** produce
+  a new `eligible`: `unknown` is caught by the blocking roll-up before the `eligible` fall-through, so
+  the worst it can do is move `ineligible` to `uncertain`. Measured on a full re-evaluation of 83,718
+  rows: 5,980 of 36,141 `ineligible` leads move (16.5%), every one of them a two- or three-year bar,
+  and none becomes `eligible`. A stated *preference* is untouched — the band applies only to rows that
+  can actually block. **Moves `engine_version`**, so the next run re-evaluates the corpus once.
+
 - **The run funnel records FETCH wall clock per provider (D-330).** Run cost could not be attributed
   from the record, because every existing signal was wrong in a different way:
   `board_scans.started_at → finished_at` times the *apply* (26.5 s of a 3,286 s run),
