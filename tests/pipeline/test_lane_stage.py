@@ -199,6 +199,66 @@ def test_a_known_company_does_not_eat_the_only_slot_a_new_one_needs(
     assert "src:new" in _stored_slugs(engine)
 
 
+def test_a_slug_differing_only_in_case_is_the_company_already_stored(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The live incident, as a test: `ashby:Lightfield` watched, `ashby:lightfield` offered.
+
+    They were one board — identical 19 open postings under identical Ashby posting UUIDs — but
+    `UNIQUE(provider, slug)` compares case-sensitively, so the store held two rows, fetched the
+    board twice a run, and could not suppress either copy's postings: every suppressing identity
+    kind is scoped by `company_id`, and there were two of those.
+
+    Both halves matter. One row is the corpus damage; an uncharged cap slot is the control
+    damage, because a company already stored must never spend reach the run has to give away.
+    """
+    _known(engine, "ashby", "Lightfield")
+    lane = StubLane([("ashby", "lightfield"), ("hiringcafe", "src:new")])
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path, lane_new_companies_per_run=1),
+        lane,
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    assert _stored_slugs(engine) == {"Lightfield", "src:new"}, "a case variant became a 2nd row"
+    assert report.admitted == (("hiringcafe", "src:new"),), "the case variant spent a cap slot"
+    assert report.refused == ()
+    # The lane's postings still land, and against the EXISTING company row rather than a new one.
+    with engine.connect() as conn:
+        owner = conn.execute(
+            select(tables.companies.c.slug)
+            .join(tables.postings, tables.postings.c.company_id == tables.companies.c.id)
+            .where(tables.postings.c.provider_posting_id == "lightfield-1")
+        ).scalar_one()
+    assert owner == "Lightfield"
+
+
+def test_two_genuinely_different_slugs_at_one_provider_both_store(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The guard folds CASE and nothing else — it must not collapse distinct boards.
+
+    Sharpened deliberately: the two slugs are anagram-adjacent under a naive "same letters"
+    or prefix comparison, so only a real case-fold equality test passes this and the one above.
+    """
+    lane = StubLane([("ashby", "lightfield"), ("ashby", "lightfields")])
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path, lane_new_companies_per_run=2),
+        lane,
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    assert _stored_slugs(engine) == {"lightfield", "lightfields"}
+    assert report.admitted == (("ashby", "lightfield"), ("ashby", "lightfields"))
+    assert _open_posting_ids(engine) == {"lightfield-1", "lightfields-1"}
+
+
 def test_the_cap_still_refuses_companies_the_store_has_never_seen(
     engine: Engine, tmp_path: Path
 ) -> None:

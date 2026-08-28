@@ -201,6 +201,41 @@ def test_adding_a_smartrecruiters_board_lowercases_the_slug(tmp_path) -> None:
     assert len(_watch_count(tmp_path, "smartrecruiters", "visa")) == 1
 
 
+def test_adding_a_case_variant_watches_the_stored_board_and_reports_it(tmp_path) -> None:
+    """`companies add ashby:KAYAK` with `ashby:kayak` already watched. Caught by hand once and
+    then missed once — `ashby:Lightfield`/`ashby:lightfield` reached the live store as two rows
+    for one board. A silent no-op is the wrong outcome here: the operator would be left
+    believing a new board was added, so the resolution has to be printed."""
+    base = _base(tmp_path)
+    assert runner.invoke(app, [*base, "companies", "add", "ashby:kayak"]).exit_code == 0
+    result = runner.invoke(app, [*base, "companies", "add", "ashby:KAYAK"])
+    assert result.exit_code == 0
+    assert "ashby:kayak" in result.stdout and "no second board" in result.stdout
+    assert len(_watch_count(tmp_path, "ashby", "kayak")) == 1
+    assert _watch_count(tmp_path, "ashby", "KAYAK") == []
+
+
+def test_importing_a_case_variant_reports_it_rather_than_counting_a_new_board(tmp_path) -> None:
+    """`import` reports its work as a COUNT, which on its own would imply a new board."""
+    base = _base(tmp_path)
+    runner.invoke(app, [*base, "companies", "add", "ashby:kayak"])
+    path = _import_file(tmp_path, [{"name": "Kayak", "provider": "ashby", "slug": "KAYAK"}])
+    result = runner.invoke(app, [*base, "companies", "import", path])
+    assert result.exit_code == 0
+    assert "ashby:kayak" in result.stdout
+    assert _watch_count(tmp_path, "ashby", "KAYAK") == []
+
+
+def test_removing_a_case_variant_unwatches_the_stored_board(tmp_path) -> None:
+    """The orphan the guard would otherwise create: a board added by typing `KAYAK` that
+    `remove ashby:KAYAK` can no longer reach."""
+    base = _base(tmp_path)
+    runner.invoke(app, [*base, "companies", "add", "ashby:kayak"])
+    result = runner.invoke(app, [*base, "companies", "remove", "ashby:KAYAK"])
+    assert result.exit_code == 0 and "No such watch" not in result.stdout
+    assert _watch_count(tmp_path, "ashby", "kayak")[0].watched is False
+
+
 def test_adding_a_greenhouse_board_emits_no_such_warning(tmp_path) -> None:
     base = _base(tmp_path)
     result = runner.invoke(app, [*base, "companies", "add", "greenhouse:stripe"])

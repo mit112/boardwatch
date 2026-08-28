@@ -100,7 +100,7 @@ from boardwatch.store.queries import (
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import lead_provenance
-from boardwatch.store.tables import companies, postings
+from boardwatch.store.tables import postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
 from boardwatch.tailor.persona import PersonaError
@@ -438,7 +438,11 @@ def _collect_lane(
         # commits its own per-board transaction, which is the per-board atomicity guarantee an
         # outer transaction would silently take away.
         with engine.begin() as conn:
-            upsert_lane_company(
+            # The id comes back from the upsert rather than from a second select on
+            # `(provider, slug)`: the row the upsert resolved to may be stored under a
+            # different SLUG CASE than the lane offered, and re-selecting by the lane's
+            # spelling would then find nothing (`queries.stored_slug`).
+            company_id = upsert_lane_company(
                 conn,
                 provider=company.provider,
                 slug=company.slug,
@@ -449,14 +453,6 @@ def _collect_lane(
                 # `cross_host` posting identity, so rewriting it would silently re-key that
                 # company's identities.
                 name=company.name,
-            )
-            company_id = int(
-                conn.execute(
-                    select(companies.c.id).where(
-                        companies.c.provider == company.provider,
-                        companies.c.slug == company.slug,
-                    )
-                ).scalar_one()
             )
         # `scan_kind="lane"`, and the default is not good enough here: `apply_board` writes a
         # `board_scans` row every time, and board coverage outer-joins that table on

@@ -113,8 +113,17 @@ def add(
                 "postings. Watching it anyway."
             )
     with app_ctx.engine.begin() as conn:
-        upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
-    console.print(f"Watching {provider}:{slug} (source={source}).")
+        watched = upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
+    if watched == slug:
+        console.print(f"Watching {provider}:{slug} (source={source}).")
+    else:
+        # A silent no-op would leave the operator believing a new board was added. Say which
+        # row the watch landed on, and do not claim `source`: the stored row keeps its own.
+        console.print(
+            f"[yellow]note:[/yellow] {provider}:{slug} differs only in slug case from the "
+            f"board already stored as {provider}:{watched}; no second board was added."
+        )
+        console.print(f"Watching {provider}:{watched}.")
     if provider == "smartrecruiters":
         console.print(
             "[yellow]note:[/yellow] SmartRecruiters cannot confirm a board exists — "
@@ -268,12 +277,21 @@ def import_(
                 empty.append(f"{e.provider}:{e.slug}")
             kept.append(e)
         entries = kept
+    recased: list[str] = []
     with app_ctx.engine.begin() as conn:
         for e in entries:
             in_catalog = (e.provider, e.slug) in _catalog_index()
-            upsert_watch(conn, provider=e.provider, slug=e.slug, name=e.name,
-                         source="registry" if in_catalog else "user")
+            watched = upsert_watch(conn, provider=e.provider, slug=e.slug, name=e.name,
+                                   source="registry" if in_catalog else "user")
+            if watched != e.slug:
+                recased.append(f"{e.provider}:{e.slug} -> {e.provider}:{watched}")
     console.print(f"Imported {len(entries)} watches.")
+    if recased:
+        # Reported, not silent: the count above would otherwise imply N new boards.
+        console.print(
+            "[yellow]note:[/yellow] already stored under a different slug case, watched in "
+            f"place rather than added a second time: {', '.join(recased)}"
+        )
     if empty:
         console.print(
             f"[yellow]note:[/yellow] reachable but currently empty (watched anyway): "
