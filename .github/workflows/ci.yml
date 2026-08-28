@@ -23,26 +23,60 @@ permissions:
   pull-requests: read
 
 jobs:
-  test:
-    name: test (${{ matrix.python }}, ${{ matrix.os }})
+  # The single source of truth for the shard matrix.
+  #
+  # This job exists because a workflow-level `env` CANNOT be read from
+  # `jobs.<id>.strategy` — only `github`, `needs`, `vars` and `inputs` are available there — and
+  # no Actions expression can expand an integer into `[1..n]` anyway. So the shard count is
+  # emitted here and consumed by everything downstream: the matrix that runs the shards, the
+  # audit that proves they partition the suite, and the coverage job that counts databases.
+  #
+  # Nothing downstream may hardcode a shard count. A literal `8` in the audit would keep
+  # validating a population of 8 after the matrix moved to 4 — the audit would either fail for
+  # the wrong reason or, worse, certify the wrong population.
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      shards: ${{ steps.plan.outputs.shards }}
+      pythons: ${{ steps.plan.outputs.pythons }}
+    steps:
+      - id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Raise or lower this ONE number to retune. 4 is MEASURED, not guessed: at 8 shards
+          # (24 jobs) seven of them queued, the start stagger was 262s, and the shards took
+          # 10.1 min wall clock against a median 290s of actual work each.
+          #
+          # Wall clock here is bounded by CONCURRENCY, not by shard count. Roughly twenty slots
+          # are available, and the suite's total work is fixed, so wall clock is about
+          # work / 20 however finely it is sliced — 4 shards and 8 shards both land near ten
+          # minutes. What differs is overhead: every job pays ~40s of checkout, uv sync and
+          # typesetting, so 24 jobs burn ~960s of setup where 12 burn ~480s, and while
+          # concurrency-bound that difference is wall clock rather than free parallelism.
+          #
+          # Raising this only helps if the concurrent-job ceiling rises too.
+          SHARDS=4
+          PYTHONS='3.11 3.12 3.13'
+          shards_json=$(seq 1 "$SHARDS" | paste -sd, - | sed 's/^/[/; s/$/]/')
+          pythons_json=$(printf '%s\n' $PYTHONS | sed 's/.*/"&"/' | paste -sd, - | sed 's/^/[/; s/$/]/')
+          echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
+          echo "pythons=$PYTHONS" >> "$GITHUB_OUTPUT"
+          echo "matrix={\"python\":$pythons_json,\"shard\":$shards_json}" >> "$GITHUB_OUTPUT"
+
+  # The suite, split across jobs. Ubuntu only — see `test-other-os` for why.
+  test-ubuntu:
+    name: test (${{ matrix.python }}, shard ${{ matrix.shard }}/${{ needs.plan.outputs.shards }})
+    needs: plan
     strategy:
+      # Keep this false. With fail-fast, one failing shard cancels its queued siblings, and the
+      # diagnostic value of "which other shards also failed" is lost — the aggregate below still
+      # fails the run correctly, but you learn less per run.
       fail-fast: false
-      matrix:
-        # Windows is OFF the per-push path (D-151): it is the slowest job by far, so it set the
-        # wall clock of every push while serving no current user. It runs nightly and on demand
-        # instead, which caps a Windows regression at ~24h of drift rather than the ~180 commits
-        # that accumulated ~130 failures in D-145. Do NOT drop it entirely — that is the rot this
-        # cadence exists to prevent, and re-greening it is expensive.
-        # macOS stays on push: it is the platform boardwatch is actually run on.
-        # PRs stay ubuntu-only to conserve minutes (macOS bills 10x, Windows 2x).
-        os: >-
-          ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-              && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]')
-              || (github.event_name == 'push'
-                  && fromJSON('["ubuntu-latest", "macos-latest"]')
-                  || fromJSON('["ubuntu-latest"]')) }}
-        python: ["3.11", "3.12", "3.13"]
-    runs-on: ${{ matrix.os }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -54,12 +88,185 @@ jobs:
       # nothing, which is the failure mode this program exists to make impossible.
       - uses: ./.github/actions/setup-typesetting
       - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run mypy --strict src tools
       # `-n auto` here and in the Makefile, deliberately NOT in pyproject's addopts: the perf job
       # below measures wall-clock timings, and inheriting workers would corrupt the numbers it
       # exists to produce. Keeping it at the call sites leaves perf, and ad-hoc narrow runs, serial.
-      - run: uv run pytest -n auto
+      #
+      # `--cov-fail-under=0` overrides the 85 in addopts because command-line arguments are
+      # applied later. A shard sees a fraction of the suite, so its own percentage is meaningless;
+      # the real threshold is applied once per Python version in `coverage` below.
+      - name: Run this shard
+        run: |
+          uv run pytest -n auto \
+            --shard ${{ matrix.shard }}/${{ needs.plan.outputs.shards }} \
+            --shard-manifest "$RUNNER_TEMP/manifest-py${{ matrix.python }}-shard${{ matrix.shard }}.json" \
+            --cov-fail-under=0 --cov-report=
+      # pytest-cov combines its own xdist workers, so a shard leaves exactly ONE `.coverage` —
+      # not the `.coverage.*` the naming might suggest. Renaming per shard is what lets every
+      # shard's database land in one directory without colliding, and `mv` failing is a real
+      # signal that the run produced no coverage at all.
+      - name: Name this shard's coverage database
+        run: mv .coverage ".coverage.py${{ matrix.python }}.shard${{ matrix.shard }}"
+      # `include-hidden-files` because these are dotfiles and v4 excludes them by default;
+      # `if-no-files-found: error` because the default merely WARNS, and a silently missing
+      # upload is exactly how a partial suite would still report a passing coverage number.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python }}-shard${{ matrix.shard }}
+          path: .coverage.py${{ matrix.python }}.shard${{ matrix.shard }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest-py${{ matrix.python }}-shard${{ matrix.shard }}
+          path: ${{ runner.temp }}/manifest-py${{ matrix.python }}-shard${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  # macOS and Windows run the WHOLE suite, unsharded, and keep their own ruff/mypy steps.
+  #
+  # Not sharded because sharding buys parallelism at the cost of jobs, and these platforms are
+  # rationed: both Free and Pro allow only five concurrent macOS jobs, so splitting them would
+  # queue into waves and finish no sooner. They also keep `mypy --strict` locally because mypy's
+  # platform defaults follow the machine it runs on — hoisting it to a single Ubuntu job would
+  # silently drop the macOS and Windows type-checking axes that exist today.
+  #
+  # Consequence worth stating plainly: this change targets PULL REQUEST latency. Pushes and the
+  # nightly are still bounded by these full-suite jobs, and Windows remains the slowest of them.
+  test-other-os:
+    name: test (${{ matrix.python }}, ${{ matrix.os }})
+    if: ${{ github.event_name != 'pull_request' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is OFF the per-push path (D-151): it is the slowest job by far, so it set the
+        # wall clock of every push while serving no current user. It runs nightly and on demand
+        # instead, which caps a Windows regression at ~24h of drift rather than the ~180 commits
+        # that accumulated ~130 failures in D-145. Do NOT drop it entirely — that is the rot this
+        # cadence exists to prevent, and re-greening it is expensive.
+        # macOS stays on push: it is the platform boardwatch is actually run on.
+        os: >-
+          ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+              && fromJSON('["macos-latest", "windows-latest"]')
+              || fromJSON('["macos-latest"]') }}
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: ./.github/actions/setup-typesetting
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run mypy --strict src tools
+      - run: uv run pytest -n auto --no-cov
+
+  # Ruff is platform- and version-independent, so once is enough.
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+
+  # mypy is NOT collapsed to a single job: its resolution follows the interpreter it runs under,
+  # so one job per supported Python is the contract the matrix used to provide. The macOS and
+  # Windows axes are preserved inside `test-other-os` above.
+  type:
+    name: type (${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen
+      - run: uv run mypy --strict src tools
+
+  # Proves the shards were a genuine partition of the suite.
+  #
+  # This is the job that makes sharding safe to trust. A shard erroring is visible in CI; a shard
+  # silently owning fewer tests than it should, or an artifact never arriving, is not — and either
+  # leaves the run green while covering less than it claims. A unit test of the splitter cannot
+  # establish this, because the properties that matter (did every job collect the same suite? did
+  # all eight manifests arrive? did any test run twice?) are cross-process by construction.
+  shard-audit:
+    name: shard-audit
+    needs: [plan, test-ubuntu]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: manifest-*
+          merge-multiple: true
+          path: manifests
+      - name: The shards must partition the suite exactly
+        run: |
+          uv run python -m tools.shard_audit manifests \
+            --shards ${{ needs.plan.outputs.shards }} \
+            $(for v in ${{ needs.plan.outputs.pythons }}; do printf ' --python %s' "$v"; done)
+
+  # The 85% threshold, applied once per Python version against that version's whole suite.
+  #
+  # Per version, deliberately. `coverage combine` merges every `.coverage.*` it finds regardless
+  # of which interpreter produced it, so combining all three at once would silently collapse
+  # three independent 85% guarantees into one union number that is easier to satisfy than any of
+  # them. Isolating each version into its own directory and its own COVERAGE_FILE preserves
+  # exactly the contract the pre-shard matrix had.
+  coverage:
+    name: coverage
+    needs: [plan, test-ubuntu]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: databases
+      - name: Combine each Python version's shards and apply the threshold
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for version in ${{ needs.plan.outputs.pythons }}; do
+            mkdir -p "combined/$version"
+            files=("databases/.coverage.py$version.shard"*)
+            # The count assertion is the point. Without it, a failed upload just means fewer
+            # databases, and the combined result is still a VALID coverage database that can
+            # sit above 85% while most of the suite went unmeasured.
+            if [ "${#files[@]}" -ne "${{ needs.plan.outputs.shards }}" ]; then
+              echo "::error::py$version contributed ${#files[@]} coverage databases, expected ${{ needs.plan.outputs.shards }}"
+              exit 1
+            fi
+            cp "${files[@]}" "combined/$version/"
+            # COVERAGE_FILE must be named `.coverage`. `coverage combine <dir>` does NOT glob
+            # `.coverage.*` literally — it globs `<basename of COVERAGE_FILE>.*`. Naming this
+            # `.combined` made it look for `.combined.*`, match nothing, and report "No data to
+            # combine" even with all eight databases sitting in the directory.
+            export COVERAGE_FILE="combined/$version/.coverage"
+            uv run coverage combine "combined/$version"
+            echo "--- Python $version ---"
+            uv run coverage report --fail-under=85
+          done
 
   gitleaks:
     name: gitleaks
@@ -144,11 +351,94 @@ jobs:
             exit 1
           fi
 
+  # The ONE required status check. Branch protection names this job and nothing else, so the job
+  # graph above can be retuned — more shards, fewer shards, a new gate — without ever editing
+  # protection again.
+  #
+  # Three things make this non-vacuous, and all three are deliberate:
+  #
+  # 1. `always()`, so it runs even when a dependency failed. Without it the job would be SKIPPED
+  #    on failure, and GitHub counts a skipped required check as SUCCESS.
+  # 2. Results are inspected EXPLICITLY. `needs` alone is not enough — this must reject
+  #    `failure`, `cancelled` AND an unexpected `skipped`, because a job that never ran is not a
+  #    job that passed.
+  # 3. Expectations are derived from `github.event_name`, not from the results themselves.
+  #    GitHub exposes only success/failure/cancelled/skipped and never the REASON for a skip, so
+  #    "skipped because this event does not run macOS" is indistinguishable from "skipped because
+  #    its dependency failed" by inspection. The event is the only honest source for which jobs
+  #    were supposed to run.
+  #
+  # Two standing rules for anyone editing this file:
+  #   - Do NOT add an `if:` to this job beyond `always()`. A skipped required check reads as
+  #     success, so a condition here silently erases every gate at once.
+  #   - Do NOT add `continue-on-error` to any job listed in `needs`. It makes a failed job report
+  #     `success`, and this aggregate would faithfully believe it.
+  #
+  # `nightly-watch` is deliberately absent from `needs`: it is schedule-only, so it is `skipped`
+  # on every PR, and it is an alerter rather than a gate — nothing merges on a scheduled run.
+  # It depends on THIS job instead, so that it observes a complete run.
+  ci:
+    name: ci
+    if: always()
+    needs:
+      - plan
+      - test-ubuntu
+      - test-other-os
+      - lint
+      - type
+      - shard-audit
+      - coverage
+      - gitleaks
+      - perf
+      - generalization
+      - web-bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every gate must have run and passed
+        shell: bash
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+
+          results = {name: body["result"] for name, body in json.loads(os.environ["RESULTS"]).items()}
+          event = os.environ["EVENT"]
+
+          # macOS/Windows do not run on pull_request, by design (D-151 and the job's own comment).
+          # Everything else must run on every event.
+          expected_skipped = {"test-other-os"} if event == "pull_request" else set()
+
+          problems = []
+          for name, result in sorted(results.items()):
+              if name in expected_skipped:
+                  if result != "skipped":
+                      problems.append(f"{name}: expected 'skipped' on {event}, got {result!r}")
+              elif result != "success":
+                  problems.append(f"{name}: expected 'success', got {result!r}")
+
+          if problems:
+              print(f"::error::the {event} gate did not pass")
+              for problem in problems:
+                  print(f"  - {problem}")
+              sys.exit(1)
+
+          print(f"All {len(results)} gates passed for {event}.")
+          PY
+
   # The nightly is the ONLY build whose matrix contains Windows (D-151), and for three consecutive
   # days nothing read its result — so a deliberate CADENCE decision had quietly become an unnoticed
   # COVERAGE decision (D-211/D-212). This job is what reads it. Without a consumer, "CI is green"
-  # kept meaning the 9-job push matrix, which by construction contains zero Windows jobs and can
+  # kept meaning the push matrix, which by construction contains zero Windows jobs and can
   # never be evidence about them.
+  #
+  # It depends on `ci` rather than on the individual jobs, for two reasons: `ci` already names
+  # every gate, so this cannot drift out of date when a job is added; and because this job reads
+  # the run's job list from the API, starting before every gate finishes would let it read an
+  # incomplete list and miss a real nightly failure. There is no cycle, because `ci` deliberately
+  # excludes this job.
   #
   # Scoped to `schedule` on purpose: a `workflow_dispatch` run is somebody already investigating,
   # and filing an issue about a run you are watching is noise. It also CLOSES the issue when the
@@ -157,7 +447,7 @@ jobs:
   nightly-watch:
     name: nightly-watch
     if: ${{ always() && github.event_name == 'schedule' }}
-    needs: [test, gitleaks, perf, generalization, web-bundle]
+    needs: [ci]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -171,7 +461,7 @@ jobs:
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
 
             // Read the per-job conclusions from the API rather than from `needs`: `needs` collapses
-            // a 3-OS matrix into one result, and WHICH os/python failed is the whole diagnostic.
+            // a matrix into one result, and WHICH os/python/shard failed is the whole diagnostic.
             const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
               owner, repo, run_id: context.runId, per_page: 100,
             });
@@ -209,9 +499,9 @@ jobs:
               'Failed jobs:',
               ...failed.map((name) => `- \`${name}\``),
               '',
-              '**A push run cannot see this.** `ci.yml` builds the `os` matrix only for',
-              '`schedule` and `workflow_dispatch` (D-151), so a push is 9 jobs with zero Windows',
-              'while the nightly is 12. Reproduce on demand with',
+              '**A pull request run cannot see this.** `ci.yml` runs macOS only for `push`,',
+              '`schedule` and `workflow_dispatch`, and Windows only for the latter two (D-151),',
+              'so a PR carries zero macOS and zero Windows jobs. Reproduce on demand with',
               '`gh workflow run ci.yml --ref main` — budget ~1h05m for a Windows job.',
             ].join('\n');
 

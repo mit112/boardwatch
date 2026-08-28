@@ -102,3 +102,15 @@ markers = ["perf: performance smoke tests (dedicated CI job, excluded by default
 
 [tool.coverage.run]
 branch = true
+# `source` must be set HERE and not only via pytest's `--cov=boardwatch`: coverage.py reads it
+# from configuration when it resolves paths during reporting, which is what `relative_files`
+# below depends on. CI combines coverage databases produced by eight separate shard jobs, so the
+# paths recorded in them have to normalise to one another.
+source = ["boardwatch"]
+relative_files = true
+
+# Maps the two layouts the same file can be recorded under — the source tree locally, and the
+# installed package in a CI virtualenv — onto one path, so `coverage combine` treats them as the
+# same file instead of reporting each twice at half the coverage.
+[tool.coverage.paths]
+source = ["src/boardwatch", "*/site-packages/boardwatch"]
