@@ -77,6 +77,14 @@ export interface QueueCounts {
    * rather than silently dropped, so `in_queue` has no unexplained remainder.
    */
   ineligible: number;
+  /**
+   * Delivered leads held for a LOOK rather than blindly appliable — a foreign or unknown-and-
+   * unverified location, or a title the role gate will not positively call software. They ARE
+   * listed, under `QueueResponse.review`, and their folders sit in `_review` (D-332). Its own
+   * cell for the same reason `ineligible` has one: `in_queue` counts the apply lane, so without
+   * this the difference between it and the delivered set is an unexplained remainder.
+   */
+  review: number;
   applied_ever: number;
   skipped: number;
   delivered_last_run: number;
@@ -84,7 +92,20 @@ export interface QueueCounts {
 }
 
 export interface QueueResponse {
+  /**
+   * The APPLY lane: exactly what the top level of `~/boardwatch-queue` holds, and therefore a
+   * blind-apply list. Never contains a review lead or an ineligible one.
+   */
   rows: QueueRow[];
+  /**
+   * The REVIEW lane: exactly what `_review` holds. Listed, not hidden — a review lead is work to
+   * look at, unlike an ineligible one, which is excluded and only counted.
+   *
+   * Do NOT try to re-derive this from `off_target`. That flag is `not_swe` ONLY and never
+   * `uncertain`, so most review leads carry no flag at all; the lane is the server's answer and
+   * the only one that matches the folder tree.
+   */
+  review: QueueRow[];
   counts: QueueCounts;
 }
 

@@ -34,9 +34,25 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
   const [stashed, setStashed] = useState<QueueResponse | null>(null);
   const [newCount, setNewCount] = useState(0);
 
+  /*
+   * Collapsed by default, and that IS the feature: the top of the page has to be the list you can
+   * work through without re-deriving anything. Open is one click and the count is always visible,
+   * so the lane is never hidden — only folded.
+   */
+  const [reviewOpen, setReviewOpen] = useState(false);
+
   const [query, setQuery] = useState("");
   const [minScore, setMinScore] = useState("");
   const [sort, setSort] = useState<SortState>({ key: "rank", direction: "asc" });
+  /*
+   * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
+   * table silently re-ordered the apply list above it — a list the reader is working top-down and
+   * is not currently looking at, with no visible cue, because `#` prints the server rank rather
+   * than the display position. Query and score floor are still shared, deliberately: those
+   * express "what am I looking for", which spans both lanes, while sort expresses "how do I want
+   * THIS list arranged".
+   */
+  const [reviewSort, setReviewSort] = useState<SortState>({ key: "rank", direction: "asc" });
 
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<QueueDetail | null>(null);
@@ -47,7 +63,11 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
 
   const adopt = useCallback((response: QueueResponse) => {
     setData(response);
-    knownIds.current = new Set(response.rows.map((row) => row.posting_id));
+    // BOTH lanes. A lead that moves between them on a re-evaluation is not new, and counting it
+    // as new would put a permanent "N new" nag on the page that refreshing never clears.
+    knownIds.current = new Set(
+      [...response.rows, ...response.review].map((row) => row.posting_id),
+    );
     setStashed(null);
     setNewCount(0);
     setRemoved(new Map());
@@ -75,7 +95,9 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
     const timer = window.setInterval(() => {
       void getQueue()
         .then((response) => {
-          const fresh = response.rows.filter((row) => !knownIds.current.has(row.posting_id));
+          const fresh = [...response.rows, ...response.review].filter(
+            (row) => !knownIds.current.has(row.posting_id),
+          );
           if (fresh.length > 0) {
             setStashed(response);
             setNewCount(fresh.length);
@@ -116,6 +138,11 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
 
   const detailLoading = selected !== null && detail === null && detailError === null;
 
+  /*
+   * Rank is the array POSITION, and there are now two arrays — so each lane is ranked within
+   * itself, 1..n. Sharing one map across both would print a review lane starting at rank 380,
+   * which reads as "worse than everything above" when it is a different list entirely.
+   */
   const rankByPosting = useMemo(() => {
     const map = new Map<number, number>();
     (data?.rows ?? []).forEach((row, index) => {
@@ -123,6 +150,19 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
     });
     return map;
   }, [data]);
+
+  const reviewRankByPosting = useMemo(() => {
+    const map = new Map<number, number>();
+    (data?.review ?? []).forEach((row, index) => {
+      map.set(row.posting_id, index + 1);
+    });
+    return map;
+  }, [data]);
+
+  const reviewRankOf = useCallback(
+    (row: QueueRow) => reviewRankByPosting.get(row.posting_id) ?? 0,
+    [reviewRankByPosting],
+  );
 
   const rankOf = useCallback(
     (row: QueueRow) => rankByPosting.get(row.posting_id) ?? 0,
@@ -145,6 +185,28 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
 
   const visible = useMemo(() => sortRows(filtered, sort, rankOf), [filtered, sort, rankOf]);
 
+  /*
+   * The toolbar's search and score floor apply to BOTH lanes. A filter that silently skipped the
+   * review list would make it look empty for a query that matches, which is the worst version of
+   * this feature: a reader concludes there is nothing to review when there is.
+   */
+  const filteredReview = useMemo(() => {
+    const floor = minScore.trim() === "" ? null : Number(minScore);
+    return (data?.review ?? []).filter((row) => {
+      if (removed.has(row.posting_id)) return false;
+      if (!matchesQuery(row, query.trim())) return false;
+      if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
+        return false;
+      }
+      return true;
+    });
+  }, [data, removed, query, minScore]);
+
+  const visibleReview = useMemo(
+    () => sortRows(filteredReview, reviewSort, reviewRankOf),
+    [filteredReview, reviewSort, reviewRankOf],
+  );
+
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
     let skippedDelta = 0;
@@ -161,13 +223,17 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
       // contradict the server.
       ineligible: data?.counts.ineligible ?? 0,
+      // Recomputed against the active filter, unlike `ineligible`: a review lead IS in the
+      // payload, so a client-side filter can see one and the cell must agree with the list the
+      // reader is looking at.
+      review: filteredReview.length,
       applied_ever: (data?.counts.applied_ever ?? 0) + appliedDelta,
       skipped: (data?.counts.skipped ?? 0) + skippedDelta,
       // Run-scoped facts, not filter-scoped: they come from the server unchanged.
       delivered_last_run: data?.counts.delivered_last_run ?? 0,
       last_run_finished: data?.counts.last_run_finished ?? null,
     };
-  }, [filtered, removed, data]);
+  }, [filtered, filteredReview, removed, data]);
 
   const restore = useCallback((postingId: number) => {
     setCollapsing((current) => {
@@ -241,12 +307,17 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
     [push, restore, selected],
   );
 
+  const nextSort = (current: SortState, key: SortKey): SortState =>
+    current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" };
+
   const onSort = useCallback((key: SortKey) => {
-    setSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" },
-    );
+    setSort((current) => nextSort(current, key));
+  }, []);
+
+  const onReviewSort = useCallback((key: SortKey) => {
+    setReviewSort((current) => nextSort(current, key));
   }, []);
 
   if (loadError !== null) {
@@ -297,10 +368,21 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
         }
       >
         <div className="min-w-0">
-          {data.rows.length === 0 ? (
+          {/*
+            * BOTH lanes, because `rows` is now the apply lane alone. With every delivered lead in
+            * review this said "the queue is empty … this is not a filter result" directly above a
+            * populated review section — and both halves were false: leads WERE delivered, and the
+            * reason they are not above is the lane split.
+            */}
+          {data.rows.length === 0 && data.review.length === 0 ? (
             <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
               The queue is empty. A run has to deliver a tailored lead before anything appears
               here — this is not a filter result.
+            </p>
+          ) : data.rows.length === 0 ? (
+            <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
+              Nothing is blindly appliable right now. Every delivered lead is in the review
+              section below — that is a lane split, not an empty run.
             </p>
           ) : (
             <QueueTable
@@ -326,6 +408,83 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
                 act(row, "skipped");
               }}
             />
+          )}
+
+          {data.review.length === 0 ? null : (
+            <section aria-labelledby="review-heading" className="mt-8">
+              <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-divider pt-6">
+                <h2 id="review-heading" className="text-sm text-fg">
+                  Review
+                </h2>
+                <span className="text-sm text-fg-2 tabular-nums">
+                  {visibleReview.length.toLocaleString()}
+                  {visibleReview.length === data.review.length
+                    ? ""
+                    : ` of ${data.review.length.toLocaleString()}`}
+                </span>
+                <button
+                  type="button"
+                  aria-expanded={reviewOpen}
+                  aria-controls="review-list"
+                  onClick={() => {
+                    setReviewOpen((open) => !open);
+                  }}
+                  className="min-h-11 rounded px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
+                >
+                  {reviewOpen ? "hide" : "show"}
+                </button>
+                {/*
+                  * Says what the lane IS, not what is wrong with it. These leads were not
+                  * rejected — the gate declined to vouch for them, which is a different claim,
+                  * and calling them "off target" here would assert the decision it declined to
+                  * make. The folder path is named because the two must stay legible as the same
+                  * split; if they ever disagree, the folder tree wins.
+                  */}
+                <p className="w-full text-sm text-fg-2">
+                  Open these before applying. Each one is either outside the US, or carries a
+                  title the role gate will not positively call software — so it is not
+                  blindly appliable. Same split as the{" "}
+                  <code className="text-fg-3">_review</code> folder.
+                </p>
+              </header>
+
+              {/*
+                * The container stays MOUNTED and is emptied instead of being unmounted, so
+                * `aria-controls="review-list"` resolves in the collapsed state — which is the
+                * default, and therefore the state a screen reader meets first. Unmounting it left
+                * a dangling IDREF that AT drops silently. The ROWS are still not rendered while
+                * collapsed, so nothing is paid for the leads themselves.
+                */}
+              <div id="review-list" className={reviewOpen ? "mt-4" : undefined}>
+                {!reviewOpen ? null : visibleReview.length === 0 ? (
+                    <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
+                      No review lead matches the current filter. There are{" "}
+                      {data.review.length.toLocaleString()} in the lane.
+                    </p>
+                ) : (
+                    <QueueTable
+                      rows={visibleReview}
+                      rankOf={reviewRankOf}
+                      sort={reviewSort}
+                      onSort={onReviewSort}
+                      selectedId={selected}
+                      collapsing={collapsing}
+                      onSelect={(row) => {
+                        if (row.posting_id === selected) return;
+                        setSelected(row.posting_id);
+                        setDetail(null);
+                        setDetailError(null);
+                      }}
+                      onApplied={(row) => {
+                        act(row, "applied");
+                      }}
+                      onSkip={(row) => {
+                        act(row, "skipped");
+                      }}
+                  />
+                )}
+              </div>
+            </section>
           )}
         </div>
 

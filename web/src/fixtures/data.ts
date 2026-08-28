@@ -319,7 +319,14 @@ const COMPANIES = [
   "KLA", "Synopsys", "Cadence", "Arm", "SiFive", "Groq", "Lambda", "Together AI",
 ];
 
-const TITLES: { title: string; offTarget: string | null }[] = [
+/*
+ * `review` is the D-332 lane, and it is DELIBERATELY not the same question as `offTarget`. The
+ * role gate demotes anything it will not positively call software, while `off_target` is set for
+ * `not_swe` ALONE — so a role-`uncertain` title sits in the review lane wearing no badge. The
+ * "Data Engineer, Analytics" row below is exactly that case, and it exists so the fixture shows
+ * an unbadged review lead rather than implying the badge and the lane agree.
+ */
+const TITLES: { title: string; offTarget: string | null; review?: boolean }[] = [
   { title: "Software Engineer, Backend", offTarget: null },
   { title: "Software Engineer, Frontend", offTarget: null },
   { title: "Software Engineer, Infrastructure", offTarget: null },
@@ -332,16 +339,20 @@ const TITLES: { title: string; offTarget: string | null }[] = [
   { title: "Full Stack Engineer", offTarget: null },
   { title: "Embedded Software Engineer", offTarget: null },
   { title: "Test Engineer, Silicon", offTarget: null },
+  { title: "Data Engineer, Analytics", offTarget: null, review: true },
   {
     title: "Technical Program Manager, Infrastructure",
+    review: true,
     offTarget: 'role gate: title family "program manager" is denied (matched "Program Manager")',
   },
   {
     title: "Solutions Architect, Data Platform",
+    review: true,
     offTarget: 'role gate: title family "architect" is denied (matched "Solutions Architect")',
   },
   {
     title: "Systems Administrator, Build Infrastructure",
+    review: true,
     offTarget: 'role gate: title family "administrator" is denied (matched "Administrator")',
   },
 ];
@@ -407,6 +418,15 @@ function generate(count: number, seed: number, idBase: number): QueueRow[] {
   }
   return rows;
 }
+
+/**
+ * Titles the D-332 lane holds for review. Exported as a title set because `generate` returns bare
+ * `QueueRow`s and the wire carries no per-row lane field — the server answers the question by
+ * WHICH LIST a row arrives in, so the fixture has to answer it the same way.
+ */
+export const REVIEW_TITLES: ReadonlySet<string> = new Set(
+  TITLES.filter((spec) => spec.review === true).map((spec) => spec.title),
+);
 
 /** Ranked, as the contract promises: score descending, unscored last. */
 export function byRank(a: QueueRow, b: QueueRow): number {

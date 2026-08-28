@@ -73,6 +73,7 @@ from boardwatch.delivery.answers import (
 )
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
+from boardwatch.delivery.review_gate import lane
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
@@ -178,11 +179,17 @@ class PdfFile:
 
 
 def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
-    """`GET /api/queue`: every delivered, unapplied, unskipped, non-ineligible lead, ranked now.
+    """`GET /api/queue`: every delivered, unapplied, unskipped, non-ineligible lead, ranked now,
+    split into the APPLY lane (`rows`) and the REVIEW lane (`review`).
 
-    Ineligible leads are excluded from `rows` and reported in `counts.ineligible` instead. Their
+    The split is `delivery.review_gate.lane`, the same single definition the folder tree uses
+    (D-332), so `rows` holds exactly what `~/boardwatch-queue`'s top level holds and `review`
+    holds exactly what `_review` holds. `rows` is therefore a blind-apply list and says so.
+
+    Ineligible leads are excluded from BOTH and reported in `counts.ineligible` instead. Their
     folders drain to `_ineligible`, so listing them here would make the page and the folder tree
-    disagree about the same lead.
+    disagree about the same lead. A review lead is the opposite case and is NOT excluded: it is
+    work to look at, so it is listed under its own key rather than hidden.
 
     Ranked here rather than in the store because the score is not persisted (design §6.2). The
     sort is stable, so leads that score equally — and every lead when there is no profile to score
@@ -194,19 +201,34 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # not list it either, or the folder tree and the page disagree about the same lead. It is
     # COUNTED though — see `_counts`. Silently dropping rows from a report is the failure this
     # repository treats an unreported abstain as.
-    rows = [row for row in every if row.verdict != "ineligible"]
-    drained = len(every) - len(rows)
-    facts = _live_facts(conn, ctx, rows)
-    ordered = sorted(
-        rows,
-        key=lambda row: (
-            facts[row.posting_id].score is None,
-            -(facts[row.posting_id].score or 0.0),
-        ),
+    kept = [row for row in every if row.verdict != "ineligible"]
+    drained = len(every) - len(kept)
+    facts = _live_facts(conn, ctx, kept)
+
+    def rank_key(row: QueueRow) -> tuple[bool, float]:
+        return (facts[row.posting_id].score is None, -(facts[row.posting_id].score or 0.0))
+
+    # The SAME split the folder tree uses, from the SAME function (D-332). Calling
+    # `review_gate.lane` rather than re-deriving "is this appliable" here is the whole point: a
+    # second opinion in this module is how the page and the drain start disagreeing about one
+    # lead, which is the defect `_ineligible` and `_review` both exist to prevent.
+    apply_rows = sorted(
+        (r for r in kept if lane(verdict=r.verdict, locations=r.locations, title=r.title) == ""),
+        key=rank_key,
+    )
+    review_rows = sorted(
+        (r for r in kept if lane(verdict=r.verdict, locations=r.locations, title=r.title) != ""),
+        key=rank_key,
     )
     return {
-        "rows": [_row_json(row, facts[row.posting_id], ctx) for row in ordered],
-        "counts": _counts(conn, ordered, ineligible=drained),
+        "rows": [_row_json(row, facts[row.posting_id], ctx) for row in apply_rows],
+        # Its own list, NOT an exclusion. These leads are real work — they are held for a look
+        # rather than blind-applied — so dropping them from the payload would hide ~30% of the
+        # delivered set behind a folder the page never mentions. `off_target` cannot stand in for
+        # this: it is `not_swe` ONLY, never `uncertain` (see this module's docstring), so most
+        # review leads carry no flag at all and were previously indistinguishable on the page.
+        "review": [_row_json(row, facts[row.posting_id], ctx) for row in review_rows],
+        "counts": _counts(conn, apply_rows, ineligible=drained, review=len(review_rows)),
         # A capability flag, not a preference: the button is hidden where the platform has no
         # file-manager handler, because a control that can only fail is worse than no control.
         "meta": {"reveal_supported": reveal_supported(ctx.platform)},
@@ -330,9 +352,13 @@ def _coverage_entry(term: str, *, covered: bool) -> dict[str, Any]:
 
 
 def _counts(
-    conn: Connection, rows: Sequence[QueueRow], *, ineligible: int = 0
+    conn: Connection, rows: Sequence[QueueRow], *, ineligible: int = 0, review: int = 0
 ) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
+
+    `rows` here is the APPLY lane, so `in_queue` counts what is blindly appliable; `review` and
+    `ineligible` are passed in because neither is in `rows` and both would otherwise be an
+    unexplained remainder between `in_queue` and the delivered set.
 
     That is the same rule the repository applies to every other report: an abstain is never folded
     into either neighbour, and a page is a report. `eligible` is the affirmatively-eligible count
@@ -350,6 +376,10 @@ def _counts(
         # remainder. `in_queue` counts the work list, which excludes these, so the band now
         # reconciles: in_queue == eligible + uncertain + (rows with no verdict yet).
         "ineligible": ineligible,
+        # Held for a look, not rejected and not blind-appliable. Its own cell for the same reason
+        # `ineligible` has one: `in_queue` counts the apply lane, so without this the difference
+        # between the apply lane and the delivered set is an unexplained remainder.
+        "review": review,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
         "delivered_last_run": (

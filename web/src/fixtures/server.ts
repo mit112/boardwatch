@@ -12,7 +12,7 @@
  */
 import type { QueueCounts, QueueResponse, QueueRow } from "../api/types";
 import { ANSWERS } from "./answers";
-import { LATE_ROWS, QUEUE_ROWS, byRank, detailFor } from "./data";
+import { LATE_ROWS, QUEUE_ROWS, REVIEW_TITLES, byRank, detailFor } from "./data";
 import { FUNNELS, RUNS } from "./runs";
 
 const HOLD_MS = 30_000;
@@ -44,6 +44,32 @@ function visibleRows(): QueueRow[] {
   );
 }
 
+/*
+ * The D-332 lane split, mirroring the server: `rows` is the APPLY lane and `review` is a SECOND
+ * LIST, not an exclusion. The real split is `review_gate.lane`, which reads the raw location list
+ * and the role gate; the fixture has neither, so it keys off the authored title set instead —
+ * which is why `REVIEW_TITLES` is authored rather than derived from `off_target`. Deriving it
+ * from the badge would have made the fixture agree with a claim that is FALSE on the wire, that
+ * a review lead is a badged lead.
+ */
+function isReviewLane(row: QueueRow): boolean {
+  // `off_target` is `facts.role == "not_swe"`, and `lane()` demotes anything the role gate will
+  // not positively call `swe` — so on the real wire a non-ineligible off-target lead is ALWAYS in
+  // review. Without this clause the AUTHORED "Data Analyst, Growth" row (off_target, uncertain)
+  // sat in the apply lane, which the wire cannot produce: the fixture would have been showing a
+  // badged lead inside the list `types.ts` calls a blind-apply list. `REVIEW_TITLES` still carries
+  // the case the badge CANNOT express — a role-`uncertain` title, in review wearing no flag.
+  return row.off_target || REVIEW_TITLES.has(row.title);
+}
+
+function applyRows(): QueueRow[] {
+  return visibleRows().filter((row) => !isReviewLane(row));
+}
+
+function reviewRows(): QueueRow[] {
+  return visibleRows().filter(isReviewLane);
+}
+
 /** Counted from the pool, the way the server counts before filtering — never a constant. */
 function ineligibleCount(): number {
   return pool().filter(
@@ -63,6 +89,10 @@ function counts(rows: QueueRow[]): QueueCounts {
     uncertain: rows.filter((row) => row.verdict === "uncertain").length,
     // Drained, not listed: `rows` never carries an ineligible lead, so this counts the pool.
     ineligible: ineligibleCount(),
+    // Listed under `review`, not dropped — so unlike `ineligible` this counts a list the reader
+    // can actually open. `in_queue` above is the apply lane alone, so the two together account
+    // for every delivered lead.
+    review: reviewRows().length,
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     delivered_last_run: rows.filter((row) => row.delivered_run_id === (lastRun?.id ?? -1)).length,
@@ -79,8 +109,10 @@ export class FixtureError extends Error {
 }
 
 function queueResponse(): QueueResponse {
-  const rows = visibleRows();
-  return { rows, counts: counts(rows) };
+  const rows = applyRows();
+  // `counts` is computed over the APPLY lane, exactly as the server does: `in_queue`,
+  // `eligible` and `uncertain` describe what is blindly appliable, and `review` is its own cell.
+  return { rows, review: reviewRows(), counts: counts(rows) };
 }
 
 function findRow(postingId: number): QueueRow {
