@@ -252,6 +252,37 @@ def test_or_coordinating_fields_of_study_does_not_abstain_a_years_bar(catalog) -
     assert all(d.abstained is None for d in dets)  # ...and decided, never abstained
 
 
+def test_a_possessive_years_apostrophe_still_states_a_floor(catalog) -> None:
+    """"5 years' experience" is a common formal phrasing of a floor. The `\\b` after `years`
+    sat immediately before the apostrophe, so the `\\s+experience` connective never reached
+    across it and the floor was silently lost — `eligible` by silence, the worst direction."""
+    ids = _ids(detect("5 years' experience is required.", catalog, enabled_families=ALL))
+    assert "total_years_minimum" in ids
+
+
+def test_a_qualifier_before_a_multiword_scope_is_detected(catalog) -> None:
+    """"5+ years of demonstrated full stack development experience" is a real floor. Until the
+    experience-qualifier vocabulary grew, "demonstrated" was neither a whitelisted adjective
+    nor consumable inside the scoped-noun window, so four words sat between `of` and
+    `experience` and no floor pattern fired at all."""
+    ids = _ids(detect(
+        "5+ years of demonstrated full stack development experience is required.",
+        catalog, enabled_families=ALL,
+    ))
+    assert "scoped_years_minimum" in ids
+
+
+def test_an_age_requirement_never_reads_as_an_experience_floor(catalog) -> None:
+    """REGRESSION LOCK for the widened vocabulary. "18 years of age" is a legal-age bar, not
+    an experience floor; the scoped-noun arm excludes `age`/`old` as a leading token so no
+    following clause is pulled into a spurious years bar. The real 5-year floor in the next
+    sentence is the positive control — the guard must not silence a genuine floor."""
+    body = "Must be at least 18 years of age. 5 years of professional experience is required."
+    ids = _ids(detect(body, catalog, enabled_families=ALL))
+    assert ids.count("total_years_minimum") == 1  # the real floor, detected once
+    assert "scoped_years_minimum" not in ids  # nothing spurious from "years of age"
+
+
 # ---------------------------------------------------------------- scoping and ordering
 
 def test_an_ignored_family_is_never_matched(catalog) -> None:
