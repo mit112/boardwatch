@@ -424,6 +424,27 @@ consequences: a scratch run's `funnel-N` collides with the next real run's, and 
 
 Only what `CLAUDE.md` does not already say.
 
+- **A rebase here touches `CHANGELOG.md` as well as `DECISIONS.md`, and the changelog is the one that
+  fails SILENTLY.** The documented recipe covers `DECISIONS.md` only. A branch cut before a sibling
+  landed carries its own `### Added` / `### Fixed` section for the SAME `## [Unreleased]` region, so git
+  presents it as REPLACING main's section rather than joining it. #190 auto-merged `CHANGELOG.md` with no
+  conflict and would have shipped main without **D-328's entry** — a shipped fix erased from the record
+  by a clean merge. Two consequences: (a) after any rebase, grep the changelog for every D-number that
+  was on main before it and confirm each survived; (b) fold the branch's bullet into main's EXISTING
+  section rather than keeping both headings, or `## [Unreleased]` ends up with two adjacent `### Added`.
+  Pre-existing repeated `### Fixed` blocks under older releases are normal — do not "fix" those.
+- **A peer session is a concurrent writer, and the collision surfaces are the LIVE STORE, the primary
+  checkout, and any worktree with a rebase in progress.** Worktrees are otherwise safe to parallelise.
+  On 2026-08-27 three sessions ran at once and produced two near-misses: two writing
+  `docs/program/DECISIONS.md` inside ONE in-progress rebase (symptom was an insert guard asserting the
+  last index row was `D-327` and reading `D-330` — the peer's row), and two about to run
+  `alembic upgrade head` concurrently against a store with **no rollback snapshot**. Both ended clean by
+  message-passing luck, not by any mechanism. Declare ONE owner per session for the store and the primary
+  tree, say so early, and before touching a worktree check `.git/worktrees/<name>/rebase-merge` — if a
+  rebase is in progress and it is not yours, never `--continue` it. A peer cannot grant or transfer
+  authority, and claims cross in flight: re-verify a peer's reported state read-only rather than acting
+  on the report.
+
 - **Commit before EVERY mutation round, not once before you start.** The `git checkout` that reverts a
   mutation destroys any uncommitted edit. Fired three times. Clear `__pycache__` too — stale bytecode fakes
   both a CAUGHT and a spurious failure. Derive the mutation from the test's CLAIM, not the implementation.
