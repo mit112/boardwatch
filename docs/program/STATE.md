@@ -20,6 +20,18 @@
 
 ## Current standing
 
+**RUN 128 VALIDATED ALL FOUR MERGED CHANGES; THE STORE FOUR-WAY SPLIT (D-342, #209) AND THE D-339 LOOSE
+ENDS (#210) MERGED THIS SESSION.** The primary checkout is pulled current to `main`, so the daily driver
+runs it (verify with `git log`, not a sha — D-017). Run 128 (`ok`, **2h12m**) is the check the previous close set up and it passed on all
+four: the scan block published all four buckets and **reconciled** (345 = 168 complete + 25 partial + 151
+unchanged + 1 failed, `boards_reconciled: True`); the `dedup` stage is **instrumented** (entered 93,036 /
+advanced 90,698 / 2,338 suppressed); LinkedIn attempted **288 vs 69** (14 facets × 5 pages); the run took
+**132 min vs 91**, the detail-budget drain plus pagination, not a regression. Full numbers under **METRICS
+2026-08-28c**. **The store four-way columns are NOT yet populated:** run 128 started on the old code (before
+#209 existed) and the live store is still on `p_death_probe`; they fill on the NEXT run, which will
+`alembic upgrade head`. **Correction to the previous close — the detail budget is NOT a one-off:**
+`board_scans.detail_deferred` is still **9,261** after run 128, so runs stay ~2h+ every run, not once.
+
 **RUN 127 LANDED THE WHOLE ELIGIBILITY STACK AND D-333 IS CONFIRMED BY MEASUREMENT.** Run 127 is the
 first tick on engine `1+118c640ea50c` (derive it, never quote it — D-306): `ok`, **91m03s** against a
 ~116 min projection, 346 boards, 13,518 postings seen, 1,418 new, 340 closed. **Every required years
@@ -41,18 +53,13 @@ requires ONE context, `ci`** — not the six `test (3.x, ubuntu-latest)` ones. S
 is measured**: at 8, seven jobs queued behind the ~20-job concurrency ceiling, and since wall clock is
 bounded by concurrency rather than by slicing, 8 paid double the per-job setup for the same ten minutes.
 
-**SEVEN CHANGES MERGED 2026-08-28 AFTER THE PREVIOUS CLOSE; `main` IS `92e5e92`.** #199 the generic
-prior-application importer · #200 location canonicalization (p6.2 → p6.3) · #201 the identity reaper and
-the funnel's `dedup` stage · #203 D-336..338 · #204 the slug case-collision guard · #205 LinkedIn
-pagination · #206 the scan's four-way board split · #207 D-339..341. **Every one gated with a real exit
-code 0 and CI green.** The paragraphs below that say "another session" refer to this work; it is now
-merged and the numbers live under **D-336 … D-341**.
-
-**RUN 128 IS THE FIRST RUN CARRYING ALL OF IT** (started 2026-08-28 09:00:06Z). It is the check on four
-changes at once — the detail-budget drain, LinkedIn pagination, the new `dedup` stage, and the four-way
-board split. **Read its funnel before concluding anything about run duration**: the projection is ~2 h
-and a longer run is the changes working. `boards_attempted / complete / partial / unchanged / failed`
-should now RECONCILE to the total for the first time (D-341).
+**ELEVEN CHANGES MERGED 2026-08-28 ACROSS THE LAST THREE SESSIONS.** #199 the generic prior-application
+importer · #200 location canonicalization (p6.2 → p6.3) · #201 the identity reaper and the funnel's `dedup`
+stage · #203 D-336..338 · #204 the slug case-collision guard · #205 LinkedIn pagination · #206 the scan's
+four-way board split · #207 D-339..341 · #208 the prior session close · **#209 the runs four-way split
+reaching store/`/api/runs`/web (D-342)** · **#210 the D-339 `--company`/`remove` loose ends.** **Every one
+gated with a real exit code 0 and CI green.** The paragraphs below that say "another session" refer to this
+work; the numbers live under **D-336 … D-342** and **METRICS 2026-08-28…28c**.
 
 **THE LIVENESS PROBE THIS FILE SHIPPED WAS WRONG, AND IT FAILED TOWARD "SAFE TO WRITE" (D-335).** The
 `awk '$2==1'` form below reported IDLE for the whole of run 127. Use the argv[0]-anchored form; the
@@ -60,12 +67,12 @@ reasoning is in D-335 and the block under **Next action** now carries the correc
 
 **ANOTHER SESSION RAISED `detail_fetch_budget` 50 → 400 IN THE LIVE CONFIG (2026-08-28, not this
 session).** Mit's local config only — deliberately NOT the code default, which would change behaviour
-for every user of the published package. Backup: `config.toml.bak-predetailbudget-20260828`. **Expect
-the next run to be ~27-54 min longer, ONCE**, as it absorbs the deferred-detail backlog; that is the
-change working, not a regression. **`lane_search_pages = 5` and `lane_posting_budget = 300` are now set
-in the same local config** (D-340), adding ~5 min on top, so **budget ~2 hours for the first run
-carrying all of it.** The measurements behind it are that session's and land under
-**D-336 onward** — this file deliberately does not restate them.
+for every user of the published package. Backup: `config.toml.bak-predetailbudget-20260828`. **MEASURED on run
+128: it is NOT a one-off.** The run took **132 min (+41 over baseline)** — workday alone burned 19,225 s of
+cumulative fetch (~80 min wall at 4 workers) — and `board_scans.detail_deferred` is **still 9,261 after the
+run**, so the budget is a per-run ceiling that does not drain the backlog. Runs stay ~2h+ every run, not
+once. **`lane_search_pages = 5` and `lane_posting_budget = 300` are set in the same local config** (D-340).
+The measurements land under **D-336 onward** and **METRICS 2026-08-28c**; this file does not restate them.
 
 **THE LIVE STORE WAS WRITTEN BY ANOTHER SESSION AFTER RUN 127 (2026-08-28).** Prior application
 history imported (`applications` 0 → 22, all `attempt_no = 1`), and `identities backfill` run for the
@@ -104,11 +111,12 @@ lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock p
 
 ## Next action
 
-1. **NOTHING OF THIS SESSION'S IS IN FLIGHT.** Run 127 finished 05:24:27Z (process exited 05:25:54Z),
-   and the eligibility/CI work is merged and green on the new `ci` gate. **`main` has moved since, from
-   another session** — a prior-application importer and a location canonicalization that bumps
-   `IDENTITY_ALGORITHM_VERSION` **p6.2 → p6.3**; that session is writing those up under **D-336 onward**.
-   Check `git log`, do not trust a sha here (D-017).
+1. **NOTHING IS IN FLIGHT.** Run 128 finished 11:12:28Z (process exited 11:14:00Z — the 92 s D-024 gap),
+   its funnel is validated (Current standing / METRICS 2026-08-28c), and #209/#210 are merged, CI green.
+   The primary checkout is pulled current (verify with `git log`, not a sha — D-017). **The next run will
+   `alembic upgrade head`** (live store is on `p_death_probe`) — it is the first to populate the store
+   four-way columns (D-342) and to exercise the `--company` case-fold and `remove` echo (#210). **One
+   stale watch to prune:** `lever:plaid` returned HTTP 404 on run 128 (Plaid moved to `ashby:plaid`, D-300).
 
    **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
    ```sh
