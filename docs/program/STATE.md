@@ -48,9 +48,13 @@ U.S. citizenship"*. They drain themselves via D-321's `_ineligible` filter. `eng
 **THE WHOLE STACK IS MERGED; THE ENGINE MOVES ON THE NEXT PULL, ONCE.** #183 (D-323, lead locations + artifact v7) ·
 #184 (D-326, clearance-obtainability + field-of-study facts) · #185 (D-327, the near-duplicate
 measurement and the refused reversal) · #186 (D-324, `unverifiable` status) · #187 (D-325, measured-death
-close) · the degree-bridge fix (D-328). **`engine_version` moves the moment the primary tree is pulled** —
-it is DERIVED from the digested modules, so quote `doctor`, never a pinned constant (D-306). The live
-store is still on `1+af3a746837b1` because the tree is deliberately unpulled.
+close) · the degree-bridge fix (D-328). **`engine_version` is DERIVED from the digested
+modules, so quote `doctor`, never a pinned constant (D-306). THIS ALREADY HAPPENED — the tree was
+pulled and the store moved to `1+7485e3a85f38` at ~22:52Z; see the owner-facts paragraph below.** The
+earlier "still on `1+af3a746837b1`, tree deliberately unpulled" reading is STALE and is corrected here
+because D-332's central evidence depends on the opposite: every stored verdict went blank on that move,
+which is why a mid-run-126 snapshot reads 668 rows of `verdict = None` rather than being a broken
+measurement.
 
 **THE THREE OWNER FACTS ARE APPLIED, AND THE STORE IS ON THE NEW ENGINE (2026-08-27 ~22:52Z).**
 `security_clearance.obtainable=false`, `field_of_study=software_engineering`,
@@ -142,7 +146,11 @@ remote is most of the SWE set. Measured read-only mid-run-126: **668 rows → 46
 which **198 are non-software titles** and 6 confirmed non-US. That same snapshot showed **all 668 rows at
 `verdict = None`** (every evaluation staled on the engine move), which is why `None` routes like
 `uncertain` — the alternative empties the whole queue. **No engine change, no migration, no drain.**
-**The web page is NOT filtered — Phase 1b, owner-gated** (see below).
+**The web page is NOT filtered, and the split-brain is WIDER than "unfiltered" suggests — Phase 1b,
+owner-gated** (see below). `api.py:248` sets `off_target = facts.role == "not_swe"` and the module
+docstring is explicit that **`off_target` is `not_swe` only, never `uncertain`** — so a review lead
+demoted for a role-`uncertain` title (no role signal at all) or for a confirmed non-US location renders
+on the page with `off_target: false` and **no marker whatsoever**.
 
 **`DEFAULT_TOP_N` is 10 — a HOLDING value until the precision work lands (D-293).** Do **not** raise it
 before the precision work is merged, and do **not** set it to 0 (that fails B1 outright while Gate P3's
@@ -181,9 +189,13 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
    process gone at 22:51:40 — **92 seconds of work after the table read `ok`.**
 
 2. **#192 (D-332, the apply/review queue split) is the one thing open**, on
-   `feat/apply-review-queue-split`, rebased on `main` `86da8cd`, auto-merge armed (squash). The earlier
+   `feat/apply-review-queue-split`, auto-merge armed (squash). **It is based on `4e0c95b`, NOT on
+   current `main` `86da8cd`** — `main` moved under it when #191 landed at 01:08:54Z. No rebase is
+   required and that is luck, not design: #192 touches no file #191 touched, and GitHub squash-merges
+   against `main`'s head regardless. Verify with `git merge-base origin/feat/apply-review-queue-split
+   origin/main` before assuming otherwise. The earlier
    stack all landed: #185 (D-327) 22:42Z, #190 (D-330) 23:13Z, #188 (STATE/METRICS/STANDING-FACTS)
-   23:52Z, #191 (D-329/D-331) . **Read CI job conclusions from
+   23:52Z, #191 (the live write, the 92-second guard, the drained queue) 01:08:54Z. **Read CI job conclusions from
    `gh api repos/mit112/boardwatch/actions/runs/<id>/jobs`, not `gh pr checks`** — the latter has
    misreported on this repo. Two rebase traps were paid for and now live in `STANDING-FACTS.md`
    § Process lessons — the silent `CHANGELOG.md` one is the dangerous half.
@@ -215,12 +227,17 @@ working material — re-derive if pruned.)*
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-8. **Phase 1b — whether the WEB page follows the queue split (D-332).** The folder tree now holds review
-   leads in `_review`, but `api.py::queue_payload` still LISTS uncertain/not-swe leads flagged
-   `off_target`, which is the documented **"uncertain is not a veto"** design. Filtering them out reverses
-   that design and needs a review SECTION in the React UI plus a bundle rebuild (`make web`, commit both).
-   **Do not silently exclude review leads from `queue_payload`** — that drops ~204 leads off the page with
-   nowhere for the owner to see them. Mit's call: filter + section, keep as-is, or a third framing.
+8. **Phase 1b — whether the WEB page follows the queue split (D-332). DEFERRED by the owner 2026-08-28;
+   raise it again before touching `queue_payload`, do not act on it unilaterally.** The folder tree now
+   holds review leads in `_review`, but `api.py::queue_payload` still lists them. **State the gap
+   precisely, because "they show up flagged `off_target`" is WRONG:** `api.py:248` is
+   `off_target = facts.role == "not_swe"`, and the docstring says outright that `off_target` is
+   `not_swe` only, **never `uncertain`** — deliberately, because "uncertain is not a veto" and badging it
+   would assert a decision the gate declined to make. So of the ~204 review-lane leads, only the
+   `not_swe` ones carry any marker; a role-`uncertain` title or a confirmed non-US location renders
+   **completely unmarked**. Filtering reverses that design and needs a review SECTION in the React UI
+   plus a bundle rebuild (`make web`, commit both). **Do not silently exclude review leads from
+   `queue_payload`** — that drops ~204 leads off the page with nowhere for the owner to see them.
 
 ## Open questions — Mit's, not to be resolved by fiat
 

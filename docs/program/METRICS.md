@@ -7644,7 +7644,10 @@ structural and recurs every run: the funnel and morning artifacts are emitted fr
 run row closes (D-024). Confirmed independently by two sessions on two different signals — process
 liveness and artifact mtimes.
 
-**Consequence:** the pre-write guard is `pgrep -f "boardwatch run"`, never `SELECT status FROM runs`.
+**Consequence:** the pre-write guard is `pgrep -f "bin/boardwatch run"`, never
+`SELECT status FROM runs`. **Match `bin/boardwatch run`, not the bare `boardwatch run`** — `pgrep -f`
+reads full command lines, so the bare pattern also matches the probing shell itself and reports a
+phantom PID, which blocks a session forever on a run that already exited (hit 2026-08-28; D-332).
 The handoff prescribed the DB query; had a stale `.git/index.lock` (zero bytes, 12:01, unrelated) not
 blocked the pull, the sequence would have swapped code under a live run and written the profile against
 a profile that run had already snapshotted — the exact straddle the deferral existed to prevent.
@@ -7656,8 +7659,7 @@ a profile that run had already snapshotted — the exact straddle the deferral e
 | #185 | D-327 near-duplicate measurement | 22:42:40Z |
 | #190 | D-330 fetch timing | 23:13:48Z |
 | #188 | STATE/METRICS/STANDING-FACTS, D-329/D-331 | 23:52:18Z |
-
-| #191 | D-329/D-331 live-write, the 92-second guard, drained queue | 01:08:54Z (`86da8cd`) |
+| #191 | The live write, the 92-second guard, the drained queue | 01:08:54Z (`86da8cd`) |
 | #192 | **D-332 apply/review queue split** | auto-merge armed, awaiting CI |
 
 **`main` at `86da8cd`; #192 is the one PR open.** #190's rebase was verified at the destination, not just locally:
@@ -7677,6 +7679,25 @@ against the **~124 min projection**, and the first real per-provider `scan.fetch
 rests on an **assumption** — that run 119's surcharge scales linearly in corpus size — which is worth
 stating because it is what would be wrong if 126 overruns.
 
+
+### Queue composition before the split (D-332, #192)
+
+Measured read-only during the 2026-08-27 precision audit, on the store as run **119** left it —
+**OLD engine `1+af3a746837b1`**, before the 22:52Z owner facts. Recorded here because D-332's Context
+leans on it and it can no longer be re-derived: the engine move blanked every stored verdict.
+
+| quantity | value |
+|---|---|
+| delivered, unapplied, unskipped rows | **383** |
+| …`eligible` | **27 (7.0%)** |
+| …`uncertain` | **314 (82.0%)** |
+| …remainder (`None`) | 42 |
+
+**82% `uncertain` is the number that motivated the split.** A lead is `uncertain` precisely because a
+ranker gate failed open on it, so the blind-apply surface was mostly leads the system had declined to
+vouch for. Same audit, reject side: 27,104 ineligible on a full evaluation, **~89% driven by
+`experience_years`** against a profile declaring 1 year, and **8,745 rejected for needing ≤3 yr** —
+the false-negative surface Phase 2 targets.
 
 ### The apply/review queue split — blast radius (D-332, #192)
 
