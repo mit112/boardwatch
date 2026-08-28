@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from time import sleep
+from time import perf_counter, sleep
 
 import pytest
 from rich.console import Console
@@ -762,3 +762,147 @@ def test_a_lane_that_raises_reports_no_cost_rather_than_a_free_lane(
     # `stub` is not a registered lane, so this exercises the same "absent, not zeroed" path.
     assert reports == []
     assert len(errors) == 1
+
+
+# --------------------------------------------------------------------------------------
+# Parallel fetch, serial apply (D-347)
+# --------------------------------------------------------------------------------------
+
+# Each lane's fetch sleeps this long. Sequential is 2x, parallel is ~1x, and the threshold
+# between them is wide enough that a loaded machine cannot flip the verdict.
+LANE_FETCH_DELAY = 0.6
+
+
+def _register(
+    monkeypatch: pytest.MonkeyPatch, **lanes: object
+) -> None:
+    """Replace the lane registry with stubs, keyed by the name `lanes_enabled` will ask for.
+
+    `monkeypatch.setitem` per key rather than swapping the dict, so the real registry is
+    restored even if a test adds a name the next one does not.
+    """
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {})
+    for name, lane in lanes.items():
+        lane.name = name  # type: ignore[attr-defined]
+        monkeypatch.setitem(
+            runner_mod.LANE_FACTORIES, name, lambda _s, _f, _lane=lane: _lane
+        )
+
+
+def test_two_lanes_fetch_concurrently_rather_than_one_after_the_other(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The point of the change, and it is asserted on WALL CLOCK because nothing else shows it.
+
+    Two lanes, each sleeping `LANE_FETCH_DELAY` inside `collect`. Sequential takes ~2x that and
+    parallel takes ~1x, so the ceiling below is between the two: it goes red the moment the
+    fetches are serialized again, which asserting on the reports alone could never catch.
+
+    The lanes are on DIFFERENT hosts by construction (the stub does no real HTTP), which is the
+    case the change is for. Two lanes sharing a host would still serialize inside `Fetcher`'s
+    per-host lock, and that is correct — the 1 req/s contract is not what this relaxes.
+    """
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], delay=LANE_FETCH_DELAY),
+        beta=StubLane([("hiringcafe", "src:b")], delay=LANE_FETCH_DELAY),
+    )
+    started = perf_counter()
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha", "beta"]), insert_run(engine)
+    )
+    elapsed = perf_counter() - started
+
+    assert errors == []
+    assert len(reports) == 2
+    # Halfway between parallel (~1x) and sequential (~2x).
+    assert elapsed < LANE_FETCH_DELAY * 1.5, (
+        f"lane fetches did not overlap: {elapsed:.2f}s for two {LANE_FETCH_DELAY}s lanes"
+    )
+
+
+def test_the_applies_never_overlap_because_apply_board_is_the_single_writer(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The safety property the split exists to PRESERVE, not an optimisation.
+
+    Parallelising the fetch is only safe while `apply_board` stays serial: two lanes applying at
+    once would put two writers on one SQLite store. Measured by counting concurrent entries into
+    the spy rather than by reading the code — a future edit that submits `_apply_lane` to the
+    pool would leave every other assertion in this file green.
+    """
+    real = runner_mod.apply_board
+    depth = 0
+    max_depth = 0
+
+    def counting_apply(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+        nonlocal depth, max_depth
+        depth += 1
+        max_depth = max(max_depth, depth)
+        try:
+            sleep(0.05)  # widen the window a second writer would land in
+            return real(engine_, snapshot, company_id, run_id, scan_kind)
+        finally:
+            depth -= 1
+
+    monkeypatch.setattr(runner_mod, "apply_board", counting_apply)
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], delay=LANE_FETCH_DELAY),
+        beta=StubLane([("hiringcafe", "src:b")], delay=LANE_FETCH_DELAY),
+    )
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha", "beta"]), insert_run(engine)
+    )
+
+    assert errors == []
+    assert len(reports) == 2
+    assert max_depth == 1, f"{max_depth} lanes applied at once; apply_board is the single writer"
+
+
+def test_report_order_follows_lanes_enabled_and_not_which_lane_finished_first(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`as_completed` yields by completion, so the order has to be restored deliberately.
+
+    The FIRST lane in `lanes_enabled` is made the SLOWER one, so completion order is the exact
+    reverse of declared order and an implementation that appends as futures land produces
+    `["beta", "alpha"]`. Without this the funnel's lane list order would depend on which
+    aggregator answered first — a diff in every artifact for no reason, and a fixture that
+    passes or fails by race.
+    """
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], delay=0.5),
+        beta=StubLane([("hiringcafe", "src:b")], delay=0.0),
+    )
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha", "beta"]), insert_run(engine)
+    )
+
+    assert errors == []
+    assert [r.name for r in reports] == ["alpha", "beta"]
+
+
+def test_one_lanes_fetch_failing_costs_only_that_lane(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lane may never fail the run, and the guarantee has to survive the thread boundary.
+
+    Before the split the raise happened inline; now it surfaces at `future.result()`, which is a
+    different code path with the same obligation. The failing lane is ABSENT from `reports` — not
+    present with zeros — and the healthy lane still lands.
+    """
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], raises=RuntimeError("aggregator down")),
+        beta=StubLane([("hiringcafe", "src:b")]),
+    )
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha", "beta"]), insert_run(engine)
+    )
+
+    assert [r.name for r in reports] == ["beta"]
+    assert len(errors) == 1
+    assert "alpha" in errors[0]
+    assert "aggregator down" in errors[0]

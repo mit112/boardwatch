@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
@@ -45,7 +46,7 @@ from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
-from boardwatch.lanes.base import Lane
+from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
@@ -400,6 +401,11 @@ def _run_lanes(
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
+
+    # Lanes are RESOLVED before anything is submitted, so an unregistered name is reported
+    # without a worker ever being started for it, and the resolved order is the one
+    # `lanes_enabled` declares.
+    resolved: list[tuple[str, Lane]] = []
     for name in settings.lanes_enabled:
         factory = LANE_FACTORIES.get(name)
         if factory is None:
@@ -407,10 +413,51 @@ def _run_lanes(
             errors.append(f"lane {name}: not a registered lane (registered: {registered})")
             continue
         try:
-            lane = factory(settings, facets)
-            reports.append(_collect_lane(engine, settings, lane, fetcher, run_id))
+            resolved.append((name, factory(settings, facets)))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {exc!r}")
+    if not resolved:
+        return reports, errors
+
+    # PARALLEL fetch, SERIAL apply — the same shape `scan/coordinator.py` uses, and for the same
+    # reason: `apply_board` is the pipeline's single writer, so it runs in the CONSUMING loop
+    # below and never in a worker. Two lanes applying at once would be two writers on one
+    # SQLite store.
+    #
+    # `max_workers` is the lane count and is deliberately NOT a setting. It is bounded by
+    # `LANE_FACTORIES` (two today), the per-host pace — not the worker count — is what limits
+    # request rate, and a knob here would imply a tuning decision that does not exist.
+    #
+    # What this buys is bounded by the SLOWEST lane, not divided by the lane count: run 129's
+    # lanes issued ~85 requests to hiringcafe and ~166 to linkedin, so the pacing floor moves
+    # from their sum to their max and a third lane would be nearly free behind linkedin. The
+    # apply half does not move at all. Do not expect a speedup proportional to lanes.
+    by_name: dict[str, LaneReport] = {}
+    with ThreadPoolExecutor(max_workers=len(resolved)) as pool:
+        future_map = {
+            pool.submit(_fetch_lane, engine, settings, lane, fetcher): (name, lane)
+            for name, lane in resolved
+        }
+        # `as_completed`, so the first lane to finish fetching starts applying while the others
+        # are still on the network. Order is restored below.
+        for future in as_completed(future_map):
+            name, lane = future_map[future]
+            try:
+                fetched = future.result()
+            except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
+                # Same message as before the split: a lane whose FETCH raised is reported and
+                # absent from `reports`, never present with zeros.
+                errors.append(f"lane {name}: collection failed: {exc!r}")
+                continue
+            try:
+                by_name[name] = _apply_lane(engine, lane, fetched, run_id)
+            except Exception as exc:  # noqa: BLE001 - one lane's apply must not take another's
+                errors.append(f"lane {name}: collection failed: {exc!r}")
+
+    # Back into `lanes_enabled` order. `as_completed` yields by completion, which would make the
+    # funnel's lane list order depend on which aggregator answered first — a diff in every
+    # artifact for no reason, and a fixture that passes or fails by race.
+    reports.extend(by_name[name] for name, _ in resolved if name in by_name)
     return reports, errors
 
 
@@ -432,7 +479,50 @@ def _profile_role_facets(engine: Engine) -> tuple[str, ...]:
 def _collect_lane(
     engine: Engine, settings: Settings, lane: Lane, fetcher: Fetcher, run_id: int
 ) -> LaneReport:
-    """Drive one lane: admit companies under the cap, then land what it collected.
+    """Drive ONE lane end to end: fetch it, then land what it collected.
+
+    Both halves in one call, on the calling thread. `_run_lanes` does NOT use this — it needs the
+    halves apart, so it can overlap the fetches and keep the applies serial. This stays because a
+    single lane driven start to finish is still the honest unit for a caller with one lane, and
+    because it is the seam the lane-stage tests exercise directly.
+
+    The substance lives in the two halves: `_fetch_lane` owns the admission closure and the
+    concurrency argument, `_apply_lane` owns the single-writer rule.
+    """
+    fetched = _fetch_lane(engine, settings, lane, fetcher)
+    return _apply_lane(engine, lane, fetched, run_id)
+
+
+@dataclass(frozen=True)
+class _FetchedLane:
+    """One lane's network half, carried from the fetch phase to the serial apply phase.
+
+    A frozen carrier rather than a tuple because `_run_lanes` holds one per lane across a thread
+    boundary and the apply half reads all three fields; a positional tuple there is the shape
+    that silently transposes `budget` and `result` on the next edit.
+    """
+
+    result: LaneResult
+    budget: CompanyBudget
+    fetch_seconds: float
+
+
+def _fetch_lane(
+    engine: Engine, settings: Settings, lane: Lane, fetcher: Fetcher
+) -> _FetchedLane:
+    """A lane's PACED NETWORK half — everything before the first write. Runs off the main thread.
+
+    Split from the apply half so `_run_lanes` can overlap lanes on DIFFERENT hosts while
+    `apply_board`, the pipeline's single writer, stays serial. Safe to run concurrently for two
+    reasons that are properties of code this function does not own, so both are stated here:
+
+    * `Fetcher` is thread-safe BY DESIGN and already used this way by the scan. It keeps a
+      `threading.Lock` per host, held for a request's FULL duration, and paces INSIDE that lock.
+      So two lanes on one host serialize and the 1 req/s contract holds unchanged — running
+      lanes concurrently is NOT a load increase on any third party, which is what keeps this out
+      of the owner-gated pacing question.
+    * `budget` is per LANE, constructed here, so no two threads share one. The cap was always
+      per lane; this changes nothing about it.
 
     The admission closure is the substantive half of the cap and it lives HERE, with the runner,
     because it needs the store. `CompanyBudget.admit()` has no notion of *new* and deliberately
@@ -445,7 +535,9 @@ def _collect_lane(
     `collect()` would pin a SQLite reader — and its read snapshot — for the whole of the lane's
     paced network work, blocking WAL checkpointing and standing in the path of a migration for
     minutes. The protocol calls `admits` once per distinct `(provider, slug)`, so this is a few
-    dozen calls a run, which is nothing beside a one-second-per-host fetch pace.
+    dozen calls a run, which is nothing beside a one-second-per-host fetch pace. Under
+    concurrency those are SQLite READERS, which WAL permits alongside each other and alongside
+    the single writer.
     """
     budget = CompanyBudget(settings.lane_new_companies_per_run)
 
@@ -455,13 +547,25 @@ def _collect_lane(
                 return True
         return budget.admit(provider, slug)
 
-    # The fetch/apply boundary, and the only one in this function. `perf_counter` for the same
-    # reason `_StageClock` uses it: these are durations, and a wall-clock subtraction is wrong
-    # across an NTP step. Measured at the boundary rather than by wrapping, so work that raises
-    # is still charged to the half it happened in.
+    # `perf_counter` for the same reason `_StageClock` uses it: these are durations, and a
+    # wall-clock subtraction is wrong across an NTP step.
     started = perf_counter()
     result = lane.collect(fetcher, admits)
-    fetched_at = perf_counter()
+    return _FetchedLane(result=result, budget=budget, fetch_seconds=perf_counter() - started)
+
+
+def _apply_lane(
+    engine: Engine, lane: Lane, fetched: _FetchedLane, run_id: int
+) -> LaneReport:
+    """Land one lane's collected companies. **Runs on the main thread, always.**
+
+    `apply_board` is the pipeline's single writer and this function is where it is called, so
+    keeping this out of the worker pool is the whole reason the fetch/apply split exists. Two
+    lanes applying concurrently would put two writers on one SQLite store.
+    """
+    result = fetched.result
+    budget = fetched.budget
+    apply_started = perf_counter()
     for company in result.snapshots:
         # `upsert_lane_company` is called for EVERY snapshot, including a company the store
         # already holds — the convergence case a lane exists to produce. It is conflict-safe by
@@ -517,11 +621,12 @@ def _collect_lane(
         # `lane_search_pages`, which is the CEILING and not what was fetched — a facet that ran
         # out of results after two pages is exactly the case the setting cannot report.
         search_pages=result.search_pages,
-        # Paced network work, and the half upstream throttling shows up in.
-        fetch_seconds=fetched_at - started,
-        # The `apply_board` loop — the pipeline's single writer, and the half that parallelising
-        # the lanes could not shorten.
-        apply_seconds=perf_counter() - fetched_at,
+        # Paced network work, and the half upstream throttling shows up in. Carried from the
+        # fetch phase, which may have run on another thread.
+        fetch_seconds=fetched.fetch_seconds,
+        # The `apply_board` loop — the single writer, and the half no amount of lane
+        # parallelism can shorten.
+        apply_seconds=perf_counter() - apply_started,
     )
 
 
