@@ -8,6 +8,32 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The queue UI's WCAG 2.2 AA failures are fixed and the triage list is keyboard-first.** The
+  review page is worked top-down every morning against a few hundred leads, and measurement of the
+  shipped bundle found it neither accessible nor fast to work. Each failure was measured in a
+  browser rather than argued: `--color-fg-3` and `--color-control` were verified against
+  `--color-bg` and then painted on `--color-surface-2`, where they compute **4.32:1** (needs 4.5)
+  on every selected row and **2.90:1** (needs 3.0) for the border of every chip and badge inside
+  the detail pane — both are now derived against the lightest surface they ever land on.
+  `role="row"` and eight `role="columnheader"` were emitted with **no grid or rowgroup above them
+  and no role on any data row**, so every `aria-sort` the table set was announced to nothing; the
+  list is a real `role="grid"` now. Four focusable controls per row measured **1,399 tab stops** on
+  one page and nothing below the list was reachable in practice — the tab stop is the row now
+  (roving `tabIndex`), which measures **14**, and every row control keeps a single-key equivalent.
+  Neither route had an `h1`. `scroll-margin-top` was 0 under a 61px sticky header (SC 2.4.11). The
+  undo toast — the only route back from a mark-applied or a skip — expired on a timer the reader
+  could not stop (SC 2.2.1); hover or focus holds it now. Rows are 37px rather than 53px (18 on
+  screen, not 12) and no longer lose their actions when the detail pane opens, with `j`/`k`,
+  `Enter`, `o`, `a`, `s` on the focused row and `/` for the filter — all handled on the grid, never
+  on `window`, so a keystroke aimed at the filter box can never mark a lead applied. **The skip
+  link is a `<button>`, not `<a href="#view">`**: the URL fragment is both this app's router and the
+  channel the CLI passes the bearer token over, and `api/token.ts` reads any fragment not starting
+  with `/` back as a token. Which leads render, in what order, and their counts are unchanged.
+  The row shortcuts refuse **held modifiers and auto-repeat on the acting keys**: `Cmd+A` on a
+  focused row is `event.key === "a"`, and a held `a` marks each successive lead applied as focus
+  follows the collapsing rows down the list — every repeat lands on a different posting, so API
+  idempotency is no defence. Navigation keys still repeat, because holding `j` is the point.
+
 - **The run funnel times its own stages, because a fifth of a run was attributable to nothing.**
   Run 128 took 132.4 minutes and `scan.fetch_cost` could only price the SCAN, per provider; every
   stage after it was timed nowhere. Reconstructing the shape meant joining `board_scans`,

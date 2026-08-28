@@ -9,9 +9,10 @@ import {
   unskip,
 } from "../api/client";
 import type { Answers, QueueCounts, QueueDetail, QueueResponse, QueueRow } from "../api/types";
+import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane } from "../components/DetailPane";
 import { QueueTable } from "../components/QueueTable";
-import { QueueToolbar } from "../components/QueueToolbar";
+import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
 import { StatusBand } from "../components/StatusBand";
 import type { ToastRequest } from "../hooks/useToasts";
 import { matchesQuery, sortRows } from "../lib/sort";
@@ -55,6 +56,13 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
   const [reviewSort, setReviewSort] = useState<SortState>({ key: "rank", direction: "asc" });
 
   const [selected, setSelected] = useState<number | null>(null);
+  /*
+   * The keyboard CURSOR, which is not the selection: ↓/↑ walk the list without opening a pane and
+   * without fetching a detail per row, and Enter opens the one you stopped on. One cursor for both
+   * tables, because a posting id is unique across them and arrow keys never leave the table that
+   * has focus anyway.
+   */
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [detail, setDetail] = useState<QueueDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers | null>(null);
@@ -250,6 +258,20 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
 
   const act = useCallback(
     (row: QueueRow, kind: Removal) => {
+      /*
+       * Where the cursor lands once this row leaves. Without it, marking a lead by keyboard
+       * destroyed the focused element and focus fell back to `<body>` — so triaging ten leads
+       * meant ten trips back through Tab. The neighbour BELOW, or above at the end of a list.
+       */
+      let successor: QueueRow | undefined;
+      for (const list of [visible, visibleReview]) {
+        const index = list.findIndex((candidate) => candidate.posting_id === row.posting_id);
+        if (index !== -1) {
+          successor = list[index + 1] ?? list[index - 1];
+          break;
+        }
+      }
+
       // Optimistic: the row collapses to zero height, then leaves the list.
       setCollapsing((current) => new Set(current).add(row.posting_id));
       window.setTimeout(() => {
@@ -259,6 +281,20 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
           next.delete(row.posting_id);
           return next;
         });
+        if (successor === undefined) {
+          // Nothing left to move to — a filtered-down list whose last lead was just acted on.
+          // Without this the focused row unmounts and focus falls to `<body>`, which strands a
+          // keyboard reader at the top of the document with no way back but Tab. `activeId` is
+          // cleared too: leaving it pointing at a deleted posting makes the roving stop resolve
+          // to a row that no longer exists.
+          setActiveId(null);
+          document.getElementById(FILTER_INPUT_ID)?.focus();
+          return;
+        }
+        setActiveId(successor.posting_id);
+        document
+          .querySelector<HTMLElement>(`[data-row-id="${String(successor.posting_id)}"]`)
+          ?.focus();
       }, COLLAPSE_MS);
       if (selected === row.posting_id) setSelected(null);
 
@@ -304,7 +340,38 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
           });
         });
     },
-    [push, restore, selected],
+    [push, restore, selected, visible, visibleReview],
+  );
+
+  /*
+   * The one shortcut that is safe on `window`: it only moves focus. Everything that WRITES is
+   * handled on the grid, where a row must already be focused, so no keystroke aimed at the filter
+   * box can mark a lead applied. Guarded against firing while the reader is typing.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const input = document.getElementById(FILTER_INPUT_ID);
+      if (input === null) return;
+      event.preventDefault();
+      input.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  const openApply = useCallback(
+    (row: QueueRow) => {
+      if (!openApplyUrl(row.apply_url)) {
+        push({ message: `No usable apply link for ${row.company} — ${row.title}.`, tone: "error" });
+      }
+    },
+    [push],
   );
 
   const nextSort = (current: SortState, key: SortKey): SortState =>
@@ -321,15 +388,27 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
   }, []);
 
   if (loadError !== null) {
+    /*
+     * `role="alert"`, and a second line that says what to DO. This state renders as the whole page
+     * and the first line is whatever the transport said — `404 from /api/queue` on its own is a
+     * status code, not an error a reader can act on.
+     */
     return (
-      <p className="rounded border border-fg-2 bg-surface p-4 text-sm text-fg">{loadError}</p>
+      <div role="alert" className="rounded border border-fg-2 bg-surface p-4">
+        <p className="text-sm text-fg">{loadError}</p>
+        <p className="mt-1 text-sm text-fg-2">
+          The page reads the store the CLI maintains. Reload once, and if it persists re-open the
+          URL <code className="text-fg-3">boardwatch web</code> printed — that URL carries the
+          session token.
+        </p>
+      </div>
     );
   }
 
   if (data === null) {
     return (
-      <p className="p-4 text-sm text-fg-2">
-        Loading the queue — a first sync holds roughly 540 delivered, unapplied leads.
+      <p role="status" className="p-4 text-sm text-fg-2">
+        Loading the queue…
       </p>
     );
   }
@@ -386,12 +465,16 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
             </p>
           ) : (
             <QueueTable
+              label="Queue"
               rows={visible}
               rankOf={rankOf}
               sort={sort}
               onSort={onSort}
               selectedId={selected}
+              activeId={activeId}
+              onActivate={setActiveId}
               collapsing={collapsing}
+              onOpenApply={openApply}
               onSelect={(row) => {
                 // Re-clicking the open row must not clear `detail`. `setSelected` bails out on
                 // an unchanged value, so the effect keyed on it never re-fires and the pane
@@ -463,12 +546,16 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
                     </p>
                 ) : (
                     <QueueTable
+                      label="Review"
                       rows={visibleReview}
                       rankOf={reviewRankOf}
                       sort={reviewSort}
                       onSort={onReviewSort}
                       selectedId={selected}
+                      activeId={activeId}
+                      onActivate={setActiveId}
                       collapsing={collapsing}
+                      onOpenApply={openApply}
                       onSelect={(row) => {
                         if (row.posting_id === selected) return;
                         setSelected(row.posting_id);

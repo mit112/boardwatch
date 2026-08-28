@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { openPdf, revealFolder } from "../api/client";
 import type { Answers, QueueDetail, RequirementView } from "../api/types";
@@ -163,12 +163,30 @@ export function DetailPane({
   onToast: (message: string, tone: "info" | "error") => void;
 }) {
   const [shown, setShown] = useState(false);
+  const pane = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       setShown(true);
     });
     return () => {
       window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  /*
+   * Focus, but only where the pane is a full-screen SHEET — below `lg` it is `fixed inset-0` over
+   * everything, and a keyboard reader who opened it was left behind it with no way in. Above `lg`
+   * it is a column beside the list, and stealing focus there would break the fast path the list
+   * exists for: Enter to look, ↓ to carry on down the queue.
+   *
+   * The trigger row is refocused on close so the cursor does not fall back to `<body>`.
+   */
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 64rem)").matches) return;
+    const opener = document.activeElement as HTMLElement | null;
+    pane.current?.focus();
+    return () => {
+      opener?.focus();
     };
   }, []);
 
@@ -188,8 +206,16 @@ export function DetailPane({
 
   return (
     <aside
+      ref={pane}
+      tabIndex={-1}
       aria-label="Lead detail"
-      className={`fixed inset-0 z-40 flex flex-col overflow-y-auto border-divider bg-surface transition-[opacity,translate] duration-[180ms] ease-out lg:sticky lg:top-0 lg:inset-auto lg:h-[calc(100vh-1rem)] lg:border-l ${
+      /*
+       * `lg:top-header` and `lg:z-auto`, both load-bearing. At `top-0` with `z-40` the pane slid
+       * OVER the sticky app header — measured at scroll 900, the pane's top was y=0 and the header
+       * was covered from x=1072 rightward, taking the Queue/Runs tabs with it. It now stops at the
+       * header's own height and no longer outranks it.
+       */
+      className={`fixed inset-0 z-40 flex flex-col overflow-y-auto border-divider bg-surface transition-[opacity,translate] duration-[180ms] ease-out lg:sticky lg:inset-auto lg:top-header lg:z-auto lg:h-[calc(100vh-var(--spacing-header))] lg:border-l ${
         shown ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0"
       }`}
     >

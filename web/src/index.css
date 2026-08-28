@@ -14,16 +14,26 @@
   --color-transparent: transparent;
   --color-current: currentColor;
 
-  /* Verified against WCAG 2.2 AA by computation (design §8.4), not by eye. */
+  /*
+   * Verified against WCAG 2.2 AA by computation (design §8.4), not by eye — and verified against
+   * `surface-2`, the LIGHTEST surface a token is ever painted on, NOT against `bg`.
+   *
+   * That distinction is the whole point. Checking a foreground against `bg` and then rendering it
+   * on `surface-2` is checking the guard in a different scope from the one it runs in: `fg-3` on
+   * `surface-2` computed 4.32 (fails 4.5) on every selected row and throughout the detail pane's
+   * elevated card, and `control` computed 2.90 (fails 3.0) for the border of every chip, badge and
+   * row button inside those same two surfaces. Both read as passing while measured on `bg`.
+   * The ratio recorded beside each token below is therefore its WORST case, not its best.
+   */
   --color-bg: #0b0c0e;
   --color-surface: #14161a;
   --color-surface-2: #1c1f24;
-  --color-fg: #e8eaed; /* 16.24 on bg */
-  --color-fg-2: #9aa1ab; /* 7.51 on bg */
-  --color-fg-3: #7c838d; /* 5.11 on bg */
-  --color-control: #606774; /* 3.44 — the MINIMUM that clears 3:1. Never lighten below this. */
+  --color-fg: #e8eaed; /* 13.71 on surface-2 */
+  --color-fg-2: #9aa1ab; /* 6.34 on surface-2 */
+  --color-fg-3: #858c96; /* 4.87 on surface-2 — clears 4.5:1 on every surface */
+  --color-control: #6a7280; /* 3.41 on surface-2 — clears 3:1 on every surface. Never darken. */
   --color-accent: #4db6e2; /* selection and focus rings ONLY */
-  --color-divider: #2a2e35; /* 1.44 — decorative ONLY, never carries meaning */
+  --color-divider: #333840; /* 1.40 — decorative ONLY, never carries meaning */
 
   /* Motion personality: Surgical. Exactly three curves, no springs. */
   --ease-*: initial;
@@ -34,6 +44,13 @@
   /* Tailwind's bare `transition` utility would otherwise emit its own default curve. */
   --default-transition-timing-function: var(--ease-in-out);
   --default-transition-duration: 150ms;
+
+  /*
+   * The sticky app header's height, in ONE place. Each queue table's own header row sticks
+   * directly below it and `scroll-margin-top` reserves both, so a hard-coded pixel offset in three
+   * files could not drift apart from the header it is measuring.
+   */
+  --spacing-header: 3.8125rem;
 
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
@@ -59,6 +76,18 @@
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+  }
+
+  /*
+   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky and 61px tall, so tabbing to
+   * a control just below the fold scrolls it flush to the viewport top — underneath the header,
+   * where the focus ring is invisible. The header row of each queue table is sticky too and sits
+   * below it. This reserves the height of both, for the browser's own scroll-into-view, so the
+   * fix cannot be forgotten by a component that adds a new control later.
+   */
+  :where(a, button, input, select, textarea, summary, [tabindex]) {
+    scroll-margin-top: 7rem;
+    scroll-margin-bottom: 2rem;
   }
 
   ::selection {
