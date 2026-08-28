@@ -306,19 +306,61 @@ def get_watched_companies(
     return list(conn.execute(stmt).all())
 
 
-def upsert_watch(conn: Connection, *, provider: str, slug: str, name: str, source: str) -> None:
+def stored_slug(conn: Connection, *, provider: str, slug: str) -> str | None:
+    """The slug this provider already stores for `slug`, compared WITHOUT REGARD TO CASE.
+
+    `UNIQUE(provider, slug)` is a case-SENSITIVE index, so it does not stop one board being
+    stored twice under two spellings. It happened: `ashby:Lightfield` (user) and
+    `ashby:lightfield` (lane) were one board with one set of 19 postings and one set of Ashby
+    posting UUIDs, both watched, fetched twice a run — and the duplicate postings were
+    unsuppressible, because every identity kind that suppresses a duplicate is scoped by
+    `company_id` and there were two. `ashby:KAYAK` was the same thing caught by hand.
+
+    Returned rather than a bool so a caller can INSERT UNDER THE STORED SPELLING instead of its
+    own. That is what keeps the guard from rewriting a live URL: nothing normalizes an existing
+    slug, and slug case is genuinely load-bearing for at least one provider — a Workday career
+    site is case-sensitive (`split_slug` preserves it deliberately; `NVIDIAExternalCareerSite`
+    and `external_experienced` are both real). A provider that wants its slugs folded says so
+    with `normalize_slug` (smartrecruiters does); this function only refuses the SECOND ROW.
+
+    Case folding happens on both sides in SQL, so both use SQLite's ASCII-only `lower()` and
+    agree. Python's Unicode-aware `str.lower()` on one side would disagree with it above
+    ASCII and miss a match — failing toward two rows, which is the bug this exists to stop.
+
+    Oldest row wins (`ORDER BY id`), so a store that already holds a collided pair resolves to
+    the same row every time instead of alternating.
+    """
+    return conn.execute(
+        select(companies.c.slug)
+        .where(companies.c.provider == provider, func.lower(companies.c.slug) == func.lower(slug))
+        .order_by(companies.c.id)
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def upsert_watch(conn: Connection, *, provider: str, slug: str, name: str, source: str) -> str:
+    """Watch `(provider, slug)`, and return the slug ACTUALLY watched.
+
+    The returned slug differs from the argument when the store already holds this board under
+    another case: the watch lands on that row rather than adding a second one. Callers report
+    the difference — a user who typed `ashby:KAYAK` must not be left believing a new board was
+    added when `ashby:kayak` was already watched.
+    """
+    target = stored_slug(conn, provider=provider, slug=slug) or slug
     stmt = sqlite_insert(companies).values(
-        name=name, provider=provider, slug=slug, source=source, watched=True
+        name=name, provider=provider, slug=target, source=source, watched=True
     )
     conn.execute(
         stmt.on_conflict_do_update(
             index_elements=[companies.c.provider, companies.c.slug], set_={"watched": True}
         )
     )
+    return target
 
 
-def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
+def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str) -> int:
     """Record a company an aggregator lane discovered: `source='lane'`, and NOT watched (D-285).
+    Returns its `companies.id`.
 
     Unwatched is load-bearing, not caution. `scan/coordinator.py` looks every watched company's
     provider up in the registry and appends `unknown provider` to `summary.errors` on a miss, so
@@ -343,30 +385,42 @@ def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str
     The cost is that a lane company's name is frozen at first discovery. That is the right
     trade: it is cosmetic, it is stable, and it makes this function safe no matter how often or
     from where a caller invokes it.
+
+    The `on_conflict_do_nothing` clause is case-SENSITIVE, so on its own it would happily insert
+    a second row for a board already stored under another case. `stored_slug` is what stops it,
+    and the id it resolves to is returned so the caller does not have to re-select by a slug the
+    store may not hold.
     """
-    stmt = sqlite_insert(companies).values(
-        name=name, provider=provider, slug=slug, source="lane", watched=False
-    )
-    conn.execute(
-        stmt.on_conflict_do_nothing(index_elements=[companies.c.provider, companies.c.slug])
+    target = stored_slug(conn, provider=provider, slug=slug)
+    if target is None:
+        stmt = sqlite_insert(companies).values(
+            name=name, provider=provider, slug=slug, source="lane", watched=False
+        )
+        conn.execute(
+            stmt.on_conflict_do_nothing(index_elements=[companies.c.provider, companies.c.slug])
+        )
+        target = slug
+    return int(
+        conn.execute(
+            select(companies.c.id).where(
+                companies.c.provider == provider, companies.c.slug == target
+            )
+        ).scalar_one()
     )
 
 
 def company_exists(conn: Connection, *, provider: str, slug: str) -> bool:
-    """Is this `(provider, slug)` already stored, watched or not?
+    """Is this `(provider, slug)` already stored, watched or not — under ANY slug case?
 
     The lane budget's is-new check. `get_watched_companies` cannot answer it: a lane-discovered
     company is unwatched, so asking that would charge a cap slot to a company already stored,
     every run, and reach would never widen.
+
+    Case-insensitive for the same reason the upserts are (see `stored_slug`), and it has to be:
+    a case-variant that read as NEW here spent a cap slot AND got past `upsert_lane_company`,
+    which is exactly how `ashby:lightfield` became a second row for `ashby:Lightfield`.
     """
-    return (
-        conn.execute(
-            select(companies.c.id).where(
-                companies.c.provider == provider, companies.c.slug == slug
-            )
-        ).scalar_one_or_none()
-        is not None
-    )
+    return stored_slug(conn, provider=provider, slug=slug) is not None
 
 
 # keep the P0 signature working — it is now a thin wrapper (no caller churn)
@@ -375,9 +429,17 @@ def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: 
 
 
 def unwatch(conn: Connection, *, provider: str, slug: str) -> int:
+    """Unwatch a board, resolving the slug the way `upsert_watch` does.
+
+    Case-insensitive because `upsert_watch` is: without it, `companies add ashby:KAYAK` (which
+    now lands on the stored `ashby:kayak`) could not be undone by `companies remove ashby:KAYAK`.
+    """
+    target = stored_slug(conn, provider=provider, slug=slug)
+    if target is None:
+        return 0
     result = conn.execute(
         update(companies)
-        .where(companies.c.provider == provider, companies.c.slug == slug)
+        .where(companies.c.provider == provider, companies.c.slug == target)
         .values(watched=False)
     )
     return int(result.rowcount)

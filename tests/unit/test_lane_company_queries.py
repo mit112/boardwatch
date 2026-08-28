@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import (
     company_exists,
+    unwatch,
     upsert_lane_company,
     upsert_watch,
 )
@@ -109,3 +110,86 @@ def test_company_exists_is_keyed_on_the_pair_not_the_slug(engine: Engine) -> Non
     with engine.begin() as conn:
         upsert_lane_company(conn, provider="hiringcafe", slug="acme", name="Acme")
         assert company_exists(conn, provider="greenhouse", slug="acme") is False
+
+
+# --------------------------------------------------------------------------------------
+# Slug case — `UNIQUE(provider, slug)` is case-SENSITIVE, so it is not the guard
+# --------------------------------------------------------------------------------------
+
+
+def test_a_lane_slug_differing_only_in_case_reuses_the_stored_row(engine: Engine) -> None:
+    """The live incident. `ashby:Lightfield` and `ashby:lightfield` were ONE board: the same 19
+    open postings under the same Ashby posting UUIDs, both rows watched, the board fetched twice
+    a run — and no identity kind could suppress the duplicate postings, because every one of them
+    is scoped by `company_id` and there were two.
+
+    The id is asserted, not just the row count: the caller applies a board against it, so
+    resolving to the stored row but reporting a different id would still split the corpus.
+    """
+    with engine.begin() as conn:
+        upsert_watch(
+            conn, provider="ashby", slug="Lightfield", name="Lightfield", source="user"
+        )
+    original = _row(engine, provider="ashby", slug="Lightfield").id
+    with engine.begin() as conn:
+        landed = upsert_lane_company(conn, provider="ashby", slug="lightfield", name="Lightfield")
+    assert landed == original
+    with engine.connect() as conn:
+        rows = conn.execute(select(companies.c.slug)).scalars().all()
+    assert rows == ["Lightfield"], "the case variant was stored as a second company row"
+
+
+def test_a_watch_on_a_case_variant_lands_on_the_stored_row_and_says_so(engine: Engine) -> None:
+    """`companies add ashby:KAYAK` with `ashby:kayak` already watched. A silent no-op is the
+    wrong outcome: the caller has to be able to tell the operator which row the watch hit."""
+    with engine.begin() as conn:
+        upsert_lane_company(conn, provider="ashby", slug="kayak", name="Kayak")
+    with engine.begin() as conn:
+        assert upsert_watch(
+            conn, provider="ashby", slug="KAYAK", name="KAYAK", source="user"
+        ) == "kayak"
+    row = _row(engine, provider="ashby", slug="kayak")
+    assert row.watched is True, "the existing row was not watched"
+    with engine.connect() as conn:
+        assert len(conn.execute(select(companies)).all()) == 1
+
+
+def test_two_slugs_that_differ_by_more_than_case_are_two_companies(engine: Engine) -> None:
+    """The guard folds case and NOTHING else. Without this, `stored_slug` could 'fix' the
+    duplicate by matching too widely and quietly cost the user a board."""
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="ashby", slug="Lightfield", name="A", source="user")
+        upsert_watch(conn, provider="ashby", slug="lightfields", name="B", source="user")
+    with engine.connect() as conn:
+        assert set(conn.execute(select(companies.c.slug)).scalars().all()) == {
+            "Lightfield", "lightfields",
+        }
+
+
+def test_company_exists_ignores_slug_case(engine: Engine) -> None:
+    """The lane budget's is-new check. Answering True here is what stops a company the store
+    already holds from spending one of the run's ten new-company slots."""
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="ashby", slug="Lightfield", name="L", source="user")
+        assert company_exists(conn, provider="ashby", slug="lightfield") is True
+        assert company_exists(conn, provider="ashby", slug="LIGHTFIELD") is True
+        assert company_exists(conn, provider="ashby", slug="lightfields") is False
+        assert company_exists(conn, provider="greenhouse", slug="lightfield") is False
+
+
+def test_unwatch_resolves_slug_case_the_same_way_the_watch_did(engine: Engine) -> None:
+    """`add` now lands a case variant on the stored row, so `remove` must reach the same row —
+    otherwise a board the operator just added by typing `KAYAK` can never be removed by it."""
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="ashby", slug="kayak", name="Kayak", source="user")
+    with engine.begin() as conn:
+        assert unwatch(conn, provider="ashby", slug="KAYAK") == 1
+    assert _row(engine, provider="ashby", slug="kayak").watched is False
+
+
+def test_unwatch_still_reports_nothing_for_a_slug_the_store_does_not_hold(
+    engine: Engine,
+) -> None:
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="ashby", slug="kayak", name="Kayak", source="user")
+        assert unwatch(conn, provider="ashby", slug="kayaks") == 0
