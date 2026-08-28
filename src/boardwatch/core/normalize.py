@@ -11,7 +11,14 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
+from boardwatch.rank.location_data import (
+    US_COUNTRY_SEGMENTS,
+    US_STATE_ABBREVS,
+    US_STATE_NAME_TO_ABBREV,
+)
 
 _NON_ALNUM_SPACE = re.compile(r"[^a-z0-9 ]")
 _COMPANY_SUFFIXES = re.compile(r"\b(inc|llc|corp|co|ltd|technologies|technology|labs)\b")
@@ -50,6 +57,107 @@ def normalize_title(title: str) -> str:
         t = t.replace(char, word)
     t = _NON_ALNUM_TO_SPACE.sub(" ", t)
     return _WS.sub(" ", t).strip()
+
+
+# --- location canonicalization -------------------------------------------------------------
+# One place written two ways is one place. Measured on the live queue tree, 46 of 70 redundant
+# folders differ ONLY in the location string, and two of those pairs are literally the same
+# city: "Austin, Texas, United States" vs "Austin, TX", and "San Francisco, CA, San Francisco
+# Office" vs "San Francisco County, CA". `normalized_locations` is a component of every
+# location-bearing identity key, so those never grouped.
+#
+# Every rule below is a SPELLING rule, applied per comma-separated segment. None of them merges
+# two different places: cross-city merging (PayPal's San Jose / Austin / Scottsdale / NYC),
+# subset/superset lists (Twitch) and country folding (Affirm's "Remote US" vs "Remote Canada")
+# are all deliberately NOT done here — they are owner policy calls, and each would hide a
+# genuinely different posting. Over-merging deletes a real job from the owner's view, which is
+# the failure this repo refuses (fail-safe direction: never silently delete a real job).
+#
+# Out-of-catalog segments are LEFT ALONE, never guessed. A non-US location therefore passes
+# through untouched: "London, United Kingdom", "Bengaluru, Karnataka, India" and "Toronto, ON,
+# Canada" all canonicalize to themselves. The one ambiguity in the catalog is "georgia", which
+# is both a US state and a country, so "Tbilisi, Georgia" becomes "tbilisi, ga". That cannot
+# produce a wrong merge — nothing spells the country "GA" — and both spellings already
+# collided under the previous normalizer when the string was the bare word "Georgia".
+_TRAILING_PAREN = re.compile(r"\s*\([^()]*\)$")
+_OFFICE = " office"
+
+
+def _strip_site_code(segment: str) -> str:
+    """Drop a trailing parenthetical site code, but only from a bare state segment.
+
+    "Costa Mesa, CA (OC-00)" and "Costa Mesa, California, United States" are one place; the
+    parenthesis is Vantage's internal building code. The guard is what keeps this narrow: the
+    parenthetical is dropped only when what remains IS a US state, so "Remote (IND)" — the
+    ISO alpha-3 country signal the location gate reads — is untouched, and so is any
+    parenthetical carrying real geography ("San Jose (Costa Rica)").
+    """
+    remainder = _TRAILING_PAREN.sub("", segment).strip()
+    return remainder if remainder != segment and _is_us_state(remainder) else segment
+
+
+def _is_us_state(segment: str) -> bool:
+    return segment in US_STATE_ABBREVS or segment in US_STATE_NAME_TO_ABBREV
+
+
+def canonical_location(text: str) -> str:
+    """One spelling for one place, or the input folded but otherwise unchanged.
+
+    Segment-wise and catalog-driven; see the block comment above for what this deliberately
+    does NOT do. Any change here is a normalizer change and requires an
+    IDENTITY_ALGORITHM_VERSION bump (core/identity_kinds.py).
+    """
+    folded = normalize_body(text)
+    segments = [seg.strip() for seg in folded.split(",")]
+    segments = [_strip_site_code(seg) for seg in segments if seg.strip()]
+    if not segments:
+        return folded
+    # A trailing office/site name. "san francisco, ca, san francisco office" is the SF office,
+    # which is San Francisco. Never the only segment: "home office" alone is all the evidence
+    # the posting carries, and dropping it would invent an empty location.
+    while len(segments) > 1 and (segments[-1] == "office" or segments[-1].endswith(_OFFICE)):
+        segments.pop()
+    # A trailing "United States", but only when a US state still names the place. Without the
+    # guard, "Remote, US" would fold to "remote" and lose the only country evidence it has.
+    if len(segments) > 1 and segments[-1] in US_COUNTRY_SEGMENTS and _is_us_state(segments[-2]):
+        segments.pop()
+    # State name -> USPS abbreviation, NEVER in the first segment: "New York, NY" must not
+    # become "ny, ny" and "Washington, DC" must not become "wa, dc". A bare "New York" or
+    # "Washington" is a city as often as a state, so it is left exactly as written.
+    segments = [segments[0]] + [US_STATE_NAME_TO_ABBREV.get(s, s) for s in segments[1:]]
+    # "X County, ST" -> "X, ST", only with a US state immediately after it, so a bare
+    # "Orange County" and Ireland's "County Cork" are both untouched.
+    segments = [
+        seg[: -len(" county")].strip()
+        if seg.endswith(" county") and i + 1 < len(segments) and _is_us_state(segments[i + 1])
+        else seg
+        for i, seg in enumerate(segments)
+    ]
+    return ", ".join(segments)
+
+
+def canonical_locations(locations: Iterable[str]) -> list[str]:
+    """The sorted, de-duplicated canonical form of a posting's whole location list.
+
+    Canonicalization can make two ITEMS of one list equal — Brex publishes the primary city
+    in long form beside the same city in short form — and a place named twice is one place,
+    so the result is a set. That is de-duplication WITHIN one posting's evidence, not
+    subset/superset merging across postings, which stays out of scope.
+
+    The office-alias fold is the same rule reaching across two items: Lyft publishes
+    `["San Francisco, CA", "San Francisco Office"]`, where the second item is the first
+    city's office, not a second city. It is dropped only when the city it names is already
+    in the list, so `["Seattle, WA", "San Francisco Office"]` keeps both and a list that is
+    ONLY an office name keeps it — this can never empty the evidence.
+    """
+    canon = {canonical_location(item) for item in locations}
+    cities = {item.split(",", 1)[0].strip() for item in canon}
+    kept = {
+        item
+        for item in canon
+        if not (item.endswith(_OFFICE) and item[: -len(_OFFICE)].strip() in cities)
+    }
+    return sorted(kept)
 
 
 def normalize_body(text: str) -> str:

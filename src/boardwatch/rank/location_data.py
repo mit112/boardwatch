@@ -34,27 +34,44 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
-LOCATION_DATA_VERSION = 2
+# 3: US_STATE_NAME_TO_ABBREV added and the two state sets derived from it. The classifier's
+# own tokens are unchanged — the map exists so `core.normalize.canonical_location` can fold
+# "Austin, Texas" and "Austin, TX" to one identity component.
+LOCATION_DATA_VERSION = 3
 
-US_STATE_ABBREVS = frozenset(
-    {
-        "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in",
-        "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv",
-        "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn",
-        "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy", "dc",
-    }
-)
+# The one source of truth for US states: both sets below are DERIVED from it, so adding a
+# state is one edit, not three that can disagree. Values are USPS abbreviations, which is
+# the form `canonical_location` folds every state name to.
+#
+# "district of columbia" is carried here as a state because every consumer treats DC as one:
+# the classifier reads "Washington, DC" as US, and the canonicalizer has to fold
+# "Washington, District of Columbia" onto it.
+US_STATE_NAME_TO_ABBREV: dict[str, str] = {
+    "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
+    "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
+    "hawaii": "hi", "idaho": "id", "illinois": "il", "indiana": "in", "iowa": "ia",
+    "kansas": "ks", "kentucky": "ky", "louisiana": "la", "maine": "me", "maryland": "md",
+    "massachusetts": "ma", "michigan": "mi", "minnesota": "mn", "mississippi": "ms",
+    "missouri": "mo", "montana": "mt", "nebraska": "ne", "nevada": "nv",
+    "new hampshire": "nh", "new jersey": "nj", "new mexico": "nm", "new york": "ny",
+    "north carolina": "nc", "north dakota": "nd", "ohio": "oh", "oklahoma": "ok",
+    "oregon": "or", "pennsylvania": "pa", "rhode island": "ri", "south carolina": "sc",
+    "south dakota": "sd", "tennessee": "tn", "texas": "tx", "utah": "ut", "vermont": "vt",
+    "virginia": "va", "washington": "wa", "west virginia": "wv", "wisconsin": "wi",
+    "wyoming": "wy", "district of columbia": "dc",
+}
 
-US_STATE_NAMES = frozenset(
+US_STATE_ABBREVS = frozenset(US_STATE_NAME_TO_ABBREV.values())
+
+US_STATE_NAMES = frozenset(US_STATE_NAME_TO_ABBREV)
+
+# WHOLE comma-separated segments that name the United States, for `canonical_location`.
+# Deliberately NOT merged into US_MARKERS below: that tuple is matched as a SUBSTRING by the
+# classifier, where a two-letter "us" would fire inside "Prussia" or "Houston". Segment
+# equality makes the short forms safe, so they live here instead.
+US_COUNTRY_SEGMENTS = frozenset(
     {
-        "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
-        "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
-        "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
-        "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada",
-        "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
-        "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
-        "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
-        "washington", "west virginia", "wisconsin", "wyoming", "district of columbia",
+        "united states of america", "united states", "usa", "u.s.a.", "u.s.a", "u.s.", "us",
     }
 )
 
