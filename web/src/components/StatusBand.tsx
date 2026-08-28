@@ -5,9 +5,11 @@ import { EM_DASH, formatTimestamp } from "../lib/format";
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones
  * beside it.
  *
- * `eligible` is the headline yield, and `uncertain` and `ineligible` each get their own cell.
- * `in_queue` counts the WORK list, which excludes ineligible leads, so the band reconciles
- * instead of leaving a remainder nobody can name. They are never added together,
+ * `eligible` is the headline yield, and `uncertain`, `review` and `ineligible` each get their own
+ * cell. `in_queue` counts the APPLY lane, so the band reconciles instead of leaving a remainder
+ * nobody can name: a delivered lead is in the apply lane, held in `review`, or `ineligible`.
+ * `review` and `ineligible` fail differently and are never merged — an ineligible lead is
+ * REJECTED and not listed anywhere, a review lead is UNVERIFIED and listed in its own section. They are never added together,
  * anywhere: the repository's rule is that an abstain is never folded into either neighbour in any
  * report, and a page is a report. `applied ever`, not applied today — with zero applications ever
  * recorded the two are indistinguishable, and only the first says whether the tool works.
@@ -61,6 +63,11 @@ export function StatusBand({
         label="uncertain"
         value={counts.uncertain.toLocaleString()}
         note="Its own bucket: not yet known, and never added into eligible."
+      />
+      <Metric
+        label="review"
+        value={counts.review.toLocaleString()}
+        note="Held for a look, not blindly appliable: outside the US, or a title the role gate will not positively call software. Listed below the queue; folders sit in _review."
       />
       <Metric
         label="ineligible"

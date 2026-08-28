@@ -566,13 +566,22 @@ def test_the_rows_arrive_ranked_and_carry_no_rank_field(live: Live, engine: Engi
 
     The two leads are delivered in the OPPOSITE order to their scores, so an implementation that
     returned `delivered_unapplied`'s most-recent-delivery-first order unchanged fails here.
+
+    BOTH titles are software, so both sit in the apply lane and the ordering is actually
+    exercised. The weaker lead used to be a "Data Entry Clerk", which the D-332 split now routes
+    to `review` — that would have left ONE row here and an assertion that could not fail. The gap
+    has to come from the title rather than the body: `JD_ELIGIBLE` and `JD_UNCERTAIN` score
+    IDENTICALLY against this fixture profile (0.719 both, coverage `None`), so a body-derived gap
+    would have been the vacuous version of the same mistake.
     """
     with engine.begin() as conn:
         _profile(conn)
         wanted, _ = _deliver(
             conn, "swe", title="Software Engineer", delivered_at=NOW - timedelta(days=2)
         )
-        unwanted, _ = _deliver(conn, "clerk", title="Data Entry Clerk", delivered_at=NOW)
+        unwanted, _ = _deliver(
+            conn, "swe2", title="Software Developer", delivered_at=NOW
+        )
 
     rows = call(live, "/api/queue", bearer=live.token).json()["rows"]
     assert [row["posting_id"] for row in rows] == [wanted, unwanted]
@@ -619,24 +628,76 @@ def test_off_target_carries_the_role_gates_own_matched_text_and_uncertain_is_not
     third of the delivered set classifies that way, so badging it "off target" would assert a
     decision the gate declined to make. "Tax CPA" is exactly that shape — a title that looks
     off-target to a human and that the gate deliberately does not reject.
+
+    Both of those still hold, and the D-332 split is why they now MATTER. `off_target` is
+    `not_swe` ONLY, while `review_gate.lane` demotes anything not positively `swe` — so the
+    vetoed nurse and the uncertain CPA land in the SAME list and only one of them wears a badge.
+    That is exactly why the review lane had to become its own list rather than a flag: the flag
+    cannot describe the lane, and reading `off_target` as "this is a review lead" would miss
+    every `uncertain` one.
     """
     with engine.begin() as conn:
         vetoed, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner")
         unsure, _ = _deliver(conn, "cpa", title="Tax CPA")
         software, _ = _deliver(conn, "swe", title="Software Engineer")
 
-    rows = {
-        row["posting_id"]: row
-        for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
-    }
-    assert rows[vetoed]["off_target"] is True
-    # The gate's own reason string, carrying the text it matched in quotes.
-    assert rows[vetoed]["off_target_reason"] == 'not software (matched "Nurse")'
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    rows = {row["posting_id"]: row for row in payload["rows"]}
+    review = {row["posting_id"]: row for row in payload["review"]}
 
-    assert rows[unsure]["off_target"] is False
-    assert rows[unsure]["off_target_reason"] is None
+    # The apply lane holds the software lead and NOTHING else.
+    assert set(rows) == {software}
+    assert set(review) == {vetoed, unsure}
+    assert payload["counts"]["review"] == 2
+    assert payload["counts"]["in_queue"] == 1
+
+    assert review[vetoed]["off_target"] is True
+    # The gate's own reason string, carrying the text it matched in quotes.
+    assert review[vetoed]["off_target_reason"] == 'not software (matched "Nurse")'
+
+    # The uncertain lead is in review WITHOUT a badge — the flag and the lane are not the same
+    # question, and this is the pair that proves it.
+    assert review[unsure]["off_target"] is False
+    assert review[unsure]["off_target_reason"] is None
     assert rows[software]["off_target"] is False
     assert rows[software]["off_target_reason"] is None
+
+
+def test_a_review_lead_is_listed_not_dropped_and_the_band_reconciles(
+    live: Live, engine: Engine
+) -> None:
+    """A review lead is WORK, so it must appear somewhere on the wire.
+
+    `_ineligible` is an exclusion and is only counted; `_review` is a second location and is
+    LISTED. Getting these two confused would silently hide about a third of the delivered set
+    behind a folder the page never mentions. The band has to reconcile too: `in_queue` counts the
+    apply lane alone, so without `review` the difference between it and the delivered set is an
+    unexplained remainder — the same defect D-321 fixed for `ineligible`.
+    """
+    with engine.begin() as conn:
+        _profile(conn, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+        software, _ = _deliver(conn, "swe", title="Software Engineer", body=JD_UNCERTAIN)
+        held, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner",
+                           body=JD_UNCERTAIN)
+        rejected, _ = _deliver(conn, "noauth", title="Software Engineer", body=JD_INELIGIBLE)
+        # The premise, stated out loud rather than assumed: if the engine stops calling this
+        # body ineligible, THIS fails instead of the counts passing vacuously.
+        assert (
+            _judge(conn, rejected, JD_INELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+            == "ineligible"
+        )
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    counts = payload["counts"]
+    listed = {row["posting_id"] for row in payload["rows"]} | {
+        row["posting_id"] for row in payload["review"]
+    }
+    # The ineligible lead is the ONLY one that may be absent from both lists.
+    assert listed == {software, held}
+    assert rejected not in listed
+    assert counts["ineligible"] == 1
+    assert counts["review"] == 1
+    assert counts["in_queue"] == 1
 
 
 def test_coverage_is_a_live_fraction_and_thin_jd_is_derived_from_it(
