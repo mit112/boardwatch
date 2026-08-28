@@ -26,14 +26,32 @@ REVIEW_DIR = "_review"
 def lane(*, verdict: str | None, locations: Sequence[str], title: str) -> str:
     """Return ``""`` for the apply queue or ``REVIEW_DIR`` for the review lane.
 
-    ``ineligible`` is excluded upstream and is not expected here; if one arrives it
-    is treated as review (never blind-apply).
+    ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
+    upstream and is not expected here; if one arrives it is held for review, never
+    blind-applied. Everything else — ``uncertain`` or an unevaluated ``None`` verdict —
+    is held for review when it is *confirmed* non-US or *confirmed* non-software.
+
+    Location fails OPEN on ``unknown``, exactly as the hard US gate does (the visa ruling:
+    an unclassifiable location is never blind-dropped). Only a confirmed ``non_us`` lead is
+    demoted; a bare ``"Remote"`` or any location the classifier cannot place stays in the
+    apply queue. A genuinely foreign city the classifier does not recognise (e.g. an
+    unlisted "Kaunas Office") reads ``unknown`` and is a classifier-coverage gap to close in
+    ``rank/location_data`` (the D-294 pattern), not something to fix by demoting every
+    remote lead here. Role, by contrast, is demoted on anything not positively ``swe`` — a
+    title carrying no software signal is not blindly-appliable.
+
+    An unevaluated (``None``) verdict is treated like ``uncertain`` rather than sent
+    straight to review: a delivered lead is ``None`` only transiently (its evaluation went
+    stale when the profile identity moved) or when it is body-less, and in both cases the
+    location and title are the signals that decide whether the owner can open the link and
+    apply. The eligibility verdict, when it returns, can only move such a lead to
+    ``ineligible`` (excluded) — never make a foreign or non-software lead appliable.
     """
     if verdict == "eligible":
         return ""
-    if verdict != "uncertain":
+    if verdict == "ineligible":
         return REVIEW_DIR
-    if classify_location(list(locations)) != "us":
+    if classify_location(list(locations)) == "non_us":
         return REVIEW_DIR
     if role_verdict(title)[0] != "swe":
         return REVIEW_DIR

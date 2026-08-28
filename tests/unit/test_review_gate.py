@@ -26,15 +26,19 @@ def test_verified_uncertain_us_swe_is_promoted_to_apply() -> None:
     )
 
 
-def test_uncertain_unknown_location_routes_to_review() -> None:
-    # "Kaunas Office" classifies as unknown (city, no country) -> not positively US.
+def test_unknown_location_fails_open_to_apply() -> None:
+    # A bare "Remote" (and any location the classifier cannot place) reads `unknown`; the location
+    # check fails OPEN exactly as the hard US gate does, so it stays in the apply queue. An unlisted
+    # foreign city like "Kaunas Office" also reads `unknown` and slips through here — that is a
+    # classifier-coverage gap (D-294 pattern), not a reason to demote every remote lead.
+    assert lane(verdict="uncertain", locations=["Remote"], title="Software Engineer") == ""
     assert (
         lane(
             verdict="uncertain",
             locations=["Kaunas Office"],
             title="Associate JAVA Software Engineer",
         )
-        == REVIEW_DIR
+        == ""
     )
 
 
@@ -64,10 +68,18 @@ def test_uncertain_non_swe_role_routes_to_review() -> None:
     )
 
 
-def test_unevaluated_none_verdict_routes_to_review() -> None:
-    # None means never eligibility-checked for the current identity — not verified-appliable.
-    assert lane(verdict=None, locations=["Austin, TX"], title="Software Engineer") == REVIEW_DIR
+def test_unevaluated_none_verdict_is_treated_like_uncertain() -> None:
+    # None (unevaluated) is transient staleness or a body-less lead; location + title still decide.
+    assert lane(verdict=None, locations=["Austin, TX"], title="Software Engineer") == ""
+    assert lane(verdict=None, locations=["Kaunas, Lithuania"], title="Software Engineer") == REVIEW_DIR
+    assert lane(verdict=None, locations=["Austin, TX"], title="Front Office Agent") == REVIEW_DIR
 
 
-def test_empty_locations_routes_to_review() -> None:
-    assert lane(verdict="uncertain", locations=[], title="Software Engineer") == REVIEW_DIR
+def test_ineligible_is_held_for_review_not_blind_applied() -> None:
+    # Excluded upstream in practice; defensive here.
+    assert lane(verdict="ineligible", locations=["Austin, TX"], title="Software Engineer") == REVIEW_DIR
+
+
+def test_empty_locations_fail_open_to_apply() -> None:
+    # No location named -> unknown -> fail open (never blind-drop / blind-demote an unplaced lead).
+    assert lane(verdict="uncertain", locations=[], title="Software Engineer") == ""

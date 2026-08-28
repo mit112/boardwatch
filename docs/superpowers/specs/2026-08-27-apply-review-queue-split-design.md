@@ -51,15 +51,25 @@ plumbing for Phase 1.**
 A new pure function decides the lane for a delivered row:
 
 ```
-lane(row) -> "" (apply) | "_review"
-  eligible                       -> ""            # always apply
-  uncertain and                                    # ineligible is already excluded upstream
-     classify_location(row.location) == "us"       # positively US (catches Zhubei/Kaunas: unknown -> review)
-     and role_verdict(row.title) == "swe"          # positively software (catches Hyatt/Allstate: uncertain -> review)
-     and not _is_stub(row.body_len)                # real JD captured (catches Cadence stub)
-                                  -> ""            # verified uncertain -> apply
-  otherwise                      -> "_review"
+lane(verdict, locations, title) -> "" (apply) | "_review"
+  eligible                          -> ""          # always apply
+  ineligible                        -> "_review"   # excluded upstream; defensive
+  uncertain OR None (unevaluated):                 # None treated like uncertain (see below)
+     classify_location(locations) == "non_us"  -> "_review"   # CONFIRMED foreign only; fail open on unknown
+     role_verdict(title)[0] != "swe"           -> "_review"   # not positively software (Hyatt/Allstate)
+     otherwise                                 -> ""          # verified-enough -> apply
 ```
+
+**Location fails open on `unknown`.** Only a *confirmed* `non_us` lead is demoted; a bare
+`"Remote"` (and any location the classifier cannot place) reads `unknown` and stays in the apply
+queue — the same visa-ruling fail-open the hard US gate uses (never blind-drop/blind-demote an
+unplaced lead; "Remote" is most of the SWE set). A genuinely foreign city the classifier does not
+recognise (e.g. an unlisted "Kaunas Office", "Zhubei") reads `unknown` and slips through here; that
+is a `rank/location_data` coverage gap to close with the D-294 curated-signal pattern (validated on
+run 126, since it also changes what the hard gate drops), NOT a reason to demote every remote lead.
+`role_verdict("...")` returns a `(verdict, reason)` tuple — read `[0]`. The stub-body check was
+dropped from Phase 1 (the location check already catches the known Cadence case; a body signal would
+need new plumbing).
 
 Notes:
 - `classify_location` (`rank/location_gate.py:148`) and `role_verdict` (`rank/role_gate.py:449`) are
@@ -96,11 +106,18 @@ Notes:
 2. **Staged then `os.replace`**, idempotence keyed on `content_hash`.
 3. Queue folder = exactly the known files; `_child_dirs` (`queue.py:816`) must skip `_review`.
 
-### Web surfacing
-The web UI (`delivery/server.py`) reads the main queue. `_review` is a drain (excluded from the
-apply top-level like `_ineligible`), so it will not clutter blind-apply. Showing `_review` as its own
-section in the web app is a small server + frontend addition; the owner can also browse the `_review/`
-folder directly. UI work follows `design-guardrails` (WCAG 2.2 AA). Scope this as Phase 1b if it grows.
+### Web surfacing — DEFERRED to Phase 1b (the split is filesystem-only in Phase 1)
+Phase 1 splits the on-disk folder tree only. The web app (`delivery/api.py::queue_payload`) builds
+its list from `delivered_unapplied` minus `ineligible` and **deliberately still lists `uncertain`
+and `not_swe` leads, flagged `off_target`** — the documented "uncertain is not a veto" design
+(`api.py` docstring §off_target). So after Phase 1 the `boardwatch web` apply page still shows the
+review-lane leads; only the folder tree is clean. Making the web apply list match the folder split
+is **Phase 1b**, and it is a real decision, not a tweak: it reverses "uncertain is not a veto" for
+the apply list (or reframes `off_target` as a review-lane badge) and needs a review **section** in
+the React UI (a frontend + bundle-rebuild change) so the demoted leads stay visible. The owner can
+browse `~/boardwatch-queue/_review/` directly in the meantime. UI work follows `design-guardrails`
+(WCAG 2.2 AA). **Do not silently exclude review leads from `queue_payload`** without the review
+section, or they vanish from the web surface entirely.
 
 ### Testing
 - Unit tests for `lane(...)`: each check in isolation (US vs unknown location; swe vs uncertain role;
@@ -143,9 +160,13 @@ no Mit-specific constants. The review lane and the reclassification are generic 
 
 ## Risks
 
-- One-time re-write of every queue folder when `details.json` gains a field (content_hash change).
 - Forgetting to register `_review` in `DRAIN_DIRS` / `ReconcileReport.moved` → silent `unclassified`
-  or a reconcile that stops balancing.
-- Over-aggressive location classification would drop real US jobs; Phase 1 does NOT change
-  `classify_location`, it only routes `unknown` to review (reversible, visible), preserving the
-  fail-open visa ruling.
+  or a reconcile that stops balancing. (Guarded by tests.)
+- **Over-demoting remote leads.** An early `!= "us"` check sent every `unknown`/`"Remote"` lead to
+  review — most of the SWE set — and was caught by `test_delivery_queue_hook` (a `["Remote"]` lead).
+  Fixed: the check demotes only confirmed `non_us`, failing open on `unknown`. Phase 1 does NOT
+  change `classify_location`.
+- `details.json` did not gain a field in Phase 1 (the lane is encoded by the folder location), so
+  there is no content_hash re-write.
+- The web app is unchanged in Phase 1 (see Web surfacing): the `boardwatch web` apply page still
+  lists review-lane leads until Phase 1b. Filesystem apply queue is clean; web apply page is not.
