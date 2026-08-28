@@ -11,7 +11,12 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 
-from boardwatch.core.normalize import normalize_body, normalize_company, normalize_title
+from boardwatch.core.normalize import (
+    canonical_locations,
+    normalize_body,
+    normalize_company,
+    normalize_title,
+)
 
 # ASCII unit separator: keeps ("ab","c") and ("a","bc") from hashing alike. It cannot occur
 # in a normalized component, all of which are whitespace-collapsed.
@@ -48,6 +53,9 @@ def normalized_locations(locations: list[str] | None) -> str | None:
     boundary (identity_queries.load_identity_inputs), once.
 
     A list's serialization order is not identity, so it is sorted and case-folded.
+    `canonical_locations` does the folding, so one place written two ways ("Austin, Texas,
+    United States" and "Austin, TX") produces one component; the block comment above it in
+    core/normalize.py states what it deliberately does NOT fold and why.
 
     Absence returns None rather than "[]" on purpose (design §2.1). An "[]" sentinel makes
     every location-less posting equal to every other one on that component, and the failure
@@ -58,7 +66,7 @@ def normalized_locations(locations: list[str] | None) -> str | None:
     """
     if not locations:
         return None
-    folded = sorted(normalize_body(str(item)) for item in locations)
+    folded = canonical_locations(str(item) for item in locations)
     if not any(folded):  # present but blank, e.g. ["", "  "]
         return None
     return json.dumps(folded)

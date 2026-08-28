@@ -247,3 +247,40 @@ def test_a_body_bearing_stub_hash_still_earns_an_exact_quad():
     """The guard reads the body, not the hash: a real body with a hand-set hash is fine."""
     kinds = {i.kind for i in compute_identities(_inputs(body_text="we are hiring"))}
     assert "exact_quad" in kinds
+
+
+def test_one_place_written_two_ways_is_one_location_component():
+    """The measured failure this normalizer exists to fix (queue tree, 2026-08-28).
+
+    Ontic published "Associate Software Engineer - Full Stack" as `["Austin, TX"]` on one
+    board and `["Austin, Texas, United States"]` on another; Lyft published "Software
+    Engineer" as `["San Francisco, CA", "San Francisco Office"]` and
+    `["San Francisco County, CA"]`. `normalized_locations` is a component of every
+    location-bearing identity key, so under p6.2 no kind could ever group either pair.
+    """
+    assert normalized_locations(["Austin, TX"]) == normalized_locations(
+        ["Austin, Texas, United States"]
+    )
+    assert normalized_locations(["San Francisco, CA", "San Francisco Office"]) == (
+        normalized_locations(["San Francisco County, CA"])
+    )
+
+
+def test_a_location_spelling_difference_no_longer_splits_a_location_bearing_key():
+    """End to end on the keys themselves, not just on the normalizer that feeds them."""
+    austin_short = compute_identities(_inputs(locations=["Austin, TX"]))
+    austin_long = compute_identities(_inputs(locations=["Austin, Texas, United States"]))
+    for kind in ("exact_quad", "company_title_location", "cross_host"):
+        short = next(i.identity_key for i in austin_short if i.kind == kind)
+        long = next(i.identity_key for i in austin_long if i.kind == kind)
+        assert short == long, kind
+
+
+def test_two_different_cities_still_hold_different_keys():
+    """The over-merge guard. Suppressing these would delete a real job from the queue."""
+    san_jose = compute_identities(_inputs(locations=["San Jose, CA"]))
+    austin = compute_identities(_inputs(locations=["Austin, TX"]))
+    for kind in ("exact_quad", "company_title_location", "cross_host"):
+        a = next(i.identity_key for i in san_jose if i.kind == kind)
+        b = next(i.identity_key for i in austin if i.kind == kind)
+        assert a != b, kind

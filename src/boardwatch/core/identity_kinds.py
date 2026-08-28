@@ -21,12 +21,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# p6.3: `normalized_locations` now canonicalizes each location through
+# `core.normalize.canonical_location` (state name -> USPS abbreviation, trailing "United
+# States" dropped, office/site suffix dropped, "X County, ST" -> "X, ST") and de-duplicates
+# the resulting list, so one place written two ways stops producing two identity components.
 # p6.2: normalize_title now folds "+" and "#" to words, so C++/C#/C stop sharing one title
 # component. Any normalizer change requires this bump — see the module docstring. Readers
-# filter to the current version, so existing p6.1 rows stop being read: suppression turns
+# filter to the current version, so existing p6.2 rows stop being read: suppression turns
 # off and `unique` reports None until `boardwatch identities backfill` runs again. That is
 # the designed degradation, not a regression.
-IDENTITY_ALGORITHM_VERSION = "p6.2"
+IDENTITY_ALGORITHM_VERSION = "p6.3"
 
 
 class UnknownIdentityKind(ValueError):

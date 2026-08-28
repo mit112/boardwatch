@@ -8,6 +8,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Two spellings of one city are now one location (`IDENTITY_ALGORITHM_VERSION` p6.2 -> p6.3).**
+  `normalized_locations` is a component of every location-bearing identity key, so a requisition
+  published as `["Austin, TX"]` on one board and `["Austin, Texas, United States"]` on another held two
+  keys and no identity kind could ever group it. Measured on the live queue tree, **47 of 70 redundant
+  folders differ only in the location string**. `core.normalize.canonical_location` now folds each
+  comma-separated segment against a closed, versioned catalog (`rank/location_data`, which is also now
+  the single source for both state sets): a US state name becomes its USPS abbreviation but **never in
+  the first segment**, so `New York, NY` does not become `ny, ny`; a trailing `United States` is dropped
+  only beside a US state, so `Remote, US` keeps its country; a trailing office segment is dropped; a
+  parenthetical site code is dropped only from a state segment, so `Remote (IND)` — the D-264 country
+  signal — survives; and `X County, ST` becomes `X, ST` only with a US state after it.
+  `canonical_locations` then de-duplicates the list and drops an office alias whose city the list
+  already names. Out-of-catalog segments are left alone: `London, United Kingdom`, `Toronto, ON, Canada`
+  and `Bengaluru, Karnataka, India` pass through unchanged, so a non-US tenant's locations are not
+  mangled. **Nothing merges two different places.** Cross-city (PayPal's San Jose / Austin / Scottsdale
+  / New York), subset/superset (Twitch's Seattle+SF against SF alone) and US-against-Canada (Affirm) are
+  owner policy calls, are untouched, and each has a test asserting it does not fold; five more tests
+  pin the guards by mutation. On the live corpus of 84,821 open postings the suppressing `exact_quad`
+  kind gains 31 groups and 48 suppressions (2.43% -> 2.49% of open), `company_title_location` goes
+  3,451 -> 3,535 groups and `cross_host` 3,899 -> 3,987; every newly merged suppressing group is one
+  requisition published per office by Brex or Anduril. **A version bump degrades to "no identities yet"
+  — suppression off, `unique` None — until `boardwatch identities backfill` re-runs.** Measured against
+  a copy of the live store: **83 s, 423,706 rows written, 1.3 GB peak RSS**, and `identities verify`
+  clean afterwards. The dead p6.2 generation (476,277 rows) is not reaped; the table has no reaper.
+
 - **CI shards the test suite across jobs, and one aggregate check replaces six required contexts
   (D-334).** A pull request took 30-42 minutes, and per-step timings showed the whole of it is a single
   step: gitleaks, generalization, perf and web bundle total about twenty seconds between them, while
