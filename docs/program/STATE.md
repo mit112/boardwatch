@@ -56,9 +56,13 @@ change working, not a regression. The measurements behind it are that session's 
 history imported (`applications` 0 → 22, all `attempt_no = 1`), and `identities backfill` run for the
 p6.3 bump. **The backfill wrote p6.3 BESIDE p6.2 rather than replacing it** — `write_identities` only
 deletes rows at the SAME version — so there is no window where suppression is off and old and new code
-both work. Consequence to price: `posting_identities` roughly doubled and about half is now a dead
-generation with **no reaper** (one is in flight on `feat/idhygiene`). Numbers and reasoning are that
-session's, under **D-336 onward**; this file deliberately does not restate them.
+both work. **The dead generation has since been REAPED (#201):** `posting_identities` went 899,983 →
+**423,706 rows, one generation**, in 9 s, and suppression stayed armed throughout (84,821 of 84,821 open
+postings carry a p6.3 identity). `boardwatch identities reap` reports by default and deletes only under
+`--apply`; it reaps **retired VERSIONS only** and deliberately never touches a closed posting's
+current-version rows, because a reopen would take the corpus below `identities_complete()` and disarm
+dedup store-wide. **It does not VACUUM** — pages return to SQLite's free list, the file does not shrink.
+Numbers and reasoning are that session's, under **D-336 onward**; this file does not restate them.
 
 **THE CADENCE CHANGE CUT AGGREGATOR INTAKE ~8x, AND THE MECHANISM IS RUN COUNT, NOT A BUDGET.** Moving
 from ~8x/day to 1x/day on 2026-08-27 was decided on gate-speed grounds (local runs contend with the
@@ -158,8 +162,10 @@ lying unit** — `workday` is 73.4% of a run at 22.03 s of marginal wall clock p
    `detail_fetch_budget` half moved on 2026-08-28: another session raised it **50 → 400 in Mit's local
    config only** (never the code default — that is a multi-tenancy call). Its measurements of both fetch
    ceilings land under **D-336 onward**, by that session, with its own evidence. **The "four censored
-   boards are short 18,927" figure elsewhere in this file is STALE against the 346-board fleet** and is
-   corrected there, not here.
+   boards are short 18,927" figure is STALE against the 346-board fleet**: on 346 boards the class is
+   **15 boards and 43,371 postings that can never be listed at all** (run 127), against an 84,821-posting
+   open corpus. That half is now SIZED; **it is not solved, and no budget can solve it** — those postings
+   are never enumerated. See D-336.
 
 *(Resolved and no longer open: whether `runner.py` should keep swallowing a funnel-write failure — D-288
 records it and the run still does not fail. Clearance IS a blocker (D-257). Seniority band = `entry`
