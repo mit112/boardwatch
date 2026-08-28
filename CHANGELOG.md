@@ -95,6 +95,15 @@ All notable changes to this project are documented here. The format follows
   Workday site slugs stay case-significant (`NVIDIAExternalCareerSite` and `external_experienced`
   are both real) and are unaffected, since the guard never rewrites a slug.
 
+- **`companies remove` and the `--company` filter now case-resolve the way `add` does (D-339 loose ends).**
+  D-339 folded slug case for the store calls behind `add`/`import`/`remove` but left two edges. The
+  `--company` scan filter (`get_watched_companies`) still compared the slug case-sensitively, so
+  `--company KAYAK` skipped a board stored as `kayak`; the comparison now folds case in SQL the way
+  `stored_slug` does, and needs no `--provider` to do it. And `companies remove` unwatched the correct
+  row yet echoed the slug the operator typed, so `remove ashby:KAYAK` printed `Unwatched ashby:KAYAK.`;
+  it now reports the stored spelling (`ashby:kayak`), matching what `add` and `import` already do. The
+  fold is SQL-side on both, because a Python `.lower()` disagrees above ASCII.
+
 - **A degree requirement naming several fields produced no row at all (D-328).** The three
   `*_in_field_required` patterns bounded the span between "in" and the requirement marker at 60
   characters. That was assumed to truncate the captured field; it does not — the pattern fails to

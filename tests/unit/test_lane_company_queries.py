@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import (
     company_exists,
+    get_watched_companies,
     unwatch,
     upsert_lane_company,
     upsert_watch,
@@ -175,6 +176,17 @@ def test_company_exists_ignores_slug_case(engine: Engine) -> None:
         assert company_exists(conn, provider="ashby", slug="LIGHTFIELD") is True
         assert company_exists(conn, provider="ashby", slug="lightfields") is False
         assert company_exists(conn, provider="greenhouse", slug="lightfield") is False
+
+
+def test_get_watched_companies_filters_slug_case_insensitively(engine: Engine) -> None:
+    """The `--company` filter reaches the store through this, so `--company KAYAK` must find the
+    board stored as `kayak` — otherwise a board added by one case is un-scannable by another
+    (D-339 loose end). Case folds and nothing else: `kayaks` stays a different board."""
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="ashby", slug="kayak", name="Kayak", source="user")
+    with engine.connect() as conn:
+        assert [r.slug for r in get_watched_companies(conn, slug="KAYAK")] == ["kayak"]
+        assert get_watched_companies(conn, slug="kayaks") == []
 
 
 def test_unwatch_resolves_slug_case_the_same_way_the_watch_did(engine: Engine) -> None:
