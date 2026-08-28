@@ -44,6 +44,15 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
   const [query, setQuery] = useState("");
   const [minScore, setMinScore] = useState("");
   const [sort, setSort] = useState<SortState>({ key: "rank", direction: "asc" });
+  /*
+   * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
+   * table silently re-ordered the apply list above it — a list the reader is working top-down and
+   * is not currently looking at, with no visible cue, because `#` prints the server rank rather
+   * than the display position. Query and score floor are still shared, deliberately: those
+   * express "what am I looking for", which spans both lanes, while sort expresses "how do I want
+   * THIS list arranged".
+   */
+  const [reviewSort, setReviewSort] = useState<SortState>({ key: "rank", direction: "asc" });
 
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<QueueDetail | null>(null);
@@ -194,8 +203,8 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
   }, [data, removed, query, minScore]);
 
   const visibleReview = useMemo(
-    () => sortRows(filteredReview, sort, reviewRankOf),
-    [filteredReview, sort, reviewRankOf],
+    () => sortRows(filteredReview, reviewSort, reviewRankOf),
+    [filteredReview, reviewSort, reviewRankOf],
   );
 
   const bandCounts: QueueCounts = useMemo(() => {
@@ -298,12 +307,17 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
     [push, restore, selected],
   );
 
+  const nextSort = (current: SortState, key: SortKey): SortState =>
+    current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" };
+
   const onSort = useCallback((key: SortKey) => {
-    setSort((current) =>
-      current.key === key
-        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-        : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" },
-    );
+    setSort((current) => nextSort(current, key));
+  }, []);
+
+  const onReviewSort = useCallback((key: SortKey) => {
+    setReviewSort((current) => nextSort(current, key));
   }, []);
 
   if (loadError !== null) {
@@ -354,10 +368,21 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
         }
       >
         <div className="min-w-0">
-          {data.rows.length === 0 ? (
+          {/*
+            * BOTH lanes, because `rows` is now the apply lane alone. With every delivered lead in
+            * review this said "the queue is empty … this is not a filter result" directly above a
+            * populated review section — and both halves were false: leads WERE delivered, and the
+            * reason they are not above is the lane split.
+            */}
+          {data.rows.length === 0 && data.review.length === 0 ? (
             <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
               The queue is empty. A run has to deliver a tailored lead before anything appears
               here — this is not a filter result.
+            </p>
+          ) : data.rows.length === 0 ? (
+            <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
+              Nothing is blindly appliable right now. Every delivered lead is in the review
+              section below — that is a lane split, not an empty run.
             </p>
           ) : (
             <QueueTable
@@ -423,19 +448,25 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
                 </p>
               </header>
 
-              {reviewOpen ? (
-                <div id="review-list" className="mt-4">
-                  {visibleReview.length === 0 ? (
+              {/*
+                * The container stays MOUNTED and is emptied instead of being unmounted, so
+                * `aria-controls="review-list"` resolves in the collapsed state — which is the
+                * default, and therefore the state a screen reader meets first. Unmounting it left
+                * a dangling IDREF that AT drops silently. The ROWS are still not rendered while
+                * collapsed, so nothing is paid for the leads themselves.
+                */}
+              <div id="review-list" className={reviewOpen ? "mt-4" : undefined}>
+                {!reviewOpen ? null : visibleReview.length === 0 ? (
                     <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
                       No review lead matches the current filter. There are{" "}
                       {data.review.length.toLocaleString()} in the lane.
                     </p>
-                  ) : (
+                ) : (
                     <QueueTable
                       rows={visibleReview}
                       rankOf={reviewRankOf}
-                      sort={sort}
-                      onSort={onSort}
+                      sort={reviewSort}
+                      onSort={onReviewSort}
                       selectedId={selected}
                       collapsing={collapsing}
                       onSelect={(row) => {
@@ -450,10 +481,9 @@ export function QueuePage({ push }: { push: (request: ToastRequest) => void }) {
                       onSkip={(row) => {
                         act(row, "skipped");
                       }}
-                    />
-                  )}
-                </div>
-              ) : null}
+                  />
+                )}
+              </div>
             </section>
           )}
         </div>

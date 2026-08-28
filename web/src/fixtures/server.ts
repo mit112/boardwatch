@@ -53,7 +53,13 @@ function visibleRows(): QueueRow[] {
  * a review lead is a badged lead.
  */
 function isReviewLane(row: QueueRow): boolean {
-  return REVIEW_TITLES.has(row.title);
+  // `off_target` is `facts.role == "not_swe"`, and `lane()` demotes anything the role gate will
+  // not positively call `swe` — so on the real wire a non-ineligible off-target lead is ALWAYS in
+  // review. Without this clause the AUTHORED "Data Analyst, Growth" row (off_target, uncertain)
+  // sat in the apply lane, which the wire cannot produce: the fixture would have been showing a
+  // badged lead inside the list `types.ts` calls a blind-apply list. `REVIEW_TITLES` still carries
+  // the case the badge CANNOT express — a role-`uncertain` title, in review wearing no flag.
+  return row.off_target || REVIEW_TITLES.has(row.title);
 }
 
 function applyRows(): QueueRow[] {
