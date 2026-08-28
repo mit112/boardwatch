@@ -41,6 +41,19 @@ requires ONE context, `ci`** — not the six `test (3.x, ubuntu-latest)` ones. S
 is measured**: at 8, seven jobs queued behind the ~20-job concurrency ceiling, and since wall clock is
 bounded by concurrency rather than by slicing, 8 paid double the per-job setup for the same ten minutes.
 
+**SEVEN CHANGES MERGED 2026-08-28 AFTER THE PREVIOUS CLOSE; `main` IS `92e5e92`.** #199 the generic
+prior-application importer · #200 location canonicalization (p6.2 → p6.3) · #201 the identity reaper and
+the funnel's `dedup` stage · #203 D-336..338 · #204 the slug case-collision guard · #205 LinkedIn
+pagination · #206 the scan's four-way board split · #207 D-339..341. **Every one gated with a real exit
+code 0 and CI green.** The paragraphs below that say "another session" refer to this work; it is now
+merged and the numbers live under **D-336 … D-341**.
+
+**RUN 128 IS THE FIRST RUN CARRYING ALL OF IT** (started 2026-08-28 09:00:06Z). It is the check on four
+changes at once — the detail-budget drain, LinkedIn pagination, the new `dedup` stage, and the four-way
+board split. **Read its funnel before concluding anything about run duration**: the projection is ~2 h
+and a longer run is the changes working. `boards_attempted / complete / partial / unchanged / failed`
+should now RECONCILE to the total for the first time (D-341).
+
 **THE LIVENESS PROBE THIS FILE SHIPPED WAS WRONG, AND IT FAILED TOWARD "SAFE TO WRITE" (D-335).** The
 `awk '$2==1'` form below reported IDLE for the whole of run 127. Use the argv[0]-anchored form; the
 reasoning is in D-335 and the block under **Next action** now carries the correct one.
@@ -48,8 +61,10 @@ reasoning is in D-335 and the block under **Next action** now carries the correc
 **ANOTHER SESSION RAISED `detail_fetch_budget` 50 → 400 IN THE LIVE CONFIG (2026-08-28, not this
 session).** Mit's local config only — deliberately NOT the code default, which would change behaviour
 for every user of the published package. Backup: `config.toml.bak-predetailbudget-20260828`. **Expect
-the next run to be ~27 min longer, ONCE**, as it absorbs the deferred-detail backlog; that is the
-change working, not a regression. The measurements behind it are that session's and land under
+the next run to be ~27-54 min longer, ONCE**, as it absorbs the deferred-detail backlog; that is the
+change working, not a regression. **`lane_search_pages = 5` and `lane_posting_budget = 300` are now set
+in the same local config** (D-340), adding ~5 min on top, so **budget ~2 hours for the first run
+carrying all of it.** The measurements behind it are that session's and land under
 **D-336 onward** — this file deliberately does not restate them.
 
 **THE LIVE STORE WAS WRITTEN BY ANOTHER SESSION AFTER RUN 127 (2026-08-28).** Prior application
@@ -69,7 +84,13 @@ from ~8x/day to 1x/day on 2026-08-27 was decided on gate-speed grounds (local ru
 local gate: the same suite measures 4m51s idle and 34m40s under load) and the intake consequence was
 never costed. **Do not attribute it to `lane_posting_budget`** — that was checked and is NOT binding:
 `body_fetched` was 55 on run 126 and 56 on run 127 against a budget of 60 (LinkedIn 49 and 53). What
-caps a lane is that neither paginates its search. **The CI work does NOT weaken the original
+caps a lane is that neither paginated its search. **THE LINKEDIN HALF IS NOW FIXED (D-340, #205):**
+`Settings.lane_search_pages` ships defaulting to **1 — byte-for-byte the old behaviour**, page 0 emits
+the URL unchanged rather than `&start=0`, so no other user's request SHAPE moves. Mit ruled **5 pages
++ `lane_posting_budget` 300**, both set in LOCAL config. **hiring.cafe stays one page and that is
+STRUCTURAL, not a knob** — `robots.txt` disallows its `?page=` form and no pagination parameter was ever
+found. **The cost is WALL CLOCK, not request count:** `Fetcher` already paces 1.0 s per host and
+LinkedIn is one host, so ~370 requests/run against ~74 is **~1 min → ~6.2 min** of a run. **The CI work does NOT weaken the original
 justification** — `make check` is still local and still contends.
 
 **Everything below this line is carried from the previous session and remains true.** The provisional
