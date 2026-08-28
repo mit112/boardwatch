@@ -264,6 +264,17 @@ def _is_near_miss(need: int, family: FamilySpec, pattern: PatternSpec) -> bool:
     and rewriting it to `unknown` discards a fact for no gain.
 
     A ceiling of `0` disables the band, which is every family but this one.
+
+    **Two consequences, recorded because neither is visible from the call site.** (1) On the
+    scoped/activity branch an in-band bar now returns `UNKNOWN` in BOTH directions, so
+    `total_years_experience` stops influencing those rows at all and that value class can no
+    longer fire — the shape this module treats as a monitoring failure elsewhere. It is correct
+    here (the abstain direction is the safe one) but it means the abstain RATE on
+    `experience_years` rises by design; only `fully_abstaining` means a rule is broken.
+    (2) `eligibility/extract_llm.py` carries a SECOND years adjudication that this band does not
+    cover, so its advisory rows will disagree with the deterministic lane on the same 2-3 year
+    bars. That one is advisory-only and capped below `ineligible`, so it cannot re-reject a
+    near-miss posting; it is a divergence to know about, not a hole.
     """
     ceiling = family.near_miss_years_ceiling
     return ceiling > 0 and need <= ceiling and pattern.requiredness == "required"
