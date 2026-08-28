@@ -67,6 +67,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A board slug differing only in case no longer becomes a second company row (D-339).**
+  `companies` enforces `UNIQUE(provider, slug)` and SQLite compares that case-sensitively, so
+  `ashby:Lightfield` and `ashby:lightfield` were two watched rows for one board — identical open
+  postings, identical provider posting ids, URLs differing only in the slug's case. It was fetched
+  twice every run and contributed redundant postings that no identity kind can suppress, because
+  every suppressing key is scoped by `company_id`. Two comparisons had to be wrong for the row to
+  appear: the lane's is-new check read the variant as new, which spent one of the run's
+  new-company slots as well as letting it through, and the insert's conflict target then failed to
+  converge. Both now resolve through one helper that returns the slug the store already holds, so
+  no existing slug is rewritten and no live URL moves; the fold is done in SQL on both sides,
+  because a Python-side `.lower()` disagrees above ASCII and would fail toward two rows.
+  `companies add` and `companies import` report the resolution instead of silently doing nothing.
+  Workday site slugs stay case-significant (`NVIDIAExternalCareerSite` and `external_experienced`
+  are both real) and are unaffected, since the guard never rewrites a slug.
+
 - **A degree requirement naming several fields produced no row at all (D-328).** The three
   `*_in_field_required` patterns bounded the span between "in" and the requirement marker at 60
   characters. That was assumed to truncate the captured field; it does not — the pattern fails to
