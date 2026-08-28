@@ -1485,6 +1485,12 @@ def _emit_funnel(
             ran=scan_summary is not None,
             boards_attempted=scan_summary.companies if scan_summary else 0,
             boards_complete=summary.scan_boards_complete,
+            # Read off `scan_summary` for the same reason `boards_attempted` and `fetch_cost`
+            # above are: these two complete the partition of `boards_attempted` and nothing
+            # else in the pipeline consumes them, so carrying them through `PipelineSummary`
+            # would add two fields with one reader apiece.
+            boards_partial=scan_summary.partial if scan_summary else 0,
+            boards_unchanged=scan_summary.unchanged if scan_summary else 0,
             boards_failed=summary.scan_boards_failed,
             postings_seen=summary.scan_postings_seen,
             # `None` when no scan ran, so the artifact distinguishes "not measured" from

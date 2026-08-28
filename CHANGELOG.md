@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The run funnel publishes the scan's full four-way board split, so its numbers reconcile.**
+  `ScanSummary` sorts every attempted board into exactly one of `complete | partial | failed |
+  unchanged`, and the artifact published three of them. Live run 126 read "346 boards attempted ·
+  166 complete · 1 failed", which reads as **179 boards that silently did nothing**; they were 39
+  `partial` (a detail budget truncated them) and 140 `unchanged` (HTTP 304). Run 127 hid 200 the same
+  way (145 / 35 / 165 / 1). The `scan` block now carries `boards_partial` and `boards_unchanged`
+  beside the two it had, plus `boards_reconciled` — `true` when the four sum to `boards_attempted`,
+  and **`null`, never `true`, on a `--no-scan` run**, because `0 == 0` is not a passed check. An empty
+  bucket emits a measured `0` rather than dropping its key. The Markdown line and the JSON both move.
+  The four-way partition was verified against the live store (`board_scans`, `scan_kind='board'`) for
+  both runs: 166+39+140+1 and 145+35+165+1, each exactly 346. **`artifact_version` stays 7** — these
+  are additive keys in a block that has existed since v1, on the `scan.fetch_cost` precedent, and no
+  existing value changes meaning.
+
 - **Two spellings of one city are now one location (`IDENTITY_ALGORITHM_VERSION` p6.2 -> p6.3).**
   `normalized_locations` is a component of every location-bearing identity key, so a requisition
   published as `["Austin, TX"]` on one board and `["Austin, Texas, United States"]` on another held two

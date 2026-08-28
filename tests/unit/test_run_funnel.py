@@ -144,6 +144,7 @@ def funnel(
     duplicate_this_run: int = 0,
     dead_this_run: int = 0,
     liveness: LivenessCheck | None = None,
+    scan: ScanContext | None = None,
     considered: int | None = None,
     tailor_failed: int = 0,
     artifacts: TailoredArtifactCounts | None = None,
@@ -203,8 +204,8 @@ def funnel(
         started_at=None,
         finished_at=None,
         manifest=manifest or run_manifest(),
-        scan=ScanContext(ran=True, boards_attempted=85, boards_complete=80, boards_failed=5,
-                         postings_seen=13_590),
+        scan=scan or ScanContext(ran=True, boards_attempted=85, boards_complete=80,
+                                 boards_failed=5, postings_seen=13_590),
         corpus=counts,
         shortlist=ShortlistCounts(
             considered=considered,
@@ -628,6 +629,70 @@ def test_uncertain_band_is_reported_but_is_not_a_drop() -> None:
     # the figure answers nothing "from the artifact alone".
     assert "`uncertain_band`: 3" in body
     assert "`band_tokens_seen_while_inert`: 2" in body
+
+
+# ------------------------------- the scan block's four-way board split (never three-way)
+
+
+def test_the_markdown_names_the_partial_and_unchanged_boards_it_used_to_swallow() -> None:
+    """Run 126's real split. The three-way line said "346 attempted · 166 complete · 1 failed",
+    leaving 179 boards a reader could only read as having silently done nothing."""
+    report = funnel(scan=ScanContext(
+        ran=True, boards_attempted=346, boards_complete=166, boards_partial=39,
+        boards_unchanged=140, boards_failed=1, postings_seen=18_553,
+    ))
+
+    body = funnel_to_markdown(report)
+    assert (
+        "346 boards attempted · 166 complete · 39 partial · 140 unchanged · 1 failed"
+    ) in body
+    assert "partition the boards attempted" in body
+
+
+def test_a_board_outcome_that_is_empty_reports_zero_rather_than_dropping_its_key() -> None:
+    """A measured zero and an absent bucket are different claims — this fix exists because
+    the artifact could not tell them apart."""
+    payload = funnel_to_dict(funnel(scan=ScanContext(
+        ran=True, boards_attempted=2, boards_complete=2, postings_seen=7,
+    )))["scan"]
+
+    assert payload["boards_partial"] == 0
+    assert payload["boards_unchanged"] == 0
+    assert payload["boards_failed"] == 0
+    assert payload["boards_reconciled"] is True
+
+
+def test_a_scan_whose_outcomes_do_not_sum_to_the_boards_attempted_says_so() -> None:
+    """The reconciliation is published, not implied: a gap is named where it is read."""
+    report = funnel(scan=ScanContext(
+        ran=True, boards_attempted=346, boards_complete=166, boards_failed=1,
+        postings_seen=18_553,
+    ))
+
+    assert funnel_to_dict(report)["scan"]["boards_reconciled"] is False
+    assert "do not sum to the boards attempted" in funnel_to_markdown(report)
+
+
+def test_a_run_that_did_not_scan_reports_no_reconciliation_rather_than_a_pass() -> None:
+    """`0 == 0` is not evidence. Same rule as `Stage.reconciled`: an uncomputable identity
+    is `None`, never a tick."""
+    payload = funnel_to_dict(funnel(scan=ScanContext(ran=False)))["scan"]
+
+    assert payload["boards_reconciled"] is None
+
+
+def test_the_artifact_version_does_not_move_for_the_board_split() -> None:
+    """ADDITIVE keys in a block that has existed since v1, on the `scan.fetch_cost` precedent.
+
+    Nothing already in the artifact changes meaning: `boards_attempted`, `boards_complete`,
+    `boards_failed` and `postings_seen` count exactly what they counted before, and a consumer
+    that ignores `boards_partial`/`boards_unchanged`/`boards_reconciled` reads every old key
+    correctly. Pinned as a literal because that is what a consumer sees.
+    """
+    from boardwatch.reports.run_funnel import ARTIFACT_VERSION
+
+    assert ARTIFACT_VERSION == 7
+    assert funnel_to_dict(funnel())["artifact_version"] == 7
 
 
 def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -> None:
