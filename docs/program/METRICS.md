@@ -7964,3 +7964,45 @@ detail GETs = 4,779 requests ≈ **1.78 s/request**; +7,276 detail GETs at 4-way
 written, `application_events` 0 → 22, all `attempt_no = 1`; **21 of 22 on currently-open postings (32.8%,
 as predicted)**, and **7 were sitting in the delivery queue** at import time. `applications.csv` rejected as
 the source: no URL column, 0.20% match against open postings, every row 5 months stale.
+
+### Post-close merges — slug guard, pagination, board split (D-339…D-341)
+
+**Slug case-collision (D-339).** 571 company rows, **exactly one** collision group
+(`ashby:Lightfield` id 323 user/watched vs `ashby:lightfield` id 348 lane) — identical 19 open
+postings, identical Ashby posting UUIDs. 78 rows carry an uppercase slug character; **the other 77
+collide with nothing**, so the guard changes the outcome for zero existing rows. Duplicate unwatched.
+
+**Cross-company duplication, by cause** (the 587 of D-337, resolved): HPE 553 · Lightfield 18 ·
+Cisco 5 · Genentech 4 · Roblox 2 · Visa 2 · Lyft 1 · Ontic 1 · BlackRock 1. By provider pair:
+workday+workday 559 · ashby 18 · linkedin+anything 10. **HPE's two boards are NOT nested** — 514
+requisition bases shared, **86 unique to each**, and `hpe/Jobsathpe`'s unique set holds real software
+roles, so retiring one was rejected.
+
+**Lane conversion — why scaling a lane differs from scaling a board (D-340).** Over all 670 built jobs:
+
+| source | open postings | leads ever built | conversion |
+|---|---:|---:|---:|
+| linkedin lane | 213 | 19 | **8.9%** |
+| hiringcafe lane | 291 | 22 | **7.6%** |
+| workday | ~70,000 enumerated | 278 | fractions of a percent |
+
+Leads by source-board provider: workday 278 · greenhouse 242 · ashby 78 · hiringcafe 22 · linkedin 19 ·
+lever 15 · workable 14 · smartrecruiters 2. Projected LinkedIn cost at 14 live facets, 5 pages,
+budget 300: **≤370 requests/run vs ≤74**, i.e. **~1 min → ~6.2 min** behind the 1.0 s/host pace.
+
+**Board split, the exact partition (D-341)** — filtered to `board_scans.scan_kind='board'`; lane rows
+are a separate population (81 and 86, all `partial`):
+
+| run | attempted | complete | partial | unchanged | failed | sum |
+|---|---:|---:|---:|---:|---:|---:|
+| 126 | 346 | 166 | 39 | 140 | 1 | **346** |
+| 127 | 346 | 145 | 35 | 165 | 1 | **346** |
+
+**Workday wrap, weighted per board (why D-336 declined slicing).** ~3,338 SWE-ish postings behind the
+offset-2000 wrap, NOT 43,371 — and an aggregate rate over these boards (23.4%) over-estimates by 3x
+because the volume sits on the low-density boards: Walmart 18,737 unreachable at 8.7% = 1,639 ·
+Target 10,223 at 5.4% = 555 · **NVIDIA 696 at 71.2% = 496 (134 pages — the only good ratio)** ·
+Citi 2,502 at 18.7% = 467 · Pnc 1,922 at 6.8% = 131 · **Lowes 9,039 at 0.5% = 45 (601 pages)**.
+
+**Gate/CI, all seven PRs:** every `make check` captured a real exit code 0 — 8247, 8250, 8286, 8272,
+8297, 8303, 8314 passed across the sequence; CI `ci` green on each.
