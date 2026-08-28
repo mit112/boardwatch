@@ -131,6 +131,29 @@ store deliberately and verify, rather than letting the next unattended tick disc
 rollback snapshot** — all three stale backups were verified redundant and deleted (2026-08-23b, ~2.9 GB
 reclaimed). Take one before any destructive operation rather than assuming one exists.
 
+**THE SCHEDULER IS NOW ONCE A DAY AT 04:00 LOCAL (owner's call 2026-08-27, was 8x/day at ~3h).**
+The reason is measured, not a preference: an engine change forces a FULL re-evaluation, which cost
+**run 126 116 minutes and 83,718 rows** — and every one of those rows goes stale the next time
+`engine_version` moves, so during engine work the extra ticks are DISCARDED WORK that also contends
+for CPU with the gate (the same suite measures 4m51s idle and 34m40s under load). Nothing open
+depended on the old cadence: **Gate P3 is MET on runs 71-78 and the provisional pass on runs 119-123,
+both banked**, and the 14-day acceptance clock is deliberately not started. 04:00 rather than the
+original 08:00 so a ~2h spike finishes before the workday. The 3-hourly plist is kept at
+`~/Library/LaunchAgents/com.boardwatch.run.plist.bak-3h-20260827`; restore it when delivery matters
+more than gate speed. **A paused or widened schedule looks IDENTICAL to a broken one** — there is
+still no external missed-window alarm (see Live blockers) — so check this line before concluding the
+trigger died.
+
+**A LOW YEARS BAR NOW ABSTAINS RATHER THAN REJECTING (D-333, #194).** `experience_years` drove ~89% of
+the reject pile against a profile declaring ONE year, and 8,745 postings were rejected for needing =<3
+years — a population that is **invisible by construction**, since the reject pile is never inspected
+and boardwatch never applies. A `required` bar at or under `near_miss_years_ceiling` (3) now resolves
+`UNKNOWN`, so the lead lands `uncertain`. **NOT a severity flip:** severity is per-FAMILY so it cannot
+express a threshold, and a `preference` row falls through to `eligible` — asserting the candidate
+qualifies. Measured on run 126: **36,141 ineligible -> 5,980 move (16.5%), 0 new `eligible`**, routed
+by D-332 to **5,391 `_review` / 589 APPLY**. Delivery stays capped at 10/run, so what changes is what
+COMPETES. Moves `engine_version`; no ledger drain owed (D-331).
+
 **THE QUEUE ROOT IS NO LONGER A BLIND-APPLY SURFACE CARRYING UNVERIFIED LEADS (D-332, #192).** The
 queue was **82% `uncertain`** (314/383, only 27 `eligible`), and a lead is `uncertain` precisely BECAUSE
 a ranker gate failed open on it — the hard US gate passes location `unknown` (the visa ruling) and the
@@ -177,13 +200,18 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
 
    **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
    ```sh
-   pgrep -f "bin/boardwatch run"   # empty = idle; any PID = still working, wait for it to exit
+   # ALIVE if this prints a PID; empty = idle.
+   ps -o pid,ppid,command -ax | grep '[b]oardwatch run --project' | awk '$2==1{print $1}'
    ```
-   **Match on `bin/boardwatch run`, not `boardwatch run`.** `pgrep -f` matches full command lines, so the
-   bare pattern also matches the agent's OWN shell whenever the probe command contains that string — it
-   reports a phantom PID and a session waits forever for a run that already exited. Confirm any hit with
-   `ps -o pid,ppid,command -p <PID>`: the real run's parent is `1` (launchd) and its command line starts
-   with the venv's `python3`.
+   **`pgrep -f` CANNOT do this job, and the obvious repair does not work either.** `pgrep -f` matches
+   full command lines, so it matches the probing shell itself whenever the probe text contains the
+   pattern — it returns a phantom PID and the session waits forever for a run that already exited.
+   Narrowing the pattern to `bin/boardwatch run` does NOT fix it: a shell running *that* probe matches
+   too. This was shipped as the fix on 2026-08-28 and was still wrong; a monitor built on it hung.
+   Three things make the form above work: the `[b]` character class means the probe's own command line
+   does not contain its own pattern; `$2==1` keeps only launchd's child, excluding every shell; and
+   `--project` excludes the long-lived `boardwatch web` server, which is otherwise a permanent false
+   positive (it had been up for over a day when this was found).
    `runs.finished_at` is written BEFORE the process exits — funnel and morning artifacts are emitted from
    a `finally` after the row closes (D-024). Run 125: `finished_at` 22:50:08.8, artifacts at 22:51,
    process gone at 22:51:40 — **92 seconds of work after the table read `ok`.**

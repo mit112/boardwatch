@@ -7644,10 +7644,17 @@ structural and recurs every run: the funnel and morning artifacts are emitted fr
 run row closes (D-024). Confirmed independently by two sessions on two different signals — process
 liveness and artifact mtimes.
 
-**Consequence:** the pre-write guard is `pgrep -f "bin/boardwatch run"`, never
-`SELECT status FROM runs`. **Match `bin/boardwatch run`, not the bare `boardwatch run`** — `pgrep -f`
-reads full command lines, so the bare pattern also matches the probing shell itself and reports a
-phantom PID, which blocks a session forever on a run that already exited (hit 2026-08-28; D-332).
+**Consequence:** the pre-write guard is a PROCESS check, never `SELECT status FROM runs` — and the
+process check has to be written carefully, because two successive attempts at it were wrong:
+
+```sh
+ps -o pid,ppid,command -ax | grep '[b]oardwatch run --project' | awk '$2==1{print $1}'
+```
+
+`pgrep -f` matches full command lines and therefore matches the PROBING SHELL, returning a phantom PID
+that blocks a session forever. Narrowing to `bin/boardwatch run` (shipped as the fix in D-332) has the
+same defect. The `[b]` class stops the probe matching itself, `$2==1` keeps only launchd's child, and
+`--project` excludes the long-lived `boardwatch web` server (up for over a day when this was found).
 The handoff prescribed the DB query; had a stale `.git/index.lock` (zero bytes, 12:01, unrelated) not
 blocked the pull, the sequence would have swapped code under a live run and written the profile against
 a profile that run had already snapshotted — the exact straddle the deferral existed to prevent.
@@ -7733,3 +7740,57 @@ the location classifier fails open on `unknown`, and most SWE postings are remot
 **Re-measure once run 126's evaluations land.** The verdict-conditioned split is the number that belongs
 against D-332, and it can only move leads *out* of the apply lane (an `ineligible` verdict is excluded
 upstream; `eligible` promotes; `uncertain` behaves as `None` did here).
+
+### Run 126 — the re-evaluation spike, measured against its projection
+
+| quantity | projected | **actual** |
+|---|---|---|
+| wall clock | ~124 min | **116 min** (01:00:04Z → 02:55:55Z) |
+| evaluations written | — | **83,718** |
+| engine | — | `1+7485e3a85f38` |
+
+The projection held (−8 min, 6% under), so the assumption it rested on — that run 119's surcharge
+scales linearly in corpus size — survives its first real test. **Read this before sizing the next
+engine move.**
+
+Verdicts: **3,744 `eligible` · 43,833 `uncertain` · 36,141 `ineligible`.**
+
+**And this run is the argument for widening the cadence.** All 83,718 rows are stamped
+`1+7485e3a85f38`; the D-333 branch computes `1+118c640ea50c`, so **every one of them goes stale the
+moment that merges and the tree is pulled.** 116 minutes of CPU, discarded, having contended with the
+local gate throughout. The scheduler is now once daily at 04:00 local (see `STATE.md`).
+
+### D-333 near-miss band — blast radius on run 126's full re-evaluation
+
+| quantity | value |
+|---|---|
+| evaluations carrying ≥1 requirement row | 44,497 |
+| `ineligible` | **36,141** |
+| → **move to `uncertain`** | **5,980 (16.5% of ineligible)** |
+| held by a HIGHER years bar | 2,258 |
+| held by ANOTHER blocker family | 960 |
+| low thresholds among movers | 2yr **3,003** · 3yr **3,511** (only these two) |
+| **new `eligible`** | **0, by construction** |
+
+Where D-332's `lane()` sends them:
+
+| | `_review` | APPLY |
+|---|---|---|
+| **movers** | **5,391** | **589** |
+
+Location 3,765 `us` / 1,815 `non_us` / 400 `unknown`; role 921 `swe` / 3,707 `not_swe` / 1,352
+`uncertain`. **The plan's premise — "the affected leads are US+SWE so Phase 1 routes them to
+`_review`" — is inverted**: a US+SWE `uncertain` lead routes to APPLY, and only 921 of 5,980 are `swe`
+at all. So 589 leads DO enter the blind-apply lane; delivery stays capped at `DEFAULT_TOP_N = 10`, so
+what changes is what competes for ten slots.
+
+**A superseded figure, recorded because the failure mode is generic.** An earlier measurement in the
+same session reported **596** movers. It was taken MID-run-126 against 4,062 `ineligible` rows and was
+**10× low** in absolute terms, though the proportion held (13.7% vs 16.5%). A mid-run snapshot of a
+re-evaluating store is a SAMPLE, not a measurement, and nothing in the numbers says so — check
+process liveness before quoting a count, the same way a write is guarded.
+
+**Method note.** The threshold is in `eligibility_requirements.rationale` ("1 total < 5 scoped to a
+skill"), **not** in `requirement_text` — `scoped_years_minimum`, the dominant rule at 3,195 unmet rows,
+stores a static string carrying no number. A measurement keyed on `requirement_text` reads **zero
+movers** and looks like a clean negative result.
