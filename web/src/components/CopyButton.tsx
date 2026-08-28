@@ -43,7 +43,7 @@ export function CopyButton({
   };
 
   const base =
-    "inline-flex min-h-11 items-center justify-center rounded border px-3 text-sm transition-colors duration-150 ease-in-out";
+    "inline-flex min-h-11 items-center justify-center rounded-sm border px-3 text-sm transition-colors duration-150 ease-in-out";
   const skin =
     variant === "primary"
       ? "border-fg-2 bg-surface-2 text-fg hover:border-fg hover:bg-surface"

@@ -60,7 +60,7 @@ function ToastItem({
         keyboard.current = false;
         if (!pointer.current) onRelease(toast.id);
       }}
-      className={`flex items-center gap-4 rounded border ${border} bg-surface-2 px-4 py-3 shadow-lg transition-[opacity,translate] duration-[180ms] ease-out ${
+      className={`flex items-center gap-4 rounded-md border ${border} bg-surface-2 px-4 py-3 shadow-lg transition-[opacity,translate] duration-[180ms] ease-out ${
         shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
       }`}
     >
@@ -72,7 +72,7 @@ function ToastItem({
         {toast.undo ? (
           <button
             type="button"
-            className="min-h-11 rounded border border-fg-2 px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface"
+            className="min-h-11 rounded-sm border border-fg-2 px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface"
             onClick={() => {
               toast.undo?.();
               onDismiss(toast.id);
@@ -83,7 +83,7 @@ function ToastItem({
         ) : null}
         <button
           type="button"
-          className="min-h-11 min-w-11 rounded text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
+          className="min-h-11 min-w-11 rounded-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
           onClick={() => {
             onDismiss(toast.id);
           }}

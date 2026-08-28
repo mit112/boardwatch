@@ -19,17 +19,27 @@ function Metric({
   value,
   note,
   emphasis = false,
+  order = 0,
 }: {
   label: string;
   value: string;
   note?: string;
   emphasis?: boolean;
+  /* Drives the entry stagger and nothing else. Hand-written rather than a `map` index, because
+     each cell below carries its own `note` and is therefore written out one by one. */
+  order?: number;
 }) {
   return (
-    <div className="flex min-w-24 flex-col gap-1 px-4 py-3">
-      <span className="text-[11px] tracking-wide text-fg-3 uppercase">{label}</span>
+    <div
+      className="enter-up flex min-w-28 flex-col gap-2 px-6 py-5"
+      style={{ "--stagger": `${String(order * 40)}ms` } as React.CSSProperties}
+    >
+      <span className="label-micro text-fg-3">{label}</span>
+      {/* The emphasis jump is deliberately large — 2.25rem against 1.25rem. `in queue` and
+          `eligible` are the two figures the owner opens the page to read; the rest of the row is
+          context for them, and a band where every cell shouts equally has no headline at all. */}
       <span
-        className={`tabular-nums ${emphasis ? "text-2xl text-fg" : "text-xl text-fg-2"}`}
+        className={`font-display tabular-nums ${emphasis ? "text-4xl leading-none text-fg" : "text-xl leading-none text-fg-2"}`}
         {...(note ? { title: note } : {})}
       >
         {value}
@@ -50,32 +60,36 @@ export function StatusBand({
   return (
     <section
       aria-label="Queue status"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded border border-divider bg-surface"
+      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
     >
-      <Metric label="in queue" value={counts.in_queue.toLocaleString()} emphasis />
+      <Metric label="in queue" value={counts.in_queue.toLocaleString()} emphasis order={0} />
       <Metric
         label="eligible"
         value={counts.eligible.toLocaleString()}
         emphasis
         note="Affirmatively eligible. Never includes uncertain."
+        order={1}
       />
       <Metric
         label="uncertain"
         value={counts.uncertain.toLocaleString()}
         note="Its own bucket: not yet known, and never added into eligible."
+        order={2}
       />
       <Metric
         label="review"
         value={counts.review.toLocaleString()}
         note="Held for a look, not blindly appliable: outside the US, or a title the role gate will not positively call software. Listed below the queue; folders sit in _review."
+        order={3}
       />
       <Metric
         label="ineligible"
         value={counts.ineligible.toLocaleString()}
         note="Rejected by the eligibility gate, so not in the queue. Folders drain to _ineligible."
+        order={4}
       />
-      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} />
-      <Metric label="skipped" value={counts.skipped.toLocaleString()} />
+      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={5} />
+      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={6} />
       <Metric
         label="last run"
         value={
@@ -84,6 +98,7 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
+        order={7}
       />
       {/*
         * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead
@@ -93,7 +108,7 @@ export function StatusBand({
         */}
       <div
         role="status"
-        className="ml-auto flex items-center border-l-0 px-4 py-3 text-sm text-fg-2 tabular-nums"
+        className="ml-auto flex items-center border-l-0 px-6 py-5 text-sm text-fg-2 tabular-nums"
       >
         Showing {showing.toLocaleString()} of {total.toLocaleString()}
       </div>

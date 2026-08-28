@@ -21,7 +21,7 @@ function NavTab({
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`min-h-11 rounded px-3 text-sm transition-colors duration-[120ms] ease-snap ${
+      className={`min-h-11 rounded-sm px-3.5 font-display text-xs tracking-[0.08em] uppercase transition-colors duration-[120ms] ease-snap ${
         active
           ? "bg-surface-2 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
           : "text-fg-2 hover:bg-surface hover:text-fg"
@@ -62,15 +62,21 @@ export function App() {
         onClick={() => {
           document.getElementById("view")?.focus();
         }}
-        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:inline-flex focus-visible:min-h-11 focus-visible:items-center focus-visible:rounded focus-visible:border focus-visible:border-fg-2 focus-visible:bg-surface-2 focus-visible:px-3 focus-visible:text-sm focus-visible:text-fg"
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:inline-flex focus-visible:min-h-11 focus-visible:items-center focus-visible:rounded-sm focus-visible:border focus-visible:border-fg-2 focus-visible:bg-surface-2 focus-visible:px-3 focus-visible:text-sm focus-visible:text-fg"
       >
         Skip to content
       </button>
       <header inert={sheet} className="sticky top-0 z-30 border-b border-divider bg-bg/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[110rem] flex-wrap items-center gap-4 px-4 py-2">
+        <div className="mx-auto flex max-w-[110rem] flex-wrap items-center gap-6 px-6 py-3">
           {/* A real `h1`, not a styled span: it is the only document-level heading either route
-              has, and without it a screen reader's heading list starts at `h2` under nothing. */}
-          <h1 className="text-sm tracking-wide text-fg">boardwatch</h1>
+              has, and without it a screen reader's heading list starts at `h2` under nothing.
+              Set as a wordmark in the display voice. The accent rule beside it is the only place
+              the accent appears outside a focus ring; it is `aria-hidden` and carries no meaning,
+              because the word does. */}
+          <h1 className="flex items-center gap-2.5 font-display text-[0.8125rem] tracking-[0.2em] text-fg uppercase">
+            <span aria-hidden="true" className="h-3.5 w-0.5 rounded-full bg-accent" />
+            boardwatch
+          </h1>
           <nav aria-label="Views" className="flex items-center gap-1">
             <NavTab
               label="Queue"
@@ -92,7 +98,7 @@ export function App() {
               directory — out of the shipped bundle rather than leaving it as unreachable text. */}
           {import.meta.env.DEV && FIXTURE_MODE ? (
             <span
-              className="ml-auto rounded border border-control px-2 py-1 text-[11px] tracking-wide text-fg-2 uppercase"
+              className="ml-auto rounded-sm border border-control px-2 py-1 label-micro text-fg-2"
               title="Serving from src/fixtures/. Add ?live=1 to talk to the API instead."
             >
               fixture data
@@ -101,7 +107,7 @@ export function App() {
         </div>
       </header>
 
-      <main id="view" tabIndex={-1} className="mx-auto max-w-[110rem] px-4 py-4">
+      <main id="view" tabIndex={-1} className="mx-auto max-w-[110rem] px-6 py-10">
         {route === "queue" ? <QueuePage push={push} onSheet={setSheet} /> : <RunsPage />}
       </main>
 

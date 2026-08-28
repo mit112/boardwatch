@@ -19,7 +19,7 @@ function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
         className="absolute top-2.5 left-0 size-2.5 rounded-full border border-control bg-bg"
       />
 
-      <div className="rounded border border-divider bg-surface p-3">
+      <div className="rounded-md border border-divider bg-surface p-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h3 className="text-sm text-fg">{stage.name}</h3>
           {stage.instrumented ? (
@@ -34,14 +34,14 @@ function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
           )}
           {stage.derived ? (
             <span
-              className="rounded border border-control px-1.5 py-0.5 text-[11px] tracking-wide text-fg-2 uppercase"
+              className="rounded-sm border border-control px-1.5 py-0.5 label-micro text-fg-2"
               title="One drop bucket is the remainder of the others, so this stage balances by construction. Bookkeeping, not evidence."
             >
               derived · bookkeeping
             </span>
           ) : null}
           {stage.reconciled === false ? (
-            <span className="rounded border border-fg-2 px-1.5 py-0.5 text-[11px] tracking-wide text-fg uppercase">
+            <span className="rounded-sm border border-fg-2 px-1.5 py-0.5 label-micro text-fg">
               does not reconcile
             </span>
           ) : null}
@@ -90,16 +90,16 @@ function CoverageBand({ funnel }: { funnel: RunFunnel }) {
   return (
     <section
       aria-label="Résumé coverage"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded border border-divider bg-surface"
+      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface"
     >
       {cells.map(([label, value]) => (
         <div key={label} className="flex min-w-32 flex-col gap-1 px-4 py-3">
-          <span className="text-[11px] tracking-wide text-fg-3 uppercase">{label}</span>
+          <span className="label-micro text-fg-3">{label}</span>
           <span className="text-lg text-fg-2 tabular-nums">{value}</span>
         </div>
       ))}
       <div className="flex flex-1 flex-col gap-1 px-4 py-3">
-        <span className="text-[11px] tracking-wide text-fg-3 uppercase">most-missed terms</span>
+        <span className="label-micro text-fg-3">most-missed terms</span>
         <span className="text-sm text-fg-2">
           {funnel.coverage.top_missing.length === 0
             ? EM_DASH
@@ -114,14 +114,14 @@ function CoverageBand({ funnel }: { funnel: RunFunnel }) {
 
 function BoardsAccordion({ funnel }: { funnel: RunFunnel }) {
   return (
-    <details className="rounded border border-divider bg-surface">
+    <details className="rounded-md border border-divider bg-surface">
       <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface-2">
         Boards ({funnel.sources.length.toLocaleString()})
       </summary>
       <div className="overflow-x-auto border-t border-divider">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[11px] tracking-wide text-fg-3 uppercase">
+            <tr className="label-micro text-fg-3">
               {["provider", "board", "source", "open", "unique", "assisted", "eligible", "leads"].map(
                 (heading) => (
                   <th key={heading} className="px-3 py-2 text-left font-normal">
@@ -203,7 +203,7 @@ export function RunsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[11px] tracking-wide text-fg-3 uppercase">run</span>
+          <span className="label-micro text-fg-3">run</span>
           <select
             value={runId ?? ""}
             onChange={(event) => {
@@ -211,7 +211,7 @@ export function RunsPage() {
               setError(null);
               setRunId(Number(event.target.value));
             }}
-            className="min-h-11 rounded border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2"
+            className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2"
           >
             {(runs ?? []).map((run) => (
               <option key={run.id} value={run.id}>
@@ -222,7 +222,7 @@ export function RunsPage() {
         </label>
 
         {selected === null ? null : (
-          <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded border border-divider bg-surface">
+          <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
             {(
               [
                 ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`, false],
@@ -237,7 +237,7 @@ export function RunsPage() {
               ] as [string, string, boolean][]
             ).map(([label, value, emphasis]) => (
               <div key={label} className="flex min-w-28 flex-col gap-1 px-4 py-2">
-                <dt className="text-[11px] tracking-wide text-fg-3 uppercase">{label}</dt>
+                <dt className="label-micro text-fg-3">{label}</dt>
                 <dd className={`text-lg tabular-nums ${emphasis ? "text-fg" : "text-fg-2"}`}>
                   {value}
                 </dd>
@@ -249,7 +249,7 @@ export function RunsPage() {
 
       {error !== null ? (
         // Announced, not just printed: this replaces the whole funnel with no other signal.
-        <p role="alert" className="rounded border border-fg-2 bg-surface p-4 text-sm text-fg">
+        <p role="alert" className="rounded-md border border-fg-2 bg-surface p-4 text-sm text-fg">
           {error}
         </p>
       ) : funnel === null ? (
@@ -259,7 +259,7 @@ export function RunsPage() {
       ) : (
         <>
           {funnel.fatal || funnel.errors.length > 0 ? (
-            <section className="rounded border border-fg-2 bg-surface p-4">
+            <section className="rounded-md border border-fg-2 bg-surface p-4">
               <h2 className="text-sm text-fg">
                 {funnel.fatal ? "This run ended fatally." : "This run recorded errors."}
               </h2>
@@ -276,7 +276,7 @@ export function RunsPage() {
           <CoverageBand funnel={funnel} />
 
           <section>
-            <h2 className="mb-3 text-[11px] tracking-wide text-fg-3 uppercase">
+            <h2 className="mb-3 label-micro text-fg-3">
               funnel · artifact v{funnel.artifact_version} ·{" "}
               {funnel.reconciles ? "reconciles" : "does NOT reconcile"}
             </h2>

@@ -422,7 +422,7 @@ export function QueuePage({
      * status code, not an error a reader can act on.
      */
     return (
-      <div role="alert" className="rounded border border-fg-2 bg-surface p-4">
+      <div role="alert" className="rounded-md border border-fg-2 bg-surface p-4">
         <p className="text-sm text-fg">{loadError}</p>
         <p className="mt-1 text-sm text-fg-2">
           The page reads the store the CLI maintains. Reload once, and if it persists re-open the
@@ -462,7 +462,7 @@ export function QueuePage({
               onClick={() => {
                 adopt(stashed);
               }}
-              className="min-h-11 rounded border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
             >
               refresh
             </button>
@@ -488,12 +488,12 @@ export function QueuePage({
             * reason they are not above is the lane split.
             */}
           {data.rows.length === 0 && data.review.length === 0 ? (
-            <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
+            <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
               The queue is empty. A run has to deliver a tailored lead before anything appears
               here — this is not a filter result.
             </p>
           ) : data.rows.length === 0 ? (
-            <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
+            <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
               Nothing is blindly appliable right now. Every delivered lead is in the review
               section below — that is a lane split, not an empty run.
             </p>
@@ -528,9 +528,12 @@ export function QueuePage({
           )}
 
           {data.review.length === 0 ? null : (
-            <section aria-labelledby="review-heading" className="mt-8">
-              <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-divider pt-6">
-                <h2 id="review-heading" className="text-sm text-fg">
+            <section aria-labelledby="review-heading" className="mt-12">
+              <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 border-t border-divider pt-8">
+                <h2
+                  id="review-heading"
+                  className="font-display text-base tracking-[0.12em] text-fg uppercase"
+                >
                   Review
                 </h2>
                 <span className="text-sm text-fg-2 tabular-nums">
@@ -546,7 +549,7 @@ export function QueuePage({
                   onClick={() => {
                     setReviewOpen((open) => !open);
                   }}
-                  className="min-h-11 rounded px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
+                  className="min-h-11 rounded-sm px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
                 >
                   {reviewOpen ? "hide" : "show"}
                 </button>
@@ -574,7 +577,7 @@ export function QueuePage({
                 */}
               <div id="review-list" className={reviewOpen ? "mt-4" : undefined}>
                 {!reviewOpen ? null : visibleReview.length === 0 ? (
-                    <p className="rounded border border-divider bg-surface p-6 text-sm text-fg-2">
+                    <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
                       No review lead matches the current filter. There are{" "}
                       {data.review.length.toLocaleString()} in the lane.
                     </p>
