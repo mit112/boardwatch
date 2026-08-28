@@ -1145,3 +1145,64 @@ whatever is downstream of it, and the slate cap (D-345) has not yet been observe
    **The scratchpad directory is SHARED with subagents, not per-agent.** A PR-body file written to a
    fixed name was overwritten mid-task by a worktree agent this session. Name per-launch files
    uniquely — gate logs, sentinels and PR bodies alike.
+
+## Moved out of STATE on 2026-08-28f — settled 2026-08-28e shipments, kept verbatim
+
+> Moved, not summarised: all four shipped, were verified, and are now either observed on a
+> run (the cap, the cost split) or closed with no follow-up owed (the detail sheet). STATE
+> keeps one line each; the account lives here.
+
+**THE GUARD THAT MADE THE CAP SAFE WAS FOUND BY MEASUREMENT (D-345).** `content_hash` is NOT NULL
+and never empty, so its presence proves nothing — every body-less posting hashes the empty string, so
+all **245** share one digest and **six `(company,title,hash)` groups already collide**, one a
+`software engineer frontend` pair. Body-less postings are exempt, fail-OPEN. Detail in
+`STANDING-FACTS.md`.
+
+**EACH LANE NOW REPORTS ITS COST SPLIT INTO FETCHING AND APPLYING (D-346, #217), AND THAT SPLIT IS
+THE INSTRUMENT THAT CLOSES THE LANE QUESTION — NOT AN EXTRA.** D-343 left the lane stage's 6.5 min
+unexplained because a stage total cannot separate upstream throttling from contention on
+`apply_board`. `fetch_seconds`/`apply_seconds` per lane do, and the markdown names the fetch SHARE
+because the ratio is the diagnostic. `None` = NOT MEASURED, never `0.0`. `ARTIFACT_VERSION` stays 7.
+**No run has exercised it yet — read it on the next run before proposing anything else about lanes.**
+
+**THE LANE FETCHES NOW OVERLAP, AND THAT LEVER IS NOW CLOSED (D-347, #219).** `_collect_lane` split
+into `_fetch_lane` (off-thread) and `_apply_lane` (main thread only); fetches in a
+`ThreadPoolExecutor`, applies in the consuming loop — `scan/coordinator.py`'s shape.
+**`apply_board` remains the single writer** and a test COUNTS concurrent entries into it rather than
+reading the code. **This was not the owner-gated pacing change:** `Fetcher` holds a per-host
+`threading.Lock` for a request's full duration with `_pace` INSIDE it, so same-host requests still
+serialize and the 1 req/s contract is untouched — concurrency across lanes adds **no** third-party
+load. **Sized before building and the answer is modest:** run 129's hosts were ~85 (hiringcafe) and
+~166 (linkedin) requests, so the pacing floor moves from their sum (251 s of a 390 s stage) to their
+max (166 s) — **~2.2 min, ~4.9% of a 44.7 min run**. The stage is now **tail-bound on LinkedIn
+alone**, the same shape D-344 found for the scan and `lowes.wd5`. **A third lane would be nearly
+free; more lane parallelism buys nothing. Do not re-propose it.**
+
+**THE MOBILE DETAIL SHEET IS FOCUS-CONTAINED (D-348, #216)** — the one thing #213 disclosed rather
+than shipped. `inert` on the four subtrees the sheet covers, **below 64rem only**; the toaster is
+deliberately excluded because it holds the only undo. Verified in a browser WITH a non-vacuity check
+(stripping the attributes reproduces the bug). **Closed, no follow-up owed**; the full account moved to
+`STANDING-FACTS.md` rather than being summarised away.
+
+**FOUR MERGES FROM THIS SESSION, EVERY ONE GATED WITH A REAL EXIT CODE 0, PLUS ONE FROM A PARALLEL
+SESSION.** #215 the slate cap (D-345) · #216 the detail-sheet focus containment (D-348) · #217 the
+per-lane cost split (D-346) · #219 the lane fetch overlap (D-347). **#218 (years patterns, D-349) is a
+PARALLEL SESSION's.** #219 was re-gated AFTER an `--onto` rebase onto the post-#217 `main`, because
+#215 also touched `runner.py` so the merge candidate differed from the tree first gated — a clean
+rebase can still break semantically. **All five verified present in `main` by CONTENT, not the PR page**
+(pushing to a merged PR's branch lands nothing, silently): `main` `a1a69ff`.
+
+
+## Moved out of STATE on 2026-08-28f — Gate P6's clause table, MET and unmoved, kept verbatim
+
+### Gate P6, clause by clause
+
+| Clause | Standing |
+|---|---|
+| Duplicate leakage over 7 days ≤ 5% | **MET 2026-08-27 — the span now exists (ledger 2026-08-19 → 08-27 = 8 days): 601 surfaced / 600 identified / 600 distinct / 0 redundant / 0.00%.** The blindness below is unchanged and is now MEASURED rather than argued: #185 adds a never-folded `candidate_redundant 7 / candidate_identified 610 = 1.15%` upper bound over a **0.50%** truth. Original standing: **CANNOT FAIL FOR ONE CLASS — see D-294 before quoting it.** `identity_queries.py:296` hardcodes `kind == "exact_quad"`, so a job whose only identity is `company_title_location` lands in `unidentified` and can never be counted redundant. Ruling 3 stopped those duplicates reaching leads but did NOT extend this metric, so it reads 0.00% for a structural reason. Measured honestly over the 146 delivered résumés (grouping by company+title+location) the real figure is **3 redundant = 2.05%** — under the bar, not zero. Extending the query reverses D-132/D-283 mid-gate and is the owner's. Original standing: **measurable, awaiting span (D-283).** `boardwatch identities leakage [--days N] [--json]` ships. **Live: 100 surfaced jobs / 100 distinct `exact_quad` groups / 0 redundant = 0.00%.** Only `exact_quad` counts (Mit's ruling, ratified); counted over jobs that REACHED LEADS, not the corpus; body-less jobs sit in their own `unidentified` bucket, never folded. **Not yet "over 7 days"** — the ledger starts 2026-08-19 so ~3.2 days exist, and the 7-day `seen` TTL cannot be observed faster than itself. First true window **~2026-08-26**, inside Parts 2–4, so off the critical path |
+| **0** dead postings reaching leads | **MET (D-281).** Two runs on a scratch store copy: `checked 40, dead 0, unknown 2, alive 38, gone_after_redirect 0`, identical in both, agreeing across three read paths (funnel JSON, funnel markdown, stdout). Detector demonstrably ARMED — `checked > 0`, so not the disarmed 0/0 signature. The `runs` table has no liveness columns, so no DB-row path exists; those three are all there are |
+| Injected hash-collision test | **MET** (D-100) |
+| Audit of 20 sampled suppressions | **MET** (D-101) |
+
+---
+
