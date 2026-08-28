@@ -131,6 +131,15 @@ _TOP_MISSING = 10
 # `None` to a measured count when P6 landed and did not bump this field — the same quantity,
 # from the same sweep, one block over. `dedup_detail` rides along as an ADDITIVE key on the
 # D-113 → D-147 R3 precedent, `null` on every stage but this one.
+#
+# **Publishing the scan's full four-way board split does NOT bump it either**, and the closest
+# precedent is `scan.fetch_cost`, which added a key to this same block and declined a bump. Both
+# tests come out the same way: no new top-level section (`scan` has been here since v1), and no
+# existing value changes MEANING — `boards_attempted`, `boards_complete`, `boards_failed` and
+# `postings_seen` each count exactly what they counted before. What moves is that the two buckets
+# `ScanSummary` always had and never published, `partial` and `unchanged`, stop being invisible,
+# so the numbers a reader was already given now sum to the total instead of leaving a gap they had
+# to guess at. A consumer that ignores the added keys reads every old key correctly.
 ARTIFACT_VERSION = 7
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -834,12 +843,32 @@ class ScanContext:
 
     ran: bool
     boards_attempted: int = 0
+    # `ScanSummary` sorts every attempted board into exactly one of these four, so together
+    # they PARTITION `boards_attempted`. Publishing only `complete` and `failed` left the other
+    # two invisible and the reader subtracting: run 126 read "346 attempted · 166 complete ·
+    # 1 failed", which invites the conclusion that 179 boards silently did nothing when in
+    # truth 39 were `partial` (a detail budget truncated them) and 140 `unchanged` (HTTP 304).
+    # Two dropped buckets, and the reconciliation was not merely unstated but uncheckable.
     boards_complete: int = 0
+    boards_partial: int = 0
+    boards_unchanged: int = 0
     boards_failed: int = 0
     postings_seen: int = 0
     # None means NOT MEASURED (a `--no-scan` run, or a stored funnel written before D-330),
     # which is a different statement from an empty tuple ("scanned, and nothing was timed").
     fetch_cost: tuple[ProviderFetchCost, ...] | None = None
+
+    @property
+    def boards_reconciled(self) -> bool | None:
+        """None when no scan ran — an uncomputable identity is not a pass (see `Stage`)."""
+        if not self.ran:
+            return None
+        return (
+            self.boards_complete
+            + self.boards_partial
+            + self.boards_unchanged
+            + self.boards_failed
+        ) == self.boards_attempted
 
 
 @dataclass(frozen=True)
@@ -1589,8 +1618,15 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         "scan": {
             "ran": funnel.scan.ran,
             "boards_attempted": funnel.scan.boards_attempted,
+            # The full four-way partition of `boards_attempted`, always present. A bucket that
+            # is genuinely empty emits 0 — measured, and not the same claim as a missing key.
             "boards_complete": funnel.scan.boards_complete,
+            "boards_partial": funnel.scan.boards_partial,
+            "boards_unchanged": funnel.scan.boards_unchanged,
             "boards_failed": funnel.scan.boards_failed,
+            # `None` on a `--no-scan` run: nothing was attempted, so there is no identity to
+            # check, and 0 == 0 would report a pass the run never earned.
+            "boards_reconciled": funnel.scan.boards_reconciled,
             "postings_seen": funnel.scan.postings_seen,
             # Ordered most-expensive first so the constraint is the first row a reader sees.
             "fetch_cost": None if funnel.scan.fetch_cost is None else [
@@ -1840,9 +1876,22 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     if funnel.scan.ran:
         lines.append(
             f"{funnel.scan.boards_attempted} boards attempted · "
-            f"{funnel.scan.boards_complete} complete · {funnel.scan.boards_failed} failed · "
+            f"{funnel.scan.boards_complete} complete · {funnel.scan.boards_partial} partial · "
+            f"{funnel.scan.boards_unchanged} unchanged · {funnel.scan.boards_failed} failed · "
             f"{funnel.scan.postings_seen} postings listed"
         )
+        lines.append("")
+        if funnel.scan.boards_reconciled:
+            lines.append(
+                "*The four outcomes partition the boards attempted, and here they sum to it. "
+                "`partial` is a board a detail budget truncated; `unchanged` is a board that "
+                "returned 304 — neither is a failure, and neither is a board that did nothing.*"
+            )
+        else:
+            lines.append(
+                "**NO — the four outcomes do not sum to the boards attempted; some board is "
+                "unaccounted for.**"
+            )
         lines.append("")
         lines.append(
             "*Throughput, not a funnel edge: an unchanged board lists nothing, so this is a "
