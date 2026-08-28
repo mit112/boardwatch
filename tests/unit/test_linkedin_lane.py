@@ -501,6 +501,7 @@ def test_the_facets_are_a_second_keyword_argument_and_stored_as_a_tuple():
         "self",
         "posting_budget",
         "search_facets",
+        "search_pages",
     ]
     assert LinkedInLane(search_facets=["software engineer"])._search_facets == (
         "software engineer",
@@ -720,3 +721,269 @@ def test_the_unfaceted_lane_still_raises_on_a_page_with_no_cards(tmp_path):
 
     with pytest.raises(SearchPageError, match="base-card"):
         LinkedInLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+
+# ---------------------------------------------------------------------------------------
+# Search pagination -- `start` as a real ITEM offset, behind `lane_search_pages`.
+#
+# The measurement that reopened it: `body_fetched` was 49/53 against a `lane_posting_budget` of
+# 60 on runs 126/127, so one page per facet does not list enough cards to reach the body budget
+# at all -- the reason paging was deferred ("a facet already lists more cards than the budget can
+# fetch") is the reading the runs contradict.
+#
+# The trap this section exists for: under paging an EMPTY page is a legitimate outcome (the end
+# of a facet's results), while `card_nodes` raises on one by design. Page 1 must keep raising and
+# page N must not.
+# ---------------------------------------------------------------------------------------
+
+
+def _facet_page_url(facet: str, page_index: int) -> str:
+    """The faceted search at page `page_index`, built here and not by calling `page_url`.
+
+    Independent of the implementation on purpose, exactly as `_facet_url` is: a routing test that
+    asked the implementation for the URL it was about to assert would agree with whatever offset
+    the implementation chose, including a page NUMBER where the probe recorded an ITEM offset.
+    """
+    if page_index == 0:
+        return _facet_url(facet)
+    return f"{_facet_url(facet)}&start={page_index * 10}"
+
+
+def _mock_facet_page(facet: str, page_index: int, cards: list[Card] | None) -> respx.Route:
+    return respx.get(_facet_page_url(facet, page_index)).mock(
+        return_value=httpx.Response(
+            200, text=search_page_html(cards if cards is not None else [])
+        )
+    )
+
+
+def test_page_zero_is_the_url_unchanged_and_never_start_equals_zero():
+    """The regression guard for every existing user: at the default ceiling the lane must send
+    byte-identically what it sent before paging existed, not an equivalent-looking `&start=0`.
+    """
+    base = linkedin.search_urls(("software engineer",))[0]
+
+    assert linkedin.page_url(base, 0) == base
+    assert "start=" not in linkedin.page_url(base, 0)
+    # An ITEM offset of 10 a page, which is what the probe pinned. A page NUMBER would request
+    # cards 1..10 again and the lane would page forever over one page of results.
+    assert linkedin.page_url(base, 1) == f"{base}&start=10"
+    assert linkedin.page_url(base, 4) == f"{base}&start=40"
+    # Nothing else is added at any offset.
+    assert not any(
+        "location" in linkedin.page_url(base, index) or "f_WT" in linkedin.page_url(base, index)
+        for index in range(5)
+    )
+
+
+@respx.mock
+def test_the_default_ceiling_requests_exactly_one_page_per_facet(tmp_path):
+    """`lane_search_pages = 1` IS today's behaviour: one request per facet, no `start=` anywhere.
+
+    Asserted through a route that only matches the bare facet URL, so a second page would fail to
+    match rather than quietly succeed.
+    """
+    cards = search_cards()[:2]
+    first = _mock_facet_page("software engineer", 0, cards)
+    _mock_bodies(cards)
+
+    result = LinkedInLane(search_facets=("software engineer",), search_pages=1).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert first.call_count == 1
+    assert [str(call.request.url) for call in respx.calls if "seeMore" in str(call.request.url)] == [
+        _facet_url("software engineer")
+    ]
+    assert result.search_pages == ((_facet_url("software engineer"), 1),)
+
+
+@respx.mock
+def test_the_ceiling_requests_that_many_pages_of_every_facet(tmp_path):
+    """The feature. Two facets at a ceiling of 3 is six search GETs, each at its own offset."""
+    pages = {
+        ("software engineer", index): _one_card_per_company(f"acme{index}", 4_030_000_000 + index * 100, 2)
+        for index in range(3)
+    }
+    pages.update(
+        {
+            ("data engineer", index): _one_card_per_company(
+                f"beacon{index}", 4_040_000_000 + index * 100, 2
+            )
+            for index in range(3)
+        }
+    )
+    routes = {key: _mock_facet_page(key[0], key[1], cards) for key, cards in pages.items()}
+    every_card = [card for cards in pages.values() for card in cards]
+    _mock_bodies(every_card)
+
+    result = LinkedInLane(
+        search_facets=("software engineer", "data engineer"), search_pages=3
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert [route.call_count for route in routes.values()] == [1] * 6
+    assert result.search_pages == (
+        (_facet_url("software engineer"), 3),
+        (_facet_url("data engineer"), 3),
+    )
+    # Every page's cards reached the body stage, not just page one's.
+    assert result.tally.counts["body_fetched"] == len(every_card) == 12
+
+
+@respx.mock
+def test_an_empty_first_page_is_still_the_structural_failure_it_always_was(tmp_path):
+    """The half of the trap that must NOT be weakened. Paging makes a later empty page benign; it
+    makes an empty FIRST page no less of a moved fragment or a challenge response than it was.
+    """
+    _mock_facet_page("software engineer", 0, None)
+    _mock_facet_page("data engineer", 0, None)
+    bodies = _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="facet"):
+        LinkedInLane(
+            search_facets=("software engineer", "data engineer"), search_pages=5
+        ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert bodies.call_count == 0
+
+
+@respx.mock
+def test_an_empty_first_page_of_the_unfaceted_search_still_raises(tmp_path):
+    """Same rule on the no-profile fallback, where there is no facet isolation to soften it."""
+    respx.get(linkedin.SEARCH_URL).mock(
+        return_value=httpx.Response(200, text=search_page_html([]))
+    )
+
+    with pytest.raises(SearchPageError, match="base-card"):
+        LinkedInLane(search_pages=5).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+
+@respx.mock
+def test_an_empty_later_page_ends_that_facet_instead_of_raising(tmp_path):
+    """Running off the end of a result set is the EXPECTED outcome of a ceiling above 1, not an
+    outage: a keyword matching 12 postings has no page 3. Raising here would make every facet
+    shorter than the ceiling look like a moved fragment on an ordinary run.
+    """
+    first = _one_card_per_company("acme", 4_050_000_000, 2)
+    _mock_facet_page("software engineer", 0, first)
+    _mock_facet_page("software engineer", 1, None)
+    third = _mock_facet_page("software engineer", 2, first)  # must never be requested
+    _mock_bodies(first)
+
+    result = LinkedInLane(search_facets=("software engineer",), search_pages=5).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert third.call_count == 0
+    # The empty page was requested and yielded nothing, so it is not counted as a page fetched.
+    assert result.search_pages == ((_facet_url("software engineer"), 1),)
+    assert result.tally.counts["body_fetched"] == 2
+    assert result.tally.is_silent_outage is False
+
+
+@respx.mock
+def test_a_repeat_page_ends_that_facet_and_is_not_counted_twice(tmp_path):
+    """The offset-wrap tail `providers/workday.py` guards for the same reason: a host that answers
+    past the end of a result set with a byte-identical page rather than an empty one would burn
+    every remaining page on cards already held.
+    """
+    cards = _one_card_per_company("acme", 4_060_000_000, 2)
+    _mock_facet_page("software engineer", 0, cards)
+    repeat = _mock_facet_page("software engineer", 1, cards)
+    third = _mock_facet_page("software engineer", 2, cards)
+    bodies = _mock_bodies(cards)
+
+    result = LinkedInLane(search_facets=("software engineer",), search_pages=5).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert (repeat.call_count, third.call_count) == (1, 0)
+    assert result.search_pages == ((_facet_url("software engineer"), 2),)
+    # One body per posting, and the repeat is a server artifact rather than a second listing, so
+    # it does not inflate `not_attemptable` the way a genuine cross-facet duplicate does.
+    assert bodies.call_count == 2
+    assert result.tally.counts["body_fetched"] == 2
+    assert result.tally.counts["not_attemptable"] == 0
+
+
+@respx.mock
+def test_a_later_page_that_is_refused_keeps_the_pages_already_paid_for(tmp_path):
+    """Page-1 isolation, one level down. A facet refused on its FIRST page produced nothing and is
+    counted a failure; one refused on page 2 has already bought a page of results.
+    """
+    cards = _one_card_per_company("acme", 4_070_000_000, 2)
+    _mock_facet_page("software engineer", 0, cards)
+    respx.get(_facet_page_url("software engineer", 1)).mock(
+        return_value=httpx.Response(403, text="")
+    )
+    _mock_bodies(cards)
+
+    result = LinkedInLane(search_facets=("software engineer",), search_pages=3).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert result.search_pages == ((_facet_url("software engineer"), 1),)
+    assert result.tally.counts["body_fetched"] == 2
+
+
+@respx.mock
+def test_a_short_facet_and_a_truncated_one_are_told_apart_by_the_reported_page_counts(tmp_path):
+    """The reason the counts are reported at all: both facets below yield postings, and only the
+    page counts say that one ran out at page 2 while the other filled the ceiling and was cut.
+    """
+    short = _one_card_per_company("acme", 4_080_000_000, 2)
+    _mock_facet_page("software engineer", 0, short)
+    _mock_facet_page("software engineer", 1, None)
+    deep = {
+        index: _one_card_per_company(f"beacon{index}", 4_090_000_000 + index * 100, 2)
+        for index in range(3)
+    }
+    for index, cards in deep.items():
+        _mock_facet_page("data engineer", index, cards)
+    _mock_bodies(short + [card for cards in deep.values() for card in cards])
+
+    result = LinkedInLane(
+        search_facets=("software engineer", "data engineer"), search_pages=3
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.search_pages == (
+        (_facet_url("software engineer"), 1),   # ran out
+        (_facet_url("data engineer"), 3),       # hit the ceiling -- truncated
+    )
+
+
+@respx.mock
+def test_a_company_first_seen_on_a_later_page_cites_that_page_not_the_facets_first(tmp_path):
+    """Provenance must name a URL the run actually requested, and with paging that is the offset
+    URL. Citing the facet's first page would name a page the company was not listed on.
+    """
+    first = _one_card_per_company("acme", 4_100_000_000, 1)
+    second = _one_card_per_company("beacon", 4_110_000_000, 1)
+    _mock_facet_page("software engineer", 0, first)
+    _mock_facet_page("software engineer", 1, second)
+    _mock_bodies(first + second)
+
+    result = LinkedInLane(search_facets=("software engineer",), search_pages=2).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+    urls = {snapshot.slug: snapshot.snapshot.url for snapshot in result.snapshots}
+
+    assert urls["acme-00"] == _facet_url("software engineer")
+    assert urls["beacon-00"] == _facet_page_url("software engineer", 1)
+
+
+def test_the_registry_hands_the_lane_the_configured_page_ceiling(tmp_path):
+    """A registry row that dropped it would leave every test above green while the live lane kept
+    requesting one page per facet.
+    """
+    from boardwatch.pipeline.runner import LANE_FACTORIES
+
+    settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_search_pages=5)
+    built = LANE_FACTORIES["linkedin"](settings, ("software engineer",))
+
+    assert built._search_pages == 5
+    # Default 1 -- no existing user's request volume moves.
+    assert Settings(data_dir=tmp_path, config_dir=tmp_path).lane_search_pages == 1
+    assert LANE_FACTORIES["linkedin"](
+        Settings(data_dir=tmp_path, config_dir=tmp_path), ()
+    )._search_pages == 1

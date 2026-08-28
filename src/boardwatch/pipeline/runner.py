@@ -159,8 +159,13 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     HiringCafeLane.name: lambda settings, facets: HiringCafeLane(
         posting_budget=settings.lane_posting_budget, search_facets=facets
     ),
+    # Only LinkedIn is handed `lane_search_pages`: its `start=` is a probed, working item offset,
+    # while hiring.cafe has no recorded paging parameter and its `?page=` form is disallowed by
+    # `robots.txt`, so passing the setting there would promise depth the lane cannot deliver.
     LinkedInLane.name: lambda settings, facets: LinkedInLane(
-        posting_budget=settings.lane_posting_budget, search_facets=facets
+        posting_budget=settings.lane_posting_budget,
+        search_facets=facets,
+        search_pages=settings.lane_search_pages,
     ),
 }
 
@@ -472,6 +477,10 @@ def _collect_lane(
         # reach this run ADDED rather than the companies the lane touched.
         admitted=budget.admitted,
         refused=budget.refused,
+        # How deep each search actually read. Carried from the lane rather than recomputed from
+        # `lane_search_pages`, which is the CEILING and not what was fetched — a facet that ran
+        # out of results after two pages is exactly the case the setting cannot report.
+        search_pages=result.search_pages,
     )
 
 

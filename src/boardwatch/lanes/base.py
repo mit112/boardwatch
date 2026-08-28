@@ -74,8 +74,19 @@ class LaneCompanySnapshot:
 
 @dataclass(frozen=True)
 class LaneResult:
+    """What one lane collected, plus how deep it read to collect it.
+
+    `search_pages` is `(search url, pages fetched)` per search this lane made, and it exists
+    because a posting count cannot tell a facet that RAN OUT of results from one that was
+    TRUNCATED by the page ceiling. Both report fewer postings than the ceiling allows; only the
+    first is benign, and the second is reach the run silently left on the table. Empty -- never
+    absent -- for a lane whose search does not paginate, which is honest: hiring.cafe has no
+    recorded paging parameter, so it has no page count to report rather than a page count of one.
+    """
+
     snapshots: tuple[LaneCompanySnapshot, ...]
     tally: AcquisitionTally
+    search_pages: tuple[tuple[str, int], ...] = ()
 
 
 # (provider, slug) -> may this lane spend requests on that company. The runner supplies it:

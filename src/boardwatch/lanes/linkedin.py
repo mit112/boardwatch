@@ -42,11 +42,20 @@ exactly one user and silently mislead every other one -- the multi-tenancy requi
 failure first, and it is why the contract deferred the facet rather than guessing at one. A profile
 naming no target titles falls back to the unfaceted search, which is the behaviour that shipped.
 
-`start` WORKS AND IS STILL NOT IMPLEMENTED. It is a real ITEM offset: `&start=10` and `&start=25`
-each returned 10 cards whose ids were all new against `start=0`, so one search page is 10 cards.
-Paging would buy nothing, because a realistic facet set already lists more cards than
-`DEFAULT_POSTING_BUDGET` can fetch bodies for -- a second page of any facet would only be counted
-`not_attemptable`. Breadth ahead of the budget that consumes it is not breadth.
+`start` IS A REAL ITEM OFFSET AND IS NOW IMPLEMENTED, BEHIND `lane_search_pages` (default 1).
+`&start=10` and `&start=25` each returned 10 cards whose ids were all new against `start=0`, so one
+search page is 10 cards. Paging was deferred on the reasoning that a realistic facet set already
+lists more cards than `DEFAULT_POSTING_BUDGET` can fetch bodies for, so a second page could only be
+counted `not_attemptable`. **That reasoning was sound when written and the measurement falsified
+it**: on runs 126/127 the lane fetched 49 and 53 bodies against a budget of 60, under it every time,
+because one page per facet does not list enough cards to reach the budget at all. The ceiling is a
+setting rather than a constant so that no existing user's request volume moves — `1` is the
+single-page behaviour that shipped, byte for byte, and an operator opts into more.
+
+PAGE 1 AND PAGE N ARE NOT THE SAME EVENT, and `_facet_pages` is where that is enforced. A page with
+no cards is `card_nodes`' structural failure on the FIRST page and the ordinary end of a facet's
+result set on any later one; a keyword with 23 matches has no page 3, so raising there would make a
+normal run look like an outage the moment the ceiling is raised above 1.
 
 `location=` IS SILENTLY IGNORED AND MUST NEVER BE SENT. `&location=United States` returned an
 id-identical set to no location at all, exactly like `f_WT=2` (remote) before it. Sending it would
@@ -90,6 +99,14 @@ _JOB_POSTING_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/"
 # The ceiling on body GETs per run. A hard cap, not a pacing knob: one search returns ~10 cards and
 # the runner's company cap bounds companies, not postings.
 DEFAULT_POSTING_BUDGET = 60
+
+# `start` is an ITEM offset, not a page number: `&start=10` is page two. The probe pinned the page
+# at 10 cards (`&start=10` and `&start=25` each returned 10, all new against `start=0`).
+SEARCH_PAGE_SIZE = 10
+
+# Search pages requested per facet. 1 is the shipped single-page behaviour and stays the default
+# here as well as in `Settings`, so a lane constructed directly in a test sends what it always did.
+DEFAULT_SEARCH_PAGES = 1
 
 
 class SearchPageError(ValueError):
@@ -216,6 +233,23 @@ def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
     )
 
 
+def page_url(search_url: str, page_index: int) -> str:
+    """`search_url` at page `page_index`, as the ITEM offset `start=` actually takes.
+
+    **Page 0 is the URL UNCHANGED, not `&start=0`.** With `lane_search_pages` at its default of 1
+    the lane must request byte-identically what it requested before paging existed, so that the
+    knob's default moves no user's request shape and not merely their request count. `&start=0`
+    was never probed and asserting it is equivalent would be inventing a response.
+
+    Nothing else is added. `location=` and `f_WT=2` were both measured to return an id-identical
+    set and are never sent, at any offset -- a run carrying either would report a constraint the
+    response never applied.
+    """
+    if page_index <= 0:
+        return search_url
+    return f"{search_url}&start={page_index * SEARCH_PAGE_SIZE}"
+
+
 class LinkedInLane:
     name = LANE_NAME
 
@@ -223,11 +257,16 @@ class LinkedInLane:
         self,
         posting_budget: int = DEFAULT_POSTING_BUDGET,
         search_facets: Sequence[str] = (),
+        search_pages: int = DEFAULT_SEARCH_PAGES,
     ) -> None:
         self._posting_budget = posting_budget
         # Injected rather than read here: the facets are derived from the user's profile row, which
         # lives in the store, and a lane must not reach into the store for its own configuration.
         self._search_facets = tuple(search_facets)
+        # At most this many search pages per facet. Clamped at 1 rather than trusted: `Settings`
+        # already floors it, but a lane constructed directly with 0 would fetch no search page at
+        # all and report an empty run as a quiet day.
+        self._search_pages = max(1, search_pages)
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
         """One search GET per keyword facet, then one body GET per posting at an admitted company.
@@ -236,7 +275,7 @@ class LinkedInLane:
         is fetched -- the protocol's contract, and the only ordering under which the per-run company
         cap saves requests instead of discarding paid-for ones.
         """
-        entries = self._search(fetcher)
+        entries, search_pages = self._search(fetcher)
 
         tally = AcquisitionTally()
         by_company = _group_by_company(entries, tally)
@@ -272,31 +311,38 @@ class LinkedInLane:
                         snapshot=lane_snapshot(postings, company.url),
                     )
                 )
-        return LaneResult(snapshots=tuple(snapshots), tally=tally)
+        return LaneResult(snapshots=tuple(snapshots), tally=tally, search_pages=search_pages)
 
-    def _search(self, fetcher: Fetcher) -> list[_SearchEntry]:
+    def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:
         """Every configured search page, its card nodes paired with the URL they came from.
 
         The result is INTERLEAVED across facets, round-robin, and that is load-bearing rather than
         tidy. The body budget is spent in iteration order, so concatenating instead would let the
         first facet consume all of it and every later target title contribute nothing -- a lane
-        reporting fourteen facets while delivering only the profile's first one.
+        reporting fourteen facets while delivering only the profile's first one. Paging does not
+        change that: a facet's own pages are read in order and the interleave is across facets, so
+        facet two's page 1 is still worked before facet one's page 2.
+
+        The second return value is how many pages were actually fetched per facet, which is
+        REPORTED rather than inferred: a facet that stopped at page 2 of a 5-page ceiling ran out
+        of results, and a facet that filled every page is truncated. Those are different facts
+        about the same posting count, and only the first is benign.
         """
         urls = search_urls(self._search_facets)
         if not self._search_facets:
             # The unfaceted fallback keeps the single-search contract it shipped with: a transport
-            # or structural failure propagates, because with one search there are no other results
-            # for it to cost, and `card_nodes`' own message is the most specific one available.
-            result = fetcher.get(urls[0])
-            nodes = card_nodes(result.content.decode("utf-8", "replace"))
-            return [(urls[0], node) for node in nodes]
+            # or structural failure on its FIRST page propagates, because with one facet there are
+            # no other results for it to cost, and `card_nodes`' own message is the most specific
+            # one available.
+            entries, pages = self._facet_pages(fetcher, urls[0])
+            return entries, ((urls[0], pages),)
 
         per_facet: list[list[_SearchEntry]] = []
+        page_counts: list[tuple[str, int]] = []
         failed = 0
         for url in urls:
             try:
-                result = fetcher.get(url)
-                nodes = card_nodes(result.content.decode("utf-8", "replace"))
+                entries, pages = self._facet_pages(fetcher, url)
             except (FetchFailure, SearchPageError):
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure inside a
                 # scan. One search per target title means a run makes many, so the seventh must
@@ -308,8 +354,10 @@ class LinkedInLane:
                 # become suppression, which is what the all-empty check below is for.
                 failed += 1
                 per_facet.append([])
+                page_counts.append((url, 0))
                 continue
-            per_facet.append([(url, node) for node in nodes])
+            per_facet.append(entries)
+            page_counts.append((url, pages))
 
         if not any(per_facet):
             # Not a quiet day, and the tally cannot see it either: with no cards nothing is ever
@@ -322,7 +370,64 @@ class LinkedInLane:
                 "request failures): the card fragment has moved, the host is refusing us, or "
                 "none of the profile's target titles match a posting"
             )
-        return [entry for row in zip_longest(*per_facet) for entry in row if entry is not None]
+        interleaved = [
+            entry for row in zip_longest(*per_facet) for entry in row if entry is not None
+        ]
+        return interleaved, tuple(page_counts)
+
+    def _facet_pages(self, fetcher: Fetcher, url: str) -> tuple[list[_SearchEntry], int]:
+        """One facet's cards over at most `self._search_pages` pages, and the pages fetched.
+
+        **A PAGE WITH NO CARDS MEANS TWO DIFFERENT THINGS AND THIS IS WHERE THEY SEPARATE.** On
+        the FIRST page it is `card_nodes`' structural failure -- the fragment moved, or a
+        challenge or error page answered in its place -- and it still propagates, unweakened, to
+        the caller that has always handled it. On a LATER page it is the ordinary end of a
+        facet's result set: a keyword matching 23 postings has no page 3, so every facet shorter
+        than the ceiling would otherwise raise and a normal run would read as an outage the
+        moment the ceiling rose above 1. Same split for `FetchFailure`: a facet whose first page
+        is refused has produced nothing and is a failure the caller must count, while one refused
+        on page 4 keeps the three pages already paid for.
+
+        A full page that adds no new posting id ends the facet too. That is the offset-wrap tail
+        `providers/workday.py` guards for the same reason: a host that answers past the end of a
+        result set with a REPEAT page rather than an empty one would burn every remaining page on
+        cards already held. Repeats within a facet are dropped here rather than carried, because
+        they are a server artifact and not a second listing -- unlike the same posting appearing
+        under two different facets, which is a real listing and stays counted `not_attemptable`
+        by `_group_by_company`.
+
+        The entry carries the PAGE's URL, not the facet's first page. It is a URL this run
+        actually requested, which is the whole standard `BoardSnapshot.url` provenance is held to.
+        """
+        entries: list[_SearchEntry] = []
+        seen: set[str] = set()
+        pages = 0
+        for page_index in range(self._search_pages):
+            page = page_url(url, page_index)
+            try:
+                result = fetcher.get(page)
+                nodes = card_nodes(result.content.decode("utf-8", "replace"))
+            except (FetchFailure, SearchPageError):
+                if page_index == 0:
+                    raise
+                break
+            pages += 1
+            fresh = [
+                (page, node)
+                for node in nodes
+                if (job_id := _urn_job_id(node)) == "" or job_id not in seen
+            ]
+            new_ids = {
+                job_id for node in nodes if (job_id := _urn_job_id(node)) and job_id not in seen
+            }
+            entries.extend(fresh)
+            seen |= new_ids
+            if not new_ids:
+                # No id on this page was one this facet had not already listed. Either the host
+                # is serving the wrap tail, or every card on it is unparseable; in both cases a
+                # further page is a request spent on nothing.
+                break
+        return entries, pages
 
     def _fetch_posting(
         self, fetcher: Fetcher, card: SearchCard, tally: AcquisitionTally

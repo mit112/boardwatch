@@ -130,6 +130,18 @@ class Settings(BaseModel):
     # while behaving as configured, which is the cry-wolf failure that predicate's own
     # docstring exists to avoid. Disarming a lane is what `lanes_enabled` is for.
     lane_posting_budget: int = Field(default=60, ge=1)
+    # How many search pages a lane requests per facet. Only a lane whose search exposes a
+    # working page parameter reads it: LinkedIn's `start=` is a real ITEM offset (10 cards to a
+    # page), while hiring.cafe has no recorded paging parameter and its `?page=` form is
+    # disallowed by `robots.txt`, so its one-page ceiling is structural, not configured.
+    #
+    # **Default 1, which is byte-for-byte the behaviour every lane shipped with.** The knob
+    # multiplies SEARCH requests per run by up to this factor against a host nobody here
+    # operates, so the default must move no existing user's request volume; an operator raising
+    # it is opting into a cost they can see. Floor of 1, not 0: 0 fetches no search page at all,
+    # which reports a lane that found nothing rather than one that was told not to look —
+    # disarming a lane is what `lanes_enabled` is for.
+    lane_search_pages: int = Field(default=1, ge=1)
     # D-325 — the measured-death sweep. `postings` under a company with `watched = 0` get no
     # absence signal from any board scan (D-314), so the only evidence available is the stored
     # URL answering 404/410 twice. Both knobs bound the COST of asking, never the verdict.

@@ -79,7 +79,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # corpus-wide drain from a knob that judged nothing.
         "validator_max_age_hours",
         "notify",              # delivery, post-selection: changes who is told, not which leads
-        # The three lane knobs are ACQUISITION, in the same class as `detail_fetch_budget`:
+        # The four lane knobs are ACQUISITION, in the same class as `detail_fetch_budget`:
         # they decide how much corpus arrives, not how the corpus is judged. Corpus membership
         # has never been in this hash — watching a board changes it too, and that lives in the
         # store, not in `Settings`.
@@ -92,6 +92,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lanes_enabled",
         "lane_new_companies_per_run",
         "lane_posting_budget",
+        "lane_search_pages",
         # D-325. OUT, on the same reasoning as `validator_max_age_hours`: these bound WHEN and
         # HOW OFTEN a posting is re-asked, never how the corpus is judged. What they can change
         # is corpus MEMBERSHIP — a proven-dead posting is closed — and membership has never been

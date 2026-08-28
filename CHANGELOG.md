@@ -67,6 +67,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The LinkedIn lane paginates its search, behind `lane_search_pages` (default `1`).** The lane
+  converts better per posting than any whole-board scan — 19 leads from 213 open postings — because it
+  is facet-filtered at the source against the user's target titles, but it surfaced only ~63-69
+  candidates a run. The body budget was not the constraint and the funnel says so: `body_fetched` was
+  49 and 53 against a `lane_posting_budget` of 60 on runs 126 and 127, under budget every time. One
+  search page per facet was. `start` had been probed as a working ITEM offset (10 cards to a page) and
+  deliberately left unimplemented on the reasoning that a facet already lists more cards than the body
+  budget can fetch; those two runs falsify it, and the module's comment now says so rather than
+  narrating a rationale the code no longer follows. **The ceiling is a setting defaulting to 1, which
+  is byte-for-byte the single-page behaviour that shipped** — page 0 is the URL unchanged, never
+  `&start=0` — so no existing user's request volume or request shape moves and the owner opts in
+  locally. **The correctness trap is that under paging an empty page becomes a legitimate outcome:**
+  `card_nodes` raises `SearchPageError` on a page with no cards *by design*, so paging naively would
+  make every facet shorter than the ceiling look like a structural outage. Page 1 empty still raises,
+  unweakened; page N>1 empty is the end of that facet's results and ends it cleanly. A full page adding
+  no new posting id ends it too — the offset-wrap tail `providers/workday.py` guards for the same
+  reason. Per-facet page counts are reported in the funnel's `lanes` block (additive key, no
+  `artifact_version` bump), because a facet that ran out at page 2 and one truncated at a 5-page
+  ceiling produce the same posting count and only the second is lost reach. `location=` and `f_WT=2`
+  are still never sent, at any offset. hiring.cafe is untouched: it has no recorded paging parameter
+  and its `?page=` form is disallowed by `robots.txt`, so its one-page ceiling is structural.
+
 - **`boardwatch track import` fills the funnel from a history kept in another tool.** The ranker has
   always suppressed a job carrying a submitted application — `applied_job_ids` feeds `hidden_applied`
   in `top`, and `delivered_unapplied` keeps the same job out of the delivery queue — but on a store
