@@ -34,14 +34,11 @@ permanently, and a capped row is never recorded `seen` so it ranks again next ru
 path is the next run itself**, which is why this quarantine alone needs no scheduled drain. The cap
 sits INSIDE `kept < limit`, so freed slots **refill** and the slate never shrinks.
 
-**THE GUARD THAT MADE THE CAP SAFE WAS FOUND BY MEASUREMENT, NOT BY DESIGN.** `content_hash` is NOT
-NULL and never empty (0 of 96,767 open), so its presence proves nothing — **every body-less posting
-hashes the empty string.** All **245** body-less open postings carry the same `e3b0c442…855` digest
-and the corpus already holds **six colliding `(company, title, hash)` groups**, one of them a
-`software engineer frontend` pair that could reach delivery. Uncaught, the cap would have dropped a
-real distinct lead while claiming its JD matched. A body-less posting is therefore **never capped**,
-reusing the `body_empty` flag the ranker's select already computes. Fail-OPEN, for the reason a
-span-less `INELIGIBLE` downgrades to `ABSTAIN`.
+**THE GUARD THAT MADE THE CAP SAFE WAS FOUND BY MEASUREMENT (D-345).** `content_hash` is NOT NULL
+and never empty, so its presence proves nothing — every body-less posting hashes the empty string, so
+all **245** share one digest and **six `(company,title,hash)` groups already collide**, one a
+`software engineer frontend` pair. Body-less postings are exempt, fail-OPEN. Detail in
+`STANDING-FACTS.md`.
 
 **EACH LANE NOW REPORTS ITS COST SPLIT INTO FETCHING AND APPLYING (D-346, #217), AND THAT SPLIT IS
 THE INSTRUMENT THAT CLOSES THE LANE QUESTION — NOT AN EXTRA.** D-343 left the lane stage's 6.5 min
@@ -82,23 +79,31 @@ them on the `_in_field` rules**, the exact class it flagged. **This is NOT a cla
 (a doctorate-required role correctly excludes a master's holder); it is that a family the log records
 as not armed is armed in production. **Raised to Mit — confirming or reverting is his.**
 
-**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350).** The catalog and the live profile diverge
-on **five of six** families: `rules.yaml` has `work_auth` as its only `blocker` default, the live store
-has all six. The divergence is BY DESIGN — the catalog is the multi-tenancy artefact and arming is a
-per-user act — but an unqualified severity claim is not checkable, and the gap is wide: #218's widened
-floors give **1,228 verdict flips under the live policy and 0 under the published default**. Read the
-store for what a RUN will do, `rules.yaml` for what a NEW USER gets, and record which one produced any
-verdict count.
+**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on
+**five of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six).
+By design, but it makes an unqualified severity claim uncheckable, and the gap is wide: #218's floors
+give **1,228 verdict flips live vs 0 published**. Full rule in `STANDING-FACTS.md`.
 
-**Everything below this line is carried from the previous session and remains true.** The provisional
-pass was met by runs 119-123 and the owner is holding it; Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and
-is a HOLDING value (D-293); the fleet is 344 watched boards; breadth is argued on precision and
-capacity, never on an application count (D-312). Board cost is provider-weighted and **s/board is a
-lying unit** — `workday` is ~73% of a run; size every batch by provider mix, never by board count.
-**Raising the `scan_workers` ceiling above `le=8` stays RETIRED** (D-344): run 129 proved the scan
-tail-bound on one board, 343 of 344 finishing in 27.0 min and `lowes.wd5` taking 5.9 more alone.
-Run 129 itself: `ok`, **44.7 min** against run 128's 132.4, **2.82x = 1.58x backlog drain x 1.78x
-parallelism** — only the 1.78x was code. Full numbers in `METRICS.md`.
+**FOUR MERGES FROM THIS SESSION, EVERY ONE GATED WITH A REAL EXIT CODE 0, PLUS ONE FROM A PARALLEL
+SESSION.** #215 the slate cap (D-345) · #216 the detail-sheet focus containment (D-348) · #217 the
+per-lane cost split (D-346) · #219 the lane fetch overlap (D-347). **#218 (years patterns, D-349) is a
+PARALLEL SESSION's.** #219 was re-gated AFTER an `--onto` rebase onto the post-#217 `main`, because
+#215 also touched `runner.py` so the merge candidate differed from the tree first gated — a clean
+rebase can still break semantically. **All five verified present in `main` by CONTENT, not the PR page**
+(pushing to a merged PR's branch lands nothing, silently): `main` `a1a69ff`.
+
+**No run was taken** — every number here is measured against the existing corpus or the runs 119-129
+delivery history, and says so. **Every new test was confirmed to FAIL against the wrong
+implementation** before being counted; the mutation table is in METRICS 2026-08-28e.
+
+**Everything below this line is carried and remains true.** The provisional pass is held by the owner
+(but see the restarted counter under Phase status); Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and is a
+HOLDING value (D-293); the fleet is 344 watched boards; breadth is argued on precision and capacity,
+never an application count (D-312). Board cost is provider-weighted and **s/board is a lying unit** —
+`workday` is ~73% of a run; size batches by provider mix, never board count. **Raising the
+`scan_workers` ceiling above `le=8` stays RETIRED** (D-344): run 129 finished 343 of 344 boards in
+27.0 min, `lowes.wd5` taking 5.9 more alone. Run 129 was **44.7 min** vs run 128's 132.4 — **2.82x =
+1.58x backlog drain x 1.78x parallelism**, only the 1.78x code. Numbers: `METRICS.md`.
 
 ---
 

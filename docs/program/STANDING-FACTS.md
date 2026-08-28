@@ -1064,15 +1064,23 @@ non-vacuity check**: stripping only the four attributes reproduces the bug (cove
 focus and `a` marks it applied, 347→346). Chromium only; the pre-existing Escape-restores-focus bug
 was proved pre-existing and left alone.
 
-**THREE MERGES AND ONE PR IN FLIGHT, EVERY ONE GATED WITH A REAL EXIT CODE 0.** **MERGED:** #215 the
-slate cap (D-345) · #216 the detail-sheet focus containment (D-348) · #217 the per-lane cost split
-(D-346). **OPEN, gated green, auto-merge armed, CI clean at session close:** **#219** the lane fetch
-overlap (D-347) — re-gated AFTER rebasing onto the post-#217 `main` with `--onto`, because #215 also
-touched `runner.py` so the merge candidate differed from the tree first gated (a clean rebase can
-still break semantically). **Verify #219 actually landed by `main`'s CONTENT, not by the PR page** —
-pushing to a merged PR's branch lands nothing, silently. A fourth PR, **#218 (eligibility years
-patterns), is a PARALLEL SESSION's**, not this one's.
+### The slate cap's body-less guard (moved from STATE 2026-08-28e, verbatim — D-345)
 
-**No run was taken** — every number above is measured against the existing corpus or the runs 119-129
-delivery history, and says so. **Every new test was confirmed to FAIL against the wrong
-implementation** before being counted; the mutation table is in METRICS 2026-08-28e.
+**THE GUARD THAT MADE THE CAP SAFE WAS FOUND BY MEASUREMENT, NOT BY DESIGN.** `content_hash` is NOT
+NULL and never empty (0 of 96,767 open), so its presence proves nothing — **every body-less posting
+hashes the empty string.** All **245** body-less open postings carry the same `e3b0c442…855` digest
+and the corpus already holds **six colliding `(company, title, hash)` groups**, one of them a
+`software engineer frontend` pair that could reach delivery. Uncaught, the cap would have dropped a
+real distinct lead while claiming its JD matched. A body-less posting is therefore **never capped**,
+reusing the `body_empty` flag the ranker's select already computes. Fail-OPEN, for the reason a
+span-less `INELIGIBLE` downgrades to `ABSTAIN`.
+
+### Which eligibility policy you mean (moved from STATE 2026-08-28e, verbatim — D-350)
+
+**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350).** The catalog and the live profile diverge
+on **five of six** families: `rules.yaml` has `work_auth` as its only `blocker` default, the live store
+has all six. The divergence is BY DESIGN — the catalog is the multi-tenancy artefact and arming is a
+per-user act — but an unqualified severity claim is not checkable, and the gap is wide: #218's widened
+floors give **1,228 verdict flips under the live policy and 0 under the published default**. Read the
+store for what a RUN will do, `rules.yaml` for what a NEW USER gets, and record which one produced any
+verdict count.
