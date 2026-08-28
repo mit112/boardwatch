@@ -1096,8 +1096,23 @@ them.
 |---|---:|---|
 | watched boards (fleet) | **344** (was 346) | **verified** here |
 | open corpus | **96,767** (was 84,821) | **verified** here |
-| company reach vs job-apps | **~10.1%** — supersedes the stale **7.7%** | parallel session, NOT re-derived |
-| fetch-latency backlog, deferred postings | **18,787 → 5,227**, self-draining after `detail_fetch_budget` 50 → 400 | parallel session, NOT re-derived |
+| company reach vs job-apps | **~10.1%** — supersedes the stale **7.7%** | relayed by that session from a PRIOR one (two hops), **NOT re-derived — owed a check** |
+| fetch-latency backlog, deferred postings | **18,787 → 5,227** | **verified** here, both ends |
+
+**The backlog drain is monotonic, which the two endpoints alone did not show.** Summing
+`board_scans.detail_deferred` over `scan_kind='board'` per run:
+
+| run | boards | `detail_deferred` |
+|---|---:|---:|
+| 126 | 346 | **18,787** |
+| 127 | 346 | 17,411 |
+| 128 | 345 | 9,261 |
+| 129 | 344 | **5,227** |
+
+So the `detail_fetch_budget` 50 → 400 raise is draining the backlog rather than holding it flat, and
+**the drain is nearly done** — which matters for sizing the next run, because run 129 still carried
+~27 min of catch-up and run 130 should carry materially less. `7.7%` remains the only company-reach
+figure that has been counted twice; **~10.1% has been counted once, in a session that relayed it.**
 
 **Remaining reach work**, from `.agent/2026-08-28-coverage-dedup-session/B-discovery-miss.md`
 (~28 misses/day, and the class is **company reach, not ATS coverage**):

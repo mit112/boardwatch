@@ -142,8 +142,10 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 
 3. **The breadth re-check is DOCUMENTED and is the next session's, by Mit's instruction** ("document,
    take on next session when both sessions are done"). Fleet **344** and open corpus **96,767** are
-   verified here; company reach **~10.1%** (superseding 7.7%) and the deferred backlog draining
-   **18,787 → 5,227** are a parallel session's and are **owed a check**. The cheap half is **~22
+   verified here, and so is the deferred backlog draining **18,787 → 5,227** (monotonic across runs
+   126-129, table in `STANDING-FACTS.md`) — so the detail catch-up that cost run 129 ~27 min is nearly
+   spent. Company reach **~10.1%** is **relayed from a prior session and owed a check**; 7.7% is the
+   only reach figure counted twice. The cheap half is **~22
    misses/day addable by adding a supported-ATS board** (named list in
    `.agent/2026-08-28-coverage-dedup-session/B-discovery-miss.md`); ~122 need lane dereference; ~33 are
    out of scope (D-272). Numbers and caveats: `STANDING-FACTS.md`. **Read "Breadth is last" first — the
