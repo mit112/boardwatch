@@ -35,6 +35,15 @@ that is what it is (design §6.2):
 would assert a decision the gate declined to make, which is the same error as folding an abstain
 into a neighbour.
 
+`review_reason` is therefore a SEPARATE field and `off_target` must never be stretched to stand in
+for it. It names which of `review_gate.ReviewReason`'s four members held the lead, and it comes
+from `review_gate.classify` — the same call `lane` projects, so the reason on a row and the lane
+the row arrived in are one decision and cannot disagree (D-332). It is `None` for every apply-lane
+row, which makes `review_reason is not None` and "this row came in `review`" the same statement.
+The two fields answer different questions: `off_target` is `not_swe` alone, while the lane also
+holds a confirmed non-US location and a title the role gate merely could not call software, so
+most review leads carry a reason and no badge.
+
 `rank` is deliberately not a field. The rows arrive ordered, so rank is the array position; a
 field for it could disagree with the order it describes.
 
@@ -73,7 +82,7 @@ from boardwatch.delivery.answers import (
 )
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
-from boardwatch.delivery.review_gate import lane
+from boardwatch.delivery.review_gate import classify, lane
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
@@ -265,9 +274,17 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
     `thin_jd` is `fraction is None`, which is true both for a JD carrying no recognised
     requirement at all and for a store with no master résumé to measure against. Both are
     literally "no coverage fraction could be computed", which is what the badge says.
+
+    `review_reason` is on EVERY row rather than only on the review list, because `detail_payload`
+    serializes one row with no list around it — a field that existed only inside `review` would be
+    absent exactly where the pane has to explain why the lead is held.
     """
     fraction = None if facts.coverage is None else facts.coverage.fraction
     off_target = facts.role == "not_swe"
+    # From `classify`, which `lane` is a projection of, so this row's reason and the list it was
+    # sorted into are the SAME decision rather than two that agree today. `None` on an apply-lane
+    # row by construction: `classify` returns a reason only where it returns `REVIEW_DIR`.
+    held = classify(verdict=row.verdict, locations=row.locations, title=row.title).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
     return {
         "posting_id": row.posting_id,
@@ -288,6 +305,7 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "thin_jd": fraction is None,
         "off_target": off_target,
         "off_target_reason": facts.role_reason if off_target else None,
+        "review_reason": held,
         "pdf_available": pdf is not None,
         "score": facts.score,
         "why": facts.why,

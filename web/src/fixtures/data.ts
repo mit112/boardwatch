@@ -6,10 +6,11 @@
  *     and every decision about search, sort and the status band follows from that number;
  *   - `applied_ever` starts at 0, because `applications` has never held a row — so an empty
  *     "applied" figure is the honest starting state, not a fixture oversight;
- *   - twelve AUTHORED edge cases up front, each one a rendering that has to be got right: a null
- *     posted date, a closed posting, an unverifiable posting, a thin JD, an off-target veto with
- *     its matched text, a missing PDF, a `javascript:` apply URL, a posting with no current
- *     version, and a posting whose JD yields no recognised requirements.
+ *   - thirteen AUTHORED edge cases up front, each one a rendering that has to be got right: a
+ *     null posted date, a closed posting, an unverifiable posting, a thin JD, an off-target veto
+ *     with its matched text, a lead held for a non-US location alone, a missing PDF, a
+ *     `javascript:` apply URL, a posting with no current version, and a posting whose JD yields
+ *     no recognised requirements.
  * The remainder is generated from a fixed seed so counts and ordering are stable across reloads.
  *
  * Artifact URIs are written `file://~/…` and must stay that way. `~` is not merely a shorter home
@@ -20,7 +21,13 @@
  * the scheme, so the pane still shows `~/boardwatch-applications/<date>/…` and the
  * parent-directory line still resolves.
  */
-import type { QueueDetail, QueueRow, RequirementView, Verdict } from "../api/types";
+import type {
+  QueueDetail,
+  QueueRow,
+  RequirementView,
+  ReviewReason,
+  Verdict,
+} from "../api/types";
 
 const AUTHORED: QueueRow[] = [
   {
@@ -45,6 +52,7 @@ const AUTHORED: QueueRow[] = [
     score: 87.4,
     coverage: 0.72,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 39820,
@@ -69,6 +77,7 @@ const AUTHORED: QueueRow[] = [
     score: 84.1,
     coverage: 0.64,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 38115,
@@ -93,6 +102,7 @@ const AUTHORED: QueueRow[] = [
     score: 79.8,
     coverage: 0.58,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 40551,
@@ -119,6 +129,7 @@ const AUTHORED: QueueRow[] = [
     score: 61.2,
     coverage: 0.41,
     off_target_reason: 'role gate: title family "analyst" is denied (matched "Data Analyst")',
+    review_reason: "role_vetoed",
   },
   {
     posting_id: 40990,
@@ -143,6 +154,7 @@ const AUTHORED: QueueRow[] = [
     score: 70.0,
     coverage: null,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 40012,
@@ -167,6 +179,7 @@ const AUTHORED: QueueRow[] = [
     score: 82.6,
     coverage: 0.55,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 37440,
@@ -191,6 +204,7 @@ const AUTHORED: QueueRow[] = [
     coverage: 0.29,
     off_target_reason:
       'seniority gate: band "manager" is above target_seniority_band=entry (matched "Engineering Manager")',
+    review_reason: "ineligible_verdict",
   },
   {
     posting_id: 41300,
@@ -215,6 +229,7 @@ const AUTHORED: QueueRow[] = [
     score: null,
     coverage: 0.47,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 40777,
@@ -238,6 +253,7 @@ const AUTHORED: QueueRow[] = [
     score: 88.9,
     coverage: 0.81,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 40778,
@@ -261,6 +277,7 @@ const AUTHORED: QueueRow[] = [
     score: 88.1,
     coverage: 0.8,
     off_target_reason: null,
+    review_reason: null,
   },
   {
     posting_id: 39001,
@@ -284,6 +301,7 @@ const AUTHORED: QueueRow[] = [
     score: 52.7,
     coverage: 0.33,
     off_target_reason: null,
+    review_reason: "ineligible_verdict",
   },
   {
     posting_id: 41415,
@@ -307,6 +325,34 @@ const AUTHORED: QueueRow[] = [
     score: 91.2,
     coverage: 0.77,
     off_target_reason: null,
+    review_reason: null,
+  },
+  {
+    posting_id: 41502,
+    job_id: 30940,
+    title: "Software Engineer, Payments Platform",
+    company: "Adyen",
+    location: "Amsterdam, Netherlands",
+    remote_policy: "hybrid",
+    posted_days: 4,
+    first_seen: "2026-08-24T08:15:00Z",
+    status: "open",
+    verdict: "uncertain",
+    apply_url: "https://careers.adyen.com/vacancies/41502",
+    delivered_run_id: 114,
+    tex_uri: "file://~/boardwatch-applications/2026-08-24/tailored-41502.tex",
+    pdf_uri: "file://~/boardwatch-applications/2026-08-24/tailored-41502.pdf",
+    target_flag: null,
+    thin_jd: false,
+    // A software title with NOTHING wrong with the role: the location alone holds it. This is the
+    // case the badge cannot express, and the one that rendered as a clean lead before
+    // `review_reason` existed.
+    off_target: false,
+    pdf_available: true,
+    score: 68.9,
+    coverage: 0.55,
+    off_target_reason: null,
+    review_reason: "non_us_location",
   },
 ];
 
@@ -320,13 +366,13 @@ const COMPANIES = [
 ];
 
 /*
- * `review` is the D-332 lane, and it is DELIBERATELY not the same question as `offTarget`. The
- * role gate demotes anything it will not positively call software, while `off_target` is set for
- * `not_swe` ALONE — so a role-`uncertain` title sits in the review lane wearing no badge. The
- * "Data Engineer, Analytics" row below is exactly that case, and it exists so the fixture shows
- * an unbadged review lead rather than implying the badge and the lane agree.
+ * `review` is the D-332 lane REASON, and it is DELIBERATELY not the same question as `offTarget`.
+ * The role gate demotes anything it will not positively call software, while `off_target` is set
+ * for `not_swe` ALONE — so a role-`uncertain` title sits in the review lane wearing no `off
+ * target` badge. The "Data Engineer, Analytics" row below is exactly that case, and it is
+ * `role_unconfirmed` rather than `role_vetoed` because an abstain is not a veto.
  */
-const TITLES: { title: string; offTarget: string | null; review?: boolean }[] = [
+const TITLES: { title: string; offTarget: string | null; review?: ReviewReason }[] = [
   { title: "Software Engineer, Backend", offTarget: null },
   { title: "Software Engineer, Frontend", offTarget: null },
   { title: "Software Engineer, Infrastructure", offTarget: null },
@@ -339,20 +385,20 @@ const TITLES: { title: string; offTarget: string | null; review?: boolean }[] = 
   { title: "Full Stack Engineer", offTarget: null },
   { title: "Embedded Software Engineer", offTarget: null },
   { title: "Test Engineer, Silicon", offTarget: null },
-  { title: "Data Engineer, Analytics", offTarget: null, review: true },
+  { title: "Data Engineer, Analytics", offTarget: null, review: "role_unconfirmed" },
   {
     title: "Technical Program Manager, Infrastructure",
-    review: true,
+    review: "role_vetoed",
     offTarget: 'role gate: title family "program manager" is denied (matched "Program Manager")',
   },
   {
     title: "Solutions Architect, Data Platform",
-    review: true,
+    review: "role_vetoed",
     offTarget: 'role gate: title family "architect" is denied (matched "Solutions Architect")',
   },
   {
     title: "Systems Administrator, Build Infrastructure",
-    review: true,
+    review: "role_vetoed",
     offTarget: 'role gate: title family "administrator" is denied (matched "Administrator")',
   },
 ];
@@ -410,6 +456,12 @@ function generate(count: number, seed: number, idBase: number): QueueRow[] {
       target_flag: random() < 0.3 ? true : random() < 0.5 ? false : null,
       thin_jd: thin,
       off_target: spec.offTarget !== null,
+      review_reason:
+        verdict === "eligible"
+          ? null
+          : verdict === "ineligible"
+            ? "ineligible_verdict"
+            : (spec.review ?? null),
       pdf_available: true,
       score: Math.round((35 + random() * 60) * 10) / 10,
       coverage: thin ? null : Math.round(random() * 100) / 100,
@@ -418,15 +470,6 @@ function generate(count: number, seed: number, idBase: number): QueueRow[] {
   }
   return rows;
 }
-
-/**
- * Titles the D-332 lane holds for review. Exported as a title set because `generate` returns bare
- * `QueueRow`s and the wire carries no per-row lane field — the server answers the question by
- * WHICH LIST a row arrives in, so the fixture has to answer it the same way.
- */
-export const REVIEW_TITLES: ReadonlySet<string> = new Set(
-  TITLES.filter((spec) => spec.review === true).map((spec) => spec.title),
-);
 
 /** Ranked, as the contract promises: score descending, unscored last. */
 export function byRank(a: QueueRow, b: QueueRow): number {

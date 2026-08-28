@@ -3,12 +3,16 @@
 Fixture strings are calibrated against the live `classify_location` / `role_verdict`
 classifiers (2026-08-27): US cities classify `us`; "Kaunas Office" is `unknown`
 (city without a country); "Kaunas, Lithuania"/"Zhubei, Taiwan" are `non_us`;
-"Front Office Agent"/"Field Auto Appraiser" have no role signal → `uncertain`.
+"Front Office Agent"/"Field Auto Appraiser" have no role signal → `uncertain`;
+"Registered Nurse Practitioner" matches a deny pattern → `not_swe`. The two role
+answers are asserted out loud where they are load-bearing rather than assumed, so a
+gate that moves under the fixture fails here instead of passing vacuously.
 """
 
 from __future__ import annotations
 
-from boardwatch.delivery.review_gate import REVIEW_DIR, lane
+from boardwatch.delivery.review_gate import REVIEW_DIR, classify, lane
+from boardwatch.rank.role_gate import role_verdict
 
 
 def test_eligible_always_applies_regardless_of_location_or_role() -> None:
@@ -83,3 +87,93 @@ def test_ineligible_is_held_for_review_not_blind_applied() -> None:
 def test_empty_locations_fail_open_to_apply() -> None:
     # No location named -> unknown -> fail open (never blind-drop / blind-demote an unplaced lead).
     assert lane(verdict="uncertain", locations=[], title="Software Engineer") == ""
+
+
+# --------------------------------------------------------------- the reason, one case per branch
+
+
+def test_ineligible_verdict_names_itself_as_the_reason() -> None:
+    assert classify(
+        verdict="ineligible", locations=["Austin, TX"], title="Software Engineer"
+    ) == (REVIEW_DIR, "ineligible_verdict")
+
+
+def test_a_confirmed_foreign_location_names_the_location_as_the_reason() -> None:
+    # The title is software and the verdict is not ineligible, so location is the ONLY thing that
+    # can be holding it. Before this reason existed the row rendered bare.
+    assert classify(
+        verdict="uncertain", locations=["Kaunas, Lithuania"], title="Software Engineer"
+    ) == (REVIEW_DIR, "non_us_location")
+
+
+def test_a_vetoed_title_and_an_unconfirmed_one_are_DIFFERENT_reasons() -> None:
+    """The role gate's veto and its abstain must not share one reason string.
+
+    `Registered Nurse Practitioner` matches a deny pattern (`not_swe`) and `Front Office Agent`
+    carries no role signal at all (`uncertain`). Both are held, but only the first is a decision
+    the gate made: reporting the second as "not software" would assert a claim it declined to
+    make, which is folding an abstain into its neighbour. They therefore differ HERE, at the
+    classifier, and not merely in how the page words them.
+    """
+    assert role_verdict("Registered Nurse Practitioner")[0] == "not_swe"
+    assert role_verdict("Front Office Agent")[0] == "uncertain"
+
+    vetoed = classify(
+        verdict="uncertain", locations=["Chicago, Illinois, United States"],
+        title="Registered Nurse Practitioner",
+    )
+    unconfirmed = classify(
+        verdict="uncertain", locations=["Chicago, Illinois, United States"],
+        title="Front Office Agent",
+    )
+    assert vetoed == (REVIEW_DIR, "role_vetoed")
+    assert unconfirmed == (REVIEW_DIR, "role_unconfirmed")
+    assert vetoed.reason != unconfirmed.reason
+
+
+def test_the_apply_lane_carries_no_reason() -> None:
+    assert classify(
+        verdict="eligible", locations=["Kaunas, Lithuania"], title="Janitor"
+    ) == ("", None)
+    assert classify(
+        verdict="uncertain", locations=["San Jose, CA, United States"], title="Software Engineer"
+    ) == ("", None)
+    assert classify(verdict="uncertain", locations=["Remote"], title="Software Engineer") == (
+        "",
+        None,
+    )
+
+
+# --------------------------------------------------------------------------------- they AGREE
+
+
+#: Every case above and below, as one table. `lane` is a projection of `classify`, so the point of
+#: the table is that the projection is not a second opinion: a reason without the lane to match it
+#: is exactly how the page and the `_review` folder start disagreeing about one lead (D-332).
+_CASES: list[tuple[str | None, list[str], str]] = [
+    ("eligible", ["Kaunas, Lithuania"], "Janitor"),
+    ("eligible", ["Austin, TX"], "Software Engineer"),
+    ("ineligible", ["Austin, TX"], "Software Engineer"),
+    ("ineligible", ["Kaunas, Lithuania"], "Front Office Agent"),
+    ("uncertain", ["Kaunas, Lithuania"], "Software Engineer"),
+    ("uncertain", ["Zhubei, Taiwan"], "Front Office Agent"),
+    ("uncertain", ["Chicago, Illinois, United States"], "Front Office Agent"),
+    ("uncertain", ["Chicago, Illinois, United States"], "Registered Nurse Practitioner"),
+    ("uncertain", ["San Jose, CA, United States"], "Software Engineer"),
+    ("uncertain", ["Remote"], "Software Engineer"),
+    ("uncertain", [], "Software Engineer"),
+    (None, ["Austin, TX"], "Software Engineer"),
+    (None, ["Kaunas, Lithuania"], "Software Engineer"),
+    (None, ["Austin, TX"], "Front Office Agent"),
+]
+
+
+def test_lane_is_exactly_the_classifiers_lane_and_a_reason_appears_iff_it_is_review() -> None:
+    for verdict, locations, title in _CASES:
+        decision = classify(verdict=verdict, locations=locations, title=title)
+        assert decision.lane == lane(verdict=verdict, locations=locations, title=title)
+        assert (decision.reason is not None) == (decision.lane == REVIEW_DIR), (
+            verdict,
+            locations,
+            title,
+        )

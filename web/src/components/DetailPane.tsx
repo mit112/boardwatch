@@ -15,6 +15,7 @@ import { AnswersPanel } from "./AnswersPanel";
 import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
 import { CopyButton } from "./CopyButton";
+import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
 
 /**
@@ -290,6 +291,14 @@ export function DetailPane({
               ) : null}
               {row.target_flag === true ? <Badge label="target company" /> : null}
             </div>
+
+            {/* Reason VISIBLE, like `unverifiable` above: the pane is opened to decide what to do
+                with a held lead, and a bare chip there invites the reader to guess wrong. */}
+            {row.review_reason === null ? null : (
+              <div className="mt-3">
+                <ReviewReasonBadge reason={row.review_reason} showReason />
+              </div>
+            )}
 
             {row.off_target ? (
               <div className="mt-3">
