@@ -8,6 +8,46 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A degree requirement's boilerplate no longer reads as a field of study.** The `education` field
+  surface matched the mass noun wherever a posting talked *about* education rather than naming it as
+  a subject — "or educational equivalent", "an equivalent combination of education and experience",
+  "Accreditation Commission for Education" — so a posting asking for a degree in Engineering was
+  read as demanding a degree **in education** and decided `unmet` against a candidate it had named
+  no field for at all. Counted over the open corpus, those frames outnumber the genuine field sense
+  by roughly twenty to one. The surface now rejects them on the word immediately preceding the noun,
+  which the field sense never takes, and no longer matches `educational` at all. Separately, the
+  relatedness escape could not read **"or another related field"** or "or other related field" — the
+  alternation admitted only "a" and "an" — so a posting that had plainly opened its requirement was
+  still treated as naming a closed set. 483 open postings carry that phrasing. Both defects could
+  only ever produce a wrong rejection, never a wrong clearance.
+
+- **Every held-back lead now says which reason held it.** The queue splits leads into an apply lane
+  and a review lane, but a review row carried a marker only when the role gate had positively
+  classified its title as *not* software. A lead held because its location was confirmed outside the
+  US, or because the gate simply would not vouch for the title either way, rendered exactly like a
+  clean one. The lane decision now returns its reason alongside the lane from the same branch, so
+  the page and the `_review` folder cannot start disagreeing about a lead, and each review row is
+  labelled `outside the US`, `role vetoed`, `role unconfirmed` or `ineligible verdict`. The two role
+  cases stay separate on purpose: the gate's `uncertain` is an abstain, and reporting it as "not
+  software" would assert a decision the gate declined to make.
+
+- **The review app has a new visual language.** One type size appeared in 47 places, one corner
+  radius in 42, and a border was drawn around every container, so a dense instrument read as a
+  spreadsheet. Depth now comes from elevation rather than outlines, the corner radius is a language
+  of three deliberate steps instead of a default, and the monospace face carries headings, metric
+  numerals and labels while the sans face keeps prose. The two figures the page is opened to read
+  are set at display scale. No web font is downloaded or bundled: the app ships inside the wheel and
+  is served from localhost, often offline. Every foreground and background pair was re-checked
+  against the lightest surface it can land on and clears WCAG 2.2 AA, and the keyboard model, focus
+  containment and reduced-motion behaviour are unchanged.
+
+- **The per-host request delay can be measured from the start of a request.** It was measured from
+  the end of the previous one, so a host saw one request every delay *plus* however long each took —
+  about 0.6 requests per second where the setting read 1.0. `pace_from_request_start` makes the
+  delay the whole interval. It is **off by default and stays off unless you turn it on**: raising it
+  is a real increase in the load every job board sees, and that is not a default this project sets
+  on anyone's behalf.
+
 - **The delivery slate is capped at one lead per company, title and byte-identical JD.** Run 129
   delivered ten leads and nine were a single requisition — one CGS Federal `ServiceNow Developer`
   posted to nine cities, with one `company_id`, one normalized title and one byte-identical
