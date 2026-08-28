@@ -1084,3 +1084,49 @@ per-user act — but an unqualified severity claim is not checkable, and the gap
 floors give **1,228 verdict flips under the live policy and 0 under the published default**. Read the
 store for what a RUN will do, `rules.yaml` for what a NEW USER gets, and record which one produced any
 verdict count.
+
+### Breadth re-check, 2026-08-28e — Mit's instruction was DOCUMENT NOW, ACT NEXT SESSION
+
+Measured by a parallel session (`boardwatch-52`) and handed over at its close. **Re-derived here where
+cheap; attributed where not** — the two figures below marked *verified* were counted independently
+against the live store, the rest are that session's and are owed a check before anything is built on
+them.
+
+| quantity | value | provenance |
+|---|---:|---|
+| watched boards (fleet) | **344** (was 346) | **verified** here |
+| open corpus | **96,767** (was 84,821) | **verified** here |
+| company reach vs job-apps | **~10.1%** — supersedes the stale **7.7%** | parallel session, NOT re-derived |
+| fetch-latency backlog, deferred postings | **18,787 → 5,227**, self-draining after `detail_fetch_budget` 50 → 400 | parallel session, NOT re-derived |
+
+**Remaining reach work**, from `.agent/2026-08-28-coverage-dedup-session/B-discovery-miss.md`
+(~28 misses/day, and the class is **company reach, not ATS coverage**):
+
+- **~22 misses are addable by simply adding a supported-ATS board** — a named list is in that doc
+  (RTX, UCF, HP, Bosch, Siemens Healthineers, Domino's, ModMed, …). This is the cheap half.
+- **~122 aggregator-URL misses need a dereference step** on the linkedin/hiringcafe lanes; low volume
+  today.
+- **~33 are unsupported-ATS and OUT OF SCOPE** — no new adapters (D-272).
+
+**Do not start this without re-reading `CLAUDE.md`'s "Breadth is last".** Adding input multiplies
+whatever is downstream of it, and the slate cap (D-345) has not yet been observed on a single run.
+
+### The in-flight-run liveness probe (moved from STATE 2026-08-28e, verbatim — D-335/D-024)
+
+   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
+   ```sh
+   # ALIVE if this prints a PID; empty = idle.
+   ps -o pid,command -ax | awk '$2 ~ /\/python[0-9.]*$/ && /boardwatch run --project/ {print $1}'
+   ```
+   Anchored on **argv[0]**: a real run has `argv[0] = .../.venv/bin/python3`, every decoy shell has
+   `-c`. The `awk '$2==1'` form was WRONG in the dangerous direction (D-335) — it keeps only
+   launchd's direct children, so it reported IDLE for all 91 minutes of run 127, and manual
+   invocation is now the common case. On macOS do NOT use `ps -o comm` (truncated path, matches
+   nothing, false IDLE). `runs.finished_at` precedes process exit by ~90 s (D-024).
+
+   **`pkill -f "make check"` is NOT worktree-scoped** and will kill a parallel session's gate in a
+   sibling checkout, where it reads as an unexplained `Error 143`. Kill by PID.
+
+   **The scratchpad directory is SHARED with subagents, not per-agent.** A PR-body file written to a
+   fixed name was overwritten mid-task by a worktree agent this session. Name per-launch files
+   uniquely — gate logs, sentinels and PR bodies alike.

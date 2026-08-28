@@ -124,23 +124,14 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    - **The eligibility recompute from #218's `rules_hash` bump.** Strictly stricter, so no drain is
      owed, but it re-evaluates the corpus.
 
-   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table:**
-   ```sh
-   # ALIVE if this prints a PID; empty = idle.
-   ps -o pid,command -ax | awk '$2 ~ /\/python[0-9.]*$/ && /boardwatch run --project/ {print $1}'
-   ```
-   Anchored on **argv[0]**: a real run has `argv[0] = .../.venv/bin/python3`, every decoy shell has
-   `-c`. The `awk '$2==1'` form was WRONG in the dangerous direction (D-335) — it keeps only
-   launchd's direct children, so it reported IDLE for all 91 minutes of run 127, and manual
-   invocation is now the common case. On macOS do NOT use `ps -o comm` (truncated path, matches
-   nothing, false IDLE). `runs.finished_at` precedes process exit by ~90 s (D-024).
+   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table** — the probe,
+   why the `awk '$2==1'` form was wrong in the dangerous direction (D-335), and why `ps -o comm` gives
+   a false IDLE on macOS are all in `STANDING-FACTS.md`. `runs.finished_at` precedes process exit by
+   ~90 s (D-024). **`pkill -f "make check"` is NOT worktree-scoped** — kill by PID.
 
-   **`pkill -f "make check"` is NOT worktree-scoped** and will kill a parallel session's gate in a
-   sibling checkout, where it reads as an unexplained `Error 143`. Kill by PID.
-
-   **The scratchpad directory is SHARED with subagents, not per-agent.** A PR-body file written to a
-   fixed name was overwritten mid-task by a worktree agent this session. Name per-launch files
-   uniquely — gate logs, sentinels and PR bodies alike.
+   **The scratchpad directory is SHARED with subagents, not per-agent.** A fixed-name PR-body file was
+   overwritten mid-task by a worktree agent this session; a shared *sentinel* would be worse, since
+   reading it means reading someone else's exit code. Name every per-launch file uniquely.
 
 2. **The provisional pass's clean-run counter RESTARTED, and that is the session's one live tension.**
    STATE has had it NEARLY MET with the P4 owner blind review already PASSED (2026-08-26), leaving
@@ -149,34 +140,43 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    about 3 days. **Raised to Mit; the trade (stricter eligibility now vs the provisional pass
    possibly not closing before unattended operation) is his, not a session's.**
 
-3. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
+3. **The breadth re-check is DOCUMENTED and is the next session's, by Mit's instruction** ("document,
+   take on next session when both sessions are done"). Fleet **344** and open corpus **96,767** are
+   verified here; company reach **~10.1%** (superseding 7.7%) and the deferred backlog draining
+   **18,787 → 5,227** are a parallel session's and are **owed a check**. The cheap half is **~22
+   misses/day addable by adding a supported-ATS board** (named list in
+   `.agent/2026-08-28-coverage-dedup-session/B-discovery-miss.md`); ~122 need lane dereference; ~33 are
+   out of scope (D-272). Numbers and caveats: `STANDING-FACTS.md`. **Read "Breadth is last" first — the
+   slate cap has not been observed on a single run yet.**
+
+4. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
    `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
 
-4. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
+5. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
    cheap ones go in ONE batch; SmartRecruiters 107 ≈ +40 min; Workday 333 ≈ +122 min and must be
    chunked at ~100. **Probe ~10 cold Workday boards first** — no cold Workday or SmartRecruiters
    board has ever been timed, and they are the two providers that burn a per-posting detail budget on
    a first scan.
 
-5. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
+6. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
    (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to
    green a gate; re-run the job.** macOS runs the suite unsharded, so it has MORE exposure per push.
 
-6. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
+7. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
    is **2 of 286** and architectural (D-320). *(The residual years-detection gap was the other item
    here; #218 addressed it — read that PR rather than the old 24-leads/1.3% figure.)*
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-7. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
-8. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
+8. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+9. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
    he steps back from active work (~2026-08-31, unattended after). **Not dropped — an accepted known
    gap**, and the last multi-tenancy gap of its kind. Still owner-gated and still needs its own
    brainstorm; D-054 forbids us authoring non-tech field content.
-9. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
+10. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
    one bundle.
-10. **Phase 1b — whether the WEB page follows the queue split (D-332). RAISED, NOT YET RULED — put it
+11. **Phase 1b — whether the WEB page follows the queue split (D-332). RAISED, NOT YET RULED — put it
     to Mit before touching `queue_payload`.** The folder tree holds review leads in `_review`, but
     `api.py::queue_payload` still lists them. **State the gap precisely, because "they show up
     flagged `off_target`" is WRONG:** `api.py:248` is `off_target = facts.role == "not_swe"` and the
