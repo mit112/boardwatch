@@ -24,7 +24,7 @@ function SortButton({
         onSort(sortKey);
       }}
       title={`Sort by ${label}`}
-      className={`inline-flex min-h-11 min-w-11 items-center gap-1 rounded px-1 text-[11px] tracking-wide uppercase transition-colors duration-[120ms] ease-snap ${
+      className={`inline-flex min-h-11 min-w-11 items-center gap-1 rounded-sm px-1 label-micro transition-colors duration-[120ms] ease-snap ${
         active ? "text-fg" : "text-fg-3 hover:text-fg-2"
       }`}
     >
@@ -182,7 +182,7 @@ export function QueueTable({
       aria-label={label}
       aria-rowcount={rows.length + 1}
       onKeyDown={onKeyDown}
-      className="@container rounded border border-divider bg-surface"
+      className="@container rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
     >
       {/*
         * Sticky, below the app header. Past roughly row twelve the score, verdict and coverage
@@ -197,7 +197,7 @@ export function QueueTable({
       <div role="rowgroup" className="sticky top-header z-10">
         <div
           role="row"
-          className={`grid ${GRID_TEMPLATE} items-center gap-3 rounded-t border-b border-divider bg-surface px-3`}
+          className={`grid ${GRID_TEMPLATE} items-center gap-3 rounded-t-md border-b border-divider bg-surface px-4`}
         >
           <span role="columnheader" aria-sort={ariaSort(sort, "rank")} className={WIDE_ONLY}>
             <SortButton label="#" sortKey="rank" sort={sort} onSort={onSort} />
@@ -226,7 +226,7 @@ export function QueueTable({
           <span role="columnheader" aria-sort={ariaSort(sort, "score")} className="justify-self-end">
             <SortButton label="score" sortKey="score" sort={sort} onSort={onSort} />
           </span>
-          <span role="columnheader" className="px-1 text-[11px] tracking-wide text-fg-3 uppercase">
+          <span role="columnheader" className="px-1 label-micro text-fg-3">
             verdict
           </span>
           <span role="columnheader" aria-sort={ariaSort(sort, "coverage")} className={WIDE_ONLY}>
@@ -234,7 +234,7 @@ export function QueueTable({
           </span>
           <span
             role="columnheader"
-            className={`${WIDE_ONLY} px-1 text-right text-[11px] tracking-wide text-fg-3 uppercase`}
+            className={`${WIDE_ONLY} px-1 text-right label-micro text-fg-3`}
           >
             actions
           </span>

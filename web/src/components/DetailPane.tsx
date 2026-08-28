@@ -28,7 +28,7 @@ export const SIDE_BY_SIDE = "(min-width: 64rem)";
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] tracking-wide text-fg-3 uppercase">{label}</span>
+      <span className="label-micro text-fg-3">{label}</span>
       <span className="text-sm text-fg tabular-nums">{value}</span>
     </div>
   );
@@ -57,7 +57,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       {...(title ? { title } : {})}
-      className={`inline-flex min-h-11 items-center rounded border px-3 text-sm transition-colors duration-150 ease-in-out disabled:border-divider disabled:text-fg-3 ${skin}`}
+      className={`inline-flex min-h-11 items-center rounded-sm border px-3 text-sm transition-colors duration-150 ease-in-out disabled:border-divider disabled:text-fg-3 ${skin}`}
     >
       {label}
     </button>
@@ -72,7 +72,7 @@ function ActionButton({
 function Requirements({ requirements }: { requirements: RequirementView[] }) {
   if (requirements.length === 0) {
     return (
-      <div className="rounded border border-fg-2 bg-surface-2 p-3">
+      <div className="rounded-md border border-divider bg-surface-2 shadow-[0_16px_40px_-24px_rgb(0_0_0/0.9)] p-3">
         <p className="text-sm text-fg">
           This job description yielded no recognised requirements.
         </p>
@@ -92,7 +92,7 @@ function Requirements({ requirements }: { requirements: RequirementView[] }) {
         { title: `missing (${String(missing.length)})`, items: missing },
       ].map((group) => (
         <div key={group.title}>
-          <h4 className="mb-1.5 text-[11px] tracking-wide text-fg-3 uppercase">{group.title}</h4>
+          <h4 className="mb-1.5 label-micro text-fg-3">{group.title}</h4>
           {group.items.length === 0 ? (
             <p className="text-xs text-fg-3">none</p>
           ) : (
@@ -231,11 +231,11 @@ export function DetailPane({
       }`}
     >
       <div className="flex items-center justify-between gap-3 border-b border-divider px-4 py-2">
-        <span className="text-[11px] tracking-wide text-fg-3 uppercase">Lead detail</span>
+        <span className="label-micro text-fg-3">Lead detail</span>
         <button
           type="button"
           onClick={onClose}
-          className="min-h-11 min-w-11 rounded text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
+          className="min-h-11 min-w-11 rounded-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
           aria-label="Close detail"
         >
           ✕
@@ -247,7 +247,7 @@ export function DetailPane({
       ) : (
         <div className="flex flex-col gap-5 px-4 py-4">
           {/* THE DOMINANT CELL. Everything needed to decide, before any prose. */}
-          <section className="rounded border border-fg-2 bg-surface-2 p-4">
+          <section className="rounded-md border border-divider bg-surface-2 shadow-[0_16px_40px_-24px_rgb(0_0_0/0.9)] p-4">
             <h2 className="text-lg leading-snug text-fg">{row.title}</h2>
             <p className="mt-0.5 text-sm text-fg-2">
               {row.company}
@@ -314,7 +314,7 @@ export function DetailPane({
             <ApplyLink url={row.apply_url} />
 
             {pdfPath === null ? (
-              <span className="inline-flex min-h-11 items-center rounded border border-divider px-3 text-sm text-fg-3">
+              <span className="inline-flex min-h-11 items-center rounded-sm border border-divider px-3 text-sm text-fg-3">
                 no PDF built
               </span>
             ) : (
@@ -363,12 +363,12 @@ export function DetailPane({
           </section>
 
           <section>
-            <h3 className="mb-2 text-[11px] tracking-wide text-fg-3 uppercase">requirements</h3>
+            <h3 className="mb-2 label-micro text-fg-3">requirements</h3>
             <Requirements requirements={detail?.requirements ?? []} />
           </section>
 
           <section>
-            <h3 className="mb-2 text-[11px] tracking-wide text-fg-3 uppercase">evidence</h3>
+            <h3 className="mb-2 label-micro text-fg-3">evidence</h3>
             <Evidence requirements={detail?.requirements ?? []} />
           </section>
 
@@ -382,16 +382,16 @@ export function DetailPane({
           {/* Secondary. Roughly a thousand words, so it is what you read AFTER deciding. Rendered
               as plain text: this is third-party content and never becomes markup. */}
           <section>
-            <h3 className="mb-2 text-[11px] tracking-wide text-fg-3 uppercase">
+            <h3 className="mb-2 label-micro text-fg-3">
               job description
             </h3>
             {detail?.jd_body === null || detail === null ? (
-              <p className="rounded border border-control p-3 text-sm text-fg-2">
+              <p className="rounded-md border border-control p-3 text-sm text-fg-2">
                 No current posting version, so the frozen description is unavailable. Nothing above
                 was read from it.
               </p>
             ) : (
-              <div className="max-h-96 overflow-y-auto rounded border border-divider bg-bg p-3">
+              <div className="max-h-96 overflow-y-auto rounded-md border border-divider bg-bg p-3">
                 <p className="text-sm leading-relaxed whitespace-pre-wrap text-fg-2">
                   {detail.jd_body}
                 </p>

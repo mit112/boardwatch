@@ -21,7 +21,7 @@ export function Badge({
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span
-        className={`inline-flex min-h-5 items-center rounded border px-1.5 py-0.5 text-[11px] tracking-wide uppercase ${tone}`}
+        className={`inline-flex min-h-5 items-center rounded-sm border px-1.5 py-0.5 label-micro ${tone}`}
         {...(reason ? { title: reason } : {})}
       >
         {label}

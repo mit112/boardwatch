@@ -8,7 +8,7 @@ export const FILTER_INPUT_ID = "queue-filter";
 
 function Key({ children }: { children: string }) {
   return (
-    <kbd className="rounded border border-control px-1 font-sans text-[11px] text-fg-2">
+    <kbd className="rounded-sm border border-control px-1 font-sans text-[11px] text-fg-2">
       {children}
     </kbd>
   );
@@ -29,7 +29,7 @@ export function QueueToolbar({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex min-w-64 flex-1 flex-col gap-1.5">
-          <span className="text-[11px] tracking-wide text-fg-3 uppercase">
+          <span className="label-micro text-fg-3">
             Filter company, title, location
           </span>
           <input
@@ -40,11 +40,11 @@ export function QueueToolbar({
               onQuery(event.target.value);
             }}
             placeholder="e.g. intel, backend, boston"
-            className="min-h-11 rounded border border-control bg-surface px-3 text-sm text-fg placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
+            className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
           />
         </label>
         <label className="flex w-40 flex-col gap-1.5">
-          <span className="text-[11px] tracking-wide text-fg-3 uppercase">Minimum score</span>
+          <span className="label-micro text-fg-3">Minimum score</span>
           <input
             type="number"
             inputMode="decimal"
@@ -55,7 +55,7 @@ export function QueueToolbar({
               onMinScore(event.target.value);
             }}
             placeholder="any"
-            className="min-h-11 rounded border border-control bg-surface px-3 text-sm text-fg tabular-nums placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
+            className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg tabular-nums placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
           />
         </label>
       </div>

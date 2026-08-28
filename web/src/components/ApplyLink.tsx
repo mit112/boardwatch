@@ -8,7 +8,7 @@ import { isSafeHttpUrl } from "../lib/format";
  * This is the ONE place that decision is made. The row and the detail pane both route through it.
  */
 const BUTTON =
-  "inline-flex items-center rounded border px-3 transition-colors duration-[120ms] ease-snap";
+  "inline-flex items-center rounded-sm border px-3 transition-colors duration-[120ms] ease-snap";
 
 /**
  * The focused row's `o` key. It routes through the same `isSafeHttpUrl` test as the link below, so

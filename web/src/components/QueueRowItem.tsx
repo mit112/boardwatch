@@ -77,7 +77,7 @@ function RowAction({
       onClick={onClick}
       aria-label={hint}
       {...(title ? { title } : {})}
-      className="min-h-8 rounded border border-control px-2.5 text-xs text-fg-2 transition-colors duration-[120ms] ease-snap hover:border-fg-2 hover:text-fg"
+      className="min-h-8 rounded-sm px-2.5 text-xs text-fg-3 transition-colors duration-[120ms] ease-snap hover:bg-surface-3 hover:text-fg"
     >
       {label}
     </button>
@@ -124,9 +124,9 @@ export function QueueRowItem({
           data-row-id={row.posting_id}
           tabIndex={active ? 0 : -1}
           aria-selected={selected}
-          className={`grid ${GRID_TEMPLATE} min-h-9 cursor-default items-center gap-3 border-b border-divider px-3 transition-colors duration-[120ms] ease-snap focus-visible:outline-offset-[-2px] ${
+          className={`grid ${GRID_TEMPLATE} min-h-11 cursor-default items-center gap-3 border-b border-divider px-4 transition-colors duration-[120ms] ease-snap focus-visible:outline-offset-[-2px] ${
             selected
-              ? "bg-surface-2 shadow-[inset_2px_0_0_0_var(--color-accent)]"
+              ? "bg-surface-3 shadow-[inset_2px_0_0_0_var(--color-accent)]"
               : "hover:bg-surface-2/60"
           }`}
           onClick={onSelect}

@@ -55,7 +55,7 @@ export function AnswersPanel({
     .join("\n");
 
   return (
-    <section className="rounded border border-divider bg-surface">
+    <section className="rounded-md border border-divider bg-surface">
       <button
         type="button"
         onClick={() => {
@@ -76,7 +76,7 @@ export function AnswersPanel({
         <div className="flex flex-col gap-5 border-t border-divider px-4 py-4">
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-3">
-              <h3 className="text-[11px] tracking-wide text-fg-3 uppercase">identity</h3>
+              <h3 className="label-micro text-fg-3">identity</h3>
               <CopyButton
                 value={identityBlock}
                 label="Copy whole block"
@@ -89,14 +89,14 @@ export function AnswersPanel({
           </div>
 
           <div>
-            <h3 className="mb-1.5 text-[11px] tracking-wide text-fg-3 uppercase">
+            <h3 className="mb-1.5 label-micro text-fg-3">
               work authorisation
             </h3>
             <KeyValueRows entries={Object.entries(answers.work_auth)} onError={onError} />
           </div>
 
           <div>
-            <h3 className="mb-1.5 text-[11px] tracking-wide text-fg-3 uppercase">education</h3>
+            <h3 className="mb-1.5 label-micro text-fg-3">education</h3>
             <div className="flex flex-col gap-3">
               {answers.education.map((entry, index) => (
                 <KeyValueRows
@@ -109,7 +109,7 @@ export function AnswersPanel({
           </div>
 
           <div>
-            <h3 className="mb-1.5 text-[11px] tracking-wide text-fg-3 uppercase">questions</h3>
+            <h3 className="mb-1.5 label-micro text-fg-3">questions</h3>
             <ul className="flex flex-col gap-3">
               {answers.questions.map((question) => (
                 <li key={question.q} className="border-t border-divider pt-3">

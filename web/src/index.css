@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. Every colour and every easing curve in the application resolves here; nothing
- * downstream hard-codes a hex value or a cubic-bezier.
+ * Design tokens. Every colour, radius and easing curve in the application resolves here; nothing
+ * downstream hard-codes a hex value, a pixel radius or a cubic-bezier.
  *
- * The default Tailwind palette and the default easing namespace are BOTH cleared (`*: initial`).
- * That is what keeps the promises structural rather than a matter of review discipline: with the
- * palette gone there is no `bg-white` to reach for, and with `--ease-*` cleared there is no
+ * The default Tailwind palette, the default radius scale and the default easing namespace are ALL
+ * cleared (`*: initial`). That is what keeps the promises structural rather than a matter of review
+ * discipline: with the palette gone there is no `bg-white` to reach for, with the radius scale gone
+ * there is no bare `rounded` to emit a fourth corner, and with `--ease-*` cleared there is no
  * `ease-in` or `ease-linear` utility to accidentally emit a fourth curve.
  */
 @theme {
@@ -16,24 +17,40 @@
 
   /*
    * Verified against WCAG 2.2 AA by computation (design §8.4), not by eye — and verified against
-   * `surface-2`, the LIGHTEST surface a token is ever painted on, NOT against `bg`.
+   * `surface-3`, the LIGHTEST surface a token is ever painted on, NOT against `bg`.
    *
    * That distinction is the whole point. Checking a foreground against `bg` and then rendering it
-   * on `surface-2` is checking the guard in a different scope from the one it runs in: `fg-3` on
-   * `surface-2` computed 4.32 (fails 4.5) on every selected row and throughout the detail pane's
-   * elevated card, and `control` computed 2.90 (fails 3.0) for the border of every chip, badge and
-   * row button inside those same two surfaces. Both read as passing while measured on `bg`.
-   * The ratio recorded beside each token below is therefore its WORST case, not its best.
+   * on an elevated surface is checking the guard in a different scope from the one it runs in.
+   * The ratio recorded beside each token below is therefore its WORST case, not its best, and it
+   * is recomputed whenever any surface moves. `surface-3` is new in this palette and is the
+   * lightest thing a token now lands on, so every ratio below was recomputed against it.
+   *
+   * The ramp is warm-shifted and carries FOUR surfaces rather than three. Depth is now expressed
+   * by elevation — a card sits on a lighter surface than the page — instead of by drawing a
+   * border around every container, which is what made the previous palette read as a spreadsheet.
    */
-  --color-bg: #0b0c0e;
-  --color-surface: #14161a;
-  --color-surface-2: #1c1f24;
-  --color-fg: #e8eaed; /* 13.71 on surface-2 */
-  --color-fg-2: #9aa1ab; /* 6.34 on surface-2 */
-  --color-fg-3: #858c96; /* 4.87 on surface-2 — clears 4.5:1 on every surface */
-  --color-control: #6a7280; /* 3.41 on surface-2 — clears 3:1 on every surface. Never darken. */
-  --color-accent: #4db6e2; /* selection and focus rings ONLY */
-  --color-divider: #333840; /* 1.40 — decorative ONLY, never carries meaning */
+  --color-bg: #08090c;
+  --color-surface: #101319;
+  --color-surface-2: #191d26;
+  --color-surface-3: #232833; /* elevated: selected rows, detail card, hover */
+  --color-fg: #f2f4f7; /* 13.40 on surface-3 */
+  --color-fg-2: #a7afbd; /* 6.68 on surface-3 */
+  --color-fg-3: #8d96a5; /* 4.95 on surface-3 — clears 4.5:1 on every surface */
+  --color-control: #70798a; /* 3.37 on surface-3 — clears 3:1 on every surface. Never darken. */
+  --color-accent: #5ec8f0; /* 7.73 on surface-3 — selection and focus rings ONLY */
+  --color-divider: #272c36; /* 1.05 — decorative ONLY, never carries meaning */
+
+  /*
+   * A radius LANGUAGE, three steps, and the bare `rounded` utility is deliberately gone: a corner
+   * is now always chosen (`rounded-sm` for a chip, `rounded-md` for a card, `rounded-lg` for a
+   * panel) rather than defaulted. Clearing the namespace is what makes that a compile error rather
+   * than a review note.
+   */
+  --radius-*: initial;
+  --radius-sm: 0.5rem; /* chips, badges, inputs, row buttons */
+  --radius-md: 0.75rem; /* cards, tables, the status band */
+  --radius-lg: 1rem; /* panels, the detail sheet */
+  --radius-full: 9999px;
 
   /* Motion personality: Surgical. Exactly three curves, no springs. */
   --ease-*: initial;
@@ -49,13 +66,28 @@
    * The sticky app header's height, in ONE place. Each queue table's own header row sticks
    * directly below it and `scroll-margin-top` reserves both, so a hard-coded pixel offset in three
    * files could not drift apart from the header it is measuring.
+   *
+   * 4.3125rem = a 44px (`min-h-11`) control + `py-3` top and bottom + the 1px bottom border. It
+   * moved with the header's padding in this redesign; it is measured, never guessed.
    */
-  --spacing-header: 3.8125rem;
+  --spacing-header: 4.3125rem;
 
+  /*
+   * TWO VOICES. The mono face is the DISPLAY voice — headings, metric numerals, labels, chips,
+   * anything that is read as an instrument reading rather than as prose. The sans face carries
+   * prose: JD bodies, explanatory paragraphs, requirement text.
+   *
+   * A bundled webfont was rejected. This app ships inside the Python wheel and is served from
+   * localhost, frequently offline, so a CDN face would render as a flash of fallback and a
+   * self-hosted one would put a binary in the wheel for every user. The mono-as-display voice is
+   * not a consolation prize for that: a dense instrument reading in a mono face with a wide
+   * tracked micro-label is the idiom this application actually belongs to, and it costs no bytes.
+   */
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-display: var(--font-mono);
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @layer base {
@@ -64,12 +96,41 @@
     color-scheme: dark;
   }
 
+  /*
+   * ATMOSPHERE, painted onto the body's own background rather than into an overlay element.
+   *
+   * A fixed `::after` grain layer is the usual recipe and it is wrong here: this application has a
+   * full-screen detail SHEET and a toaster that must draw above everything, so any overlay high
+   * enough in the stack to be felt is also high enough to sit over the sheet, and any overlay low
+   * enough to be safe is covered by the first opaque surface. Painting both the warm radial and
+   * the grain into `background-image` gives the depth with no stacking context and no
+   * pointer-events surface to get wrong.
+   *
+   * The radial is anchored top-left, behind the header, so the page has a light source. The grain
+   * is at 3.5% and is felt rather than seen; at higher opacity it fights the tabular numerals.
+   */
   body {
     margin: 0;
     background-color: var(--color-bg);
+    background-image:
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E"),
+      radial-gradient(60rem 32rem at 12% -8%, color-mix(in oklab, var(--color-accent) 9%, transparent) 0%, transparent 70%);
+    background-attachment: fixed, fixed;
     color: var(--color-fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * The display voice. Tightened tracking and compressed leading are what stop a mono face reading
+   * as terminal output and make it read as typography.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+    line-height: 1.15;
   }
 
   /* A visible focus ring on every interactive element, without exception. */
@@ -79,14 +140,14 @@
   }
 
   /*
-   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky and 61px tall, so tabbing to
-   * a control just below the fold scrolls it flush to the viewport top — underneath the header,
-   * where the focus ring is invisible. The header row of each queue table is sticky too and sits
-   * below it. This reserves the height of both, for the browser's own scroll-into-view, so the
-   * fix cannot be forgotten by a component that adds a new control later.
+   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky, and the header row of each
+   * queue table is sticky below it, so tabbing to a control just below the fold would scroll it
+   * flush to the viewport top — underneath both, where the focus ring is invisible. This reserves
+   * the height of both for the browser's own scroll-into-view, so the fix cannot be forgotten by a
+   * component that adds a new control later.
    */
   :where(a, button, input, select, textarea, summary, [tabindex]) {
-    scroll-margin-top: 7rem;
+    scroll-margin-top: 7.5rem;
     scroll-margin-bottom: 2rem;
   }
 
@@ -99,9 +160,49 @@
   }
 }
 
+@layer utilities {
+  /*
+   * A micro-label: the wide-tracked uppercase mono caption that names a metric or a column. It
+   * appeared as the same four utilities in twenty-four places, which is how the tracking drifts.
+   */
+  .label-micro {
+    font-family: var(--font-display);
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  /*
+   * Staggered entry. Applied to the status band's metrics and to the two section headers only —
+   * NOT to queue rows, which can number in the hundreds and would animate as a wave every time a
+   * filter changes. `--stagger` is set inline per element.
+   *
+   * `both` fill so the element is hidden during its delay rather than flashing at full opacity
+   * first. The reduced-motion block below collapses this to a 1ms animation, which lands on the
+   * `to` frame immediately.
+   */
+  @keyframes enter-up {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .enter-up {
+    animation: enter-up 0.5s var(--ease-out) both;
+    animation-delay: var(--stagger, 0ms);
+  }
+}
+
 /*
  * `prefers-reduced-motion` fallback: opacity only, everywhere. Collapsing every transition to a
- * single property here is why no component has to remember to guard its own animation.
+ * single property here is why no component has to remember to guard its own animation, and why
+ * `.enter-up` above needs no media query of its own.
  */
 @media (prefers-reduced-motion: reduce) {
   *,
