@@ -227,8 +227,8 @@ working material — re-derive if pruned.)*
 6. **P2 item 8 — the onboarding field-taxonomy gatherer.** Needs its own brainstorm; D-054 forbids us
    authoring non-tech field content.
 7. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against one bundle.
-8. **Phase 1b — whether the WEB page follows the queue split (D-332). DEFERRED by the owner 2026-08-28;
-   raise it again before touching `queue_payload`, do not act on it unilaterally.** The folder tree now
+8. **Phase 1b — whether the WEB page follows the queue split (D-332). RAISED, NOT YET RULED — put it to
+   Mit before touching `queue_payload`; do not act on it unilaterally.** The folder tree now
    holds review leads in `_review`, but `api.py::queue_payload` still lists them. **State the gap
    precisely, because "they show up flagged `off_target`" is WRONG:** `api.py:248` is
    `off_target = facts.role == "not_swe"`, and the docstring says outright that `off_target` is
