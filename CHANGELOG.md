@@ -84,6 +84,47 @@ All notable changes to this project are documented here. The format follows
   appends no event, and a job that was **withdrawn** is left withdrawn rather than silently
   re-applied. A role boardwatch never saw cannot be recorded at all, since `applications.job_id` is
   a foreign key to `jobs`; that is why `unmatched` is a reported bucket rather than an error.
+- **The funnel's `dedup` stage is instrumented.** It reported `entered: null, advanced: null` and
+  the note *"this stage counts nothing"* for the whole of P0-P6, so no run could show from its own
+  artifact whether dedup was working; the only dedup numbers a run emitted were the ranker's
+  `hidden_duplicate` and the per-source `unique` column. The stage now carries the corpus that
+  entered grouping, what survived, and a named `suppressed_duplicate` drop, plus a `dedup_detail`
+  block beside the drop — `suppressing_groups`/`suppressing_redundant`, and one
+  `candidate_redundant_*` per audit-only kind. Those bounds are never summed into the drop
+  (D-327): `company_title_location` spans genuinely different jobs. Not-measured stays
+  distinguishable from zero, and the two reasons for it — the sweep did not run, or the backfill is
+  incomplete — stay distinguishable from each other. On the live corpus the stage reads 84,821 in,
+  82,757 out, 2,064 suppressed across 1,472 groups, with bounds of 5,268 / 5,775 / 12,571.
+  `exact_provider` is absent rather than reported as 0, because a UNIQUE constraint makes its
+  collision count structurally zero. **`artifact_version` stays 7**: no new top-level section, and
+  no existing value changes meaning — a nullable stage field going from `null` to a number is the
+  transition it exists to make, and `SourceOutcome.unique` set that precedent when P6 landed.
+
+- **The funnel's corpus-wide duplicate sweep stops materialising every posting body.** The sweep
+  called `load_identity_inputs(conn)` with no id list and pulled 503 MB of `body_text` for a
+  1.33 GB peak RSS. `resolve_duplicates` drops every identity group with fewer than two members, so
+  it now loads bodies only for the postings that share a suppressing key with another open posting
+  — 3,536 of 84,821 (4.2%) on the live corpus. Measured on a scratch copy: peak RSS **1356 MiB ->
+  109 MiB**, CPU 3.64 s -> 1.28 s, and the suppression set is byte-identical (2,064 suppressions,
+  same survivors). The candidate set is driven by `SUPPRESSING_KINDS`, never by a literal
+  `exact_quad`, so enabling a second suppressing kind cannot silently narrow it.
+
+- **`boardwatch identities reap` removes the identity rows a version bump leaves behind.**
+  `write_identities` only rewrites a posting's rows at the CURRENT
+  `IDENTITY_ALGORITHM_VERSION`, so a bump writes a whole new generation beside the old one and
+  nothing ever removed the old one. `posting_identities` held **476,277 rows** on 2026-08-28,
+  about five per posting, and every reader filters to the current version. The `p6.2 → p6.3`
+  bump in this same release retires every one of them, and without a reaper the next backfill
+  would take the table past 950k rows with half of it permanently unread. Reaping the p6.2
+  generation on a
+  scratch copy of the live store deleted **476,277 rows across 95,336 postings in 4.5 s** and
+  returned **121 MiB** to SQLite's free list (the file itself shrinks only under a separate
+  `VACUUM`, which the command deliberately does not run). It reports by default and deletes only
+  under `--apply`, and nothing else in the CLI reaps as a side effect. **Only retired generations
+  are in scope.** 11.0% of the table sits on closed postings and reaping that looks like the
+  bigger win, but postings reopen — run 127 alone reopened 18 — and `identities_complete()` gates
+  suppression over all open postings, so a reopened posting with no identity rows would silently
+  disarm dedup store-wide until the next backfill.
 
 - **The delivery queue splits into an APPLY lane and a REVIEW lane (D-332).** The queue root is a
   *blind-apply* surface — you open a folder, read the rendered PDF and apply — but 82% of it was

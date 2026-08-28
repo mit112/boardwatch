@@ -38,6 +38,7 @@ from boardwatch.reports.run_funnel import (
 )
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
+    DedupSweep,
     SourceOutcome,
     TailoredArtifactCounts,
 )
@@ -157,6 +158,9 @@ def funnel(
     rewrite_rows: list[dict[str, object]] | None = None,
     coverages: list[CoverageReport | None] | None = None,
     board_coverage: BoardCoverageReport | None = None,
+    # P6. `None` means the duplicate sweep did not run, which is what every test that is not
+    # about dedup wants: the stage then reports itself unmeasured, as it always did.
+    dedup: DedupSweep | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -235,6 +239,7 @@ def funnel(
         coverages=coverages or [],
         unattributed_evaluations=unattributed_evaluations,
         abstain=abstain or build_abstain_report(catalog(), {}),
+        dedup=dedup,
     )
 
 
@@ -274,6 +279,33 @@ def test_an_uninstrumented_stage_reports_none_and_does_not_claim_to_reconcile() 
 
     # And it is excluded from the gate's population rather than silently passing it.
     assert dedup not in funnel().instrumented_stages
+
+
+def test_the_dedup_bound_renders_beside_the_drop_and_not_as_one() -> None:
+    """Gate P0 is answerable from the ARTIFACT, so the Markdown has to keep the two apart.
+
+    `company_title_location` redundancy is an upper bound over genuinely different jobs
+    (D-327). Rendered in the same bullet list as `suppressed_duplicate` a reader would sum
+    them and quote a suppression that never happened, so it renders under its own heading
+    that says what it is not.
+    """
+    sweep = DedupSweep(
+        complete=True,
+        entered=84_821,
+        suppressed=2_064,
+        suppressing_groups=1_472,
+        suppressing_redundant=2_064,
+        candidate_redundant={"company_title_location": 5_268, "content_hash_only": 12_571},
+        suppressed_by_company={},
+    )
+    rendered = funnel_to_markdown(funnel(dedup=sweep))
+
+    assert "### dedup — 84821 in, 82757 out" in rendered
+    assert "- **suppressed_duplicate**: 2064" in rendered
+    assert "Beside the drop — **not** dropped, and never summed into it:" in rendered
+    assert "- `candidate_redundant_company_title_location`: 5268" in rendered
+    # The bound is not in the stage's arithmetic: dropped is the suppression alone.
+    assert stage(funnel(dedup=sweep), "dedup").dropped == 2_064
 
 
 def test_unattributed_cache_hits_are_never_folded_into_the_prior_run_bucket() -> None:

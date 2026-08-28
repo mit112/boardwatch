@@ -1,6 +1,10 @@
 """`unique` becomes a measured number; `assisted` stays not-instrumented (design §6)."""
 
-from boardwatch.store.run_funnel_queries import SourceOutcome, count_by_source
+from boardwatch.store.run_funnel_queries import (
+    SourceOutcome,
+    count_by_source,
+    sweep_duplicates,
+)
 
 # The scoping arguments count_by_source already requires. Values copied from the existing
 # call site in tests/unit/test_run_funnel_queries.py (`_by_source`), not invented: the
@@ -19,6 +23,9 @@ def _by_source(seed) -> tuple[SourceOutcome, ...]:
             engine_version=VERSION,
             run_id=seed.run_id,
             posting_ids=[],
+            # The real sweep on the same connection, not a stub: `unique` is derived from it,
+            # so a hand-built DedupSweep here would test the arithmetic and nothing else.
+            dedup=sweep_duplicates(conn),
         )
 
 

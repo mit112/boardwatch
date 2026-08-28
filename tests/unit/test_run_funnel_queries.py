@@ -30,6 +30,7 @@ from boardwatch.store.run_funnel_queries import (
     count_unattributed_evaluations,
     lead_provenance,
     posting_ids_judged_this_run,
+    sweep_duplicates,
 )
 from boardwatch.store.tables import applications, companies, jobs, posting_versions, postings, runs
 
@@ -436,6 +437,7 @@ def _by_source(engine: Engine, run_id: int, posting_ids: list[int] | None = None
         return count_by_source(
             conn, identity=(PROFILE, RULES), engine_kind=KIND, engine_version=VERSION,
             run_id=run_id, posting_ids=posting_ids or [],
+            dedup=sweep_duplicates(conn),
         )
 
 
@@ -514,7 +516,7 @@ def test_no_profile_reports_every_board_as_zero_eligible_rather_than_failing(eng
     with engine.connect() as conn:
         rows = count_by_source(
             conn, identity=None, engine_kind=KIND, engine_version=VERSION,
-            run_id=run_id, posting_ids=[],
+            run_id=run_id, posting_ids=[], dedup=sweep_duplicates(conn),
         )
     assert rows[0].open_postings == 1
     assert rows[0].eligible == 0

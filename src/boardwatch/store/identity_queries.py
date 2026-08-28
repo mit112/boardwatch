@@ -227,6 +227,74 @@ def identities_complete(conn: Connection) -> bool:
 
 
 @dataclass(frozen=True)
+class StaleIdentityGeneration:
+    """One retired `algorithm_version` still on disk, and how much of the table it holds."""
+
+    algorithm_version: str
+    rows: int
+    postings: int
+
+
+def count_stale_identities(conn: Connection) -> tuple[StaleIdentityGeneration, ...]:
+    """Identity rows at every `algorithm_version` that is NOT the current one.
+
+    This is the whole reapable set, and the bound on it is what makes it safe: every reader
+    in this module filters to `IDENTITY_ALGORITHM_VERSION`, so a row at any other version is
+    unreadable by construction — `load_identities`, `identities_complete`,
+    `load_surfaced_identities` and `load_surfaced_keys` all carry the filter, and
+    `write_identities` documents that it never touches another version's rows. Deleting them
+    therefore cannot change any verdict, any suppression, or any report; it only stops the
+    table carrying a generation nothing will ever read again.
+
+    **Rows on CLOSED postings at the CURRENT version are deliberately NOT reapable, and that
+    is a decision, not an omission.** 11.0% of the live table (52,571 of 476,277 on
+    2026-08-28) sits on closed postings, and reaping it looks like the bigger win — but
+    postings reopen: run 127 alone reopened 18. `identities_complete()` gates suppression
+    over ALL open postings, so a reopened posting whose identities were reaped drops the
+    corpus below complete and disarms dedup silently for the whole store until the next
+    backfill. A reaper that can turn dedup off is worse than an oversized table. Stale
+    versions carry no such hazard: a reopened posting's CURRENT-version rows are untouched
+    here, so completeness is unchanged whether it reopens or not.
+
+    Reports rather than assumes: with one generation on disk this returns `()`, which is the
+    honest "nothing is reapable" and not a claim that the table is small.
+    """
+    rows = conn.execute(
+        select(
+            posting_identities.c.algorithm_version,
+            func.count(),
+            func.count(distinct(posting_identities.c.posting_id)),
+        )
+        .where(posting_identities.c.algorithm_version != IDENTITY_ALGORITHM_VERSION)
+        .group_by(posting_identities.c.algorithm_version)
+        .order_by(posting_identities.c.algorithm_version)
+    ).all()
+    return tuple(
+        StaleIdentityGeneration(
+            algorithm_version=str(row[0]), rows=int(row[1]), postings=int(row[2])
+        )
+        for row in rows
+    )
+
+
+def delete_stale_identities(conn: Connection) -> int:
+    """Delete every identity row at a retired `algorithm_version`. Returns rows deleted.
+
+    Scoped by the same predicate `count_stale_identities` reports on, so the dry run and the
+    apply cannot drift apart. Space returns to SQLite's free list and is reused by later
+    inserts; shrinking the file itself needs a separate `VACUUM`, which this does not run —
+    a `VACUUM` rewrites the whole 3.5 GB store and is not something a maintenance command
+    should do behind the operator's back.
+    """
+    result = conn.execute(
+        delete(posting_identities).where(
+            posting_identities.c.algorithm_version != IDENTITY_ALGORITHM_VERSION
+        )
+    )
+    return int(result.rowcount)
+
+
+@dataclass(frozen=True)
 class SurfacedJob:
     """One job that reached `job_dispositions` — `seen`, `skipped`, or `built` all mean the
     job was surfaced to the operator (`pipeline/runner.py`, `cli/top_cmd.py`) — paired with

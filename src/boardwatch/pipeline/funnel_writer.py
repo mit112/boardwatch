@@ -50,6 +50,7 @@ from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
+    DedupSweep,
     SourceOutcome,
     TailoredArtifactCounts,
     count_applied_for_postings,
@@ -61,6 +62,7 @@ from boardwatch.store.run_funnel_queries import (
     count_tailored_artifacts,
     count_unattributed_evaluations,
     lead_provenance,
+    sweep_duplicates,
 )
 from boardwatch.store.tables import runs
 from boardwatch.tailor.coverage import CoverageReport
@@ -175,6 +177,10 @@ def collect_run_funnel(
             )
             abstain = build_abstain_report(catalog, counts, not_applicable_families=na)
 
+        # ONE corpus-wide duplicate sweep, read by two consumers: the per-source `unique`
+        # column and the funnel's `dedup` stage. Run here rather than inside `count_by_source`
+        # so the stage and the column cannot disagree about a corpus that moved between them.
+        dedup: DedupSweep = sweep_duplicates(conn)
         # Per board (P0 item 3). Passed the identity rather than the two hashes so a run with
         # no profile reports every board's `eligible` as 0 without a second code path.
         sources: tuple[SourceOutcome, ...] = count_by_source(
@@ -184,6 +190,7 @@ def collect_run_funnel(
             engine_version=engine_version(),
             run_id=run_id,
             posting_ids=posting_ids,
+            dedup=dedup,
         )
         tailored_artifacts: TailoredArtifactCounts = count_tailored_artifacts(conn, run_id)
         # An INDEPENDENT recount of the projected leads: artifact rows whose meta carries the
@@ -266,6 +273,7 @@ def collect_run_funnel(
         shortlist=shortlist,
         liveness=liveness,
         death_probe=death_probe,
+        dedup=dedup,
         sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,
