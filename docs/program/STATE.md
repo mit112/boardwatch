@@ -66,18 +66,13 @@ deliberately excluded because it holds the only undo. Verified in a browser WITH
 (stripping the attributes reproduces the bug). **Closed, no follow-up owed**; the full account moved to
 `STANDING-FACTS.md` rather than being summarised away.
 
-**`degree` IS ARMED ON THE LIVE PROFILE AND D-321 RESERVED THAT FOR MIT (D-350).** Found while
-verifying a parallel session's severity claim. D-321 (2026-08-26 21:45) recorded the live map as
-**five** blockers and said of the sixth, in terms: *"`degree` is deliberately LEFT at `preference` …
-it is the one family whose blast radius a small measurement mis-states … **Owner's call, not taken.**"*
-The live policy now has **six**, `degree` among them; `profile.updated_at` is **2026-08-27 22:52:33**,
-after D-321, and **no decision entry records arming it** (D-326/D-328 are degree DETECTION, not
-severity). **D-321's warning was right:** it sized the family at **1 lead**, and degree-attributed
-`ineligible` evaluations now number **410** — 187 `bachelor_in_field_required`, 114
-`doctorate_required`, 78 `doctorate_in_field_required`, 33 `master_in_field_required` — with **298 of
-them on the `_in_field` rules**, the exact class it flagged. **This is NOT a claim the 410 are wrong**
-(a doctorate-required role correctly excludes a master's holder); it is that a family the log records
-as not armed is armed in production. **Raised to Mit — confirming or reverting is his.**
+**`degree` BLOCKING IS CONFIRMED BY THE OWNER — WHAT IS OWED IS AN AUDIT, NOT A REVERT (D-350 found
+it, D-351 rules it).** D-350 found `degree` armed where D-321 had recorded *"Owner's call, not taken"*;
+Mit confirmed he wanted it, so **the live six-blocker map is correct and is NOT to be reverted.** His
+constraint is about PRECISION: *"I just don't want it to reject jobs which are genuinely for me."*
+**So the 410 degree-attributed `ineligible` evaluations are owed an audit and the 298 on the
+`_in_field` rules are the target** — field-of-study matching, live-capable only since D-326, and a
+wrong field match is exactly the failure he named. **Soften nothing before the audit.**
 
 **SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on
 **five of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six).
@@ -133,12 +128,13 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    overwritten mid-task by a worktree agent this session; a shared *sentinel* would be worse, since
    reading it means reading someone else's exit code. Name every per-launch file uniquely.
 
-2. **The provisional pass's clean-run counter RESTARTED, and that is the session's one live tension.**
-   STATE has had it NEARLY MET with the P4 owner blind review already PASSED (2026-08-26), leaving
-   only **3 clean post-fix runs**. #218 bumps `rules_hash`, so those runs are pre-fix again and the
-   counter is back to zero — with runs on demand and Mit stepping back ~2026-08-31, that is 3 runs in
-   about 3 days. **Raised to Mit; the trade (stricter eligibility now vs the provisional pass
-   possibly not closing before unattended operation) is his, not a session's.**
+2. **THE PROVISIONAL PASS IS ALLOWED TO SLIP — Mit's ruling at this close: "work comes first"
+   (D-351).** #218 reset the 3-clean-post-fix-run counter and it is **not being chased** before he
+   steps back ~2026-08-31. **Read this as UNBLOCKING, and it is the more useful half:** eligibility is
+   **NOT frozen** — the freeze was only ever implied by wanting the 3 runs — so rules and eligibility
+   work may land freely, including whatever the `degree` audit turns up. **Stop pricing a `rules_hash`
+   bump as costly on this basis** until the owner reopens the pass. The P4 blind review remains passed
+   (2026-08-26) and does not repeat.
 
 3. **The breadth re-check is DOCUMENTED and is the next session's, by Mit's instruction** ("document,
    take on next session when both sessions are done"). Fleet **344** and open corpus **96,767** are
@@ -151,44 +147,49 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    out of scope (D-272). Numbers and caveats: `STANDING-FACTS.md`. **Read "Breadth is last" first — the
    slate cap has not been observed on a single run yet.**
 
-4. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
+4. **PHASE 1B IS RULED AND IS NEXT SESSION'S, TOGETHER WITH THE BREADTH WORK (D-351).** Mit took the
+   FULLER option: the web page **follows the queue split** — a review SECTION — **and he wants a wider
+   UI redesign**, not merely a marker on every set-aside lead. Scope beyond the split is his to shape.
+   Needs a React change plus `make web` and both committed. **Until it ships the defect stands, and it
+   is why the ruling went this way:** `api.py:248` is `off_target = facts.role == "not_swe"`, so of
+   ~204 review-lane leads only the `not_swe` ones carry any marker — a role-`uncertain` title or a
+   confirmed non-US location renders **indistinguishable from a clean lead**. **Never silently exclude
+   review leads from `queue_payload`.**
+
+5. **REQUEST-START PACING IS APPROVED AS A TRIAL (D-351).** Mit: *"lets try it. We'll measure the next
+   run … and then decide to revert if anything goes awry."* D-344 sized it at **28.4 min**, floor
+   **25.6 → 15.3** — the lever worker count cannot reach. **It IS a real third-party load increase
+   (0.6 → 1.0 req/s per host)**, hence the trial framing. **The revert trigger is DEFINED in D-351** so
+   "awry" is measurable before the run rather than judged after; read it before changing anything.
+   **LOCAL config only, never the code default**; back the config up first.
+
+6. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
    `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
 
-5. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
+7. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
    cheap ones go in ONE batch; SmartRecruiters 107 ≈ +40 min; Workday 333 ≈ +122 min and must be
    chunked at ~100. **Probe ~10 cold Workday boards first** — no cold Workday or SmartRecruiters
    board has ever been timed, and they are the two providers that burn a per-posting detail budget on
    a first scan.
 
-6. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
+8. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
    (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to
    green a gate; re-run the job.** macOS runs the suite unsharded, so it has MORE exposure per push.
 
-7. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
+9. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
    is **2 of 286** and architectural (D-320). *(The residual years-detection gap was the other item
    here; #218 addressed it — read that PR rather than the old 24-leads/1.3% figure.)*
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-8. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
-9. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
+10. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+11. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
    he steps back from active work (~2026-08-31, unattended after). **Not dropped — an accepted known
    gap**, and the last multi-tenancy gap of its kind. Still owner-gated and still needs its own
    brainstorm; D-054 forbids us authoring non-tech field content.
-10. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
+12. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
    one bundle.
-11. **Phase 1b — whether the WEB page follows the queue split (D-332). RAISED, NOT YET RULED — put it
-    to Mit before touching `queue_payload`.** The folder tree holds review leads in `_review`, but
-    `api.py::queue_payload` still lists them. **State the gap precisely, because "they show up
-    flagged `off_target`" is WRONG:** `api.py:248` is `off_target = facts.role == "not_swe"` and the
-    docstring says outright that `off_target` is `not_swe` only, **never `uncertain`** — deliberately,
-    because "uncertain is not a veto". So of the ~204 review-lane leads only the `not_swe` ones carry
-    any marker; a role-`uncertain` title or a confirmed non-US location renders **completely
-    unmarked**. Filtering reverses that design and needs a review SECTION in the React UI plus a
-    bundle rebuild (`make web`, commit both). **Do not silently exclude review leads from
-    `queue_payload`** — that drops ~204 leads off the page with nowhere for the owner to see them.
-
 ## Open questions — Mit's, not to be resolved by fiat
 
 1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate
