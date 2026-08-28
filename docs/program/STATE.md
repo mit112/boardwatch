@@ -154,40 +154,36 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    now duplicate on the same row; suppress `off_target` on REVIEW rows only, since it is still the
    sole signal on an APPLY row (an `eligible` off-target lead correctly sits there wearing it).
 
-6. **`main` WAS RED ALL DAY AND #225 IS THE FIX (D-357).** `test_the_cost_boundary_sits_between_fetching_and_applying`
-   from #217 was a wall-clock flake — a 50 ms window on a 300 ms sleep — and failed six of the last
-   eight `main` pushes. **It was not weakened:** the clock was removed and the assertion is now
-   EXACT EQUALITY against a counter the test advances, which is strictly tighter, and all three
-   original mutants still fail. **A red `main` is how real failures get ignored** — check it is green
-   before trusting any CI result, and note that a green PR today may only be green because a job was
-   re-run.
+6. **`main` WAS RED ALL DAY AND IT TOOK TWO FIXES — CONFIRM IT IS ACTUALLY GREEN (D-357).**
+   Two independent wall-clock flakes, and clearing the first only revealed the second: **#225**
+   (lane cost boundary, from #217) then **#227** (`test_a_locked_store_answers_503_without_stalling`,
+   which took down all three macOS jobs at once — macOS runs unsharded). #227 is the one STATE
+   previously listed as a known flake to *re-run rather than fix*; re-running was not a fix, because
+   it was systematic. **Neither threshold was weakened** — both now assert the property directly and
+   are strictly tighter than what they replaced.
+
+   **At this close #227 had NOT merged, so `main` was still red and the run on top of the docs merge
+   was expected to fail.** First thing next session: confirm a `main` run **after** #227 is green.
+   Until then treat any green PR with suspicion — several today were green only because a job was
+   re-run. **And mutate every new assertion:** #227's first draft compared against a constant the
+   implementation also uses, so a mutant moved both sides and passed (D-357).
 
 7. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
    `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
 
-8. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
-   cheap ones go in ONE batch; SmartRecruiters 107 ≈ +40 min; Workday 333 ≈ +122 min and must be
-   chunked at ~100. **Probe ~10 cold Workday boards first** — no cold Workday or SmartRecruiters
-   board has ever been timed, and they are the two providers that burn a per-posting detail budget on
-   a first scan.
-
-9. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:764`
-   (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to
-   green a gate; re-run the job.** macOS runs the suite unsharded, so it has MORE exposure per push.
-
-10. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
+8. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
    is **2 of 286** and architectural (D-320). *(The residual years-detection gap was the other item
    here; #218 addressed it — read that PR rather than the old 24-leads/1.3% figure.)*
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-11. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
-12. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
+9. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+10. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
    he steps back from active work (~2026-08-31, unattended after). **Not dropped — an accepted known
    gap**, and the last multi-tenancy gap of its kind. Still owner-gated and still needs its own
    brainstorm; D-054 forbids us authoring non-tech field content.
-13. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
+11. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
    one bundle.
 ## Open questions — Mit's, not to be resolved by fiat
 
