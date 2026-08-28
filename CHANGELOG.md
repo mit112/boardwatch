@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **CI shards the test suite across jobs, and one aggregate check replaces six required contexts
+  (D-334).** A pull request took 30-42 minutes, and per-step timings showed the whole of it is a single
+  step: gitleaks, generalization, perf and web bundle total about twenty seconds between them, while
+  `pytest -n auto` ran 1764s / 2480s / 1903s on 3.11 / 3.12 / 3.13. A GitHub standard runner has four
+  vCPU; the same suite takes 6m24s on a ten-core Mac. There is no hot spot to remove — the slowest
+  single test is 1.5% of total CPU and the top 25 are 9% — so the suite is now split N ways per Python
+  version by SHA-256 of the node id, chosen over a durations file because a flat profile balances
+  without one (8 shards measured 996-1094 tests, a 9.5% spread). Every shard emits a manifest and
+  `tools/shard_audit.py` proves the shards are a genuine partition: exactly N manifests per version,
+  identical collection digests, pairwise disjoint, union equal to the whole. Coverage is combined per
+  Python version and the 85% threshold applied three times, preserving what the pre-shard matrix
+  guaranteed rather than collapsing it into one easier union number. Branch protection now names the
+  single `ci` job, which derives what should have run from the event rather than from job results,
+  because GitHub counts a skipped required check as a passing one. macOS and Windows stay unsharded and
+  keep their own type-checking, so this change targets pull-request latency specifically; pushes and
+  the nightly are still bounded by those full-suite jobs.
+
+
 ### Fixed
 
 - **A degree requirement naming several fields produced no row at all (D-328).** The three
