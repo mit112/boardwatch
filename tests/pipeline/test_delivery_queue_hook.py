@@ -38,12 +38,12 @@ from sqlalchemy import Connection, insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
+from boardwatch.delivery import DRAIN_DIRS
 from boardwatch.delivery import queue as queue_module
 from boardwatch.delivery.api import FALLBACK_OWNER_NAME, resolve_owner_name
 from boardwatch.delivery.queue import (
     APPLIED_DIR,
     DETAILS_FILE,
-    INELIGIBLE_DIR,
     LOCK_FILE,
     SKIPPED_DIR,
     SyncReport,
@@ -161,7 +161,7 @@ def _folders(where: Path) -> list[str]:
         for path in where.iterdir()
         if path.is_dir()
         and not path.name.startswith(".")
-        and path.name not in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR)
+        and path.name not in DRAIN_DIRS
     )
 
 

@@ -87,6 +87,9 @@ class QueueRow:
     title: str
     company: str
     location: str | None
+    #: Raw location segments from `postings.locations_json`. `location` above is the joined display
+    #: string; `classify_location` needs the segments, not the joined string (it splits on nothing).
+    locations: tuple[str, ...]
     remote_policy: str | None
     posted_days: int | None
     first_seen: datetime
@@ -159,6 +162,14 @@ def _location(locations: object) -> str | None:
     return ", ".join(named) if named else None
 
 
+def _locations_list(locations: object) -> tuple[str, ...]:
+    """The raw location segments for `classify_location`, which needs the list, not the joined
+    display string. Empty when the posting names no place."""
+    if not isinstance(locations, list):
+        return ()
+    return tuple(str(loc) for loc in locations if str(loc).strip())
+
+
 def _target_flag(tags: object) -> bool | None:
     """Tri-state read of `companies.tags_json`. None when the company carries no tags at all."""
     if not isinstance(tags, list) or not tags:
@@ -201,6 +212,7 @@ def _queue_row(row: Row[Any], *, verdict: str | None, now: datetime) -> QueueRow
         title=str(row.title),
         company=str(row.company),
         location=_location(row.locations_json),
+        locations=_locations_list(row.locations_json),
         remote_policy=(
             None if row.remote_policy == REMOTE_POLICY_UNKNOWN else str(row.remote_policy)
         ),
@@ -246,6 +258,28 @@ def ineligible_job_ids(conn: Connection) -> dict[int, str]:
         row.job_id: row.verdict
         for row in delivered_unapplied(conn, skipped=set())
         if row.verdict == "ineligible"
+    }
+
+
+def review_job_ids(conn: Connection) -> set[int]:
+    """`job_id` for every delivered lead the verified-uncertain check routes to the review lane.
+
+    An `uncertain` lead reached the queue by failing open at a ranker gate; it is
+    blindly-appliable only when confirmed US and confirmed software. Everything else — foreign or
+    unknown location, non-software title, or an unevaluated (`None`) verdict — belongs in review.
+
+    Derived from `delivered_unapplied` for the same reason `ineligible_job_ids` is: the drain on
+    disk and the page cannot then disagree about a classification. `ineligible` is excluded here —
+    it has its own drain — and `skipped=set()` is deliberate, so the applied/skipped precedence
+    lives in `_wanted_location`, not here.
+    """
+    from boardwatch.delivery.review_gate import REVIEW_DIR, lane
+
+    return {
+        row.job_id
+        for row in delivered_unapplied(conn, skipped=set())
+        if row.verdict != "ineligible"
+        and lane(verdict=row.verdict, locations=row.locations, title=row.title) == REVIEW_DIR
     }
 
 
