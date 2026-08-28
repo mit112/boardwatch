@@ -136,10 +136,17 @@ def test_an_activity_row_elsewhere_does_not_dissolve_a_total_years_block(catalog
     minimum of 3 years of relevant experience" was correctly `ineligible`, and adding an
     activity pattern that shared the scoped value turned it `uncertain` -- delivered -- because
     a different line read "3 year of developing cloud native applications".
+
+    D-333 raised the two bars from THREE years to SIX. At three the near-miss band abstains the
+    total floor on its own, which makes this body useless for its own subject: a dissolved-by-
+    the-group row and a band-abstained row are both `unknown`, so the assertion could no longer
+    tell them apart and would have passed for the wrong reason. Six is above the band, so the
+    exclusive-group property is tested exactly as before. The in-band behaviour of this same
+    shape is pinned separately, by rationale, in the test below.
     """
     body = (
-        "A minimum of 3 years of relevant experience.\n"
-        "A minimum of 3 year of developing cloud native applications, preferably in AWS.\n"
+        "A minimum of 6 years of relevant experience.\n"
+        "A minimum of 6 year of developing cloud native applications, preferably in AWS.\n"
     )
     facts = Facts(total_years_experience=1)
     policy = Policy(families={"experience_years": "blocker"})
@@ -147,6 +154,30 @@ def test_an_activity_row_elsewhere_does_not_dissolve_a_total_years_block(catalog
     kinds = {(r.rule_id, r.disposition) for r in result.requirements}
     assert result.verdict == "ineligible", f"the total floor was dissolved: {kinds}"
     assert ("experience_years:total_years_minimum", "unmet") in kinds
+
+
+def test_an_in_band_total_floor_abstains_by_the_band_not_by_the_group(catalog) -> None:
+    """The SAME body at the original three years, pinned by RATIONALE rather than disposition.
+
+    The near-miss band and an exclusive-group conflict both render `unknown`, so disposition
+    alone cannot say which fired. Reading the rationale keeps the two distinguishable: if the
+    group ever started dissolving this row, the band's rationale would disappear from it and
+    this test would fail even though the disposition looked unchanged.
+    """
+    body = (
+        "A minimum of 3 years of relevant experience.\n"
+        "A minimum of 3 year of developing cloud native applications, preferably in AWS.\n"
+    )
+    result = evaluate(
+        body, Facts(total_years_experience=1),
+        Policy(families={"experience_years": "blocker"}), catalog,
+    )
+    assert result.verdict == "uncertain"
+    total = [r for r in result.requirements
+             if r.rule_id == "experience_years:total_years_minimum"]
+    assert len(total) == 1, f"the total floor was dissolved: {result.requirements}"
+    assert total[0].disposition == "unknown"
+    assert "near-miss band" in total[0].rationale, total[0].rationale
 
 
 def test_the_engine_version_is_stable_across_runs() -> None:
