@@ -7649,7 +7649,7 @@ The handoff prescribed the DB query; had a stale `.git/index.lock` (zero bytes, 
 blocked the pull, the sequence would have swapped code under a live run and written the profile against
 a profile that run had already snapshotted — the exact straddle the deferral existed to prevent.
 
-### Merges — the queue is drained
+### Merges
 
 | PR | Carries | Merged |
 |---|---|---|
@@ -7657,7 +7657,10 @@ a profile that run had already snapshotted — the exact straddle the deferral e
 | #190 | D-330 fetch timing | 23:13:48Z |
 | #188 | STATE/METRICS/STANDING-FACTS, D-329/D-331 | 23:52:18Z |
 
-**Zero open PRs.** `main` at `4e0c95b`. #190's rebase was verified at the destination, not just locally:
+| #191 | D-329/D-331 live-write, the 92-second guard, drained queue | 01:08:54Z (`86da8cd`) |
+| #192 | **D-332 apply/review queue split** | auto-merge armed, awaiting CI |
+
+**`main` at `86da8cd`; #192 is the one PR open.** #190's rebase was verified at the destination, not just locally:
 D-330 present, **D-328's CHANGELOG entry survived**, single `### Fixed`/`### Added` pair under
 `## [Unreleased]`. Affected suites re-run post-rebase (136 passed) rather than trusting pre-rebase greens.
 
@@ -7673,3 +7676,39 @@ Fires 01:00Z. It now measures **two** things because the tree carries D-330: the
 against the **~124 min projection**, and the first real per-provider `scan.fetch_cost`. The projection
 rests on an **assumption** — that run 119's surcharge scales linearly in corpus size — which is worth
 stating because it is what would be wrong if 126 overruns.
+
+
+### The apply/review queue split — blast radius (D-332, #192)
+
+Measured **read-only** against the live store (`sqlite3 file:...?mode=ro`) while run 126 was still
+in flight, so the verdict column is not yet the new engine's settled answer. Recorded anyway, because
+the *reason* it is unsettled is itself the finding.
+
+| quantity | value |
+|---|---|
+| `delivered_unapplied` rows (all runs, one per canonical job) | **668** |
+| …with `verdict = "eligible"` | 0 |
+| …with `verdict = "uncertain"` | 0 |
+| …with **`verdict = None`** | **668 (100%)** |
+| → **apply lane** | **464 (69.5%)** |
+| → **review lane** | **204 (30.5%)** |
+| …demoted for a **non-software title** | **198** |
+| …demoted for a **confirmed non-US location** | **6** |
+
+**The 100% `None` is the headline, not a measurement failure.** The engine moved to `1+7485e3a85f38` at
+~22:52Z, which stales every stored evaluation, and run 126 was still re-deriving them. It is direct
+evidence for D-332's most-questioned call: had `None` routed straight to review instead of being treated
+like `uncertain`, **the entire 668-lead queue would have emptied into `_review`** on the next sync. A
+`None` lead is `None` only transiently or because it is body-less; in both cases location and title are
+exactly the signals that decide whether the owner can open the link and apply.
+
+**With the verdict contributing nothing, the split above is decided purely by location and title** — so
+it is a clean read of the *fail-open* leak on its own. Roughly **one lead in three sitting in the
+blind-apply surface carries no software signal in its title**, which is the population the four named
+false positives (Allstate "Field Auto Appraiser", Humana care-support, ITW "Recycle Operator", Hyatt
+"Front Office Agent") were drawn from. Only **6** were confirmed non-US, which is the expected shape:
+the location classifier fails open on `unknown`, and most SWE postings are remote or unlisted.
+
+**Re-measure once run 126's evaluations land.** The verdict-conditioned split is the number that belongs
+against D-332, and it can only move leads *out* of the apply lane (an `ineligible` verdict is excluded
+upstream; `eligible` promotes; `uncertain` behaves as `None` did here).
