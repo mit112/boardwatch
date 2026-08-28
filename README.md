@@ -253,6 +253,21 @@ boardwatch track list --status applied
 boardwatch track log 1                     # the full history for one application
 ```
 
+Already applied to some of these through another tool? Import that history once and those roles
+stop re-surfacing. The file is a plain CSV or JSONL with the columns `company`, `title`, `url`,
+`applied_at`, `status` — whatever you are migrating from, you can produce it:
+
+```bash
+boardwatch track import history.csv --dry-run --report audit.jsonl
+boardwatch track import history.csv --report audit.jsonl
+```
+
+A row is matched on its url, or — with `--allow-title-match`, which is weaker because one title
+at a large employer can cover several requisitions — on company and title. Nothing is dropped
+silently: every row is counted as matched, already present, unmatched or malformed, and
+`--report` writes each one out with the key that matched it. Re-running the same file writes
+nothing.
+
 ---
 
 ## Where you stand

@@ -42,6 +42,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch track import` fills the funnel from a history kept in another tool.** The ranker has
+  always suppressed a job carrying a submitted application — `applied_job_ids` feeds `hidden_applied`
+  in `top`, and `delivered_unapplied` keeps the same job out of the delivery queue — but on a store
+  whose user applied through something else that machinery is starved: `applications` sits at **0
+  rows**, so a role applied to months ago re-surfaces and is re-tailored on every run. Measured on a
+  real 64-row history against a 95,897-posting store, **21 of the 64 (32.8%) were still open there**
+  and would have re-surfaced. The importer takes a deliberately generic file, CSV or JSONL with the
+  columns `company`, `title`, `url`, `applied_at`, `status`, so it is not tied to any particular
+  source tool. Rows match on **url** first, folded through the same `normalize_url` the duplicate
+  suppressor uses, and on **(company, title)** only behind `--allow-title-match`, because one title
+  at a large employer can cover several requisitions; the key that matched is recorded per row.
+  **No row is dropped silently** — each lands in exactly one of `matched`, `already_present`,
+  `unmatched` or `malformed`, all four counts are printed even at zero, and `--report` writes a
+  per-row JSONL audit. Importing the same file twice writes nothing, bumps no `attempt_no` and
+  appends no event, and a job that was **withdrawn** is left withdrawn rather than silently
+  re-applied. A role boardwatch never saw cannot be recorded at all, since `applications.job_id` is
+  a foreign key to `jobs`; that is why `unmatched` is a reported bucket rather than an error.
+
 - **The delivery queue splits into an APPLY lane and a REVIEW lane (D-332).** The queue root is a
   *blind-apply* surface — you open a folder, read the rendered PDF and apply — but 82% of it was
   `uncertain` (314 of 383 leads, only 27 `eligible`), and a lead is `uncertain` precisely *because* a
