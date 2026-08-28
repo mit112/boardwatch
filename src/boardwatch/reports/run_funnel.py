@@ -806,6 +806,29 @@ class LaneReport:
 
 
 @dataclass(frozen=True)
+class StageDuration:
+    """Wall clock between two pipeline stage boundaries.
+
+    The run's OWN cost breakdown, and it is not derivable from anything else the artifact
+    carries. `scan.fetch_cost` answers "what did this provider cost the scan", but every stage
+    after the scan — the projection preflight, the lanes, the death probe, eligibility,
+    liveness, the tailor loop — is timed nowhere: run 128 spent 26.8 minutes between its last
+    board apply and its first lane apply and no artifact could say on which. Reconstructing it
+    afterwards meant joining four tables on their side-effect timestamps and guessing at the
+    stages that write no rows at all.
+
+    Measured with `perf_counter`, not `utcnow`: these are durations and a wall-clock
+    subtraction is wrong across an NTP step. Recorded at BOUNDARIES rather than by wrapping
+    each stage, so a stage that returned early or raised still contributes its cost to the
+    next mark instead of vanishing — the durations therefore sum to the run's wall clock by
+    construction, which is what makes an unaccounted block impossible to hide.
+    """
+
+    name: str
+    seconds: float
+
+
+@dataclass(frozen=True)
 class ProviderFetchCost:
     """One provider's FETCH wall clock this run — the run-cost unit that was missing.
 
@@ -910,6 +933,13 @@ class RunFunnel:
     # supplied — which is not the same as a sweep that found nothing. A block of zeros would
     # claim a measurement nobody took, the same rule `LivenessCheck` applies above.
     death_probe: DeathProbeReport | None = None
+    # Wall clock per pipeline stage, in the order the stages ran. `None` means NOT MEASURED —
+    # a stored funnel written before this shipped, or a caller that did not time the run —
+    # which is a different statement from `()`, "timed, and no stage boundary was reached".
+    # `run_pipeline` never emits `()`: its last mark is in a `finally`, so any run that reaches
+    # the funnel has at least two rows. The empty tuple exists for a direct `build_run_funnel`
+    # caller, and the two states are kept apart so neither has to be inferred from the other.
+    stage_durations: tuple[StageDuration, ...] | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -1082,6 +1112,9 @@ def build_run_funnel(
     # A sweep that ran over an incomplete backfill is a DIFFERENT state and carries
     # `complete=False`, which the stage also reports as unmeasured but for a stated reason.
     dedup: DedupSweep | None = None,
+    # Omitted means the run was NOT timed, and the section says so rather than reporting a
+    # stageless run — the same omission direction as `liveness` and `death_probe` above.
+    stage_durations: Sequence[StageDuration] | None = None,
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -1504,6 +1537,7 @@ def build_run_funnel(
         board_coverage=board_coverage,
         lanes=tuple(lanes),
         death_probe=death_probe,
+        stage_durations=None if stage_durations is None else tuple(stage_durations),
     )
 
 
@@ -1531,6 +1565,35 @@ def _fetch_cost_markdown(rows: tuple[ProviderFetchCost, ...] | None) -> list[str
     total = sum(r.seconds for r in rows)
     out.append(f"| **total** | {sum(r.boards for r in rows)} | **{total:.1f}** | | "
                f"{sum(r.untimed for r in rows)} |")
+    return out
+
+
+def _stage_durations_markdown(rows: tuple[StageDuration, ...] | None) -> list[str]:
+    """Where the run's wall clock went, or an explicit statement that it was not timed."""
+    if rows is None:
+        return ["", "Stage wall clock: **not measured** this run."]
+    if not rows:
+        return ["", "Stage wall clock: timed, but **no stage boundary was reached**."]
+    total = sum(row.seconds for row in rows)
+    out = [
+        "",
+        "**Wall clock by stage.** Measured at stage BOUNDARIES, so a stage that returned "
+        "early or raised is charged to the mark that follows it rather than dropped, and "
+        "consecutive rows leave no gap between them. Rendered in the order the stages ran, "
+        "never sorted by cost — reading order is what makes a gap visible.",
+        "",
+        "**The total is the run UP TO this artifact, not the whole process.** This file, the "
+        "morning file and the delivery-queue sync are all written after the last mark — the "
+        "funnel cannot contain its own duration — so they are outside every number below and "
+        "the shares are of the total shown, not of wall-clock-to-exit.",
+        "",
+        "| stage | seconds | share |",
+        "|---|---:|---:|",
+    ]
+    for row in rows:
+        share = f"{100 * row.seconds / total:.1f}%" if total > 0 else "—"
+        out.append(f"| `{row.name}` | {row.seconds:.1f} | {share} |")
+    out.append(f"| **total** | **{total:.1f}** | |")
     return out
 
 
@@ -1652,6 +1715,13 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 )
             ],
         },
+        # Where the run's wall clock went. Ordered as the stages RAN, not by cost: the whole
+        # point is that consecutive marks sum to the run, so an unaccounted block shows up as a
+        # row rather than as a missing total.
+        "stage_durations": None if funnel.stage_durations is None else [
+            {"name": row.name, "seconds": round(row.seconds, 3)}
+            for row in funnel.stage_durations
+        ],
         # Board DISCOVERY coverage (D-274), deliberately adjacent to `scan` because it is
         # the denominator `scan` never had. Not to be read as the `coverage` key above,
         # which is resume keyword coverage.
@@ -1923,6 +1993,13 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")
+
+    # Run-level, so it sits OUTSIDE the `scan.ran` branch above: a `--no-scan` run still has
+    # stages and still has a wall clock to account for. Placed immediately after the scan
+    # because the scan is normally most of it, and the reader who has just been told what the
+    # scan cost is the reader who needs to know what the other 40% was.
+    lines += ["", "## Wall clock", ""]
+    lines += _stage_durations_markdown(funnel.stage_durations)[1:]
 
     # The denominator the section above never had: how much of each board we can actually
     # see. Rendered here rather than at the end because a reader who has just been told

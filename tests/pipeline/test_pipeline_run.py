@@ -8,6 +8,7 @@ that aborts is still closed out rather than left dangling for `doctor` to call s
 import json
 from datetime import timedelta
 from pathlib import Path
+from time import perf_counter, sleep
 
 import httpx
 import pytest
@@ -904,3 +905,95 @@ def test_a_fatal_run_does_not_ping_the_heartbeat(
 
     assert summary.fatal is not None, "guard: this must be the fatal path"
     assert pings == [], "a fatal run pinged the heartbeat — the monitor would never alert"
+
+
+def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
+    env: Path, tmp_path: Path
+) -> None:
+    """Run 128 spent 26.8 minutes between its last board apply and its first lane apply, and
+    no artifact could say on which stage — the scan's per-provider fetch cost was the only
+    timing the funnel carried, and every stage after it was timed nowhere. Reconstructing it
+    afterwards meant joining four tables on their side-effect timestamps.
+
+    Two properties, and neither is "the key exists". The marks must name every stage IN RUN
+    ORDER, because a missing mark is not a missing row — its cost silently joins the stage
+    after it. And they must not exceed the run: the clock closes each stage as it marks it, so
+    a mark that failed to advance the cursor would report cumulative times that look like a
+    plausible breakdown and sum to several times the run.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    started = perf_counter()
+    summary = _pipeline(env, out_root)
+    elapsed = perf_counter() - started
+
+    assert [stage.name for stage in summary.stage_durations] == [
+        "scan",
+        "projection",
+        "lanes",
+        "death_probe",
+        "eligibility",
+        "liveness",
+        "tailor",
+        "finalize",
+    ]
+    assert all(stage.seconds >= 0 for stage in summary.stage_durations)
+    total = sum(stage.seconds for stage in summary.stage_durations)
+    assert 0 < total <= elapsed, f"the stages claim {total:.3f}s of a {elapsed:.3f}s run"
+
+    payload = json.loads(
+        next((out_root / utcnow().date().isoformat()).glob("funnel-*.json")).read_text()
+    )
+    # NAMES AND SECONDS. Comparing names alone would let the serializer emit a different
+    # number from the one the run measured — a table that reconciles against itself and
+    # against nothing else. The writer rounds to 3dp, so the summary is rounded the same way
+    # rather than compared with a tolerance nobody could justify.
+    assert payload["stage_durations"] == [
+        {"name": stage.name, "seconds": round(stage.seconds, 3)}
+        for stage in summary.stage_durations
+    ], "the artifact and the summary disagree about what the run cost"
+
+
+# Long enough to dominate the rounding the funnel writer applies (3dp) and short enough not to
+# slow the suite. Only ever compared one-sided.
+_ABORT_TICK = 0.05
+
+
+def test_a_crashed_run_still_reports_where_its_time_went(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crashed run is exactly the one whose cost breakdown is worth having, and it is the
+    case a per-stage context manager would lose: `_count_evaluations` raising skips the
+    `tailor` mark entirely, so that stage's cost must be charged to the mark that follows it
+    from the `finally` rather than vanishing. The artifact must still balance."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    # Deliberately SLOW before it raises. A bare raise leaves the assertion below unable to
+    # tell "the aborted work was charged to `finalize`" from "`finalize` happened to be a few
+    # milliseconds" — the measurable sleep is what makes the claim falsifiable. One-sided:
+    # `sleep` is a lower bound, so no machine load can make this flake.
+    def boom(*_a: object, **_k: object) -> None:
+        sleep(_ABORT_TICK)
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+    with pytest.raises(RuntimeError):
+        _pipeline(env, out_root)
+
+    payload = json.loads(
+        next((out_root / utcnow().date().isoformat()).glob("funnel-*.json")).read_text()
+    )
+    by_name = {row["name"]: row["seconds"] for row in payload["stage_durations"]}
+    names = list(by_name)
+    assert names[-1] == "finalize", f"the aborting run reported {names}"
+    assert "tailor" not in names, "a stage that never completed was reported as if it had"
+    # The work the abort discarded is CHARGED to the mark that follows it, never dropped:
+    # `finalize` is the only mark between `liveness` and the crash, so it must carry at least
+    # the time the aborting call itself burned.
+    assert by_name["finalize"] >= _ABORT_TICK * 0.8, (
+        f"the aborted stage's {_ABORT_TICK}s went unaccounted for: {by_name}"
+    )

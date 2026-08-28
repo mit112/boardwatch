@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 import httpx
@@ -78,6 +79,7 @@ from boardwatch.reports.run_funnel import (
     ProviderFetchCost,
     ScanContext,
     ShortlistCounts,
+    StageDuration,
     WrittenArtifact,
     write_run_funnel,
 )
@@ -316,10 +318,38 @@ class PipelineSummary:
     # 6.7% against a control of proven-closed postings, so a zero here is weak evidence about
     # the class and must not be read as one.
     death_probe: DeathProbeReport | None = None
+    # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
+    # Empty means the run never reached its first mark; the funnel reports that as timed-with-
+    # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
+    stage_durations: list[StageDuration] = field(default_factory=list)
 
     @property
     def leads_with_pdf(self) -> int:
         return sum(1 for lead in self.tailored if lead.pdf_built)
+
+
+class _StageClock:
+    """Wall clock between pipeline stage boundaries.
+
+    Boundaries, not wrappers. Wrapping each stage in a context manager would mean reindenting
+    the whole pipeline body and would still lose the cost of a stage that `return`s early;
+    marking after each stage costs one line per stage and charges any unmarked work to the
+    next mark, so consecutive durations sum to the run and an unaccounted block is a visible
+    row rather than a missing total.
+
+    `perf_counter`, not `utcnow`, for the same reason `scan/workers.py` uses it: these are
+    durations, and a wall-clock subtraction is wrong across an NTP step.
+    """
+
+    def __init__(self) -> None:
+        self._last = perf_counter()
+        self.durations: list[StageDuration] = []
+
+    def mark(self, name: str) -> None:
+        """Close the stage that just ended. `name` names the work BEHIND this boundary."""
+        now = perf_counter()
+        self.durations.append(StageDuration(name=name, seconds=now - self._last))
+        self._last = now
 
 
 def _lane_fetcher(settings: Settings) -> Fetcher:
@@ -806,6 +836,9 @@ def run_pipeline(
     except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
         console.print(f"  ! stale-run reap failed: {exc}", markup=False)
 
+    # Started BEFORE the scan, so the scan is the first mark rather than untimed work the
+    # run's own artifact cannot see.
+    clock = _StageClock()
     scan_summary = None
     if not skip_scan:
         console.print("[bold]scan[/bold]")
@@ -816,6 +849,7 @@ def run_pipeline(
     else:
         ensure_schema(engine)
         run_id = ensure_run(engine, None)
+    clock.mark("scan")
 
     summary = PipelineSummary(run_id=run_id)
     # Computed before the try so the finally can write the funnel artifact into it even when
@@ -909,6 +943,7 @@ def run_pipeline(
                 stage_errors.append(message)
                 summary.errors.append(message)
                 return summary
+        clock.mark("projection")
 
         # The lane stage (JD-acquisition spec §4) — additive breadth, run before the ranker so
         # that a posting a lane discovers is judged by THIS run rather than by tomorrow's. It
@@ -932,6 +967,7 @@ def run_pipeline(
         summary.lanes.extend(lane_reports)
         stage_errors.extend(lane_errors)
         summary.errors.extend(lane_errors)
+        clock.mark("lanes")
 
         # D-325 — the measured-death sweep, HERE: after the lanes have re-sighted whatever they
         # could find (a positive sighting clears a strike in `_apply_listed`) and before the
@@ -970,6 +1006,7 @@ def run_pipeline(
                     f"{probe.gone} gone, {probe.unknown} unknown, {probe.closed} closed "
                     f"({probe.budget_refused} refused by budget)"
                 )
+        clock.mark("death_probe")
 
         console.print("[bold]eligibility[/bold]")
         try:
@@ -1027,6 +1064,7 @@ def run_pipeline(
         summary.regrouped, regroup_errors = _regroup(engine, ranked.suppressions)
         stage_errors.extend(regroup_errors)
         summary.errors.extend(regroup_errors)
+        clock.mark("eligibility")
 
         # P6 item 6 — liveness, immediately before the render and after everything that decides
         # WHICH postings are leads. Here because the gate clause is "0 dead postings reaching the
@@ -1073,6 +1111,8 @@ def run_pipeline(
                 f"liveness: {summary.liveness_checked} checked, {summary.liveness_dead} gone, "
                 f"{summary.liveness_unknown} unknown (unknown is served){redirected_note}"
             )
+
+        clock.mark("liveness")
 
         # Names the résumé source in the log, so a projected run is distinguishable from an
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
@@ -1360,6 +1400,7 @@ def run_pipeline(
                 )
 
         summary.evaluated = _count_evaluations(engine, run_id)
+        clock.mark("tailor")
         return summary
     except BaseException as exc:
         # #4: the finally below closes the row either way. Without recording the exception,
@@ -1398,6 +1439,18 @@ def run_pipeline(
         # this returns None and the renderers say so, where an escaping exception would take
         # the whole funnel down with it through the except below.
         summary.board_coverage = _load_board_coverage(engine, run_id, console)
+        # LAST mark, and inside the `finally` so it fires on the crash and early-return paths
+        # too — those are exactly the runs whose cost breakdown is worth having. On a clean run
+        # it covers `finish_run` and the coverage load above and nothing else: the late guards
+        # sit BEFORE `clock.mark("tailor")` and are charged there. On an aborting run it also
+        # absorbs everything since the last mark that completed, which is the point of marking
+        # boundaries rather than wrapping stages.
+        #
+        # `finalize`, not `reports`: the three artifact writes below run AFTER this mark, and
+        # they must — the funnel is one of them and cannot contain its own duration. The
+        # markdown states that exclusion rather than letting the shares imply otherwise.
+        clock.mark("finalize")
+        summary.stage_durations = list(clock.durations)
         try:
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -1513,6 +1566,7 @@ def _emit_funnel(
         ),
         # D-325. `None` when the sweep did not run — never a block of zeros.
         death_probe=summary.death_probe,
+        stage_durations=summary.stage_durations,
         tailored=[
             (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
             for lead in summary.tailored

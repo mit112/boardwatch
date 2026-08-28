@@ -8,6 +8,38 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The run funnel times its own stages, because a fifth of a run was attributable to nothing.**
+  Run 128 took 132.4 minutes and `scan.fetch_cost` could only price the SCAN, per provider; every
+  stage after it was timed nowhere. Reconstructing the shape meant joining `board_scans`,
+  `extractions`, `eligibility_evaluations` and `artifacts` on their side-effect timestamps, and even
+  then **26.8 minutes — 20% of the run — landed in one block spanning two stages** with no way to
+  split it. A `_StageClock` now marks eight boundaries (`scan`, `projection`, `lanes`, `death_probe`,
+  `eligibility`, `liveness`, `tailor`, `finalize`) and each mark closes the stage behind it, so
+  consecutive rows leave no gap and a stage that returned early or raised is charged to the mark that
+  follows it rather than dropped — both the projection preflight's refusal and the `NoProfileError`
+  path do exactly that, which is why a per-stage wrapper was rejected. The last mark is inside the
+  `finally`, so a crashed run — the one whose breakdown is worth most — still reports where its time
+  went. New `stage_durations` JSON key and `## Wall clock` markdown section. **The total is the run
+  up to the artifact, and the section says so**: the funnel, the morning file and the queue sync are
+  all written after the last mark, because the funnel cannot contain its own duration. `None` means
+  the run was not timed (a stored artifact predating this), which is not `()`, "timed and no boundary
+  reached". **`artifact_version` stays 7** — additive key, the `scan.fetch_cost` precedent.
+
+- **The scan dispatches boards by HOST, so a wider worker pool actually pays.** `Fetcher` holds a
+  per-host lock for a request's full duration and paces requests apart, so a worker that picks up a
+  board whose host is already busy does no work at all. Five of the six providers serve every board
+  from ONE API host; only Workday has a host per tenant (105 hosts, 114 boards, 92% of the fetch
+  cost). Boards were dispatched in company-rowid order — the order they were added, in per-provider
+  batches — so **the first sixteen boards of the live 345-board fleet were all `api.ashbyhq.com`**,
+  leaving three of four workers idle at the start of every run and seven of eight.
+  `coordinator.host_diverse` now round-robins boards across hosts before submission, keyed on the
+  newly exported `politeness.host_key` — the exact key the lock uses, never the provider name, which
+  would bucket Workday's 105 independent hosts as one. **No host sees a different request rate**;
+  only the number of distinct hosts in flight changes, and a completed run persists exactly what it
+  persisted before (`exact_quad`, the only suppressing identity, keys on `company_id`, so no
+  cross-host pair can collide). Modelled against run 128's own numbers — the model reproduces its
+  measured 92.8-minute board scan at 93.0 — this is 87.8 min at 4 workers and 47.4 min at 8.
+
 - **The run funnel publishes the scan's full four-way board split, so its numbers reconcile.**
   `ScanSummary` sorts every attempted board into exactly one of `complete | partial | failed |
   unchanged`, and the artifact published three of them. Live run 126 read "346 boards attempted ·

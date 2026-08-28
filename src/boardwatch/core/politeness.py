@@ -32,6 +32,17 @@ PER_HOST_DELAY_FLOOR = 0.25
 _RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
+def host_key(url: str) -> str:
+    """The key `Fetcher` serializes and paces on.
+
+    Exported so the scan coordinator can order its work by the SAME key the lock uses. A
+    scheduler that keyed on its own spelling of the host — `urlsplit().hostname`, the provider
+    name, the board slug — would optimize for a partition the lock does not share, and would
+    silently stop helping the first time the two disagreed.
+    """
+    return httpx.URL(url).host or ""
+
+
 class FetchFailure(Exception):
     """A fetch that produced no usable 200/304; providers map this to a failed snapshot.
 
@@ -103,7 +114,7 @@ class Fetcher:
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
     ) -> FetchResult:
-        host = httpx.URL(url).host or ""
+        host = host_key(url)
         with self._host_lock(host):  # same-host requests serialize for their full duration
             self._pace(host)
             try:
