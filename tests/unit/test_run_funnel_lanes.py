@@ -45,6 +45,8 @@ def _report(
     *outcomes: str,
     admitted: tuple[tuple[str, str], ...] = (),
     refused: tuple[tuple[str, str], ...] = (),
+    fetch_seconds: float | None = None,
+    apply_seconds: float | None = None,
 ) -> LaneReport:
     tally = _tally(*outcomes)
     return LaneReport(
@@ -55,6 +57,10 @@ def _report(
         is_silent_outage=tally.is_silent_outage,
         admitted=admitted,
         refused=refused,
+        # Default None on purpose: every test above this line predates the cost split and must
+        # keep exercising the NOT MEASURED path rather than being silently backfilled with 0.0.
+        fetch_seconds=fetch_seconds,
+        apply_seconds=apply_seconds,
     )
 
 
@@ -185,3 +191,46 @@ def test_the_markdown_section_is_absent_when_no_lane_ran() -> None:
     served by a heading over a sentence saying nothing happened."""
     assert "## Lanes" not in funnel_to_markdown(_funnel())
     assert "## Lanes" in funnel_to_markdown(_funnel((_report("stub", "body_inline"),)))
+
+
+def test_both_halves_of_a_lanes_cost_reach_the_artifact() -> None:
+    """D-346. The stage total could not say whether the lane stage's 6.5 min was upstream
+    throttling or contention on the single writer; these two keys are what separate them."""
+    payload = funnel_to_dict(
+        _funnel((_report("hiringcafe", "body_inline", fetch_seconds=12.5, apply_seconds=3.25),))
+    )
+    lane = payload["lanes"][0]
+    assert lane["fetch_seconds"] == 12.5
+    assert lane["apply_seconds"] == 3.25
+
+
+def test_an_unmeasured_lane_cost_is_null_and_never_zero() -> None:
+    """`0.0` would claim a lane cost nothing; `null` says it was not measured. The distinction is
+    the same one the ten `AcquisitionOutcome` zeros exist to preserve, in the other direction."""
+    lane = funnel_to_dict(_funnel((_report("stub", "body_inline"),)))["lanes"][0]
+    assert lane["fetch_seconds"] is None
+    assert lane["apply_seconds"] is None
+    assert "NOT MEASURED" in funnel_to_markdown(_funnel((_report("stub", "body_inline"),)))
+
+
+def test_the_markdown_names_the_fetch_share_because_the_ratio_is_the_diagnostic() -> None:
+    """A lane that is mostly fetch is throttled upstream and parallelising the lanes would help
+    it; one that is mostly apply is queued behind the single writer and parallelising would not.
+    The share is printed rather than left to the reader to divide, so the artifact answers the
+    question it was added for."""
+    markdown = funnel_to_markdown(
+        _funnel((_report("linkedin", "body_inline", fetch_seconds=9.0, apply_seconds=1.0),))
+    )
+    assert "90% fetch" in markdown
+    assert "10.0s total" in markdown
+    assert "9.0s paced fetching" in markdown
+    assert "1.0s applying" in markdown
+
+
+def test_a_lane_with_no_measurable_cost_does_not_divide_by_zero() -> None:
+    """Both halves at 0.0 is reachable — a lane whose work is below the clock's resolution — and
+    the share is undefined there rather than 0%."""
+    markdown = funnel_to_markdown(
+        _funnel((_report("stub", "body_inline", fetch_seconds=0.0, apply_seconds=0.0),))
+    )
+    assert "no measurable cost" in markdown

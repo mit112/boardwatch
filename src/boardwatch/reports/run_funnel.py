@@ -110,6 +110,10 @@ _TOP_MISSING = 10
 # consumer reads it: `cli/verify_cmd.py` pulls named keys out of the frozen JSON and tolerates
 # whatever else is there, with no schema, no golden fixture and no full-dict equality anywhere.
 # A run with no lane enabled emits `"lanes": []`, which is honest and costs a reader nothing.
+# **`fetch_seconds`/`apply_seconds` do not bump it either**, for the same reason and one step
+# further in: they are additive keys INSIDE a `lanes` entry, they change no existing value's
+# meaning, and `null` means NOT MEASURED so an older artifact reads correctly as unmeasured
+# rather than as a free lane.
 #
 # **v7 is a lead's `locations` and the hard US gate's verdict on them (D-267, shipped D-323).**
 # It bumps for the v5 reason and not the v6 one: this does not add a section, it changes what a
@@ -793,6 +797,19 @@ class LaneReport:
     results or because it hit the configured page ceiling. The second is reach the run left on
     the table, and inferring it from a total would need the ceiling, the page size and the facet
     count that produced it. Empty for a lane whose search does not paginate.
+
+    `fetch_seconds` and `apply_seconds` split the lane's cost at the one boundary that matters
+    for what to do about it, and they are two numbers rather than one for that reason. D-343 timed
+    the `lanes` STAGE and found it costs 6.5 min while swinging 4x run to run for MORE work
+    (run 129: ~276 lane requests in 6.5 min against run 128's ~223 in ~26.8), with the cause
+    unestablished. A stage total cannot separate the two candidate causes: upstream throttling —
+    LinkedIn is one host behind a 1.0 s pace with 429-retry backoff — lands in `fetch_seconds`,
+    whereas contention on `apply_board`, the pipeline's single writer, lands in `apply_seconds`.
+    Per LANE as well as per half, because the stage runs hiringcafe and linkedin sequentially and
+    a stage total attributes nothing to either.
+
+    `None` means NOT MEASURED, never zero — the same convention `stage_durations` uses, and it is
+    load-bearing here: a lane that raised before it was timed must not report 0.0 s of work.
     """
 
     name: str
@@ -803,6 +820,8 @@ class LaneReport:
     admitted: tuple[tuple[str, str], ...]
     refused: tuple[tuple[str, str], ...]
     search_pages: tuple[tuple[str, int], ...] = ()
+    fetch_seconds: float | None = None
+    apply_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1750,6 +1769,11 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 "search_pages": [
                     {"url": url, "pages": pages} for url, pages in lane.search_pages
                 ],
+                # The lane's cost, split at the fetch/apply boundary. `null` means NOT
+                # MEASURED, never 0.0 — a lane that raised before it was timed reports
+                # absence rather than a free lane.
+                "fetch_seconds": lane.fetch_seconds,
+                "apply_seconds": lane.apply_seconds,
             }
             for lane in funnel.lanes
         ],
@@ -1868,6 +1892,27 @@ def _provider_rollup(sources: Sequence[SourceOutcome]) -> list[tuple[str, int, i
     )
 
 
+def _lane_cost_line(lane: LaneReport) -> str:
+    """One line splitting a lane's wall clock into paced fetching and serial applying.
+
+    Spelled out rather than left to the reader to divide, because the RATIO is the diagnostic:
+    a lane that is 95% fetch is throttled upstream and parallelising the lanes would help it,
+    while one that is 95% apply is queued behind the single writer and parallelising would not.
+
+    `NOT MEASURED` rather than `0.0s` when either half is absent. A lane that raised before it
+    was timed has to be distinguishable from a lane that genuinely cost nothing — the same
+    reason the ten `AcquisitionOutcome` zeros are all printed.
+    """
+    if lane.fetch_seconds is None or lane.apply_seconds is None:
+        return "Cost: **NOT MEASURED**"
+    total = lane.fetch_seconds + lane.apply_seconds
+    share = f"{100 * lane.fetch_seconds / total:.0f}% fetch" if total > 0 else "no measurable cost"
+    return (
+        f"Cost: {total:.1f}s total — {lane.fetch_seconds:.1f}s paced fetching, "
+        f"{lane.apply_seconds:.1f}s applying ({share})"
+    )
+
+
 def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
     """The `## Lanes` section, or nothing at all when no lane ran.
 
@@ -1891,6 +1936,8 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
             f"{lane.attempted} attempted · {lane.resolved} resolved · "
             f"{len(lane.admitted)} new companies admitted · "
             f"{len(lane.refused)} refused by the cap{outage}",
+            "",
+            _lane_cost_line(lane),
             "",
             "| outcome | count |",
             "|---|---:|",

@@ -455,7 +455,13 @@ def _collect_lane(
                 return True
         return budget.admit(provider, slug)
 
+    # The fetch/apply boundary, and the only one in this function. `perf_counter` for the same
+    # reason `_StageClock` uses it: these are durations, and a wall-clock subtraction is wrong
+    # across an NTP step. Measured at the boundary rather than by wrapping, so work that raises
+    # is still charged to the half it happened in.
+    started = perf_counter()
     result = lane.collect(fetcher, admits)
+    fetched_at = perf_counter()
     for company in result.snapshots:
         # `upsert_lane_company` is called for EVERY snapshot, including a company the store
         # already holds — the convergence case a lane exists to produce. It is conflict-safe by
@@ -511,6 +517,11 @@ def _collect_lane(
         # `lane_search_pages`, which is the CEILING and not what was fetched — a facet that ran
         # out of results after two pages is exactly the case the setting cannot report.
         search_pages=result.search_pages,
+        # Paced network work, and the half upstream throttling shows up in.
+        fetch_seconds=fetched_at - started,
+        # The `apply_board` loop — the pipeline's single writer, and the half that parallelising
+        # the lanes could not shorten.
+        apply_seconds=perf_counter() - fetched_at,
     )
 
 
