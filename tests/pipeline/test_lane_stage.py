@@ -19,8 +19,10 @@ The four things under test, each of which fails on a plausible wrong implementat
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from time import perf_counter, sleep
+from threading import Barrier
+from time import sleep
 
 import pytest
 from rich.console import Console
@@ -61,6 +63,7 @@ class StubLane:
         outcomes: tuple[str, ...] = ("body_inline",),
         raises: Exception | None = None,
         delay: float = 0.0,
+        on_collect: Callable[[], object] | None = None,
     ) -> None:
         self._companies = companies
         self._outcomes = outcomes
@@ -69,11 +72,17 @@ class StubLane:
         # nowhere else. This is what lets a test locate the boundary rather than merely
         # observe that two numbers were produced.
         self._delay = delay
+        # Run inside `collect`, so it too lands on the FETCH side of the boundary. Two uses,
+        # both of which replace a wall-clock measurement with an exact one: advancing a fake
+        # clock, and rendezvousing two lanes on a barrier.
+        self._on_collect = on_collect
         self.seen: list[tuple[str, str]] = []
         self.landed: list[tuple[str, str]] = []
         self.fetcher: Fetcher | None = None
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
+        if self._on_collect is not None:
+            self._on_collect()
         if self._delay:
             sleep(self._delay)
         if self._raises is not None:
@@ -681,12 +690,30 @@ def test_no_profile_row_at_all_leaves_the_lane_unfaceted_rather_than_failing(
 # Per-lane cost (D-346)
 # --------------------------------------------------------------------------------------
 
-# Long enough to dominate scheduler noise and a local SQLite apply, short enough not to slow
-# the suite. The assertions below compare the two halves against EACH OTHER as well as against
-# this, so a machine that is merely slow cannot make the test pass for the wrong reason.
-FETCH_DELAY = 0.30
+# What each half is made to cost on the FAKE CLOCK below. Not durations anything sleeps for:
+# nothing here waits, so the size is free and only the arithmetic matters. Both are binary-exact
+# fractions, so the subtraction the runner does — `perf_counter() - started` — is exact and the
+# assertions can be equalities. (0.30 and 0.10 are not: 0.4 - 0.3 is 0.10000000000000003.)
+FETCH_DELAY = 0.25
 # Deliberately DIFFERENT from FETCH_DELAY, so transposed halves are detectable.
-APPLY_DELAY = 0.10
+APPLY_DELAY = 0.125
+
+
+class _FakeClock:
+    """A stand-in for `runner.perf_counter` that only ever moves when the test moves it.
+
+    Reads are free and repeatable, which matters because the runner reads the clock four times
+    across the two halves and the test controls only what happens BETWEEN those reads.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
 def test_a_lane_reports_both_halves_of_its_cost(engine: Engine, tmp_path: Path) -> None:
@@ -712,39 +739,43 @@ def test_the_cost_boundary_sits_between_fetching_and_applying(
 ) -> None:
     """The test that LOCATES the boundary rather than detecting that two numbers exist.
 
-    Both halves are given measurable, DIFFERENT amounts of work — the stub sleeps inside
-    `collect`, and `apply_board` is spied to sleep a different amount — because one-sided delay
-    is not enough. With only a fetch delay, an implementation that timed the whole function as
-    `fetch_seconds` and reported `apply_seconds = 0` passes every assertion; it is caught here
-    only by the upper bounds, which no single-sided version of this test can express.
+    Both halves are given DIFFERENT amounts of work, because one-sided cost is not enough: with
+    only a fetch cost, an implementation that timed the whole function as `fetch_seconds` and
+    reported `apply_seconds = 0` passes every assertion a single-sided test can express.
 
-    Each half is therefore bounded on BOTH sides, and the bounds exclude the three plausible
-    wrong implementations: transposed halves (fetch reads ~APPLY_DELAY, below its floor),
-    fetch-absorbs-everything and apply-absorbs-everything (either reads ~the total, above its
-    ceiling). The ceiling is deliberately tighter than the total so "absorbed everything" cannot
-    slip under it.
+    The cost is spent on a FAKE CLOCK, not on `sleep`. What is under test is WHICH CODE THE
+    TIMER BRACKETS — that `fetch_seconds` covers `collect` and `apply_seconds` covers the
+    `apply_board` loop — and that is a claim about the wiring, not about real elapsed time. So
+    `runner.perf_counter` is replaced by a counter this test advances by hand: FETCH_DELAY from
+    inside the lane's `collect`, APPLY_DELAY from inside the spied `apply_board`. Measuring real
+    sleeps only bought a load-dependent tolerance, and a 50ms window around a 300ms sleep went
+    red on loaded CI runners while the wiring it guards was perfectly correct.
+
+    With the clock exact, each half is asserted by EQUALITY. That is strictly tighter than the
+    two-sided bounds it replaces — zero tolerance instead of 17% — and it still excludes the
+    three plausible wrong implementations: transposed halves (fetch reads APPLY_DELAY), and
+    fetch-absorbs-everything or apply-absorbs-everything (one half reads the total, the other
+    0.0).
     """
+    clock = _FakeClock()
+    monkeypatch.setattr(runner_mod, "perf_counter", clock)
     real = runner_mod.apply_board
 
-    def slow_apply(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
-        sleep(APPLY_DELAY)
+    def costly_apply(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+        clock.advance(APPLY_DELAY)
         return real(engine_, snapshot, company_id, run_id, scan_kind)
 
-    monkeypatch.setattr(runner_mod, "apply_board", slow_apply)
+    monkeypatch.setattr(runner_mod, "apply_board", costly_apply)
 
     report = _collect_lane(
         engine,
         _settings(tmp_path),
-        StubLane([("hiringcafe", "src:a")], delay=FETCH_DELAY),
+        StubLane([("hiringcafe", "src:a")], on_collect=lambda: clock.advance(FETCH_DELAY)),
         Fetcher(_settings(tmp_path)),
         insert_run(engine),
     )
-    assert report.fetch_seconds is not None
-    assert report.apply_seconds is not None
-    # Anything above this means the half absorbed work belonging to the other one.
-    ceiling = FETCH_DELAY + APPLY_DELAY / 2
-    assert FETCH_DELAY <= report.fetch_seconds < ceiling
-    assert APPLY_DELAY <= report.apply_seconds < ceiling
+    assert report.fetch_seconds == FETCH_DELAY
+    assert report.apply_seconds == APPLY_DELAY
 
 
 def test_a_lane_that_raises_reports_no_cost_rather_than_a_free_lane(
@@ -768,9 +799,14 @@ def test_a_lane_that_raises_reports_no_cost_rather_than_a_free_lane(
 # Parallel fetch, serial apply (D-347)
 # --------------------------------------------------------------------------------------
 
-# Each lane's fetch sleeps this long. Sequential is 2x, parallel is ~1x, and the threshold
-# between them is wide enough that a loaded machine cannot flip the verdict.
+# Each lane's fetch sleeps this long, to hold two lanes in the fetch phase at once.
 LANE_FETCH_DELAY = 0.6
+
+# How long a lane waits at the rendezvous below before declaring its partner is not coming.
+# It is a FAILURE budget, never a pass one: a correct implementation trips the barrier
+# immediately no matter how loaded the machine is, and a serialized one waits the whole of it
+# and then fails. So it can be generous without slowing a green run by a millisecond.
+LANE_RENDEZVOUS_TIMEOUT = 10.0
 
 
 def _register(
@@ -792,33 +828,31 @@ def _register(
 def test_two_lanes_fetch_concurrently_rather_than_one_after_the_other(
     engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The point of the change, and it is asserted on WALL CLOCK because nothing else shows it.
+    """The point of the change, asserted by RENDEZVOUS rather than by elapsed time.
 
-    Two lanes, each sleeping `LANE_FETCH_DELAY` inside `collect`. Sequential takes ~2x that and
-    parallel takes ~1x, so the ceiling below is between the two: it goes red the moment the
-    fetches are serialized again, which asserting on the reports alone could never catch.
+    Both lanes wait on the same two-party barrier inside `collect`, so neither can return until
+    the other has also entered its fetch. That is overlap itself, not a proxy for it: if the
+    fetches are serialized again the first lane waits alone, the barrier breaks, and both lanes
+    raise — reported, because `_run_lanes` turns a lane's failure into an error string rather
+    than an exception. Timing the stage instead would only say the total was small enough, which
+    is a claim about the machine's load as much as about the code.
 
     The lanes are on DIFFERENT hosts by construction (the stub does no real HTTP), which is the
     case the change is for. Two lanes sharing a host would still serialize inside `Fetcher`'s
     per-host lock, and that is correct — the 1 req/s contract is not what this relaxes.
     """
+    rendezvous = Barrier(2, timeout=LANE_RENDEZVOUS_TIMEOUT)
     _register(
         monkeypatch,
-        alpha=StubLane([("hiringcafe", "src:a")], delay=LANE_FETCH_DELAY),
-        beta=StubLane([("hiringcafe", "src:b")], delay=LANE_FETCH_DELAY),
+        alpha=StubLane([("hiringcafe", "src:a")], on_collect=rendezvous.wait),
+        beta=StubLane([("hiringcafe", "src:b")], on_collect=rendezvous.wait),
     )
-    started = perf_counter()
     reports, errors = _run_lanes(
         engine, _settings(tmp_path, lanes_enabled=["alpha", "beta"]), insert_run(engine)
     )
-    elapsed = perf_counter() - started
 
-    assert errors == []
+    assert errors == [], f"lane fetches did not overlap: {errors}"
     assert len(reports) == 2
-    # Halfway between parallel (~1x) and sequential (~2x).
-    assert elapsed < LANE_FETCH_DELAY * 1.5, (
-        f"lane fetches did not overlap: {elapsed:.2f}s for two {LANE_FETCH_DELAY}s lanes"
-    )
 
 
 def test_the_applies_never_overlap_because_apply_board_is_the_single_writer(
