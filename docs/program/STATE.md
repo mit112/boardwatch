@@ -158,13 +158,18 @@ set and the population caveat are in `STANDING-FACTS.md` § Precision gates (D-2
    a `finally` after the row closes (D-024). Run 125: `finished_at` 22:50:08.8, artifacts at 22:51,
    process gone at 22:51:40 — **92 seconds of work after the table read `ok`.**
 
-2. **Land what is still open:** #185 (D-327), #188 (this file), #190 (D-330, fetch timing). Each needs
-   only a `DECISIONS.md` rebase; all three are gate-green.
+2. **NOTHING IS OPEN — the queue is drained.** #185 (D-327) 22:42Z, #190 (D-330) 23:13Z, #188
+   (STATE/METRICS/STANDING-FACTS) 23:52Z; **zero open PRs**, `main` `4e0c95b`, primary tree at `main`'s
+   head. Two rebase traps were paid for and now live in `STANDING-FACTS.md` § Process lessons — the
+   silent `CHANGELOG.md` one is the dangerous half.
 
 3. **Batch 2 of the ~765 discover candidates is now a SIZING question with an answer** — see the
    provider-weighted table above and in `METRICS.md`. The ~325 cheap ones go in ONE batch. **Probe ~10
    cold Workday boards first**: no cold Workday or SmartRecruiters board has ever been timed, and they are
-   the two providers that burn a per-posting detail budget on a first scan.
+   the two providers that burn a per-posting detail budget on a first scan. **Held OFF run 126
+   deliberately** — 126 is the ~124-min spike against a 180-min cadence, and the probe is free on 127.
+   Do NOT generalise from the cheap providers: their cold scans were the CHEAPEST rows in run 124
+   (0.26-1.11 s/board), and Workday is the one case where a first scan also burns a detail budget.
 
 4. **One pre-existing defect remains, and it is deliberate:** `tests/unit/test_web_server.py:678`
    (`assert elapsed < 3.0`) is a genuine load-dependent flake — **do not weaken the threshold to green a
