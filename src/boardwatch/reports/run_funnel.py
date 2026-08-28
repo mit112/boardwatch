@@ -58,6 +58,7 @@ from boardwatch.reports.board_coverage import (
 )
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
+    DedupSweep,
     SourceOutcome,
     TailoredArtifactCounts,
 )
@@ -120,6 +121,16 @@ _TOP_MISSING = 10
 # with it, because the verdicts are unreadable without it: in the default `soft` mode a `non_us`
 # lead is documented behaviour, not a leak, and a reader who cannot see the mode cannot tell a
 # passing gate from a disarmed one.
+#
+# **Instrumenting the `dedup` stage does NOT bump it, and the ruling follows the same two
+# tests.** It adds no top-level section — `dedup` has been a member of `stages` since v1 — and
+# it changes no existing value's MEANING: `entered`/`advanced` go from `null` to a number, which
+# is the transition every nullable stage field exists to make. A consumer already has to handle
+# both, because the `shortlist`, `tailor` and `projection` stages all emit nulls when the ranker
+# never ran. The direct precedent is `SourceOutcome.unique`, which went from an unconditional
+# `None` to a measured count when P6 landed and did not bump this field — the same quantity,
+# from the same sweep, one block over. `dedup_detail` rides along as an ADDITIVE key on the
+# D-113 → D-147 R3 precedent, `null` on every stage but this one.
 ARTIFACT_VERSION = 7
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -152,6 +163,12 @@ class Stage:
     # unexplained}`, run-scoped. A diagnostic for the zero-output guard, not a drop: it is not
     # summed into `dropped`/`reconciled` above. None on every other stage.
     run_scoped_attribution: dict[str, int] | None = None
+    # P6 — present ONLY on the `dedup` stage. `suppressing_*` describe what the suppressing
+    # kinds' keys collide on; `candidate_redundant_*` are the audit-only kinds' UPPER BOUNDS
+    # (D-327), which span genuinely different jobs and suppress nothing. Not a drop and never
+    # summed into `dropped`/`reconciled`: folding a bound into a count is exactly what this
+    # artifact refuses to do. None on every other stage.
+    dedup_detail: dict[str, int] | None = None
 
     @property
     def instrumented(self) -> bool:
@@ -897,6 +914,89 @@ class RunFunnel:
         return 0 if self.abstain.rules else 1
 
 
+def _dedup_stage(dedup: DedupSweep | None) -> Stage:
+    """The `dedup` stage, populated from the corpus-wide sweep the funnel already runs.
+
+    This stage reported `entered: null, advanced: null` and the note "this stage counts
+    nothing" for the whole of P0–P6, so no run could show from its own artifact whether dedup
+    was working. The sweep it now reports on is not new — `count_by_source` has run it every
+    run to compute per-source `unique` — only its counts were being thrown away.
+
+    **Three states, kept apart.** The sweep did not run (`None`); it ran and found the
+    backfill incomplete (`complete=False`); it ran and measured. The first two both report
+    `entered`/`advanced` as null, because in neither case is "how many postings entered
+    grouping" a known number — but they say WHY separately, and neither is ever reported as
+    zero duplicates, which is the opposite claim.
+
+    **`derived`.** `advanced` is `entered` minus the suppressions, so the identity balances by
+    construction and the tick beside it proves nothing. Labelled as such rather than presented
+    as a passing reconciliation — see the module docstring's second load-bearing property.
+
+    **`dedup_detail` is beside the drop, never inside it.** `suppressing_redundant` is what the
+    suppressing keys collide on before `core/dedup._verify_quad` re-checks the underlying
+    strings, so it is an upper bound on `suppressed` and the gap between them is the verifier's
+    refusals. The `candidate_redundant_*` entries are the audit-only kinds' bounds (D-327):
+    `company_title_location` spans genuinely different jobs — 6 true duplicates in a
+    hand-adjudicated 30-group sample on 2026-08-28 — and nothing in it is suppressed. Adding
+    either to `dropped` would assert a suppression that never happened.
+    """
+    if dedup is None or not dedup.complete:
+        return Stage(
+            name="dedup",
+            entered=None,
+            advanced=None,
+            note=(
+                "NOT INSTRUMENTED — the duplicate sweep did not run this run, so how many "
+                "postings entered grouping is unknown. Reported as unmeasured rather than as "
+                "zero duplicates, which is the opposite claim."
+                if dedup is None
+                else "NOT INSTRUMENTED — identities are INCOMPLETE: at least one open posting "
+                "carries no row at the current IDENTITY_ALGORITHM_VERSION, so grouping would "
+                "measure the backfill rather than the corpus. This is the designed state right "
+                "after a version bump; `boardwatch identities backfill` clears it. Reported as "
+                "unmeasured rather than as zero duplicates."
+            ),
+        )
+    assert dedup.entered is not None and dedup.suppressed is not None  # narrowed by complete
+    assert dedup.suppressing_groups is not None and dedup.candidate_redundant is not None
+    assert dedup.suppressing_redundant is not None
+    return Stage(
+        name="dedup",
+        entered=dedup.entered,
+        advanced=dedup.entered - dedup.suppressed,
+        drops=(
+            Drop(
+                reason="suppressed_duplicate",
+                count=dedup.suppressed,
+                note=(
+                    "grouped onto a surviving posting by a SUPPRESSING identity kind and "
+                    "re-verified against the underlying strings. Corpus-wide, over every open "
+                    "posting — not the ranker's bounded pass, whose own count is the "
+                    "shortlist stage's `hidden_duplicate`"
+                ),
+            ),
+        ),
+        derived=True,
+        note=(
+            "Every OPEN posting, grouped by identity. `entered` is the corpus the sweep saw; "
+            "`advanced` is what survived suppression. The numbers beside this stage in "
+            "`dedup_detail` are NOT drops: `suppressing_redundant` is what the suppressing "
+            "keys collide on BEFORE the string re-verification, so it bounds `suppressed` "
+            "from above and the difference is the verifier's refusals; every "
+            "`candidate_redundant_*` is an audit-only kind's UPPER BOUND, which spans "
+            "genuinely different jobs and suppresses nothing (D-327). Neither is folded in."
+        ),
+        dedup_detail={
+            "suppressing_groups": dedup.suppressing_groups,
+            "suppressing_redundant": dedup.suppressing_redundant,
+            **{
+                f"candidate_redundant_{kind}": count
+                for kind, count in sorted(dedup.candidate_redundant.items())
+            },
+        },
+    )
+
+
 def build_run_funnel(
     *,
     run_id: int,
@@ -941,6 +1041,11 @@ def build_run_funnel(
     # D-325. Omitted means the sweep did not run and the section reports itself UNMEASURED,
     # never zero — the same omission direction as `liveness` above.
     death_probe: DeathProbeReport | None = None,
+    # P6. Omitted means the sweep did not run at all, and the `dedup` stage says so rather than
+    # reporting zero duplicates — the same omission direction as `liveness` and `death_probe`.
+    # A sweep that ran over an incomplete backfill is a DIFFERENT state and carries
+    # `complete=False`, which the stage also reports as unmeasured but for a stated reason.
+    dedup: DedupSweep | None = None,
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -1151,19 +1256,7 @@ def build_run_funnel(
         )
 
     stages = (
-        Stage(
-            name="dedup",
-            entered=None,
-            advanced=None,
-            note=(
-                "NOT INSTRUMENTED. Grouping HAS run — this note asserted the opposite until "
-                "2026-08-19, when the store contradicted it (89 grouping events, 70 jobs "
-                "carrying more than one posting), so it no longer claims 1:1. What is still "
-                "true is that this stage counts nothing: duplicate leakage over a window is "
-                "owned by P6 and unmeasured. Reported as unmeasured rather than as zero "
-                "duplicates, which is the opposite claim."
-            ),
-        ),
+        _dedup_stage(dedup),
         Stage(
             name="corpus",
             entered=corpus.open_postings,
@@ -1419,6 +1512,7 @@ def _stage_json(stage: Stage) -> dict[str, object]:
         "derived": stage.derived,
         "note": stage.note,
         "run_scoped_attribution": stage.run_scoped_attribution,
+        "dedup_detail": stage.dedup_detail,
     }
 
 
@@ -1821,6 +1915,12 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         for drop in stage.drops:
             suffix = f" — {drop.note}" if drop.note else ""
             lines.append(f"- **{drop.reason}**: {drop.count}{suffix}")
+        if stage.dedup_detail:
+            # Rendered UNDER a heading that says what they are not, because the bullets above
+            # look identical and a reader skimming would otherwise sum the two lists.
+            lines += ["", "Beside the drop — **not** dropped, and never summed into it:"]
+            for key, value in stage.dedup_detail.items():
+                lines.append(f"- `{key}`: {value}")
         lines.append("")
 
     lines += ["## Cross-checks", "", "| quantity | pipeline said | store says | agree |",

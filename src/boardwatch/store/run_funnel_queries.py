@@ -27,9 +27,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from sqlalchemy import Connection, Select, case, func, literal, select, tuple_
+from sqlalchemy import Connection, Select, case, distinct, func, literal, select, tuple_
 
 from boardwatch.core.dedup import resolve_duplicates
+from boardwatch.core.identity_kinds import (
+    IDENTITY_ALGORITHM_VERSION,
+    IDENTITY_KINDS,
+    SUPPRESSING_KINDS,
+)
 from boardwatch.core.lineage import meta_probe_key
 from boardwatch.store.applications import APPLIED_STATUSES
 from boardwatch.store.identity_queries import (
@@ -44,6 +49,7 @@ from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
     eligibility_inputs,
+    posting_identities,
     posting_versions,
     postings,
 )
@@ -469,6 +475,186 @@ def lead_provenance(conn: Connection, posting_ids: list[int]) -> dict[int, Prove
     }
 
 
+# Audit-only kinds whose collisions are worth reporting as an UPPER BOUND. `exact_provider`
+# is deliberately absent: `postings` enforces UNIQUE(company_id, provider_posting_id), so its
+# collision count is 0 for every possible database state. Emitting that 0 beside four measured
+# ones would dress a structural impossibility as a measurement — the same reason `assisted`
+# reports None rather than 0.
+_BOUNDED_KINDS: tuple[str, ...] = tuple(
+    spec.name
+    for spec in IDENTITY_KINDS
+    if not spec.suppresses and spec.name != "exact_provider"
+)
+
+
+@dataclass(frozen=True)
+class DedupSweep:
+    """The corpus-wide duplicate sweep, run ONCE per funnel and read by two consumers.
+
+    Extracted so the funnel's `dedup` stage and the per-source `unique` column come from the
+    same pass. Running it twice would double a sweep that already reads every open posting.
+
+    **Every count is `None` when identities are not complete, never 0.** The gate is
+    `identities_complete`, not `if identities:` — a partial backfill produces a number that
+    measures the backfill rather than the corpus, and an `IDENTITY_ALGORITHM_VERSION` bump
+    empties the current-version rows, which must read as "unmeasured this run" and not as
+    "no duplicates". `suppressed_by_company` stays an empty mapping in that state and its
+    consumer keys `unique` off `complete`, so an absent company is never read as a zero.
+
+    `suppressing_groups`/`suppressing_redundant` count what the SUPPRESSING kinds' keys
+    collide on — `redundant` is members minus groups, i.e. the most suppression could
+    possibly remove. It is an upper bound on `suppressed`, not a restatement of it:
+    `core/dedup._verify_quad` re-compares the underlying strings and refuses a stale key, so
+    the difference between the two is the verifier's refusals and is worth seeing.
+
+    `candidate_redundant` is the audit-only kinds' redundancy, per kind, and is a CANDIDATE
+    UPPER BOUND in the D-327 sense — `company_title_location` spans genuinely different jobs
+    (hand-adjudicated 2026-08-28: 6 true duplicates in a 30-group sample), nothing in it is
+    suppressed, and it must never be folded into `suppressed` or presented as a duplicate
+    count. A kind with no colliding group gets a measured 0; a kind that cannot collide at
+    all is absent (see `_BOUNDED_KINDS`).
+    """
+
+    complete: bool
+    entered: int | None
+    suppressed: int | None
+    suppressing_groups: int | None
+    suppressing_redundant: int | None
+    candidate_redundant: Mapping[str, int] | None
+    suppressed_by_company: Mapping[int, int]
+
+
+def _redundancy_by_kind(conn: Connection) -> dict[str, tuple[int, int]]:
+    """kind -> (groups of >=2 open postings, redundant members) at the current version."""
+    grouped = (
+        select(
+            posting_identities.c.kind.label("kind"),
+            posting_identities.c.identity_key.label("identity_key"),
+            func.count().label("members"),
+        )
+        .select_from(
+            posting_identities.join(postings, posting_identities.c.posting_id == postings.c.id)
+        )
+        .where(
+            postings.c.status == "open",
+            posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+        )
+        .group_by(posting_identities.c.kind, posting_identities.c.identity_key)
+        .having(func.count() >= 2)
+        .subquery()
+    )
+    rows = conn.execute(
+        select(
+            grouped.c.kind,
+            func.count(),
+            func.sum(grouped.c.members - 1),
+        ).group_by(grouped.c.kind)
+    ).all()
+    return {str(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
+
+def _colliding_open_posting_ids(conn: Connection) -> list[int]:
+    """Open postings sharing a SUPPRESSING kind's key with at least one other open posting.
+
+    This is the set `resolve_duplicates` can act on and nothing else: it groups by identity
+    key and skips every group with fewer than two members, so a posting outside this set can
+    neither be suppressed nor be the survivor of anything. Restricting the sweep's inputs to
+    it is what keeps `body_text` — the largest column in the schema, 503 MB across the open
+    corpus on 2026-08-28 — out of a read that would otherwise materialise all of it for a
+    ~4% slice that can actually collide.
+
+    Driven by `SUPPRESSING_KINDS`, never by the literal `exact_quad`. Enabling a second
+    suppressing kind is a one-line catalog edit, and a hardcoded kind here would silently
+    narrow the sweep's input below what `resolve_duplicates` iterates — suppressions would
+    quietly stop happening, in the direction that looks like a healthy corpus.
+    """
+    kinds = [spec.name for spec in SUPPRESSING_KINDS]
+    grouped = (
+        select(
+            posting_identities.c.kind.label("kind"),
+            posting_identities.c.identity_key.label("identity_key"),
+        )
+        .select_from(
+            posting_identities.join(postings, posting_identities.c.posting_id == postings.c.id)
+        )
+        .where(
+            postings.c.status == "open",
+            posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+            posting_identities.c.kind.in_(kinds),
+        )
+        .group_by(posting_identities.c.kind, posting_identities.c.identity_key)
+        .having(func.count() >= 2)
+        .subquery()
+    )
+    stmt = (
+        select(distinct(posting_identities.c.posting_id))
+        .select_from(
+            posting_identities.join(
+                postings, posting_identities.c.posting_id == postings.c.id
+            ).join(
+                grouped,
+                (posting_identities.c.kind == grouped.c.kind)
+                & (posting_identities.c.identity_key == grouped.c.identity_key),
+            )
+        )
+        .where(
+            postings.c.status == "open",
+            posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+            posting_identities.c.kind.in_(kinds),
+        )
+    )
+    return [int(row[0]) for row in conn.execute(stmt).all()]
+
+
+def sweep_duplicates(conn: Connection) -> DedupSweep:
+    """Group the open corpus by identity and resolve which postings are suppressed.
+
+    Gated on completeness, not on existence: a number computed over a partial backfill is not
+    a measurement, and `if identities:` cannot tell the two apart. A version bump empties the
+    current-version rows, closes this gate, and degrades every count here to None — which is
+    the honest report (design §6.1).
+
+    The sweep loads bodies only for the postings that share a suppressing key with another
+    open posting. That is not an approximation: `resolve_duplicates` drops every group of
+    fewer than two members, so the suppression set over the restricted rows is identical to
+    the one over the whole corpus. What changes is peak memory — 503 MB of `body_text` for a
+    1.33 GB peak RSS, measured on 2026-08-28, for a sweep whose CPU cost was 2.39 s of a
+    115-minute run. The cost was never time.
+    """
+    if not identities_complete(conn):
+        return DedupSweep(
+            complete=False,
+            entered=None,
+            suppressed=None,
+            suppressing_groups=None,
+            suppressing_redundant=None,
+            candidate_redundant=None,
+            suppressed_by_company={},
+        )
+    redundancy = _redundancy_by_kind(conn)
+    colliding = _colliding_open_posting_ids(conn)
+    rows = load_identity_inputs(conn, colliding)
+    by_company: dict[int, int] = {}
+    for suppression in resolve_duplicates(rows, load_identities(conn, colliding)):
+        company_id = {r.posting_id: r.company_id for r in rows}[suppression.posting_id]
+        by_company[company_id] = by_company.get(company_id, 0) + 1
+    return DedupSweep(
+        complete=True,
+        entered=count_open_postings(conn),
+        suppressed=sum(by_company.values()),
+        suppressing_groups=sum(redundancy.get(spec.name, (0, 0))[0] for spec in SUPPRESSING_KINDS),
+        suppressing_redundant=sum(
+            redundancy.get(spec.name, (0, 0))[1] for spec in SUPPRESSING_KINDS
+        ),
+        # A kind with no colliding group gets 0 — we counted and found none, which is a
+        # measurement. Kinds that cannot collide are absent instead; see `_BOUNDED_KINDS`.
+        candidate_redundant={
+            kind: redundancy.get(kind, (0, 0))[1] for kind in _BOUNDED_KINDS
+        },
+        suppressed_by_company=by_company,
+    )
+
+
 @dataclass(frozen=True)
 class SourceOutcome:
     """One watched board's outcomes this run — PROGRAM.md §3.P0 item 3.
@@ -528,8 +714,15 @@ def count_by_source(
     engine_version: str,
     run_id: int,
     posting_ids: list[int],
+    dedup: DedupSweep,
 ) -> tuple[SourceOutcome, ...]:
-    """Per-board outcomes, as six independent sweeps merged on company id.
+    """Per-board outcomes, as five independent sweeps merged on company id, plus the
+    corpus-wide duplicate sweep passed in.
+
+    `dedup` is a PARAMETER rather than a sixth sweep run here, because the funnel's `dedup`
+    stage reports the same pass. Running it twice would double a read over the whole open
+    corpus to answer one question in two places, and — worse — let the stage and the `unique`
+    column disagree about a corpus that changed between them.
 
     Separate sweeps rather than one joined query because `artifacts` and `applications` are both
     many-per-posting in principle: folding them into a single GROUP BY would fan out and
@@ -613,21 +806,21 @@ def count_by_source(
             ).all()
         }
 
-    # Sixth sweep: survivor attribution (design §6.1). Gated on completeness, not on
-    # existence: a number computed over a partial backfill is not a measurement, and
-    # `if identities:` cannot tell the two apart. A version bump empties the current-version
-    # rows, closes this gate, and degrades `unique` to None — which is the honest report.
-    unique_by_company: dict[int, int] = {}
-    complete = identities_complete(conn)
-    if complete:
-        identity_rows = load_identity_inputs(conn)
-        # No id list: at corpus scale it would exceed SQLite's bound-parameter cap and take
-        # the funnel artifact down with it. See load_identities.
-        identities = load_identities(conn)
-        suppressed = {s.posting_id for s in resolve_duplicates(identity_rows, identities)}
-        for row in identity_rows:
-            if row.posting_id not in suppressed:
-                unique_by_company[row.company_id] = unique_by_company.get(row.company_id, 0) + 1
+    # Survivor attribution (design §6.1), from the sweep the caller already ran. Derived by
+    # SUBTRACTING suppressions from `open_by_company` rather than by re-counting survivors:
+    # the two are the same population — every suppressed posting is an open posting the sweep
+    # grouped — so this is arithmetic on one measurement, not a second one. It is marked
+    # `unique` in the artifact and never presented as a cross-check against `open_postings`,
+    # which is exactly the unfailable-assertion defect D-028 exists to forbid.
+    complete = dedup.complete
+    unique_by_company: dict[int, int] = (
+        {
+            company_id: open_count - dedup.suppressed_by_company.get(company_id, 0)
+            for company_id, open_count in open_by_company.items()
+        }
+        if complete
+        else {}
+    )
 
     # A board with no open postings can still own a lead, if its posting closed mid-run. Keyed
     # off the union rather than off open_postings alone so a lead can never vanish from the
@@ -638,7 +831,9 @@ def count_by_source(
         | set(leads_by_company)
         | set(applied_by_company)
     )
-    # A board whose every posting was suppressed still appears, with unique=0.
+    # A board whose every posting was suppressed still appears, with unique=0. Now a subset of
+    # `open_by_company` by construction, since `unique` is derived from it — kept because the
+    # union is what makes that guarantee independent of how `unique` is built.
     company_ids |= set(unique_by_company)
     if not company_ids:
         return ()
