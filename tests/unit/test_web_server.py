@@ -39,10 +39,12 @@ import pytest
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
+from boardwatch.delivery import server as server_mod
 from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
     TOKEN_FILENAME,
+    WRITE_BUSY_TIMEOUT_MS,
     BundleMissingError,
     NonLoopbackBindError,
     ReviewServer,
@@ -790,17 +792,37 @@ def test_coverage_is_a_live_fraction_and_thin_jd_is_derived_from_it(
 
 
 def test_a_locked_store_answers_503_without_stalling(
-    live: Live, engine: Engine, tmp_path: Path
+    live: Live, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A bounded retry and then 503 — not a five-second stall ending in a traceback.
 
     The lock is a real `BEGIN EXCLUSIVE` on a second connection, so the write genuinely gets
-    SQLITE_BUSY rather than a simulated one. The elapsed-time assertion is the discriminator
-    against an implementation that simply inherited `get_engine`'s 5000 ms busy timeout: that
-    version returns the same 503 eventually, and only the clock can tell the two apart.
+    SQLITE_BUSY rather than a simulated one.
+
+    The discriminator is the BUDGET THE WRITE PATH ASKED FOR, asserted directly, not inferred from
+    a stopwatch. The wrong implementation this guards against is one that inherited `get_engine`'s
+    5000 ms default; spying on `get_engine` names that difference exactly (300 ms x 3 attempts
+    against 5000 ms) instead of hoping a wall-clock bound lands between them.
+
+    It did not. The real budget is `WRITE_ATTEMPTS * WRITE_BUSY_TIMEOUT_MS` = 900 ms, but three
+    engine construct/dispose cycles dominate it, so a loaded macOS runner measured 3.01-3.15 s
+    against a 3.0 s bound and `main` went red on all three macOS jobs at once. The bound was never
+    load-sensitive in a useful way: it sat on top of the true elapsed while the implementation it
+    rejects is ~15 s away. The clock assertion therefore STAYS, as a generous backstop against a
+    genuine stall, and moves to 8 s — still less than the ~15 s the 5000 ms version would take, so
+    nothing is given up.
     """
     with engine.begin() as conn:
         posting_id, _job = _deliver(conn, "one")
+
+    asked: list[int | None] = []
+    real_get_engine = server_mod.get_engine
+
+    def spy_get_engine(data_dir: Path, busy_timeout_ms: int | None = None, **kw: object) -> Any:
+        asked.append(busy_timeout_ms)
+        return real_get_engine(data_dir, busy_timeout_ms=busy_timeout_ms, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(server_mod, "get_engine", spy_get_engine)
 
     locker = sqlite3.connect(str(tmp_path / "data" / DB_FILENAME), timeout=0.05)
     locker.isolation_level = None
@@ -811,7 +833,16 @@ def test_a_locked_store_answers_503_without_stalling(
         elapsed = time.monotonic() - started
         assert refused.status == 503
         assert b"Traceback" not in refused.body
-        assert elapsed < 3.0, f"a contended write took {elapsed:.2f}s"
+        # The real discriminator: the write path asked for the BOUNDED budget on every attempt,
+        # never `get_engine`'s 5000 ms default.
+        # The count is a LITERAL 3, not `WRITE_ATTEMPTS`. Comparing against the constant put it on
+        # both sides of the assertion, so collapsing the retry budget to 1 moved the expectation
+        # with it and the test passed against the mutant. The budget stays a constant — tuning it
+        # is legitimate — but the number of attempts is the contract this test pins.
+        assert asked == [WRITE_BUSY_TIMEOUT_MS] * 3, asked
+        # A generous backstop against a genuine stall. 8 s is far below the ~15 s the 5000 ms
+        # version would take, so widening it from 3 s gives up no discriminating power.
+        assert elapsed < 8.0, f"a contended write took {elapsed:.2f}s"
     finally:
         locker.execute("ROLLBACK")
         locker.close()
