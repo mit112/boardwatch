@@ -49,6 +49,7 @@ from boardwatch.delivery.queue import (
     JD_FILE,
     LINK_FILE,
     LOCK_FILE,
+    REVIEW_DIR,
     SKIPPED_DIR,
     URL_FILE,
     WEBLOC_FILE,
@@ -148,6 +149,7 @@ def _deliver(
     pdf_uri: str | None | bool = True,
     delivered_at: datetime = NOW,
     watched: bool = True,
+    locations: tuple[str, ...] = ("Boston, MA",),
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact, disk folder.
 
@@ -186,7 +188,7 @@ def _deliver(
                 title=title,
                 normalized_title=title.lower(),
                 url=url,
-                locations_json=["Boston, MA"],
+                locations_json=list(locations),
                 remote_policy="hybrid",
                 posted_at=NOW - timedelta(days=4),
                 first_seen_at=NOW - timedelta(days=4),
@@ -242,7 +244,7 @@ def _folders(base: Path) -> list[str]:
         for path in base.iterdir()
         if path.is_dir()
         and not path.name.startswith(".")
-        and path.name not in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR)
+        and path.name not in DRAIN_DIRS
     )
 
 
@@ -903,7 +905,7 @@ def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
     pins the named constants to it so adding a fourth drain cannot repeat the trick.
     """
     assert set(queue._LOCATIONS) - {""} == set(DRAIN_DIRS)
-    assert set(DRAIN_DIRS) == {APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR}
+    assert set(DRAIN_DIRS) == {APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR}
 
 
 def test_no_drain_directory_is_ever_reported_as_unclassified(
@@ -929,7 +931,7 @@ def test_no_drain_directory_is_ever_reported_as_unclassified(
     with engine.connect() as conn:
         again = reconcile_queue(conn, root=root)
         synced = sync_queue(conn, root=root, owner_name=OWNER)
-    for name in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR):
+    for name in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR):
         assert name not in again.unclassified, f"{name} was reported as a lead folder"
     assert again.unclassified == ()
     assert synced.failed == 0
@@ -947,16 +949,23 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     )
     both = {7: "2026-08-26"}
     verdict = {7: "ineligible"}
+    review = {7}
     assert queue._wanted_location(
-        entry, applied=both, skipped={}, ineligible=verdict
+        entry, applied=both, skipped={}, ineligible=verdict, review=review
     ) == APPLIED_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped=both, ineligible=verdict
+        entry, applied={}, skipped=both, ineligible=verdict, review=review
     ) == SKIPPED_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, ineligible=verdict
+        entry, applied={}, skipped={}, ineligible=verdict, review=review
     ) == INELIGIBLE_DIR
-    assert queue._wanted_location(entry, applied={}, skipped={}, ineligible={}) == ""
+    # review ranks below ineligible (a lead that is both is ineligible) and above the apply queue.
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, ineligible={}, review=review
+    ) == REVIEW_DIR
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, ineligible={}, review=set()
+    ) == ""
 
 
 def test_a_job_that_is_both_applied_and_skipped_drains_to_applied(
@@ -1386,9 +1395,10 @@ def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     # only once a folder lands in it is invisible to every test whose root never produces one,
     # which is what let `_child_dirs` ship without knowing `_ineligible` existed.
     assert (root / INELIGIBLE_DIR).is_dir()
+    assert (root / REVIEW_DIR).is_dir()
     assert _folders(root) == []
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
-        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR]
+        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks
     # it, and `profile_bundle/locking.py` is explicit that its presence is not a signal.
@@ -1401,8 +1411,10 @@ def test_failed_is_derived_from_failures_so_the_two_cannot_disagree() -> None:
     # EVERY drain is set, and each contributes a distinct value, so a `moved` that forgets one
     # cannot land on the right total by accident. Omitting `to_ineligible` here is exactly how the
     # first version of this change shipped a `moved` that printed 0 while 294 folders moved.
-    recon = queue.ReconcileReport(to_applied=1, to_skipped=2, to_ineligible=4, to_queue=8)
-    assert recon.moved == 15
+    recon = queue.ReconcileReport(
+        to_applied=1, to_skipped=2, to_ineligible=4, to_review=8, to_queue=16
+    )
+    assert recon.moved == 31
     assert recon.failed == 0
 
 
@@ -1500,3 +1512,99 @@ def test_a_failure_report_names_the_error_without_pasting_a_path(
     assert detail == "OSError: No space left on device"
     assert str(root) not in detail
     assert DETAILS_FILE not in detail
+
+
+# --------------------------------------------------------- the apply / review split (verified-uncertain)
+
+
+def test_a_us_software_lead_lands_in_the_apply_queue(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The verified-uncertain lead — US location, software title — is blindly-appliable."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one", title="Software Engineer", locations=("Boston, MA",))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert report.created == 1
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+    assert _folders(root / REVIEW_DIR) == []
+
+
+def test_a_foreign_location_lead_is_born_in_the_review_lane(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A lead whose location is not positively US is held for review — the Kaunas/Zhubei class that
+    fails open at the hard US gate. It is CREATED directly in `_review`, not excluded."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one", title="Software Engineer", locations=("Kaunas, Lithuania",))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert report.created == 1
+    assert _folders(root) == []
+    assert _folders(root / REVIEW_DIR) == ["Acme_Corp_Software_Engineer"]
+
+
+def test_a_non_software_lead_is_born_in_the_review_lane(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A lead whose title carries no software signal is held for review — the Front-Office-Agent /
+    Field-Auto-Appraiser class that fails open at the role gate as `uncertain`."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one", title="Front Office Agent")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == []
+    assert len(_folders(root / REVIEW_DIR)) == 1
+
+
+def test_reconcile_moves_a_lead_into_review_when_it_stops_being_software(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A lead already in the apply queue is drawn into review when its class changes, counted in
+    `to_review`, and NOT rebuilt at the top level by the sync that follows."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 1
+
+    with engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == posting_id)
+            .values(title="Front Office Agent", normalized_title="front office agent")
+        )
+    with engine.connect() as conn:
+        recon = reconcile_queue(conn, root=root)
+    assert recon.to_review == 1
+    assert _folders(root) == []
+    assert len(_folders(root / REVIEW_DIR)) == 1
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == [], "sync rebuilt a top-level folder for a review lead"
+    assert len(_folders(root / REVIEW_DIR)) == 1
+    assert report.created == 0
+
+
+def test_a_review_lead_returns_to_the_apply_queue_when_it_becomes_software(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The split self-heals in both directions: a review lead re-promotes once it is US + software."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one", title="Front Office Agent")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root / REVIEW_DIR)) == 1
+
+    with engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == posting_id)
+            .values(title="Software Engineer", normalized_title="software engineer")
+        )
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root)
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 1
+    assert _folders(root / REVIEW_DIR) == []

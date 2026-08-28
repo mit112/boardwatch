@@ -67,12 +67,14 @@ from sqlalchemy import Connection, select
 
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
+from boardwatch.delivery.review_gate import REVIEW_DIR, lane
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     QueueRow,
     delivered_unapplied,
     ineligible_job_ids,
     queue_detail,
+    review_job_ids,
 )
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
@@ -193,6 +195,7 @@ class ReconcileReport:
     to_applied: int = 0
     to_skipped: int = 0
     to_ineligible: int = 0
+    to_review: int = 0
     to_queue: int = 0
     unclassified: tuple[str, ...] = ()
     failures: tuple[FolderFailure, ...] = ()
@@ -200,12 +203,17 @@ class ReconcileReport:
 
     @property
     def moved(self) -> int:
-        # EVERY drain, including `_ineligible`. Both callers report this and nothing else
-        # (`runner.py`'s run line and the server's reconcile endpoint), and `sync_queue` cannot
-        # compensate because it excludes exactly the same rows — so omitting a drain here prints
-        # "0 moved" while hundreds of folders move, which is the same unreported-number defect
-        # this whole change exists to fix.
-        return self.to_applied + self.to_skipped + self.to_ineligible + self.to_queue
+        # EVERY drain, including `_ineligible` and `_review`. Both callers report this and nothing
+        # else (`runner.py`'s run line and the server's reconcile endpoint), and `sync_queue`
+        # cannot compensate for a reconcile-only move — so omitting a drain here prints "0 moved"
+        # while folders move, which is the same unreported-number defect this whole change fixes.
+        return (
+            self.to_applied
+            + self.to_skipped
+            + self.to_ineligible
+            + self.to_review
+            + self.to_queue
+        )
 
     @property
     def failed(self) -> int:
@@ -345,6 +353,11 @@ def _ensure_root(root: Path) -> None:
 # ------------------------------------------------------------------------------------------ sync
 
 
+def _dest(root: Path, lane_dir: str, folder: str) -> Path:
+    """Where a lead's folder belongs: the apply queue (`lane_dir == ""`) or a lane subdir."""
+    return (root / lane_dir / folder) if lane_dir else root / folder
+
+
 def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
     """Two passes, and the order is load-bearing.
 
@@ -354,17 +367,24 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     landed in would depend on the query's row order.
     """
     _clear_staging(root)
-    # An ineligible lead is not work, so it gets no top-level folder. It is EXCLUDED here rather
-    # than deleted: `reconcile_queue` has already moved any existing folder into
-    # `_ineligible`, and leaving the row out of `rows` is what stops the move-loop below pulling
-    # it straight back out. The reverse direction still works — if the verdict later clears, the
-    # row reappears here and the folder is drawn back to the top level, so the drain self-heals
-    # in both directions exactly as `_applied` and `_skipped` do.
+    # An ineligible lead is not work, so it gets no folder at all. It is EXCLUDED here rather than
+    # deleted: `reconcile_queue` has already moved any existing folder into `_ineligible`, and
+    # leaving the row out of `rows` is what stops the move-loop below pulling it straight back out.
+    # The reverse direction still works — if the verdict later clears, the row reappears here and
+    # the folder is drawn back, so the drain self-heals exactly as `_applied` and `_skipped` do.
+    #
+    # A REVIEW lead, by contrast, IS work to look at, so it STAYS in `rows`: `lane_of` routes it to
+    # the `_review` subdir rather than excluding it, and `_index` scans `_review`, so a lead is
+    # created wherever it belongs and moves between the apply queue and review as its class changes.
     rows = [
         row
         for row in delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
         if row.verdict != "ineligible"
     ]
+    lane_of = {
+        row.posting_id: lane(verdict=row.verdict, locations=row.locations, title=row.title)
+        for row in rows
+    }
     artifact_ids = _tailored_artifact_ids(conn)
     entries, _ = _index(root)
     planned, failures = _plan(rows, root=root, owner_name=owner_name)
@@ -374,10 +394,13 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     for row in rows:
         names = planned.get(row.posting_id)
         entry = entries.get(row.posting_id)
-        if names is None or entry is None or entry.path == root / names.folder:
+        if names is None or entry is None:
+            continue
+        target = _dest(root, lane_of[row.posting_id], names.folder)
+        if entry.path == target:
             continue
         try:
-            _relocate(entry.path, root / names.folder)
+            _relocate(entry.path, target)
             moved += 1
         except Exception as exc:  # one lead must never cost the rest
             failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
@@ -395,7 +418,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                 # `entry.path` is stale after the relocation pass; only its existence and its
                 # recorded hash are read here, and neither moved.
                 entry = entries.get(row.posting_id)
-                target = root / names.folder
+                target = _dest(root, lane_of[row.posting_id], names.folder)
                 if entry is None and target.exists():
                     raise QueueConflictError(
                         f"{names.folder} already exists and does not identify posting "
@@ -686,12 +709,13 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     applied = applied_job_ids(conn)
     skipped = skipped_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
+    review = review_job_ids(conn)
     entries, unclassified = _index(root)
-    counts = {APPLIED_DIR: 0, SKIPPED_DIR: 0, INELIGIBLE_DIR: 0, "": 0}
+    counts = {APPLIED_DIR: 0, SKIPPED_DIR: 0, INELIGIBLE_DIR: 0, REVIEW_DIR: 0, "": 0}
     failures: list[FolderFailure] = []
     for entry in sorted(entries.values(), key=lambda item: item.posting_id):
         wanted = _wanted_location(
-            entry, applied=applied, skipped=skipped, ineligible=ineligible
+            entry, applied=applied, skipped=skipped, ineligible=ineligible, review=review
         )
         if wanted == entry.location:
             continue
@@ -715,6 +739,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
         to_applied=counts[APPLIED_DIR],
         to_skipped=counts[SKIPPED_DIR],
         to_ineligible=counts[INELIGIBLE_DIR],
+        to_review=counts[REVIEW_DIR],
         to_queue=counts[""],
         unclassified=unclassified,
         failures=tuple(failures),
@@ -727,13 +752,16 @@ def _wanted_location(
     applied: dict[int, str],
     skipped: dict[int, str],
     ineligible: dict[int, str],
+    review: set[int],
 ) -> str:
     """Precedence, and it is not arbitrary.
 
     Applied and skipped are both statements the OWNER made about what they did; `ineligible` is
     a verdict the gate derived and can revise on the next run. So an owner statement wins: a
     lead they already applied to must not be swept into an eligibility drain months later
-    because a rule tightened, and a lead they chose to skip keeps that record.
+    because a rule tightened, and a lead they chose to skip keeps that record. `review` ranks
+    below `ineligible` — a lead that is both is ineligible, not merely unverified — and above the
+    apply queue, so an unverified `uncertain` lead is held for a look rather than blind-applied.
     """
     if entry.job_id in applied:
         return APPLIED_DIR
@@ -741,6 +769,8 @@ def _wanted_location(
         return SKIPPED_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
+    if entry.job_id in review:
+        return REVIEW_DIR
     return ""
 
 
@@ -813,7 +843,7 @@ def _child_dirs(base: Path) -> list[Path]:
         for path in base.iterdir()
         if path.is_dir()
         and not path.name.startswith(".")
-        and path.name not in (APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR)
+        and path.name not in DRAIN_DIRS
     )
 
 
@@ -861,6 +891,7 @@ __all__ = [
     "DEFAULT_QUEUE_ROOT",
     "DETAILS_FILE",
     "INELIGIBLE_DIR",
+    "REVIEW_DIR",
     "DETAILS_SCHEMA",
     "JD_FILE",
     "LINK_FILE",
