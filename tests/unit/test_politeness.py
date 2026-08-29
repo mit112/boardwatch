@@ -389,3 +389,53 @@ def test_a_response_slower_than_the_delay_is_its_own_pacing(tmp_path: Path) -> N
     """
     waits = _pacing_waits(tmp_path, from_start=True, work=0.75)
     assert waits == [], waits
+
+
+def test_caller_headers_ride_along_on_a_get(tmp_path: Path) -> None:
+    """The seam the hiring.cafe search route needs, asserted where it is implemented.
+
+    Written as a header the client's own defaults would otherwise supply (`Accept`), because a
+    header httpx never sets would pass even if the merge dropped the caller's value onto an
+    empty dict AFTER the client had already applied its own.
+    """
+    with respx.mock:
+        route = respx.get("https://h.example/x").mock(return_value=httpx.Response(200))
+        Fetcher(_settings(tmp_path)).get("https://h.example/x", headers={"Accept": "text/html"})
+    sent = route.calls[0].request.headers
+    assert sent["Accept"] == "text/html"
+    # The client's own identity still rides: caller headers ADD, they do not replace the set.
+    assert sent["User-Agent"].startswith("boardwatch/")
+
+
+def test_caller_headers_cannot_suppress_a_conditional_get(tmp_path: Path) -> None:
+    """Validators are merged OVER caller headers, and this is the assertion that pins it.
+
+    A caller that could clear `If-None-Match` would silently turn every conditional GET on that
+    path into an unconditional one -- the board would refetch a full payload forever, report
+    `complete` rather than `unchanged`, and no counter would name the cause.
+    """
+    with respx.mock:
+        route = respx.get("https://i.example/x").mock(return_value=httpx.Response(304))
+        Fetcher(_settings(tmp_path)).get(
+            "https://i.example/x",
+            validators=ResponseValidators(etag='W/"v9"', last_modified=None),
+            headers={"If-None-Match": 'W/"caller-wins"', "Accept": "text/html"},
+        )
+    sent = route.calls[0].request.headers
+    assert sent["If-None-Match"] == 'W/"v9"'
+    assert sent["Accept"] == "text/html"
+
+
+def test_post_json_sends_no_caller_headers_because_it_takes_none(tmp_path: Path) -> None:
+    """`post_json` is Workday's path and deliberately keeps the identifying default set.
+
+    Pinned so that widening the GET seam does not quietly widen this one: the POST body path
+    serves the six ATS providers, which get the honest `boardwatch/` UA under the D22 politeness
+    contract, and nothing about the aggregator's edge behaviour is a reason to change that.
+    """
+    with respx.mock:
+        route = respx.post("https://j.example/x").mock(return_value=httpx.Response(200, json={}))
+        Fetcher(_settings(tmp_path)).post_json("https://j.example/x", {"a": 1})
+    sent = route.calls[0].request.headers
+    assert sent["User-Agent"].startswith("boardwatch/")
+    assert "Sec-Fetch-Mode" not in sent

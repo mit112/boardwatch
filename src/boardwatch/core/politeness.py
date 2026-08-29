@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.metadata import version as package_version
 from typing import Any
@@ -96,8 +97,25 @@ class Fetcher:
     def retry_attempts(self) -> int:
         return self._retry_attempts
 
-    def get(self, url: str, validators: ResponseValidators | None = None) -> FetchResult:
-        return self._dispatch("GET", url, validators, None)
+    def get(
+        self,
+        url: str,
+        validators: ResponseValidators | None = None,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> FetchResult:
+        """One GET, optionally carrying caller-supplied request headers.
+
+        `headers` exists for ONE caller and is documented here so a second one has to justify
+        itself: the hiring.cafe lane's search route needs the header set a browser sends for a
+        top-level navigation, and it must not leak onto that lane's JSON body endpoint or onto
+        the other lane sharing this client (D-369). Client-level headers could not express that.
+
+        They are merged UNDER the conditional-GET validators, so a caller cannot suppress an
+        `If-None-Match` by passing one of its own — the validator half is this client's
+        contract with the coordinator, not the caller's to override.
+        """
+        return self._dispatch("GET", url, validators, None, headers)
 
     def post_json(
         self, url: str, body: dict[str, Any], validators: ResponseValidators | None = None
@@ -106,7 +124,7 @@ class Fetcher:
         classification as get(). Workday's CXS search endpoint has no GET form (a GET
         returns 400), and a 2000-posting board is 100+ requests to one host, so routing
         POST through the existing per-host serialization is the point, not a formality."""
-        return self._dispatch("POST", url, validators, body)
+        return self._dispatch("POST", url, validators, body, None)
 
     def _dispatch(
         self,
@@ -114,6 +132,7 @@ class Fetcher:
         url: str,
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
+        headers: Mapping[str, str] | None,
     ) -> FetchResult:
         host = host_key(url)
         with self._host_lock(host):  # same-host requests serialize for their full duration
@@ -127,7 +146,7 @@ class Fetcher:
             if self._pace_from_start:
                 self._last_request_at[host] = time.monotonic()
             try:
-                return self._send_with_retries(method, url, validators, json_body)
+                return self._send_with_retries(method, url, validators, json_body, headers)
             finally:
                 if not self._pace_from_start:
                     self._last_request_at[host] = time.monotonic()
@@ -149,6 +168,7 @@ class Fetcher:
         url: str,
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
+        headers: Mapping[str, str] | None,
     ) -> FetchResult:
         def _wait(retry_state: RetryCallState) -> float:
             base = wait_exponential_jitter(initial=0.5, max=8.0)(retry_state)
@@ -167,7 +187,7 @@ class Fetcher:
                 reraise=True,
             ):
                 with attempt:
-                    return self._send_once(method, url, validators, json_body)
+                    return self._send_once(method, url, validators, json_body, headers)
         except _RetryableStatus as exc:
             raise FetchFailure(
                 f"HTTP {exc.status_code} after {self._retry_attempts} attempts for {url}",
@@ -191,8 +211,9 @@ class Fetcher:
         url: str,
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
+        extra_headers: Mapping[str, str] | None,
     ) -> FetchResult:
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = dict(extra_headers or {})
         if validators is not None:
             if validators.etag:
                 headers["If-None-Match"] = validators.etag

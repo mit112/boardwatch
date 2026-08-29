@@ -6,7 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The hiring.cafe search now asks the way the user agent it sends says it will.** The lane has
+  carried a Chrome user agent since it shipped, but none of the headers that user agent implies —
+  and httpx's default `Accept: */*` contradicts it outright, because no browser asks for `*/*` when
+  navigating to an HTML page. The reference client that reaches this host daily from the same
+  machine sets exactly one header by hand, `Accept: text/html`, and is otherwise *sparser* than we
+  are: no `Accept-Language`, no `Sec-Fetch-*`, `Connection: close`. It is not refused. That rules
+  out "too few browser headers" and leaves the contradiction as the difference worth removing. The
+  search route now sends a browser's navigation header set; `/api/job-description` — an XHR, and the
+  half of this lane that still works — deliberately keeps the defaults, so the change touches one
+  request kind on one lane rather than every request on the shared lane client. Two omissions are
+  deliberate and pinned by a test: no `sec-ch-ua*` client hints, which a server negotiates with
+  `Accept-CH` and which would assert something the user agent does not; and no hand-set
+  `Accept-Encoding`, because this client cannot decode the `br`/`zstd` a real Chrome advertises and
+  advertising an encoding it cannot read would trade a header mismatch for a corrupted body.
+
 ### Added
+
+- **`Fetcher.get` accepts per-request headers.** One caller needs them — the lane above — and they
+  are merged *under* the conditional-GET validators, so a caller cannot clear an `If-None-Match` and
+  silently turn every conditional GET on a board into an unconditional refetch.
 
 - **The React viewer has a test suite, and the gate runs it.** Until now the frontend's only checks
   were `tsc --noEmit` and eslint, so `make check` could not see a render regression at all — the

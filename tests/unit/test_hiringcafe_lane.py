@@ -719,3 +719,96 @@ def test_no_facet_however_shaped_can_build_a_url_robots_disallows(facet):
     # No query string at all, so no disallowed query form can exist in one.
     assert split.query == ""
     assert not any(form in url for form in ROBOTS_DISALLOWED_FORMS)
+
+
+# --- how the search request PRESENTS itself (D-369) ----------------------------------------
+#
+# The lane has carried a Chrome UA since it shipped; what it did not carry was any of the
+# headers that UA implies, and httpx's defaults contradict it -- `Accept: */*` is not something
+# a browser sends when navigating to an HTML page. These tests pin the search route's header
+# set and, just as load-bearing, pin that it does NOT reach the JSON body endpoint.
+
+
+@respx.mock
+def test_a_search_get_presents_itself_as_the_navigation_its_user_agent_claims(tmp_path):
+    """The facet page is fetched with a browser's navigation headers, not httpx's defaults.
+
+    `Accept` is asserted on its VALUE rather than on presence: httpx always sends an `Accept`,
+    so a presence check passes against the unpatched lane and proves nothing.
+    """
+    hits = search_hits()[:2]
+    swe = _mock_facet("software-engineer", hits)
+    _mock_bodies(hits)
+
+    HiringCafeLane(search_facets=("software-engineer",)).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    sent = swe.calls[0].request.headers
+    assert sent["Accept"].startswith("text/html")
+    assert sent["Accept"] != "*/*"
+    assert sent["Accept-Language"] == "en-US,en;q=0.9"
+    assert sent["Sec-Fetch-Mode"] == "navigate"
+    assert sent["Sec-Fetch-Dest"] == "document"
+    assert sent["Upgrade-Insecure-Requests"] == "1"
+    # The UA is the CLIENT's and is pinned in `tests/pipeline/test_lane_stage.py`, which is also
+    # where the coupling is asserted: this set is coherent only against a browser UA.
+
+
+@respx.mock
+def test_the_unfaceted_fallback_search_presents_itself_the_same_way(tmp_path):
+    """A profile with no target titles requests a different URL, not a different kind of request.
+
+    Pinned separately because `_search` has two arms and the faceted one is the only one the
+    test above exercises -- a patch applied to one arm alone passes it.
+    """
+    hits = search_hits()[:2]
+    root = _mock_search(hits)
+    _mock_bodies(hits)
+
+    HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert root.calls[0].request.headers["Accept"].startswith("text/html")
+
+
+@respx.mock
+def test_the_navigation_headers_never_reach_the_json_body_endpoint(tmp_path):
+    """`/api/job-description` is an XHR, and it is the half of this lane that still WORKS.
+
+    A browser fetching JSON sends `Accept: */*` and `Sec-Fetch-Dest: empty`, so putting the
+    navigation set on the shared client would have made every body GET incoherent in the
+    opposite direction -- and would have changed the other lane on that client at the same
+    time, which is the second variable D-364's one-at-a-time rule exists to prevent.
+    """
+    hits = search_hits()[:2]
+    _mock_facet("software-engineer", hits)
+    bodies = _mock_bodies(hits)
+
+    HiringCafeLane(search_facets=("software-engineer",)).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert bodies.call_count == 2
+    for call in bodies.calls:
+        assert call.request.headers["Accept"] == "*/*"
+        assert "Sec-Fetch-Mode" not in call.request.headers
+        assert "Upgrade-Insecure-Requests" not in call.request.headers
+
+
+def test_the_search_header_set_asserts_nothing_the_user_agent_does_not_already(tmp_path):
+    """The boundary, written down: restate the UA's claim, never extend it.
+
+    `sec-ch-ua*` client hints are a fresh assertion -- a server asks for them with `Accept-CH`
+    and we have no recorded evidence this one does -- and `Accept-Encoding` is httpx's to set,
+    because this client cannot decode the `br`/`zstd` a real Chrome advertises and advertising
+    an encoding we cannot read trades a header mismatch for a corrupted body. Both omissions
+    are deliberate, so both are pinned: without this, "make it look more like a browser" has no
+    stopping point and the next reader adds them.
+    """
+    keys = {key.lower() for key in hiringcafe._SEARCH_HEADERS}
+
+    assert not any(key.startswith("sec-ch-ua") for key in keys)
+    assert "accept-encoding" not in keys
+    assert "cookie" not in keys
+    assert "referer" not in keys
+    assert "user-agent" not in keys  # the client owns identity; the lane owns request shape
