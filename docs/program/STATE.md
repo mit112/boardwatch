@@ -144,16 +144,12 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    refusing us**, so the condition that produced the deferral has not changed. Not re-litigated.
    **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
 
-5. **PHASE 1B IS COMPLETE AND SO IS ITS FOLLOW-UP — retire the whole item (D-354, D-359).** The
-   split shipped in #195, the redesign in **#223**, the per-row hold reason in **#224**, and the
-   `ROLE VETOED`/`OFF TARGET` duplication in **#230**. `role_vetoed` and `role_unconfirmed` stay
-   separate on purpose — only `not_swe` is a veto and the gate's `uncertain` is an abstain.
-   **#230 is NARROWER than D-354 specified, on purpose:** "suppress `off_target` on REVIEW rows"
-   would have deleted a real signal, because `classify` reaches `ineligible_verdict` and
-   `non_us_location` BEFORE the role branch, so either can hold a lead while `off_target` reports
-   something else (the fixture's Block row is held on an ineligible verdict while `off target` names
-   a seniority band). Only `role_vetoed` is the same derivation twice, so that member alone is
-   suppressed. **Do not re-broaden it to the lane.**
+5. **PHASE 1B IS COMPLETE AND SO IS ITS FOLLOW-UP — retire the whole item (D-354, D-359).** Split
+   #195, redesign #223, per-row hold reason #224, `ROLE VETOED`/`OFF TARGET` duplication #230.
+   `role_vetoed` and `role_unconfirmed` stay separate — only `not_swe` is a veto. **#230 is
+   deliberately NARROWER than D-354 specified: suppression is keyed on the `role_vetoed` MEMBER, not
+   the review lane, because `classify` reaches `ineligible_verdict` and `non_us_location` first and
+   either can carry a genuinely separate `off_target`. Do not re-broaden it to the lane** (D-359).
 
 6. **`main` IS GREEN — confirmed, and it took THREE fixes, not two (D-357, D-358).** Verified at
    this close: `de65448` (#227), `b1ff14b` (#228) and `b0ecfe3` (#229) are three consecutive green
@@ -246,5 +242,6 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
+| **The running `boardwatch web` viewer is STALE and must be restarted** | It serves the bundle from **disk** but the API from the Python it imported **at startup** (D-360), so it was serving a 19:30 bundle off an 06:25 process and returning all 222 review rows with **no `review_reason` key**. Before #232 that blanked the page — no error boundary, so the throw unmounted everything. #232 makes it degrade to the pre-#224 view instead, but **only a restart makes the viewer correct**, and it binds `--port 0` so the port changes | **Mit** (restart when convenient) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN behind Cloudflare** | Run 130: total outage, `403` + `Just a moment...` on `/jobs/` with boardwatch's own UA, while `/robots.txt` returns 200 and explicitly `Allow`s `/jobs/`. **Not a boardwatch defect and not a robots violation** — bot protection. Re-probe before assuming it is permanent; 2026-08-28 ran 4 runs against a cadence of 1, so our own volume is a plausible trigger. **Browser automation is out of scope and is not the remedy.** Half the lane coverage job-apps' edge comes from (D-356) | **Mit** (owner-side: ask for API access) |
