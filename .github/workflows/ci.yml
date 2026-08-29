@@ -333,6 +333,11 @@ jobs:
         working-directory: web
       - run: npx eslint .
         working-directory: web
+      # The React suite. `make check` runs it too (`web-test`), but nothing in CI runs `make
+      # check` on a pull request, so without this step the frontend's only gate would be the
+      # release workflow — i.e. after the merge that broke it.
+      - run: npm test
+        working-directory: web
       # Hashed BEFORE `make web` overwrites it — Vite builds with emptyOutDir. Asset file names
       # are content-hashed, so this one listing is the asset manifest AND the per-asset content
       # hashes: a changed asset, a renamed one and a dropped one are all visible. A raw byte

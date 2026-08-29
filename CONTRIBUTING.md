@@ -1,8 +1,9 @@
 # Contributing
 
 Dev setup: install [uv](https://docs.astral.sh/uv/), then `uv sync` and
-`uv run pre-commit install`. `make check` (generalization + index-check + ruff + mypy --strict + pytest) must
-be green before every PR; CI runs the same commands: pull requests run the test suite on ubuntu with
+`uv run pre-commit install`. `make check` (generalization + index-check + ruff + mypy --strict + the React
+suite + pytest) must be green before every PR — the React suite needs node, which `make check` installs
+into `web/node_modules` on first run; CI runs the same commands: pull requests run the test suite on ubuntu with
 Python 3.11-3.13, plus gitleaks and a dedicated generalization job; pushes to `main` additionally
 run that test matrix on macOS and Windows.
 

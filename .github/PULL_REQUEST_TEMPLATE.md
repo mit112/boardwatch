@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] `make check` passes locally (generalization + index-check + ruff + mypy --strict + pytest)
+- [ ] `make check` passes locally (generalization + index-check + ruff + mypy --strict + React suite + pytest)
 - [ ] Tests added/updated for the change
 - [ ] README/docs updated if behavior or config changed
 - [ ] One logical change per PR
