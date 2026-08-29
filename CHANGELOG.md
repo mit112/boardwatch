@@ -31,6 +31,15 @@ All notable changes to this project are documented here. The format follows
   cases stay separate on purpose: the gate's `uncertain` is an abstain, and reporting it as "not
   software" would assert a decision the gate declined to make.
 
+- **A held-back lead no longer carries the same reason twice.** Once every review row began naming
+  the reason it was held, a lead held because the role gate vetoed its title showed both "role
+  vetoed" and "off target" side by side — two chips derived from the same check, saying the same
+  thing. The second is now suppressed on exactly that case. It is kept everywhere else it still
+  means something: on a lead held for a location or an ineligible verdict, where it reports a
+  separate finding such as a seniority band, and on the apply queue, where a lead that is otherwise
+  ready to send but carries an off-target title has nothing else to warn the reader with. Opening a
+  lead still shows both, with each reason spelled out.
+
 - **The review app has a new visual language.** One type size appeared in 47 places, one corner
   radius in 42, and a border was drawn around every container, so a dense instrument read as a
   spreadsheet. Depth now comes from elevation rather than outlines, the corner radius is a language

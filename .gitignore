@@ -2,7 +2,15 @@
 __pycache__/
 *.pyc
 .coverage
+# pytest-xdist writes one data file PER WORKER as `.coverage.<host>.<pid>.<rand>`, which the
+# bare `.coverage` line above does not match. Without this a `git add -A` run while a gate is in
+# flight commits several MB of binaries — it has happened.
+.coverage.*
 coverage.xml
+
+# Playwright MCP scratch output — console logs, page snapshots and screenshots, written into the
+# repo root by the browser tooling. 6.3 MB across 67 files by 2026-08-28g, from several sessions.
+.playwright-mcp/
 dist/
 _alembic_dev.db
 .agent/*
