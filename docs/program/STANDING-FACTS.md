@@ -1249,3 +1249,26 @@ primary checkout on `main` before ending any session** — it matters more from 
 branch left checked out changes every subsequent run rather than one. Pointing the plist at a
 worktree pinned to `main` would close it mechanically, but that moves a scheduled job and a venv and
 must keep the same config/data dir, so it is **Mit's call and has not been taken**.
+
+## Moved out of STATE on 2026-08-28h — settled Phase 1b and deflake history, kept verbatim
+
+Both items were retired in STATE on 2026-08-28h to keep that file under its own ~250-line rule. The
+operative half of item 6 — the standing rule about what a timing test MEASURED versus what it CLAIMS
+— deliberately stayed in STATE; only the incident history moved here.
+
+### Phase 1b, complete including its follow-up (from STATE item 5, verbatim — D-354, D-359)
+
+5. **PHASE 1B IS COMPLETE AND SO IS ITS FOLLOW-UP — retire the whole item (D-354, D-359).** Split
+   #195, redesign #223, per-row hold reason #224, `ROLE VETOED`/`OFF TARGET` duplication #230.
+   `role_vetoed` and `role_unconfirmed` stay separate — only `not_swe` is a veto. **#230 is
+   deliberately NARROWER than D-354 specified: suppression is keyed on the `role_vetoed` MEMBER, not
+   the review lane, because `classify` reaches `ineligible_verdict` and `non_us_location` first and
+   either can carry a genuinely separate `off_target`. Do not re-broaden it to the lane** (D-359).
+
+### `main` is green, and it took three fixes not two (from STATE item 6, verbatim — D-357, D-358)
+
+6. **`main` IS GREEN — confirmed, and it took THREE fixes, not two (D-357, D-358).** Three
+   consecutive green `main` runs after the deflake. The flakes were #225 (lane cost boundary), #227
+   (`test_a_locked_store_answers_503_without_stalling`, which took all three macOS jobs at once —
+   macOS runs unsharded) and **#222's own new pacing test**. **No threshold was weakened**; each is
+   strictly tighter than what it replaced.

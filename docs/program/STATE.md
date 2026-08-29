@@ -84,16 +84,25 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 
 ## Next action
 
-> **BEFORE ANYTHING ELSE — two owner-gated risks that stop everything, both UNANSWERED (D-361).**
-> Disk: **99%, 3.8 GiB free** against a store growing **200-500 MB/day** = roughly **8-19 days**,
-> with Mit unattended from ~2026-08-31, and **`VACUUM` reclaims nothing**. Compounding it, **there
-> is no alerting path at all** (both notify tiers off *and* `notify` is a separate command the
-> scheduled job never invokes), so the failure mode is not "runs stop" but **"runs stop and nobody
-> is told"**. Four options priced in D-361; **a guard was written up and deliberately NOT shipped —
-> a new fatal path can halt every run, and silence is not approval. RE-ASK FIRST.** The only lever
-> an agent may pull freely is removing its own worktrees.
+> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Both
+> were re-measured before being re-asked and **both premises had moved.**
+> **Disk is not a near-term risk:** **83%, 35 GiB free**, not 99%/3.8 GiB — real, not purgeable
+> (`diskutil` 37.1 GB free; `tmutil listlocalsnapshots /` returns none). ~31 GiB was freed from
+> **outside** this project, so do not credit boardwatch or assume it repeats. **The store did not
+> grow** — 4,222,877,696 bytes is **3.93 GiB**, D-361's own figure, and 4.22 GB decimal; **quote the
+> byte count when a size is load-bearing.** Runway **~70 days** worst-observed, ~250-640 at steady
+> state, against the 8-19 that made it urgent. **Mit's call: no retention policy.** Guard stays
+> unshipped.
+> **Alerting is ARMED.** "No alerting path at all" was **wrong** — it generalised from the notify
+> tiers to the whole system. The heartbeat (**D-260**, #110) was always wired **inside** `runner.py`,
+> gated `summary.fatal is None`; it was off only because `BOARDWATCH_HEARTBEAT_URL` was unset. **Now
+> set in the launchd plist and verified** — `launchctl print` shows launchd holding it, and a ping
+> through `send_heartbeat()` returned `True`. The monitor alerts on a ping's **absence**, so a missed
+> tick, a dead run and a sleeping Mac are all externally visible. **Disarm = delete the key + reload.**
+> Tiers stay off: inert here, the job never invokes `notify`.
 
-1. **hiring.cafe is STILL DOWN — re-probed at this close and it has not lifted (D-356).** It is
+1. **hiring.cafe is STILL DOWN — re-probed 2026-08-28 ~22:49 CDT and it has NOT lifted (D-356).**
+   Same `403`, still `cf-mitigated: challenge` and `server: cloudflare`, no `__NEXT_DATA__`. It is
    the only thing losing real coverage. Re-probe with ONE polite
    `GET https://hiringcafe.com/jobs/software-engineer` carrying boardwatch's own UA: a 200 with
    `__NEXT_DATA__` means the challenge lifted and the lane self-heals on the next run; a 403 with
@@ -147,18 +156,12 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    refusing us**, so the condition that produced the deferral has not changed. Not re-litigated.
    **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
 
-5. **PHASE 1B IS COMPLETE AND SO IS ITS FOLLOW-UP — retire the whole item (D-354, D-359).** Split
-   #195, redesign #223, per-row hold reason #224, `ROLE VETOED`/`OFF TARGET` duplication #230.
-   `role_vetoed` and `role_unconfirmed` stay separate — only `not_swe` is a veto. **#230 is
-   deliberately NARROWER than D-354 specified: suppression is keyed on the `role_vetoed` MEMBER, not
-   the review lane, because `classify` reaches `ineligible_verdict` and `non_us_location` first and
-   either can carry a genuinely separate `off_target`. Do not re-broaden it to the lane** (D-359).
+5. **Phase 1b and its follow-up are COMPLETE — item RETIRED.** Detail moved verbatim to
+   `STANDING-FACTS.md` 2026-08-28h, including why #230 is keyed on the `role_vetoed` MEMBER and
+   must not be re-broadened to the review lane (D-354, D-359).
 
-6. **`main` IS GREEN — confirmed, and it took THREE fixes, not two (D-357, D-358).** Three
-   consecutive green `main` runs after the deflake. The flakes were #225 (lane cost boundary), #227
-   (`test_a_locked_store_answers_503_without_stalling`, which took all three macOS jobs at once —
-   macOS runs unsharded) and **#222's own new pacing test**. **No threshold was weakened**; each is
-   strictly tighter than what it replaced.
+6. **`main` IS GREEN** — three consecutive green runs; which three flakes, and why each fix was
+   strictly tighter, moved verbatim to `STANDING-FACTS.md` 2026-08-28h (D-357, D-358).
 
    **The standing rule, three instances behind it: when a timing test flakes, ask what it MEASURED
    versus what it CLAIMS** — all three measured a proxy whose noise straddled the bound, and none
@@ -238,11 +241,9 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **boardwatch cannot see ~90% of job-apps' eligible yield** | 41 of 530 records (7.7%) at a watched company — **a parallel session re-measured reach at ~10.1% on the 344-board fleet on 2026-08-28; NOT re-derived here, so treat 7.7% as the reproducible figure and 10.1% as owed a check**; 352 companies in the set, 24 watched. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
-| **No alerting path AT ALL — a failed unattended run is SILENT** | Nothing outside a run can detect a missed tick (the funnel heartbeat is written only from inside `runner.py`), **and a run that DOES fire and fails is equally silent**: both notify tiers are OFF (`desktop_enabled=False`, `webhook_enabled=False`, no `[notify]` section) and **`notify` is a SEPARATE command the launchd job never invokes** — the plist runs `boardwatch run --project` and nothing else. Compounds D-361: disk fills, runs fail, nobody is told | P3 / **Mit** |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **DISK is the binding constraint on unattended running — RAISED, UNANSWERED, nothing done** | Volume at **99%, 3.8 GiB free**; store **3.93 GB** growing **~200-500 MB/day** = **~8-19 days** of headroom, against unattended running from ~08-31. **`VACUUM` reclaims 0** (freelist empty) and closed postings hold only 0.20 GB, so neither is the answer. Four options priced in D-361. **A preflight guard was written up and deliberately NOT shipped: a new fatal path can halt EVERY run, and silence is not approval.** Freeing this session's worktrees returned 589 MB (99% -> 98%) | **Mit** — RE-ASK |
-| **The running `boardwatch web` viewer is STALE and must be restarted** | It serves the bundle from **disk** but the API from the Python it imported **at startup** (D-360), so it was serving a 19:30 bundle off an 06:25 process and returning all 222 review rows with **no `review_reason` key**. Before #232 that blanked the page — no error boundary, so the throw unmounted everything. #232 makes it degrade to the pre-#224 view instead, but **only a restart makes the viewer correct**, and it binds `--port 0` so the port changes | **Mit** (restart when convenient) |
+| **`boardwatch web` is NOT RUNNING — START it, don't restart it** | Checked 2026-08-28: no `boardwatch web` process exists; port 8787 is an unrelated `python3.1` (Bridge). D-360's note said *restart* it so the viewer sends `review_reason`; since nothing is up, the accurate instruction is **start** it. The underlying skew is still structural (D-360): it serves the bundle from **disk** but the API from the Python it imported **at startup**, so any merge or branch switch under a running viewer separates the two. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page. It binds `--port 0`, so **the port is whatever it picks** | **Mit** (start when convenient) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN behind Cloudflare** | Run 130: total outage, `403` + `Just a moment...` on `/jobs/` with boardwatch's own UA, while `/robots.txt` returns 200 and explicitly `Allow`s `/jobs/`. **Not a boardwatch defect and not a robots violation** — bot protection. Re-probe before assuming it is permanent; 2026-08-28 ran 4 runs against a cadence of 1, so our own volume is a plausible trigger. **Browser automation is out of scope and is not the remedy.** Half the lane coverage job-apps' edge comes from (D-356) | **Mit** (owner-side: ask for API access) |
