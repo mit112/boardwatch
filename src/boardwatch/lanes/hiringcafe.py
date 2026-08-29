@@ -91,6 +91,46 @@ _JOB_DESCRIPTION_URL = "https://hiringcafe.com/api/job-description?id="
 # page returns ~159 hits and the runner's company cap does not bound postings, only companies.
 DEFAULT_POSTING_BUDGET = 60
 
+# The header set a browser sends for a top-level navigation, applied to the SEARCH route only
+# (D-369). The lane client has always carried a Chrome UA; what it did not carry was any of the
+# headers that UA implies, and two of httpx's defaults CONTRADICT it outright -- `Accept: */*`,
+# which no browser sends when navigating to an HTML page, and no `Accept-Language` at all.
+#
+# Ranked FIRST against D-368's ordering, which had this second behind volume on the premise that
+# "we self-identify as a bot". That premise was false -- the UA above is a Chrome string and has
+# been since the lane shipped -- and the volume premise did not survive either: run 128, the last
+# search that WORKED, spent 14 search GETs and 14 body GETs against the reference client's
+# ~20-25 a day, and the run after it was refused on its FIRST request 14 hours later. A rate
+# counter decays over 14 hours; a classification does not.
+#
+# What the reference client does differently is the one header it sets by hand: `Accept:
+# text/html`. It is otherwise SPARSER than ours in every respect -- no `Accept-Language`, no
+# `Sec-Fetch-*`, `Connection: close` -- and it is not refused, which is what rules out "too few
+# browser headers" and leaves CONTRADICTION with the claimed UA as the difference worth removing.
+#
+# THE LINE THIS DOES NOT CROSS, and it is the same line the module docstring already draws: every
+# header here RESTATES, in the form a browser uses, the claim the UA already makes, and asserts
+# nothing new. No TLS shaping, no cookie, no `sec-ch-ua` client hints (a server negotiates those
+# via `Accept-CH`; sending them unasked would be a fresh assertion, not a restatement), and no
+# attempt to answer a challenge. `Accept-Encoding` is deliberately LEFT TO httpx: Chrome
+# advertises `br` and `zstd`, this client can decode neither, and advertising an encoding we
+# cannot read trades a header mismatch for a corrupted body. If the host still refuses us after
+# this, the remedy is the access request, not a further step in this direction.
+_SEARCH_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,"
+        "image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    # `none` and `?1`: this lane types a URL in directly. It follows no link and sends no
+    # `Referer`, so any other value here would be the fresh assertion the note above refuses.
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+
 
 class SearchPageError(ValueError):
     """The search page was served but carried no usable `ssrHits`.
@@ -299,7 +339,7 @@ class HiringCafeLane:
             # The unfaceted fallback keeps the single-search contract it shipped with: a
             # transport or structural failure propagates, because with one search there are no
             # other results for it to cost.
-            result = fetcher.get(urls[0])
+            result = fetcher.get(urls[0], headers=_SEARCH_HEADERS)
             hits = search_hits(result.content.decode("utf-8", "replace"))
             return [(urls[0], hit) for hit in hits]
 
@@ -307,7 +347,7 @@ class HiringCafeLane:
         failed = 0
         for url in urls:
             try:
-                result = fetcher.get(url)
+                result = fetcher.get(url, headers=_SEARCH_HEADERS)
                 hits = search_hits(result.content.decode("utf-8", "replace"))
             except (FetchFailure, SearchPageError):
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure.

@@ -32,6 +32,7 @@ from boardwatch.cli.run_cmd import _lane_lines
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings, load_settings
+from boardwatch.lanes import hiringcafe
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline import runner as runner_mod
@@ -445,6 +446,13 @@ def test_the_lane_fetcher_is_a_second_instance_with_a_browser_user_agent(
     ua = lane.fetcher._client.headers["User-Agent"]
     assert "Mozilla/5.0" in ua
     assert "boardwatch" not in ua
+    # The coupling D-369 created, pinned here because this is the constant that would be
+    # reverted: the hiring.cafe search route now sends a browser's NAVIGATION headers, and that
+    # set is coherent only against a browser UA. Reverting this constant to the identifying
+    # `boardwatch/` one would leave the lane claiming to be a bot while asking like a browser --
+    # the same contradiction D-369 removed, pointing the other way, and the lane's own tests
+    # build their fetcher directly and so cannot see it.
+    assert "Sec-Fetch-Mode" in hiringcafe._SEARCH_HEADERS
 
 
 # --------------------------------------------------------------------------------------
