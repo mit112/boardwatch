@@ -112,7 +112,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
             "because a change to the dependency set of a bundle that ships inside the wheel "
             "is security-sensitive and must be a deliberate act rather than a drift."
         ),
-        pin="sha256:457f6e0121c39c176bc302596e13022d6fe9b19d525d7712f3aed0a52277603f",
+        pin="sha256:8715d201219d92357abb8e022880944f544138d8847db15ef36ce972370e2d14",
     ),
     "web/package-lock.json": DataEntry(
         kind="template",
@@ -123,7 +123,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
             "more strongly: this file decides which third-party code is compiled into a "
             "published artifact."
         ),
-        pin="sha256:bb1058eef052b0279878d6fe9801c7f73f627b7b4d439894314a86636b5f7f35",
+        pin="sha256:51e275b9fdfd330ebcde44cb62d7bbd5431be3117714397794b00e5453b08188",
     ),
     "web/tsconfig.json": DataEntry(
         kind="template",
@@ -131,7 +131,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
             "TypeScript compiler settings for the frontend. Describes compilation, not "
             "data."
         ),
-        pin="sha256:a35c9cfab65389e8d51e9c2b79569decd72f73c94edafb261d12580176ad63f1",
+        pin="sha256:03bdd0f3025ac01d08b9f05e0c9584a23ce00639f50b780dce9e668072cfcb80",
     ),
     "src/boardwatch/delivery/answers.example.yaml": DataEntry(
         kind="template",

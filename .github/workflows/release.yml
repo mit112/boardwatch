@@ -24,6 +24,14 @@ jobs:
       # `make check` runs the résumé PDF gate, which shells tectonic and pdfinfo. Their absence is
       # what failed the 0.3.0 build (D-112) — correctly, since the publish jobs then skipped.
       - uses: ./.github/actions/setup-typesetting
+      # `make check` also runs the React suite (`web-test`). Pinned to the same major as the
+      # web-bundle job in ci.yml rather than inherited from the runner image, so a toolchain the
+      # release gate never chose cannot decide whether a tag publishes.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - run: uv sync --frozen
       # The strongest gate belongs on the most irreversible action. `make check` is the same
       # generalization + ruff + mypy --strict + pytest gate main runs; `pytest -q` alone let a
