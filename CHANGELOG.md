@@ -25,6 +25,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Twenty more Workday boards are watched; the fleet is 379.** Breadth batch 2 had been deferred
+  because its boards had never been timed cold. One was: a cold Workday board scanned in 604 s,
+  enumerated 420 of 420 postings, and stopped at exactly 400 — the detail-fetch budget — deferring the
+  remaining 20. A cold Workday board is therefore bounded by that budget rather than by how big the
+  board is, which puts the whole batch at roughly +34 minutes of scanning on its first run and about
+  +5 minutes thereafter. The four SmartRecruiters boards in the same batch are deliberately left out,
+  and the reason inverts the intuition: every SmartRecruiters board is served from one host, which the
+  fetcher serializes and extra scan workers cannot help, so those four would cost more wall clock than
+  all twenty Workday boards combined. Each Workday board was re-verified as watched by querying the
+  store back against the source list rather than trusting the importer's own count.
+
 - **`Fetcher.get` accepts per-request headers.** One caller needs them — the lane above — and they
   are merged *under* the conditional-GET validators, so a caller cannot clear an `If-None-Match` and
   silently turn every conditional GET on a board into an unconditional refetch.
