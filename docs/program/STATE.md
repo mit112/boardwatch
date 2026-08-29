@@ -100,15 +100,18 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 > through `send_heartbeat()` returned `True`. The monitor alerts on a ping's **absence**, so a missed
 > tick, a dead run and a sleeping Mac are all externally visible. **Disarm = delete the key + reload.**
 > Tiers stay off: inert here, the job never invokes `notify`.
+> **OWED NEXT SESSION: confirm the first REAL ping landed** — a setup ping already made the check
+> green, so green alone proves nothing; the 2026-08-29 04:00 tick is the first unattended one. If it
+> went red: `~/Library/Logs/boardwatch-run.log`, `launchctl list | grep boardwatch` (col 2 = last
+> exit). **It cannot false-alarm on hiring.cafe** — a lane outage never sets `fatal` (verified).
 
 1. **hiring.cafe is STILL DOWN — re-probed 2026-08-28 ~22:49 CDT and it has NOT lifted (D-356).**
    Same `403`, still `cf-mitigated: challenge` and `server: cloudflare`, no `__NEXT_DATA__`. It is
-   the only thing losing real coverage. Re-probe with ONE polite
-   `GET https://hiringcafe.com/jobs/software-engineer` carrying boardwatch's own UA: a 200 with
-   `__NEXT_DATA__` means the challenge lifted and the lane self-heals on the next run; a 403 with
-   `Just a moment...` and `cf-mitigated: challenge` means it has not. **One probe per session, not
-   more** — IP reputation is the leading hypothesis, so probing hard is the one thing that could keep
-   it closed. **Do not work around it**: browser automation is out of scope. **The owner-side ask is
+   the only thing losing real coverage. Re-probe with **ONE** polite
+   `GET https://hiringcafe.com/jobs/software-engineer` under boardwatch's own UA — 200 +
+   `__NEXT_DATA__` means it lifted and the lane self-heals next run. **One probe per session**: IP
+   reputation is the leading hypothesis, so probing hard is the one thing that could keep it closed.
+   **Do not work around it**: browser automation is out of scope. **The owner-side ask is
    drafted and NOT sent** in `.agent/2026-08-28g-session/hiringcafe-access-request.md` — Mit's to
    send, edit or discard. **Until it lifts, treat lane coverage as HALVED.**
 
