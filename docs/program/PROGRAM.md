@@ -199,7 +199,7 @@ Every bar metric in §1 has exactly one owning phase. Added after review found B
 | B2 PDF 100% | **P1** | P1 hard gate |
 | B3 QA gate 100% | **P1** (mechanical) + **P4** (craft) | per-lead pass/fail |
 | B4 0 fabrications, n≥100 | **P1** (Tier-B provenance validator) + **P4** (audit) | P0 fabrication counters |
-| B5 0 silent empty days | **P3** | zero-output guard + exit status — **the instrument is DORMANT, see D-282** |
+| B5 0 silent empty days | **P3** | zero-output guard — **ARMED on run-scoped rank attribution (D-302)** |
 | B6 funnel reconciles 100% | **P0** | reconciliation invariant |
 | B7 work auth decisive | **P2** | per-rule abstain + `ineligible` count |
 
@@ -207,14 +207,17 @@ Every bar metric in §1 has exactly one owning phase. Added after review found B
 for **every** rule in the catalog, and *which source produced each lead, and why every non-lead was
 dropped* is answerable **from the artifact alone, without reading code**.
 
-**B5's instrument does not currently work, and this is the one bar metric with no honest reading
-(D-282).** The zero-output guard is the named instrument. Firing requires `hidden_handled == 0` (measured 8 /
-48 / 128 on runs 68 / 69 / 71) and an empty shortlist (`capped_by_top_n` is 3,603–3,683, so `visible` is 40
-every run), so it is dormant. It cannot simply be widened either: the ranker's `hidden_*` buckets are an
-**exhaustive partition** of the corpus, so "can this run explain the empty day?" is always yes by
-construction, and a complete partition cannot evidence a silent failure. Making B5 real needs **run-scoped**
-rank attribution, which is not built and is an owner call. **Scoring B5 as passing on exit status alone
-would be scoring the absence of an alarm that cannot sound.**
+**B5's instrument is armed on run-scoped rank attribution, and B5 is scoreable (D-302).** The zero-output
+guard is the named instrument, and it cannot be built from the ranker's corpus-scoped `hidden_*` buckets:
+those are an **exhaustive partition** of the corpus, so "can this run explain the empty day?" is always yes
+by construction, and a complete partition cannot evidence a silent failure. The guard reconciles run-scoped
+instead — `unexplained = candidates judged this run − handled − applied − duplicate − dead`, four disjoint
+run-scoped subsets of that numerator. `unexplained > 0` on a run with 0 leads is fatal; a negative raises
+`ZeroOutputReconciliationError` rather than clamping, because a subset cannot exceed its superset. Only
+those four **suppressions** make an empty day honest: a **rejection** — hard-filter, non-SWE, over-seniority,
+below-cutoff — is meant to fire the guard, because a filter or cap that ate the whole shortlist is exactly
+the silent day (D-246). **Score B5 on that reconciliation, not on exit status**, which conflates this guard
+with every other fatal path; the four values ride the funnel's shortlist stage as `run_scoped_attribution`.
 
 ### P1 — Résumé artifact integrity (live gap, cheapest first)
 
