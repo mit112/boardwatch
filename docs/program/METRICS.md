@@ -8551,3 +8551,30 @@ Reproduced with the field stripped from the fixture payload:
 
 Against a matched server, unchanged: 48 `role vetoed` · 13 `role unconfirmed` · 1 `outside the US` ·
 0 `off target` in review · 49 on apply.
+
+### (h) Disk, measured before unattended running (D-361)
+
+| measure | value |
+|---|---|
+| `/System/Volumes/Data` | **99% used, 3.8 GiB free** (4.4 GiB after worktree cleanup) |
+| store `boardwatch.db` | **3.93 GB** |
+| postings | 113,049 |
+| `postings.raw_json` | **1.21 GB** |
+| `postings.body_text` | 0.63 GB |
+| `posting_versions.body_text` | 0.67 GB (119,831 rows) |
+| CLOSED postings' text | **0.20 GB only** |
+| `PRAGMA freelist_count` | **0 — VACUUM reclaims nothing** |
+| bytes per posting (postings + versions) | 25.4 KB |
+
+New postings per day — the 08-26 step is the fleet doubling 124 → 344, so the recent rate is
+plausibly a one-time backlog drain rather than steady state:
+
+| 08-20 | 08-21 | 08-22 | 08-23 | 08-24 | 08-25 | 08-26 | 08-27 | 08-28 |
+|---|---|---|---|---|---|---|---|---|
+| 4,286 | 2,324 | 2,208 | 3,064 | 5,246 | 5,690 | **15,405** | **26,890** | **20,179** |
+
+- 9-day average 8,139/day → **~202 MB/day → ~19 days**
+- last 3 days ~20,825/day → **~517 MB/day → ~7.5 days**
+
+Worktree cleanup returned **589 MB** (bw-skew 364 MB + bw-docs2 225 MB); each carries a `.venv`
+~170 MB and often `node_modules` ~130 MB.
