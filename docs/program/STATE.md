@@ -93,8 +93,9 @@ attribution. B5 is **scoreable**. The general lesson: **when a program document 
 capability GAP, verify the gap against the CODE — the citation dates the claim, it does not renew it.**
 
 **Everything below this line is carried and remains true.** The provisional pass is held by the owner
-(but see the restarted counter under Phase status); Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and is a
-HOLDING value (D-293); the fleet is 359 watched boards; breadth is argued on precision and capacity,
+(but see the restarted counter under Phase status); Gate P6 is 4 of 4; **the delivery cap is 40, set in
+the plist (D-366)** — the code default `DEFAULT_TOP_N` stays 10 and D-293's hold on it is RELEASED, not
+standing; the fleet is 359 watched boards; breadth is argued on precision and capacity,
 never an application count (D-312). Board cost is provider-weighted and **s/board is a lying unit** —
 `workday` is ~73% of a run; size batches by provider mix, never board count. **Raising the
 `scan_workers` ceiling above `le=8` stays RETIRED** (D-344): run 129 finished 343 of 344 boards in
