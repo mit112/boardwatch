@@ -1294,3 +1294,40 @@ boilerplate (~1,200 frames vs ~57 genuine) and the relatedness escape could not 
 `other`/`another` (483 postings). **One widening was REJECTED as measured NET HARMFUL:**
 `degree_equivalence` for "equivalent combination of education and experience" would turn **30 `met`
 rows into abstains to rescue 13 `unmet`**. Do not re-propose it without sentence-scoping it first.
+
+
+## Moved out of STATE on 2026-08-29b — D-361/D-362's settled unattended risks, kept verbatim
+
+*Closed by D-362 and not to be re-raised. Kept here because the REASONING — re-measuring a premise
+before re-asking the question — is the transferable part.*
+
+> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Both
+> were re-measured before being re-asked and **both premises had moved.**
+> **Disk is not a near-term risk:** **83%, 35 GiB free**, not 99%/3.8 GiB — real, not purgeable
+> (`diskutil` 37.1 GB free; `tmutil listlocalsnapshots /` returns none). ~31 GiB was freed from
+> **outside** this project, so do not credit boardwatch or assume it repeats. **The store did not
+> grow** — 4,222,877,696 bytes is **3.93 GiB**, D-361's own figure, and 4.22 GB decimal; **quote the
+> byte count when a size is load-bearing.** Runway **~70 days** worst-observed, ~250-640 at steady
+> state, against the 8-19 that made it urgent. **Mit's call: no retention policy.** Guard stays
+> unshipped.
+> **Alerting is ARMED.** "No alerting path at all" was **wrong** — it generalised from the notify
+> tiers to the whole system. The heartbeat (**D-260**, #110) was always wired **inside** `runner.py`,
+> gated `summary.fatal is None`; it was off only because `BOARDWATCH_HEARTBEAT_URL` was unset. **Now
+> set in the launchd plist and verified** — `launchctl print` shows launchd holding it, and a ping
+> through `send_heartbeat()` returned `True`. The monitor alerts on a ping's **absence**, so a missed
+> tick, a dead run and a sleeping Mac are all externally visible. **Disarm = delete the key + reload.**
+> Tiers stay off: inert here, the job never invokes `notify`.
+> **STILL OWED: confirm the first REAL ping landed.** Checked 2026-08-29 00:05 CDT and **the tick
+> had not fired yet** — it is 04:00 daily, so the first unattended one was still ~4 h out. A setup
+> ping already made the check green, so green alone still proves nothing.
+> **`launchctl list` col 2 is the WRONG route and the previous version of this line was wrong to
+> name it** — it printed `0` for a job that had **never run**, because `0` is that column's initial
+> value after a `bootstrap`. Use `launchctl print gui/$(id -u)/com.boardwatch.run` and read
+> **`runs = N`** plus `last exit code`; cross-check the **mtime** of `~/Library/Logs/boardwatch-run.log`,
+> never its content, which survives reloads. At the check above, `runs = 0`, `last exit code =
+> (never exited)`, log mtime 08-28 06:13.
+> **Arming re-verified and the tick pre-cleared:** `launchctl print` shows launchd holding
+> `BOARDWATCH_HEARTBEAT_URL`; `send_heartbeat()` reads env at CALL time, gated `summary.fatal is
+> None`; `tectonic` resolves under the plist's hand-listed `PATH` (so "render tool unavailable"
+> cannot fire); the editable venv resolves to this checkout and it is parked on `main`.
+> **It cannot false-alarm on hiring.cafe** — a lane outage never sets `fatal` (verified).

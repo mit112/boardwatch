@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The React viewer has a test suite, and the gate runs it.** Until now the frontend's only checks
+  were `tsc --noEmit` and eslint, so `make check` could not see a render regression at all — the
+  error boundaries added for the queue page, and the loose `== null` guards that absorb the viewer's
+  structural disk-bundle-vs-memory-API skew, were both behaviour no test covered. vitest and jsdom
+  now run as a `web-test` prerequisite of `check`, and as a step in CI's web job, because nothing in
+  CI runs `make check` on a pull request. The target is deliberately **not** conditional on node
+  being installed: a check that skips itself where the toolchain is missing reports green while
+  verifying nothing. Eight tests cover the four boundary scopes and the skew guards, and each was
+  confirmed to fail against the broken implementation before being counted — removing any one
+  boundary, or tightening any `== null` to `=== null`, turns the suite red. Two guards were left
+  unasserted on purpose and say so in the file: `new Date(undefined)` and `new URL(undefined)`
+  behave identically under both comparisons, so a test on them would pass against the tightened
+  version and prove nothing.
+
 ### Changed
 
 - **A degree requirement's boilerplate no longer reads as a field of study.** The `education` field

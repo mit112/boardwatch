@@ -64,12 +64,37 @@ gap and left it open; it is closed. A component that throws while rendering now 
 the page: root, route switch, review lane, detail pane, each keeping a different thing alive. The
 review lane is contained SEPARATELY from the apply lane on purpose. **Verified by reproducing the
 pre-#232 defect** — 408 apply rows survived, and removing that one boundary took them **408 -> 0**.
-**Still open and NOT closed by this: the frontend has no test suite** (only `tsc --noEmit` +
-eslint), so `make check` cannot see this class; adding vitest is a dependency call, not taken.
+**The "no frontend test suite" gap this left open is now CLOSED (#241).** vitest + jsdom run as a
+`web-test` prerequisite of `make check` and as a CI step (nothing in CI runs `make check` on a PR). Eight
+tests cover the four boundary scopes and the skew guards, and **each was confirmed RED against the broken
+implementation** — removing any one boundary, or tightening any `== null` to `=== null`, fails the suite.
+`make check` now needs node, deliberately not conditional: a check that skips itself where the toolchain
+is missing reports green while verifying nothing.
+
+**THE DELIVERY CAP IS 40 AGAIN, SET IN THE PLIST AND NOT IN CODE (D-366).** D-293 ruling 5 held
+`DEFAULT_TOP_N` at 10 *until rulings 1-4 landed*; 1/2/4 shipped, 3 was dropped (#148) and answered by the
+D-345 slate cap, and #218/D-333/D-352 landed since — **the hold condition is met**. The measurement that
+decides it also **corrects D-281**: runs 120-130 delivered **100% same-day** (median 0.00-0.73 d, 0% older
+than 7 d), so the ranker is **recency-dominated** and run 130's **4,801 `capped_by_top_n`** postings are
+**permanently buried, not queued**. At N=10 every unattended day discards its own surplus. The cost is a
+RANGE driven by **JD richness**, not the LLM lane: **+5% to +23%** of a run. **`DEFAULT_TOP_N` in code
+stays 10** — that is Mit's review capacity, not the mechanism. **No hash moves, so the provisional-pass
+counter is NOT reset.** Revert = delete two `<string>` lines from the plist.
+
+**BREADTH BATCH 1 IS APPLIED — the fleet is 359, not 344 (D-367).** The 15 cheap boards (ashby 7 /
+greenhouse 6 / lever 2) imported with `--verify`, all 15 re-verified `watched=1` against the source YAML
+rather than trusting the command. **The cold-scan objection turned out to be provider-specific**: only
+`workday` and `smartrecruiters` spend `detail_fetch_budget`, so the cheap batch carries none. **The 24
+cold boards stay deferred** on the unchanged reason.
+
+**PROGRAM.md's B5 row was STALE BY 20 DECISIONS and is corrected (D-365).** It read "the instrument is
+DORMANT, see D-282" long after **D-302 (#164)** armed the zero-output guard on run-scoped rank
+attribution. B5 is **scoreable**. The general lesson: **when a program document cites a decision for a
+capability GAP, verify the gap against the CODE — the citation dates the claim, it does not renew it.**
 
 **Everything below this line is carried and remains true.** The provisional pass is held by the owner
 (but see the restarted counter under Phase status); Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and is a
-HOLDING value (D-293); the fleet is 344 watched boards; breadth is argued on precision and capacity,
+HOLDING value (D-293); the fleet is 359 watched boards; breadth is argued on precision and capacity,
 never an application count (D-312). Board cost is provider-weighted and **s/board is a lying unit** —
 `workday` is ~73% of a run; size batches by provider mix, never board count. **Raising the
 `scan_workers` ceiling above `le=8` stays RETIRED** (D-344): run 129 finished 343 of 344 boards in
@@ -80,40 +105,25 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 
 ## Next action
 
-> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Both
-> were re-measured before being re-asked and **both premises had moved.**
-> **Disk is not a near-term risk:** **83%, 35 GiB free**, not 99%/3.8 GiB — real, not purgeable
-> (`diskutil` 37.1 GB free; `tmutil listlocalsnapshots /` returns none). ~31 GiB was freed from
-> **outside** this project, so do not credit boardwatch or assume it repeats. **The store did not
-> grow** — 4,222,877,696 bytes is **3.93 GiB**, D-361's own figure, and 4.22 GB decimal; **quote the
-> byte count when a size is load-bearing.** Runway **~70 days** worst-observed, ~250-640 at steady
-> state, against the 8-19 that made it urgent. **Mit's call: no retention policy.** Guard stays
-> unshipped.
-> **Alerting is ARMED.** "No alerting path at all" was **wrong** — it generalised from the notify
-> tiers to the whole system. The heartbeat (**D-260**, #110) was always wired **inside** `runner.py`,
-> gated `summary.fatal is None`; it was off only because `BOARDWATCH_HEARTBEAT_URL` was unset. **Now
-> set in the launchd plist and verified** — `launchctl print` shows launchd holding it, and a ping
-> through `send_heartbeat()` returned `True`. The monitor alerts on a ping's **absence**, so a missed
-> tick, a dead run and a sleeping Mac are all externally visible. **Disarm = delete the key + reload.**
-> Tiers stay off: inert here, the job never invokes `notify`.
-> **STILL OWED: confirm the first REAL ping landed.** Checked 2026-08-29 00:05 CDT and **the tick
-> had not fired yet** — it is 04:00 daily, so the first unattended one was still ~4 h out. A setup
-> ping already made the check green, so green alone still proves nothing.
-> **`launchctl list` col 2 is the WRONG route and the previous version of this line was wrong to
-> name it** — it printed `0` for a job that had **never run**, because `0` is that column's initial
-> value after a `bootstrap`. Use `launchctl print gui/$(id -u)/com.boardwatch.run` and read
-> **`runs = N`** plus `last exit code`; cross-check the **mtime** of `~/Library/Logs/boardwatch-run.log`,
-> never its content, which survives reloads. At the check above, `runs = 0`, `last exit code =
-> (never exited)`, log mtime 08-28 06:13.
-> **Arming re-verified and the tick pre-cleared:** `launchctl print` shows launchd holding
-> `BOARDWATCH_HEARTBEAT_URL`; `send_heartbeat()` reads env at CALL time, gated `summary.fatal is
-> None`; `tectonic` resolves under the plist's hand-listed `PATH` (so "render tool unavailable"
-> cannot fire); the editable venv resolves to this checkout and it is parked on `main`.
+> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Both were
+> re-measured before being re-asked and **both premises had moved**: disk is **83%, 35 GiB free** with a
+> ~70-day worst-observed runway (Mit's call: **no retention policy**), and alerting was never absent —
+> the **D-260 heartbeat** was wired inside `runner.py` all along and is now armed in the launchd plist.
+> The full reasoning moved to `STANDING-FACTS.md` at the 2026-08-29b close. **Edit that plist TEXTUALLY**
+> — PlistBuddy strips the comments that carry the reasoning.
+>
+> **STILL OWED: confirm the first REAL ping landed.** Re-checked at this close: `runs = 0`, `last exit
+> code = (never exited)`, log mtime 08-28 06:13 — the counter was reset again by this session's plist
+> reload for `--top 40`, which is expected and not a fault. The 04:00 tick on 2026-08-29 is the first
+> unattended one. **A setup ping already made the monitor green, so green alone still proves nothing.**
+> **`launchctl list` col 2 is the WRONG route** — it prints `0` for a job that has NEVER run. Use
+> `launchctl print gui/$(id -u)/com.boardwatch.run` and read **`runs = N`** plus `last exit code`, and
+> cross-check the **mtime** of `~/Library/Logs/boardwatch-run.log`, never its content.
 > **It cannot false-alarm on hiring.cafe** — a lane outage never sets `fatal` (verified).
 
-1. **hiring.cafe is STILL DOWN — re-probed 2026-08-28 ~23:46 CDT and it has NOT lifted (D-356).**
+1. **hiring.cafe is STILL DOWN — re-probed 2026-08-29 ~02:05 CDT and it has NOT lifted (D-356).**
    Same `403`, still `cf-mitigated: challenge` and `server: cloudflare`, no `__NEXT_DATA__`,
-   5,599-byte interstitial. It is
+   5,578-byte interstitial. It is
    the only thing losing real coverage. Re-probe with **ONE** polite
    `GET https://hiringcafe.com/jobs/software-engineer` under boardwatch's own UA — 200 +
    `__NEXT_DATA__` means it lifted and the lane self-heals next run. **One probe per session**: IP
@@ -161,7 +171,7 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    frozen**, so rules work may land freely and a `rules_hash` bump is not costly on this basis until
    the owner reopens the pass. The P4 blind review remains passed and does not repeat.
 
-4. **BREADTH IS PREPPED BUT NOT APPLIED — 39 boards, TWO batches, and the naive list was WRONG.**
+4. **BREADTH BATCH 1 IS APPLIED; BATCH 2 REMAINS DEFERRED — 39 boards, TWO batches (D-367).**
    Re-derived read-only from job-apps' `dedup_ledger.sqlite` and written to
    `.agent/2026-08-28f-degree-audit/breadth-add.yaml`; import with
    `boardwatch companies import --verify <file>` (`--verify` probes each board and skips anything
@@ -174,10 +184,12 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    **It is two batches because s/board is a lying unit:** ashby 7 + greenhouse 6 + lever 2 = **15
    cheap boards** (~30 s of added fetch) versus **20 workday + 4 smartrecruiters** that are COLD,
    spend `detail_fetch_budget` on a first scan, and have **never been timed cold** (STATE's own open
-   question). **Deferred on 2026-08-28** because Mit held the pacing trial and chose to back off
-   third-party load for the night, and adding 24 cold boards is the opposite of backing off.
-   **Still deferred at the 2026-08-28g close on the SAME reason, re-checked: hiring.cafe is still
-   refusing us**, so the condition that produced the deferral has not changed. Not re-litigated.
+   question). **Batch 1 (the 15 cheap boards) SHIPPED 2026-08-29 — fleet 344 -> 359**, all 15
+   re-verified `watched=1` against the source YAML rather than trusting the command's own report.
+   The cold-scan objection was CHECKED and is **provider-specific**: only `workday` and
+   `smartrecruiters` spend `detail_fetch_budget`, so the cheap batch carried none (D-367).
+   **Batch 2 (the 24 cold boards) stays deferred** on the unchanged reason — hiring.cafe is still
+   refusing us and those boards have never been timed cold. Not re-litigated.
    **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
 
 5. **Phase 1b and its follow-up are COMPLETE — item RETIRED.** Detail moved verbatim to
@@ -268,6 +280,6 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **`boardwatch web` is NOT RUNNING — START it, don't restart it** | Re-checked 2026-08-29 00:00: still no process, 8787 still Bridge. **Starting it is now worth more than it was**: the D-363 error boundaries only protect a viewer that is actually up, and starting it is still what makes the viewer send `review_reason`. Original note — checked 2026-08-28: no `boardwatch web` process exists; port 8787 is an unrelated `python3.1` (Bridge). D-360's note said *restart* it so the viewer sends `review_reason`; since nothing is up, the accurate instruction is **start** it. The underlying skew is still structural (D-360): it serves the bundle from **disk** but the API from the Python it imported **at startup**, so any merge or branch switch under a running viewer separates the two. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page. It binds `--port 0`, so **the port is whatever it picks** | **Mit** (start when convenient) |
+| **`boardwatch web` is NOT RUNNING — START it, don't restart it** | Re-checked 2026-08-29 00:00: still no process, 8787 still Bridge. **Do NOT start it while a run is live or imminent** — the viewer's context path is a write path and a WAL two-writer deadlock against a running pipeline is on record; start it AFTER a run lands. **Otherwise it is worth more than it was**: the D-363 error boundaries only protect a viewer that is actually up, and starting it is still what makes the viewer send `review_reason`. Original note — checked 2026-08-28: no `boardwatch web` process exists; port 8787 is an unrelated `python3.1` (Bridge). D-360's note said *restart* it so the viewer sends `review_reason`; since nothing is up, the accurate instruction is **start** it. The underlying skew is still structural (D-360): it serves the bundle from **disk** but the API from the Python it imported **at startup**, so any merge or branch switch under a running viewer separates the two. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page. It binds `--port 0`, so **the port is whatever it picks** | **Mit** (start when convenient) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN behind Cloudflare** | Run 130: total outage, `403` + `Just a moment...` on `/jobs/` with boardwatch's own UA, while `/robots.txt` returns 200 and explicitly `Allow`s `/jobs/`. **Not a boardwatch defect and not a robots violation** — bot protection. Re-probe before assuming it is permanent; 2026-08-28 ran 4 runs against a cadence of 1, so our own volume is a plausible trigger. **Browser automation is out of scope and is not the remedy.** Half the lane coverage job-apps' edge comes from (D-356) | **Mit** (owner-side: ask for API access) |
