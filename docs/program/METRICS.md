@@ -8523,3 +8523,31 @@ vite fixtures at 1600 px, after #230:
 - **`test_post_json_paces_the_same_host`** also asserts an exact `>= 0.25` on a real sleep, but
   `started` is stamped **before both requests**, so the span covers two requests plus a full pace
   sleep and has real margin. Not the same defect; left alone.
+
+### (g) The live-data check that found D-360
+
+Verifying D-359 against the **live** API rather than the fixtures, via the running viewer on the port
+`lsof` reported, with the bearer token from `{config_dir}/web-token` in an `Authorization` header:
+
+| measure | value |
+|---|---|
+| viewer process start | **06:25:08** |
+| bundle it was serving | `index-QqilaGRV.js`, built **19:30** (#230) |
+| #224 merge time (added `review_reason`) | **17:19:35** |
+| `GET /api/queue` | HTTP 200, 737,878 B |
+| apply rows / review rows | 489 / 222 |
+| review rows carrying a `review_reason` key | **0 of 222 — the key is absent entirely** |
+| store `alembic_version` vs repo head | `p_runs_board_split` — **MATCH**, so not the D-279 schema half |
+
+Reproduced with the field stripped from the fixture payload:
+
+| | before #232 | after #232 |
+|---|---|---|
+| `#root` children | **0** | 1 |
+| `document.body.innerText.length` | **0** | 42,399 |
+| review rows rendered | **none (blank page)** | 62 |
+| reason badges | — | 0 (honest: unknown) |
+| `off target` chips | — | **49** (pre-#224 behaviour) |
+
+Against a matched server, unchanged: 48 `role vetoed` · 13 `role unconfirmed` · 1 `outside the US` ·
+0 `off target` in review · 49 on apply.
