@@ -38,13 +38,10 @@ boilerplate (~1,200 frames vs ~57 genuine) and the relatedness escape could not 
 `degree_equivalence` for "equivalent combination of education and experience" would turn **30 `met`
 rows into abstains to rescue 13 `unmet`**. Do not re-propose it without sentence-scoping it first.
 
-**`degree` BLOCKING IS CONFIRMED BY THE OWNER — WHAT IS OWED IS AN AUDIT, NOT A REVERT (D-350 found
-it, D-351 rules it).** D-350 found `degree` armed where D-321 had recorded *"Owner's call, not taken"*;
-Mit confirmed he wanted it, so **the live six-blocker map is correct and is NOT to be reverted.** His
-constraint is about PRECISION: *"I just don't want it to reject jobs which are genuinely for me."*
-**So the 410 degree-attributed `ineligible` evaluations are owed an audit and the 298 on the
-`_in_field` rules are the target** — field-of-study matching, live-capable only since D-326, and a
-wrong field match is exactly the failure he named. **Soften nothing before the audit.**
+**The live six-blocker map is the OWNER'S and is NOT to be reverted (D-350 found it, D-351 rules
+it).** D-350 found `degree` armed where D-321 had recorded *"Owner's call, not taken"*; Mit confirmed
+he wanted it. His constraint was precision — *"I just don't want it to reject jobs which are
+genuinely for me"* — and D-352 above is the audit that answers it.
 
 **SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on
 **five of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six).
@@ -66,9 +63,13 @@ warranted. Do not re-propose lane parallelism.
 outage after working on every run through 129 (85 attempted / 79 resolved). Probed: `/jobs/` returns
 **403 with Cloudflare's `Just a moment...` interstitial**, while `/robots.txt` returns 200 and
 **explicitly `Allow`s `/jobs/`** — so boardwatch is fully compliant and this is bot protection.
-**Back off and re-probe**; 2026-08-28 ran FOUR runs against a normal cadence of one, so our own
-volume is a plausible trigger. **Browser automation / challenge-solving is out of scope and is not
-the answer.** This is half the lane coverage that job-apps' daily edge comes from.
+**Re-probed 2026-08-28 ~19:20 CDT and it has NOT lifted** — same 403, and the response now also
+carries `cf-mitigated: challenge` and `server: cloudflare`, which names the mechanism outright.
+`/robots.txt` still returns 200 and still `Allow`s `/jobs/`. 2026-08-28 ran FOUR runs against a
+normal cadence of one, so our own volume remains a plausible trigger. **Browser automation /
+challenge-solving is out of scope and is not the answer.** This is half the lane coverage that
+job-apps' daily edge comes from. **It cannot make a run fatal** — `is_systemic_scan_outage` reads
+board counts only, never lanes — so it costs coverage, not availability.
 
 **Everything below this line is carried and remains true.** The provisional pass is held by the owner
 (but see the restarted counter under Phase status); Gate P6 is 4 of 4; `DEFAULT_TOP_N` is 10 and is a
@@ -83,15 +84,21 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 
 ## Next action
 
-1. **RE-PROBE hiring.cafe FIRST — it is the only thing losing real coverage right now (D-356).**
-   One polite `GET https://hiringcafe.com/jobs/software-engineer` with boardwatch's own UA. A 200
-   with `__NEXT_DATA__` means the challenge lifted and the lane self-heals on the next run; a 403
-   with `Just a moment...` means it has not. **Do not work around a Cloudflare challenge** — browser
-   automation is out of scope and this project does not circumvent bot protection. If it persists,
-   the owner-side move is to ask hiring.cafe for API access (`/jobs/` is explicitly `Allow`ed in
-   their robots.txt). **Until it lifts, treat lane coverage as HALVED.**
+1. **hiring.cafe is STILL DOWN — re-probed at this close and it has not lifted (D-356).** It is
+   the only thing losing real coverage. Re-probe with ONE polite
+   `GET https://hiringcafe.com/jobs/software-engineer` carrying boardwatch's own UA: a 200 with
+   `__NEXT_DATA__` means the challenge lifted and the lane self-heals on the next run; a 403 with
+   `Just a moment...` and `cf-mitigated: challenge` means it has not. **One probe per session, not
+   more** — IP reputation is the leading hypothesis, so probing hard is the one thing that could
+   keep it closed. **Do not work around it**: browser automation is out of scope and this project
+   does not circumvent bot protection. **The owner-side move is drafted and NOT sent** —
+   `.agent/2026-08-28g-session/hiringcafe-access-request.md` holds a request for API access plus the
+   evidence it rests on; it is Mit's to send, edit or discard, and it deliberately does not look up
+   a contact address from this machine while we are being challenged. **Until it lifts, treat lane
+   coverage as HALVED.**
 
-2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 is merged and the lever ships
+2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
+   STATE claimed that while the PR was still OPEN and RED, and the repo won (D-358). The lever ships
    **disarmed**; arming is one config line plus a read-back check, and the whole procedure is in
    `.agent/2026-08-28f-degree-audit/RUN131-CHECKLIST.md`. Mit held it on 2026-08-28 because
    hiring.cafe began refusing us on a day that ran FOUR runs against a cadence of one, and
@@ -106,19 +113,9 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    (it read **-10 on run 130, which had no pacing change**, because `unchanged` collapsed 153 -> 36
    when the validator TTL expired). Any `board_scans` query MUST filter `scan_kind='board'`.
 
-   **Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table** — the probe,
-   why the `awk '$2==1'` form was wrong in the dangerous direction (D-335), and why `ps -o comm` gives
-   a false IDLE on macOS are all in `STANDING-FACTS.md`. `runs.finished_at` precedes process exit by
-   ~90 s (D-024). **`pkill -f "make check"` is NOT worktree-scoped** — kill by PID.
-
-   **The venv is EDITABLE, so a branch switch MUTATES a live run's code and `rules.yaml`.** While a
-   run is in flight, do not check out any branch whose diff touches `src/boardwatch/**`. Park on the
-   branch the run started from; use a WORKTREE for parallel code work. The Bash tool's cwd also
-   PERSISTS across calls — use absolute paths for writes.
-
-   **The scratchpad directory is SHARED with subagents, not per-agent.** Name every per-launch file
-   uniquely; a shared *sentinel* is worse than a shared log, since reading it means reading someone
-   else's exit code.
+   **Run safety, worktrees and the shared scratchpad have moved to `STANDING-FACTS.md`** ("Moved out
+   of STATE on 2026-08-28g") — process-liveness guarding, the EDITABLE venv, PID-scoped kills, and
+   per-launch log/sentinel naming. Read that section before touching a live run or launching a gate.
 
 3. **THE PROVISIONAL PASS IS ALLOWED TO SLIP — Mit's ruling at this close: "work comes first"
    (D-351).** #218 reset the 3-clean-post-fix-run counter and it is **not being chased** before he
@@ -143,30 +140,35 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    spend `detail_fetch_budget` on a first scan, and have **never been timed cold** (STATE's own open
    question). **Deferred on 2026-08-28** because Mit held the pacing trial and chose to back off
    third-party load for the night, and adding 24 cold boards is the opposite of backing off.
+   **Still deferred at the 2026-08-28g close on the SAME reason, re-checked: hiring.cafe is still
+   refusing us**, so the condition that produced the deferral has not changed. Not re-litigated.
    **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
 
-5. **PHASE 1B IS COMPLETE (D-354) — retire it from this list.** The split was ALREADY shipped in
-   #195 (STATE was stale on that; the repo won), the redesign landed as **#223**, and the per-row
-   hold reason as **#224**. D-351's named defect is closed: every review row now names why it was
-   held (`ROLE UNCONFIRMED` / `ROLE VETOED` / `OUTSIDE THE US`), verified by rendering the merged
-   tree. `role_vetoed` and `role_unconfirmed` are separate on purpose — only `not_swe` is a veto and
-   the gate's `uncertain` is an abstain. **One cosmetic follow-up:** `ROLE VETOED` and `OFF TARGET`
-   now duplicate on the same row; suppress `off_target` on REVIEW rows only, since it is still the
-   sole signal on an APPLY row (an `eligible` off-target lead correctly sits there wearing it).
+5. **PHASE 1B IS COMPLETE AND SO IS ITS FOLLOW-UP — retire the whole item (D-354, D-359).** The
+   split shipped in #195, the redesign in **#223**, the per-row hold reason in **#224**, and the
+   `ROLE VETOED`/`OFF TARGET` duplication in **#230**. `role_vetoed` and `role_unconfirmed` stay
+   separate on purpose — only `not_swe` is a veto and the gate's `uncertain` is an abstain.
+   **#230 is NARROWER than D-354 specified, on purpose:** "suppress `off_target` on REVIEW rows"
+   would have deleted a real signal, because `classify` reaches `ineligible_verdict` and
+   `non_us_location` BEFORE the role branch, so either can hold a lead while `off_target` reports
+   something else (the fixture's Block row is held on an ineligible verdict while `off target` names
+   a seniority band). Only `role_vetoed` is the same derivation twice, so that member alone is
+   suppressed. **Do not re-broaden it to the lane.**
 
-6. **`main` WAS RED ALL DAY AND IT TOOK TWO FIXES — CONFIRM IT IS ACTUALLY GREEN (D-357).**
-   Two independent wall-clock flakes, and clearing the first only revealed the second: **#225**
-   (lane cost boundary, from #217) then **#227** (`test_a_locked_store_answers_503_without_stalling`,
-   which took down all three macOS jobs at once — macOS runs unsharded). #227 is the one STATE
-   previously listed as a known flake to *re-run rather than fix*; re-running was not a fix, because
-   it was systematic. **Neither threshold was weakened** — both now assert the property directly and
-   are strictly tighter than what they replaced.
+6. **`main` IS GREEN — confirmed, and it took THREE fixes, not two (D-357, D-358).** Verified at
+   this close: `de65448` (#227), `b1ff14b` (#228) and `b0ecfe3` (#229) are three consecutive green
+   `main` runs after the deflake. The day's flakes were **#225** (lane cost boundary, from #217),
+   **#227** (`test_a_locked_store_answers_503_without_stalling`, which took all three macOS jobs at
+   once — macOS runs unsharded), and **#222's own new pacing test**, found this session. **No
+   threshold was weakened in any of the three** — each now asserts its property directly and is
+   strictly tighter than what it replaced.
 
-   **At this close #227 had NOT merged, so `main` was still red and the run on top of the docs merge
-   was expected to fail.** First thing next session: confirm a `main` run **after** #227 is green.
-   Until then treat any green PR with suspicion — several today were green only because a job was
-   re-run. **And mutate every new assertion:** #227's first draft compared against a constant the
-   implementation also uses, so a mutant moved both sides and passed (D-357).
+   **The standing rule, now with three instances behind it: when a timing test flakes, ask what it
+   MEASURED versus what it CLAIMS.** All three measured a proxy whose noise straddled the bound;
+   none needed a wider bound. **And mutate every new assertion** — two of the three had a *second*
+   defect where the expected value was reachable by a route the test did not intend (#227 compared
+   against a constant the implementation also reads; #222 set the delay equal to the floor it was
+   supposed to prove was overridden).
 
 7. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
@@ -244,4 +246,5 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
+| **The unattended 04:00 tick runs the PRIMARY checkout's branch** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN behind Cloudflare** | Run 130: total outage, `403` + `Just a moment...` on `/jobs/` with boardwatch's own UA, while `/robots.txt` returns 200 and explicitly `Allow`s `/jobs/`. **Not a boardwatch defect and not a robots violation** — bot protection. Re-probe before assuming it is permanent; 2026-08-28 ran 4 runs against a cadence of 1, so our own volume is a plausible trigger. **Browser automation is out of scope and is not the remedy.** Half the lane coverage job-apps' edge comes from (D-356) | **Mit** (owner-side: ask for API access) |

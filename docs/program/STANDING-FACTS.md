@@ -1220,3 +1220,32 @@ rebase can still break semantically. **All five verified present in `main` by CO
    board has ever been timed, and they are the two providers that burn a per-posting detail budget on
    a first scan.
 
+## Moved out of STATE on 2026-08-28g — settled run-safety and worktree craft, kept verbatim
+
+Carried unchanged out of STATE's "Next action" §2 when that file crossed 250 lines again. None of it
+is a next action — it is standing craft that applies to every session that touches a live run, a
+store, or a gate.
+
+**Before ANY pull or store write, guard on PROCESS liveness, never the `runs` table** — the probe,
+why the `awk '$2==1'` form was wrong in the dangerous direction (D-335), and why `ps -o comm` gives
+a false IDLE on macOS are all in the "Liveness and the ledger" section above. `runs.finished_at`
+precedes process exit by ~90 s (D-024). **`pkill -f "make check"` is NOT worktree-scoped** — kill by
+PID.
+
+**The venv is EDITABLE, so a branch switch MUTATES a live run's code and `rules.yaml`.** While a run
+is in flight, do not check out any branch whose diff touches `src/boardwatch/**`. Park on the branch
+the run started from; use a WORKTREE for parallel code work. The Bash tool's cwd also PERSISTS across
+calls — use absolute paths for writes.
+
+**The scratchpad directory is SHARED with subagents, not per-agent.** Name every per-launch file
+uniquely; a shared *sentinel* is worse than a shared log, since reading it means reading someone
+else's exit code.
+
+**The 04:00 tick runs whatever branch the PRIMARY checkout is parked on.**
+`~/Library/LaunchAgents/com.boardwatch.run.plist` invokes
+`<repo>/.venv/bin/boardwatch run --project` by absolute path, and that venv is
+editable, so the primary checkout's branch IS the unattended run's code and `rules.yaml`. **Park the
+primary checkout on `main` before ending any session** — it matters more from ~2026-08-31, when a
+branch left checked out changes every subsequent run rather than one. Pointing the plist at a
+worktree pinned to `main` would close it mechanically, but that moves a scheduled job and a venv and
+must keep the same config/data dir, so it is **Mit's call and has not been taken**.
