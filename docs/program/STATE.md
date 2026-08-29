@@ -84,18 +84,24 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 
 ## Next action
 
+> **BEFORE ANYTHING ELSE — two owner-gated risks that stop everything, both UNANSWERED (D-361).**
+> Disk: **99%, 3.8 GiB free** against a store growing **200-500 MB/day** = roughly **8-19 days**,
+> with Mit unattended from ~2026-08-31, and **`VACUUM` reclaims nothing**. Compounding it, **there
+> is no alerting path at all** (both notify tiers off *and* `notify` is a separate command the
+> scheduled job never invokes), so the failure mode is not "runs stop" but **"runs stop and nobody
+> is told"**. Four options priced in D-361; **a guard was written up and deliberately NOT shipped —
+> a new fatal path can halt every run, and silence is not approval. RE-ASK FIRST.** The only lever
+> an agent may pull freely is removing its own worktrees.
+
 1. **hiring.cafe is STILL DOWN — re-probed at this close and it has not lifted (D-356).** It is
    the only thing losing real coverage. Re-probe with ONE polite
    `GET https://hiringcafe.com/jobs/software-engineer` carrying boardwatch's own UA: a 200 with
    `__NEXT_DATA__` means the challenge lifted and the lane self-heals on the next run; a 403 with
    `Just a moment...` and `cf-mitigated: challenge` means it has not. **One probe per session, not
-   more** — IP reputation is the leading hypothesis, so probing hard is the one thing that could
-   keep it closed. **Do not work around it**: browser automation is out of scope and this project
-   does not circumvent bot protection. **The owner-side move is drafted and NOT sent** —
-   `.agent/2026-08-28g-session/hiringcafe-access-request.md` holds a request for API access plus the
-   evidence it rests on; it is Mit's to send, edit or discard, and it deliberately does not look up
-   a contact address from this machine while we are being challenged. **Until it lifts, treat lane
-   coverage as HALVED.**
+   more** — IP reputation is the leading hypothesis, so probing hard is the one thing that could keep
+   it closed. **Do not work around it**: browser automation is out of scope. **The owner-side ask is
+   drafted and NOT sent** in `.agent/2026-08-28g-session/hiringcafe-access-request.md` — Mit's to
+   send, edit or discard. **Until it lifts, treat lane coverage as HALVED.**
 
 2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
    STATE claimed that while the PR was still OPEN and RED, and the repo won (D-358). The lever ships
@@ -117,13 +123,10 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    of STATE on 2026-08-28g") — process-liveness guarding, the EDITABLE venv, PID-scoped kills, and
    per-launch log/sentinel naming. Read that section before touching a live run or launching a gate.
 
-3. **THE PROVISIONAL PASS IS ALLOWED TO SLIP — Mit's ruling at this close: "work comes first"
-   (D-351).** #218 reset the 3-clean-post-fix-run counter and it is **not being chased** before he
-   steps back ~2026-08-31. **Read this as UNBLOCKING, and it is the more useful half:** eligibility is
-   **NOT frozen** — the freeze was only ever implied by wanting the 3 runs — so rules and eligibility
-   work may land freely, including whatever the `degree` audit turns up. **Stop pricing a `rules_hash`
-   bump as costly on this basis** until the owner reopens the pass. The P4 blind review remains passed
-   (2026-08-26) and does not repeat.
+3. **THE PROVISIONAL PASS IS ALLOWED TO SLIP — "work comes first" (D-351).** #218 reset the
+   3-clean-run counter and it is **not being chased**. **Read it as UNBLOCKING: eligibility is NOT
+   frozen**, so rules work may land freely and a `rules_hash` bump is not costly on this basis until
+   the owner reopens the pass. The P4 blind review remains passed and does not repeat.
 
 4. **BREADTH IS PREPPED BUT NOT APPLIED — 39 boards, TWO batches, and the naive list was WRONG.**
    Re-derived read-only from job-apps' `dedup_ledger.sqlite` and written to
@@ -151,28 +154,25 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    the review lane, because `classify` reaches `ineligible_verdict` and `non_us_location` first and
    either can carry a genuinely separate `off_target`. Do not re-broaden it to the lane** (D-359).
 
-6. **`main` IS GREEN — confirmed, and it took THREE fixes, not two (D-357, D-358).** Verified at
-   this close: `de65448` (#227), `b1ff14b` (#228) and `b0ecfe3` (#229) are three consecutive green
-   `main` runs after the deflake. The day's flakes were **#225** (lane cost boundary, from #217),
-   **#227** (`test_a_locked_store_answers_503_without_stalling`, which took all three macOS jobs at
-   once — macOS runs unsharded), and **#222's own new pacing test**, found this session. **No
-   threshold was weakened in any of the three** — each now asserts its property directly and is
+6. **`main` IS GREEN — confirmed, and it took THREE fixes, not two (D-357, D-358).** Three
+   consecutive green `main` runs after the deflake. The flakes were #225 (lane cost boundary), #227
+   (`test_a_locked_store_answers_503_without_stalling`, which took all three macOS jobs at once —
+   macOS runs unsharded) and **#222's own new pacing test**. **No threshold was weakened**; each is
    strictly tighter than what it replaced.
 
-   **The standing rule, now with three instances behind it: when a timing test flakes, ask what it
-   MEASURED versus what it CLAIMS.** All three measured a proxy whose noise straddled the bound;
-   none needed a wider bound. **And mutate every new assertion** — two of the three had a *second*
-   defect where the expected value was reachable by a route the test did not intend (#227 compared
-   against a constant the implementation also reads; #222 set the delay equal to the floor it was
-   supposed to prove was overridden).
-
+   **The standing rule, three instances behind it: when a timing test flakes, ask what it MEASURED
+   versus what it CLAIMS** — all three measured a proxy whose noise straddled the bound, and none
+   needed a wider bound. **A failure UNDER a sleep-derived bound proves the measurement wrong, not
+   the machine slow.** **And mutate every new assertion:** two of the three also had the expected
+   value reachable by a route the test did not intend (a constant the implementation also reads; a
+   delay set equal to the floor it was meant to prove was overridden).
 7. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
    `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
 
-8. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state machine
-   is **2 of 286** and architectural (D-320). *(The residual years-detection gap was the other item
-   here; #218 addressed it — read that PR rather than the old 24-leads/1.3% figure.)*
+8. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state
+   machine is **2 of 286** and architectural (D-320). The years-detection gap that sat here was
+   addressed by #218 — read that PR, not the old 24-leads/1.3% figure.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
