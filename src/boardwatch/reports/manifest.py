@@ -67,6 +67,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "data_dir",            # machine-local
         "config_dir",          # machine-local
         "per_host_delay_seconds",  # throughput
+        "pace_from_request_start",  # throughput: WHERE the same delay is measured from
         "retry_attempts",          # throughput
         "busy_timeout_ms",         # throughput
         "scan_workers",            # throughput

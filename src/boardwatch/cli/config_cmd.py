@@ -44,8 +44,23 @@ def _lane_names(raw: str) -> list[str]:
 # Annotated because `lanes_enabled`'s caster is a function returning a list while every
 # other one is a scalar type; without this mypy joins them to `object` and the call below
 # stops type-checking.
+def _str_to_bool(raw: str) -> bool:
+    v = raw.strip().lower()
+    if v in {"true", "1", "yes", "on"}:
+        return True
+    if v in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError(f"expected a boolean (true/false), got {raw!r}")
+
+
 _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "per_host_delay_seconds": (float, "next scan", "seconds, floor 0.25"),
+    "pace_from_request_start": (
+        _str_to_bool,
+        "next scan",
+        "true measures the per-host delay between request STARTS (a true 1/delay ceiling); "
+        "false, the default, measures it from the previous request's END",
+    ),
     "retry_attempts": (int, "next scan", "total attempts 1–10 (1 = no retry)"),
     "scan_workers": (int, "next scan", "1–8"),
     "detail_fetch_budget": (
@@ -91,15 +106,6 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
-
-
-def _str_to_bool(raw: str) -> bool:
-    v = raw.strip().lower()
-    if v in {"true", "1", "yes", "on"}:
-        return True
-    if v in {"false", "0", "no", "off"}:
-        return False
-    raise ValueError(f"expected a boolean (true/false), got {raw!r}")
 
 
 # notify.* live under [notify]; both are booleans, take effect on next notify.

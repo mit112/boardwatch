@@ -82,6 +82,7 @@ class Fetcher:
             headers={"User-Agent": ua}, timeout=30.0, follow_redirects=True
         )
         self._delay = max(settings.per_host_delay_seconds, PER_HOST_DELAY_FLOOR)
+        self._pace_from_start = settings.pace_from_request_start
         self._retry_attempts = settings.retry_attempts
         self._guard = threading.Lock()
         self._host_locks: dict[str, threading.Lock] = {}
@@ -117,10 +118,19 @@ class Fetcher:
         host = host_key(url)
         with self._host_lock(host):  # same-host requests serialize for their full duration
             self._pace(host)
+            # Stamping BEFORE the send makes the delay an interval between request STARTS;
+            # stamping in the `finally` makes it a gap between the previous END and the next
+            # start, which is the shipped default. The stamp is written in both arms and the
+            # lock is held across the whole block, so the two cannot race and a raising request
+            # still advances the clock — a failing host must not be retried faster than a
+            # healthy one.
+            if self._pace_from_start:
+                self._last_request_at[host] = time.monotonic()
             try:
                 return self._send_with_retries(method, url, validators, json_body)
             finally:
-                self._last_request_at[host] = time.monotonic()
+                if not self._pace_from_start:
+                    self._last_request_at[host] = time.monotonic()
 
     def _host_lock(self, host: str) -> threading.Lock:
         with self._guard:

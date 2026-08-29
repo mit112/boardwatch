@@ -7,6 +7,7 @@ import httpx
 import pytest
 import respx
 
+from boardwatch.core import politeness
 from boardwatch.core.models import ResponseValidators
 from boardwatch.core.politeness import PER_HOST_DELAY_FLOOR, Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
@@ -280,3 +281,111 @@ def test_request_error_is_not_retried(tmp_path: Path) -> None:
         with pytest.raises(FetchFailure):
             fetcher.get("https://loop.example.com/")
     assert route.call_count == 1
+
+
+# --------------------------------------------------------------------------------------
+# Where the per-host clock is stamped (`pace_from_request_start`)
+# --------------------------------------------------------------------------------------
+
+# Deliberately ABOVE PER_HOST_DELAY_FLOOR, so an implementation that ignored the configured
+# delay and paced on the floor instead would be caught here rather than pass by coincidence.
+DELAY = 0.5
+# What a response costs to answer. Under DELAY, so pacing from the request START has something
+# to absorb. Both are binary-exact fractions, so DELAY - WORK is exact and the assertions below
+# can be equalities rather than tolerances.
+WORK = 0.125
+
+
+class _FakeTime:
+    """Stands in for the `time` module INSIDE `politeness`, which uses only these two calls.
+
+    Rebinding that one module-level name is narrower than patching `time` itself: the real
+    module keeps working everywhere else in the process, httpx and tenacity included.
+
+    Nothing here waits. `sleep` records what it was asked for and advances the clock by exactly
+    that much, so the pacing under test is read off directly instead of being inferred from
+    elapsed wall time. Inferring it is what made the previous version of these tests flaky: the
+    gap they measured was between two respx handler entries, so it carried the dispatch jitter
+    either side of the stamp, and a few hundred microseconds of it straddled an exact bound.
+    Both of the failures were on the low side, 0.24889 and 0.24985 against a required 0.25.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _pacing_waits(tmp_path: Path, *, from_start: bool, work: float, n: int = 3) -> list[float]:
+    """What `_pace` waited before each of `n` sequential same-host GETs that each cost `work`.
+
+    The list is the entire observation, and its LENGTH carries as much as its values: `[]` means
+    the fetcher never had to wait at all, and two entries before three requests means it waited
+    once ahead of every request after the first.
+    """
+    clock = _FakeTime()
+    settings = Settings(
+        data_dir=tmp_path,
+        config_dir=tmp_path,
+        per_host_delay_seconds=DELAY,
+        pace_from_request_start=from_start,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        clock.advance(work)  # answering the request costs `work`, charged on the fake clock
+        return httpx.Response(200)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(politeness, "time", clock)
+        with respx.mock:
+            respx.get("https://paced.example/x").mock(side_effect=handler)
+            fetcher = Fetcher(settings)
+            for _ in range(n):
+                fetcher.get("https://paced.example/x")
+    return clock.slept
+
+
+def test_pacing_from_request_end_charges_the_response_time_on_top(tmp_path: Path) -> None:
+    """The shipped default: the delay is measured from when the previous request FINISHED.
+
+    So the fetcher waits the whole delay every time, however long the response took, and the
+    host sees one request per DELAY + WORK rather than one per DELAY. That is the gap D-344
+    sized at 28.4 minutes off a run — ~0.6 req/s at a 0.67 s response, not the 1.0 the delay
+    reads as.
+    """
+    waits = _pacing_waits(tmp_path, from_start=False, work=WORK)
+    assert waits == [0.5, 0.5], waits  # the full delay, with the 0.125 s response ON TOP
+
+
+def test_pacing_from_request_start_absorbs_the_response_time(tmp_path: Path) -> None:
+    """The discriminating half: with the flag on, the response time comes OUT of the delay.
+
+    Against the request-END implementation every wait is the full 0.5 instead of 0.375, so this
+    is the assertion that fails if the flag is not read. The waits are still POSITIVE, which is
+    the other half of the claim: the flag moves where the delay is measured from, and is not a
+    licence to drop the delay.
+    """
+    waits = _pacing_waits(tmp_path, from_start=True, work=WORK)
+    assert waits == [0.375, 0.375], waits  # DELAY less the 0.125 s the response already cost
+
+
+def test_a_response_slower_than_the_delay_is_its_own_pacing(tmp_path: Path) -> None:
+    """A response that outlasts the delay leaves nothing to wait for, so the fetcher never waits.
+
+    Without this the flag reads as "1/delay always"; a 0.75 s response under a 0.5 s delay can
+    only ever be one request per 0.75 s, and asserting a faster rate would be asserting one the
+    transport cannot produce. It discriminates too — the request-END implementation waits the
+    full delay after a slow response exactly as it does after a fast one, so it reports
+    `[0.5, 0.5]` here.
+    """
+    waits = _pacing_waits(tmp_path, from_start=True, work=0.75)
+    assert waits == [], waits

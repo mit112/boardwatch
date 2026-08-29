@@ -75,6 +75,18 @@ class Settings(BaseModel):
     data_dir: Path
     config_dir: Path
     per_host_delay_seconds: float = Field(default=1.0, ge=0.25)  # §3.4 floor
+    # WHERE the per-host clock starts. `False` (the default, and the behaviour that shipped)
+    # measures the gap from the END of the previous request, so a host sees one request every
+    # `per_host_delay_seconds` PLUS however long each one took — ~0.6 req/s at a 0.67 s response.
+    # `True` measures from the START, which is what the delay reads as, and yields a true
+    # 1/`per_host_delay_seconds` ceiling.
+    #
+    # It defaults OFF and stays off for everyone who does not ask, because turning it on is a
+    # real increase in the load every third party sees (~0.6 -> 1.0 req/s per host) and that is
+    # not a default this project may set on a user's behalf — the same line `scan_workers` and
+    # `detail_fetch_budget` hold. The floor still applies either way: a request slower than the
+    # delay paces itself.
+    pace_from_request_start: bool = False
     retry_attempts: int = Field(default=3, ge=1, le=10)          # total attempts; 1 = no retry
     busy_timeout_ms: int = 5000
     # A `running` row this old with no terminal status is a crashed/killed run, not one still
