@@ -1206,3 +1206,17 @@ rebase can still break semantically. **All five verified present in `main` by CO
 
 ---
 
+
+## Moved out of STATE on 2026-08-28f — the batch-2 discover sizing, superseded but kept verbatim
+
+> Superseded by the concrete 39-board breadth prep (STATE's breadth item and
+> `.agent/2026-08-28f-degree-audit/breadth-add.yaml`), which carries measured provider
+> costs rather than an estimate. Kept because the cold-Workday timing question it raises
+> is still open and still unmeasured.
+
+8. **Batch 2 of the ~765 discover candidates is still a sizing question with an answer** — the ~325
+   cheap ones go in ONE batch; SmartRecruiters 107 ≈ +40 min; Workday 333 ≈ +122 min and must be
+   chunked at ~100. **Probe ~10 cold Workday boards first** — no cold Workday or SmartRecruiters
+   board has ever been timed, and they are the two providers that burn a per-posting detail budget on
+   a first scan.
+
