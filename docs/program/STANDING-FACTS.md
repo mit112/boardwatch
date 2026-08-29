@@ -1331,3 +1331,74 @@ before re-asking the question — is the transferable part.*
 > None`; `tectonic` resolves under the plist's hand-listed `PATH` (so "render tool unavailable"
 > cannot fire); the editable venv resolves to this checkout and it is parked on `main`.
 > **It cannot false-alarm on hiring.cafe** — a lane outage never sets `fatal` (verified).
+
+
+## Moved out of STATE on 2026-08-29c — settled blocks, kept verbatim
+
+### D-363 boundaries + suite
+
+**THE WEB VIEWER NOW HAS ERROR BOUNDARIES, AT FOUR SCOPES (D-363).** D-360 named the structural
+gap and left it open; it is closed. A component that throws while rendering now costs a card, not
+the page: root, route switch, review lane, detail pane, each keeping a different thing alive. The
+review lane is contained SEPARATELY from the apply lane on purpose. **Verified by reproducing the
+pre-#232 defect** — 408 apply rows survived, and removing that one boundary took them **408 -> 0**.
+**The "no frontend test suite" gap this left open is now CLOSED (#241).** vitest + jsdom run as a
+`web-test` prerequisite of `make check` and as a CI step (nothing in CI runs `make check` on a PR). Eight
+tests cover the four boundary scopes and the skew guards, and **each was confirmed RED against the broken
+implementation** — removing any one boundary, or tightening any `== null` to `=== null`, fails the suite.
+`make check` now needs node, deliberately not conditional: a check that skips itself where the toolchain
+is missing reports green while verifying nothing.
+
+### six-blocker map
+
+**The live six-blocker map is the OWNER'S and is NOT to be reverted (D-350 found it, D-351 rules
+it).** D-350 found `degree` armed where D-321 had recorded *"Owner's call, not taken"*; Mit confirmed
+he wanted it. His constraint was precision — *"I just don't want it to reject jobs which are
+genuinely for me"* — and D-352 above is the audit that answers it.
+
+### main-is-green flake history
+
+6. **`main` IS GREEN** — three consecutive green runs; which three flakes, and why each fix was
+   strictly tighter, moved verbatim to `STANDING-FACTS.md` 2026-08-28h (D-357, D-358).
+
+   **The standing rule, three instances behind it: when a timing test flakes, ask what it MEASURED
+   versus what it CLAIMS** — all three measured a proxy whose noise straddled the bound, and none
+   needed a wider bound. **A failure UNDER a sleep-derived bound proves the measurement wrong, not
+   the machine slow.** **And mutate every new assertion:** two of the three also had the expected
+   value reachable by a route the test did not intend (a constant the implementation also reads; a
+   delay set equal to the floor it was meant to prove was overridden).
+
+
+### breadth item-4 sizing detail
+
+4. **BREADTH BATCH 1 IS APPLIED; BATCH 2 REMAINS DEFERRED — 39 boards, TWO batches (D-367).**
+   Re-derived read-only from job-apps' `dedup_ledger.sqlite` and written to
+   `.agent/2026-08-28f-degree-audit/breadth-add.yaml`; import with
+   `boardwatch companies import --verify <file>` (`--verify` probes each board and skips anything
+   unproven). **The cross-reference had to be NORMALISED:** boardwatch stores a Workday slug as the
+   full composite `{tenant}.{wdN}.myworkdayjobs.com/{tenant}/{site}` while a job URL gives
+   `.../[locale/]{site}`, so comparing raw marked **Micron and HPE as addable when both are already
+   watched**. Normalising moved 14 into a duplicate bucket. Toyota IS a real addition — the tenant is
+   watched at site `tmna`, this is the sibling site `tmna_professional` (the HPE precedent).
+
+   **It is two batches because s/board is a lying unit:** ashby 7 + greenhouse 6 + lever 2 = **15
+   cheap boards** (~30 s of added fetch) versus **20 workday + 4 smartrecruiters** that are COLD,
+   spend `detail_fetch_budget` on a first scan, and have **never been timed cold** (STATE's own open
+   question). **Batch 1 (the 15 cheap boards) SHIPPED 2026-08-29 — fleet 344 -> 359**, all 15
+   re-verified `watched=1` against the source YAML rather than trusting the command's own report.
+   The cold-scan objection was CHECKED and is **provider-specific**: only `workday` and
+   `smartrecruiters` spend `detail_fetch_budget`, so the cheap batch carried none (D-367).
+   **Batch 2 (the 24 cold boards) stays deferred** on the unchanged reason — hiring.cafe is still
+   refusing us and those boards have never been timed cold. Not re-litigated.
+   **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
+
+### D-361 disk half
+
+> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Both were
+> re-measured before being re-asked and **both premises had moved**: disk is **83%, 35 GiB free** with a
+> ~70-day worst-observed runway (Mit's call: **no retention policy**), and alerting was never absent —
+> the **D-260 heartbeat** was wired inside `runner.py` all along and is now armed in the launchd plist.
+> The full reasoning moved to `STANDING-FACTS.md` at the 2026-08-29b close. **Edit that plist TEXTUALLY**
+> — PlistBuddy strips the comments that carry the reasoning.
+>
+

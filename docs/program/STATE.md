@@ -20,33 +20,43 @@
 
 ## Current standing
 
-**THE SLATE CAP IS ARMED AND REPORTING, AND ITS FIRST OBSERVATION IS A MEASURED ZERO (D-345, #215;
-run 130).** `hidden_slate_cap = 0`. The bucket is never identity-gated, so that 0 is a real reading
-and not a disarmed detector. Run 130 delivered **10 leads across 10 DISTINCT companies** where run
-129 spent 9 of 10 slots on one CGS Federal requisition — but **that diversity was natural ranking,
-not the cap**; the cap freed nothing. So D-345 is observed CORRECT, **not yet observed EFFECTIVE**,
-and the next location-split day is still the test. Design detail moved to `STANDING-FACTS.md`.
+**THE SLATE CAP HAS NOW FIRED — D-345 IS OBSERVED EFFECTIVE, AND THE OPEN TEST IS CLOSED.**
+`hidden_slate_cap` = **5** on run 131, against 0 on run 130. `SLATE_CAP_PER_KEY = 1` is per-key and
+independent of N, so widening the slate to 40 (D-366) made the collision surface: the cap deferred 5
+leads that were the same company, title and byte-identical JD as one already on the slate. STATE
+carried this as *"observed CORRECT, not yet observed EFFECTIVE"* with "the next location-split day"
+as the outstanding test — **it closed as a free side effect of the cap change, not by waiting**.
+Design detail is in `STANDING-FACTS.md`.
 
 **`degree` is AUDITED AND CLOSED — nothing needed softening (D-352, #221); the widening is measured NET HARMFUL.** Moved verbatim to `STANDING-FACTS.md` 2026-08-29.
 
-**The live six-blocker map is the OWNER'S and is NOT to be reverted (D-350 found it, D-351 rules
-it).** D-350 found `degree` armed where D-321 had recorded *"Owner's call, not taken"*; Mit confirmed
-he wanted it. His constraint was precision — *"I just don't want it to reject jobs which are
-genuinely for me"* — and D-352 above is the audit that answers it.
+**The live six-blocker map is the OWNER'S and is NOT to be reverted (D-350/D-351).** Moved verbatim to
+`STANDING-FACTS.md` 2026-08-29c.
 
 **SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on
 **five of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six).
 By design, but it makes an unqualified severity claim uncheckable, and the gap is wide: #218's floors
 give **1,228 verdict flips live vs 0 published**. Full rule in `STANDING-FACTS.md`.
 
-**RUN 130 WAS TAKEN AND IT IS THE FIRST FULL RECOMPUTE ON #218's `rules_hash`** — 137.2 min against
-run 129's 44.7, of which **eligibility alone is 84.7 min**. Read the STAGE, never the total, when
-judging anything about fetching. It closes two open reads: `hidden_slate_cap` above, and the lane
-cost split below. Numbers: METRICS 2026-08-28f.
+**RUN 131 IS THE FIRST CLEAN UNATTENDED TICK AND IT VALIDATES THE CAP CHANGE.** 96.7 min against run
+130's 137.2, **with 15 more boards and 4x the leads** — `unchanged` went 36 → 101 and eligibility was
+not a full recompute. **`tailor` was 168.1 s for 40 leads = 4.20 s/lead**, so D-366's predicted
++5%-+23% landed at the **bottom** of its range: tailoring is 2.9% of the run. **`capped_by_top_n` rose
+4,801 → 5,338**, so the reservoir refills faster than 40/day drains it — the cap was never what
+rationed supply. **Read the STAGE, never the total**, when judging anything about fetching.
+Numbers: METRICS 2026-08-29c.
 
 **The lane question is CLOSED (D-346/D-347) — do not re-propose lane parallelism.** Moved verbatim to `STANDING-FACTS.md` 2026-08-29.
 
-**THE hiring.cafe LANE IS DOWN, AND IT IS NOT OUR BUG (D-356).** Run 130 raised
+**THE DISCRIMINATOR READ OUT: IP REPUTATION IS RULED OUT AND THE CAUSE IS HOW BOARDWATCH ASKS
+(D-368).** On 2026-08-29, same machine and same IP: **boardwatch run 131 FAILED** at 04:00-05:36
+(`SearchPageError`, `boardwatch-run.log:5157`) and **job-apps SUCCEEDED at 08:30 — 248 roles, 8 terms,
+zero errors**, three hours later. D-364 pre-registered exactly this rule. **"Wait it out" is retired**:
+waiting cannot fix a difference in how we present ourselves. **The fix space is UNBLOCKED and ranked —
+(1) volume, (2) UA, (3) endpoint — and must be changed ONE AT A TIME.** Browser automation stays out of
+scope and is not the remedy. **Nothing was changed this session; it is next-session, owner-facing work.**
+
+**The lane was down and it is not our bug (D-356).** Run 130 raised
 `SearchPageError("every role facet yielded nothing (14 searched, 14 request failures)")` — a TOTAL
 outage after working on every run through 129 (85 attempted / 79 resolved). Probed: `/jobs/` returns
 **403 with Cloudflare's `Just a moment...` interstitial**, while `/robots.txt` returns 200 and
@@ -59,17 +69,10 @@ challenge-solving is out of scope and is not the answer.** This is half the lane
 job-apps' daily edge comes from. **It cannot make a run fatal** — `is_systemic_scan_outage` reads
 board counts only, never lanes — so it costs coverage, not availability.
 
-**THE WEB VIEWER NOW HAS ERROR BOUNDARIES, AT FOUR SCOPES (D-363).** D-360 named the structural
-gap and left it open; it is closed. A component that throws while rendering now costs a card, not
-the page: root, route switch, review lane, detail pane, each keeping a different thing alive. The
-review lane is contained SEPARATELY from the apply lane on purpose. **Verified by reproducing the
-pre-#232 defect** — 408 apply rows survived, and removing that one boundary took them **408 -> 0**.
-**The "no frontend test suite" gap this left open is now CLOSED (#241).** vitest + jsdom run as a
-`web-test` prerequisite of `make check` and as a CI step (nothing in CI runs `make check` on a PR). Eight
-tests cover the four boundary scopes and the skew guards, and **each was confirmed RED against the broken
-implementation** — removing any one boundary, or tightening any `== null` to `=== null`, fails the suite.
-`make check` now needs node, deliberately not conditional: a check that skips itself where the toolchain
-is missing reports green while verifying nothing.
+**The web viewer's error boundaries (D-363) and its test suite (#241) are BOTH SHIPPED and settled.**
+Four scopes, the review lane contained separately from the apply lane on purpose, and eight vitest
+tests in the gate — each confirmed RED against the broken implementation. Moved verbatim to
+`STANDING-FACTS.md` 2026-08-29c.
 
 **THE DELIVERY CAP IS 40 AGAIN, SET IN THE PLIST AND NOT IN CODE (D-366).** D-293 ruling 5 held
 `DEFAULT_TOP_N` at 10 *until rulings 1-4 landed*; 1/2/4 shipped, 3 was dropped (#148) and answered by the
@@ -106,46 +109,45 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
 
 ## Next action
 
-> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Both were
-> re-measured before being re-asked and **both premises had moved**: disk is **83%, 35 GiB free** with a
-> ~70-day worst-observed runway (Mit's call: **no retention policy**), and alerting was never absent —
-> the **D-260 heartbeat** was wired inside `runner.py` all along and is now armed in the launchd plist.
-> The full reasoning moved to `STANDING-FACTS.md` at the 2026-08-29b close. **Edit that plist TEXTUALLY**
-> — PlistBuddy strips the comments that carry the reasoning.
+> **Mit's instruction at the 2026-08-29c close: the owner-facing items below are NEXT-SESSION work.**
+> Nothing in them was started. The one thing that changed under them is item 1 — the hiring.cafe
+> discriminator read out, so that item is now a FIX to decide, not a probe to repeat.
+
+> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Disk is
+> not near-term (83%, 35 GiB free, ~70-day worst runway; Mit's call: **no retention policy**), and
+> alerting was never absent. Full reasoning in `STANDING-FACTS.md`. **Edit the plist TEXTUALLY** —
+> PlistBuddy strips the comments that carry the reasoning.
 >
-> **STILL OWED: confirm the first REAL ping landed.** Re-checked at this close: `runs = 0`, `last exit
-> code = (never exited)`, log mtime 08-28 06:13 — the counter was reset again by this session's plist
-> reload for `--top 40`, which is expected and not a fault. The 04:00 tick on 2026-08-29 is the first
-> unattended one. **A setup ping already made the monitor green, so green alone still proves nothing.**
-> **`launchctl list` col 2 is the WRONG route** — it prints `0` for a job that has NEVER run. Use
-> `launchctl print gui/$(id -u)/com.boardwatch.run` and read **`runs = N`** plus `last exit code`, and
-> cross-check the **mtime** of `~/Library/Logs/boardwatch-run.log`, never its content.
+> **THE FIRST REAL UNATTENDED TICK FIRED AND WAS CLEAN (2026-08-29, run 131).** `launchctl print` now
+> reads **`runs = 1`, `last exit code = 0`**, log mtime 05:38, and the run row is `ok` — 04:00 to 05:36,
+> 40 leads, 359 boards, no fatal. The two-session-old owed item is answered on the half that is
+> observable here. **`launchctl list` col 2 is still the WRONG route** — it prints `0` for a job that has
+> NEVER run; use `launchctl print` and read `runs = N` plus `last exit code`, cross-checked against the
+> log's **mtime**, never its content.
+>
+> **What is STILL unconfirmed, and cannot be confirmed from this machine:** `send_heartbeat()` returns a
+> `bool`, never raises and **logs nothing**, so no local artifact records whether the GET reached
+> healthchecks.io. What is proven is the gate it fires on — `status=ok` and exit 0 mean
+> `summary.fatal is None` held, so the call was made. **Receipt is Mit's to confirm in the
+> healthchecks.io dashboard.** Do NOT GET the ping URL to check: that manufactures a green.
 > **It cannot false-alarm on hiring.cafe** — a lane outage never sets `fatal` (verified).
 
-1. **hiring.cafe is STILL DOWN — re-probed 2026-08-29 ~02:05 CDT and it has NOT lifted (D-356).**
-   Same `403`, still `cf-mitigated: challenge` and `server: cloudflare`, no `__NEXT_DATA__`,
-   5,578-byte interstitial. It is
-   the only thing losing real coverage. Re-probe with **ONE** polite
-   `GET https://hiringcafe.com/jobs/software-engineer` under boardwatch's own UA — 200 +
-   `__NEXT_DATA__` means it lifted and the lane self-heals next run. **One probe per session**: IP
-   reputation is the leading hypothesis, so probing hard is the one thing that could keep it closed.
-   **Do not work around it**: browser automation is out of scope. **The owner-side ask is
-   drafted and NOT sent** in `.agent/2026-08-28g-session/hiringcafe-access-request.md` — Mit's to
-   send, edit or discard. **Until it lifts, treat lane coverage as HALVED.**
-
-   **THE OUTAGE HAS SELF-CLEARED BEFORE, SO 08-28 IS NOT PROVEN TO BE A STEP CHANGE (D-364).** The
-   identical `SearchPageError` appears at `boardwatch-run.log:4547` in **run 116 (2026-08-26)** and
-   the lane recovered unaided across the next ten runs. The earlier "worked on every run through
-   129" reading was wrong. **Waiting is a stronger option than it looked.**
-
-   **THE DISCRIMINATOR IS job-apps' 08:30 RUN AND IT COSTS US NOTHING (D-364).** job-apps reaches
-   hiring.cafe **daily from this same machine — 10 of 10 days, zero errors, 381 roles on 08-28** —
-   on a launchd schedule at 08:30. But its last fetch was **08:33 CDT on 08-28** and boardwatch's
-   first 403 came from run 130 at **15:27 CDT**, so **it has not been tested since the block and IP
-   reputation is NOT ruled out.** Its next scheduled run is the experiment. Read
-   `resumes/_logs/2026-08-29_scheduled_discovery_0830.log` under job-apps for the `hiring.cafe`
-   block, or query `acquisition_observations` for `source='hiringcafe'`. **Do NOT change our UA or
-   endpoint before that reads out** — two changes at once spoils the only free experiment there is.
+1. **hiring.cafe: THE DISCRIMINATOR HAS READ OUT — the next move is a FIX, not a probe (D-368).**
+   On 2026-08-29, same machine and same IP: boardwatch run 131 **failed** (04:00-05:36,
+   `SearchPageError`, `boardwatch-run.log:5157`); job-apps **succeeded** at 08:30 with **248 roles
+   across 8 terms, zero errors**. D-364 pre-registered the rule, so this is decisive: **IP reputation
+   is RULED OUT and the cause is HOW BOARDWATCH ASKS.** **Stop re-probing** — a probe can no longer
+   tell us anything a fix would not, and more requests from this IP is the one move that could keep it
+   closed. **Do NOT read lane absence as recovery either.**
+   **The fix space, ranked, change ONE at a time:** (1) **volume** — 14 facets plus up to 60
+   `/api/job-description` bodies per run (`DEFAULT_POSTING_BUDGET=60`) against job-apps' ~20-25
+   GETs/day; largest measured gap, cheapest to change. (2) **UA** — we self-identify as a bot, job-apps
+   sends real Chrome. (3) **endpoint** — `hiringcafe.com/jobs/{role}` plus an `/api/` endpoint job-apps
+   never touches. **Browser automation stays OUT OF SCOPE and is not the remedy** — job-apps passes on
+   plain stdlib `urllib.request`. **Robots compliance is not what Cloudflare scores**: robots disallows
+   job-apps' `?searchState=` and allows our `/jobs/`, so the compliant client is the blocked one; stay
+   on the allowed path. The owner-side access request is still drafted and unsent in
+   `.agent/2026-08-28g-session/hiringcafe-access-request.md`. **Until it lifts, lane coverage is HALVED.**
 
 2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
    STATE claimed that while the PR was still OPEN and RED, and the repo won (D-358). The lever ships
@@ -172,40 +174,24 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    frozen**, so rules work may land freely and a `rules_hash` bump is not costly on this basis until
    the owner reopens the pass. The P4 blind review remains passed and does not repeat.
 
-4. **BREADTH BATCH 1 IS APPLIED; BATCH 2 REMAINS DEFERRED — 39 boards, TWO batches (D-367).**
-   Re-derived read-only from job-apps' `dedup_ledger.sqlite` and written to
-   `.agent/2026-08-28f-degree-audit/breadth-add.yaml`; import with
-   `boardwatch companies import --verify <file>` (`--verify` probes each board and skips anything
-   unproven). **The cross-reference had to be NORMALISED:** boardwatch stores a Workday slug as the
-   full composite `{tenant}.{wdN}.myworkdayjobs.com/{tenant}/{site}` while a job URL gives
-   `.../[locale/]{site}`, so comparing raw marked **Micron and HPE as addable when both are already
-   watched**. Normalising moved 14 into a duplicate bucket. Toyota IS a real addition — the tenant is
-   watched at site `tmna`, this is the sibling site `tmna_professional` (the HPE precedent).
-
-   **It is two batches because s/board is a lying unit:** ashby 7 + greenhouse 6 + lever 2 = **15
-   cheap boards** (~30 s of added fetch) versus **20 workday + 4 smartrecruiters** that are COLD,
-   spend `detail_fetch_budget` on a first scan, and have **never been timed cold** (STATE's own open
-   question). **Batch 1 (the 15 cheap boards) SHIPPED 2026-08-29 — fleet 344 -> 359**, all 15
-   re-verified `watched=1` against the source YAML rather than trusting the command's own report.
-   The cold-scan objection was CHECKED and is **provider-specific**: only `workday` and
-   `smartrecruiters` spend `detail_fetch_budget`, so the cheap batch carried none (D-367).
-   **Batch 2 (the 24 cold boards) stays deferred** on the unchanged reason — hiring.cafe is still
-   refusing us and those boards have never been timed cold. Not re-litigated.
-   **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
+4. **BREADTH BATCH 1 IS APPLIED; BATCH 2 REMAINS DEFERRED (D-367).** The 15 cheap boards
+   (ashby 7 / greenhouse 6 / lever 2) shipped 2026-08-29 — **fleet 344 → 359**, all re-verified
+   `watched=1` against the source YAML. Already producing: Relativity Space 346 open postings,
+   OKX 341, NYT 178, Zip 122, Voleon 59. **The cold-scan objection was checked and is
+   provider-specific** — only `workday` and `smartrecruiters` spend `detail_fetch_budget`.
+   **Batch 2 (20 workday + 4 smartrecruiters) stays deferred**: never timed cold, and Workday is
+   ~73% of a run's fetch cost. Sizing detail and the normalisation trap are in D-367 and
+   `STANDING-FACTS.md`; the file is `.agent/2026-08-28f-degree-audit/breadth-add.yaml`.
+   **Read "Breadth is last" first.**
 
 5. **Phase 1b and its follow-up are COMPLETE — item RETIRED.** Detail moved verbatim to
    `STANDING-FACTS.md` 2026-08-28h, including why #230 is keyed on the `role_vetoed` MEMBER and
    must not be re-broadened to the review lane (D-354, D-359).
 
-6. **`main` IS GREEN** — three consecutive green runs; which three flakes, and why each fix was
-   strictly tighter, moved verbatim to `STANDING-FACTS.md` 2026-08-28h (D-357, D-358).
+6. **`main` IS GREEN** and stayed green across #240-#243. The three deflakes behind that, and the
+   standing rule they produced — **when a timing test flakes, ask what it MEASURED versus what it
+   CLAIMS**, and **mutate every new assertion** — are in `STANDING-FACTS.md`.
 
-   **The standing rule, three instances behind it: when a timing test flakes, ask what it MEASURED
-   versus what it CLAIMS** — all three measured a proxy whose noise straddled the bound, and none
-   needed a wider bound. **A failure UNDER a sleep-derived bound proves the measurement wrong, not
-   the machine slow.** **And mutate every new assertion:** two of the three also had the expected
-   value reachable by a route the test did not intend (a constant the implementation also reads; a
-   delay set equal to the floor it was meant to prove was overridden).
 7. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
    `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
@@ -281,6 +267,6 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **`boardwatch web` is NOT RUNNING — START it, don't restart it** | Re-checked 2026-08-29 00:00: still no process, 8787 still Bridge. **Do NOT start it while a run is live or imminent** — the viewer's context path is a write path and a WAL two-writer deadlock against a running pipeline is on record; start it AFTER a run lands. **Otherwise it is worth more than it was**: the D-363 error boundaries only protect a viewer that is actually up, and starting it is still what makes the viewer send `review_reason`. Original note — checked 2026-08-28: no `boardwatch web` process exists; port 8787 is an unrelated `python3.1` (Bridge). D-360's note said *restart* it so the viewer sends `review_reason`; since nothing is up, the accurate instruction is **start** it. The underlying skew is still structural (D-360): it serves the bundle from **disk** but the API from the Python it imported **at startup**, so any merge or branch switch under a running viewer separates the two. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page. It binds `--port 0`, so **the port is whatever it picks** | **Mit** (start when convenient) |
-| **The unattended 04:00 tick runs the PRIMARY checkout's branch** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
-| **hiring.cafe lane is DOWN behind Cloudflare** | Run 130: total outage, `403` + `Just a moment...` on `/jobs/` with boardwatch's own UA, while `/robots.txt` returns 200 and explicitly `Allow`s `/jobs/`. **Not a boardwatch defect and not a robots violation** — bot protection. Re-probe before assuming it is permanent; 2026-08-28 ran 4 runs against a cadence of 1, so our own volume is a plausible trigger. **Browser automation is out of scope and is not the remedy.** Half the lane coverage job-apps' edge comes from (D-356) | **Mit** (owner-side: ask for API access) |
+| **`boardwatch web` is NOT RUNNING — START it, don't restart it** | Re-checked 2026-08-29 00:00: still no process, 8787 still Bridge. **Run 131 finished 05:36, so the window is OPEN until the next 04:00 tick — this is the time to start it.** Still **never while a run is live**: the viewer's context path is a write path and a WAL two-writer deadlock against a running pipeline is on record. **It is worth more than it was**: the D-363 error boundaries only protect a viewer that is actually up, and starting it is still what makes the viewer send `review_reason`. Original note — checked 2026-08-28: no `boardwatch web` process exists; port 8787 is an unrelated `python3.1` (Bridge). D-360's note said *restart* it so the viewer sends `review_reason`; since nothing is up, the accurate instruction is **start** it. The underlying skew is still structural (D-360): it serves the bundle from **disk** but the API from the Python it imported **at startup**, so any merge or branch switch under a running viewer separates the two. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page. It binds `--port 0`, so **the port is whatever it picks** | **Mit** (start when convenient) |
+| **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
+| **hiring.cafe lane is DOWN, and the cause is now KNOWN** | **The discriminator read out 2026-08-29 (D-368): same machine, same IP, same day — boardwatch run 131 FAILED at 04:00-05:36, job-apps SUCCEEDED at 08:30 with 248 roles / 8 terms / 0 errors.** IP reputation is **RULED OUT**; the cause is **how boardwatch asks**. **Stop probing — the next move is a fix**, ranked: (1) volume (14 facets + up to 60 `/api/job-description` bodies/run vs job-apps' ~20-25 GETs/day), (2) UA (we self-identify as a bot), (3) endpoint. **Change ONE at a time.** Browser automation stays out of scope and is NOT the remedy. Half the lane coverage job-apps' edge comes from | **Mit** (next session: pick the lever, or send the drafted access request) |
