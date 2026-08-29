@@ -67,7 +67,7 @@ function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
           </ul>
         )}
 
-        {stage.run_scoped_attribution === null ? null : (
+        {stage.run_scoped_attribution == null ? null : (
           <p className="mt-2 text-xs text-fg-3">
             run-scoped attribution ·{" "}
             {Object.entries(stage.run_scoped_attribution)
@@ -81,11 +81,19 @@ function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
 }
 
 function CoverageBand({ funnel }: { funnel: RunFunnel }) {
+  /*
+   * Unlike every other payload on this page, a funnel is read straight off DISK and passed through
+   * unchanged, so its shape follows the artifact's AGE, not the API's version — older runs predate
+   * both `coverage` and `run_scoped_attribution`. Only `RUNS_LIMIT = 20` keeps those artifacts out
+   * of the selector today, and that constant was not chosen for this reason.
+   */
+  const coverage = funnel.coverage as RunFunnel["coverage"] | undefined;
+  if (coverage == null) return null;
   const cells: [string, string][] = [
-    ["leads measured", formatCount(funnel.coverage.leads_measured)],
-    ["with a fraction", formatCount(funnel.coverage.leads_with_fraction)],
-    ["mean", formatFraction(funnel.coverage.mean_fraction)],
-    ["median", formatFraction(funnel.coverage.median_fraction)],
+    ["leads measured", formatCount(coverage.leads_measured)],
+    ["with a fraction", formatCount(coverage.leads_with_fraction)],
+    ["mean", formatFraction(coverage.mean_fraction)],
+    ["median", formatFraction(coverage.median_fraction)],
   ];
   return (
     <section
@@ -101,9 +109,9 @@ function CoverageBand({ funnel }: { funnel: RunFunnel }) {
       <div className="flex flex-1 flex-col gap-1 px-4 py-3">
         <span className="label-micro text-fg-3">most-missed terms</span>
         <span className="text-sm text-fg-2">
-          {funnel.coverage.top_missing.length === 0
+          {coverage.top_missing.length === 0
             ? EM_DASH
-            : funnel.coverage.top_missing
+            : coverage.top_missing
                 .map((item) => `${item.term} (${String(item.count)})`)
                 .join(", ")}
         </span>

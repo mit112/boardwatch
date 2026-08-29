@@ -33,7 +33,9 @@ const STYLES: Record<Verdict, { className: string; glyph: string; hint: string }
 };
 
 export function VerdictChip({ verdict }: { verdict: Verdict | null }) {
-  if (verdict === null) {
+  // `== null`, matching `ReviewReasonBadge`: a viewer older than this field sends `undefined`,
+  // and `STYLES[undefined].className` is the exact throw that blanked the page (D-360).
+  if (verdict == null) {
     return (
       <span
         className="inline-flex min-h-5 items-center gap-1.5 rounded-sm border border-dashed border-control px-2 py-0.5 text-xs text-fg-3"

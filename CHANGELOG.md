@@ -225,6 +225,29 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A component that fails to draw now costs a card, not the whole page.** The queue viewer had no
+  error boundary anywhere, so any error thrown while rendering unmounted the entire React tree and
+  left a blank page — which is how one undefined field blanked the queue. Boundaries now sit at four
+  scopes, each keeping a different thing usable: the app root, the route switch (so the tabs still
+  work and the other view is one click away), the review lane (so a failure there cannot cost the
+  apply queue above it), and the detail pane (so a failure there cannot cost the queue beside it).
+  Each card says what failed, what still works, and offers one named recovery action; the technical
+  detail is there but folded, and focus moves to the recovery button only when the failure destroyed
+  the element that had it. The detail pane's action closes the lead rather than redrawing it, because
+  below the side-by-side breakpoint a lead that stays selected holds the queue behind it inert.
+
+- **The viewer no longer breaks when it is newer than the server it is talking to.** The page's
+  JavaScript is served from disk while the data comes from the copy the server loaded at startup, so
+  a long-running viewer can read a field its own API never learned to send. An absent field arrived
+  as `undefined`, the guards tested only for `null`, and the read threw. The queue's own lane list
+  is the worst case and the one no error boundary can catch — it is read inside a promise, so the
+  page showed a load failure blaming the connection and advising a reload that would not have
+  helped, and on the background refresh it failed silently and stopped reporting new leads
+  altogether for as long as the page stayed open. The lane list is now normalised once where the
+  response arrives, the shared display helpers and the verdict chip accept an absent value the same
+  way the review badge already did, and the runs page tolerates funnel files written before the
+  fields it reads existed.
+
 - **The experience-years floor patterns now read possessive and qualified phrasings.** The floor
   patterns anchored on the literal word `experience` immediately after an optional whitelisted
   adjective, so three common phrasings never registered as floors at all: the possessive

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { FIXTURE_MODE } from "./api/client";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "./components/Toaster";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useToasts } from "./hooks/useToasts";
@@ -108,7 +109,20 @@ export function App() {
       </header>
 
       <main id="view" tabIndex={-1} className="mx-auto max-w-[110rem] px-6 py-10">
-        {route === "queue" ? <QueuePage push={push} onSheet={setSheet} /> : <RunsPage />}
+        {/*
+          * Wraps the route SWITCH, not the header — so a view that fails to draw leaves the nav
+          * above it working, and the reader's way out is the tab they already know. `resetKeys`
+          * on the route is what makes that way out real: without it, taking the tab would carry
+          * this card onto the other view, which is not broken.
+          */}
+        <ErrorBoundary
+          title="This view could not be drawn."
+          hint="The tabs above still work, so the other view is one click away. Drawing this one again is worth a try — it reloads from the server either way, and nothing in the queue was changed by the failure."
+          action="Draw this view again"
+          resetKeys={[route]}
+        >
+          {route === "queue" ? <QueuePage push={push} onSheet={setSheet} /> : <RunsPage />}
+        </ErrorBoundary>
       </main>
 
       <Toaster toasts={toasts} onDismiss={dismiss} onHold={hold} onRelease={release} />

@@ -47,9 +47,13 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
  * says that cannot happen and on a matched pair it cannot; but `boardwatch web` serves the bundle
  * from DISK while running the Python it imported at STARTUP, so a long-lived viewer process can
  * serve a bundle newer than its own API. A viewer started before this field existed omits it
- * entirely, `REASONS[undefined]` is `undefined`, and reading `.label` off that threw — unmounting
- * the whole tree, because the app has no error boundary. A missing field means the server cannot
- * say why a lead was held, so the honest render is no badge: exactly the pre-#224 page.
+ * entirely, `REASONS[undefined]` is `undefined`, and reading `.label` off that threw — which
+ * unmounted the whole tree and blanked the page. A missing field means the server cannot say why a
+ * lead was held, so the honest render is no badge: exactly the pre-#224 page.
+ *
+ * This guard is still the fix. `ErrorBoundary` now contains the review lane, so the same class of
+ * throw costs a card rather than the page — but containment is the floor under this guard, not a
+ * replacement for it: a caught error still loses the whole lane, and the reader wants the leads.
  */
 export function ReviewReasonBadge({
   reason,

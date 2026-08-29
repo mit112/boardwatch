@@ -11,6 +11,7 @@ import {
 import type { Answers, QueueCounts, QueueDetail, QueueResponse, QueueRow } from "../api/types";
 import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
 import { StatusBand } from "../components/StatusBand";
@@ -77,11 +78,24 @@ export function QueuePage({
   const knownIds = useRef<Set<number>>(new Set());
 
   const adopt = useCallback((response: QueueResponse) => {
-    setData(response);
+    /*
+     * `review` is normalised ONCE, here, and never again — eight places downstream read it, five
+     * of them as a bare `data.review.length`, and guarding each would be five chances to miss one.
+     *
+     * It needs normalising because `review` is newer than this page's oldest possible server: a
+     * viewer that imported its Python before the lane split sends no `review` key at all. The
+     * type says that cannot happen; `boardwatch web` says otherwise, serving this bundle from DISK
+     * against the API it imported at STARTUP (D-360). Spreading `undefined` throws `not iterable`,
+     * and that throw is inside a promise, so NO error boundary sees it — it lands in the `.catch`
+     * below and paints a load-failure card that blames the transport and tells the reader to
+     * re-open a URL, neither of which is true or would help.
+     */
+    const normalised: QueueResponse = { ...response, review: response.review ?? [] };
+    setData(normalised);
     // BOTH lanes. A lead that moves between them on a re-evaluation is not new, and counting it
     // as new would put a permanent "N new" nag on the page that refreshing never clears.
     knownIds.current = new Set(
-      [...response.rows, ...response.review].map((row) => row.posting_id),
+      [...normalised.rows, ...normalised.review].map((row) => row.posting_id),
     );
     setStashed(null);
     setNewCount(0);
@@ -110,7 +124,10 @@ export function QueuePage({
     const timer = window.setInterval(() => {
       void getQueue()
         .then((response) => {
-          const fresh = [...response.rows, ...response.review].filter(
+          // `?? []` as above, and it matters more here: this `.catch` swallows deliberately, so
+          // the same throw would kill the poll silently and "N new" would never appear again for
+          // the life of the process.
+          const fresh = [...response.rows, ...(response.review ?? [])].filter(
             (row) => !knownIds.current.has(row.posting_id),
           );
           if (fresh.length > 0) {
@@ -528,112 +545,167 @@ export function QueuePage({
           )}
 
           {data.review.length === 0 ? null : (
-            <section aria-labelledby="review-heading" className="mt-12">
-              <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 border-t border-divider pt-8">
-                <h2
-                  id="review-heading"
-                  className="font-display text-base tracking-[0.12em] text-fg uppercase"
-                >
-                  Review
-                </h2>
-                <span className="text-sm text-fg-2 tabular-nums">
-                  {visibleReview.length.toLocaleString()}
-                  {visibleReview.length === data.review.length
-                    ? ""
-                    : ` of ${data.review.length.toLocaleString()}`}
-                </span>
-                <button
-                  type="button"
-                  aria-expanded={reviewOpen}
-                  aria-controls="review-list"
-                  onClick={() => {
-                    setReviewOpen((open) => !open);
-                  }}
-                  className="min-h-11 rounded-sm px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
-                >
-                  {reviewOpen ? "hide" : "show"}
-                </button>
-                {/*
-                  * Says what the lane IS, not what is wrong with it. These leads were not
-                  * rejected — the gate declined to vouch for them, which is a different claim,
-                  * and calling them "off target" here would assert the decision it declined to
-                  * make. The folder path is named because the two must stay legible as the same
-                  * split; if they ever disagree, the folder tree wins.
-                  */}
-                <p className="w-full text-sm text-fg-2">
-                  Open these before applying. Each one is either outside the US, or carries a
-                  title the role gate will not positively call software — so it is not
-                  blindly appliable. Same split as the{" "}
-                  <code className="text-fg-3">_review</code> folder.
-                </p>
-              </header>
-
-              {/*
-                * The container stays MOUNTED and is emptied instead of being unmounted, so
-                * `aria-controls="review-list"` resolves in the collapsed state — which is the
-                * default, and therefore the state a screen reader meets first. Unmounting it left
-                * a dangling IDREF that AT drops silently. The ROWS are still not rendered while
-                * collapsed, so nothing is paid for the leads themselves.
-                */}
-              <div id="review-list" className={reviewOpen ? "mt-4" : undefined}>
-                {!reviewOpen ? null : visibleReview.length === 0 ? (
-                    <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
-                      No review lead matches the current filter. There are{" "}
-                      {data.review.length.toLocaleString()} in the lane.
+            /*
+             * The lane is contained SEPARATELY from the apply queue above it, and that asymmetry
+             * is the point: `ReviewReasonBadge` renders a field only these rows carry, which is
+             * precisely the shape that blanked this page once. A failure here must not cost the
+             * reader the list they can actually act on. The whole `<section>` is inside, header
+             * included, so `aria-controls="review-list"` can never be left pointing at an element
+             * the fallback replaced. `mt-12` moved out to the wrapper so the card inherits it.
+             */
+            <div className="mt-12">
+              <ErrorBoundary
+                title="The review lane could not be drawn."
+                hint="The queue above is unaffected and still works. These leads are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
+                action="Draw the review lane again"
+                resetKeys={[data]}
+              >
+                <section aria-labelledby="review-heading">
+                  <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 border-t border-divider pt-8">
+                    <h2
+                      id="review-heading"
+                      className="font-display text-base tracking-[0.12em] text-fg uppercase"
+                    >
+                      Review
+                    </h2>
+                    <span className="text-sm text-fg-2 tabular-nums">
+                      {visibleReview.length.toLocaleString()}
+                      {visibleReview.length === data.review.length
+                        ? ""
+                        : ` of ${data.review.length.toLocaleString()}`}
+                    </span>
+                    <button
+                      type="button"
+                      aria-expanded={reviewOpen}
+                      aria-controls="review-list"
+                      onClick={() => {
+                        setReviewOpen((open) => !open);
+                      }}
+                      className="min-h-11 rounded-sm px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
+                    >
+                      {reviewOpen ? "hide" : "show"}
+                    </button>
+                    {/*
+                      * Says what the lane IS, not what is wrong with it. These leads were not
+                      * rejected — the gate declined to vouch for them, which is a different claim,
+                      * and calling them "off target" here would assert the decision it declined to
+                      * make. The folder path is named because the two must stay legible as the same
+                      * split; if they ever disagree, the folder tree wins.
+                      */}
+                    <p className="w-full text-sm text-fg-2">
+                      Open these before applying. Each one is either outside the US, or carries a
+                      title the role gate will not positively call software — so it is not
+                      blindly appliable. Same split as the{" "}
+                      <code className="text-fg-3">_review</code> folder.
                     </p>
-                ) : (
-                    <QueueTable
-                      label="Review"
-                      rows={visibleReview}
-                      rankOf={reviewRankOf}
-                      sort={reviewSort}
-                      onSort={onReviewSort}
-                      selectedId={selected}
-                      activeId={activeId}
-                      onActivate={setActiveId}
-                      collapsing={collapsing}
-                      onOpenApply={openApply}
-                      onSelect={(row) => {
-                        if (row.posting_id === selected) return;
-                        setSelected(row.posting_id);
-                        setDetail(null);
-                        setDetailError(null);
-                      }}
-                      onApplied={(row) => {
-                        act(row, "applied");
-                      }}
-                      onSkip={(row) => {
-                        act(row, "skipped");
-                      }}
-                  />
-                )}
-              </div>
-            </section>
+                  </header>
+
+                  {/*
+                    * The container stays MOUNTED and is emptied instead of being unmounted, so
+                    * `aria-controls="review-list"` resolves in the collapsed state — which is the
+                    * default, and therefore the state a screen reader meets first. Unmounting it left
+                    * a dangling IDREF that AT drops silently. The ROWS are still not rendered while
+                    * collapsed, so nothing is paid for the leads themselves.
+                    */}
+                  <div id="review-list" className={reviewOpen ? "mt-4" : undefined}>
+                    {!reviewOpen ? null : visibleReview.length === 0 ? (
+                        <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
+                          No review lead matches the current filter. There are{" "}
+                          {data.review.length.toLocaleString()} in the lane.
+                        </p>
+                    ) : (
+                        <QueueTable
+                          label="Review"
+                          rows={visibleReview}
+                          rankOf={reviewRankOf}
+                          sort={reviewSort}
+                          onSort={onReviewSort}
+                          selectedId={selected}
+                          activeId={activeId}
+                          onActivate={setActiveId}
+                          collapsing={collapsing}
+                          onOpenApply={openApply}
+                          onSelect={(row) => {
+                            if (row.posting_id === selected) return;
+                            setSelected(row.posting_id);
+                            setDetail(null);
+                            setDetailError(null);
+                          }}
+                          onApplied={(row) => {
+                            act(row, "applied");
+                          }}
+                          onSkip={(row) => {
+                            act(row, "skipped");
+                          }}
+                      />
+                    )}
+                  </div>
+                </section>
+              </ErrorBoundary>
+            </div>
           )}
         </div>
 
         {selected === null ? null : (
-          <DetailPane
-            key={selected}
-            detail={detail}
-            loading={detailLoading}
-            error={detailError}
-            answers={answers}
-            onClose={() => {
+          /*
+           * The pane reads more of the API surface than anything else on the page, so it is the
+           * likeliest thing to meet a field the server stopped sending — and it is the easiest to
+           * lose safely, because the queue beside it is the part being worked through.
+           *
+           * The recovery action is CLOSE, not redraw, and that is not a style choice: below `lg`
+           * this pane is a sheet, and `sheetOpen` is derived from `selected`, so a failed pane
+           * that stays selected holds `inert` on the list behind it. Redrawing would hand back a
+           * card with a frozen queue behind it. Clearing `selected` releases the `inert` AND moves
+           * `resetKeys`, so the boundary is reset by the same click.
+           */
+          <ErrorBoundary
+            title="This lead could not be drawn."
+            hint="The queue beside it is unaffected — close this one and pick another. The lead's own résumé and notes are on disk in its queue folder either way."
+            action="Close this lead"
+            onAction={() => {
+              /*
+               * Where the cursor lands, for the same reason the mark-applied path does it: this
+               * click destroys the button that has focus — the boundary unmounts with the pane —
+               * and focus would fall to `<body>`, stranding a keyboard reader at the top of the
+               * document. Back to the row that opened the pane, which is reachable again the
+               * moment `selected` is null and the sheet's `inert` lifts. `DetailPane`'s own
+               * restore cannot cover this: at the narrow tier it already fired against an inert
+               * row, and at `lg` it never registers one.
+               */
+              const opener = selected;
               setSelected(null);
+              window.setTimeout(() => {
+                const row = document.querySelector<HTMLElement>(
+                  `[data-row-id="${String(opener)}"]`,
+                );
+                if (row === null) document.getElementById(FILTER_INPUT_ID)?.focus();
+                else row.focus();
+              }, 0);
             }}
-            onApplied={() => {
-              const row = detail?.row;
-              if (row) act(row, "applied");
-            }}
-            onSkip={() => {
-              const row = detail?.row;
-              if (row) act(row, "skipped");
-            }}
-            onToast={(message, tone) => {
-              push({ message, tone });
-            }}
-          />
+            resetKeys={[selected]}
+          >
+            <DetailPane
+              key={selected}
+              detail={detail}
+              loading={detailLoading}
+              error={detailError}
+              answers={answers}
+              onClose={() => {
+                setSelected(null);
+              }}
+              onApplied={() => {
+                const row = detail?.row;
+                if (row) act(row, "applied");
+              }}
+              onSkip={() => {
+                const row = detail?.row;
+                if (row) act(row, "skipped");
+              }}
+              onToast={(message, tone) => {
+                push({ message, tone });
+              }}
+            />
+          </ErrorBoundary>
         )}
       </div>
     </div>
