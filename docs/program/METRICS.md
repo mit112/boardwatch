@@ -8778,6 +8778,29 @@ visually identical.
 **Honest limit:** findings 1-3 changed the boundary code AFTER the browser probes in (c). They were
 re-verified by `tsc`, eslint and a full green gate, not by re-running those probes.
 
+### (f) job-apps vs boardwatch on hiring.cafe — read from LOCAL stores, zero network requests (D-364)
+
+| | job-apps | boardwatch |
+|---|---|---|
+| reaches hiring.cafe | **10 of 10 days, zero errors** | `403` since run 130 |
+| last success | **2026-08-28T13:32:59Z** (08:32 CDT) | run 129 |
+| 08-28 yield | **381 roles, 8/8 terms** | lane outage at 15:27 CDT |
+| schedule | unattended **08:30** (`com.mitsheth.job-discovery.plist`); 20 consecutive `completed` | 04:00, on demand |
+| requests/day | ~20-25 total | 14 facets + up to **60** bodies **per run**; 08-28 ran **4 runs** (~300, ~13x) |
+| User-Agent | real **Chrome 130** | `boardwatch/0.5.0 (+https://…)` — self-identifies as a bot |
+| endpoint | `hiring.cafe/?searchState=…&page=N` | `hiringcafe.com/jobs/{role}` + `/api/job-description` |
+| client | plain stdlib `urllib.request` | `httpx` |
+
+**It does not discriminate yet.** job-apps' last fetch 08:33 CDT, boardwatch's first 403 15:27 CDT,
+same day — job-apps has not requested since the block, so **IP reputation is NOT ruled out**. The
+free experiment is its own 08:30 run on 2026-08-29.
+
+**Headless-browser advantage REFUTED** — job-apps uses plain `urllib`; `.playwright-mcp/` is a stale
+2026-07-27 cache with zero hiring.cafe artifacts. A plain HTTP client demonstrably passes.
+
+**Correction to D-356:** the same `SearchPageError` is at `boardwatch-run.log:4547` in **run 116
+(2026-08-26)** and recovered unaided over ten runs — the outage is intermittent, not a step change.
+
 ### (e) Not done, deliberately
 
 No run taken: 2026-08-28 already ran four against a cadence of one, and our own volume is the leading

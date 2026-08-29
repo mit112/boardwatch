@@ -122,6 +122,20 @@ never an application count (D-312). Board cost is provider-weighted and **s/boar
    drafted and NOT sent** in `.agent/2026-08-28g-session/hiringcafe-access-request.md` — Mit's to
    send, edit or discard. **Until it lifts, treat lane coverage as HALVED.**
 
+   **THE OUTAGE HAS SELF-CLEARED BEFORE, SO 08-28 IS NOT PROVEN TO BE A STEP CHANGE (D-364).** The
+   identical `SearchPageError` appears at `boardwatch-run.log:4547` in **run 116 (2026-08-26)** and
+   the lane recovered unaided across the next ten runs. The earlier "worked on every run through
+   129" reading was wrong. **Waiting is a stronger option than it looked.**
+
+   **THE DISCRIMINATOR IS job-apps' 08:30 RUN AND IT COSTS US NOTHING (D-364).** job-apps reaches
+   hiring.cafe **daily from this same machine — 10 of 10 days, zero errors, 381 roles on 08-28** —
+   on a launchd schedule at 08:30. But its last fetch was **08:33 CDT on 08-28** and boardwatch's
+   first 403 came from run 130 at **15:27 CDT**, so **it has not been tested since the block and IP
+   reputation is NOT ruled out.** Its next scheduled run is the experiment. Read
+   `resumes/_logs/2026-08-29_scheduled_discovery_0830.log` under job-apps for the `hiring.cafe`
+   block, or query `acquisition_observations` for `source='hiringcafe'`. **Do NOT change our UA or
+   endpoint before that reads out** — two changes at once spoils the only free experiment there is.
+
 2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
    STATE claimed that while the PR was still OPEN and RED, and the repo won (D-358). The lever ships
    **disarmed**; arming is one config line plus a read-back check, and the whole procedure is in
