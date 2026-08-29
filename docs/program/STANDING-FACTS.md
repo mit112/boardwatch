@@ -1402,3 +1402,76 @@ genuinely for me"* — and D-352 above is the audit that answers it.
 > — PlistBuddy strips the comments that carry the reasoning.
 >
 
+## Moved out of STATE on 2026-08-29d — settled, kept verbatim
+
+These blocks were true and stayed true; they were moved whole, not summarised, because STATE
+passed its ~250-line ceiling again. Each one's reasoning lives in the decision it cites.
+
+### The slate cap firing (D-345 observed effective)
+
+**THE SLATE CAP HAS NOW FIRED — D-345 IS OBSERVED EFFECTIVE, AND THE OPEN TEST IS CLOSED.**
+`hidden_slate_cap` = **5** on run 131, against 0 on run 130. `SLATE_CAP_PER_KEY = 1` is per-key and
+independent of N, so widening the slate to 40 (D-366) made the collision surface: the cap deferred 5
+leads that were the same company, title and byte-identical JD as one already on the slate. STATE
+carried this as *"observed CORRECT, not yet observed EFFECTIVE"* with "the next location-split day"
+as the outstanding test — **it closed as a free side effect of the cap change, not by waiting**.
+Design detail is in `STANDING-FACTS.md`.
+
+### The lane-down reading superseded by D-368/D-369 (D-356)
+
+**The lane was down and it is not our bug (D-356).** Run 130 raised
+`SearchPageError("every role facet yielded nothing (14 searched, 14 request failures)")` — a TOTAL
+outage after working on every run through 129 (85 attempted / 79 resolved). Probed: `/jobs/` returns
+**403 with Cloudflare's `Just a moment...` interstitial**, while `/robots.txt` returns 200 and
+**explicitly `Allow`s `/jobs/`** — so boardwatch is fully compliant and this is bot protection.
+**Re-probed 2026-08-28 ~19:20 CDT and it has NOT lifted** — same 403, and the response now also
+carries `cf-mitigated: challenge` and `server: cloudflare`, which names the mechanism outright.
+`/robots.txt` still returns 200 and still `Allow`s `/jobs/`. 2026-08-28 ran FOUR runs against a
+normal cadence of one, so our own volume remains a plausible trigger. **Browser automation /
+challenge-solving is out of scope and is not the answer.** This is half the lane coverage that
+job-apps' daily edge comes from. **It cannot make a run fatal** — `is_systemic_scan_outage` reads
+board counts only, never lanes — so it costs coverage, not availability.
+
+### The web viewer's boundaries and test suite (D-363/#241)
+
+**The web viewer's error boundaries (D-363) and its test suite (#241) are BOTH SHIPPED and settled.**
+Four scopes, the review lane contained separately from the apply lane on purpose, and eight vitest
+tests in the gate — each confirmed RED against the broken implementation. Moved verbatim to
+`STANDING-FACTS.md` 2026-08-29c.
+
+### The delivery cap at 40 in the plist (D-366)
+
+**THE DELIVERY CAP IS 40 AGAIN, SET IN THE PLIST AND NOT IN CODE (D-366).** D-293 ruling 5 held
+`DEFAULT_TOP_N` at 10 *until rulings 1-4 landed*; 1/2/4 shipped, 3 was dropped (#148) and answered by the
+D-345 slate cap, and #218/D-333/D-352 landed since — **the hold condition is met**. The measurement that
+decides it also **corrects D-281**: runs 120-130 delivered **100% same-day** (median 0.00-0.73 d, 0% older
+than 7 d), so the ranker is **recency-dominated** and run 130's **4,801 `capped_by_top_n`** postings are
+**permanently buried, not queued**. At N=10 every unattended day discards its own surplus. The cost is a
+RANGE driven by **JD richness**, not the LLM lane: **+5% to +23%** of a run. **`DEFAULT_TOP_N` in code
+stays 10** — that is Mit's review capacity, not the mechanism. **No hash moves, so the provisional-pass
+counter is NOT reset.** Revert = delete two `<string>` lines from the plist.
+
+### Breadth batch 1 applied (D-367)
+
+**BREADTH BATCH 1 IS APPLIED — the fleet is 359, not 344 (D-367).** The 15 cheap boards (ashby 7 /
+greenhouse 6 / lever 2) imported with `--verify`, all 15 re-verified `watched=1` against the source YAML
+rather than trusting the command. **The cold-scan objection turned out to be provider-specific**: only
+`workday` and `smartrecruiters` spend `detail_fetch_budget`, so the cheap batch carries none. **The 24
+cold boards stay deferred** on the unchanged reason.
+
+### PROGRAM.md's B5 row corrected (D-365)
+
+**PROGRAM.md's B5 row was STALE BY 20 DECISIONS and is corrected (D-365).** It read "the instrument is
+DORMANT, see D-282" long after **D-302 (#164)** armed the zero-output guard on run-scoped rank
+attribution. B5 is **scoreable**. The general lesson: **when a program document cites a decision for a
+capability GAP, verify the gap against the CODE — the citation dates the claim, it does not renew it.**
+### Run 131, the first clean unattended tick (D-366 / METRICS 2026-08-29c)
+
+**RUN 131 IS THE FIRST CLEAN UNATTENDED TICK AND IT VALIDATES THE CAP CHANGE.** 96.7 min against run
+130's 137.2, **with 15 more boards and 4x the leads** — `unchanged` went 36 → 101 and eligibility was
+not a full recompute. **`tailor` was 168.1 s for 40 leads = 4.20 s/lead**, so D-366's predicted
++5%-+23% landed at the **bottom** of its range: tailoring is 2.9% of the run. **`capped_by_top_n` rose
+4,801 → 5,338**, so the reservoir refills faster than 40/day drains it — the cap was never what
+rationed supply. **Read the STAGE, never the total**, when judging anything about fetching.
+Numbers: METRICS 2026-08-29c.
+
