@@ -39,7 +39,17 @@ function Flags({ row }: { row: QueueRow }) {
       {row.thin_jd ? (
         <Badge label="thin JD" reason="No coverage fraction could be computed." />
       ) : null}
-      {row.off_target ? <Badge label="off target" reason={row.off_target_reason} /> : null}
+      {/* Suppressed on `role_vetoed` rows ALONE, where the badge above already says it: that
+          member IS `role === "not_swe"`, read off the same `role_verdict` call `off_target` is,
+          so the two chips are one claim rendered twice. NOT suppressed on every review row —
+          `classify` reaches `ineligible_verdict` and `non_us_location` BEFORE the role branch,
+          so either can hold a lead while `off target` reports something else entirely (the
+          fixture's Block row is held on an ineligible verdict while `off target` names a
+          seniority band). The detail pane keeps both: there the reasons are expanded, so they
+          read as lane-then-evidence rather than as a repeat. */}
+      {row.off_target && row.review_reason !== "role_vetoed" ? (
+        <Badge label="off target" reason={row.off_target_reason} />
+      ) : null}
       {row.status === "closed" ? (
         <Badge
           label="closed"
