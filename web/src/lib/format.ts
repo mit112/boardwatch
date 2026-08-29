@@ -1,4 +1,14 @@
-/** Display helpers. Every one of them has a defined answer for `null`, and none of them is `0`. */
+/**
+ * Display helpers. Every one of them has a defined answer for `null`, and none of them is `0`.
+ *
+ * Every guard here is `== null`, deliberately loose, so it catches `undefined` as well. The types
+ * say `undefined` cannot arrive; `boardwatch web` says otherwise, because it serves this bundle
+ * from DISK while answering from the Python it imported at STARTUP, so a long-lived viewer can
+ * serve a bundle that reads a field its own API never learned to send. An absent field then
+ * arrives as `undefined`, `=== null` waves it through, and `undefined.toLocaleString()` throws
+ * during render — which is how one absent field blanked the whole page (D-360). These helpers sit
+ * under nearly every number the viewer prints, so this is the cheapest place to hold that line.
+ */
 
 export const EM_DASH = "\u2014";
 
@@ -7,24 +17,24 @@ export const EM_DASH = "\u2014";
  * em dash — never `0d`, which would claim the posting went up today. A genuine zero says "today".
  */
 export function formatAge(days: number | null): string {
-  if (days === null) return EM_DASH;
+  if (days == null) return EM_DASH;
   if (days === 0) return "today";
   return `${String(days)}d`;
 }
 
 /** A coverage fraction. `null` is "not measured", which is exactly the thin-JD case. */
 export function formatFraction(fraction: number | null): string {
-  if (fraction === null) return EM_DASH;
+  if (fraction == null) return EM_DASH;
   return `${(fraction * 100).toFixed(0)}%`;
 }
 
 export function formatScore(score: number | null): string {
-  if (score === null) return EM_DASH;
+  if (score == null) return EM_DASH;
   return score.toFixed(1);
 }
 
 export function formatTimestamp(iso: string | null): string {
-  if (iso === null) return EM_DASH;
+  if (iso == null) return EM_DASH;
   const when = new Date(iso);
   if (Number.isNaN(when.getTime())) return EM_DASH;
   return when.toLocaleString(undefined, {
@@ -36,7 +46,7 @@ export function formatTimestamp(iso: string | null): string {
 }
 
 export function formatCount(value: number | null): string {
-  return value === null ? EM_DASH : value.toLocaleString();
+  return value == null ? EM_DASH : value.toLocaleString();
 }
 
 /**
@@ -44,7 +54,7 @@ export function formatCount(value: number | null): string {
  * anything else — `javascript:`, `data:`, a relative path — is rendered as inert text instead.
  */
 export function isSafeHttpUrl(value: string | null): boolean {
-  if (value === null) return false;
+  if (value == null) return false;
   try {
     const parsed = new URL(value);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -59,7 +69,7 @@ export function isSafeHttpUrl(value: string | null): boolean {
  * replaces a three-to-five action detour through the file manager with one paste.
  */
 export function pathFromFileUri(uri: string | null): string | null {
-  if (uri === null) return null;
+  if (uri == null) return null;
   if (!uri.startsWith("file://")) return uri;
   let path = decodeURIComponent(uri.slice("file://".length));
   // `file:///C:/x` — a Windows path keeps its drive letter and loses the leading slash.
@@ -69,7 +79,7 @@ export function pathFromFileUri(uri: string | null): string | null {
 
 /** The queue folder is the PDF's parent directory; shown so "Reveal folder" is not a mystery. */
 export function parentDirectory(path: string | null): string | null {
-  if (path === null) return null;
+  if (path == null) return null;
   const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return index <= 0 ? null : path.slice(0, index);
 }

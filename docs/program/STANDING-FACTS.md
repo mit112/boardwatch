@@ -1272,3 +1272,25 @@ operative half of item 6 — the standing rule about what a timing test MEASURED
    (`test_a_locked_store_answers_503_without_stalling`, which took all three macOS jobs at once —
    macOS runs unsharded) and **#222's own new pacing test**. **No threshold was weakened**; each is
    strictly tighter than what it replaced.
+
+## Moved out of STATE on 2026-08-29 — settled lane and degree findings, kept verbatim
+
+### The lane question, closed (from STATE current standing, verbatim — D-346/D-347)
+
+**THE LANE QUESTION IS CLOSED (D-346/D-347).** Run 130's linkedin lane is
+`fetch=277.3s apply=0.22s` — **100% fetch**. The lane stage is entirely upstream throttling and there
+is **no contention on `apply_board`**, so D-347's estimate holds and no further lane work is
+warranted. Do not re-propose lane parallelism.
+
+### `degree` audited and closed (from STATE current standing, verbatim — D-352, #221)
+
+**`degree` IS AUDITED AND CLOSED — NOTHING NEEDED SOFTENING (D-352, #221).** D-351's audit is DONE
+and the item it raised is RETIRED. **Zero SWE-titled postings are blocked by any degree rule
+anywhere in the live corpus.** Of 164 in-field `unmet` postings, 71 are sole-cause and every one was
+read by hand: all non-SWE (accounting 24, finance/tax 12, nursing 11, engineering 11, other 13).
+The abstain side costs 6 SWE postings and all six abstains are honest. **Two extraction defects were
+fixed anyway, for MULTI-TENANCY not for Mit's yield** — the `education` surface matched equivalence
+boilerplate (~1,200 frames vs ~57 genuine) and the relatedness escape could not read
+`other`/`another` (483 postings). **One widening was REJECTED as measured NET HARMFUL:**
+`degree_equivalence` for "equivalent combination of education and experience" would turn **30 `met`
+rows into abstains to rescue 13 `unmet`**. Do not re-propose it without sentence-scoping it first.
