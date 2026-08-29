@@ -42,6 +42,14 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
 /**
  * Renders nothing off the review lane, where `reason` is `null` by construction — so the caller
  * never has to know which list a row came from.
+ *
+ * The guard is `== null`, deliberately loose, because it also has to survive `undefined`. The type
+ * says that cannot happen and on a matched pair it cannot; but `boardwatch web` serves the bundle
+ * from DISK while running the Python it imported at STARTUP, so a long-lived viewer process can
+ * serve a bundle newer than its own API. A viewer started before this field existed omits it
+ * entirely, `REASONS[undefined]` is `undefined`, and reading `.label` off that threw — unmounting
+ * the whole tree, because the app has no error boundary. A missing field means the server cannot
+ * say why a lead was held, so the honest render is no badge: exactly the pre-#224 page.
  */
 export function ReviewReasonBadge({
   reason,
@@ -50,7 +58,7 @@ export function ReviewReasonBadge({
   reason: ReviewReason | null;
   showReason?: boolean;
 }) {
-  if (reason === null) return null;
+  if (reason == null) return null;
   const words = REASONS[reason];
   return <Badge label={words.label} reason={words.reason} showReason={showReason} />;
 }
