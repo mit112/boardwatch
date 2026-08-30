@@ -118,9 +118,9 @@ class RequirementFlags(NamedTuple):
     filtered opinion downstream.
     """
 
-    #: An `experience_years` row resolved `unmet` or `unknown` — a bar not confirmed satisfied.
+    #: A REQUIRED `experience_years` row resolved `unmet` or `unknown` — a bar not confirmed met.
     experience_unconfirmed: bool = False
-    #: A `work_auth` or `clearance` row resolved `unknown` — a blocking rule that ABSTAINED.
+    #: A REQUIRED `work_auth` or `clearance` row resolved `unknown` — a blocking rule that ABSTAINED.
     #: `unmet` is deliberately NOT folded in: an unmet hard rule makes the verdict `ineligible`,
     #: which has its own drain, and counting it here would relabel that lead's hold.
     eligibility_unconfirmed: bool = False
@@ -164,6 +164,16 @@ def current_requirement_flags(
             ).where(
                 eligibility_requirements.c.evaluation_id.in_(chunk),
                 eligibility_requirements.c.disposition.in_(("unmet", "unknown")),
+                # `engine.blocking` counts a row only when it is `required` AND its family is a
+                # blocker, so a `preferred`/`bonus` row can never make a verdict `ineligible` or
+                # `uncertain`. Holding a lead for one would be a hold on a requirement that cannot
+                # block -- 2,790 rows on the live store, `clearance_preferred` the bulk of them.
+                # Severity is the other half of that test and is NOT stored per row (it comes from
+                # the caller's policy), so it is not filtered here; under a policy that demotes one
+                # of these families the flag can still be set for a row that no longer blocks.
+                # That is reachable only once an `eligible` verdict is subject to these gates,
+                # which it is not today.
+                eligibility_requirements.c.requiredness == "required",
             )
         ).all()
         for row in rows:
