@@ -167,6 +167,46 @@ def test_e_two_complete_misses_close_reappearance_reopens(
     assert _event_kinds(engine).count("reopened") == 1
 
 
+def test_e2_a_closed_posting_is_not_re_closed_by_later_complete_scans(
+    engine: Engine, company_id: int, run_id: int, case: ProviderCase
+) -> None:
+    """`_process_missing` selects `status == "open"`, and nothing exercised that filter.
+
+    `test_e` closes a posting and REOPENS it on the very next scan; `test_l` stops at the moment
+    of closure. Neither runs a further complete scan while the posting is still absent AND
+    already closed — the exact state the filter guards. Without it every subsequent complete
+    scan re-closes the same row: a duplicate `closed` event each night, `closed_at` reset to
+    now (destroying the closed-date history `show` renders and `export` emits), and
+    `consecutive_missing` climbing without bound. Unattended, that compounds nightly.
+    """
+    jobs = case.jobs()[:2]
+    pid = str(jobs[1][case.id_key])
+    apply_board(engine, case.snapshot_for(jobs), company_id, run_id)
+    apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
+    apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
+
+    closed = _posting_by_pid(engine, pid)
+    assert closed.status == "closed", "guard: the posting must be closed before the real check"
+    closed_at, missing = closed.closed_at, closed.consecutive_missing
+    assert _event_kinds(engine).count("closed") == 1
+
+    # Two MORE complete scans, posting still absent. This is what no test covered.
+    apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
+    apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
+
+    still = _posting_by_pid(engine, pid)
+    assert still.status == "closed"
+    assert _event_kinds(engine).count("closed") == 1, (
+        "an already-closed posting was closed AGAIN — one duplicate event per night"
+    )
+    assert still.closed_at == closed_at, (
+        "closed_at was reset by a later scan — the closed-date history is destroyed"
+    )
+    assert still.consecutive_missing == missing, (
+        "the miss counter kept climbing after closure"
+    )
+
+
 def test_f_identical_bodies_two_provider_ids_stay_two_postings(
     engine: Engine, company_id: int, run_id: int, case: ProviderCase
 ) -> None:
