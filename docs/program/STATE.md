@@ -114,6 +114,26 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 
 ## Next action
 
+> **RUN THIS BEFORE LEAVING, AND THE OTHER ONE ON RETURN.** Two read-only helpers were written this
+> session and neither is discoverable from the code:
+>
+>     zsh    .agent/2026-08-30-session/preflight-before-leaving.sh
+>     python3 .agent/2026-08-30-session/away-readout.py 133
+>
+> The **preflight** exits 0 when nothing blocks a 14-day window, and checks the five things that
+> would actually cost a fortnight — including that the primary tree is **CLEAN**, not merely on
+> `main`, because the editable venv means the run executes the WORKING TREE and a stray edit
+> silently changes every subsequent night. **Its one irreplaceable check: it EXECUTES `tectonic`
+> and `pdfinfo` rather than only locating them**, which is exactly what boardwatch's own render
+> preflight does not do (`shutil.which` succeeds for a binary broken by a `brew upgrade`). Today it
+> is green with exactly two WARNs, and they are the two owner decisions below.
+>
+> The **away-readout** replaces opening fourteen morning digests with one table per run, and flags
+> both a calendar day with NO run (what the heartbeat should have paged for) and a candidate-rate
+> collapse. It prints the rate for EVERY run, which is the compensating control for
+> corpus-regression being a step detector blind to gradual drift. Both were verified against
+> synthetic data to actually fire, not just to run.
+
 > **THE ONE ACTION THAT MATTERS BEFORE THE ABSENCE: decide whether to ARM `BOARDWATCH_ALERT_URL`.** #258 is
 > merged and verified on `main` and through the editable venv, but it is a **strict no-op until armed**, so
 > without this the fortnight has no remote signal for a degraded-but-successful run. One line in the plist;
