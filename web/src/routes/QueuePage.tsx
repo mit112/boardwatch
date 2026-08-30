@@ -246,7 +246,14 @@ export function QueuePage({
   }, [data, removed, query, minScore]);
 
   const visible = useMemo(() => {
-    const base = facet === null ? filtered : filtered.filter((row) => row.verdict === facet);
+    // `review` selects a LANE, not a verdict: the apply queue is hidden entirely for it, so its
+    // list is empty. The verdict facets narrow it; `null` shows all.
+    const base =
+      facet === "review"
+        ? []
+        : facet === null
+          ? filtered
+          : filtered.filter((row) => row.verdict === facet);
     return sortRows(base, sort, rankOf);
   }, [filtered, facet, sort, rankOf]);
 
@@ -268,11 +275,13 @@ export function QueuePage({
   }, [data, removed, query, minScore]);
 
   const visibleReview = useMemo(() => {
-    // The facet reaches the review lane too: a review lead can be `eligible` — held only for its
-    // location — so filtering "eligible" while skipping this list is the documented "make the
-    // review list look empty for a matching filter" failure.
+    // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
+    // its location — so filtering "eligible" while skipping this list is the documented "make the
+    // review list look empty for a matching filter" failure. `review` shows the whole lane.
     const base =
-      facet === null ? filteredReview : filteredReview.filter((row) => row.verdict === facet);
+      facet === null || facet === "review"
+        ? filteredReview
+        : filteredReview.filter((row) => row.verdict === facet);
     return sortRows(base, reviewSort, reviewRankOf);
   }, [filteredReview, facet, reviewSort, reviewRankOf]);
 
@@ -453,6 +462,15 @@ export function QueuePage({
     setFacet((current) => (current === next ? null : next));
   }, []);
 
+  /*
+   * Selecting the `review` lane opens its section: it is collapsed by default, and with the apply
+   * queue hidden a collapsed review section would leave the page showing only a header. The reader
+   * can still collapse it afterward — this only forces the open when the facet is chosen.
+   */
+  useEffect(() => {
+    if (facet === "review") setReviewOpen(true);
+  }, [facet]);
+
   // The empty grid must name the lever that emptied it. With a facet on, the two default
   // sentences point at the text box and the score floor — neither of which is what is filtering.
   const emptyHint =
@@ -493,8 +511,8 @@ export function QueuePage({
       <div className="flex flex-col gap-4" inert={sheetOpen}>
         <StatusBand
           counts={bandCounts}
-          showing={visible.length}
-          total={data.rows.length}
+          showing={facet === "review" ? visibleReview.length : visible.length}
+          total={facet === "review" ? data.review.length : data.rows.length}
           activeFacet={facet}
           onToggleFacet={toggleFacet}
         />
@@ -509,7 +527,9 @@ export function QueuePage({
             and how to drop it — the pressed band cell shows which, this shows that. */}
         {facet !== null ? (
           <p className="flex items-center gap-3 text-sm text-fg-2">
-            <span>Showing {facet} only.</span>
+            <span>
+              {facet === "review" ? "Showing the review lane only." : `Showing ${facet} only.`}
+            </span>
             <button
               type="button"
               onClick={() => {
@@ -555,7 +575,9 @@ export function QueuePage({
             * populated review section — and both halves were false: leads WERE delivered, and the
             * reason they are not above is the lane split.
             */}
-          {data.rows.length === 0 && data.review.length === 0 ? (
+          {/* The `review` facet hides the apply queue entirely — it is a request to see that lane
+              alone. Its own empty/populated states below are unaffected. */}
+          {facet === "review" ? null : data.rows.length === 0 && data.review.length === 0 ? (
             <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
               The queue is empty. A run has to deliver a tailored lead before anything appears
               here — this is not a filter result.
@@ -605,7 +627,7 @@ export function QueuePage({
              * included, so `aria-controls="review-list"` can never be left pointing at an element
              * the fallback replaced. `mt-12` moved out to the wrapper so the card inherits it.
              */
-            <div className="mt-12">
+            <div className={facet === "review" ? undefined : "mt-12"}>
               <ErrorBoundary
                 title="The review lane could not be drawn."
                 hint="The queue above is unaffected and still works. These leads are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
@@ -613,7 +635,11 @@ export function QueuePage({
                 resetKeys={[data]}
               >
                 <section aria-labelledby="review-heading">
-                  <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 border-t border-divider pt-8">
+                  {/* No top rule when the review lane stands alone (the `review` facet): a rule at
+                      the top of the content has nothing to divide it from. */}
+                  <header
+                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-2 ${facet === "review" ? "" : "border-t border-divider pt-8"}`}
+                  >
                     <h2
                       id="review-heading"
                       className="font-display text-base tracking-[0.12em] text-fg uppercase"

@@ -2,14 +2,16 @@ import type { QueueCounts } from "../api/types";
 import { EM_DASH, formatTimestamp } from "../lib/format";
 
 /**
- * The band cells a reader can click to see only that bucket. Both are VERDICTS, so a facet filters
- * the apply lane AND the review lane, exactly as the text search and score floor do — a review-lane
- * lead can be `eligible` (held only for its location), and dropping it would be the documented
- * "make the review list look empty for a matching filter" failure. `ineligible` is deliberately not
- * here: it is drained, never listed, so nothing could be shown. `review` is a LANE, not a verdict,
- * and would need different behaviour — left static for now.
+ * The band cells a reader can click to see only that bucket. `eligible` and `uncertain` are
+ * VERDICTS: each filters the apply lane AND the review lane, exactly as the text search and score
+ * floor do — a review-lane lead can be `eligible` (held only for its location), and dropping it
+ * would be the documented "make the review list look empty for a matching filter" failure.
+ *
+ * `review` is a LANE, not a verdict, so it behaves differently: it shows the review lane alone and
+ * hides the apply queue, the way opening only that section would. `ineligible` is deliberately NOT a
+ * facet: it is drained, never listed, so a toggle there could only ever show an empty list.
  */
-export type QueueFacet = "eligible" | "uncertain";
+export type QueueFacet = "eligible" | "uncertain" | "review";
 
 /*
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones
@@ -138,8 +140,12 @@ export function StatusBand({
       <Metric
         label="review"
         value={counts.review.toLocaleString()}
-        note="Held for a look, not blindly appliable: outside the US, or a title the role gate will not positively call software. Listed below the queue; folders sit in _review."
+        note="Held for a look, not blindly appliable: outside the US, or a title the role gate will not positively call software. Click to show only this lane."
         order={3}
+        active={activeFacet === "review"}
+        onToggle={() => {
+          onToggleFacet("review");
+        }}
       />
       <Metric
         label="ineligible"
