@@ -176,6 +176,16 @@ def _status(data_dir: Path, run_id: int) -> str:
         )
 
 
+def _errors_json(data_dir: Path, run_id: int) -> list[str]:
+    with get_engine(data_dir).connect() as conn:
+        return list(
+            conn.execute(
+                select(tables.runs.c.errors_json).where(tables.runs.c.id == run_id)
+            ).scalar_one()
+            or []
+        )
+
+
 def _job_id(data_dir: Path, posting_id: int) -> int:
     with get_engine(data_dir).connect() as conn:
         return int(
@@ -268,6 +278,10 @@ def test_a_raising_sync_never_fails_the_run(env: Path, tmp_path: Path, queue_roo
     # Reported, never silent: the note reaches the summary `run_cmd` prints and the console.
     assert [note for note in summary.errors if "delivery queue not synced" in note]
     assert "queue root is on fire" in output
+    # Durable, not only printed: the sync runs after `finish_run`, so without an explicit
+    # `append_run_error` the note never reaches `runs.errors_json` and an unattended queue
+    # failure is invisible to anything reading the store (D-287). This fails against that gap.
+    assert [note for note in _errors_json(env, summary.run_id) if "delivery queue not synced" in note]
 
 
 def test_contention_is_not_a_failure(env: Path, tmp_path: Path, queue_root: Path) -> None:
