@@ -1610,3 +1610,54 @@ they mean **3 days**. `CORPUS_REGRESSION_WINDOW = 5` (needing 6 runs) went ~18 h
 day, so `due` grows monotonically (run 133: `due=1139, attempted=50, refused=1089`). The probe drift
 is bounded in importance by its own 6.7% detection rate. **Detection latency during the absence is
 3 days, not hours** — worth knowing before reading a quiet morning as healthy.
+
+## Moved out of STATE on 2026-08-30e — the completed mutation campaign, kept verbatim
+
+The campaign is finished and `METRICS.md` holds the full per-area table; what stays in STATE is the
+part still awaiting a decision (the two residuals). Kept verbatim because the conclusion — no
+vacuous test, no live defect, and all eleven survivors to be KEPT because their redundancy is
+contingent — is the thing a future session must not re-derive.
+
+**THE GUARDS ARE PINNED — 145 MUTATIONS, 130 CAUGHT, NO VACUOUS TEST AND NO LIVE DEFECT.**
+Every guard the unattended path depends on was mutated and scored against its own tests: the six
+detectors, the heartbeat gate, the tailor no-fabrication guards, the eligibility keystone and
+verdict rollup, projection fidelity, scan/apply and identity/dedup, the review gate, and the rank
+gates. Four gaps were real and three shipped as **test-only** PRs — **#263** (a closed posting was
+being re-closable, the only one that COMPOUNDS nightly), **#264** (plan deviation 8: a reopen must
+not swallow the revision), **#265** (`weight_sum <= 0.0`, the first gap reachable from a LEGAL
+config) and **#267** (the funnel's JSON `reconciles` key could be hardcoded `True` — the artifact
+Gate P0 is defined against, and the web viewer's run-list badge). Eleven survivors were proven
+**unobservable** rather than untested, each by constructing the exact input the clause guards —
+and each should be KEPT, because in every case the redundancy depends on a neighbouring
+implementation detail that a refactor could change. **Every gap was correctness that was not PINNED, never
+correctness that was wrong** — full table in `METRICS.md`.
+
+**THE BIGGEST REMAINING RISK IS NOT IN THIS REPO — A NIGHTLY `brew upgrade` SITS 4 HOURS UPSTREAM
+OF THE RÉSUMÉ RENDERER.** `com.mitsheth.nightly-maintenance` fires **00:00 daily** and runs
+`brew update` -> `brew upgrade` -> `brew cleanup`. `reports/tailor.py` shells out to **`tectonic`**
+and **`pdfinfo`**, both at `/opt/homebrew/bin/` (0.17.0 / poppler **26.08.0**). poppler versions as
+`YY.MM.x`, so **26.09.0 is due in the first days of September — inside the window** — and it
+already auto-upgraded 26.07.0 -> 26.08.0 on 2026-08-04. **The preflight checks EXISTENCE, not
+executability**: `shutil.which` still succeeds for a binary broken by a dyld mismatch, so it does
+NOT report `BINARY_MISSING` — it degrades to per-lead `COMPILE_FAILED` -> "every lead failed to
+project or tailor" -> FATAL -> heartbeat withheld -> the monitor pages. **Detected but
+MIS-DIAGNOSED, and every subsequent night fails identically.** Leads are NOT burned
+(`COMPILE_FAILED` is excluded from `DETERMINISTIC_GATE_REFUSALS`), so a repair recovers everything.
+**Mitigation is one reversible command and it is MIT'S CALL because it changes another job's
+behaviour: `brew pin tectonic poppler`.** The principled in-repo fix — have the preflight PROBE the
+binaries rather than only locate them — is deliberately NOT shipped before a freeze; it is a change
+to the nightly render path and deserves its own review.
+
+**TWO MORE MACHINE-LEVEL FACTS, both lower severity.** macOS **auto-installs on a BETA seed train**
+(three OS installs in 18 days); each reboots, but auto-login is on and FileVault OFF so the
+LaunchAgent returns, and a reboot inside the run window costs that night only. And
+`com.mitsheth.cleanup-caches` fires at **exactly 04:00 on Sundays** — 09-06 and 09-13 — the same
+minute boardwatch starts; pure I/O contention, it touches no boardwatch path.
+
+**THE PLIST'S HEARTBEAT-GRACE REASONING COMPARES THE WRONG QUANTITY.** It argues *"run 130 took 137
+min, so a slow day cannot false-alarm"*. The ping fires at `04:00 + duration`, so the 26 h window
+constrains **`dur(N+1) - dur(N)`**, not absolute duration. Only runs 131 (96.7 min) and 133 (112.9
+min) are genuine scheduled ticks — delta 16.2 min — so the real margin is **not yet pinnable**;
+every other full-scan run in the store is from the ad-hoc era. Re-derive from consecutive scheduled
+ticks once 134+ exist. Errs safe either way: the failure mode is a FALSE "down" email, never a
+missed real failure.
