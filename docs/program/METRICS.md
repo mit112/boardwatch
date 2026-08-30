@@ -9117,6 +9117,28 @@ corpus-regression baseline point **1 of 6**. Earliest possible fire: **run 138, 
 correctly did not fire. State after: **420 apply-ready**, 189 `_review`, 182 `_ineligible`,
 7 `_applied` — 31% review split, so no apply-lane starvation either.
 
+### Also shipped this session — #260, detector-fallback durability
+
+The finalize block was inconsistent about recording its own failures: the three artifact-write
+handlers (funnel, queue sync, morning) call `append_run_error`, while the four DETECTOR handlers —
+intake-death, delivery-drought, liveness-blindness, corpus-regression — appended to
+`summary.errors` and stopped. `finish_run` has already committed by then, so `summary.errors` alone
+never reaches the run row (D-287). The note reached the digest and, since D-376, the escalation
+channel; it could not reach `runs.errors_json`. **Forensic gap** — over a fortnight it is the
+difference between "which day did the detector stop working?" being answerable on return and not.
+
+Four one-line additions, inert on the normal path (those branches run only when a check raises).
+Each pinned by its **own parametrised test**: a single test crashing all four would pass while
+three of the four calls were missing, because the first note in the row satisfies a naive
+assertion. Mutation-verified — dropping each `append_run_error` in turn fails **exactly one** test.
+Gate: **exit 0**, 8,507 passed (the +4 are these tests), coverage **95.66%**, 5m54s.
+
+*Known property, named rather than inherited silently:* `append_run_error` is not internally
+defensive, and these calls sit inside `except` handlers, so a store refusing the write would escape.
+That exposure is shared with the three existing durable handlers and was matched deliberately
+rather than diverging. It needs two simultaneous failures, and it fails loudly — a crashed run
+withholds the heartbeat, which pages.
+
 ### Gate — PR #258
 | what | result |
 |---|---|
