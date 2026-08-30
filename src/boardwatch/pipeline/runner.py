@@ -90,7 +90,12 @@ from boardwatch.reports.run_funnel import (
 )
 from boardwatch.reports.tailor import ResumeLineageMismatch, default_compile_runner, run_tailor
 from boardwatch.scan.apply import apply_board
-from boardwatch.scan.coordinator import ScanSummary, is_systemic_scan_outage, run_scan
+from boardwatch.scan.coordinator import (
+    ScanSummary,
+    is_systemic_scan_outage,
+    run_scan,
+    systemic_scan_outage_reason,
+)
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.ledger_queries import record_disposition
@@ -1004,16 +1009,16 @@ def run_pipeline(
             # CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent
             # empty day)". `is_systemic_scan_outage` (D-037) is the same predicate
             # `coordinator.py`'s standalone scan uses, so the two can never disagree on the
-            # same event. Note this reads the outcome, not a status field.
+            # same event. Note this reads the outcome, not a status field. The SENTENCE is
+            # shared for the same reason the predicate is: both callers persist it, and the
+            # row a reader reaches for should not depend on which command wrote it.
             attempted = scan_summary.companies
             if is_systemic_scan_outage(
                 attempted=attempted,
                 complete=scan_summary.complete,
                 unchanged=scan_summary.unchanged,
             ):
-                summary.fatal = (
-                    f"systemic scan outage: {attempted} boards attempted, none completed"
-                )
+                summary.fatal = systemic_scan_outage_reason(attempted)
             # NOT added to stage_errors: the scan stage already persisted these into
             # errors_json itself, and finish_run appends. Passing them again would record
             # every scan error twice and make any per-run error count uninterpretable.
@@ -1568,6 +1573,32 @@ def run_pipeline(
             summary.fatal = message
         raise
     finally:
+        # `status=failed` with `errors_json=[]` is a run that cannot say why it failed, and it
+        # is the shape an unattended failure actually took: the reason lived only in the
+        # console log. Four fatal paths reach here without ever touching `stage_errors` — the
+        # all-leads-unrendered fatal, `_zero_output_guard`, `_cohort_guard` and the
+        # filesystem-truth guard all set `summary.fatal` and fall through — so this is the
+        # choke point that guarantees the reason is persisted.
+        #
+        # HERE rather than at each of those four sites, and that is the whole point: the
+        # failure mode is not those four, it is the FIFTH fatal path somebody adds later and
+        # forgets to record. A guarantee that lives in one place a fatal cannot bypass is
+        # retroactively correct for a path that has not been written yet; four more `append`
+        # calls would only be correct for the four that exist today.
+        #
+        # The sites that DO record prefix the reason with their stage (`scan: `, `projection: `,
+        # `tailor: `) and the crash handler records it verbatim, so on every current path the
+        # reason is a SUFFIX of what was already appended. `endswith` is the dedup test rather
+        # than substring containment: it is exact for all of them, and where a future site
+        # wraps the reason differently it errs toward recording it TWICE rather than not at
+        # all — the safe direction for a guard whose only job is that the reason is never
+        # missing. `summary.errors` is left alone: the funnel already renders `summary.fatal`
+        # as its own FATAL line, so the artifact could always answer this and only the row
+        # could not.
+        if summary.fatal is not None and not any(
+            recorded.endswith(summary.fatal) for recorded in stage_errors
+        ):
+            stage_errors.append(f"fatal: {summary.fatal}")
         # Tied to `fatal`, not to `stage_errors`: a run that lost one lead to a tailor failure
         # is a successful run with an error, and the artifact's FATAL line is the thing a
         # reader already treats as "this run did not deliver". Keeping the two in step means

@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A failed run now records why it failed.** Run 132 was stamped `failed` with an empty error
+  list: one board was attempted, it came back `partial`, nothing completed, and the sentence that
+  explained it — "systemic scan outage: 1 boards attempted, none completed" — was written only to a
+  console log that has since scrolled away. That is the shape several fatal paths took. Four guards
+  below the tailor loop (the all-leads-unrendered fatal, the zero-output guard, cohort completeness
+  and filesystem-truth) set the run's fatal outcome and fell straight through to `finish_run`
+  without ever adding it to the list that gets persisted, and the standalone `boardwatch scan`
+  classified the outage as fatal without recording it at all — `partial` is counted neither
+  complete nor failed, so not even a per-board error line was left behind. The fix is one choke
+  point rather than five patches: the `finally` that closes the run row now appends the fatal
+  reason unless a stage already recorded it, so a fatal path added a year from now is covered
+  without anyone remembering to record it, which is precisely the discipline the old design kept
+  asking for and not getting. The dedup is a suffix test, because every site that does record
+  prefixes the reason with its stage; where that test is ever wrong it errs toward writing the
+  reason twice rather than losing it. The standalone scan gained the same sentence — shared with
+  the pipeline's copy, so one event cannot be described two ways depending on which command
+  observed it — and only when it owns the run's terminal status, so `boardwatch run` still records
+  it exactly once.
+
 - **A delivery-queue failure is now recorded, not just printed.** The funnel and morning-digest
   handlers already record their write failures to `runs.errors_json` (via `append_run_error`, because
   they run after `finish_run`), but the queue-sync handler only printed a console line and appended to

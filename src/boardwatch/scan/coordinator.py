@@ -115,6 +115,19 @@ def is_systemic_scan_outage(*, attempted: int, complete: int, unchanged: int) ->
     return attempted > 0 and complete == 0 and unchanged == 0
 
 
+def systemic_scan_outage_reason(attempted: int) -> str:
+    """The operator's sentence for the outage the predicate above detects.
+
+    Shared for exactly the reason the predicate is (D-037): `run_scan` and `run_pipeline` both
+    persist this sentence onto the run row, and two hand-written copies would drift into two
+    different accounts of one event. A `failed` row is only useful if it says why, and this is
+    the whole of the why for the outage case — the per-board errors that usually explain a bad
+    scan are absent by construction here, since a board that returns `partial` is counted
+    neither complete nor failed and contributes no error line of its own.
+    """
+    return f"systemic scan outage: {attempted} boards attempted, none completed"
+
+
 @dataclass
 class ProviderFetchCost:
     """What one provider's boards cost this run, in FETCH wall clock.
@@ -408,6 +421,21 @@ def _scan_body(
                 select(func.count()).select_from(postings).where(postings.c.status == "open")
             ).scalar_one()
         )
+    outage = is_systemic_scan_outage(
+        attempted=summary.companies,
+        complete=summary.complete,
+        unchanged=summary.unchanged,
+    )
+    # A `failed` row whose errors_json is `[]` cannot answer why it failed, and the outage is
+    # the one fatal state here that leaves no error line behind on its own: a board that comes
+    # back `partial` is counted neither complete nor failed, so "one board attempted, it
+    # returned partial" trips the predicate with an empty error list. Recorded ONLY when
+    # `finish`, because that is exactly when this caller owns the terminal status. Under
+    # `boardwatch run` the pipeline owns it and appends the same sentence to its own error
+    # list, so appending here too would write one event onto one row twice — the duplication
+    # this function's per-board errors are already careful to avoid.
+    if outage and finish:
+        summary.errors.append(systemic_scan_outage_reason(summary.companies))
     finalize_run(
         engine, active_run_id,
         boards_attempted=summary.companies,
@@ -425,14 +453,6 @@ def _scan_body(
         # classifies this exact state as fatal via the same `is_systemic_scan_outage`
         # predicate (D-037), so the SAME event can never record `ok` under `boardwatch scan`
         # and `failed` under `boardwatch run`.
-        status=(
-            RUN_FAILED
-            if is_systemic_scan_outage(
-                attempted=summary.companies,
-                complete=summary.complete,
-                unchanged=summary.unchanged,
-            )
-            else RUN_OK
-        ),
+        status=RUN_FAILED if outage else RUN_OK,
     )
     return summary

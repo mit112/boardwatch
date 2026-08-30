@@ -854,6 +854,145 @@ def test_a_lead_whose_folder_disappeared_after_tailoring_is_filesystem_truth_fat
     assert "filesystem-truth" in summary.fatal
 
 
+# --- every fatal path must leave its reason on the run row ------------------------------
+#
+# `status=failed` with `errors_json=[]` is a run that cannot say why it failed, and it is the
+# shape an unattended failure actually took. The four late guards below the tailor loop set
+# `summary.fatal` and fall through to `finish_run` without ever touching `stage_errors`, so the
+# reason existed only in a console log nobody reads on a 04:00 run.
+#
+# Parametrized over the fatal paths rather than written four times, because the invariant is
+# about the CHOKE POINT, not about any one guard: whatever put a reason in `summary.fatal` has
+# to be findable on the row afterwards. A new guard added later is covered by adding one entry
+# here, and — more to the point — is covered in PRODUCTION without touching this file at all.
+
+
+def _fatal_scan_outage(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """Run 132's shape through the PIPELINE caller. Already recorded before this change
+    (the scan arm appends `scan: <reason>` itself), so it pins the behaviour rather than
+    discriminating — the discriminating case is the standalone caller, in test_scan.py."""
+    _ready(env)
+    return _scan_pipeline(env, out_root, status=500)
+
+
+def _fatal_every_lead_unrendered(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """A non-empty shortlist that produced no lead at all — a broken résumé path."""
+    _ready(env)
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("resume.yaml is missing")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    return _pipeline(env, out_root)
+
+
+def _fatal_zero_output_guard(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """B5's silent empty day: a genuinely new eligible posting that no lead explains."""
+    _ready(env)
+    first = _pipeline(env, out_root)
+    assert first.fatal is None, first.fatal
+    assert first.tailored, "run 1 produced no lead, so run 2 proves nothing"
+    _seed_posting(env, slug="acme3")
+    return _pipeline(env, out_root, top_n=0)
+
+
+def _fatal_cohort_guard(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stands in for the fatal path nobody has written yet as much as for `_cohort_guard`
+    itself: the guard is replaced by one returning a reason the runner has never seen, so what
+    is proved is that the choke point persists whatever a guard hands it, not that it knows
+    this particular sentence."""
+    _ready(env)
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(
+        runner_mod, "_cohort_guard", lambda *_a: "cohort: candidate 4242 reached no terminal state"
+    )
+    return _pipeline(env, out_root)
+
+
+def _fatal_filesystem_truth(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """The store says a lead was produced; its folder is gone from disk."""
+    _ready(env)
+    import shutil
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    real_run_tailor = runner_mod.run_tailor
+
+    def sabotage(*args: object, **kwargs: object):
+        result = real_run_tailor(*args, **kwargs)
+        shutil.rmtree(kwargs["out_dir"])  # type: ignore[arg-type]
+        return result
+
+    monkeypatch.setattr(runner_mod, "run_tailor", sabotage)
+    return _pipeline(env, out_root)
+
+
+@pytest.mark.parametrize(
+    "make_fatal",
+    [
+        _fatal_scan_outage,
+        _fatal_every_lead_unrendered,
+        _fatal_zero_output_guard,
+        _fatal_cohort_guard,
+        _fatal_filesystem_truth,
+    ],
+    ids=[
+        "scan_outage",
+        "every_lead_unrendered",
+        "zero_output_guard",
+        "cohort_guard",
+        "filesystem_truth",
+    ],
+)
+def test_every_fatal_path_persists_its_reason_on_the_run_row(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_fatal: object
+) -> None:
+    summary = make_fatal(env, tmp_path / "apps", monkeypatch)  # type: ignore[operator]
+
+    assert summary.fatal is not None, "guard: this scenario did not go fatal, so it proves nothing"
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.errors_json).where(
+                tables.runs.c.id == summary.run_id
+            )
+        ).one()
+    persisted = list(row.errors_json or [])
+    assert row.status == "failed", f"a fatal run was not recorded failed: {row.status}"
+    carrying = [note for note in persisted if summary.fatal in note]
+    assert carrying, (
+        f"the run recorded failed but not WHY — errors_json cannot answer it: {persisted}"
+    )
+    # One event, one entry. A path that both records at its own site AND falls through to the
+    # choke point would double every fatal, which makes any per-run error count downstream
+    # uninterpretable — the same duplication the scan stage's own errors already avoid.
+    assert len(carrying) == 1, f"one fatal was recorded {len(carrying)} times: {persisted}"
+
+
+def test_a_fatal_reason_a_stage_already_recorded_is_not_recorded_twice(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The crash handler already appends its message and then sets `fatal` to that same
+    message, so the choke point must recognise it as recorded. One event, one row entry —
+    otherwise every per-run error count downstream becomes uninterpretable."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+    with pytest.raises(RuntimeError):
+        _pipeline(env, tmp_path / "apps")
+
+    with get_engine(env).connect() as conn:
+        persisted = list(conn.execute(select(tables.runs.c.errors_json)).scalar_one() or [])
+    aborted = [note for note in persisted if "taxonomy.yaml is malformed" in note]
+    assert len(aborted) == 1, f"the crash reason was recorded {len(aborted)} times: {persisted}"
+
+
 def test_a_normal_run_that_produced_leads_stays_non_fatal(env: Path, tmp_path: Path) -> None:
     """Regression: the guards must not fire on a healthy run. Distinct from
     `test_a_clean_run_is_recorded_as_ok`, which checks `runs.status`; this checks the guards'

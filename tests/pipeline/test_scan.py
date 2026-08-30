@@ -1,5 +1,6 @@
 """Coordinator round-trip, state test d, failure isolation, CLI smoke."""
 
+import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from gh_fixtures import gh_jobs, snapshot_for
+from gh_fixtures import BOARD_URL, gh_jobs, snapshot_for
 from provider_cases import ProviderCase
 from sqlalchemy import Engine, insert, select
 from typer.testing import CliRunner
@@ -264,3 +265,37 @@ def test_coordinator_passes_known_posting_ids_after_first_scan(
     assert seen[0] == frozenset()
     assert seen[1], "second scan must know the posting stored by the first"
     assert budgets == [7, 7]
+
+
+def test_a_systemic_outage_records_WHY_the_run_failed(  # noqa: N802
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Run 132's exact shape: one board attempted, it came back `partial`, none completed.
+
+    `partial` is counted neither complete nor failed, so the per-board error line that
+    explains an ordinary bad scan is never written — the row was stamped `failed` with
+    `errors_json = []`, and the only account of the outage lived in a console log that
+    scrolled away. A `failed` run nobody can diagnose two weeks later is the whole failure
+    this closes, and this is the standalone caller: it owns the terminal status here, so it
+    owns the reason too.
+    """
+    _add_company(engine, "acme", "greenhouse")
+    # One job that parses and one that cannot. Greenhouse reports `partial` for a board that
+    # still yielded SOME postings, which is what makes this the empty-error-list case rather
+    # than the `failed` one the sibling tests above already cover.
+    payload = json.dumps({"jobs": [gh_jobs()[0], {"id": 999}]}).encode()
+    with respx.mock:
+        respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=payload))
+        summary = run_scan(engine, _settings(tmp_path))
+
+    assert (summary.companies, summary.complete, summary.unchanged) == (1, 0, 0), (
+        f"guard: not the outage shape, so this test proves nothing: {summary}"
+    )
+    assert summary.partial == 1, f"guard: the board did not come back partial: {summary}"
+    assert summary.failed == 0, "guard: a failed board would write its own error line"
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs.c.status, tables.runs.c.errors_json)).one()
+    assert row.status == "failed", "guard: the outage was not classified fatal"
+    assert any("systemic scan outage" in note for note in (row.errors_json or [])), (
+        f"the run recorded failed with no reason at all: {row.errors_json}"
+    )
