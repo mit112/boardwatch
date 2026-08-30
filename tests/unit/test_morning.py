@@ -16,6 +16,7 @@ from boardwatch.reports.board_coverage import BoardCoverage
 from boardwatch.reports.board_coverage import build_report as build_board_report
 from boardwatch.reports.morning import (
     ARTIFACT_VERSION,
+    MARKDOWN_ALERT_LIMIT,
     MorningLead,
     build_morning,
     morning_to_dict,
@@ -172,13 +173,14 @@ def _reach(held: int = 500, stated: int = 1000) -> object:
     )
 
 
-def test_the_artifact_version_is_bumped_for_the_discovery_reach_block() -> None:
+def test_the_artifact_version_is_bumped_for_each_new_top_level_block() -> None:
     """v1 had no version-history test at all, so nothing would have caught a silent bump. v2
     adds the run-level `board_coverage` block — a new top-level section, not an additive key
-    inside one."""
-    assert ARTIFACT_VERSION == 2
+    inside one. v3 adds the run-level `errors`/`fatal` pair and the `## Alerts` section, which
+    is the same kind of addition and so moves the version the same way."""
+    assert ARTIFACT_VERSION == 3
     artifact = build_morning(run_id=1, funnel_name="funnel-1.md", leads=[lead()])
-    assert morning_to_dict(artifact)["artifact_version"] == 2
+    assert morning_to_dict(artifact)["artifact_version"] == 3
 
 
 def test_discovery_reach_renders_for_the_operator() -> None:
@@ -268,3 +270,127 @@ def test_discovery_reach_says_not_measured_rather_than_vanishing() -> None:
     assert "## Discovery reach" in rendered
     assert "not measured this run" in rendered
     assert morning_to_dict(artifact)["board_coverage"] is None
+
+
+# --------------------------------------------------------------------------------------
+# Alerts — the run's own errors, in the file the operator actually opens
+# --------------------------------------------------------------------------------------
+
+
+def test_the_alerts_section_renders_every_error_the_run_raised() -> None:
+    """THE case this section exists for. Before it, `summary.errors` reached the console log
+    (unread unattended), `runs.errors_json` (unqueried) and the funnel's `## Errors` — which on
+    run 131 put a real lane collapse at line 1388 of a 116 KB file. The digest is the file the
+    operator opens, so the alert has to be in it, in both halves."""
+    artifact = build_morning(
+        run_id=131,
+        funnel_name="funnel-131.md",
+        leads=[lead()],
+        errors=["lane hiringcafe: collection failed: every role facet yielded nothing"],
+    )
+
+    rendered = morning_to_markdown(artifact)
+    payload = morning_to_dict(artifact)
+
+    assert "## Alerts" in rendered
+    assert "lane hiringcafe: collection failed" in rendered
+    assert "**1 alert(s)**" in rendered
+    assert payload["errors"] == [
+        "lane hiringcafe: collection failed: every role facet yielded nothing"
+    ]
+
+
+def test_a_clean_run_states_no_alerts_rather_than_omitting_the_section() -> None:
+    """Positive evidence that the check ran, not silence. An alerts section that vanishes on a
+    healthy day is indistinguishable from an alerts section that stopped working — which is
+    precisely the state this file was in before, and nothing said so. "No flags" is not
+    "cleared" unless something says the flags were looked for."""
+    artifact = build_morning(run_id=1, funnel_name="funnel-1.md", leads=[lead()])
+
+    rendered = morning_to_markdown(artifact)
+    payload = morning_to_dict(artifact)
+
+    assert "## Alerts" in rendered
+    assert "No alerts: this run raised no errors." in rendered
+    assert payload["errors"] == []
+    assert payload["fatal"] is None
+
+
+def test_alerts_render_above_discovery_reach_and_above_the_leads() -> None:
+    """Placement, not mere presence — the defect a substring check cannot see, and the same
+    class `test_the_zero_lead_none_belongs_to_leads_not_to_discovery_reach` already guards.
+
+    Reach is a MEASUREMENT; an alert is very often the reason that measurement is wrong. A
+    digest that prints 50.0% discovery reach and only later mentions that the lane behind it
+    collapsed has invited the reader to trust the number. And an alert below forty lead entries
+    is not surfaced, it is buried — which is exactly what the funnel already does to it.
+    """
+    rendered = morning_to_markdown(
+        build_morning(
+            run_id=1,
+            funnel_name="funnel-1.md",
+            leads=[lead()],
+            board_coverage=_reach(),
+            errors=["scan: systemic outage"],
+        )
+    )
+    lines = rendered.splitlines()
+
+    alerts = lines.index("## Alerts")
+    reach = lines.index("## Discovery reach")
+    leads = lines.index("## Leads")
+    assert alerts < reach < leads, f"alerts are not the first section:\n{rendered}"
+
+
+def test_a_zero_lead_morning_still_renders_its_alerts() -> None:
+    """The zero-lead path returns early, and a run that produced nothing is exactly the run
+    whose alerts explain why. Same reason `## Discovery reach` renders before that return."""
+    rendered = morning_to_markdown(
+        build_morning(
+            run_id=1, funnel_name="funnel-1.md", leads=[], errors=["scan: systemic outage"]
+        )
+    )
+
+    assert "## Alerts" in rendered
+    assert "scan: systemic outage" in rendered
+    assert "none." in rendered
+
+
+def test_a_fatal_run_never_claims_it_raised_no_alerts() -> None:
+    """Three runner guards — zero-output, cohort completeness, filesystem-truth — set `fatal`
+    WITHOUT appending anything to `errors`. A digest that read `errors` alone would print "no
+    alerts" on a run that failed outright, which is a worse lie than the silence it replaced."""
+    artifact = build_morning(
+        run_id=1,
+        funnel_name="funnel-1.md",
+        leads=[],
+        fatal="every lead failed to project or tailor (8/8)",
+    )
+
+    rendered = morning_to_markdown(artifact)
+
+    assert "**FATAL:** every lead failed to project or tailor (8/8)" in rendered
+    assert "No alerts" not in rendered
+    assert morning_to_dict(artifact)["fatal"] == "every lead failed to project or tailor (8/8)"
+
+
+def test_the_markdown_caps_the_alert_list_but_never_the_count() -> None:
+    """The digest must stay short: one alert class already fires once per lead, so a systematic
+    cause produces one line per delivered lead and a forty-line first screen buries the leads.
+    The cap is on LINES PRINTED, never on the count or on the JSON — a truncation that hides how
+    much it dropped is the same burial one level down, so it names the remainder and where it
+    lives."""
+    errors = [f"tailor: lead {i} shipped the untailored master" for i in range(40)]
+    artifact = build_morning(
+        run_id=1, funnel_name="funnel-1.md", leads=[lead()], errors=errors
+    )
+
+    rendered = morning_to_markdown(artifact)
+    payload = morning_to_dict(artifact)
+
+    assert "**40 alert(s)**" in rendered
+    shown = [line for line in rendered.splitlines() if line.startswith("- tailor: lead ")]
+    assert len(shown) == MARKDOWN_ALERT_LIMIT, f"printed {len(shown)} alert lines"
+    assert f"- \u2026and {40 - MARKDOWN_ALERT_LIMIT} more, in `funnel-1.md`." in rendered
+    # Nothing is lost, only deferred: the machine-readable half carries all forty.
+    assert payload["errors"] == errors
