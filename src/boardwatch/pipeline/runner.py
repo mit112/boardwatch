@@ -52,6 +52,7 @@ from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
+from boardwatch.notify.scan_health import scan_outage_alert
 from boardwatch.pipeline.death_probe import sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
@@ -1638,6 +1639,9 @@ def run_pipeline(
             note = f"delivery queue not synced: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+            # Durable, like the funnel and morning handlers: this runs after `finish_run`,
+            # so `summary.errors` alone never reaches `runs.errors_json` (D-287).
+            append_run_error(engine, run_id, note)
         # F4 intake-death detector. The heartbeat below fires on any clean outcome, so a
         # run that scans fine but finds NOTHING new — a dead fleet, a silent fetch
         # regression — pages nobody. This reads the per-run net-new count the scan already
@@ -1656,6 +1660,17 @@ def run_pipeline(
             note = f"intake-death check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+        # Partial scan-outage soft alert. `is_systemic_scan_outage` only fatals when EVERY
+        # board fails; a provider or IP block can dark most of the fleet while a few boards
+        # complete, which is not systemic — the heartbeat stays green and F4 cannot see it
+        # because the survivors still emit net-new. Soft and non-fatal, recorded in the run.
+        # `scan_summary` is None on a lane-only or `--no-scan` run.
+        if scan_summary is not None:
+            outage = scan_outage_alert(scan_summary.companies, summary.scan_boards_failed)
+            if outage is not None:
+                console.print(f"  ! {outage}", markup=False)
+                summary.errors.append(outage)
+                append_run_error(engine, run_id, outage)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
         # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
         # and the external monitor still alerts. Gated on `fatal`, not on reaching a return —
@@ -1865,7 +1880,7 @@ def _emit_morning(
     return write_morning(artifact, day_dir)
 
 
-def _sync_queue(engine: Engine, settings: Settings, console: Console) -> None:
+def _sync_queue(engine: Engine, settings: Settings, console: Console) -> int:
     """Drain, then rebuild, the delivery queue on disk from what the store says (design §4.3).
 
     **Reconcile first**, the same order and for the same reason as `delivery/server.py`'s
@@ -1878,8 +1893,8 @@ def _sync_queue(engine: Engine, settings: Settings, console: Console) -> None:
 
     Neither entry point raises on contention: both report `contended=True`, so a scheduled run
     colliding with a serving web app is a normal outcome that changed nothing, not an error. Both
-    also report per-lead failures inside their report rather than raising, so the counts below are
-    the only place those surface — nothing here re-raises them.
+    also report per-lead failures inside their report rather than raising; the total failed count is
+    returned so the caller can record it durably, and it is still never re-raised here.
 
     `DEFAULT_QUEUE_ROOT` is read from this module's namespace at call time rather than captured in
     a default argument, so a test can redirect the root by name; a `Settings` field would add four
@@ -1900,6 +1915,7 @@ def _sync_queue(engine: Engine, settings: Settings, console: Console) -> None:
         f"{synced.failed + drained.failed} failed{contended}",
         markup=False,
     )
+    return synced.failed + drained.failed
 
 
 def _ensure_dir(path: Path) -> Path:

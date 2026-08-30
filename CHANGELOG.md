@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A delivery-queue failure is now recorded, not just printed.** The funnel and morning-digest
+  handlers already record their write failures to `runs.errors_json` (via `append_run_error`, because
+  they run after `finish_run`), but the queue-sync handler only printed a console line and appended to
+  the in-memory error list — which never reaches the store. Under unattended operation that made a
+  queue that stopped receiving leads invisible to anything reading the database. The handler now
+  records it durably, exactly like its two siblings. Per-lead copy failures (already surfaced as a
+  count on the queue line) keep their existing deliberate behaviour — they are not escalated.
+
 - **The hiring.cafe search now asks the way the user agent it sends says it will.** The lane has
   carried a Chrome user agent since it shipped, but none of the headers that user agent implies —
   and httpx's default `Accept: */*` contradicts it outright, because no browser asks for `*/*` when
@@ -35,6 +43,15 @@ All notable changes to this project are documented here. The format follows
   intake tickets, it does not trip the dead-man's switch. Runs whose scan never recorded a count — a
   `top --no-record` phantom — are skipped rather than read as zero, and fewer than three scanning runs
   of history abstains rather than firing on a fresh store.
+
+- **A majority-of-the-fleet scan outage is no longer silent.** A run is only made fatal when *every*
+  board fails; a provider block — Workday is the bulk of the 379-board fleet — or an IP-reputation
+  problem can dark most of the boards while a handful of other providers still complete. That is not
+  systemic, so the run stays clean and the heartbeat fires green while intake collapses, and the
+  intake-death detector cannot see it because the survivors still emit some new postings. A run whose
+  failed-board fraction crosses half now raises a soft, non-fatal alert recorded on the run — a partial
+  outage tickets rather than paging, because it is not a systemic one and a false page on a transient
+  timeout burst is worse than a note read on the next review.
 
 - **Twenty more Workday boards are watched; the fleet is 379.** Breadth batch 2 had been deferred
   because its boards had never been timed cold. One was: a cold Workday board scanned in 604 s,
