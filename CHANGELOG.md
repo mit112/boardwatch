@@ -82,7 +82,10 @@ All notable changes to this project are documented here. The format follows
   until configured, and read from the environment rather than `config.toml` because the URL embeds a
   token. It is deliberately the last thing the finalize block does: it reports the alerts every
   handler above raised rather than raising one, so it runs after all of them — and after the
-  heartbeat, so a refused ping travels in the report too (D-376).
+  heartbeat, so a refused ping travels in the report too. What travels is the finalize-block
+  slice, not every error the run recorded: a stage error — one dead board slug, a lane that could
+  not collect — is routine on a 379-board fleet, and escalating it would drive a monitor DOWN on
+  ordinary runs until the owner stopped believing it (D-376).
 
 - **A collapse that makes the whole corpus ineligible is no longer the one failure nothing watches.**
   The delivery-drought alert abstains on it by design — its honest guard is "did this run judge a

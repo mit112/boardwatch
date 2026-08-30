@@ -1635,6 +1635,17 @@ def run_pipeline(
         # markdown states that exclusion rather than letting the shares imply otherwise.
         clock.mark("finalize")
         summary.stage_durations = list(clock.durations)
+        # Where the ESCALATABLE alerts begin, and why a mark is needed at all: `summary.errors`
+        # is not "the run's alerts". It accumulates every stage error the pipeline produced — a
+        # single 404 on one board slug, a lane that could not collect, a per-lead projection or
+        # tailor degradation — and those are routine on a 379-board fleet. Measured over the last
+        # 25 runs, NINE carried a non-empty `summary.errors` and not one of the nine was a
+        # finalize-block alert: runs 124-128 each carried `plaid: HTTP 404` for one dead slug.
+        # Escalating that list would drive an external monitor DOWN on five consecutive ordinary
+        # `status=ok` runs, and an owner who learns a DOWN check means nothing has lost the only
+        # property this channel has. Everything appended from here on is a deliberate ALERT: the
+        # artifact-write failures, the six soft detectors, and the heartbeat's own result.
+        escalatable_from = len(summary.errors)
         try:
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -1877,13 +1888,25 @@ def run_pipeline(
         # reads as a fortnight of healthy ones. Presence-gated and unset by default (D-076
         # fail-open), so this is a no-op for anyone who has not configured an endpoint.
         try:
-            escalation_alert = escalate_alerts(run_id, tuple(summary.errors))
+            # The SLICE, never the whole list — see `escalatable_from` above. A stage error is
+            # not an alert, and escalating one is how this channel would train its reader to
+            # ignore it.
+            escalation_alert = escalate_alerts(run_id, tuple(summary.errors[escalatable_from:]))
             if escalation_alert is not None:
                 console.print(f"  ! {escalation_alert}", markup=False)
                 summary.errors.append(escalation_alert)
                 append_run_error(engine, run_id, escalation_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
-            console.print(f"  ! alert escalation not sent: {exc}", markup=False)
+            # Durable, not print-only like the heartbeat's fallback next door. A permanently
+            # misconfigured URL — a typo'd port raises `httpx.InvalidURL`, which is NOT an
+            # `HTTPError` — would otherwise cost one console line per run into a launchd log
+            # nobody opens, with no record anywhere: the exact silent degradation this feature
+            # exists to end. `append_run_error` is safe here because `finish_run` committed long
+            # ago and it can touch neither status nor finished_at.
+            note = f"alert escalation not sent: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
 
 
 def _load_board_coverage(

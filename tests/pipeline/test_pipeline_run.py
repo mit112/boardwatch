@@ -1435,6 +1435,140 @@ def test_the_escalation_report_carries_every_alert_including_the_heartbeat_s_own
     )
 
 
+def test_a_stage_error_is_NOT_escalated(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`summary.errors` is not "the run's alerts", and escalating all of it would destroy the
+    channel.
+
+    It accumulates every stage error the pipeline produced — one dead board slug, a lane that
+    could not collect, a per-lead tailor degradation. Measured over runs 109-133, NINE runs
+    carried a non-empty `summary.errors` and NOT ONE of the nine was a finalize-block alert:
+    runs 124-128 each carried `plaid: HTTP 404` for a single dead slug out of 379 boards. Armed
+    against a healthchecks.io `/fail` URL, that is five consecutive ordinary `status=ok` runs
+    driving the monitor DOWN — and an owner who learns a DOWN check means nothing has lost the
+    only property this channel has.
+
+    So the payload is the finalize-block SLICE. This pins that: a stage error present before
+    finalize must stay out, while an alert raised inside it goes in.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    # A PRE-finalize stage error, injected the way the lane stage produces one
+    # (`runner.py` extends `summary.errors` with whatever `_run_lanes` returns).
+    monkeypatch.setattr(
+        runner_mod, "_run_lanes", lambda *_a, **_k: ([], ["lane fake: collection failed"])
+    )
+    # ...and an alert raised INSIDE the finalize block.
+    monkeypatch.setattr(runner_mod, "check_intake_death", lambda *_a, **_k: "MARKER-alert")
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert captured, "escalation was never called"
+    payload = captured[-1]
+    assert "MARKER-alert" in payload, "the finalize-block alert must be escalated"
+    assert "lane fake: collection failed" not in payload, (
+        "a pre-finalize STAGE error reached the escalation payload — armed, an ordinary run "
+        "with one dead board slug would drive the monitor DOWN"
+    )
+    # Guard: the stage error is still recorded, just not escalated. The two lists differ on
+    # purpose, so a mutant that simply drops the error everywhere does not pass this.
+    assert any("lane fake" in e for e in summary.errors), (
+        "guard: the stage error must still reach summary.errors and the digest"
+    )
+
+
+def test_the_runner_lets_escalation_read_the_REAL_environment(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stray `env=`/`client=` at the call site ships the feature permanently disarmed, and
+    both are invisible: a working escalation and a dead one are equally silent, and the unit
+    tests inject `env` themselves so they stay green either way."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+    seen_kwargs: list[dict[str, object]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **kw: object) -> None:
+        seen_kwargs.append(kw)
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+
+    _pipeline(env, tmp_path / "apps")
+
+    assert seen_kwargs, "escalation was never called"
+    assert "env" not in seen_kwargs[-1], "the call site pins `env`, so the real one is never read"
+    assert "client" not in seen_kwargs[-1], "the call site pins `client`"
+
+
+def test_a_refused_escalation_is_recorded_DURABLY(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rotated token gives a 401 on every run. Printing that to a launchd log nobody opens,
+    with no row in `runs.errors_json`, is the same invisibility the feature exists to end — and
+    it is the failure most likely to actually happen."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+    monkeypatch.setattr(
+        runner_mod, "escalate_alerts", lambda *_a, **_k: "alert escalation: refused (HTTP 401)"
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "a refused escalation must never fail the run"
+    assert any("HTTP 401" in e for e in summary.errors), "not recorded on summary.errors"
+    with get_engine(env).connect() as conn:
+        stored = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    # `errors_json` is a JSON column, so this comes back as a LIST, not a string — a bare
+    # `"HTTP 401" in stored` is a membership test against whole entries and never matches.
+    assert stored is not None and any("HTTP 401" in e for e in stored), (
+        "not durable in runs.errors_json"
+    )
+
+
+def test_an_escalation_that_RAISES_never_fails_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`httpx.InvalidURL` does not inherit from `HTTPError`, so a typo'd port in the env var can
+    escape the module. Telemetry may never fail a run (D-076) — this pins the runner's guard,
+    which no other test exercises: delete the `try/except` and every other test still passes."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("escalation boom")
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", boom)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "an escalation crash fell through and failed the run"
+    assert summary.tailored, "guard: the run still delivered its leads"
+    assert any("escalation boom" in e for e in summary.errors), "the crash left no record"
+
+
 def test_a_clean_run_escalates_nothing(env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Non-vacuity companion to the test above: the assertions there must be reachable only on
     a run that actually raised alerts, or they would pass on any run at all."""

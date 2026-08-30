@@ -9,12 +9,7 @@ from __future__ import annotations
 
 import httpx
 
-from boardwatch.notify.alert_escalation import (
-    ALERT_URL_ENV,
-    MAX_BODY_CHARS,
-    build_alert_body,
-    escalate_alerts,
-)
+from boardwatch.notify.alert_escalation import ALERT_URL_ENV, build_alert_body, escalate_alerts
 
 _URL = "https://hc.example/ping-token/fail"
 
@@ -114,10 +109,38 @@ def test_truncation_announces_itself_and_respects_the_cap() -> None:
 
     body = build_alert_body(133, alerts)
 
-    assert len(body) <= MAX_BODY_CHARS
+    # A LITERAL, never the imported constant: `len(body) <= MAX_BODY_BYTES` moves WITH a mutant
+    # that raises the constant, so it would pass while the body sailed past the 10 KB the
+    # endpoint actually keeps and got cut mid-sentence — the failure truncation exists to stop.
+    assert len(body.encode("utf-8")) <= 8_000
     assert "200 alert(s)" in body  # the COUNT is honest even when the list is not complete
-    assert "more, in this run's morning digest" in body
     assert "alert number 0" in body  # kept from the front, not an arbitrary slice
+    # The NUMBER, not merely the phrase. `withheld = len(alerts)` — off by everything kept —
+    # passes a bare substring check and tells the reader a flat lie about what is missing.
+    kept = sum(1 for line in body.splitlines() if line.startswith("- alert number "))
+    assert f"...and {200 - kept} more" in body
+
+
+def test_the_cap_is_in_BYTES_not_characters() -> None:
+    """The body is sent `.encode("utf-8")`, so the endpoint budgets BYTES. A character cap lets
+    non-ASCII alert text through at up to 3x the intended wire size: 8,000 CJK characters are
+    24,000 bytes. Rejects a `len(str)`-based implementation, which passes every ASCII test."""
+    alerts = tuple("東京" * 100 for _ in range(60))
+
+    body = build_alert_body(133, alerts)
+
+    assert len(body.encode("utf-8")) <= 8_000
+
+
+def test_an_invalid_url_is_swallowed_like_any_other_failure() -> None:
+    """`httpx.InvalidURL` does NOT inherit from `httpx.HTTPError`, and it is raised while
+    BUILDING the request — before any transport — so a typo'd port in the env var escapes an
+    `HTTPError`-only clause and breaks this function's never-raises contract."""
+    alert = escalate_alerts(133, ("x",), env={ALERT_URL_ENV: "https://hc.example:not-a-port/fail"})
+
+    assert alert is not None
+    assert "InvalidURL" in alert
+    assert "hc.example" not in alert  # still no URL in a string bound for runs.errors_json
 
 
 def test_a_short_body_is_not_truncated() -> None:

@@ -18666,6 +18666,19 @@ sites a scalar setting would need. Telemetry can never fail a run (D-076) — ev
 is swallowed into a returned soft-alert string, and neither the URL nor an exception message is interpolated
 into it, because that string is persisted to `runs.errors_json`.
 
+**The payload is the finalize-block SLICE, not `summary.errors`, and this was measured rather than
+assumed.** `summary.errors` is not "the run's alerts" — it accumulates every stage error the pipeline
+produced: a single 404 on one board slug, a lane that could not collect, a per-lead projection or tailor
+degradation. Over the last 25 runs, **9 carried a non-empty `summary.errors` and not one of the nine was a
+finalize-block alert**; runs 124-128 each carried `plaid: HTTP 404` for one dead slug out of a 379-board
+fleet. Armed against a `/fail` URL that is five consecutive ordinary `status=ok` runs driving the monitor
+DOWN, and an owner who learns that a DOWN check means nothing has lost the only property this channel has.
+So the runner records `escalatable_from = len(summary.errors)` at the top of the finalize block and
+escalates `summary.errors[escalatable_from:]` — the artifact-write failures, the six soft detectors and the
+heartbeat's result, and nothing upstream. The stage errors still reach `summary.errors`, the digest and
+`runs.errors_json`; they are recorded, not escalated. A regression test injects a lane error and asserts it
+stays OUT of the payload while a finalize alert goes in, and it fails against the whole-list version.
+
 **The call site is the whole of the correctness, and it is the one thing in this block that belongs BELOW
 `_emit_morning`.** The D-374 invariant governs where an alert is **raised**; this raises nothing, it
 **reports** what every handler above already raised, so it must run after the last of them or the report goes
@@ -18686,3 +18699,12 @@ heartbeat ping when a soft alert fired* — it would overload the dead-man's swi
 withheld ping cannot say WHY, which is the entire content of an escalation. *A JSON Slack/Discord body* —
 plain text is what cron-monitor endpoints store and display; the dual-key payload exists in `webhook.py` for
 the feature that needs it.
+
+**Three smaller corrections found by review, each with a test that fails without it.** `httpx.InvalidURL`
+does **not** inherit from `httpx.HTTPError` and is raised while BUILDING the request, so a typo'd port in
+the env var escaped a function whose contract is that it never raises; it is now caught explicitly. The
+runner's fallback handler is **durable** (`append_run_error`), not print-only like the heartbeat's next
+door — a permanently misconfigured URL would otherwise cost one line per run in a launchd log nobody opens,
+with no record anywhere, which is the silent degradation this feature exists to end. And the body cap is in
+**bytes**, not characters, because that is the unit the endpoint budgets and the unit the body is sent in:
+8,000 CJK characters are 24,000 bytes.

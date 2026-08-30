@@ -51,25 +51,40 @@ _TIMEOUT = httpx.Timeout(10.0)
 #: body says how many alerts it dropped and where the full list lives, rather than ending
 #: mid-sentence at a boundary the operator cannot see. Same contract as the digest's own
 #: `MARKDOWN_ALERT_LIMIT`: never truncate without saying so.
-MAX_BODY_CHARS = 8_000
+#:
+#: In BYTES, because that is the unit the endpoint's limit is in and the unit the body is sent
+#: in (`.encode("utf-8")` below). A character budget silently becomes a 3x larger wire payload
+#: on non-ASCII alert text — 8,000 CJK characters are 24,000 bytes — which is the overflow this
+#: constant exists to prevent, arriving through the unit rather than the count.
+MAX_BODY_BYTES = 8_000
+
+
+def _width(text: str) -> int:
+    """Encoded size, which is what the endpoint actually budgets."""
+    return len(text.encode("utf-8"))
 
 
 def build_alert_body(run_id: int, alerts: Sequence[str]) -> str:
-    """Render the POST body: a count line, then one line per alert, truncated announcedly."""
+    """Render the POST body: a count line, then one line per alert, truncated announcedly.
+
+    The header states the TRUE count even when the list below it is cut, so the two can never
+    disagree about how many alerts the run raised — the reader is told what is missing rather
+    than shown a short list that looks complete.
+    """
     header = f"boardwatch run {run_id}: {len(alerts)} alert(s)"
     lines = [header, *(f"- {alert}" for alert in alerts)]
     body = "\n".join(lines)
-    if len(body) <= MAX_BODY_CHARS:
+    if _width(body) <= MAX_BODY_BYTES:
         return body
     kept: list[str] = [header]
-    used = len(header)
+    used = _width(header)
     for line in lines[1:]:
         # +1 for the newline this line would add. The note below is always affordable because
-        # MAX_BODY_CHARS is far larger than it.
-        if used + len(line) + 1 > MAX_BODY_CHARS - 120:
+        # MAX_BODY_BYTES is far larger than the reserve.
+        if used + _width(line) + 1 > MAX_BODY_BYTES - 120:
             break
         kept.append(line)
-        used += len(line) + 1
+        used += _width(line) + 1
     withheld = len(alerts) - (len(kept) - 1)
     kept.append(f"- ...and {withheld} more, in this run's morning digest and runs.errors_json.")
     return "\n".join(kept)
@@ -111,7 +126,11 @@ def escalate_alerts(
         if response.is_success:
             return None
         return f"alert escalation: the endpoint refused the report (HTTP {response.status_code})"
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        # `InvalidURL` is listed EXPLICITLY because it does NOT inherit from `HTTPError` — a
+        # typo'd port or host in the env var (`https://host:abc/...`) raises it while building
+        # the request, before any transport is touched, so an `HTTPError`-only clause would let
+        # a misconfiguration escape a function whose contract is that it never raises.
         return f"alert escalation: the report never reached the endpoint ({type(exc).__name__})"
     finally:
         if owned:
