@@ -907,6 +907,31 @@ def test_a_fatal_run_does_not_ping_the_heartbeat(
     assert pings == [], "a fatal run pinged the heartbeat — the monitor would never alert"
 
 
+def test_a_funnel_write_failure_withholds_the_heartbeat(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run whose funnel never wrote is non-fatal (fail-open, D-287) but its authoritative
+    record is missing (B1/B5/P3 are read out of it), so the green ping is withheld and the
+    monitor alerts. A clean run that could not record itself must not read as clean to the
+    dead-man's-switch."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("funnel boom")
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "_emit_funnel", boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "a funnel-write failure must not fail the run (fail-open)"
+    assert summary.funnel is None, "guard: the funnel must have failed to write"
+    assert pings == [], "the heartbeat pinged despite a missing funnel — the monitor would not alert"
+
+
 def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
     env: Path, tmp_path: Path
 ) -> None:
@@ -997,3 +1022,68 @@ def test_a_crashed_run_still_reports_where_its_time_went(
     assert by_name["finalize"] >= _ABORT_TICK * 0.8, (
         f"the aborted stage's {_ABORT_TICK}s went unaccounted for: {by_name}"
     )
+
+
+def test_a_morning_write_failure_is_recorded_durably_not_only_printed(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The morning digest (P3 item 7) is emitted AFTER finish_run, like the funnel. A swallowed
+    write used to reach only the console — invisible to anything reading the store, so an
+    unattended run whose digest never wrote looked byte-identical to a clean one (D-287). It must
+    now reach `summary.errors` and the `runs` row, without failing the run: a digest write is not
+    the run's outcome (fail-open)."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    _ready(env)
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("morning boom")
+
+    monkeypatch.setattr(runner_mod, "_emit_morning", boom)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "a digest-write failure must not fail the run"
+    assert any("morning artifact not written" in e for e in summary.errors), summary.errors
+    # Durable, read back through a DIFFERENT path than summary.errors — the runs row itself.
+    with get_engine(env).connect() as conn:
+        stored = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    assert any("morning artifact not written" in e for e in (stored or [])), stored
+
+
+def test_the_run_surfaces_net_new_intake_as_a_real_number(env: Path, tmp_path: Path) -> None:
+    """'0 new across the whole corpus' is intake death that is NOT a scan outage
+    (is_systemic_scan_outage stays False on a complete-but-empty listing) and yields zero leads
+    with no fatal. `summary.scan_new` must carry the real count discovered, not sit at its
+    default: a scan that found a posting reads > 0."""
+    _ready(env)
+    _add_live_board(env)
+    body = b'{"meta": {"total": 1}, "jobs": [{"id": 1, "title": "Engineer A"}]}'
+    settings = load_settings(data_dir=env)
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=HEALTHY_BODY)
+            )
+        respx.get(_GH.board_url("live")).mock(return_value=httpx.Response(200, content=body))
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+    assert summary.scan_new >= 1, (
+        f"a scan that discovered a posting reported scan_new={summary.scan_new}"
+    )
+
+
+def test_the_run_summary_line_carries_the_net_new_signal(env: Path, tmp_path: Path) -> None:
+    """The net-new count rides the one line an unattended run is read from (stdout → the log),
+    so a corpus that stops producing new postings is a visible number rather than buried in
+    `evaluated: 0`."""
+    _ready(env)
+    result = _cli(env, ["run", "--no-scan", "--out", str(tmp_path / "apps")])
+    assert result.exit_code == 0, result.output
+    assert " new · " in result.output and " closed · " in result.output, result.output

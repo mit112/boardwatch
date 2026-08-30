@@ -200,6 +200,11 @@ class TailoredLead:
     # P4 item 6: this lead's keyword-coverage report, carried for the morning artifact and the
     # funnel's coverage summary. None when the measurement was unavailable — never a veto.
     coverage: CoverageReport | None = None
+    # True when the JD-tailored PDF failed its compile/layout gate and this lead shipped the
+    # untailored master résumé instead — `run_tailor`'s fail-safe fallback. Threaded from
+    # `TailorResult.degraded` so a SYSTEMATIC degrade (every lead shipping generic while the run
+    # still prints green) surfaces as a count on the run line, not only in the artifact meta.
+    degraded: bool = False
 
 
 @dataclass
@@ -222,6 +227,13 @@ class PipelineSummary:
     scan_open_postings: int = 0
     scan_boards_failed: int = 0
     scan_boards_complete: int = 0
+    # Net intake this run. Surfaced on the CLI summary line because "0 new across the whole
+    # corpus" is the likeliest failure of a system left unattended for weeks: a provider that
+    # returns an empty-but-`complete` listing is NOT a scan outage (is_systemic_scan_outage
+    # stays False on unchanged/complete > 0) and yields zero leads with no fatal, so the number
+    # has to be visible rather than buried in `evaluated: 0`.
+    scan_new: int = 0
+    scan_closed: int = 0
     evaluated: int = 0
     # The ranker's whole population accounting, not just what it showed. `shortlisted` alone
     # is capped at --top and so measures the flag rather than the funnel; the considered count
@@ -981,6 +993,8 @@ def run_pipeline(
             summary.scan_open_postings = scan_summary.open_postings
             summary.scan_boards_failed = scan_summary.failed
             summary.scan_boards_complete = scan_summary.complete
+            summary.scan_new = scan_summary.new
+            summary.scan_closed = scan_summary.closed
             # CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent
             # empty day)". `is_systemic_scan_outage` (D-037) is the same predicate
             # `coordinator.py`'s standalone scan uses, so the two can never disagree on the
@@ -1422,8 +1436,22 @@ def run_pipeline(
                     score=posting.score.total,
                     pdf_path=result.pdf_path,
                     coverage=result.coverage,
+                    degraded=result.degraded,
                 )
             )
+            if result.degraded:
+                # A shippable-but-UNTAILORED PDF is not a failed lead (pdf_built stays True), so
+                # nothing above records it. Left unsurfaced, a systematic cause — every tailored
+                # output running one page over the limit, a template regression — ships generic
+                # résumés on every lead while the run stays green. Recorded like a tailor
+                # failure: onto the `runs` row via stage_errors, onto the funnel and CLI via
+                # summary.errors. Not fatal — the untailored master is a real, correct résumé.
+                message = (
+                    f"tailor: posting {posting.posting_id}: shipped untailored master "
+                    f"(tailored gate: {result.degrade_reason})"
+                )
+                stage_errors.append(message)
+                summary.errors.append(message)
 
         # P6 slice 2 §5.3 — the whole ledger write, AFTER the loop, so every disposition names
         # work that actually happened: `built` only for a lead whose artifact already exists, and
@@ -1588,7 +1616,15 @@ def run_pipeline(
         try:
             summary.morning = _emit_morning(engine, settings, summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
-            console.print(f"  ! morning artifact not written: {exc}", markup=False)
+            # Recorded, not just printed — the same asymmetry the funnel handler above closes
+            # (D-287). The morning artifact is the owner's daily digest (P3 item 7); a swallowed
+            # write left only a console line that no unattended run is read from, so the note now
+            # also reaches `summary.errors` (which `run_cmd` reprints) and the `runs` row via
+            # `append_run_error`. Still fail-open: a digest write is not the run's outcome.
+            note = f"morning artifact not written: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # The delivery queue (design §4.3), LAST of the three projections and guarded exactly as
         # they are. The queue holds COPIES of what the run already delivered — the résumé and the
         # funnel above are the run's real output — so a queue failure must cost the queue and
@@ -1607,7 +1643,14 @@ def run_pipeline(
         # the late guards fall through here with `fatal` set. Swallowed like the emits above:
         # telemetry must never be the thing that fails the run (D-076). No-op unless the
         # operator set BOARDWATCH_HEARTBEAT_URL, so it is off by default for every other user.
-        if summary.fatal is None:
+        #
+        # Also gated on the funnel having been written. A run whose funnel write failed stays
+        # non-fatal (fail-open, D-287), but its authoritative record is missing — B1, B5 and the
+        # Gate P3 clean-run count are all read out of that artifact — so a green ping would
+        # assert a trustworthy run that never fully recorded itself. Withholding the ping makes
+        # the monitor alert on that state instead. `summary.funnel` is None exactly when
+        # `_emit_funnel` raised above.
+        if summary.fatal is None and summary.funnel is not None:
             try:
                 send_heartbeat()
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome

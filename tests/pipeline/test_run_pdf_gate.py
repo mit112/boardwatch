@@ -127,6 +127,12 @@ def test_a_lead_that_only_the_untailored_master_compiles_still_ships_degraded(
     assert lead.pdf_built is True
     assert lead.out_dir.is_dir()
     assert summary.fatal is None
+    # The degrade is not a failed lead (pdf_built stays True), so it must be surfaced some other
+    # way or a systematic cause ships generic résumés on every lead under a green run.
+    assert lead.degraded is True, "the untailored-master fallback must mark the lead degraded"
+    assert any("shipped untailored master" in e for e in summary.errors), (
+        f"a degraded lead must surface as a run error, not stay silent: {summary.errors}"
+    )
 
 
 def test_binary_missing_is_a_run_level_fatal_not_a_per_lead_drop(
@@ -191,6 +197,11 @@ def test_every_tailored_lead_has_a_built_pdf_on_a_normal_run(env: Path, tmp_path
 
     assert summary.tailored, "nothing was tailored, so this test proves nothing"
     assert all(lead.pdf_built for lead in summary.tailored)
+    # The non-vacuity guard for the degraded signal: a normally-tailored lead is NOT degraded
+    # and raises no untailored-master error, so a mutant that always marked `degraded` or always
+    # appended the error would fail here rather than sailing through the positive test above.
+    assert not any(lead.degraded for lead in summary.tailored)
+    assert not any("shipped untailored master" in e for e in summary.errors), summary.errors
 
 
 def test_tailored_artifact_row_is_a_real_tex_file_with_pdf_built_meta(

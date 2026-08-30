@@ -188,11 +188,17 @@ def run(
         console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)
         raise typer.Exit(code=2) from None
 
+    # Net intake and the untailored count are both silent-failure signals: "0 new" is intake
+    # death (a provider quietly returns an empty listing), and any untailored count means a lead
+    # shipped the generic master. Both leave `fatal` unset, so the log line is where they show.
+    degraded_count = sum(1 for lead in summary.tailored if lead.degraded)
+    degraded_note = f" ({degraded_count} untailored)" if degraded_count else ""
     console.print(
         f"run {summary.run_id} · {summary.scan_postings_seen} postings seen · "
+        f"{summary.scan_new} new · {summary.scan_closed} closed · "
         f"{summary.scan_open_postings} open · {summary.evaluated} evaluated · "
         f"{_shortlist_line(summary)} · "
-        f"{len(summary.tailored)} tailored · {summary.leads_with_pdf} with PDF"
+        f"{len(summary.tailored)} tailored{degraded_note} · {summary.leads_with_pdf} with PDF"
     )
     for lead in summary.tailored:
         mark = "✓" if lead.pdf_built else "·"
