@@ -1377,3 +1377,82 @@ def test_the_run_summary_line_carries_the_net_new_signal(env: Path, tmp_path: Pa
     result = _cli(env, ["run", "--no-scan", "--out", str(tmp_path / "apps")])
     assert result.exit_code == 0, result.output
     assert " new · " in result.output and " closed · " in result.output, result.output
+
+
+# --- soft-alert ESCALATION: the absent-owner channel ---------------------------------------
+#
+# The heartbeat gate is satisfied by a merely non-fatal run, so a run that raised every soft
+# alert in the finalize block still pings GREEN. While somebody is at the machine the morning
+# digest carries those alerts; unattended it cannot, because it is a local file in no synced
+# folder. Escalation is what makes a DEGRADED-but-successful run visible remotely, and its
+# correctness is entirely a question of WHERE it is called from.
+
+
+def test_the_escalation_report_carries_every_alert_including_the_heartbeat_s_own(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins the call site, which is the whole of this feature's correctness.
+
+    Escalation is the one thing in the finalize block that belongs BELOW `_emit_morning` — it
+    raises no alert, it reports the alerts every handler above already raised, so it must run
+    after the last of them. Two moves break it and neither changes any other test:
+
+    - lifted into the soft-alert block (where the ordering invariant would "correctly" put a
+      NEW alert), and the report goes out missing the heartbeat's own result;
+    - lifted above the heartbeat gate, same thing.
+
+    A refused ping is the single alert most worth escalating — it means the dead-man's switch
+    itself is not reporting, so the monitor's silence can no longer be read as health. So this
+    asserts the payload contains BOTH a soft alert raised early in the block and the heartbeat
+    result raised at the very end of it.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "check_intake_death", lambda *_a, **_k: "MARKER-intake")
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: "MARKER-heartbeat")
+
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "guard: escalation must never fail the run (fail-open)"
+    assert captured, "escalation was never called — a degraded run reports nothing remotely"
+    payload = captured[-1]
+    assert "MARKER-intake" in payload, (
+        "escalation ran ABOVE the soft-alert block: the report omits alerts raised after it"
+    )
+    assert "MARKER-heartbeat" in payload, (
+        "escalation ran ABOVE the heartbeat: a refused ping — the one alert that invalidates "
+        "the monitor's silence — never reaches the owner"
+    )
+
+
+def test_a_clean_run_escalates_nothing(env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-vacuity companion to the test above: the assertions there must be reachable only on
+    a run that actually raised alerts, or they would pass on any run at all."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+
+    _pipeline(env, tmp_path / "apps")
+
+    assert captured, "guard: escalation is still CALLED on a clean run"
+    assert captured[-1] == (), "a clean run handed the channel alerts it did not raise"

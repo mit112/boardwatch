@@ -69,6 +69,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Soft alerts can now reach an owner who is away from the machine.** The six run alerts render
+  into the morning digest, which is a file under `~/boardwatch-applications/<date>/` on local disk —
+  in no synced folder. The heartbeat gate is satisfied by a merely non-fatal run, so a run that
+  raised every one of those alerts still pinged the monitor, and pinged green. A crash or a machine
+  asleep was always covered (the ping simply stops and the monitor alerts); what nothing reported was
+  the run that **succeeded while degraded** — intake death against a dead fleet, a scan outage, a
+  collapsed corpus — which over a fortnight of unattended running reads exactly like a fortnight of
+  healthy ones. `notify/alert_escalation.py` POSTs the run's alerts to a URL read from
+  `BOARDWATCH_ALERT_URL`; point it at a healthchecks.io `/fail` URL and the check already watching
+  for silence also reports degradation. Presence-gated and **unset by default**, so it is a no-op
+  until configured, and read from the environment rather than `config.toml` because the URL embeds a
+  token. It is deliberately the last thing the finalize block does: it reports the alerts every
+  handler above raised rather than raising one, so it runs after all of them — and after the
+  heartbeat, so a refused ping travels in the report too (D-376).
+
 - **A collapse that makes the whole corpus ineligible is no longer the one failure nothing watches.**
   The delivery-drought alert abstains on it by design — its honest guard is "did this run judge a
   candidate?", and a corpus that has gone entirely ineligible judged none — and the intake alert stays

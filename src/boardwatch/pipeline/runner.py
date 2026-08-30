@@ -50,6 +50,7 @@ from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
+from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.corpus_regression import check_corpus_regression
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
@@ -1853,6 +1854,36 @@ def run_pipeline(
                     append_run_error(engine, run_id, heartbeat_alert)
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 console.print(f"  ! heartbeat not sent: {exc}", markup=False)
+        # Escalation, and it belongs HERE — below `_emit_morning` and below the heartbeat gate —
+        # which is the one place in this block that is NOT a mistake. The rule the digest imposes
+        # ("a soft alert belongs ABOVE `_emit_morning`") is about where an alert is RAISED. This
+        # raises nothing: it REPORTS the alerts every handler above already raised, so it has to
+        # run after the last of them or it would send a payload missing exactly the alerts that
+        # arrived latest. **A mechanical rebase that "fixes" this upward into the alert block
+        # silently truncates the report** — the same class of accident the ordering invariant
+        # exists to catch, running the other way.
+        #
+        # Below the heartbeat specifically, so `summary.errors` already carries a REFUSED PING by
+        # the time it is read. That is the single alert most worth escalating: it means the
+        # dead-man's switch itself is not reporting, so the monitor's silence can no longer be
+        # trusted to mean health. The cost of this order is that a failure of the escalation POST
+        # cannot itself be escalated — it is recorded like every other soft alert and no further.
+        # Something has to be last; this is the cheapest thing to lose.
+        #
+        # Why it exists at all: the heartbeat gate above is satisfied by a run that is merely
+        # non-fatal, so a run that raised every alert in this block still pings GREEN. While the
+        # owner is at the machine that is fine — the digest carries the alerts. Unattended it is
+        # not: the digest is a local file in no synced folder, so a fortnight of degraded runs
+        # reads as a fortnight of healthy ones. Presence-gated and unset by default (D-076
+        # fail-open), so this is a no-op for anyone who has not configured an endpoint.
+        try:
+            escalation_alert = escalate_alerts(run_id, tuple(summary.errors))
+            if escalation_alert is not None:
+                console.print(f"  ! {escalation_alert}", markup=False)
+                summary.errors.append(escalation_alert)
+                append_run_error(engine, run_id, escalation_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            console.print(f"  ! alert escalation not sent: {exc}", markup=False)
 
 
 def _load_board_coverage(
