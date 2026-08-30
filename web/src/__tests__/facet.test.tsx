@@ -121,4 +121,39 @@ describe("verdict facet", () => {
       screen.getByRole("button", { name: /^eligible 2 —/i }).getAttribute("aria-pressed"),
     ).toBe("false");
   });
+
+  it("REVIEW shows the review lane alone, hides the apply queue, and auto-opens it", async () => {
+    render(<App />);
+    await screen.findByRole("grid", { name: "Queue" });
+
+    // Note: no "show" click — REVIEW must open the section itself.
+    fireEvent.click(screen.getByRole("button", { name: /^review 2 —/i }));
+
+    // Apply queue gone entirely; this fails if REVIEW is treated as a verdict filter.
+    expect(screen.queryByRole("grid", { name: "Queue" })).toBeNull();
+    expect(screen.queryByText("APPLY-ELIGIBLE")).toBeNull();
+    // Whole review lane shown — both verdicts, since REVIEW selects the lane, not a verdict.
+    const review = screen.getByRole("grid", { name: "Review" });
+    expect(hasRow(review, "REVIEW-ELIGIBLE")).toBe(true);
+    expect(hasRow(review, "REVIEW-UNCERTAIN")).toBe(true);
+    // "Showing X of Y" re-scoped to the review lane (2 of 2), not the empty apply lane (0 of 5).
+    expect(screen.getByText(/Showing 2 of 2/)).toBeTruthy();
+  });
+
+  it("Show all restores the apply queue after REVIEW", async () => {
+    render(<App />);
+    await screen.findByRole("grid", { name: "Queue" });
+    fireEvent.click(screen.getByRole("button", { name: /^review 2 —/i }));
+    expect(
+      screen.getByRole("button", { name: /^review 2 —/i }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.queryByRole("grid", { name: "Queue" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+
+    expect(screen.getByRole("grid", { name: "Queue" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /^review 2 —/i }).getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
 });

@@ -14,9 +14,11 @@ All notable changes to this project are documented here. The format follows
   eligible lead held in the review lane for its location stays visible rather than vanishing. It is
   applied after the band's own counts are computed, so switching straight from one facet to the next
   works without the target cell dropping to zero. `ineligible` stays a plain readout (those leads are
-  drained, never listed) and `review` stays one (it is a lane, not a verdict). Accessible toggle:
-  `aria-pressed`, a Label-in-Name accessible name, and the app's own active treatment (fill + inset
-  accent bar + brighter text) so state is never colour-alone (D-377).
+  drained, never listed). Accessible toggle: `aria-pressed`, a Label-in-Name accessible name, and
+  the app's own active treatment (fill + inset accent bar + brighter text) so state is never
+  colour-alone (D-377). The `review` cell is a toggle too, but a LANE filter rather than a verdict
+  one: it shows the review lane alone and hides the apply queue, and re-scopes the "Showing N of M"
+  readout to that lane (D-378).
 
 ### Fixed
 
