@@ -108,6 +108,62 @@ def test_read_stamp_on_a_stamp_missing_bundle_digest_raises_a_typed_error(tmp_pa
         read_stamp(tmp_path, D1)
 
 
+# --------------------------------------------------------------------------------------
+# The absolute pin: the stamp bytes already sitting in owners' config directories
+# --------------------------------------------------------------------------------------
+
+#: One stamp exactly as `write_stamp` emits it, frozen as BYTES and never round-tripped through
+#: the model. Every other assertion in this file writes a stamp with the current code and reads it
+#: back with the current code, so the pair agrees with itself no matter how `ProjectionStamp`
+#: changes shape. These are the bytes a real approval left on disk, and they are the only thing
+#: here that a same-direction change to the model cannot satisfy.
+PINNED_STAMP_BYTES = (
+    b"'projection_stamp_id': 'projection-approval.sha256-" + b"a" * 64 + b"'\n"
+    b"'projection_digest': 'sha256:" + b"a" * 64 + b"'\n"
+    b"'bundle_digest': 'sha256:" + b"c" * 64 + b"'\n"
+    b"'approved_at': '2026-08-13T12:00:00Z'\n"
+    b"'approved_via': 'controlling_terminal'\n"
+)
+
+
+def test_read_stamp_still_accepts_the_bytes_an_approval_already_wrote(tmp_path: Path) -> None:
+    """The stamp equivalent of `test_the_minimal_declaration_digest_is_the_one_already_stamped_on_disk`
+    (`test_projection_declaration.py`), guarding the OTHER half of the same owner-facing failure.
+
+    WHAT MOVING THIS COSTS, IN PRODUCTION. `project_pool` reads the stamp back unconditionally
+    (D-167), and `read_stamp` converts any `ValidationError` into a `ProfileBundleError`. Adding a
+    REQUIRED field to `ProjectionStamp`, renaming one, or narrowing a type therefore makes every
+    stamp already on disk fail to validate — the file is still there, `stamp_exists` still says
+    yes, and the read one line later raises. The blast radius is identical to the digest moving:
+    the `--project` preflight is fail-closed (`pipeline/runner.py`, P5a), so the scheduled run
+    returns with `fatal`, records no lead dispositions and exits 1, every day, until a human
+    re-approves at a controlling terminal. That is not hypothetical here — the test directly above
+    documents exactly this happening once already, when `bundle_digest` became required.
+
+    WHY BYTES AND NOT A MODEL. The failure is a READ of historical bytes, so the fixture has to BE
+    historical bytes. Building one with `write_stamp` and reading it back would move both sides
+    together and stay green through precisely the change this is for. Freezing the emitted shape
+    also catches the mirror-image break: a change to `document_bytes`'s output style leaves every
+    stamp already written in the old style, and this pins that the loader still takes it.
+
+    WHAT TO DO WHEN IT GOES RED. Not add the field to this literal. A red here says the change has
+    made every existing approval unreadable. A new field on this model should be OPTIONAL with a
+    default, which keeps these bytes valid and needs no edit here at all. If it genuinely must be
+    required, the owner has to be told before it ships that they will re-approve on a terminal and
+    that no scheduled run delivers anything until they have — then, and only then, move the pin.
+    """
+    path = stamp_path(tmp_path, D1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(PINNED_STAMP_BYTES)
+
+    stamp = read_stamp(tmp_path, D1)
+    assert stamp.projection_stamp_id == "projection-approval.sha256-" + "a" * 64
+    assert stamp.projection_digest == D1
+    assert stamp.bundle_digest == BD1
+    assert stamp.approved_at == NOW
+    assert stamp.approved_via == "controlling_terminal"
+
+
 def test_two_writes_of_one_digest_do_not_produce_two_files(tmp_path: Path) -> None:
     write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
     write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
