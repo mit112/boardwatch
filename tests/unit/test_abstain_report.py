@@ -114,8 +114,15 @@ def test_a_structurally_undecidable_rule_is_reported_apart_from_the_fixable_ones
     # ...but the structural one is bucketed apart and dropped from the actionable count. The
     # structurally-undecidable set is intrinsic (flagged from the constant), so it lists every
     # such catalog rule regardless of rows — both scoped_years_minimum and clearable_required.
+    # A LITERAL, not `set(STRUCTURALLY_UNDECIDABLE)`: comparing the report against the same
+    # constant the production code reads is vacuous, because a mutant that drops a member from
+    # `STRUCTURALLY_UNDECIDABLE` moves BOTH sides and the equality still holds. Pinned to the two
+    # ids `abstain.py` declares so dropping either one fails here (D-253).
     structural_ids = {rule.rule_id for rule in report.structurally_undecidable}
-    assert structural_ids == set(STRUCTURALLY_UNDECIDABLE)
+    assert structural_ids == {
+        "experience_years:scoped_years_minimum",
+        "clearance:clearable_required",
+    }
     fixable_ids = {rule.rule_id for rule in report.fully_abstaining_fixable}
     assert structural not in fixable_ids
     assert fixable in fixable_ids
