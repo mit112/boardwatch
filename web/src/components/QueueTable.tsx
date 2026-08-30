@@ -88,6 +88,7 @@ export function QueueTable({
   onOpenApply,
   onApplied,
   onSkip,
+  emptyHint = "Clear the text box or lower the minimum score.",
 }: {
   label: string;
   rows: QueueRow[];
@@ -102,6 +103,9 @@ export function QueueTable({
   onOpenApply: (row: QueueRow) => void;
   onApplied: (row: QueueRow) => void;
   onSkip: (row: QueueRow) => void;
+  /* Names the levers that would bring rows back. A verdict facet is a lever the two default
+     sentences do not mention, so the empty state must say so or it points at the wrong control. */
+  emptyHint?: string;
 }) {
   // The roving stop. When the cursor is on a row of the OTHER table — or on none — the first row
   // holds it, so the grid is always reachable in one Tab and never becomes a dead region.
@@ -247,7 +251,7 @@ export function QueueTable({
         <div role="rowgroup">
           <div role="row">
             <p role="gridcell" className="px-4 py-10 text-center text-sm text-fg-2">
-              No lead matches this filter. Clear the text box or lower the minimum score.
+              No lead matches this filter. {emptyHint}
             </p>
           </div>
         </div>
