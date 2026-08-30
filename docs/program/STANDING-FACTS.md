@@ -1501,6 +1501,9 @@ ratio of **1.0006**. Subsequent runs fall back to ~45 min.
 from D-370, `status='failed'` via the systemic-outage predicate on a single board. **The 04:00 tick is run
 133.** Any manual few-board scan writes a `failed` run this way, so `runs.status` is a poor forensic
 instrument for the retrospective.
+*(Annotation, not part of the verbatim text: run 133 has since RUN and finished `status=ok`. The
+standing lesson is the last sentence — a manual few-board scan mints a `failed` run and shifts the
+numbering, so never infer a run's health from `runs.status` alone.)*
 
 **THE PROJECTION APPROVAL SCARE WAS FALSE, AND THE REAL RISK IS NOW GATED (#251).** `run --project` never
 reaches the TTY prompt — it only READS a durable digest-keyed stamp, proven by run 131 delivering 40
