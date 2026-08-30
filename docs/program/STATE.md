@@ -92,6 +92,25 @@ it cannot bite while nobody is running ad-hoc scans, it is not a one-line change
 defaults to `status='running'`, so adding the filter silences all six existing tests), and whether a
 FAILED run should count toward "intake died" is a judgement, not a typo.
 
+**THE GUARDS ARE PINNED — 105 MUTATIONS, 97 CAUGHT, NO VACUOUS TEST AND NO LIVE DEFECT.**
+Every guard the unattended path depends on was mutated and scored against its own tests: the six
+detectors, the heartbeat gate, the tailor no-fabrication guards, the eligibility keystone and
+verdict rollup, projection fidelity, scan/apply and identity/dedup, the review gate, and the rank
+gates. Four gaps were real and three shipped as **test-only** PRs — **#263** (a closed posting was
+being re-closable, the only one that COMPOUNDS nightly), **#264** (plan deviation 8: a reopen must
+not swallow the revision), **#265** (`weight_sum <= 0.0`, the first gap reachable from a LEGAL
+config). Eight survivors were proven **unobservable** rather than untested, each by constructing
+the exact input the clause guards. **Every gap was correctness that was not PINNED, never
+correctness that was wrong** — full table in `METRICS.md`.
+
+**TWO RESIDUALS ARE THE OWNER'S CALL, both recorded with numbers and neither fixed.** (a) Trailing
+`Director` defeats the seniority gate — 9 live titles of 84,724, 4 reaching an entry target; the
+directionality is deliberate and documented, but the docstring's supporting measurement was taken
+on a corpus **2.2x smaller**. (b) `STRUCTURALLY_UNDECIDABLE` in `reports/abstain.py` freezes two
+rules as never-decidable that returned **30,231** and **691** `unmet` on run 133, and
+`fully_abstaining_fixable` EXCLUDES anything so flagged — so a D-372-class regression in either
+would be masked. Revisiting D-253 is owner-gated.
+
 **THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
 `_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
 BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the owner** — which is exactly
