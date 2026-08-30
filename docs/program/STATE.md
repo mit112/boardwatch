@@ -20,26 +20,6 @@
 
 ## Current standing
 
-**RUN 133 READ OUT: THE DIGEST HALF OF THE ALERT CHANNEL IS ACCEPTED, AND hiring.cafe FAILED AGAIN.**
-`morning-133.md` opens with `## Alerts`, above `## Discovery reach`, rendering the run's one alert — the
-acceptance criterion for the ten 2026-08-29f PRs, met. The baseline is proven on the artifact:
-`morning-131.md` is 489 lines with **zero** `## Alerts` sections, while that run's identical lane failure
-sat at **line 1390 of a 1,390-line, 116 KB funnel**. Run 133 was clean — `status=ok`, launchd exit 0,
-**1h52m52s** (inside the ~1h45m estimate), 379 boards / 271 complete / 21 partial / **0 failed**, 23,166
-seen, 4,300 net-new, 1,053 closed, 40 leads with 40 PDFs, reach 88.1%. The heartbeat fired (`errors_json`
-holds the lane failure and no `heartbeat:` entry, which a refused ping would have left, D-375).
-
-**THE ALERT CHANNEL TO AN ABSENT OWNER WAS *NOT* CLOSED ON 2026-08-29f. IT IS CLOSED NOW, AND IT SHIPS
-DISARMED (D-376, #258).** What 2026-08-29f closed was the channel to someone *sitting at the machine*.
-Verified this session, every link: the digest is a file under `~/boardwatch-applications/<date>/` and
-neither it nor `~/boardwatch-queue` is inside iCloud Drive, Dropbox or Google Drive; the heartbeat gate is
-`fatal is None and funnel is not None and morning is not None` — **`errors` is not in it**, so a run raising
-every soft alert still pings **green**; `runner.py` never imports `WebhookChannel`; and the plist declares
-exactly two environment variables with no `com.boardwatch.notify` job. **Runs 130 and 131 are the proof it
-already bit** — both `status='ok'` with a dead hiring.cafe lane, both pinged green.
-**Scope the claim precisely: the uncovered class is NON-FATAL DEGRADATION.** The dead-man's switch does
-work; a crash or a sleeping machine leaves no ping and healthchecks.io alerts inside 1 day + 2 h grace.
-
 **ARMING IS ONE PLIST LINE AND IT IS MIT'S CALL — IT IS THE ONLY ACTION THAT MAKES #258 DO ANYTHING.**
 `BOARDWATCH_ALERT_URL` is unset, so the code is a strict no-op today (verified through the editable venv).
 The exact edit, the reload commands and the two questions to settle first — do you want daily paging while
@@ -56,23 +36,6 @@ end-to-end **in a real pipeline run** on an isolated store: a real detector resu
 environment, not production. **Expect run 134 to be the first time this code runs for real, and
 expect it to POST nothing** — the channel is unarmed, and even armed, run 133's only alert was a
 LANE error, which the finalize-block slice deliberately excludes.
-
-**A STEP DETECTOR CANNOT HELP DURING A CODE FREEZE — do not count corpus-regression as coverage
-for these two weeks.** Firing on a >50% step between runs is the documented design
-(`corpus_regression.py`, "this is a STEP detector ... fires roughly three times, then ... goes
-quiet" — that is a stated limitation, NOT a defect, and a sweep has now mistaken it for one once).
-But a freeze removes every mechanism that produces a step: a rules edit, a profile fact that stops
-resolving, a taxonomy change are all changes the freeze forbids. What a freeze permits is gradual
-composition drift, which a step detector is blind to by construction. Combined with its cold start
-(dark until ~run 138), treat it as unavailable for most of the absence.
-
-**THE 2026-08-27 CADENCE CHANGE SILENTLY RESCALED EVERY WINDOW, because they count RUNS not TIME.**
-At 8 runs/day `INTAKE_DEATH_WINDOW = 3` and `DELIVERY_DROUGHT_WINDOW = 3` meant ~9 h; at 1 run/day
-they mean **3 days**. `CORPUS_REGRESSION_WINDOW = 5` (needing 6 runs) went ~18 h -> **6 days**. And
-`death_probe_budget = 50` went 400/day -> **50/day** against 75-384 new unwatched-company postings a
-day, so `due` grows monotonically (run 133: `due=1139, attempted=50, refused=1089`). The probe drift
-is bounded in importance by its own 6.7% detection rate. **Detection latency during the absence is
-3 days, not hours** — worth knowing before reading a quiet morning as healthy.
 
 **`check_intake_death` HAS NO RUN-STATUS FILTER, and both its siblings do — owner's call.**
 `intake_death.py:42-47` selects on `new_count IS NOT NULL` only, while `delivery_drought.py:50` and
@@ -97,6 +60,36 @@ Gate P0 is defined against, and the web viewer's run-list badge). Eleven survivo
 and each should be KEPT, because in every case the redundancy depends on a neighbouring
 implementation detail that a refactor could change. **Every gap was correctness that was not PINNED, never
 correctness that was wrong** — full table in `METRICS.md`.
+
+**THE BIGGEST REMAINING RISK IS NOT IN THIS REPO — A NIGHTLY `brew upgrade` SITS 4 HOURS UPSTREAM
+OF THE RÉSUMÉ RENDERER.** `com.mitsheth.nightly-maintenance` fires **00:00 daily** and runs
+`brew update` -> `brew upgrade` -> `brew cleanup`. `reports/tailor.py` shells out to **`tectonic`**
+and **`pdfinfo`**, both at `/opt/homebrew/bin/` (0.17.0 / poppler **26.08.0**). poppler versions as
+`YY.MM.x`, so **26.09.0 is due in the first days of September — inside the window** — and it
+already auto-upgraded 26.07.0 -> 26.08.0 on 2026-08-04. **The preflight checks EXISTENCE, not
+executability**: `shutil.which` still succeeds for a binary broken by a dyld mismatch, so it does
+NOT report `BINARY_MISSING` — it degrades to per-lead `COMPILE_FAILED` -> "every lead failed to
+project or tailor" -> FATAL -> heartbeat withheld -> the monitor pages. **Detected but
+MIS-DIAGNOSED, and every subsequent night fails identically.** Leads are NOT burned
+(`COMPILE_FAILED` is excluded from `DETERMINISTIC_GATE_REFUSALS`), so a repair recovers everything.
+**Mitigation is one reversible command and it is MIT'S CALL because it changes another job's
+behaviour: `brew pin tectonic poppler`.** The principled in-repo fix — have the preflight PROBE the
+binaries rather than only locate them — is deliberately NOT shipped before a freeze; it is a change
+to the nightly render path and deserves its own review.
+
+**TWO MORE MACHINE-LEVEL FACTS, both lower severity.** macOS **auto-installs on a BETA seed train**
+(three OS installs in 18 days); each reboots, but auto-login is on and FileVault OFF so the
+LaunchAgent returns, and a reboot inside the run window costs that night only. And
+`com.mitsheth.cleanup-caches` fires at **exactly 04:00 on Sundays** — 09-06 and 09-13 — the same
+minute boardwatch starts; pure I/O contention, it touches no boardwatch path.
+
+**THE PLIST'S HEARTBEAT-GRACE REASONING COMPARES THE WRONG QUANTITY.** It argues *"run 130 took 137
+min, so a slow day cannot false-alarm"*. The ping fires at `04:00 + duration`, so the 26 h window
+constrains **`dur(N+1) - dur(N)`**, not absolute duration. Only runs 131 (96.7 min) and 133 (112.9
+min) are genuine scheduled ticks — delta 16.2 min — so the real margin is **not yet pinnable**;
+every other full-scan run in the store is from the ad-hoc era. Re-derive from consecutive scheduled
+ticks once 134+ exist. Errs safe either way: the failure mode is a FALSE "down" email, never a
+missed real failure.
 
 **TWO RESIDUALS ARE THE OWNER'S CALL, both recorded with numbers and neither fixed.** (a) Trailing
 `Director` defeats the seniority gate — 9 live titles of 84,724, 4 reaching an entry target; the
