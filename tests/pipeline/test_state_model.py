@@ -207,6 +207,45 @@ def test_e2_a_closed_posting_is_not_re_closed_by_later_complete_scans(
     )
 
 
+def test_e3_a_reopen_with_a_changed_body_emits_BOTH_reopened_and_revised(
+    engine: Engine, company_id: int, run_id: int, case: ProviderCase
+) -> None:
+    """Plan deviation 8, stated in `apply.py`'s own module docstring and pinned by nothing.
+
+    `test_e` reopens with an UNCHANGED body, so the revision limb never runs. Turning the
+    revision check into an `elif` — so a reopen consumes the observation — leaves the whole
+    suite green, yet `body_text` and `content_hash` are then NOT refreshed on the reopening
+    run. Extraction is hash-keyed, so eligibility that run is judged against the STALE JD.
+    It self-heals on the next scan, which is why this is a one-run correctness bug and not a
+    permanent one — but the path is common: reopen+revise in the same run accounts for a large
+    share of reopens in the live store.
+    """
+    jobs = case.jobs()[:2]
+    pid = str(jobs[1][case.id_key])
+    case.set_body(jobs[1], "Original body before the posting was pulled.")
+    apply_board(engine, case.snapshot_for(jobs), company_id, run_id)
+    original_hash = _posting_by_pid(engine, pid).content_hash
+
+    apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
+    apply_board(engine, case.snapshot_for(jobs[:1]), company_id, run_id)
+    assert _posting_by_pid(engine, pid).status == "closed", "guard: must be closed first"
+
+    # Reappears WITH A DIFFERENT BODY — the case `test_e` does not cover.
+    back = case.jobs()[:2]
+    case.set_body(back[1], "Materially different body on the day it came back.")
+    apply_board(engine, case.snapshot_for(back), company_id, run_id)
+
+    row = _posting_by_pid(engine, pid)
+    kinds = _event_kinds(engine)
+    assert row.status == "open"
+    assert kinds.count("reopened") == 1
+    assert kinds.count("revised") == 1, (
+        "a reopen swallowed the revision — body_text and content_hash go unrefreshed, so this "
+        "run judges eligibility against the stale JD"
+    )
+    assert row.content_hash != original_hash, "content_hash was not refreshed on the reopen"
+
+
 def test_f_identical_bodies_two_provider_ids_stay_two_postings(
     engine: Engine, company_id: int, run_id: int, case: ProviderCase
 ) -> None:
