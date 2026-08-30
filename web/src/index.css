@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
 /*
+ * Test files are NOT production sources: Tailwind v4 auto-scans every file under web/, so a
+ * class-like token in a `.test.tsx` would otherwise be emitted into the shipped CSS and any test
+ * edit would rebuild the bundle (and trip the CI web-bundle byte-check). Excluding the test tree
+ * keeps the shipped bundle a function of the app alone. All vitest specs live under __tests__.
+ */
+@source not "./__tests__";
+
+/*
  * Design tokens. Every colour, radius and easing curve in the application resolves here; nothing
  * downstream hard-codes a hex value, a pixel radius or a cubic-bezier.
  *
