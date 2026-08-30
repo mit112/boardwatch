@@ -854,6 +854,145 @@ def test_a_lead_whose_folder_disappeared_after_tailoring_is_filesystem_truth_fat
     assert "filesystem-truth" in summary.fatal
 
 
+# --- every fatal path must leave its reason on the run row ------------------------------
+#
+# `status=failed` with `errors_json=[]` is a run that cannot say why it failed, and it is the
+# shape an unattended failure actually took. The four late guards below the tailor loop set
+# `summary.fatal` and fall through to `finish_run` without ever touching `stage_errors`, so the
+# reason existed only in a console log nobody reads on a 04:00 run.
+#
+# Parametrized over the fatal paths rather than written four times, because the invariant is
+# about the CHOKE POINT, not about any one guard: whatever put a reason in `summary.fatal` has
+# to be findable on the row afterwards. A new guard added later is covered by adding one entry
+# here, and — more to the point — is covered in PRODUCTION without touching this file at all.
+
+
+def _fatal_scan_outage(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """Run 132's shape through the PIPELINE caller. Already recorded before this change
+    (the scan arm appends `scan: <reason>` itself), so it pins the behaviour rather than
+    discriminating — the discriminating case is the standalone caller, in test_scan.py."""
+    _ready(env)
+    return _scan_pipeline(env, out_root, status=500)
+
+
+def _fatal_every_lead_unrendered(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """A non-empty shortlist that produced no lead at all — a broken résumé path."""
+    _ready(env)
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("resume.yaml is missing")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    return _pipeline(env, out_root)
+
+
+def _fatal_zero_output_guard(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """B5's silent empty day: a genuinely new eligible posting that no lead explains."""
+    _ready(env)
+    first = _pipeline(env, out_root)
+    assert first.fatal is None, first.fatal
+    assert first.tailored, "run 1 produced no lead, so run 2 proves nothing"
+    _seed_posting(env, slug="acme3")
+    return _pipeline(env, out_root, top_n=0)
+
+
+def _fatal_cohort_guard(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stands in for the fatal path nobody has written yet as much as for `_cohort_guard`
+    itself: the guard is replaced by one returning a reason the runner has never seen, so what
+    is proved is that the choke point persists whatever a guard hands it, not that it knows
+    this particular sentence."""
+    _ready(env)
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(
+        runner_mod, "_cohort_guard", lambda *_a: "cohort: candidate 4242 reached no terminal state"
+    )
+    return _pipeline(env, out_root)
+
+
+def _fatal_filesystem_truth(env: Path, out_root: Path, monkeypatch: pytest.MonkeyPatch):
+    """The store says a lead was produced; its folder is gone from disk."""
+    _ready(env)
+    import shutil
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    real_run_tailor = runner_mod.run_tailor
+
+    def sabotage(*args: object, **kwargs: object):
+        result = real_run_tailor(*args, **kwargs)
+        shutil.rmtree(kwargs["out_dir"])  # type: ignore[arg-type]
+        return result
+
+    monkeypatch.setattr(runner_mod, "run_tailor", sabotage)
+    return _pipeline(env, out_root)
+
+
+@pytest.mark.parametrize(
+    "make_fatal",
+    [
+        _fatal_scan_outage,
+        _fatal_every_lead_unrendered,
+        _fatal_zero_output_guard,
+        _fatal_cohort_guard,
+        _fatal_filesystem_truth,
+    ],
+    ids=[
+        "scan_outage",
+        "every_lead_unrendered",
+        "zero_output_guard",
+        "cohort_guard",
+        "filesystem_truth",
+    ],
+)
+def test_every_fatal_path_persists_its_reason_on_the_run_row(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_fatal: object
+) -> None:
+    summary = make_fatal(env, tmp_path / "apps", monkeypatch)  # type: ignore[operator]
+
+    assert summary.fatal is not None, "guard: this scenario did not go fatal, so it proves nothing"
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.errors_json).where(
+                tables.runs.c.id == summary.run_id
+            )
+        ).one()
+    persisted = list(row.errors_json or [])
+    assert row.status == "failed", f"a fatal run was not recorded failed: {row.status}"
+    carrying = [note for note in persisted if summary.fatal in note]
+    assert carrying, (
+        f"the run recorded failed but not WHY — errors_json cannot answer it: {persisted}"
+    )
+    # One event, one entry. A path that both records at its own site AND falls through to the
+    # choke point would double every fatal, which makes any per-run error count downstream
+    # uninterpretable — the same duplication the scan stage's own errors already avoid.
+    assert len(carrying) == 1, f"one fatal was recorded {len(carrying)} times: {persisted}"
+
+
+def test_a_fatal_reason_a_stage_already_recorded_is_not_recorded_twice(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The crash handler already appends its message and then sets `fatal` to that same
+    message, so the choke point must recognise it as recorded. One event, one row entry —
+    otherwise every per-run error count downstream becomes uninterpretable."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("taxonomy.yaml is malformed")
+
+    monkeypatch.setattr(runner_mod, "_count_evaluations", boom)
+    with pytest.raises(RuntimeError):
+        _pipeline(env, tmp_path / "apps")
+
+    with get_engine(env).connect() as conn:
+        persisted = list(conn.execute(select(tables.runs.c.errors_json)).scalar_one() or [])
+    aborted = [note for note in persisted if "taxonomy.yaml is malformed" in note]
+    assert len(aborted) == 1, f"the crash reason was recorded {len(aborted)} times: {persisted}"
+
+
 def test_a_normal_run_that_produced_leads_stays_non_fatal(env: Path, tmp_path: Path) -> None:
     """Regression: the guards must not fire on a healthy run. Distinct from
     `test_a_clean_run_is_recorded_as_ok`, which checks `runs.status`; this checks the guards'
@@ -962,6 +1101,125 @@ def test_a_morning_write_failure_withholds_the_heartbeat(
     assert summary.morning is None, "guard: the digest must have failed to write"
     assert summary.tailored, "guard: the run still delivered its leads"
     assert pings == [], "the heartbeat pinged despite a missing digest — no alert would ever land"
+
+
+# --- the heartbeat's OWN outcome ---------------------------------------------------------
+#
+# The monitor can only see pings that arrive, and cannot tell a REFUSED ping from a machine
+# that was asleep. So a rotated token, a deleted healthchecks.io check, or an endpoint
+# answering 500 left no local trace of any kind, and boardwatch's silence read as health while
+# the whole unattended safety net was down.
+#
+# These three drive the REAL `send_heartbeat` over an httpx.MockTransport rather than stubbing
+# its return value, so the runner's wiring and the module's own contract are proved together.
+# No test here may ever reach a real monitor URL: a test ping registers as a successful run on
+# the operator's live check and destroys exactly the signal this feature exists to protect.
+
+_MONITOR_URL = "https://hc.example/ping-token"
+
+
+def _wire_heartbeat(
+    monkeypatch: pytest.MonkeyPatch, *, env_value: str | None, handler: object
+) -> list[str]:
+    """Point the runner's heartbeat at a mock transport; return the list of URLs it requested."""
+    import boardwatch.pipeline.runner as runner_mod
+    from boardwatch.notify import heartbeat as heartbeat_mod
+
+    requested: list[str] = []
+
+    def recording(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return handler(request)  # type: ignore[operator]
+
+    def send() -> str | None:
+        return heartbeat_mod.send_heartbeat(
+            env={} if env_value is None else {heartbeat_mod.HEARTBEAT_URL_ENV: env_value},
+            client=httpx.Client(
+                transport=httpx.MockTransport(recording), follow_redirects=True
+            ),
+        )
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", send)
+    return requested
+
+
+def test_a_refused_heartbeat_ping_is_recorded_and_does_not_fail_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ping's return value used to be discarded, so a 4xx/5xx produced no trace anywhere.
+    It must now be durable on the run row — and the run must stay clean, because telemetry can
+    never be the thing that fails a run (D-076)."""
+    _ready(env)
+    requested = _wire_heartbeat(
+        monkeypatch, env_value=_MONITOR_URL, handler=lambda req: httpx.Response(404)
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.tailored, "guard: the fixture produced no lead, so this proves nothing"
+    assert requested == [_MONITOR_URL], "guard: exactly one ping must have been attempted"
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.errors_json).where(
+                tables.runs.c.id == summary.run_id
+            )
+        ).one()
+    persisted = list(row.errors_json or [])
+    assert any("heartbeat" in note and "404" in note for note in persisted), (
+        f"a refused heartbeat left no durable trace: {persisted}"
+    )
+    assert any("heartbeat" in note for note in summary.errors), summary.errors
+    assert summary.fatal is None, "a telemetry failure failed the run — fail-open is broken"
+    assert row.status == "ok", f"a telemetry failure changed the run's status: {row.status}"
+
+
+def test_an_unset_heartbeat_url_records_nothing(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The heartbeat is off by default for every user but this one, and the OLD return value
+    could not tell "unset" from "failed" — both were `False`. Alerting on falsiness would have
+    put a heartbeat failure on every run of every install that never configured one."""
+    _ready(env)
+    requested = _wire_heartbeat(
+        monkeypatch, env_value=None, handler=lambda req: httpx.Response(500)
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert requested == [], "an unset URL must never touch the network"
+    with get_engine(env).connect() as conn:
+        persisted = list(
+            conn.execute(
+                select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+            or []
+        )
+    assert not any("heartbeat" in note for note in persisted), persisted
+    assert not any("heartbeat" in note for note in summary.errors), summary.errors
+
+
+def test_an_acknowledged_heartbeat_ping_records_nothing(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The quiet path stays quiet: a 2xx is the normal nightly outcome and must not add a
+    line to every clean run's error list."""
+    _ready(env)
+    requested = _wire_heartbeat(
+        monkeypatch, env_value=_MONITOR_URL, handler=lambda req: httpx.Response(200, text="ok")
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert requested == [_MONITOR_URL], "guard: the ping was never sent, so this proves nothing"
+    with get_engine(env).connect() as conn:
+        persisted = list(
+            conn.execute(
+                select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+            or []
+        )
+    assert not any("heartbeat" in note for note in persisted), persisted
+    assert not any("heartbeat" in note for note in summary.errors), summary.errors
 
 
 def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802

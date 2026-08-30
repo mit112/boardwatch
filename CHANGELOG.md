@@ -8,6 +8,42 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A failed run now records why it failed.** Run 132 was stamped `failed` with an empty error
+  list: one board was attempted, it came back `partial`, nothing completed, and the sentence that
+  explained it — "systemic scan outage: 1 boards attempted, none completed" — was written only to a
+  console log that has since scrolled away. That is the shape several fatal paths took. Four guards
+  below the tailor loop (the all-leads-unrendered fatal, the zero-output guard, cohort completeness
+  and filesystem-truth) set the run's fatal outcome and fell straight through to `finish_run`
+  without ever adding it to the list that gets persisted, and the standalone `boardwatch scan`
+  classified the outage as fatal without recording it at all — `partial` is counted neither
+  complete nor failed, so not even a per-board error line was left behind. The fix is one choke
+  point rather than five patches: the `finally` that closes the run row now appends the fatal
+  reason unless a stage already recorded it, so a fatal path added a year from now is covered
+  without anyone remembering to record it, which is precisely the discipline the old design kept
+  asking for and not getting. The dedup is a suffix test, because every site that does record
+  prefixes the reason with its stage; where that test is ever wrong it errs toward writing the
+  reason twice rather than losing it. The standalone scan gained the same sentence — shared with
+  the pipeline's copy, so one event cannot be described two ways depending on which command
+  observed it — and only when it owns the run's terminal status, so `boardwatch run` still records
+  it exactly once.
+
+- **A heartbeat the monitor refuses is no longer silent.** The dead-man's-switch ping's return
+  value was discarded, and only a raised exception produced so much as a console line. An HTTP
+  4xx/5xx, a rotated token, or a deleted healthchecks.io check therefore left no local trace of any
+  kind — and the external monitor cannot help, because it sees no ping and cannot tell a refused one
+  from a machine that never woke up. The whole unattended safety net rests on that one request, so
+  its failure read as health. `send_heartbeat` now returns the same `str | None` soft alert shape
+  the intake-death detector uses: `None` when there is nothing to act on — the ping was
+  acknowledged, or no URL is configured, which stays the silent default for everyone who never set
+  one — and a one-line alert when a ping was attempted and did not land. The run prints it, puts it
+  on the error list the CLI reprints, and makes it durable on the run row. It remains strictly
+  fail-open: no fatal, no raise, no retry, and never a second ping. The alert names an HTTP status
+  or the transport exception's class and never the URL, which embeds a token. One limitation is
+  worth stating rather than hiding: the heartbeat gate is deliberately the last thing a run does,
+  because it has to observe whether the funnel and the morning digest were written before it
+  asserts the run was clean — so this note reaches the console and the run row, and neither of that
+  day's artifacts.
+
 - **A delivery-queue failure is now recorded, not just printed.** The funnel and morning-digest
   handlers already record their write failures to `runs.errors_json` (via `append_run_error`, because
   they run after `finish_run`), but the queue-sync handler only printed a console line and appended to
