@@ -381,6 +381,61 @@ const AUTHORED: QueueRow[] = [
     off_target_reason: null,
     review_reason: "non_us_location",
   },
+  {
+    posting_id: 41702,
+    job_id: 31044,
+    title: "Software Engineer, Payments Infrastructure",
+    company: "Ramp",
+    location: "New York, NY",
+    remote_policy: "hybrid",
+    posted_days: 2,
+    first_seen: "2026-08-28T09:05:00Z",
+    status: "open",
+    // US, software, and NOT held by either of the older gates: a work_auth or clearance rule
+    // ABSTAINED, so a blocking requirement could not be decided at all. The badge must report the
+    // abstain as an abstain -- rendering it as an ineligible verdict would spend a decision the
+    // engine explicitly declined to make.
+    verdict: "uncertain",
+    apply_url: "https://ramp.com/careers/41702",
+    delivered_run_id: 115,
+    tex_uri: "file://~/boardwatch-applications/2026-08-28/tailored-41702.tex",
+    pdf_uri: "file://~/boardwatch-applications/2026-08-28/tailored-41702.pdf",
+    target_flag: null,
+    thin_jd: false,
+    off_target: false,
+    pdf_available: true,
+    score: 71.4,
+    coverage: 0.61,
+    off_target_reason: null,
+    review_reason: "eligibility_unconfirmed",
+  },
+  {
+    posting_id: 41733,
+    job_id: 31061,
+    title: "Backend Engineer, Search",
+    company: "Instacart",
+    location: "San Francisco, CA",
+    remote_policy: "remote",
+    posted_days: 5,
+    first_seen: "2026-08-25T16:20:00Z",
+    status: "open",
+    // The other new hold, and deliberately a DIFFERENT row from the one above: the two reasons
+    // must render distinguishably, because the reader acts on them differently -- a stated
+    // experience bar is still worth reading, a blocking abstain has to be resolved first.
+    verdict: "uncertain",
+    apply_url: "https://instacart.careers/41733",
+    delivered_run_id: 115,
+    tex_uri: "file://~/boardwatch-applications/2026-08-25/tailored-41733.tex",
+    pdf_uri: "file://~/boardwatch-applications/2026-08-25/tailored-41733.pdf",
+    target_flag: null,
+    thin_jd: false,
+    off_target: false,
+    pdf_available: true,
+    score: 66.2,
+    coverage: 0.58,
+    off_target_reason: null,
+    review_reason: "experience_requirement",
+  },
 ];
 
 const COMPANIES = [

@@ -382,7 +382,13 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         if row.verdict != "ineligible"
     ]
     lane_of = {
-        row.posting_id: lane(verdict=row.verdict, locations=row.locations, title=row.title)
+        row.posting_id: lane(
+            verdict=row.verdict,
+            locations=row.locations,
+            title=row.title,
+            experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
+            eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+        )
         for row in rows
     }
     artifact_ids = _tailored_artifact_ids(conn)

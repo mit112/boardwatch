@@ -9,12 +9,19 @@ export of closed tracked postings needs.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from sqlalchemy import Connection, func, select
 
 from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.tables import eligibility_evaluations, eligibility_inputs, posting_versions
+from boardwatch.store.tables import (
+    eligibility_evaluations,
+    eligibility_inputs,
+    eligibility_requirements,
+    posting_versions,
+)
 
 
 def current_evaluations_chunked(
@@ -90,6 +97,92 @@ def current_verdicts(
         for vid in posting_version_ids
         if vid in version_to_posting
     }
+
+
+#: Rule-id prefixes whose ABSTAIN means a blocking rule could not be decided at all. Matched on the
+#: `family:` prefix rather than by listing rule ids, so a new pattern in either family is covered
+#: the day it ships — the opposite of a closed catalog, and correct here: this asks which FAMILY
+#: the rule belongs to, and the families are the closed set.
+HARD_FAMILIES = ("work_auth:", "clearance:")
+
+#: The family whose bar the candidate may simply not clear. `unmet` counts alongside `unknown`:
+#: both mean the requirement is not confirmed satisfied, which is the question the lane asks.
+EXPERIENCE_FAMILY = "experience_years:"
+
+
+class RequirementFlags(NamedTuple):
+    """Two booleans summarising one posting's current requirement rows.
+
+    A summary, not the rows: the lane decision needs to know only whether an unconfirmed
+    requirement of each kind EXISTS, and carrying the rows would invite a second, differently
+    filtered opinion downstream.
+    """
+
+    #: An `experience_years` row resolved `unmet` or `unknown` — a bar not confirmed satisfied.
+    experience_unconfirmed: bool = False
+    #: A `work_auth` or `clearance` row resolved `unknown` — a blocking rule that ABSTAINED.
+    #: `unmet` is deliberately NOT folded in: an unmet hard rule makes the verdict `ineligible`,
+    #: which has its own drain, and counting it here would relabel that lead's hold.
+    eligibility_unconfirmed: bool = False
+
+
+#: The all-False summary, as ONE immutable value. Callers use it as the default for a posting with
+#: no current evaluation, and as an argument default — which `RequirementFlags()` cannot be, since a
+#: call in a default is flagged even when the type is immutable.
+NO_REQUIREMENT_FLAGS = RequirementFlags()
+
+
+def current_requirement_flags(
+    conn: Connection,
+    posting_version_ids: list[int],
+    profile_hash: str | None,
+    rules_hash: str | None,
+) -> dict[int, RequirementFlags]:
+    """posting_id -> which kinds of requirement its CURRENT evaluation left unconfirmed.
+
+    Scoped exactly like `current_verdicts` — same identity, same version list, same read of
+    `current_evaluations_chunked` — so a caller that takes both gets a verdict and a summary from
+    the SAME evaluation. That is the whole point: the delivery lane reads them together, and a
+    summary drawn from a different evaluation than the verdict beside it could hold a lead for a
+    requirement the verdict had already resolved.
+
+    A posting with no current evaluation is absent from the result, exactly as it is absent from
+    `current_verdicts`; the caller's `.get(...)` default supplies the all-False summary, which is
+    the old behaviour.
+    """
+    if profile_hash is None or rules_hash is None or not posting_version_ids:
+        return {}
+    evals = current_evaluations_chunked(conn, posting_version_ids, profile_hash, rules_hash)
+    version_by_eval = {eval_id: vid for vid, (eval_id, _) in evals.items()}
+    flags: dict[int, list[bool]] = {}
+    for chunk in id_chunks(list(version_by_eval)):
+        rows = conn.execute(
+            select(
+                eligibility_requirements.c.evaluation_id,
+                eligibility_requirements.c.rule_id,
+                eligibility_requirements.c.disposition,
+            ).where(
+                eligibility_requirements.c.evaluation_id.in_(chunk),
+                eligibility_requirements.c.disposition.in_(("unmet", "unknown")),
+            )
+        ).all()
+        for row in rows:
+            rule_id, disposition = row.rule_id, str(row.disposition)
+            if not rule_id:
+                continue
+            seen = flags.setdefault(int(row.evaluation_id), [False, False])
+            if rule_id.startswith(EXPERIENCE_FAMILY):
+                seen[0] = True
+            elif disposition == "unknown" and rule_id.startswith(HARD_FAMILIES):
+                seen[1] = True
+    version_to_posting = _posting_by_version(conn, posting_version_ids)
+    out: dict[int, RequirementFlags] = {}
+    for eval_id, (experience, eligibility) in flags.items():
+        vid = version_by_eval[eval_id]
+        posting_id = version_to_posting.get(vid)
+        if posting_id is not None:
+            out[posting_id] = RequirementFlags(experience, eligibility)
+    return out
 
 
 def current_gate_verdicts(

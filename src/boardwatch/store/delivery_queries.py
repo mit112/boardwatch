@@ -53,7 +53,12 @@ from boardwatch.core.settings import load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
-from boardwatch.eligibility.read import current_verdicts
+from boardwatch.eligibility.read import (
+    NO_REQUIREMENT_FLAGS,
+    RequirementFlags,
+    current_requirement_flags,
+    current_verdicts,
+)
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
@@ -101,6 +106,11 @@ class QueueRow:
     tex_uri: str
     pdf_uri: str | None
     target_flag: bool | None
+    #: Which kinds of requirement the CURRENT evaluation left unconfirmed. Read from the same
+    #: evaluation as `verdict` above, in the same call, so the lane can never hold a lead for a
+    #: requirement a newer verdict beside it had already resolved. Defaulted so a row built
+    #: without it — every test fixture that predates the lane gates — behaves as before.
+    requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS
 
 
 @dataclass(frozen=True)
@@ -205,7 +215,13 @@ def _status(status: object, watched: object) -> str:
     return STATUS_UNVERIFIABLE if str(status) == "open" and not watched else str(status)
 
 
-def _queue_row(row: Row[Any], *, verdict: str | None, now: datetime) -> QueueRow:
+def _queue_row(
+    row: Row[Any],
+    *,
+    verdict: str | None,
+    now: datetime,
+    requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS,
+) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
         job_id=int(row.job_id),
@@ -227,6 +243,7 @@ def _queue_row(row: Row[Any], *, verdict: str | None, now: datetime) -> QueueRow
         tex_uri=str(row.tex_uri),
         pdf_uri=str(row.pdf_uri) if row.pdf_uri is not None else None,
         target_flag=_target_flag(row.tags_json),
+        requirement_flags=requirement_flags,
     )
 
 
@@ -279,7 +296,14 @@ def review_job_ids(conn: Connection) -> set[int]:
         row.job_id
         for row in delivered_unapplied(conn, skipped=set())
         if row.verdict != "ineligible"
-        and lane(verdict=row.verdict, locations=row.locations, title=row.title) == REVIEW_DIR
+        and lane(
+            verdict=row.verdict,
+            locations=row.locations,
+            title=row.title,
+            experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
+            eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+        )
+        == REVIEW_DIR
     }
 
 
@@ -320,15 +344,20 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # bounded by the artifact count rather than by the open corpus.
     versions = current_posting_versions(conn, [int(row.posting_id) for row in ordered])
     profile_hash, rules_hash = _identity(conn)
-    verdicts = current_verdicts(
-        conn,
-        [version.posting_version_id for version in versions.values()],
-        profile_hash,
-        rules_hash,
-    )
+    version_ids = [version.posting_version_id for version in versions.values()]
+    verdicts = current_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # Same identity and same version list as the verdicts above, so each row's summary and its
+    # verdict come from ONE evaluation. Absent posting -> the all-False default.
+    flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
     now = utcnow()
     return [
-        _queue_row(row, verdict=verdicts.get(int(row.posting_id)), now=now) for row in ordered
+        _queue_row(
+            row,
+            verdict=verdicts.get(int(row.posting_id)),
+            now=now,
+            requirement_flags=flags.get(int(row.posting_id), NO_REQUIREMENT_FLAGS),
+        )
+        for row in ordered
     ]
 
 
