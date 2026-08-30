@@ -60,6 +60,28 @@ All notable changes to this project are documented here. The format follows
   fails the run, never changes its status and never discards a lead — the leads still ship — it only
   makes the external monitor say something.
 
+- **A liveness prober that cannot reach anything no longer passes as a clean corpus.** The liveness
+  stage is fail-open by design: any transport fault returns `unknown`, and `unknown` is served, so
+  that a timeout costs a wasted résumé rather than a missed job. The cost of that direction is that
+  a prober whose egress has broken — DNS, a proxy in front of it, the machine's IP blocked — returns
+  `unknown` for the entire shortlist, drops the gone count to zero, and ships every lead unverified
+  while the run line reads exactly as it does on a good night; unattended, the owner would be handed
+  dead requisitions presented as live for as long as the break lasted. A new detector raises a soft
+  alert on the conjunction, which is what neither half says alone: a high `unknown` share is a normal
+  bad afternoon on one provider, and a gone count of zero is the ordinary state — it has been zero on
+  every instrumented run on record — but together they say the prober asked about the whole shortlist
+  and got not one definitive answer. The threshold is a rate rather than a count, because the
+  shortlist size is `--top` and that has moved 8 → 40 → 10 → 40 inside a fortnight; it is set at 75%
+  of a shortlist of at least ten, against a recorded worst clean run of 3 unknown of 8 (37.5%), and
+  of 2 of 10 and 3 of 40 at the sizes the pipeline actually runs at. A run that was never probed
+  abstains rather than reporting a clean result it never took. Like the rest of this family the alert
+  reaches `summary.errors` and the `runs` row through `append_run_error` and never sets the run's
+  fatal outcome, so the heartbeat still fires — a blind prober tickets, it does not trip the
+  dead-man's switch. It judges one run rather than a window, and that is a limitation rather than a
+  preference: the three liveness counts live only on the in-memory summary and in the per-run funnel
+  JSON, so there is no persisted per-run column to read a window off the way the intake detector reads
+  `runs.new_count`.
+
 - **A run that scans fine but finds nothing new no longer passes silently.** The heartbeat fires on
   any clean outcome, so a dead board fleet or a silent fetch regression — the pipeline running
   perfectly and returning zero new postings every night — looked identical to a healthy run. A new
@@ -120,6 +142,24 @@ All notable changes to this project are documented here. The format follows
   version and prove nothing.
 
 ### Changed
+
+- **A lead the delivery queue could not copy is now recorded, not just printed.** `sync_queue` and
+  `reconcile_queue` both isolate their per-lead failures inside their own report rather than raising,
+  which is what keeps a queue copy from ever failing a run — and the run hook counted those failures
+  into its log line and did nothing else with them. That was a deliberate contract, and it was the
+  right one while somebody was watching the run: the queue holds copies, and the dated tree and the
+  funnel are the real output. It stops being the right one unattended. The log line goes to a file
+  nobody opens, so a queue that had quietly stopped copying leads was byte-identical in the store to
+  one that copied every single one, and the owner would go on trusting a queue that had gone empty.
+  The hook now returns the combined failed count and a non-zero one is escalated the same way every
+  other reporting failure in the run's finalize block is — onto `summary.errors`, which the CLI
+  reprints, and onto the run row through `append_run_error`, because the hook runs after
+  `finish_run` and nothing appended to the summary alone survives the process. Still non-fatal: the
+  run's outcome, its status and its leads are all untouched, and all three are asserted so. The test
+  that pinned the old console-only contract was inverted to the new one and confirmed to fail
+  against the old implementation first, and a second test covers the drain half of the count, which
+  had no provocation of its own and would otherwise have let a version that reported only sync
+  failures ship green.
 
 - **A degree requirement's boilerplate no longer reads as a field of study.** The `education` field
   surface matched the mass noun wherever a posting talked *about* education rather than naming it as
