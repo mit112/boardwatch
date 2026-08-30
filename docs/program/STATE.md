@@ -47,50 +47,6 @@ it cannot bite while nobody is running ad-hoc scans, it is not a one-line change
 defaults to `status='running'`, so adding the filter silences all six existing tests), and whether a
 FAILED run should count toward "intake died" is a judgement, not a typo.
 
-**THE GUARDS ARE PINNED — 145 MUTATIONS, 130 CAUGHT, NO VACUOUS TEST AND NO LIVE DEFECT.**
-Every guard the unattended path depends on was mutated and scored against its own tests: the six
-detectors, the heartbeat gate, the tailor no-fabrication guards, the eligibility keystone and
-verdict rollup, projection fidelity, scan/apply and identity/dedup, the review gate, and the rank
-gates. Four gaps were real and three shipped as **test-only** PRs — **#263** (a closed posting was
-being re-closable, the only one that COMPOUNDS nightly), **#264** (plan deviation 8: a reopen must
-not swallow the revision), **#265** (`weight_sum <= 0.0`, the first gap reachable from a LEGAL
-config) and **#267** (the funnel's JSON `reconciles` key could be hardcoded `True` — the artifact
-Gate P0 is defined against, and the web viewer's run-list badge). Eleven survivors were proven
-**unobservable** rather than untested, each by constructing the exact input the clause guards —
-and each should be KEPT, because in every case the redundancy depends on a neighbouring
-implementation detail that a refactor could change. **Every gap was correctness that was not PINNED, never
-correctness that was wrong** — full table in `METRICS.md`.
-
-**THE BIGGEST REMAINING RISK IS NOT IN THIS REPO — A NIGHTLY `brew upgrade` SITS 4 HOURS UPSTREAM
-OF THE RÉSUMÉ RENDERER.** `com.mitsheth.nightly-maintenance` fires **00:00 daily** and runs
-`brew update` -> `brew upgrade` -> `brew cleanup`. `reports/tailor.py` shells out to **`tectonic`**
-and **`pdfinfo`**, both at `/opt/homebrew/bin/` (0.17.0 / poppler **26.08.0**). poppler versions as
-`YY.MM.x`, so **26.09.0 is due in the first days of September — inside the window** — and it
-already auto-upgraded 26.07.0 -> 26.08.0 on 2026-08-04. **The preflight checks EXISTENCE, not
-executability**: `shutil.which` still succeeds for a binary broken by a dyld mismatch, so it does
-NOT report `BINARY_MISSING` — it degrades to per-lead `COMPILE_FAILED` -> "every lead failed to
-project or tailor" -> FATAL -> heartbeat withheld -> the monitor pages. **Detected but
-MIS-DIAGNOSED, and every subsequent night fails identically.** Leads are NOT burned
-(`COMPILE_FAILED` is excluded from `DETERMINISTIC_GATE_REFUSALS`), so a repair recovers everything.
-**Mitigation is one reversible command and it is MIT'S CALL because it changes another job's
-behaviour: `brew pin tectonic poppler`.** The principled in-repo fix — have the preflight PROBE the
-binaries rather than only locate them — is deliberately NOT shipped before a freeze; it is a change
-to the nightly render path and deserves its own review.
-
-**TWO MORE MACHINE-LEVEL FACTS, both lower severity.** macOS **auto-installs on a BETA seed train**
-(three OS installs in 18 days); each reboots, but auto-login is on and FileVault OFF so the
-LaunchAgent returns, and a reboot inside the run window costs that night only. And
-`com.mitsheth.cleanup-caches` fires at **exactly 04:00 on Sundays** — 09-06 and 09-13 — the same
-minute boardwatch starts; pure I/O contention, it touches no boardwatch path.
-
-**THE PLIST'S HEARTBEAT-GRACE REASONING COMPARES THE WRONG QUANTITY.** It argues *"run 130 took 137
-min, so a slow day cannot false-alarm"*. The ping fires at `04:00 + duration`, so the 26 h window
-constrains **`dur(N+1) - dur(N)`**, not absolute duration. Only runs 131 (96.7 min) and 133 (112.9
-min) are genuine scheduled ticks — delta 16.2 min — so the real margin is **not yet pinnable**;
-every other full-scan run in the store is from the ad-hoc era. Re-derive from consecutive scheduled
-ticks once 134+ exist. Errs safe either way: the failure mode is a FALSE "down" email, never a
-missed real failure.
-
 **TWO RESIDUALS ARE THE OWNER'S CALL, both recorded with numbers and neither fixed.** (a) Trailing
 `Director` defeats the seniority gate — 9 live titles of 84,724, 4 reaching an entry target; the
 directionality is deliberate and documented, but the docstring's supporting measurement was taken
