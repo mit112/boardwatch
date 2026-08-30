@@ -296,6 +296,33 @@ families:
         # "We are willing to sponsor the regional robotics championship each spring." and
         # told a candidate needing a visa that the posting had offered them one.
         pattern: '(?:(?:for|in)\s+(?:the\s+|our\s+)?(?:roles?|positions?|candidates?|applicants?|hires?|employees?|openings?|jobs?|vacancies|vacancy|listings?|reqs?)?\s*(?:based\s+)?(?:in\s+)?(?:the\s+)?(?<!\w)(?P<juris_pre>Canadian|Canada|United\s+Kingdom|(?<!\w)U\.?K\.?|London|England|British|Britain|European\s+Union|European|Europe|(?<!\w)E\.?U\.?|United\s+States|(?<!\w)U\.?S\.?A?\.?|American|America|Germany|German|France|French|Ireland|Irish|Netherlands|Dutch|Spain|Spanish|Poland|Polish|Indian|India|Australian|Australia|Singaporean|Singapore|Japanese|Japan|Brazilian|Brazil|Mexican|Mexico|Israeli|Israel)(?!\w)(?:-based)?\s*(?:roles?|positions?|office|jobs?|vacancies|vacancy|listings?|reqs?)?\s*[,:]?\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice)\b)\w+\s+){0,3}?)?(?:(?<!\w)(?:happy|able|willing|glad|prepared)\s+to\s+(?:provide\s+|offer\s+)?sponsor(?:ship\s+for)?\s+(?:\w+\s+){0,2}?(?:visas?|work\s+visas?|employment\s+visas?|employment|immigration|green\s*cards?|H-?1B|H1-?B|TN|O-?1|E-?3|work\s+permits?)|(?:visa\s+)?sponsorship\s+(?:is\s+|are\s+|will\s+be\s+)?(?:available|offered|provided)|(?:do(?:es)?|we|will)\s+(?:provide|offer)\s+(?:visa\s+)?sponsorship|we\s+sponsor\s+(?:visas|work\s+visas))(?:\s+(?:for|in)\s+(?:the\s+|our\s+)?(?:roles?|positions?|candidates?|applicants?|hires?|employees?|openings?|jobs?|vacancies|vacancy|listings?|reqs?)?\s*(?:based\s+)?(?:in\s+)?(?:the\s+)?(?<!\w)(?P<juris_post>Canadian|Canada|United\s+Kingdom|(?<!\w)U\.?K\.?|London|England|British|Britain|European\s+Union|European|Europe|(?<!\w)E\.?U\.?|United\s+States|(?<!\w)U\.?S\.?A?\.?|American|America|Germany|German|France|French|Ireland|Irish|Netherlands|Dutch|Spain|Spanish|Poland|Polish|Indian|India|Australian|Australia|Singaporean|Singapore|Japanese|Japan|Brazilian|Brazil|Mexican|Mexico|Israeli|Israel)(?!\w)(?:-based)?\s*(?:roles?|positions?|office|jobs?|vacancies|vacancy|listings?|reqs?)?)?'
+      # FINDING (2026-08-30 audit): "...authorized to work in the US WITHOUT sponsorship" is the
+      # commonest sponsorship-blocking sentence, and it previously produced ONLY an
+      # authorization_required row -- MET for an ead_or_similar holder -- never the sponsorship
+      # restriction it actually states, so an EAD holder who needs future sponsorship was cleared.
+      # The negation_cue_idioms entry keeps "without ... sponsorship" non-polar (so it does not
+      # delete the authorization gate); this pattern is what turns that same clause into the
+      # sponsorship_unavailable row the resolver already knows how to decide (UNMET for a declared
+      # needs_sponsorship, MET for a citizen -- multi-tenant safe). Surfaces mirror the two idiom
+      # entries above; the cues are declared consumed so the in-span "without"/"no" are not dropped.
+      - id: no_sponsorship_without_clause
+        requiredness: required
+        implies: sponsorship_unavailable
+        scope: sentence
+        consumes_cues: ["without", "no"]
+        requirement_text: "Work authorization without sponsorship is required"
+        pattern: '(?:without\s+(?:(?:the|a|any)\s+need\s+(?:for|of)\s+|requiring\s+|needing\s+|current\s+or\s+future\s+)?(?:employer\s+|company\s+|visa\s+|work\s+visa\s+|immigration\s+)?sponsorship|with\s+no\s+(?:need\s+(?:for|of)\s+)?(?:employer\s+|company\s+|visa\s+)?sponsorship)'
+      # FINDING (2026-08-30 audit): "We will not consider candidates who require sponsorship, now or
+      # in the future" carries no refusal-verb frame (provide|offer|sponsor), so no_sponsorship_offered
+      # never fired and the sentence cleared by silence. The "not" cue sits inside the span and is
+      # declared consumed. Structure: "<refuse> ... <accept-verb> ... <require/need> sponsorship".
+      - id: no_sponsorship_will_not_consider
+        requiredness: required
+        implies: sponsorship_unavailable
+        scope: sentence
+        consumes_cues: ["not", "cannot", "won't", "no"]
+        requirement_text: "Candidates requiring sponsorship are not considered"
+        pattern: '(?:will\s+not|do(?:es)?\s+not|cannot|can\x27t|will\s+never|won\x27t|(?:are|is)\s+unable\s+to)\s+(?:(?!\b(?:and|but|while|whereas)\b)\w+\s+){0,3}?(?:consider|accept|hire|employ|entertain)\s+(?:(?!\b(?:and|but|while|whereas)\b)[\w\x27]+\s+){0,6}?(?:requir(?:e|ing|es)|need(?:s|ing)?)\s+(?:(?!\b(?:and|but|while|whereas)\b)\w+\s+){0,3}?sponsorship'
 
   - id: experience_years
     label: Years of experience
