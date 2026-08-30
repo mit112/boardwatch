@@ -50,6 +50,7 @@ from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
+from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
 from boardwatch.notify.scan_health import scan_outage_alert
@@ -1671,6 +1672,20 @@ def run_pipeline(
                 console.print(f"  ! {outage}", markup=False)
                 summary.errors.append(outage)
                 append_run_error(engine, run_id, outage)
+        # Delivery-drought soft alert. Intake can be healthy while the tailor, rank, or delivery
+        # path silently ships nothing; the heartbeat stays green and intake-death cannot see it
+        # (net-new > 0). Fires only when the last clean runs each judged a candidate yet
+        # delivered zero — a quiet day and an eligibility collapse both abstain. Non-fatal.
+        try:
+            drought = check_delivery_drought(engine)
+            if drought is not None:
+                console.print(f"  ! {drought}", markup=False)
+                summary.errors.append(drought)
+                append_run_error(engine, run_id, drought)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"delivery-drought check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
         # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
         # and the external monitor still alerts. Gated on `fatal`, not on reaching a return —

@@ -53,6 +53,16 @@ All notable changes to this project are documented here. The format follows
   outage tickets rather than paging, because it is not a systemic one and a false page on a transient
   timeout burst is worse than a note read on the next review.
 
+- **A pipeline that finds leads but ships none no longer passes silently.** Intake can be healthy —
+  boards up, new postings arriving — while the tailor, rank, or delivery path drops every candidate:
+  an over-suppression bug, a ranker that hides everything, a broken résumé render. The run reaches a
+  clean outcome, so the heartbeat fires green, and the intake-death detector stays quiet because
+  net-new is not zero. A detector now raises a soft, non-fatal alert when the last three clean runs
+  each judged at least one new eligible/uncertain candidate yet delivered zero leads. The candidate
+  guard keeps it honest: a quiet steady-state run that had nothing new to judge, and a full
+  eligibility collapse where nothing was judged eligible, both judge zero candidates and abstain — it
+  fires only when the pipeline is finding deliverable postings and dropping all of them.
+
 - **Twenty more Workday boards are watched; the fleet is 379.** Breadth batch 2 had been deferred
   because its boards had never been timed cold. One was: a cold Workday board scanned in 604 s,
   enumerated 420 of 420 postings, and stopped at exactly 400 — the detail-fetch budget — deferring the
