@@ -33,6 +33,33 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The morning digest now carries the run's alerts, and the heartbeat waits for it.** Every soft
+  alert this program raises — a collapsed lane, a stalled intake, an unsynced delivery queue, a
+  degraded tailor — did the same two things: appended to the run's error list and wrote the note
+  onto the run row. Neither had a reader. The list is reprinted to a console that, unattended, is a
+  log file nobody opens; `runs.errors_json` is queried by nothing; and the funnel renders them under
+  `## Errors` at the very bottom, which on run 131 put a real hiring.cafe failure at line 1388 of a
+  116 KB file. The one artifact the owner actually reads each morning rendered no error at all. It
+  now opens with an `## Alerts` section, above `## Discovery reach`, because reach is a measurement
+  and an alert is very often the reason that measurement is wrong. A healthy run says so in one line
+  rather than omitting the section: a block that disappears when it has nothing to say is
+  indistinguishable from a block that stopped working, which is exactly the state this file was in.
+  The run's fatal message is carried separately and never folded into the alert count, because three
+  guards — zero-output, cohort completeness, filesystem-truth — set it without appending anything to
+  the error list, and a digest reading only that list would have printed "no alerts" on a run that
+  failed outright. The markdown stops after eight alert lines and names how many it withheld and
+  where they live; the JSON sibling carries the full list, so the cap costs a reader nothing. The
+  digest is also emitted last in the run's finalize block, after the queue sync and the intake-death
+  check, so the notes those append reach it rather than landing after it was written.
+
+  The heartbeat is gated on that write. It was already gated on the funnel, on the grounds that a
+  run whose authoritative record is missing must not ping green; the digest now earns the same
+  treatment for a stronger reason, because it is the only channel by which any of this reaches an
+  absent owner. A run whose digest failed to write delivered its leads and delivered none of its
+  warnings, and looked identical to a run with nothing to warn about. Withholding the ping never
+  fails the run, never changes its status and never discards a lead — the leads still ship — it only
+  makes the external monitor say something.
+
 - **A run that scans fine but finds nothing new no longer passes silently.** The heartbeat fires on
   any clean outcome, so a dead board fleet or a silent fetch regression — the pipeline running
   perfectly and returning zero new postings every night — looked identical to a healthy run. A new

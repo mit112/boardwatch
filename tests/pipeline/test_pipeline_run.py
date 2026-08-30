@@ -932,6 +932,38 @@ def test_a_funnel_write_failure_withholds_the_heartbeat(
     assert pings == [], "the heartbeat pinged despite a missing funnel — the monitor would not alert"
 
 
+def test_a_morning_write_failure_withholds_the_heartbeat(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The digest is where a soft alert is DELIVERED, so a run that could not write one warned
+    nobody — and looked exactly like a run with nothing to warn about.
+
+    The other three channels are all unread unattended: the console goes to a log file, nothing
+    queries `runs.errors_json`, and the funnel buries an alert a thousand lines into a file that
+    is searched rather than read. Withholding the ping is what makes that state reach the
+    operator at all. It stays fail-open in every other respect: the run is still non-fatal and
+    the leads still shipped.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("morning boom")
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "_emit_morning", boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "a digest-write failure must not fail the run (fail-open)"
+    assert summary.funnel is not None, "guard: the FUNNEL wrote, so only the digest is missing"
+    assert summary.morning is None, "guard: the digest must have failed to write"
+    assert summary.tailored, "guard: the run still delivered its leads"
+    assert pings == [], "the heartbeat pinged despite a missing digest — no alert would ever land"
+
+
 def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
     env: Path, tmp_path: Path
 ) -> None:

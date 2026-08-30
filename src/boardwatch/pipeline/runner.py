@@ -270,6 +270,8 @@ class PipelineSummary:
     funnel: WrittenArtifact | None = None
     # Where the per-run morning artifact landed (P3 item 7). Same fail-safe as `funnel`: a
     # reporting failure is swallowed and reported to the console, never allowed to fail the run.
+    # `None` here withholds the heartbeat, exactly as a `None` funnel does — the digest is where
+    # this run's alerts are delivered, so a run that could not write one warned nobody.
     morning: WrittenArtifact | None = None
     # D-274. This run's board-coverage report, loaded ONCE in the finally block and shared by
     # both artifacts. `None` means the load failed (reported to the console), never that
@@ -1613,27 +1615,14 @@ def run_pipeline(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
-        # AFTER the funnel: the morning artifact links to `funnel-<run_id>.md` by name rather
-        # than by the WrittenArtifact above, so it renders that link even when the funnel
-        # itself failed to write (the name is deterministic from run_id either way).
-        try:
-            summary.morning = _emit_morning(engine, settings, summary, day_dir)
-        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
-            # Recorded, not just printed — the same asymmetry the funnel handler above closes
-            # (D-287). The morning artifact is the owner's daily digest (P3 item 7); a swallowed
-            # write left only a console line that no unattended run is read from, so the note now
-            # also reaches `summary.errors` (which `run_cmd` reprints) and the `runs` row via
-            # `append_run_error`. Still fail-open: a digest write is not the run's outcome.
-            note = f"morning artifact not written: {exc}"
-            console.print(f"  ! {note}", markup=False)
-            summary.errors.append(note)
-            append_run_error(engine, run_id, note)
-        # The delivery queue (design §4.3), LAST of the three projections and guarded exactly as
-        # they are. The queue holds COPIES of what the run already delivered — the résumé and the
-        # funnel above are the run's real output — so a queue failure must cost the queue and
-        # nothing else, and it must not sit upstream of an artifact a gate reads. Recorded on
-        # `summary.errors` as well as printed, because `run_cmd` prints that list after the call
-        # returns and a silently unwritten queue is a queue the owner will trust anyway.
+        # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
+        # sits BETWEEN them so a failure here reaches the morning digest below, which is the
+        # file the owner actually reads. The queue holds COPIES of what the run already
+        # delivered — the résumé and the funnel above are the run's real output — so a queue
+        # failure must cost the queue and nothing else, and it must not sit upstream of an
+        # artifact a gate reads. Recorded on `summary.errors` as well as printed, because
+        # `run_cmd` prints that list after the call returns and a silently unwritten queue is a
+        # queue the owner will trust anyway.
         try:
             _sync_queue(engine, settings, console)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -1686,6 +1675,29 @@ def run_pipeline(
             note = f"delivery-drought check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+        # LAST thing the finalize block writes, and deliberately so: the morning digest now
+        # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
+        # unattended. Every handler above appends its note to that list BEFORE this runs, so a
+        # funnel-write failure, a queue-sync failure and the intake-death alert all reach the
+        # digest. Emitting it earlier renders the digest and THEN appends alerts nobody sees
+        # until the next run — which is where the queue sync used to leave its note. Any future
+        # soft alert belongs above this call for the same reason. It still comes after the
+        # funnel for the original reason too: it links to `funnel-<run_id>.md` by NAME rather
+        # than by the WrittenArtifact above, so it renders that link even when the funnel itself
+        # failed to write (the name is deterministic from run_id either way).
+        try:
+            summary.morning = _emit_morning(engine, settings, summary, day_dir)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            # Recorded, not just printed — the same asymmetry the funnel handler above closes
+            # (D-287). The morning artifact is the owner's daily digest (P3 item 7); a swallowed
+            # write left only a console line that no unattended run is read from, so the note now
+            # also reaches `summary.errors` (which `run_cmd` reprints) and the `runs` row via
+            # `append_run_error`. Still fail-open: a digest write is not the run's outcome — and
+            # the heartbeat gate below, not this handler, is what makes the failure carry.
+            note = f"morning artifact not written: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
         # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
         # and the external monitor still alerts. Gated on `fatal`, not on reaching a return —
@@ -1699,7 +1711,25 @@ def run_pipeline(
         # assert a trustworthy run that never fully recorded itself. Withholding the ping makes
         # the monitor alert on that state instead. `summary.funnel` is None exactly when
         # `_emit_funnel` raised above.
-        if summary.fatal is None and summary.funnel is not None:
+        #
+        # And gated on the morning digest, for a reason that did NOT hold before the digest
+        # began rendering `summary.errors`. Until then it was a convenience view of facts the
+        # funnel already held, and gating on it would have paged daily over a reporting bug. It
+        # is now the only channel by which a soft alert reaches an absent owner: the console
+        # goes to a log file nobody opens, `runs.errors_json` is queried by nothing, and the
+        # funnel buries an alert a thousand lines deep in a file that is searched rather than
+        # read. A run whose digest did not write therefore delivered its leads and delivered
+        # none of its warnings, and looked identical to a run that had nothing to warn about —
+        # which is the exact silent-degradation class the heartbeat gate exists to break.
+        #
+        # A persistent digest bug will now page every day, and that is the intended cost: over a
+        # fortnight of unattended running it means a fortnight of blind operation, and one alert
+        # a day is proportional to that. The switch is not being overloaded with a new claim,
+        # either — the funnel clause above already moved its meaning from "a run happened" to
+        # "a run happened and recorded itself", and this extends the same predicate to the one
+        # record that is actually delivered. Withholding a ping never fails the run, never
+        # changes `runs.status` and never discards a lead; the leads still ship.
+        if summary.fatal is None and summary.funnel is not None and summary.morning is not None:
             try:
                 send_heartbeat()
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -1891,6 +1921,12 @@ def _emit_morning(
         leads=rows,
         # The SAME object the funnel got, not a second load — see the call site.
         board_coverage=summary.board_coverage,
+        # The same two the funnel receives, from the same lists, and passed the same way. The
+        # digest is the artifact the owner actually opens, so an alert that only reached the
+        # funnel reached nobody during an unattended fortnight. Passed rather than re-derived:
+        # one writer, one list, so the two artifacts cannot drift about what this run raised.
+        errors=summary.errors,
+        fatal=summary.fatal,
     )
     return write_morning(artifact, day_dir)
 

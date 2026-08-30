@@ -139,3 +139,56 @@ def test_a_run_with_no_tailored_leads_still_emits_an_empty_morning_artifact(
 
     assert summary.fatal is not None, "a missing profile is fatal; the fixture is wrong"
     assert payload["leads"] == []
+
+
+# --------------------------------------------------------------------------------------
+# Alerts — a soft alert must reach the artifact the operator actually opens
+# --------------------------------------------------------------------------------------
+
+
+def test_a_soft_alert_reaches_the_morning_digest_not_only_the_funnel(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point. A queue-sync failure is a SOFT alert: non-fatal by design, so the
+    heartbeat still fires and the run still delivers. Before this it reached the console (a log
+    an unattended run leaves unread), and — because the queue sync ran AFTER the digest was
+    written — not even the funnel. It must now be in both halves of the digest.
+
+    Uses the queue handler on purpose rather than a synthetic error: it is the LAST note the
+    finalize block appends, so a digest that carries it carries every earlier one too.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("queue boom")
+
+    monkeypatch.setattr(runner_mod, "_sync_queue", boom)
+
+    summary = _pipeline(env, out_root)
+    payload = _payload(out_root, "morning")
+
+    assert summary.fatal is None, "a queue-sync failure must not fail the run (fail-open)"
+    assert summary.morning is not None, "guard: the digest must have been written"
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "## Alerts" in rendered
+    assert "delivery queue not synced: queue boom" in rendered
+    # Both halves, consistently — the JSON is what any tooling would read.
+    assert any("delivery queue not synced" in err for err in payload["errors"]), payload["errors"]
+
+
+def test_a_clean_run_says_no_alerts_in_the_digest(env: Path, tmp_path: Path) -> None:
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    summary = _pipeline(env, out_root)
+    payload = _payload(out_root, "morning")
+
+    assert summary.fatal is None and not summary.errors, f"guard: not a clean run: {summary.errors}"
+    assert summary.morning is not None
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "No alerts: this run raised no errors." in rendered
+    assert payload["errors"] == []
+    assert payload["fatal"] is None
