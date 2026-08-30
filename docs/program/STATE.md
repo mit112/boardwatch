@@ -84,15 +84,18 @@ it cannot bite while nobody is running ad-hoc scans, it is not a one-line change
 defaults to `status='running'`, so adding the filter silences all six existing tests), and whether a
 FAILED run should count toward "intake died" is a judgement, not a typo.
 
-**THE GUARDS ARE PINNED — 105 MUTATIONS, 97 CAUGHT, NO VACUOUS TEST AND NO LIVE DEFECT.**
+**THE GUARDS ARE PINNED — 145 MUTATIONS, 130 CAUGHT, NO VACUOUS TEST AND NO LIVE DEFECT.**
 Every guard the unattended path depends on was mutated and scored against its own tests: the six
 detectors, the heartbeat gate, the tailor no-fabrication guards, the eligibility keystone and
 verdict rollup, projection fidelity, scan/apply and identity/dedup, the review gate, and the rank
 gates. Four gaps were real and three shipped as **test-only** PRs — **#263** (a closed posting was
 being re-closable, the only one that COMPOUNDS nightly), **#264** (plan deviation 8: a reopen must
 not swallow the revision), **#265** (`weight_sum <= 0.0`, the first gap reachable from a LEGAL
-config). Eight survivors were proven **unobservable** rather than untested, each by constructing
-the exact input the clause guards. **Every gap was correctness that was not PINNED, never
+config) and **#267** (the funnel's JSON `reconciles` key could be hardcoded `True` — the artifact
+Gate P0 is defined against, and the web viewer's run-list badge). Eleven survivors were proven
+**unobservable** rather than untested, each by constructing the exact input the clause guards —
+and each should be KEPT, because in every case the redundancy depends on a neighbouring
+implementation detail that a refactor could change. **Every gap was correctness that was not PINNED, never
 correctness that was wrong** — full table in `METRICS.md`.
 
 **TWO RESIDUALS ARE THE OWNER'S CALL, both recorded with numbers and neither fixed.** (a) Trailing

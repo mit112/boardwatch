@@ -9117,7 +9117,7 @@ corpus-regression baseline point **1 of 6**. Earliest possible fire: **run 138, 
 correctly did not fire. State after: **420 apply-ready**, 189 `_review`, 182 `_ineligible`,
 7 `_applied` — 31% review split, so no apply-lane starvation either.
 
-### Mutation campaign — 105 mutations across every guard the unattended path depends on
+### Mutation campaign — 145 mutations across every guard the unattended path depends on
 
 Run 133 having read out, the rest of the session went to a question no run answers: **do the tests
 actually hold the guards, or would a broken guard ship green?** A detector whose tests pass against
@@ -9135,7 +9135,9 @@ verified clean throughout because its branch is what the scheduled job runs.
 | scan/apply + identity/dedup | 28 | 21 |
 | review gate | 5 | 5 |
 | rank gates (hard filters, scoring, role, seniority, foreign-ad) | 14 | 13 |
-| **total** | **105** | **97** |
+| funnel reconciliation | 35 | 28 |
+| provider base (health mapping, enumerated count) | 5 | 5 |
+| **total** | **145** | **130** |
 
 **Four of the eight survivors were real gaps; the other four, plus four more from the scan sweep,
 were proven UNOBSERVABLE** — defensive code no test *can* exercise, each established by
@@ -9155,6 +9157,23 @@ pinned, never correctness that was wrong.
   configuration**: `RankWeights` permits `ge=0.0` on all four weights with no "at least one
   positive" rule and `boardwatch config` sets each, so all-zero is constructible — and without the
   guard that is `ZeroDivisionError` on every posting of every run.
+- **#267** — `funnel_to_dict`'s top-level `"reconciles"` key. Hardcoding it `True` left the suite
+  green because **all eight assertions on that key repo-wide check `is True`**; nothing pinned the
+  False path. The canonical test asserts the property and the markdown — and its own docstring says
+  *"if this test can never fail, nothing in Gate P0's 'reconciles to 100%' has any teeth"* — but
+  stopped one line short of the JSON. **An isolated hole, not a serializer gap:** the markdown
+  mirror and the sibling keys `"reconciled"` / `"boards_reconciled"` were all covered. No Python
+  path reads it (`verify` uses `reconcile.py`'s independent checks), but the consumers are the
+  archived `funnel-N.json` and the **web viewer's run-list badge** — so a run that did not
+  reconcile would show GREEN in the run list beside a markdown saying `DOES NOT RECONCILE`.
+
+**The funnel's reconciliation PREDICATES are genuinely well defended** — `Stage.reconciled`,
+`CrossCheck.agrees`, `SourceTotal.agrees`, `boards_reconciled`, the `RunFunnel.reconciles`
+conjunction and all of `reconcile.py`'s Class A/B checks were each caught, including **both**
+directions of the keystone (folding abstain into `ineligible` AND into `eligible`). Three further
+survivors there are localization-only — a lying `agrees` cell hides WHICH check failed, never THAT
+one did, because `disagreements` reads the dataclass property rather than the rendered cell — one
+is an equivalent mutant, and two are unused properties with no production consumer.
 
 **Not shipped, deliberately:** identity rows written from a stale `content_hash` (self-heals in one
 run; its natural test belongs in another file), and the `"director"` member of
