@@ -458,18 +458,21 @@ export function QueuePage({
   }, []);
 
   // Clicking the active facet's band cell again clears it — one control, both directions.
-  const toggleFacet = useCallback((next: QueueFacet) => {
-    setFacet((current) => (current === next ? null : next));
-  }, []);
-
-  /*
-   * Selecting the `review` lane opens its section: it is collapsed by default, and with the apply
-   * queue hidden a collapsed review section would leave the page showing only a header. The reader
-   * can still collapse it afterward — this only forces the open when the facet is chosen.
-   */
-  useEffect(() => {
-    if (facet === "review") setReviewOpen(true);
-  }, [facet]);
+  const toggleFacet = useCallback(
+    (next: QueueFacet) => {
+      const clearing = facet === next;
+      setFacet(clearing ? null : next);
+      /*
+       * Selecting the `review` lane opens its section: it is collapsed by default, and with the
+       * apply queue hidden a collapsed one would leave the page showing only a header. Done here on
+       * the click — not in an effect keyed on `facet`, because a setState synchronised into an
+       * effect body is a cascading render the lint rule rejects, and the event already knows the
+       * answer. The reader can still collapse it afterward.
+       */
+      if (!clearing && next === "review") setReviewOpen(true);
+    },
+    [facet],
+  );
 
   // The empty grid must name the lever that emptied it. With a facet on, the two default
   // sentences point at the text box and the score floor — neither of which is what is filtering.
