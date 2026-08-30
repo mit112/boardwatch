@@ -53,6 +53,7 @@ from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
+from boardwatch.notify.liveness_blind import check_liveness_blind
 from boardwatch.notify.scan_health import scan_outage_alert
 from boardwatch.pipeline.death_probe import sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
@@ -1673,6 +1674,28 @@ def run_pipeline(
                 append_run_error(engine, run_id, drought)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"delivery-drought check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+        # Liveness-blindness soft alert. The liveness stage is fail-open by design — any
+        # transport fault is `unknown`, and `unknown` is served — so a prober whose egress has
+        # broken (DNS, a proxy, a blocked IP) returns `unknown` for the whole shortlist, drops
+        # `dead` to zero, and ships every lead unverified while the run line still reads
+        # normally. The conjunction is the signal: a high unknown share AND no gone-status at
+        # all is a property of the prober, not of the postings. Non-fatal and deliberately not
+        # gated on the heartbeat below — the leads this run produced are real and the run
+        # succeeded, so a blind prober tickets rather than tripping the dead-man's switch.
+        # Recorded on `summary.errors` (reprinted by `run_cmd`) and, because `finish_run` has
+        # already committed above, made durable through `append_run_error`.
+        try:
+            blind_alert = check_liveness_blind(
+                summary.liveness_checked, summary.liveness_unknown, summary.liveness_dead
+            )
+            if blind_alert is not None:
+                console.print(f"  ! {blind_alert}", markup=False)
+                summary.errors.append(blind_alert)
+                append_run_error(engine, run_id, blind_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"liveness-blindness check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now

@@ -29,6 +29,7 @@ from sqlalchemy import insert, select
 from boardwatch.core.clock import utcnow
 from boardwatch.core.liveness import Liveness
 from boardwatch.core.settings import load_settings
+from boardwatch.pipeline import runner as runner_module
 from boardwatch.pipeline.liveness import check_leads
 from boardwatch.pipeline.runner import _zero_output_guard, run_pipeline
 from boardwatch.store import tables
@@ -434,3 +435,47 @@ def test_check_leads_writes_nothing(env: Path) -> None:
     before = full_dump()
     check_leads(engine, ids, prober=_prober(dead=set(ids)))
     assert full_dump() == before
+
+
+def test_a_blindness_alert_reaches_the_run_row(env: Path, tmp_path: Path) -> None:
+    """The detector's WIRING, which its own unit tests cannot see.
+
+    The verdict is stubbed rather than provoked, because provoking the real one needs a probed
+    shortlist of ten — `LIVENESS_MIN_CHECKED` — and ten tailored leads to reach it, which is a
+    minute of résumé builds to assert a call site. Stubbing keeps the three things the call site
+    is actually responsible for: that it is called at all, that it is handed THIS run's counts
+    rather than placeholders, and that a returned alert is made durable on the `runs` row —
+    `_sync_queue` and everything around it run after `finish_run`, so `summary.errors` alone
+    never reaches the store (D-287).
+
+    Fails against a missing call site, against passing the wrong three counters, and against a
+    version that appends to `summary.errors` without `append_run_error`.
+    """
+    ids = _ready(env, 2)
+    seen: list[tuple[int | None, int | None, int | None]] = []
+
+    def stub(checked: int | None, unknown: int | None, dead: int | None) -> str:
+        seen.append((checked, unknown, dead))
+        return "liveness: the prober may be blind"
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(runner_module, "check_liveness_blind", stub)
+        summary = _pipeline(env, tmp_path / "apps", top_n=2, prober=_prober(unknown=set(ids)))
+
+    # `(checked, unknown, dead)` in that order, and every one of them real: both postings probed,
+    # both unknown, none gone. A call site that swapped two arguments or passed a literal would
+    # be invisible to an assertion that only checked the note.
+    assert seen == [(2, 2, 0)]
+    assert "liveness: the prober may be blind" in summary.errors
+    with get_engine(env).connect() as conn:
+        recorded = conn.execute(
+            select(tables.runs.c.errors_json, tables.runs.c.status).where(
+                tables.runs.c.id == summary.run_id
+            )
+        ).one()
+    assert "liveness: the prober may be blind" in list(recorded.errors_json or [])
+    # Non-fatal, and it must stay that way: the leads this run produced are real and the run
+    # itself succeeded, so the alert may not move the outcome the heartbeat and the CLI read.
+    assert summary.fatal is None, summary.errors
+    assert recorded.status == "ok"
+    assert {lead.posting_id for lead in summary.tailored} == set(ids)
