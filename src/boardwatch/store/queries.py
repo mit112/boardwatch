@@ -265,6 +265,44 @@ def append_run_error(engine: Engine, run_id: int, note: str) -> None:
         )
 
 
+def record_corpus_counts(
+    engine: Engine,
+    run_id: int,
+    *,
+    open_postings: int,
+    evaluated: int,
+    candidates: int,
+) -> None:
+    """Stamp the standing eligible corpus onto a run row that has already been finished.
+
+    The same shape as `append_run_error` above, and for the same reason: this is called from
+    the funnel writer, which runs AFTER `finish_run`, so it must be able to add a fact to a
+    finished row without touching `status` or `finished_at`. Deliberately NOT
+    `finalize_run(...)`: that re-stamps both, so recording an observation about the corpus
+    would move the run's own completion time, and a corpus count is not a run outcome.
+
+    All three are required keyword arguments rather than defaulting to `None`. There is one
+    caller, and a forgotten count should be a type error rather than a silently NULL column
+    that the corpus-regression detector then skips forever without saying why (the same
+    direction `collect_run_funnel` takes for `lanes`).
+
+    NULL therefore means exactly one thing: this function was never called for the run — a row
+    that predates the columns, or a run whose funnel never reached the corpus count. The
+    detector treats such a run as unmeasured and skips it; it never reads absent as zero,
+    because zero here is the alarm.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            update(runs)
+            .where(runs.c.id == run_id)
+            .values(
+                corpus_open=open_postings,
+                corpus_evaluated=evaluated,
+                corpus_candidates=candidates,
+            )
+        )
+
+
 def ensure_run(engine: Engine, run_id: int | None) -> int:
     """Return the caller's run id, minting a fresh run row when there is none.
 
