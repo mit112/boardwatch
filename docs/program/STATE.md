@@ -54,6 +54,44 @@ would have driven the monitor DOWN on five ordinary `status=ok` runs. **Conseque
 longer reaches the remote channel**, only the digest — closing that means a lane-health *detector*, not a
 wider payload. On run 133 itself the channel would have posted **nothing**, which is correct.
 
+**RUN 134 IS THE FIRST PRODUCTION EXECUTION OF #258 AND #260 — RUN 133 IS NOT EVIDENCE FOR THEM.**
+Run 133 finished 10:52:56 UTC; #258 merged 11:03:05 UTC and #260 11:44:15 UTC, so both landed AFTER
+it. Run 133 IS the acceptance evidence for the ten 2026-08-29f PRs (#247-#256), which is what its
+`## Alerts` section proves — do not stretch it further. The escalation chain was instead proven
+end-to-end **in a real pipeline run** on an isolated store: a real detector result reached
+`summary.errors`, the digest rendered `## Alerts` above `## Discovery reach`, and the real
+`escalate_alerts` POSTed the body over a real socket, with the run surviving. That is a test
+environment, not production. **Expect run 134 to be the first time this code runs for real, and
+expect it to POST nothing** — the channel is unarmed, and even armed, run 133's only alert was a
+LANE error, which the finalize-block slice deliberately excludes.
+
+**A STEP DETECTOR CANNOT HELP DURING A CODE FREEZE — do not count corpus-regression as coverage
+for these two weeks.** Firing on a >50% step between runs is the documented design
+(`corpus_regression.py`, "this is a STEP detector ... fires roughly three times, then ... goes
+quiet" — that is a stated limitation, NOT a defect, and a sweep has now mistaken it for one once).
+But a freeze removes every mechanism that produces a step: a rules edit, a profile fact that stops
+resolving, a taxonomy change are all changes the freeze forbids. What a freeze permits is gradual
+composition drift, which a step detector is blind to by construction. Combined with its cold start
+(dark until ~run 138), treat it as unavailable for most of the absence.
+
+**THE 2026-08-27 CADENCE CHANGE SILENTLY RESCALED EVERY WINDOW, because they count RUNS not TIME.**
+At 8 runs/day `INTAKE_DEATH_WINDOW = 3` and `DELIVERY_DROUGHT_WINDOW = 3` meant ~9 h; at 1 run/day
+they mean **3 days**. `CORPUS_REGRESSION_WINDOW = 5` (needing 6 runs) went ~18 h -> **6 days**. And
+`death_probe_budget = 50` went 400/day -> **50/day** against 75-384 new unwatched-company postings a
+day, so `due` grows monotonically (run 133: `due=1139, attempted=50, refused=1089`). The probe drift
+is bounded in importance by its own 6.7% detection rate. **Detection latency during the absence is
+3 days, not hours** — worth knowing before reading a quiet morning as healthy.
+
+**`check_intake_death` HAS NO RUN-STATUS FILTER, and both its siblings do — owner's call.**
+`intake_death.py:42-47` selects on `new_count IS NOT NULL` only, while `delivery_drought.py:50` and
+`corpus_regression.py:89` both filter `status == RUN_OK`; no test covers the status dimension. Two
+wrong directions, the second worse: a failed run with `new_count = 0` can contribute to a FALSE
+alert, and a failed run with `new_count > 0` **RESETS the window and MASKS** a real intake death —
+run 132 is exactly that shape (`status='failed'`, `new_count=400`, one board). **Not fixed here**:
+it cannot bite while nobody is running ad-hoc scans, it is not a one-line change (a seeded run
+defaults to `status='running'`, so adding the filter silences all six existing tests), and whether a
+FAILED run should count toward "intake died" is a judgement, not a typo.
+
 **THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
 `_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
 BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the owner** — which is exactly
@@ -66,16 +104,6 @@ of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live s
 `STANDING-FACTS.md`.
 
 **The lane question is CLOSED (D-346/D-347) — do not re-propose lane parallelism.** In `STANDING-FACTS.md`.
-
-**THE hiring.cafe HEADER LEVER FAILED — D-369 IS ANSWERED AND CLOSED (#245).** Run 133 reproduced run 131's
-failure byte for byte, so the header set is eliminated and **that experiment must not be repeated**. What
-survives is the endpoint hypothesis and it is the **owner's**; the detail and the second, smaller
-"leave the lane enabled?" decision are in Next action item 1. **Still no probing; browser automation stays
-out of scope.**
-
-**BREADTH BATCH 2 IS HALF APPLIED — the fleet is 379 (D-370).** 20 Workday boards in, 4 SmartRecruiters out,
-because every SR board shares the ONE host `api.smartrecruiters.com` which `Fetcher` serializes, so 4 boards
-cost more wall clock than the 20 Workday ones combined.
 
 **Everything below this line is carried and remains true.** Gate P6 is 4 of 4; **the delivery cap is 40, set
 in the plist (D-366)** and the code default `DEFAULT_TOP_N` stays 10; breadth is argued on precision and
@@ -166,43 +194,30 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
    frozen**, so rules work may land freely and a `rules_hash` bump is not costly on this basis until
    the owner reopens the pass. The P4 blind review remains passed and does not repeat.
 
-4. **BREADTH BATCH 2 IS HALF APPLIED — fleet 379 — AND THE SPLIT IS MEASURED, NOT GUESSED (D-370).**
-   D-367's blocker was "never timed cold". It was timed: one batch-2 Workday board scanned cold =
-   **604 s, 420/420 enumerated, `postings_listed` 400 (the detail budget saturated exactly), 20
-   deferred** — so **a cold Workday board is bounded by the BUDGET, not by board size**. 20 × 604 s at
-   run 131's 5.90x parallelism = **~+34 min of scan on the FIRST run**, decaying toward ~+5 min.
-   **The 20 Workday boards are IN** (20 distinct `{tenant}.wdN` hosts, absorbed by `scan_workers=8`),
-   all re-verified `watched=1` against the source YAML. **The 4 SmartRecruiters boards are OUT, and
-   the reason inverts the intuition**: every SR board shares the ONE host `api.smartrecruiters.com`,
-   which `Fetcher` serializes and `scan_workers` provably cannot help (D-346/D-347), so **4 boards
-   cost more wall clock than the 20 Workday ones combined**. That SR figure is **DERIVED, not
-   measured** — measuring it spends the cost the decision avoids. File:
-   `.agent/2026-08-28f-degree-audit/breadth-add.yaml`. **Read "Breadth is last" first.**
-
-5. **Phase 1b and its follow-up are COMPLETE — item RETIRED.** Detail moved verbatim to
+4. **Phase 1b and its follow-up are COMPLETE — item RETIRED.** Detail moved verbatim to
    `STANDING-FACTS.md` 2026-08-28h, including why #230 is keyed on the `role_vetoed` MEMBER and
    must not be re-broadened to the review lane (D-354, D-359).
 
-6. **`main` IS GREEN** and stayed green across #240-#243. The three deflakes behind that, and the
+5. **`main` IS GREEN** and stayed green across #240-#243. The three deflakes behind that, and the
    standing rule they produced — **when a timing test flakes, ask what it MEASURED versus what it
    CLAIMS**, and **mutate every new assertion** — are in `STANDING-FACTS.md`.
 
-7. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
+6. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
    and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
    `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
 
-8. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state
+7. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state
    machine is **2 of 286** and architectural (D-320). The years-detection gap that sat here was
    addressed by #218 — read that PR, not the old 24-leads/1.3% figure.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-9. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
-10. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
+8. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+9. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
    he steps back from active work (~2026-08-31, unattended after). **Not dropped — an accepted known
    gap**, and the last multi-tenancy gap of its kind. Still owner-gated and still needs its own
    brainstorm; D-054 forbids us authoring non-tech field content.
-11. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
+10. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
    one bundle.
 ## Open questions — Mit's, not to be resolved by fiat
 
