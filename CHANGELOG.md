@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The queue's status band filters by verdict.** The `eligible` and `uncertain` cells are now
+  toggle buttons: click one to show only that verdict, click again — or the `Show all` control — to
+  clear. The filter reaches BOTH lanes, exactly like the existing text search and score floor, so an
+  eligible lead held in the review lane for its location stays visible rather than vanishing. It is
+  applied after the band's own counts are computed, so switching straight from one facet to the next
+  works without the target cell dropping to zero. `ineligible` stays a plain readout (those leads are
+  drained, never listed) and `review` stays one (it is a lane, not a verdict). Accessible toggle:
+  `aria-pressed`, a Label-in-Name accessible name, and the app's own active treatment (fill + inset
+  accent bar + brighter text) so state is never colour-alone (D-377).
+
 ### Fixed
 
 - **A detector that crashes now leaves a durable record.** The finalize block was inconsistent
