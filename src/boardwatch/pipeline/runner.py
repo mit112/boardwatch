@@ -1797,9 +1797,37 @@ def run_pipeline(
         # "a run happened and recorded itself", and this extends the same predicate to the one
         # record that is actually delivered. Withholding a ping never fails the run, never
         # changes `runs.status` and never discards a lead; the leads still ship.
+        #
+        # The ping's own outcome is recorded, not discarded. A ping the monitor REFUSES — a
+        # rotated token, a deleted check, an endpoint answering 500 — is indistinguishable from
+        # a healthy run to everything downstream: the monitor sees no ping and cannot tell a
+        # refused one from a machine that never woke up, and boardwatch's silence reads as
+        # health. `send_heartbeat` returns `None` for both quiet outcomes (acknowledged, or no
+        # URL configured — an unset URL must never raise an alert, it is the default), so a
+        # string here means a ping was attempted and did not land. Handled like every soft alert
+        # above: printed, onto `summary.errors` for `run_cmd` to reprint, and made durable
+        # through `append_run_error` because `finish_run` has long since committed.
+        #
+        # This is the ONE alert that cannot reach the digest, and that is structural rather than
+        # an oversight to tidy up later. The rule the digest imposes — a soft alert belongs
+        # ABOVE `_emit_morning` — cannot hold for an alert raised by the gate whose job is to
+        # observe whether `_emit_morning` succeeded; pinging earlier to buy the digest would
+        # break the two clauses in this very condition. So this note reaches the console (the
+        # launchd log on an unattended run) and `runs.errors_json`, and no artifact — nothing
+        # reads a prior run's error list, so it will not surface in tomorrow's digest either.
+        # That is a real loss and it is stated rather than papered over; it is also strictly
+        # smaller than what it replaces, which was no trace of any kind.
+        #
+        # Still strictly fail-open (D-076): no `fatal`, no raise, no retry, no second ping. The
+        # broad `except` also covers `append_run_error`, so a store that refuses the write costs
+        # a console line and never the run.
         if summary.fatal is None and summary.funnel is not None and summary.morning is not None:
             try:
-                send_heartbeat()
+                heartbeat_alert = send_heartbeat()
+                if heartbeat_alert is not None:
+                    console.print(f"  ! {heartbeat_alert}", markup=False)
+                    summary.errors.append(heartbeat_alert)
+                    append_run_error(engine, run_id, heartbeat_alert)
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 console.print(f"  ! heartbeat not sent: {exc}", markup=False)
 

@@ -1103,6 +1103,125 @@ def test_a_morning_write_failure_withholds_the_heartbeat(
     assert pings == [], "the heartbeat pinged despite a missing digest — no alert would ever land"
 
 
+# --- the heartbeat's OWN outcome ---------------------------------------------------------
+#
+# The monitor can only see pings that arrive, and cannot tell a REFUSED ping from a machine
+# that was asleep. So a rotated token, a deleted healthchecks.io check, or an endpoint
+# answering 500 left no local trace of any kind, and boardwatch's silence read as health while
+# the whole unattended safety net was down.
+#
+# These three drive the REAL `send_heartbeat` over an httpx.MockTransport rather than stubbing
+# its return value, so the runner's wiring and the module's own contract are proved together.
+# No test here may ever reach a real monitor URL: a test ping registers as a successful run on
+# the operator's live check and destroys exactly the signal this feature exists to protect.
+
+_MONITOR_URL = "https://hc.example/ping-token"
+
+
+def _wire_heartbeat(
+    monkeypatch: pytest.MonkeyPatch, *, env_value: str | None, handler: object
+) -> list[str]:
+    """Point the runner's heartbeat at a mock transport; return the list of URLs it requested."""
+    import boardwatch.pipeline.runner as runner_mod
+    from boardwatch.notify import heartbeat as heartbeat_mod
+
+    requested: list[str] = []
+
+    def recording(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return handler(request)  # type: ignore[operator]
+
+    def send() -> str | None:
+        return heartbeat_mod.send_heartbeat(
+            env={} if env_value is None else {heartbeat_mod.HEARTBEAT_URL_ENV: env_value},
+            client=httpx.Client(
+                transport=httpx.MockTransport(recording), follow_redirects=True
+            ),
+        )
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", send)
+    return requested
+
+
+def test_a_refused_heartbeat_ping_is_recorded_and_does_not_fail_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ping's return value used to be discarded, so a 4xx/5xx produced no trace anywhere.
+    It must now be durable on the run row — and the run must stay clean, because telemetry can
+    never be the thing that fails a run (D-076)."""
+    _ready(env)
+    requested = _wire_heartbeat(
+        monkeypatch, env_value=_MONITOR_URL, handler=lambda req: httpx.Response(404)
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.tailored, "guard: the fixture produced no lead, so this proves nothing"
+    assert requested == [_MONITOR_URL], "guard: exactly one ping must have been attempted"
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.errors_json).where(
+                tables.runs.c.id == summary.run_id
+            )
+        ).one()
+    persisted = list(row.errors_json or [])
+    assert any("heartbeat" in note and "404" in note for note in persisted), (
+        f"a refused heartbeat left no durable trace: {persisted}"
+    )
+    assert any("heartbeat" in note for note in summary.errors), summary.errors
+    assert summary.fatal is None, "a telemetry failure failed the run — fail-open is broken"
+    assert row.status == "ok", f"a telemetry failure changed the run's status: {row.status}"
+
+
+def test_an_unset_heartbeat_url_records_nothing(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The heartbeat is off by default for every user but this one, and the OLD return value
+    could not tell "unset" from "failed" — both were `False`. Alerting on falsiness would have
+    put a heartbeat failure on every run of every install that never configured one."""
+    _ready(env)
+    requested = _wire_heartbeat(
+        monkeypatch, env_value=None, handler=lambda req: httpx.Response(500)
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert requested == [], "an unset URL must never touch the network"
+    with get_engine(env).connect() as conn:
+        persisted = list(
+            conn.execute(
+                select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+            or []
+        )
+    assert not any("heartbeat" in note for note in persisted), persisted
+    assert not any("heartbeat" in note for note in summary.errors), summary.errors
+
+
+def test_an_acknowledged_heartbeat_ping_records_nothing(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The quiet path stays quiet: a 2xx is the normal nightly outcome and must not add a
+    line to every clean run's error list."""
+    _ready(env)
+    requested = _wire_heartbeat(
+        monkeypatch, env_value=_MONITOR_URL, handler=lambda req: httpx.Response(200, text="ok")
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert requested == [_MONITOR_URL], "guard: the ping was never sent, so this proves nothing"
+    with get_engine(env).connect() as conn:
+        persisted = list(
+            conn.execute(
+                select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+            or []
+        )
+    assert not any("heartbeat" in note for note in persisted), persisted
+    assert not any("heartbeat" in note for note in summary.errors), summary.errors
+
+
 def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
     env: Path, tmp_path: Path
 ) -> None:

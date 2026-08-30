@@ -27,6 +27,23 @@ All notable changes to this project are documented here. The format follows
   observed it — and only when it owns the run's terminal status, so `boardwatch run` still records
   it exactly once.
 
+- **A heartbeat the monitor refuses is no longer silent.** The dead-man's-switch ping's return
+  value was discarded, and only a raised exception produced so much as a console line. An HTTP
+  4xx/5xx, a rotated token, or a deleted healthchecks.io check therefore left no local trace of any
+  kind — and the external monitor cannot help, because it sees no ping and cannot tell a refused one
+  from a machine that never woke up. The whole unattended safety net rests on that one request, so
+  its failure read as health. `send_heartbeat` now returns the same `str | None` soft alert shape
+  the intake-death detector uses: `None` when there is nothing to act on — the ping was
+  acknowledged, or no URL is configured, which stays the silent default for everyone who never set
+  one — and a one-line alert when a ping was attempted and did not land. The run prints it, puts it
+  on the error list the CLI reprints, and makes it durable on the run row. It remains strictly
+  fail-open: no fatal, no raise, no retry, and never a second ping. The alert names an HTTP status
+  or the transport exception's class and never the URL, which embeds a token. One limitation is
+  worth stating rather than hiding: the heartbeat gate is deliberately the last thing a run does,
+  because it has to observe whether the funnel and the morning digest were written before it
+  asserts the run was clean — so this note reaches the console and the run row, and neither of that
+  day's artifacts.
+
 - **A delivery-queue failure is now recorded, not just printed.** The funnel and morning-digest
   handlers already record their write failures to `runs.errors_json` (via `append_run_error`, because
   they run after `finish_run`), but the queue-sync handler only printed a console line and appended to
