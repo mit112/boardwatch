@@ -1540,3 +1540,25 @@ cost more wall clock than the 20 Workday ones combined.
    cost more wall clock than the 20 Workday ones combined**. That SR figure is **DERIVED, not
    measured** — measuring it spends the cost the decision avoids. File:
    `.agent/2026-08-28f-degree-audit/breadth-add.yaml`. **Read "Breadth is last" first.**
+
+## Moved out of STATE on 2026-08-30c — settled and held elsewhere, kept verbatim
+
+Both are fully recorded in the decision log (D-376 and D-374 respectively), and the ordering
+invariant additionally now has a BEHAVIOURAL test pinning the escalation's position, added with
+#258. Kept here verbatim because both remain required reading before touching `runner.py`'s
+finalize block.
+
+**WHAT ESCALATES IS THE FINALIZE-BLOCK SLICE, NOT `summary.errors`, AND THAT WAS MEASURED.**
+`summary.errors` accumulates every stage error — one dead board slug, a lane that could not collect, a
+per-lead tailor degradation. Over the last 25 runs **nine carried a non-empty `summary.errors` and not one
+of the nine was a finalize-block alert**; runs 124-128 each carried `plaid: HTTP 404`. Escalating that list
+would have driven the monitor DOWN on five ordinary `status=ok` runs. **Consequence to know: a dead LANE no
+longer reaches the remote channel**, only the digest — closing that means a lane-health *detector*, not a
+wider payload. On run 133 itself the channel would have posted **nothing**, which is correct.
+
+**THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
+`_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
+BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the owner** — which is exactly
+how the queue-sync note and #249's intake-death alert shipped. Three separate branches tried to union into
+that region this session and two would have landed below the digest. **Verify the order in source after any
+rebase touching the finalize block; do not assume a clean rebase preserved it.**
