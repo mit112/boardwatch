@@ -97,7 +97,12 @@ class TestSponsorshipLeak:
         )
 
     def test_ineligible_carries_a_quoted_jd_span(self, catalog: RulesCatalog) -> None:
-        # Keystone: an INELIGIBLE work_auth row must cite a span found in the JD.
+        """Keystone: an INELIGIBLE row must cite a span from the frozen JD, or be
+        downgraded to ABSTAIN. `requirement_text` cannot show that -- it is a static
+        string on the catalog rule and is identical whatever the JD says -- so this
+        resolves `jd_locator` against the body and asserts the span is the offending
+        clause itself. Asserting only that the text is non-empty would pass against a
+        rule that cited nothing."""
         result = evaluate(WITHOUT_SPONSORSHIP, EAD_NEEDS_SPONSORSHIP, BLOCKER_ALL, catalog)
         offending = [
             req
@@ -106,7 +111,10 @@ class TestSponsorshipLeak:
             and req.disposition == "unmet"
         ]
         assert offending, "expected the without-sponsorship row to be present and unmet"
-        assert offending[0].requirement_text  # a non-empty requirement statement
+        locator = offending[0].jd_locator
+        assert locator["field"] == "body_text"
+        start, end = locator["span"]
+        assert WITHOUT_SPONSORSHIP[start:end] == "without sponsorship"
 
     def test_plain_authorization_requirement_stays_eligible(
         self, catalog: RulesCatalog

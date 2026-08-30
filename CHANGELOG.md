@@ -22,6 +22,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A posting that refuses sponsorship no longer reads as eligible.** "Must be authorized to work in
+  the US *without sponsorship*" — the commonest way a JD states the restriction — produced only an
+  authorization requirement, which is correctly *met* for someone holding an EAD, and no sponsorship
+  requirement at all. A candidate who declares a future sponsorship need was therefore cleared by the
+  very sentence that rules them out; the declared `needs_sponsorship` fact is read only against a
+  sponsorship requirement, so with none in play it could never decide. "We will not consider candidates
+  who require sponsorship" leaked the same way, having no refusal verb for the existing rule to match.
+  Both surfaces now raise a sponsorship requirement, which resolves against the declared fact in every
+  direction: blocking for someone who needs sponsorship, clearing for someone who does not, and
+  abstaining — never clearing — when the fact is undeclared. 1,670 of 109,450 open postings carry one
+  of the two surfaces (D-379).
+
 - **A detector that crashes now leaves a durable record.** The finalize block was inconsistent
   about this: its three artifact-write handlers (funnel, queue sync, morning digest) record a
   failure through `append_run_error` as well as printing it, while the four DETECTOR handlers —
