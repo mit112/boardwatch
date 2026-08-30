@@ -1475,3 +1475,36 @@ not a full recompute. **`tailor` was 168.1 s for 40 leads = 4.20 s/lead**, so D-
 rationed supply. **Read the STAGE, never the total**, when judging anything about fetching.
 Numbers: METRICS 2026-08-29c.
 
+## Moved out of STATE on 2026-08-30 — settled by run 133's readout, kept verbatim
+
+These four blocks were live questions until run 133 answered them. Nothing is deleted; each is the
+STATE text as it stood, with the run-133 confirmation already folded in where it applies.
+
+**A FAILED RUN NOW RECORDS WHY (D-375).** Run 132 sits in the store as `status='failed'` with
+`errors_json='[]'`. Five fatal paths set `summary.fatal` without recording it — including the standalone
+`run_scan` in `scan/coordinator.py`, which is what actually wrote run 132. The fix is a **choke point in
+the `finally`**, not five patches, because the failure mode is the sixth path someone adds later.
+
+**`clearance_preferred` RESOLVES, AND NO LEDGER DRAIN IS OWED (D-372/D-373).** It was a resolver bug, not a
+missing fact: 1,094 rows, 0 decided, ever — and the run-122 audit that called it "correct" was wrong.
+Verdict neutrality proven structurally, over the corpus, and by live replay over 198 postings under three
+policies (0 diffs). The drain is **decided NO on measured evidence**, and D-373 refines the convention: ask
+what could DIFFER, not whether the version moved.
+**Run 133 paid the re-evaluation and CONFIRMED both claims on live data.** `engine_version` moved to
+`1+6a9fb2164f5b`; the full re-evaluation of 109,696 postings cost **1h52m52s**, inside the ~1h45m estimate
+and far inside the heartbeat budget. **The resolver fix works**: `clearance:clearance_preferred` held
+**1,094 rows, every one `unknown`, ever** — and run 133 produces `unmet`. **And it is verdict-neutral in
+fact, not just in argument**: the candidate rate reads 64.4657% (run 133) against 64.4244% (run 131), a
+ratio of **1.0006**. Subsequent runs fall back to ~45 min.
+
+**RUN NUMBERING SHIFTED AGAIN — run 132 ALREADY EXISTS.** It is the 18:03-18:13 cold-Workday timing probe
+from D-370, `status='failed'` via the systemic-outage predicate on a single board. **The 04:00 tick is run
+133.** Any manual few-board scan writes a `failed` run this way, so `runs.status` is a poor forensic
+instrument for the retrospective.
+
+**THE PROJECTION APPROVAL SCARE WAS FALSE, AND THE REAL RISK IS NOW GATED (#251).** `run --project` never
+reaches the TTY prompt — it only READS a durable digest-keyed stamp, proven by run 131 delivering 40
+projected PDFs with no TTY. The genuine hazard was that a code change to `ProjectionDeclaration`,
+`stamp.py` or `yaml_writer.document_bytes` invalidates every user's approval **with `make check` green**,
+because both digest tests were relative. Measured: under the mutation, 330 projection tests passed and only
+the new literal pin failed.

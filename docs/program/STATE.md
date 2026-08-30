@@ -20,12 +20,39 @@
 
 ## Current standing
 
-**UNATTENDED OBSERVABILITY IS COMPLETE, AND THE 2026-08-30 04:00 TICK IS ITS ACCEPTANCE RUN.** Ten PRs
-landed on 2026-08-29f (#247-#256). The unattended path now has **six soft alerts** — intake-death,
-scan-outage, delivery-drought, blind-liveness, corpus-regression, and queue-copy failure — and, more
-importantly, **a channel that reaches an absent owner**: before this session every one of them landed in a
-launchd log nobody opens, a `runs.errors_json` nobody queries, and line 1388 of a 116 KB funnel (D-374).
-The morning digest now renders them, and the heartbeat gates on that digest having been written.
+**RUN 133 READ OUT: THE DIGEST HALF OF THE ALERT CHANNEL IS ACCEPTED, AND hiring.cafe FAILED AGAIN.**
+`morning-133.md` opens with `## Alerts`, above `## Discovery reach`, rendering the run's one alert — the
+acceptance criterion for the ten 2026-08-29f PRs, met. The baseline is proven on the artifact:
+`morning-131.md` is 489 lines with **zero** `## Alerts` sections, while that run's identical lane failure
+sat at **line 1390 of a 1,390-line, 116 KB funnel**. Run 133 was clean — `status=ok`, launchd exit 0,
+**1h52m52s** (inside the ~1h45m estimate), 379 boards / 271 complete / 21 partial / **0 failed**, 23,166
+seen, 4,300 net-new, 1,053 closed, 40 leads with 40 PDFs, reach 88.1%. The heartbeat fired (`errors_json`
+holds the lane failure and no `heartbeat:` entry, which a refused ping would have left, D-375).
+
+**THE ALERT CHANNEL TO AN ABSENT OWNER WAS *NOT* CLOSED ON 2026-08-29f. IT IS CLOSED NOW, AND IT SHIPS
+DISARMED (D-376, #258).** What 2026-08-29f closed was the channel to someone *sitting at the machine*.
+Verified this session, every link: the digest is a file under `~/boardwatch-applications/<date>/` and
+neither it nor `~/boardwatch-queue` is inside iCloud Drive, Dropbox or Google Drive; the heartbeat gate is
+`fatal is None and funnel is not None and morning is not None` — **`errors` is not in it**, so a run raising
+every soft alert still pings **green**; `runner.py` never imports `WebhookChannel`; and the plist declares
+exactly two environment variables with no `com.boardwatch.notify` job. **Runs 130 and 131 are the proof it
+already bit** — both `status='ok'` with a dead hiring.cafe lane, both pinged green.
+**Scope the claim precisely: the uncovered class is NON-FATAL DEGRADATION.** The dead-man's switch does
+work; a crash or a sleeping machine leaves no ping and healthchecks.io alerts inside 1 day + 2 h grace.
+
+**ARMING IS ONE PLIST LINE AND IT IS MIT'S CALL — IT IS THE ONLY ACTION THAT MAKES #258 DO ANYTHING.**
+`BOARDWATCH_ALERT_URL` is unset, so the code is a strict no-op today (verified through the editable venv).
+The exact edit, the reload commands and the two questions to settle first — do you want daily paging while
+away, and does your healthchecks target reach you — are in `.agent/2026-08-30-session/ARMING-alert-
+escalation.md`. **Deliberately not armed: it pages a real person.**
+
+**WHAT ESCALATES IS THE FINALIZE-BLOCK SLICE, NOT `summary.errors`, AND THAT WAS MEASURED.**
+`summary.errors` accumulates every stage error — one dead board slug, a lane that could not collect, a
+per-lead tailor degradation. Over the last 25 runs **nine carried a non-empty `summary.errors` and not one
+of the nine was a finalize-block alert**; runs 124-128 each carried `plaid: HTTP 404`. Escalating that list
+would have driven the monitor DOWN on five ordinary `status=ok` runs. **Consequence to know: a dead LANE no
+longer reaches the remote channel**, only the digest — closing that means a lane-health *detector*, not a
+wider payload. On run 133 itself the channel would have posted **nothing**, which is correct.
 
 **THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
 `_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
@@ -34,44 +61,17 @@ how the queue-sync note and #249's intake-death alert shipped. Three separate br
 that region this session and two would have landed below the digest. **Verify the order in source after any
 rebase touching the finalize block; do not assume a clean rebase preserved it.**
 
-**A FAILED RUN NOW RECORDS WHY (D-375).** Run 132 sits in the store as `status='failed'` with
-`errors_json='[]'`. Five fatal paths set `summary.fatal` without recording it — including the standalone
-`run_scan` in `scan/coordinator.py`, which is what actually wrote run 132. The fix is a **choke point in
-the `finally`**, not five patches, because the failure mode is the sixth path someone adds later.
-
-**`clearance_preferred` RESOLVES, AND NO LEDGER DRAIN IS OWED (D-372/D-373).** It was a resolver bug, not a
-missing fact: 1,094 rows, 0 decided, ever — and the run-122 audit that called it "correct" was wrong.
-Verdict neutrality proven structurally, over the corpus, and by live replay over 198 postings under three
-policies (0 diffs). `engine_version` moved to `1+6a9fb2164f5b`, so **the next run does a FULL
-re-evaluation** — estimated ~1h45m, worst case ~2h35m, against a heartbeat budget of 3h37m. The drain is
-**decided NO on measured evidence**, and D-373 refines the convention: ask what could DIFFER, not whether
-the version moved.
-
-**RUN NUMBERING SHIFTED AGAIN — run 132 ALREADY EXISTS.** It is the 18:03-18:13 cold-Workday timing probe
-from D-370, `status='failed'` via the systemic-outage predicate on a single board. **The 04:00 tick is run
-133.** Any manual few-board scan writes a `failed` run this way, so `runs.status` is a poor forensic
-instrument for the retrospective.
-
-**THE PROJECTION APPROVAL SCARE WAS FALSE, AND THE REAL RISK IS NOW GATED (#251).** `run --project` never
-reaches the TTY prompt — it only READS a durable digest-keyed stamp, proven by run 131 delivering 40
-projected PDFs with no TTY. The genuine hazard was that a code change to `ProjectionDeclaration`,
-`stamp.py` or `yaml_writer.document_bytes` invalidates every user's approval **with `make check` green**,
-because both digest tests were relative. Measured: under the mutation, 330 projection tests passed and only
-the new literal pin failed.
-
 **SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on **five
 of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six). Full rule in
 `STANDING-FACTS.md`.
 
 **The lane question is CLOSED (D-346/D-347) — do not re-propose lane parallelism.** In `STANDING-FACTS.md`.
 
-**THE hiring.cafe LEVER IS PULLED AND THE 04:00 RUN IS ITS READOUT (D-369, #245).** Run 131 is **NOT** the
-readout — it started 04:00 on 08-29, nine hours before the fix committed at 13:23. Facets resolve, or
-`SearchPageError` again. **If it fails, headers are ELIMINATED** and the strongest remaining hypothesis is
-**path-scoped protection on `/jobs/*`** — evidenced without a probe: job-apps succeeds on `/`, our `/api/`
-calls succeeded every run through 128, our `/jobs/` calls fail **14 of 14**. That branch is the **OWNER'S**,
-because robots allows `/jobs/` and disallows job-apps' query form. **Still no probing; browser automation
-stays out of scope.**
+**THE hiring.cafe HEADER LEVER FAILED — D-369 IS ANSWERED AND CLOSED (#245).** Run 133 reproduced run 131's
+failure byte for byte, so the header set is eliminated and **that experiment must not be repeated**. What
+survives is the endpoint hypothesis and it is the **owner's**; the detail and the second, smaller
+"leave the lane enabled?" decision are in Next action item 1. **Still no probing; browser automation stays
+out of scope.**
 
 **BREADTH BATCH 2 IS HALF APPLIED — the fleet is 379 (D-370).** 20 Workday boards in, 4 SmartRecruiters out,
 because every SR board shares the ONE host `api.smartrecruiters.com` which `Fetcher` serializes, so 4 boards
@@ -86,12 +86,23 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 
 ## Next action
 
-> **THE 2026-08-30 04:00 TICK (run 133) IS THE ACCEPTANCE RUN FOR TEN MERGED PRs.** The primary tree is
-> parked on `main` at the session close and the editable venv runs it, so that tick exercises every change
-> from 2026-08-29f unattended. It also **migrates the store** (`p_runs_board_split` -> `p_runs_corpus_counts`)
-> — the code head carries the migration, the store does not yet. **Do NOT restart `boardwatch web`**: the
-> viewer never migrates (D-279), so restarting it against a checkout ahead of the store 500s it. The running
-> process holds the old code and is fine either side of an additive migration.
+> **THE ONE ACTION THAT MATTERS BEFORE THE ABSENCE: decide whether to ARM `BOARDWATCH_ALERT_URL`.** #258 is
+> merged and verified on `main` and through the editable venv, but it is a **strict no-op until armed**, so
+> without this the fortnight has no remote signal for a degraded-but-successful run. One line in the plist;
+> exact edit in `.agent/2026-08-30-session/ARMING-alert-escalation.md`. Deliberately left to Mit: it pages a
+> real person, and it depends on the healthchecks target actually reaching him.
+>
+> **Run 133 already migrated the store** (`p_runs_board_split` -> `p_runs_corpus_counts`, `alembic_version`
+> confirmed) and populated the corpus columns for the first time. **`boardwatch web` was NOT restarted this
+> session and still need not be** — verified that PID 22459 holds no descriptor on `boardwatch.db`, so it
+> cannot block a WAL checkpoint; the viewer never migrates (D-279), so restarting it against a checkout
+> ahead of the store 500s it. It is now safe to restart *if wanted*, since the store has migrated.
+>
+> **corpus-regression CANNOT FIRE until ~run 138 (~2026-09-04).** All 133 pre-existing runs have
+> `corpus_open/evaluated/candidates` NULL; run 133 is qualifying baseline point **1 of 6**. Bounded, and
+> **not worth patching** — the obvious zero-floor fix contradicts `test_abstains_below_the_window`, a
+> tested and documented decision. The one run the detector could not judge was run 133 itself, and that was
+> checked by hand: no collapse.
 
 > **THE HEARTBEAT IS NOW SELF-REPORTING, BUT RECEIPT IS STILL MIT'S TO CONFIRM (D-375).**
 > `send_heartbeat()` used to return a `bool` whose value was discarded, with `False` meaning BOTH "refused"
@@ -102,18 +113,24 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 > manufactures a green.** Note the heartbeat's own alert reaches NO artifact: the gate is last, after
 > `_emit_morning`, and no report reads a prior run's `errors_json` (verified, not assumed).
 
-1. **hiring.cafe: READ THE 04:00 READOUT — run 131 was NOT it (D-369, #245).** The fix committed 13:23 on
-   08-29, nine hours AFTER run 131 started, so run 131's `SearchPageError` is the PRE-change failure. Read
-   the LOCAL log only: `grep -n "lane hiringcafe" ~/Library/Logs/boardwatch-run.log | tail -5`. Success is
-   `lane hiringcafe -> N attempted · M resolved`; failure is `SearchPageError`. **Do NOT probe the site
-   even once** — more requests from this IP is the one move that keeps it closed. Cross-check the tick
-   fired with `launchctl print` (`runs =`, `last exit code`) plus the log MTIME; **`launchctl list` col 2
-   prints `0` for a job that has NEVER run.**
-   **If it fails, headers are ELIMINATED** and the remainder is volume (the weaker case) and endpoint,
-   where path-scoped protection on `/jobs/*` is strongest. **That branch is the OWNER'S** — robots allows
-   `/jobs/` and disallows job-apps' `?searchState=` form, so moving off the allowed path is a compliance
-   decision, not a repair. The drafted, unsent access request is at
-   `.agent/2026-08-28g-session/hiringcafe-access-request.md`. Until it lifts, lane coverage is **HALVED**.
+1. **hiring.cafe: THE READOUT IS IN AND IT IS NEGATIVE — HEADERS ARE ELIMINATED (D-369, #245).** Run 133
+   failed exactly as run 131 did, byte for byte: `SearchPageError("every role facet yielded nothing (14
+   searched, 14 request failures)")`. It started 04:00 on 08-30, well after the fix committed 13:23 on
+   08-29, so it **is** the readout. The header hypothesis is dead. **Do not re-run this experiment.**
+   **What remains is the ENDPOINT, and it is the OWNER'S call, not an agent's.** Path-scoped protection on
+   `/jobs/*` is the strongest surviving hypothesis (volume is the weaker one): job-apps succeeds on `/`,
+   our `/api/` calls succeeded every run through 128, our `/jobs/` calls have now failed **14 of 14 on two
+   separate runs**. Moving off `/jobs/` is a **compliance decision, not a repair** — robots.txt ALLOWS
+   `/jobs/` and DISALLOWS job-apps' `?searchState=` form, so the compliant route is the blocked one. The
+   drafted, unsent access request is at `.agent/2026-08-28g-session/hiringcafe-access-request.md`.
+   **Still do NOT probe the site, even once.** Until it lifts, lane coverage is **HALVED**.
+   **A second, smaller decision now sits beside it:** left enabled, the lane will issue ~14 refused facet
+   requests per run — roughly **196 over an unattended fortnight** — to a host that refuses us. Disabling
+   it is one line in the LOCAL `config.toml` (`lanes_enabled`). Genuinely balanced and NOT actioned:
+   against disabling, those requests are within hiring.cafe's own published robots policy and 14/day is
+   trivial load; for disabling, it stops futile traffic and *may* help if the "more requests keep it
+   closed" premise holds — which is a hypothesis, not a measurement. Leaving it enabled preserves the only
+   signal that would show a recovery.
 
 
 2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
@@ -239,7 +256,10 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 
 | Item | Detail | Owner |
 |---|---|---|
-| **boardwatch cannot see ~90% of job-apps' eligible yield** | 41 of 530 records (7.7%) at a watched company — **a parallel session re-measured reach at ~10.1% on the 344-board fleet on 2026-08-28; NOT re-derived here, so treat 7.7% as the reproducible figure and 10.1% as owed a check**; 352 companies in the set, 24 watched. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
+| **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
+| **Delivery-drought cannot see APPLY-LANE starvation** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, which is written **regardless of which lane `review_gate.lane()` routes to**. If location classification broke globally every lead would go to `_review`, artifacts would keep appearing, drought would abstain, and the owner would get **zero apply-ready leads for a fortnight with nothing firing**. Verified open. Current split is healthy (run 133: 40 new to apply; 420 apply / 189 `_review` = 31%). NOT built: the lane decision lives in `_sync_queue`'s copy step (`delivery/queue.py:385`) and its result type is shared with the web server, so a guard is a materially bigger change than it looks — wrong thing to ship days before an absence | **Mit** (on return) |
+| **Four detector fallbacks are print-only, not durable** | The `intake-death` / `delivery-drought` / `liveness-blindness` / `corpus-regression` "check not run" handlers append to `summary.errors` but never call `append_run_error`, unlike the three artifact-write handlers beside them. A DETECTOR that crashes therefore reaches the digest and the escalation channel but leaves **no row in `runs.errors_json`**. Forensic gap only; four one-line additions; pre-existing, so deliberately out of #258's scope | open (small, reviewable) |
+| **`companies.last_health` / `last_ok_at` are a LYING instrument** | 178 of 379 watched boards read NULL, which looks like "never succeeded" — **all 178 were scanned by run 133** (128 complete, 7 partial, 43 unchanged). The scan path does not maintain these columns. **Judge fleet health from `board_scans` per run instead**: run 133 was 379 attempted / 271 complete / 87 unchanged / 21 partial / **0 failed** | tooling gotcha |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
