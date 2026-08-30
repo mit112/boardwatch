@@ -1709,6 +1709,7 @@ def run_pipeline(
             note = f"intake-death check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # Partial scan-outage soft alert. `is_systemic_scan_outage` only fatals when EVERY
         # board fails; a provider or IP block can dark most of the fleet while a few boards
         # complete, which is not systemic — the heartbeat stays green and F4 cannot see it
@@ -1734,6 +1735,7 @@ def run_pipeline(
             note = f"delivery-drought check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # Liveness-blindness soft alert. The liveness stage is fail-open by design — any
         # transport fault is `unknown`, and `unknown` is served — so a prober whose egress has
         # broken (DNS, a proxy, a blocked IP) returns `unknown` for the whole shortlist, drops
@@ -1756,6 +1758,7 @@ def run_pipeline(
             note = f"liveness-blindness check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # Corpus-regression detector (D-371) — the one collapse the checks above cannot
         # see. Intake death stays quiet because postings keep arriving; a delivery drought
         # abstains BY CONSTRUCTION, because its honest guard is "did this run judge a
@@ -1778,6 +1781,7 @@ def run_pipeline(
             note = f"corpus-regression check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
