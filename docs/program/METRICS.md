@@ -9113,8 +9113,9 @@ every one `unknown`** before run 133 — never decided, ever. Run 133 produces `
 corpus_candidates=70,419` → rate 64.19%, coverage 100%, so run 133 **QUALIFIES** as
 corpus-regression baseline point **1 of 6**. Earliest possible fire: **run 138, ~2026-09-04.**
 
-**Queue:** 40 new, 12 updated, 557 unchanged. State after: **420 apply-ready**, 189 `_review`,
-182 `_ineligible`, 7 `_applied` — 31% review split, so no apply-lane starvation.
+**Queue:** 40 new, 12 updated, 557 unchanged, 5 moved, **0 failed** — so the queue-copy alert
+correctly did not fire. State after: **420 apply-ready**, 189 `_review`, 182 `_ineligible`,
+7 `_applied` — 31% review split, so no apply-lane starvation either.
 
 ### Gate — PR #258
 | what | result |
