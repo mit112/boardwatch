@@ -204,6 +204,62 @@ def test_the_digest_is_stable_across_formatting(tmp_path: Path) -> None:
     assert first == second
 
 
+# --------------------------------------------------------------------------------------
+# The absolute pin: the digest as every approval stamp in the wild already spells it
+# --------------------------------------------------------------------------------------
+
+#: `MINIMAL`'s digest, taken once from outside `projection_digest` and frozen. Every other
+#: assertion in this file about the digest compares `projection_digest` against
+#: `projection_digest` and therefore agrees with itself whatever that function does; this literal
+#: is the one statement made from outside it. Regenerating it to make a failing test pass is the
+#: mistake it exists to catch — read the test below before touching this line.
+PINNED_MINIMAL_DIGEST = "sha256:4bc13866b84cbda60e794831fbac0ca2492de105161482a14ff0803827b58742"
+
+
+def test_the_minimal_declaration_digest_is_the_one_already_stamped_on_disk(
+    tmp_path: Path,
+) -> None:
+    """The absolute pin the two relative tests above cannot be.
+
+    WHAT MOVING THIS COSTS, IN PRODUCTION. A projection approval is a file whose NAME is this
+    digest — `{config_dir}/projection-approvals/sha256-<hex>.yaml` (`stamp.stamp_path`) — and
+    `project_pool` looks it up by exact digest, raising `MISSING_PROJECTION_APPROVAL` when it is
+    not there (`pool.py`). So if this value moves, every stamp already written stops matching at
+    once, for every user, with nothing on disk changed: the `--project` preflight is fail-closed
+    by design (`pipeline/runner.py`, P5a) and returns with `fatal` rather than falling back to the
+    authored résumé, so the run produces no lead dispositions at all and exits 1. The gate that
+    clears it is TTY-only on purpose — a human types the approval at a controlling terminal — so a
+    SCHEDULED, unattended run cannot clear it by itself and simply keeps delivering nothing every
+    day until somebody is at the machine. Nothing re-derives a stamp; it is written once, by hand,
+    and read forever after.
+
+    WHY IT HAS TO BE A LITERAL. `test_the_digest_changes_when_a_template_literal_changes` and
+    `test_the_digest_is_stable_across_formatting` both compare `projection_digest` against
+    `projection_digest`. Add a field to `ProjectionDeclaration`, rename one, change what
+    `yaml_writer.document_bytes` emits — and BOTH sides of both assertions move together: the
+    inequality still holds, the equality still holds, the gate stays green, and the breakage is
+    invisible until it reaches an owner's config directory. A relative assertion cannot see a
+    change that moves the whole coordinate system, and this is exactly such a change.
+
+    WHAT TO DO WHEN IT GOES RED. Not regenerate it. A red here is the change reporting, correctly,
+    that it has invalidated every projection approval in existence — the consequence is the thing
+    to decide about, not the literal. Usually the change does not need to move the digest at all
+    (leave the emitted shape alone, or do not touch the model). If moving it is genuinely intended,
+    then the owner has to be told, before the change ships, that they will re-approve on a terminal
+    and that no scheduled run delivers anything until they have. Update this literal only after
+    that consequence has been accepted deliberately.
+
+    `shell_source` is pinned to a bare filename here rather than left as `_write`'s `tmp_path`
+    value: it is a `Path` that `model_dump(mode="json")` serialises verbatim into the hashed
+    payload, so the real fixture's per-run absolute path would leave no stable value to pin at all.
+    `load_declaration` performs no filesystem check on it (`declaration.py`), so a relative literal
+    loads exactly as the real one does, and a bare filename carries no separator — the digest is
+    the same byte-for-byte on Windows.
+    """
+    body = MINIMAL.replace("shell_source: {shell}", "shell_source: master_resume.yaml")
+    assert projection_digest(load_declaration(_write(tmp_path, body))) == PINNED_MINIMAL_DIGEST
+
+
 def test_dates_may_be_a_declared_two_fact_range(tmp_path: Path) -> None:
     """The mapping shape loads as a `DateRangeDeclaration`, not as a string. Projects and
     education carry dates as a `year_month` PAIR (D-177), so the declaration admits one form per
