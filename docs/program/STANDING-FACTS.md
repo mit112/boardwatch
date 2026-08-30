@@ -1562,3 +1562,51 @@ BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the 
 how the queue-sync note and #249's intake-death alert shipped. Three separate branches tried to union into
 that region this session and two would have landed below the digest. **Verify the order in source after any
 rebase touching the finalize block; do not assume a clean rebase preserved it.**
+
+## Moved out of STATE on 2026-08-30d — run 133's readout and the absent-owner correction, kept verbatim
+
+Both are history once run 134 exists: the readout's numbers are in `METRICS.md`, and the
+absent-owner correction is recorded in full as D-376. What stays in STATE is the LIVE half — that
+`BOARDWATCH_ALERT_URL` is still unset and arming it is one plist line.
+
+**RUN 133 READ OUT: THE DIGEST HALF OF THE ALERT CHANNEL IS ACCEPTED, AND hiring.cafe FAILED AGAIN.**
+`morning-133.md` opens with `## Alerts`, above `## Discovery reach`, rendering the run's one alert — the
+acceptance criterion for the ten 2026-08-29f PRs, met. The baseline is proven on the artifact:
+`morning-131.md` is 489 lines with **zero** `## Alerts` sections, while that run's identical lane failure
+sat at **line 1390 of a 1,390-line, 116 KB funnel**. Run 133 was clean — `status=ok`, launchd exit 0,
+**1h52m52s** (inside the ~1h45m estimate), 379 boards / 271 complete / 21 partial / **0 failed**, 23,166
+seen, 4,300 net-new, 1,053 closed, 40 leads with 40 PDFs, reach 88.1%. The heartbeat fired (`errors_json`
+holds the lane failure and no `heartbeat:` entry, which a refused ping would have left, D-375).
+
+**THE ALERT CHANNEL TO AN ABSENT OWNER WAS *NOT* CLOSED ON 2026-08-29f. IT IS CLOSED NOW, AND IT SHIPS
+DISARMED (D-376, #258).** What 2026-08-29f closed was the channel to someone *sitting at the machine*.
+Verified this session, every link: the digest is a file under `~/boardwatch-applications/<date>/` and
+neither it nor `~/boardwatch-queue` is inside iCloud Drive, Dropbox or Google Drive; the heartbeat gate is
+`fatal is None and funnel is not None and morning is not None` — **`errors` is not in it**, so a run raising
+every soft alert still pings **green**; `runner.py` never imports `WebhookChannel`; and the plist declares
+exactly two environment variables with no `com.boardwatch.notify` job. **Runs 130 and 131 are the proof it
+already bit** — both `status='ok'` with a dead hiring.cafe lane, both pinged green.
+**Scope the claim precisely: the uncovered class is NON-FATAL DEGRADATION.** The dead-man's switch does
+work; a crash or a sleeping machine leaves no ping and healthchecks.io alerts inside 1 day + 2 h grace.
+
+## Moved out of STATE on 2026-08-30d — window properties, kept verbatim
+
+Permanent properties of the 1-run/day cadence rather than session news. Both remain required
+reading before trusting a quiet morning or counting corpus-regression as coverage.
+
+**A STEP DETECTOR CANNOT HELP DURING A CODE FREEZE — do not count corpus-regression as coverage
+for these two weeks.** Firing on a >50% step between runs is the documented design
+(`corpus_regression.py`, "this is a STEP detector ... fires roughly three times, then ... goes
+quiet" — that is a stated limitation, NOT a defect, and a sweep has now mistaken it for one once).
+But a freeze removes every mechanism that produces a step: a rules edit, a profile fact that stops
+resolving, a taxonomy change are all changes the freeze forbids. What a freeze permits is gradual
+composition drift, which a step detector is blind to by construction. Combined with its cold start
+(dark until ~run 138), treat it as unavailable for most of the absence.
+
+**THE 2026-08-27 CADENCE CHANGE SILENTLY RESCALED EVERY WINDOW, because they count RUNS not TIME.**
+At 8 runs/day `INTAKE_DEATH_WINDOW = 3` and `DELIVERY_DROUGHT_WINDOW = 3` meant ~9 h; at 1 run/day
+they mean **3 days**. `CORPUS_REGRESSION_WINDOW = 5` (needing 6 runs) went ~18 h -> **6 days**. And
+`death_probe_budget = 50` went 400/day -> **50/day** against 75-384 new unwatched-company postings a
+day, so `due` grows monotonically (run 133: `due=1139, attempted=50, refused=1089`). The probe drift
+is bounded in importance by its own 6.7% detection rate. **Detection latency during the absence is
+3 days, not hours** — worth knowing before reading a quiet morning as healthy.
