@@ -360,6 +360,14 @@ def test_a_stage_whose_counts_do_not_add_up_fails_reconciliation() -> None:
     assert [item.name for item in report.unreconciled] == ["corpus"]
     assert report.reconciles is False
     assert "DOES NOT RECONCILE" in funnel_to_markdown(report)
+    # ...and the JSON half, which this test stopped one line short of. `funnel_to_dict`'s
+    # `"reconciles"` key can be hardcoded True with the whole suite green: every one of the
+    # eight assertions on it repo-wide checks `is True`, so the False path was never pinned.
+    # That key is the machine-readable accounting record and what the web viewer's run-list
+    # badge reads, so hardcoding it shows a run GREEN in the UI while the markdown beside it
+    # says DOES NOT RECONCILE — the artifact contradicting itself is precisely what Gate P0's
+    # "reconciles to 100%" cannot afford.
+    assert funnel_to_dict(report)["reconciles"] is False
 
 
 def test_a_balanced_funnel_reconciles() -> None:
