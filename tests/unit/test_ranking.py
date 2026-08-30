@@ -170,6 +170,31 @@ class TestZeroSkillImputation:
         assert score_posting(*args, RankWeights(), NOW).total != punitive.total
         assert Settings(data_dir=Path("d"), config_dir=Path("c")).zero_skill_coverage_prior == 0.50
 
+    def test_all_zero_weights_score_zero_instead_of_crashing(self) -> None:
+        """`weight_sum <= 0.0` is reachable from a LEGAL config, and nothing pinned it.
+
+        `RankWeights` declares every weight `ge=0.0` with no "at least one must be positive"
+        rule, and `boardwatch config` sets each one individually — so all four at 0.0 is a
+        configuration a user can actually reach. Dropping `weight_sum <= 0.0` from the guard
+        leaves the whole ranking suite green, yet the else-branch then divides by that sum:
+
+            with the guard     -> total == 0.0
+            without the guard  -> ZeroDivisionError: float division by zero
+
+        The 0.0 is "no ranking signals" (plan deviation 7), which is the documented behaviour
+        this pins. Ranking runs for every posting on every unattended night, so the crash would
+        be per-run and total rather than partial.
+        """
+        zero = RankWeights(skill_coverage=0.0, title_match=0.0, recency=0.0, location_fit=0.0)
+        args = (_profile(), {"Python"}, "Backend Engineer", NOW, ["New York"], "unknown")
+
+        score = score_posting(*args, zero, NOW)
+
+        assert score.total == 0.0
+        # Guard: a non-zero weight set on the SAME inputs must score differently, or the
+        # assertion above would hold for a scorer that always returned 0.
+        assert score_posting(*args, RankWeights(), NOW).total != 0.0
+
     def test_why_line_stays_one_line_and_names_the_assumption(self) -> None:
         score = score_posting(
             _profile(), set(), "Backend Engineer", NOW - timedelta(days=2), ["New York"],
