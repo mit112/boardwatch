@@ -1590,3 +1590,61 @@ def test_a_clean_run_escalates_nothing(env: Path, tmp_path: Path, monkeypatch: p
 
     assert captured, "guard: escalation is still CALLED on a clean run"
     assert captured[-1] == (), "a clean run handed the channel alerts it did not raise"
+
+
+# --- a crashed DETECTOR must leave a durable record --------------------------------------
+#
+# The three artifact-write handlers in the finalize block (funnel, queue sync, morning) all
+# record their failure through `append_run_error` as well as printing it. The four DETECTOR
+# handlers did not: they appended to `summary.errors` and stopped there. `finish_run` has
+# already committed by the time any of them runs, so `summary.errors` alone never reaches the
+# run row (D-287) — meaning a detector that had silently stopped working left the digest and
+# the escalation channel able to say so, and `runs.errors_json` unable to. Over an unattended
+# fortnight that is the difference between "which day did the detector break?" being
+# answerable on return and not.
+
+
+@pytest.mark.parametrize(
+    ("attr", "phrase"),
+    [
+        ("check_intake_death", "intake-death check not run"),
+        ("check_delivery_drought", "delivery-drought check not run"),
+        ("check_liveness_blind", "liveness-blindness check not run"),
+        ("check_corpus_regression", "corpus-regression check not run"),
+    ],
+)
+def test_a_crashed_detector_is_recorded_DURABLY(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, attr: str, phrase: str
+) -> None:
+    """Each detector, one at a time: when the CHECK ITSELF raises, the note must reach
+    `runs.errors_json`, not only `summary.errors`.
+
+    Parametrised rather than folded into one run because a single test that crashes all four
+    would pass while three of the four `append_run_error` calls were missing — the first note
+    in the row would satisfy a naive assertion.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError(f"{attr} boom")
+
+    monkeypatch.setattr(runner_mod, attr, boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "a crashed detector must never fail the run (fail-open)"
+    assert any(phrase in e for e in summary.errors), "not even on summary.errors"
+
+    with get_engine(env).connect() as conn:
+        stored = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    # `errors_json` is a JSON column, so this is a LIST — a bare `phrase in stored` is a
+    # membership test against whole entries and never matches.
+    assert stored is not None and any(phrase in e for e in stored), (
+        f"{phrase!r} reached summary.errors but NOT runs.errors_json — on return there is no "
+        f"way to answer which day the detector stopped working"
+    )

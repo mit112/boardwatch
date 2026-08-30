@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A detector that crashes now leaves a durable record.** The finalize block was inconsistent
+  about this: its three artifact-write handlers (funnel, queue sync, morning digest) record a
+  failure through `append_run_error` as well as printing it, while the four DETECTOR handlers —
+  intake-death, delivery-drought, liveness-blindness, corpus-regression — appended to
+  `summary.errors` and stopped. `finish_run` has already committed by the time any of them runs,
+  so `summary.errors` alone never reaches the run row (D-287). The note still reached the morning
+  digest and, since D-376, the escalation channel; what it could not reach was
+  `runs.errors_json`. Over an unattended fortnight that is the difference between "which day did
+  the detector stop working?" being answerable on return and not. Four one-line additions, inert
+  on the normal path — these branches only execute when a check itself raises — and each is
+  pinned by its own parametrised test, because a single test crashing all four would pass while
+  three of the four calls were missing (D-376).
+
 - **A failed run now records why it failed.** Run 132 was stamped `failed` with an empty error
   list: one board was attempted, it came back `partial`, nothing completed, and the sentence that
   explained it — "systemic scan outage: 1 boards attempted, none completed" — was written only to a
