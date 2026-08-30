@@ -1511,3 +1511,32 @@ projected PDFs with no TTY. The genuine hazard was that a code change to `Projec
 `stamp.py` or `yaml_writer.document_bytes` invalidates every user's approval **with `make check` green**,
 because both digest tests were relative. Measured: under the mutation, 330 projection tests passed and only
 the new literal pin failed.
+
+## Moved out of STATE on 2026-08-30b — answered/settled, kept verbatim
+
+Both were live questions that this session closed. The hiring.cafe HEADER experiment is answered
+(negative); the LIVE decision that remains — the `/jobs/*` endpoint call, and whether to leave the
+lane enabled — stays in STATE's Next action item 1, not here.
+
+**THE hiring.cafe HEADER LEVER FAILED — D-369 IS ANSWERED AND CLOSED (#245).** Run 133 reproduced run 131's
+failure byte for byte, so the header set is eliminated and **that experiment must not be repeated**. What
+survives is the endpoint hypothesis and it is the **owner's**; the detail and the second, smaller
+"leave the lane enabled?" decision are in Next action item 1. **Still no probing; browser automation stays
+out of scope.**
+
+**BREADTH BATCH 2 IS HALF APPLIED — the fleet is 379 (D-370).** 20 Workday boards in, 4 SmartRecruiters out,
+because every SR board shares the ONE host `api.smartrecruiters.com` which `Fetcher` serializes, so 4 boards
+cost more wall clock than the 20 Workday ones combined.
+
+4. **BREADTH BATCH 2 IS HALF APPLIED — fleet 379 — AND THE SPLIT IS MEASURED, NOT GUESSED (D-370).**
+   D-367's blocker was "never timed cold". It was timed: one batch-2 Workday board scanned cold =
+   **604 s, 420/420 enumerated, `postings_listed` 400 (the detail budget saturated exactly), 20
+   deferred** — so **a cold Workday board is bounded by the BUDGET, not by board size**. 20 × 604 s at
+   run 131's 5.90x parallelism = **~+34 min of scan on the FIRST run**, decaying toward ~+5 min.
+   **The 20 Workday boards are IN** (20 distinct `{tenant}.wdN` hosts, absorbed by `scan_workers=8`),
+   all re-verified `watched=1` against the source YAML. **The 4 SmartRecruiters boards are OUT, and
+   the reason inverts the intuition**: every SR board shares the ONE host `api.smartrecruiters.com`,
+   which `Fetcher` serializes and `scan_workers` provably cannot help (D-346/D-347), so **4 boards
+   cost more wall clock than the 20 Workday ones combined**. That SR figure is **DERIVED, not
+   measured** — measuring it spends the cost the decision avoids. File:
+   `.agent/2026-08-28f-degree-audit/breadth-add.yaml`. **Read "Breadth is last" first.**
