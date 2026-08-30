@@ -25,6 +25,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run that scans fine but finds nothing new no longer passes silently.** The heartbeat fires on
+  any clean outcome, so a dead board fleet or a silent fetch regression — the pipeline running
+  perfectly and returning zero new postings every night — looked identical to a healthy run. A new
+  detector reads the per-run net-new count the scan already records (`runs.new_count`) and raises a
+  soft alert when three scanning runs in a row all find zero. It is a slow-burn signal by design: the
+  alert is appended to the run's error list (reprinted by the CLI and persisted to the run row via
+  `append_run_error`) and never sets the run's fatal outcome, so the heartbeat still fires — a stalled
+  intake tickets, it does not trip the dead-man's switch. Runs whose scan never recorded a count — a
+  `top --no-record` phantom — are skipped rather than read as zero, and fewer than three scanning runs
+  of history abstains rather than firing on a fresh store.
+
 - **Twenty more Workday boards are watched; the fleet is 379.** Breadth batch 2 had been deferred
   because its boards had never been timed cold. One was: a cold Workday board scanned in 604 s,
   enumerated 420 of 420 postings, and stopped at exactly 400 — the detail-fetch budget — deferring the
