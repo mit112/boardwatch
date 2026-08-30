@@ -143,6 +143,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A lead the delivery queue could not copy is now recorded, not just printed.** `sync_queue` and
+  `reconcile_queue` both isolate their per-lead failures inside their own report rather than raising,
+  which is what keeps a queue copy from ever failing a run — and the run hook counted those failures
+  into its log line and did nothing else with them. That was a deliberate contract, and it was the
+  right one while somebody was watching the run: the queue holds copies, and the dated tree and the
+  funnel are the real output. It stops being the right one unattended. The log line goes to a file
+  nobody opens, so a queue that had quietly stopped copying leads was byte-identical in the store to
+  one that copied every single one, and the owner would go on trusting a queue that had gone empty.
+  The hook now returns the combined failed count and a non-zero one is escalated the same way every
+  other reporting failure in the run's finalize block is — onto `summary.errors`, which the CLI
+  reprints, and onto the run row through `append_run_error`, because the hook runs after
+  `finish_run` and nothing appended to the summary alone survives the process. Still non-fatal: the
+  run's outcome, its status and its leads are all untouched, and all three are asserted so. The test
+  that pinned the old console-only contract was inverted to the new one and confirmed to fail
+  against the old implementation first, and a second test covers the drain half of the count, which
+  had no provocation of its own and would otherwise have let a version that reported only sync
+  failures ship green.
+
 - **A degree requirement's boilerplate no longer reads as a field of study.** The `education` field
   surface matched the mass noun wherever a posting talked *about* education rather than naming it as
   a subject — "or educational equivalent", "an equivalent combination of education and experience",

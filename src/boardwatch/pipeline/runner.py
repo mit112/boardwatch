@@ -1625,7 +1625,21 @@ def run_pipeline(
         # `run_cmd` prints that list after the call returns and a silently unwritten queue is a
         # queue the owner will trust anyway.
         try:
-            _sync_queue(engine, settings, console)
+            queue_failed = _sync_queue(engine, settings, console)
+            # Per-lead failures used to stop at the log line above, which is defensible while
+            # somebody is watching the run and is not defensible unattended: `run_cmd` prints that
+            # line into a file nobody opens, so a queue that had quietly stopped copying leads was
+            # byte-identical in the store to one that copied every one of them — and the owner
+            # would go on trusting a queue that had gone empty. Escalated to the same two places
+            # every other reporting failure in this block reaches, and durable through
+            # `append_run_error` because `finish_run` has already committed. Still NOT fatal, for
+            # the reason the block comment above gives: the queue holds COPIES, and the dated tree
+            # and the funnel are the run's real output.
+            if queue_failed:
+                note = f"delivery queue: {queue_failed} lead folder(s) failed to copy or drain"
+                console.print(f"  ! {note}", markup=False)
+                summary.errors.append(note)
+                append_run_error(engine, run_id, note)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"delivery queue not synced: {exc}"
             console.print(f"  ! {note}", markup=False)
@@ -1989,6 +2003,9 @@ def _sync_queue(engine: Engine, settings: Settings, console: Console) -> int:
         f"{synced.failed + drained.failed} failed{contended}",
         markup=False,
     )
+    # Both halves of the partition: a lead `sync_queue` could not write, and a folder
+    # `reconcile_queue` could not move. They are one number to the caller because the answer to
+    # either is the same — the queue on disk no longer matches what the store says was delivered.
     return synced.failed + drained.failed
 
 

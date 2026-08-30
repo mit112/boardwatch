@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import io
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,8 @@ from boardwatch.delivery.queue import (
     DETAILS_FILE,
     LOCK_FILE,
     SKIPPED_DIR,
+    FolderFailure,
+    ReconcileReport,
     SyncReport,
 )
 from boardwatch.pipeline import runner as runner_module
@@ -177,6 +180,10 @@ def _status(data_dir: Path, run_id: int) -> str:
 
 
 def _errors_json(data_dir: Path, run_id: int) -> list[str]:
+    """The run row's own error list. Read through the store rather than off `summary.errors`,
+    because the queue hook runs AFTER `finish_run` — a note that only reaches the summary is
+    invisible to everything that reads the database, which is the whole point of asserting it
+    here as well as there (D-287)."""
     with get_engine(data_dir).connect() as conn:
         return list(
             conn.execute(
@@ -309,11 +316,26 @@ def test_contention_is_not_a_failure(env: Path, tmp_path: Path, queue_root: Path
     assert _folders(queue_root) == [], "a contended sync wrote anyway"
 
 
-def test_per_lead_queue_failures_do_not_propagate(
+def test_per_lead_queue_failures_are_recorded_and_never_propagate(
     env: Path, tmp_path: Path, queue_root: Path
 ) -> None:
-    """`sync_queue` reports a lead it could not write inside its report. The hook counts that into
-    its log line and returns; it never re-raises and never records a run error."""
+    """`sync_queue` reports a lead it could not write inside its report rather than raising. The
+    hook counts that into its log line, escalates it to the run's error list and to the run row,
+    and returns — it still never re-raises and still never fails the run.
+
+    Recorded is the NEW half of the contract and it inverts what this test used to assert. The
+    count was console-only, which is defensible while somebody is watching the run and is not
+    defensible unattended: `run_cmd` prints the queue line to a log file nobody opens, so a queue
+    that silently stopped copying leads was byte-identical in the store to one that copied every
+    one of them, and the owner would keep trusting a queue that had quietly gone empty.
+
+    The failure is simulated inside the queue's own collaborator, never by stubbing the queue, so
+    `sync_queue`'s real per-lead isolation runs and produces a real `SyncReport` with `failures`.
+
+    Non-fatal is asserted alongside, in three places at once — `summary.fatal`, the run's status,
+    and the lead still being tailored — because the escalation must not have turned a queue copy
+    failure into a run outcome. The queue holds COPIES; the dated tree is the real output.
+    """
 
     def unplannable(**_kwargs: object) -> object:
         raise RuntimeError("no name fits")
@@ -326,9 +348,14 @@ def test_per_lead_queue_failures_do_not_propagate(
     assert summary.fatal is None, summary.fatal
     assert len(summary.tailored) == 1, summary.errors
     assert _status(env, summary.run_id) == "ok"
-    assert [note for note in summary.errors if "queue" in note] == []
     assert "1 failed" in _queue_line(output)
     assert _folders(queue_root) == [], "a lead that could not be planned was written anyway"
+    # Both halves, and the store one is the load-bearing one: a note on the summary alone is gone
+    # the moment the process exits.
+    assert [note for note in summary.errors if "delivery queue" in note], summary.errors
+    recorded = [note for note in _errors_json(env, summary.run_id) if "delivery queue" in note]
+    assert recorded, _errors_json(env, summary.run_id)
+    assert "1" in recorded[0], f"the note does not carry the failed count: {recorded[0]!r}"
 
 
 def test_the_owner_name_comes_from_the_profile(
@@ -372,3 +399,34 @@ def test_the_hook_never_reads_the_real_queue_root(
     assert (queue_root / APPLIED_DIR).is_dir(), "the hook did not use the redirected root"
     assert (queue_root / SKIPPED_DIR).is_dir()
     assert queue_root.is_relative_to(tmp_path)
+
+
+def test_a_drain_failure_is_escalated_too(env: Path, tmp_path: Path, queue_root: Path) -> None:
+    """The hook reports `synced.failed + drained.failed`, and only the sync half of that sum has a
+    natural provocation in this file — the `plan_lead_names` trap above. Without this test a
+    version that returned `synced.failed` alone ships green, and a queue whose `_applied` drain had
+    stopped moving folders stays exactly as silent as the per-lead case used to be.
+
+    The real `reconcile_queue` still runs and still does its real work; only one synthetic failure
+    is appended to the report on the way out. That is deliberately not the same thing as the
+    hand-built report this module's docstring warns against: what is asserted here is the hook's
+    arithmetic over a report, not the queue's own per-folder isolation.
+    """
+    _ready(env, 1)
+    real = runner_module.reconcile_queue
+
+    def with_a_drain_failure(conn: Connection, *, root: Path) -> ReconcileReport:
+        report = real(conn, root=root)
+        return replace(
+            report, failures=(*report.failures, FolderFailure("acme0-backend", "drain broke"))
+        )
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(runner_module, "reconcile_queue", with_a_drain_failure)
+        summary, output = _run(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert _status(env, summary.run_id) == "ok"
+    assert "1 failed" in _queue_line(output)
+    assert [note for note in summary.errors if "delivery queue" in note], summary.errors
+    assert [note for note in _errors_json(env, summary.run_id) if "delivery queue" in note]
