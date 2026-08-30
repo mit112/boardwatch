@@ -20,102 +20,101 @@
 
 ## Current standing
 
-**`degree` is AUDITED AND CLOSED — nothing needed softening (D-352, #221); the widening is measured NET HARMFUL.** Moved verbatim to `STANDING-FACTS.md` 2026-08-29.
+**UNATTENDED OBSERVABILITY IS COMPLETE, AND THE 2026-08-30 04:00 TICK IS ITS ACCEPTANCE RUN.** Ten PRs
+landed on 2026-08-29f (#247-#256). The unattended path now has **six soft alerts** — intake-death,
+scan-outage, delivery-drought, blind-liveness, corpus-regression, and queue-copy failure — and, more
+importantly, **a channel that reaches an absent owner**: before this session every one of them landed in a
+launchd log nobody opens, a `runs.errors_json` nobody queries, and line 1388 of a 116 KB funnel (D-374).
+The morning digest now renders them, and the heartbeat gates on that digest having been written.
 
-**The live six-blocker map is the OWNER'S and is NOT to be reverted (D-350/D-351).** Moved verbatim to
-`STANDING-FACTS.md` 2026-08-29c.
+**THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
+`_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
+BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the owner** — which is exactly
+how the queue-sync note and #249's intake-death alert shipped. Three separate branches tried to union into
+that region this session and two would have landed below the digest. **Verify the order in source after any
+rebase touching the finalize block; do not assume a clean rebase preserved it.**
 
-**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on
-**five of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six).
-By design, but it makes an unqualified severity claim uncheckable, and the gap is wide: #218's floors
-give **1,228 verdict flips live vs 0 published**. Full rule in `STANDING-FACTS.md`.
+**A FAILED RUN NOW RECORDS WHY (D-375).** Run 132 sits in the store as `status='failed'` with
+`errors_json='[]'`. Five fatal paths set `summary.fatal` without recording it — including the standalone
+`run_scan` in `scan/coordinator.py`, which is what actually wrote run 132. The fix is a **choke point in
+the `finally`**, not five patches, because the failure mode is the sixth path someone adds later.
 
-**The lane question is CLOSED (D-346/D-347) — do not re-propose lane parallelism.** Moved verbatim to `STANDING-FACTS.md` 2026-08-29.
+**`clearance_preferred` RESOLVES, AND NO LEDGER DRAIN IS OWED (D-372/D-373).** It was a resolver bug, not a
+missing fact: 1,094 rows, 0 decided, ever — and the run-122 audit that called it "correct" was wrong.
+Verdict neutrality proven structurally, over the corpus, and by live replay over 198 postings under three
+policies (0 diffs). `engine_version` moved to `1+6a9fb2164f5b`, so **the next run does a FULL
+re-evaluation** — estimated ~1h45m, worst case ~2h35m, against a heartbeat budget of 3h37m. The drain is
+**decided NO on measured evidence**, and D-373 refines the convention: ask what could DIFFER, not whether
+the version moved.
 
-**THE hiring.cafe LEVER IS PULLED, AND THE NEXT RUN IS ITS READOUT (D-369, #245).** D-368 ranked the
-fix space (1) volume, (2) UA, (3) endpoint. **Reading the two clients side by side falsifies the UA
-premise outright** — `runner._LANE_USER_AGENT` has been a Chrome string since the lane shipped and
-`tests/pipeline/test_lane_stage.py` has pinned it that long, so **BOTH clients send Chrome** — **and the
-volume premise did not survive the run log**: run 128, the last search that WORKED, spent 14 search GETs
-and 14 body GETs (**~28 requests**, the reference client's own order of magnitude), and run 131 was
-refused on its **FIRST** request 14 hours later. **A rate counter decays over 14 hours; a classification
-does not.** What shipped instead is the **SEARCH ROUTE'S HEADER SET**: we sent httpx's `Accept: */*`
-under a Chrome UA, while the working client sets `Accept: text/html` by hand and is **SPARSER** than us
-everywhere else and is not refused — which rules out "too few browser headers" and leaves
-**contradiction with the claimed UA**. Applied to the **search route only**: `/api/job-description` is an
-XHR and is the half of the lane that still works. **THE NEXT RUN IS THE READOUT** — facets resolve, or
-`SearchPageError` again. **If it fails, headers are ELIMINATED and the strongest remaining hypothesis is
-PATH-SCOPED protection on `/jobs/*`** — evidenced already and without a probe: job-apps succeeds on `/`,
-our `/api/` calls succeeded every run through 128, our `/jobs/` calls fail **14 of 14**. That branch is
-**the OWNER'S**, because robots **allows** `/jobs/` and **disallows** job-apps' query form. **Still no
-probing, and browser automation is still out of scope.**
+**RUN NUMBERING SHIFTED AGAIN — run 132 ALREADY EXISTS.** It is the 18:03-18:13 cold-Workday timing probe
+from D-370, `status='failed'` via the systemic-outage predicate on a single board. **The 04:00 tick is run
+133.** Any manual few-board scan writes a `failed` run this way, so `runs.status` is a poor forensic
+instrument for the retrospective.
 
-**BREADTH BATCH 2 IS HALF APPLIED, ON A MEASURED COLD SCAN — the fleet is 379 (D-370).** D-367's stated
-blocker was "never timed cold", so it was timed: one batch-2 Workday board scanned cold = **604 s,
-420/420 enumerated, 0 censored, `postings_listed` 400 — the `detail_fetch_budget` SATURATED exactly, 20
-deferred**. **A cold Workday board is therefore bounded by the BUDGET, not by board size.** 20 × 604 s
-against run 131's **5.90x** parallelism (10,339.9 s latency / 1,752.0 s `scan`) = **~+34 min of scan wall
-clock on the FIRST run**, decaying toward ~+5 min once they hold validators. **The 4 SmartRecruiters
-boards are NOT applied, and the reason inverts the intuition**: every SR board is served from the ONE
-host `api.smartrecruiters.com`, which `Fetcher` serializes and `scan_workers` provably cannot help
-(D-346/D-347), so **4 boards cost more wall clock than the 20 Workday ones combined**. All 20 Workday
-boards re-verified `watched=1` by querying the store back against the source YAML.
+**THE PROJECTION APPROVAL SCARE WAS FALSE, AND THE REAL RISK IS NOW GATED (#251).** `run --project` never
+reaches the TTY prompt — it only READS a durable digest-keyed stamp, proven by run 131 delivering 40
+projected PDFs with no TTY. The genuine hazard was that a code change to `ProjectionDeclaration`,
+`stamp.py` or `yaml_writer.document_bytes` invalidates every user's approval **with `make check` green**,
+because both digest tests were relative. Measured: under the mutation, 330 projection tests passed and only
+the new literal pin failed.
 
-**Everything below this line is carried and remains true.** The provisional pass is held by the owner
-(but see the restarted counter under Phase status); Gate P6 is 4 of 4; **the delivery cap is 40, set in
-the plist (D-366)** — the code default `DEFAULT_TOP_N` stays 10 and D-293's hold on it is RELEASED, not
-standing; the fleet is 379 watched boards; breadth is argued on precision and capacity,
-never an application count (D-312). Board cost is provider-weighted and **s/board is a lying unit** —
-`workday` is ~73% of a run; size batches by provider mix, never board count. **Raising the
-`scan_workers` ceiling above `le=8` stays RETIRED** (D-344): run 129 finished 343 of 344 boards in
-27.0 min, `lowes.wd5` taking 5.9 more alone. Run 129 was **44.7 min** vs run 128's 132.4 — **2.82x =
-1.58x backlog drain x 1.78x parallelism**, only the 1.78x code. Numbers: `METRICS.md`.
+**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on **five
+of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six). Full rule in
+`STANDING-FACTS.md`.
+
+**The lane question is CLOSED (D-346/D-347) — do not re-propose lane parallelism.** In `STANDING-FACTS.md`.
+
+**THE hiring.cafe LEVER IS PULLED AND THE 04:00 RUN IS ITS READOUT (D-369, #245).** Run 131 is **NOT** the
+readout — it started 04:00 on 08-29, nine hours before the fix committed at 13:23. Facets resolve, or
+`SearchPageError` again. **If it fails, headers are ELIMINATED** and the strongest remaining hypothesis is
+**path-scoped protection on `/jobs/*`** — evidenced without a probe: job-apps succeeds on `/`, our `/api/`
+calls succeeded every run through 128, our `/jobs/` calls fail **14 of 14**. That branch is the **OWNER'S**,
+because robots allows `/jobs/` and disallows job-apps' query form. **Still no probing; browser automation
+stays out of scope.**
+
+**BREADTH BATCH 2 IS HALF APPLIED — the fleet is 379 (D-370).** 20 Workday boards in, 4 SmartRecruiters out,
+because every SR board shares the ONE host `api.smartrecruiters.com` which `Fetcher` serializes, so 4 boards
+cost more wall clock than the 20 Workday ones combined.
+
+**Everything below this line is carried and remains true.** Gate P6 is 4 of 4; **the delivery cap is 40, set
+in the plist (D-366)** and the code default `DEFAULT_TOP_N` stays 10; breadth is argued on precision and
+capacity, never an application count (D-312). Board cost is provider-weighted and **s/board is a lying
+unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: `METRICS.md`.
 
 ---
 
 ## Next action
 
-> **Mit's instruction at the 2026-08-29c close scoped the owner-facing items to the NEXT session;
-> that session ran on 2026-08-29d.** Items 1, 2 and 4 were worked. **1 is SHIPPED and awaiting its
-> readout (D-369/#245), 2 stays HELD and now for a MECHANICAL reason, 4 is HALF APPLIED on a
-> measurement (D-370).** Items 9-11 remain the owner's and were not started.
+> **THE 2026-08-30 04:00 TICK (run 133) IS THE ACCEPTANCE RUN FOR TEN MERGED PRs.** The primary tree is
+> parked on `main` at the session close and the editable venv runs it, so that tick exercises every change
+> from 2026-08-29f unattended. It also **migrates the store** (`p_runs_board_split` -> `p_runs_corpus_counts`)
+> — the code head carries the migration, the store does not yet. **Do NOT restart `boardwatch web`**: the
+> viewer never migrates (D-279), so restarting it against a checkout ahead of the store 500s it. The running
+> process holds the old code and is fine either side of an additive migration.
 
-> **D-361's two unattended risks are ANSWERED AND CLOSED — do not re-raise either (D-362).** Disk is
-> not near-term (83%, 35 GiB free, ~70-day worst runway; Mit's call: **no retention policy**), and
-> alerting was never absent. Full reasoning in `STANDING-FACTS.md`. **Edit the plist TEXTUALLY** —
-> PlistBuddy strips the comments that carry the reasoning.
->
-> **THE FIRST REAL UNATTENDED TICK FIRED AND WAS CLEAN (2026-08-29, run 131).** `launchctl print` now
-> reads **`runs = 1`, `last exit code = 0`**, log mtime 05:38, and the run row is `ok` — 04:00 to 05:36,
-> 40 leads, 359 boards, no fatal. The two-session-old owed item is answered on the half that is
-> observable here. **`launchctl list` col 2 is still the WRONG route** — it prints `0` for a job that has
-> NEVER run; use `launchctl print` and read `runs = N` plus `last exit code`, cross-checked against the
-> log's **mtime**, never its content.
->
-> **What is STILL unconfirmed, and cannot be confirmed from this machine:** `send_heartbeat()` returns a
-> `bool`, never raises and **logs nothing**, so no local artifact records whether the GET reached
-> healthchecks.io. What is proven is the gate it fires on — `status=ok` and exit 0 mean
-> `summary.fatal is None` held, so the call was made. **Receipt is Mit's to confirm in the
-> healthchecks.io dashboard.** Do NOT GET the ping URL to check: that manufactures a green.
-> **It cannot false-alarm on hiring.cafe** — a lane outage never sets `fatal` (verified).
+> **THE HEARTBEAT IS NOW SELF-REPORTING, BUT RECEIPT IS STILL MIT'S TO CONFIRM (D-375).**
+> `send_heartbeat()` used to return a `bool` whose value was discarded, with `False` meaning BOTH "refused"
+> and "no URL configured" — so the obvious "alert on falsy" fix would have fired on every unconfigured
+> install. It now returns `str | None` and a refused ping is recorded durably. **What it still cannot do is
+> prove the ping ARRIVED.** Open the healthchecks.io dashboard and confirm the 04:00 pings landed, and that
+> the notification target is one Mit reads while away. **Do NOT GET the ping URL to check — that
+> manufactures a green.** Note the heartbeat's own alert reaches NO artifact: the gate is last, after
+> `_emit_morning`, and no report reads a prior run's `errors_json` (verified, not assumed).
 
-1. **hiring.cafe: THE LEVER IS PULLED — the next move is to READ THE RUN, not to change anything
-   (D-369, #245).** D-368's ranking was corrected on evidence, not overridden: its **UA premise is
-   FALSE** (we have sent a Chrome UA since the lane shipped) and its **volume premise did not survive
-   the run log** (run 128, the last search that worked, spent ~28 requests; run 131 was refused on its
-   FIRST request 14 h later — a rate counter decays over 14 hours, a classification does not). What
-   shipped is the **search route's header set**: httpx's `Accept: */*` under a Chrome UA was the one
-   thing the working client does differently, and it sets `Accept: text/html` by hand while being
-   sparser than us in every other respect. **The 04:00 run is the readout. Change NOTHING before it
-   reads out, and do NOT probe the site.**
-   **If it fails, headers are ELIMINATED**, and the ranked remainder is **volume** (now the weaker
-   case) and **endpoint** — where the strongest hypothesis is **path-scoped protection on `/jobs/*`**
-   (job-apps succeeds on `/`, our `/api/` calls succeeded through run 128, our `/jobs/` calls fail 14
-   of 14). **The endpoint branch is the OWNER'S**: robots **allows** `/jobs/` and **disallows**
-   job-apps' `?searchState=` form, so moving off the allowed path is a compliance decision, not a
-   repair. The owner-side access request is still drafted and unsent in
-   `.agent/2026-08-28g-session/hiringcafe-access-request.md`. **Until it lifts, lane coverage is
-   HALVED.** Browser automation and challenge-solving stay out of scope.
+1. **hiring.cafe: READ THE 04:00 READOUT — run 131 was NOT it (D-369, #245).** The fix committed 13:23 on
+   08-29, nine hours AFTER run 131 started, so run 131's `SearchPageError` is the PRE-change failure. Read
+   the LOCAL log only: `grep -n "lane hiringcafe" ~/Library/Logs/boardwatch-run.log | tail -5`. Success is
+   `lane hiringcafe -> N attempted · M resolved`; failure is `SearchPageError`. **Do NOT probe the site
+   even once** — more requests from this IP is the one move that keeps it closed. Cross-check the tick
+   fired with `launchctl print` (`runs =`, `last exit code`) plus the log MTIME; **`launchctl list` col 2
+   prints `0` for a job that has NEVER run.**
+   **If it fails, headers are ELIMINATED** and the remainder is volume (the weaker case) and endpoint,
+   where path-scoped protection on `/jobs/*` is strongest. **That branch is the OWNER'S** — robots allows
+   `/jobs/` and disallows job-apps' `?searchState=` form, so moving off the allowed path is a compliance
+   decision, not a repair. The drafted, unsent access request is at
+   `.agent/2026-08-28g-session/hiringcafe-access-request.md`. Until it lifts, lane coverage is **HALVED**.
+
 
 2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
    STATE claimed that while the PR was still OPEN and RED, and the repo won (D-358). The lever ships
@@ -246,6 +245,6 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **`boardwatch web` IS RUNNING — started 2026-08-29d** | Started from the primary checkout on `main` with `--port 0 --no-open` and **verified through a second path**: `GET /` returns 200 and `GET /api/runs` returns **401 without a token and 200 with the bearer**. The session URL is `http://127.0.0.1:<port>/#<token>` — the token rides in the **fragment** so it never reaches a server log or a `Referer`, it is stable, and it lives at `~/Library/Application Support/boardwatch/web-token` (mode 0600). **The port is whatever `--port 0` picked**, so read it from the process rather than assuming: `lsof -nP -iTCP -sTCP:LISTEN -a -p $(pgrep -f 'boardwatch web')`. It was stopped and restarted once during this session to take the store lock for the D-370 cold scan — **never write to the store with the viewer up**, a WAL two-writer deadlock against a running pipeline is on record. The underlying skew is still structural (D-360): the bundle is served from **disk** and the API from the Python imported **at startup**, so any merge or branch switch under a running viewer separates the two — **it is now stale against `main` the moment #245 landed, so restart it after any merge.** #232 makes a missing field degrade to the pre-#224 view instead of blanking the page | **Mit** (restart after merges) |
-| **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. Checked at this close and currently harmless (the tree is on `main`). **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
+| **`boardwatch web` IS RUNNING — started 2026-08-29d** | Started from the primary checkout on `main` with `--port 0 --no-open` and **verified through a second path**: `GET /` returns 200 and `GET /api/runs` returns **401 without a token and 200 with the bearer**. The session URL is `http://127.0.0.1:<port>/#<token>` — the token rides in the **fragment** so it never reaches a server log or a `Referer`, it is stable, and it lives at `~/Library/Application Support/boardwatch/web-token` (mode 0600). **The port is whatever `--port 0` picked**, so read it from the process rather than assuming: `lsof -nP -iTCP -sTCP:LISTEN -a -p $(pgrep -f 'boardwatch web')`. It was stopped and restarted once during this session to take the store lock for the D-370 cold scan — **never write to the store with the viewer up**, a WAL two-writer deadlock against a running pipeline is on record. The underlying skew is still structural (D-360): the bundle is served from **disk** and the API from the Python imported **at startup**, so any merge or branch switch under a running viewer separates the two — **DO NOT RESTART IT AS OF 2026-08-29f.** `main` now carries the `p_runs_corpus_counts` migration while the store is still at `p_runs_board_split` until the 04:00 run migrates it, and the viewer NEVER migrates (D-279) — restarting against a checkout AHEAD of the store 500s it. The running process holds the pre-merge code in memory and is correct either side of an additive migration, so leaving it alone is the safe action. Restart only AFTER a run has migrated the store; the bundle it serves is built on disk (`web/dist` is untracked) and only `make web` changes it. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page | **Mit** (restart after merges) |
+| **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN; the cause is known and the FIRST LEVER IS PULLED** | **D-369/#245 shipped the search route's browser navigation header set, and the 04:00 run is its readout.** D-368's ranking was corrected on evidence: its **UA premise is FALSE** (we have sent a Chrome UA since the lane shipped) and its **volume premise did not survive the run log** (run 128, the last working search, spent ~28 requests; run 131 was refused on its FIRST request 14 h later). **Do NOT probe, and do NOT change anything else until the run reads out.** If it fails, headers are eliminated and the remainder is volume (weaker) and endpoint — where **path-scoped protection on `/jobs/*`** is the strongest hypothesis and the **owner's** call, because robots allows `/jobs/` and disallows job-apps' query form. Half the lane coverage job-apps' edge comes from | **Mit** (read the 04:00 run; then the endpoint call, or send the drafted access request) |
