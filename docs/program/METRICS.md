@@ -9266,3 +9266,35 @@ do not mix them.
 08-28. boardwatch's own burn is **+513 MB across a FULL re-evaluation day** (4.22 → 4.74 GB), which
 is an upper bound. `~/Library/Developer/XCTestDevices` is 72 GB. **No recorded disk figure here
 should be trusted for long.**
+
+### Session close — 13 PRs, every one gate-green, and what the fortnight rests on
+
+**Merged 2026-08-30: #258 … #270.** Three carried runtime behaviour (#258 escalation, #260 detector
+durability, and #252's resolver fix reading out in run 133); four were **test-only, zero runtime
+change** (#263 #264 #265 #267), each pinning a guard the mutation campaign proved was unpinned; the
+rest are the record. Local `make check` was run to a **per-launch sentinel** on every branch that
+touched code and read exit **0** each time — final gate, on #270: **8,516 passed, 4 xfailed,
+coverage 95.66%, 6m41s**; CI **24 non-skipped jobs green and the required
+aggregate `ci` success** (the 2 skips are the matrix placeholder and `nightly-watch`).
+
+**The preflight is the close.** `preflight-before-leaving.sh` exits **0 — READY, nothing blocking a
+14-day unattended window** — with exactly **two WARNs, and both are the owner decisions already
+named above**: `BOARDWATCH_ALERT_URL` unset, and tectonic/poppler unpinned against the 00:00
+`brew upgrade`. Verified at close: primary tree on `main` **clean** and in sync (the editable venv
+means a stray edit here silently changes every subsequent night), `com.boardwatch.run` loaded with
+`last exit code 0`, both render binaries **EXECUTED** rather than located, machine never sleeps on
+AC with a 03:55 wake armed, 17 GiB free, schema head `p_runs_corpus_counts`, **0 runs stuck
+`running`**, newest run 133 `status=ok`.
+
+**What the fortnight actually rests on**, in the order it would fail: the heartbeat pages if a run
+crashes or never starts (armed, but **receipt is unconfirmed** — the dashboard is Mit's to open);
+five of six soft detectors are armed and reach the digest; the sixth, corpus-regression, is **dark
+until ~run 138 (~2026-09-04)** by construction; and a degraded-but-successful run reaches **nobody
+remote** until #258 is armed. `away-readout.py` covers the gap on return by printing the candidate
+rate for every run, including the ones no detector could judge.
+
+**STATE is 261 lines** — down from 306, by moving two COMPLETED blocks whole into
+`STANDING-FACTS.md` (sections 2026-08-30d and 2026-08-30e), verified present-in-one /
+absent-in-other with nothing summarised away. **It is still over both stated bars** — STATE's own
+header says move blocks out past ~250, and `CLAUDE.md` says the file is kept near 170 — so the next
+session inherits the same lever, not a solved problem.
