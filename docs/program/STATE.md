@@ -46,14 +46,6 @@ The exact edit, the reload commands and the two questions to settle first — do
 away, and does your healthchecks target reach you — are in `.agent/2026-08-30-session/ARMING-alert-
 escalation.md`. **Deliberately not armed: it pages a real person.**
 
-**WHAT ESCALATES IS THE FINALIZE-BLOCK SLICE, NOT `summary.errors`, AND THAT WAS MEASURED.**
-`summary.errors` accumulates every stage error — one dead board slug, a lane that could not collect, a
-per-lead tailor degradation. Over the last 25 runs **nine carried a non-empty `summary.errors` and not one
-of the nine was a finalize-block alert**; runs 124-128 each carried `plaid: HTTP 404`. Escalating that list
-would have driven the monitor DOWN on five ordinary `status=ok` runs. **Consequence to know: a dead LANE no
-longer reaches the remote channel**, only the digest — closing that means a lane-health *detector*, not a
-wider payload. On run 133 itself the channel would have posted **nothing**, which is correct.
-
 **RUN 134 IS THE FIRST PRODUCTION EXECUTION OF #258 AND #260 — RUN 133 IS NOT EVIDENCE FOR THEM.**
 Run 133 finished 10:52:56 UTC; #258 merged 11:03:05 UTC and #260 11:44:15 UTC, so both landed AFTER
 it. Run 133 IS the acceptance evidence for the ten 2026-08-29f PRs (#247-#256), which is what its
@@ -92,12 +84,24 @@ it cannot bite while nobody is running ad-hoc scans, it is not a one-line change
 defaults to `status='running'`, so adding the filter silences all six existing tests), and whether a
 FAILED run should count toward "intake died" is a judgement, not a typo.
 
-**THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
-`_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
-BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the owner** — which is exactly
-how the queue-sync note and #249's intake-death alert shipped. Three separate branches tried to union into
-that region this session and two would have landed below the digest. **Verify the order in source after any
-rebase touching the finalize block; do not assume a clean rebase preserved it.**
+**THE GUARDS ARE PINNED — 105 MUTATIONS, 97 CAUGHT, NO VACUOUS TEST AND NO LIVE DEFECT.**
+Every guard the unattended path depends on was mutated and scored against its own tests: the six
+detectors, the heartbeat gate, the tailor no-fabrication guards, the eligibility keystone and
+verdict rollup, projection fidelity, scan/apply and identity/dedup, the review gate, and the rank
+gates. Four gaps were real and three shipped as **test-only** PRs — **#263** (a closed posting was
+being re-closable, the only one that COMPOUNDS nightly), **#264** (plan deviation 8: a reopen must
+not swallow the revision), **#265** (`weight_sum <= 0.0`, the first gap reachable from a LEGAL
+config). Eight survivors were proven **unobservable** rather than untested, each by constructing
+the exact input the clause guards. **Every gap was correctness that was not PINNED, never
+correctness that was wrong** — full table in `METRICS.md`.
+
+**TWO RESIDUALS ARE THE OWNER'S CALL, both recorded with numbers and neither fixed.** (a) Trailing
+`Director` defeats the seniority gate — 9 live titles of 84,724, 4 reaching an entry target; the
+directionality is deliberate and documented, but the docstring's supporting measurement was taken
+on a corpus **2.2x smaller**. (b) `STRUCTURALLY_UNDECIDABLE` in `reports/abstain.py` freezes two
+rules as never-decidable that returned **30,231** and **691** `unmet` on run 133, and
+`fully_abstaining_fixable` EXCLUDES anything so flagged — so a D-372-class regression in either
+would be masked. Revisiting D-253 is owner-gated.
 
 **SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on **five
 of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six). Full rule in

@@ -9117,6 +9117,71 @@ corpus-regression baseline point **1 of 6**. Earliest possible fire: **run 138, 
 correctly did not fire. State after: **420 apply-ready**, 189 `_review`, 182 `_ineligible`,
 7 `_applied` — 31% review split, so no apply-lane starvation either.
 
+### Mutation campaign — 105 mutations across every guard the unattended path depends on
+
+Run 133 having read out, the rest of the session went to a question no run answers: **do the tests
+actually hold the guards, or would a broken guard ship green?** A detector whose tests pass against
+a broken implementation is worse than no detector, because it is trusted. Method: mutate, run that
+module's own tests, revert immediately, all in throwaway worktrees; the primary checkout was
+verified clean throughout because its branch is what the scheduled job runs.
+
+| area | mutations | caught |
+|---|---:|---:|
+| six soft detectors | 20 | 19 |
+| the heartbeat gate | 5 | 5 |
+| tailor no-fabrication guards | 8 | 6 |
+| eligibility keystone: abstain + verdict rollup | 9 | 9 |
+| projection fidelity | 7 | 7 |
+| scan/apply + identity/dedup | 28 | 21 |
+| review gate | 5 | 5 |
+| rank gates (hard filters, scoring, role, seniority, foreign-ad) | 14 | 13 |
+| **total** | **105** | **97** |
+
+**Four of the eight survivors were real gaps; the other four, plus four more from the scan sweep,
+were proven UNOBSERVABLE** — defensive code no test *can* exercise, each established by
+constructing the exact input the clause guards and showing another mechanism already excludes it.
+**No vacuous test was found anywhere, and no live defect.** Every gap was correctness that was not
+pinned, never correctness that was wrong.
+
+**Shipped as test-only PRs (zero runtime change):**
+- **#263** — `_process_missing` losing its `status == "open"` filter left the whole 8,507-test suite
+  green. Unattended it would re-close already-closed rows nightly: a duplicate `closed` event each
+  night, `closed_at` reset (destroying the closed-date history `show` renders and `export` emits),
+  `consecutive_missing` unbounded. **The only one that COMPOUNDS**, which is why it shipped first.
+- **#264** — plan deviation 8, stated in `apply.py`'s own docstring: a reopen must not swallow the
+  revision. `if` -> `elif` also left the suite green; the cost is one run judging eligibility
+  against a stale JD, then self-healing.
+- **#265** — `score_posting`'s `weight_sum <= 0.0` guard. **The first gap reachable from a LEGAL
+  configuration**: `RankWeights` permits `ge=0.0` on all four weights with no "at least one
+  positive" rule and `boardwatch config` sets each, so all-zero is constructible — and without the
+  guard that is `ZeroDivisionError` on every posting of every run.
+
+**Not shipped, deliberately:** identity rows written from a stale `content_hash` (self-heals in one
+run; its natural test belongs in another file), and the `"director"` member of
+`_MANAGEMENT_AMBIGUOUS` — see the residual below, where pinning today's behaviour would entrench a
+trade-off the owner may want to revisit.
+
+### Two residuals worth the owner's attention, neither fixed
+
+**Trailing "Director" defeats the seniority gate — 9 live titles, 4 reaching an entry target.**
+Measured over 84,724 distinct titles: `Solutions Engineer, Director`,
+`Rust, AI Engineer, Director` and `Network Engineering Architect, Director` all score `in_band`,
+while the leading form `Director, Software Engineering` is correctly `above_band`. The
+directionality is **deliberate** — `_qualifies_as_management_seniority` is documented as
+*"DIRECTIONAL on purpose ... a real IC role is never dropped"*, the project's fail-open direction.
+**What is stale is the evidence:** the docstring records the residual as *"measured to ZERO on the
+live corpus (37,979 distinct titles)"*, and the corpus is now **2.2x** that. Impact is small and
+did not bite run 133 (no director-titled lead among its 40). Making the branch bidirectional would
+catch these 9 but risks dropping real IC roles — a measured cost against an unmeasured one.
+
+**`STRUCTURALLY_UNDECIDABLE` in `reports/abstain.py` is factually stale.** It freezes
+`experience_years:scoped_years_minimum` and `clearance:clearable_required` as rules that *"can
+never be decided for ANY profile"*. Measured on run 133 they returned **30,231** and **691**
+`unmet`. `fully_abstaining_fixable` EXCLUDES anything so flagged, so if either regressed to 100%
+abstain — the D-372 failure class, which has already happened once — it would be dimmed out of the
+actionable headline. A closed catalog with wrong members is worse than an empty one. Revisiting
+D-253 is the owner's call; nothing was changed.
+
 ### Also shipped this session — #260, detector-fallback durability
 
 The finalize block was inconsistent about recording its own failures: the three artifact-write
