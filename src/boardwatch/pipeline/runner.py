@@ -51,6 +51,7 @@ from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.heartbeat import send_heartbeat
+from boardwatch.notify.intake_death import check_intake_death
 from boardwatch.pipeline.death_probe import sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
@@ -1635,6 +1636,24 @@ def run_pipeline(
             _sync_queue(engine, settings, console)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"delivery queue not synced: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+        # F4 intake-death detector. The heartbeat below fires on any clean outcome, so a
+        # run that scans fine but finds NOTHING new — a dead fleet, a silent fetch
+        # regression — pages nobody. This reads the per-run net-new count the scan already
+        # persisted (`runs.new_count`) and raises a SOFT alert when a window of scanning
+        # runs all read zero. It never sets `fatal`: the run succeeded, so the heartbeat
+        # must still fire — a stalled intake tickets, it does not trip the dead-man's
+        # switch. Recorded on `summary.errors` (reprinted by `run_cmd`) and, because
+        # `finish_run` has already committed, made durable through `append_run_error`.
+        try:
+            intake_alert = check_intake_death(engine)
+            if intake_alert is not None:
+                console.print(f"  ! {intake_alert}", markup=False)
+                summary.errors.append(intake_alert)
+                append_run_error(engine, run_id, intake_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"intake-death check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
