@@ -124,8 +124,8 @@ def test_an_UNMET_hard_rule_does_NOT_set_the_eligibility_flag(engine: Engine) ->
     relabel that lead's hold as an abstain — the exact fold this catalog refuses."""
     with engine.begin() as conn:
         pid, vid = _seed(conn, "e", ("work_auth:us_authorization_required", "required", "unmet"))
-    flags = _flags(engine, [vid])
-    assert flags[pid].eligibility_unconfirmed is False
+    # Absent, not present-and-False: the row sets no flag, so it creates no entry at all.
+    assert pid not in _flags(engine, [vid])
 
 
 def test_a_NON_required_row_sets_NOTHING(engine: Engine) -> None:
@@ -188,3 +188,16 @@ def test_no_versions_and_no_identity_are_both_empty(engine: Engine) -> None:
     with engine.connect() as conn:
         assert current_requirement_flags(conn, [1], None, RULES) == {}
         assert current_requirement_flags(conn, [1], PROFILE, None) == {}
+
+
+def test_an_unconfirmed_row_from_an_UNRELATED_family_creates_no_entry(engine: Engine) -> None:
+    """The query admits an unconfirmed row from any family, but only two decide a lane.
+
+    A `degree`/`internship`/`contract_not_fte` row entering the result would carry an all-False
+    summary that reads exactly like the absent default — ~2,000 of them on the live store — so
+    the entry itself would be the lie: it says "this posting was summarised and nothing was
+    unconfirmed" when a requirement WAS unconfirmed and simply is not one this gate reads.
+    """
+    with engine.begin() as conn:
+        pid, vid = _seed(conn, "l", ("degree:bachelors_required", "required", "unmet"))
+    assert pid not in _flags(engine, [vid])

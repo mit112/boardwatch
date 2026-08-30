@@ -120,7 +120,7 @@ class RequirementFlags(NamedTuple):
 
     #: A REQUIRED `experience_years` row resolved `unmet` or `unknown` — a bar not confirmed met.
     experience_unconfirmed: bool = False
-    #: A REQUIRED `work_auth` or `clearance` row resolved `unknown` — a blocking rule that ABSTAINED.
+    #: A REQUIRED `work_auth`/`clearance` row resolved `unknown` — a blocking rule that ABSTAINED.
     #: `unmet` is deliberately NOT folded in: an unmet hard rule makes the verdict `ineligible`,
     #: which has its own drain, and counting it here would relabel that lead's hold.
     eligibility_unconfirmed: bool = False
@@ -180,11 +180,17 @@ def current_requirement_flags(
             rule_id, disposition = row.rule_id, str(row.disposition)
             if not rule_id:
                 continue
+            experience = rule_id.startswith(EXPERIENCE_FAMILY)
+            eligibility = disposition == "unknown" and rule_id.startswith(HARD_FAMILIES)
+            # Only a row that sets a flag creates an entry. The where-clause above admits an
+            # unconfirmed row from ANY family -- `degree`, `internship`, `contract_not_fte` --
+            # and those decide nothing here; entering them would carry ~2k all-False summaries
+            # that read exactly like the absent default while costing a dict entry each.
+            if not (experience or eligibility):
+                continue
             seen = flags.setdefault(int(row.evaluation_id), [False, False])
-            if rule_id.startswith(EXPERIENCE_FAMILY):
-                seen[0] = True
-            elif disposition == "unknown" and rule_id.startswith(HARD_FAMILIES):
-                seen[1] = True
+            seen[0] |= experience
+            seen[1] |= eligibility
     version_to_posting = _posting_by_version(conn, posting_version_ids)
     out: dict[int, RequirementFlags] = {}
     for eval_id, (experience, eligibility) in flags.items():
