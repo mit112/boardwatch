@@ -69,6 +69,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A collapse that makes the whole corpus ineligible is no longer the one failure nothing watches.**
+  The delivery-drought alert abstains on it by design — its honest guard is "did this run judge a
+  candidate?", and a corpus that has gone entirely ineligible judged none — and the intake alert stays
+  quiet because postings keep arriving. So a rules edit or a profile fact that stops resolving could
+  empty the standing eligible corpus and every signal would still read green. The three numbers that
+  would have shown it existed only inside each run's funnel artifact on disk, where no cross-run query
+  could reach them, so they now also land on the run row: the open corpus, how much of it was
+  evaluated, and how much of that cleared. A new detector compares the run's candidate **rate** against
+  the median of the last five comparable runs and raises a soft alert when it has halved. A rate rather
+  than a count, and that choice is load-bearing: the eligibility identity re-keys often enough that a
+  perfectly healthy run can evaluate 5% of its own corpus, which any count-based threshold reads as a
+  96% collapse and pages on at four in the morning. Runs that judged less than half their corpus are
+  skipped for the same reason. Checked against the recorded history before shipping — across 66 clean
+  runs the rate never moved by more than the trigger allows, and an injected collapse fires on the first
+  run it touches. Like the other detectors it never fails the run, and the alert is written to the run
+  row as well as printed, because an unattended machine prints to a log nobody reads.
+
 - **The morning digest now carries the run's alerts, and the heartbeat waits for it.** Every soft
   alert this program raises — a collapsed lane, a stalled intake, an unsynced delivery queue, a
   degraded tailor — did the same two things: appended to the run's error list and wrote the note

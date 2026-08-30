@@ -48,7 +48,7 @@ from boardwatch.reports.run_funnel import (
     build_run_funnel,
 )
 from boardwatch.store.abstain_queries import count_requirement_dispositions
-from boardwatch.store.queries import current_posting_versions, get_profile
+from boardwatch.store.queries import current_posting_versions, get_profile, record_corpus_counts
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
@@ -215,6 +215,29 @@ def collect_run_funnel(
                 runs.c.id == run_id
             )
         ).one_or_none()
+
+    # The corpus counts, onto the run row (D-371). Written from the `corpus` object the block
+    # above already produced rather than re-counted: `count_corpus` is five sweeps over the
+    # whole open corpus, and a second independent sweep here would not only pay that cost
+    # twice, it could DISAGREE with the artifact — two numbers for one run's corpus, with
+    # nothing to say which is authoritative.
+    #
+    # Before the manifest and the artifact write, so the counts survive a later reporting
+    # failure. Everything from `RunManifest(` down can raise (the caller catches it, records
+    # the failure and stays fail-open, D-287); a corpus collapse is exactly the kind of
+    # upstream change that could also break artifact rendering, and the run whose numbers the
+    # detector most needs must not be the one run that recorded none.
+    #
+    # `candidates` folds the two DELIVERABLE verdicts. `ineligible` cannot become a lead, so
+    # it is not a candidate; the fold is a monitoring numerator, and the funnel's own verdict
+    # stage keeps the split unfolded for every reader.
+    record_corpus_counts(
+        engine,
+        run_id,
+        open_postings=corpus.open_postings,
+        evaluated=corpus.evaluated,
+        candidates=corpus.by_verdict.get("eligible", 0) + corpus.by_verdict.get("uncertain", 0),
+    )
 
     manifest = RunManifest(
         code_fingerprint=engine_version(),

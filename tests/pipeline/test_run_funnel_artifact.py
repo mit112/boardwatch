@@ -316,3 +316,79 @@ def test_a_funnel_that_fails_to_write_is_recorded_rather_than_only_printed(
     assert any(
         "funnel artifact not written" in e for e in (row.errors_json or [])
     ), row.errors_json
+
+
+def _stage(payload: dict, name: str) -> dict:
+    """The named funnel stage, out of the artifact this run actually wrote."""
+    found = [stage for stage in payload["stages"] if stage["name"] == name]
+    assert len(found) == 1, f"expected exactly one {name!r} stage, got {found}"
+    return found[0]
+
+
+def test_the_runs_row_carries_the_same_corpus_the_funnel_reported(
+    env: Path, tmp_path: Path
+) -> None:
+    """D-371's write, checked against the artifact rather than against itself.
+
+    The corpus-regression detector reads `runs.corpus_*` while every existing reader of these
+    numbers reads the funnel, so the two must be the same measurement. They are, by
+    construction — the writer stamps the very `CorpusCounts` object the artifact is rendered
+    from — and this pins that construction. It rejects a version that re-counts the corpus in a
+    second sweep (five more passes over the whole open corpus, and two numbers for one run with
+    nothing to say which is authoritative), and a version wired into the no-profile branch or
+    into no branch at all, which would leave the columns NULL on a run that measured a corpus.
+
+    `corpus_candidates` is checked against the VERDICT stage, not the corpus stage: it is
+    eligible + uncertain, and the artifact keeps those unfolded — `advanced` for eligible and
+    the `abstained` drop for uncertain. Recomposing it here is what makes this a comparison
+    between two representations rather than a restatement of one.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+    summary = _pipeline(env, out_root)
+    payload = _payload(out_root)
+
+    corpus = _stage(payload, "corpus")
+    verdict = _stage(payload, "verdict")
+    abstained = [d["count"] for d in verdict["drops"] if d["reason"] == "abstained"]
+    assert len(abstained) == 1, verdict["drops"]
+
+    with get_engine(env).connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == summary.run_id)).one()
+
+    assert row.corpus_open == corpus["entered"]
+    assert row.corpus_evaluated == corpus["advanced"]
+    assert row.corpus_candidates == verdict["advanced"] + abstained[0]
+    # Non-vacuous: a run that evaluated nothing would satisfy every equality above with three
+    # zeros, and a NULL column would satisfy none of them but is what a dead branch writes.
+    assert row.corpus_evaluated > 0, "the fixture judged nothing; the equalities are trivial"
+
+
+def test_a_corpus_regression_alert_reaches_the_run_row_not_just_the_summary(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The alert has to be DURABLE, because the owner is not at the machine.
+
+    An unattended run prints to a log nobody reads. `summary.errors` alone is invisible the
+    moment the process exits, which is the asymmetry D-287 closed for the funnel and the
+    morning digest; the same asymmetry would make this detector decorative. So the alert must
+    land in `runs.errors_json` via `append_run_error` as well.
+
+    And it must not fatal the run. The run itself succeeded — a corpus regression is a ticket,
+    not a dead-man's-switch trip — so `summary.fatal` stays None and the run stays `ok`.
+    Rejects a version that sets `fatal`, and one that only appends to the summary.
+    """
+    _ready(env)
+
+    monkeypatch.setattr(
+        runner, "check_corpus_regression", lambda *_a, **_k: "corpus: rate collapsed to 0.00%"
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "a soft alert was promoted into a run failure"
+    assert any("rate collapsed" in e for e in summary.errors), summary.errors
+    with get_engine(env).connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == summary.run_id)).one()
+    assert any("rate collapsed" in e for e in (row.errors_json or [])), row.errors_json
+    assert row.status == "ok", "the run outcome moved for a reporting-side alert"

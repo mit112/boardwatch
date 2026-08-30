@@ -50,6 +50,7 @@ from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
+from boardwatch.notify.corpus_regression import check_corpus_regression
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
@@ -1741,6 +1742,28 @@ def run_pipeline(
                 append_run_error(engine, run_id, blind_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"liveness-blindness check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+        # Corpus-regression detector (D-371) — the one collapse the checks above cannot
+        # see. Intake death stays quiet because postings keep arriving; a delivery drought
+        # abstains BY CONSTRUCTION, because its honest guard is "did this run judge a
+        # candidate?" and a corpus that has gone entirely ineligible judged none. So a rules
+        # edit or a profile fact that stops resolving leaves every existing signal green while
+        # an unattended machine ships nothing for a fortnight. This compares the run's
+        # candidate RATE — never a count, which an identity re-key legitimately drops by 96%
+        # on a perfectly clean run — against the median of the last five comparable runs.
+        # Same contract as the check above: soft, never `fatal`, appended to `summary.errors`
+        # for `run_cmd` to reprint, and made durable through `append_run_error` — safe because
+        # `finish_run` has already committed, and `append_run_error` cannot touch status or
+        # finished_at.
+        try:
+            corpus_alert = check_corpus_regression(engine)
+            if corpus_alert is not None:
+                console.print(f"  ! {corpus_alert}", markup=False)
+                summary.errors.append(corpus_alert)
+                append_run_error(engine, run_id, corpus_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"corpus-regression check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now

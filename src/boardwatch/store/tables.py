@@ -249,6 +249,16 @@ runs = Table(
     Column("boards_partial", Integer, nullable=True),
     Column("boards_unchanged", Integer, nullable=True),
     Column("boards_failed", Integer, nullable=True),
+    # The standing eligible corpus this run measured, lifted out of the funnel artifact so a
+    # cross-run query can reach it (D-371). `corpus_candidates` is eligible + uncertain — the
+    # deliverable verdicts — folded here because this is a rate numerator for the
+    # corpus-regression detector, not a report; the funnel keeps the verdict split unfolded.
+    # Nullable and NOT defaulted to 0, for the same reason as the board split above and with
+    # sharper teeth: a defaulted 0 would make every pre-instrumentation run read as a
+    # MEASURED empty corpus, which is the exact alarm state the detector watches for.
+    Column("corpus_open", Integer, nullable=True),
+    Column("corpus_evaluated", Integer, nullable=True),
+    Column("corpus_candidates", Integer, nullable=True),
     Column("postings_seen", Integer, nullable=True),
     Column("new_count", Integer, nullable=True),
     Column("closed_count", Integer, nullable=True),

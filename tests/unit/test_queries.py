@@ -17,6 +17,7 @@ from boardwatch.store.queries import (
     get_validators,
     insert_run,
     reap_stale_runs,
+    record_corpus_counts,
 )
 
 
@@ -90,6 +91,55 @@ def test_finalize_run_leaves_the_four_way_split_null_when_omitted(engine: Engine
     assert row.boards_partial is None
     assert row.boards_unchanged is None
     assert row.boards_failed is None
+
+
+def test_record_corpus_counts_writes_all_three(engine: Engine) -> None:
+    """The three numbers the corpus-regression detector reads, on the run row (D-371).
+
+    Distinct values on purpose: `open == evaluated == candidates` would pass against a writer
+    that bound the wrong column to the wrong argument.
+    """
+    run_id = insert_run(engine)
+    record_corpus_counts(engine, run_id, open_postings=105935, evaluated=101105, candidates=65148)
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert row.corpus_open == 105935
+    assert row.corpus_evaluated == 101105
+    assert row.corpus_candidates == 65148
+
+
+def test_a_run_nobody_recorded_a_corpus_for_keeps_all_three_null(engine: Engine) -> None:
+    """Absent is not zero, and here the distinction is the alarm itself: a defaulted 0 would
+    make every run that never reached the corpus count — and every run predating the columns —
+    read as a run that MEASURED an empty corpus, which is exactly the state the detector
+    fires on. NULL means unmeasured and the detector skips it."""
+    run_id = insert_run(engine)
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert row.corpus_open is None
+    assert row.corpus_evaluated is None
+    assert row.corpus_candidates is None
+
+
+def test_record_corpus_counts_does_not_move_finished_at_or_status(engine: Engine) -> None:
+    """It appends a fact to a FINISHED row and nothing else — the same contract as
+    `append_run_error`, and for the same reason. The funnel writer calls this after
+    `finish_run` has committed, so an implementation written as `finalize_run(...)` or
+    `finish_run(...)` would re-stamp both columns and make an observation about the corpus
+    move the run's own completion time and outcome."""
+    run_id = insert_run(engine)
+    finish_run(engine, run_id, errors=["acme: HTTP 503"], status=RUN_FAILED)
+    with engine.connect() as conn:
+        before = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+
+    record_corpus_counts(engine, run_id, open_postings=10, evaluated=9, candidates=4)
+
+    with engine.connect() as conn:
+        after = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert after.finished_at == before.finished_at
+    assert after.status == RUN_FAILED
+    assert after.errors_json == ["acme: HTTP 503"]
+    assert after.corpus_candidates == 4
 
 
 def _insert_run_row(
