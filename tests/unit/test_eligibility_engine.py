@@ -18,7 +18,7 @@ from boardwatch.eligibility.engine import (
     field_applicability,
     write_evaluation,
 )
-from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact
+from boardwatch.eligibility.facts import ClearanceFact, Facts, Policy, WorkAuthFact
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.db import ensure_schema, get_engine
@@ -453,6 +453,32 @@ def test_preferred_and_bonus_rows_never_decide(catalog) -> None:
 def test_a_blocker_unknown_yields_uncertain(catalog) -> None:
     result = evaluate("Bachelor's degree required.", Facts(), BLOCK_ALL, catalog)
     assert result.verdict == "uncertain"
+
+
+@pytest.mark.parametrize("policy", [Policy(), BLOCK_ALL],
+                         ids=["catalog_default", "live_store_all_blocker"])
+def test_a_resolved_clearance_preference_still_cannot_move_the_verdict(
+    catalog, policy: Policy
+) -> None:
+    """Both halves of the clearance_preferred fix, under BOTH severity policies.
+
+    The row RESOLVES `unmet` for a profile that declares it holds nothing, instead of
+    abstaining forever — and the verdict is untouched either way, because `blocking()` counts
+    only `required` rows and the catalog fixes this pattern at `preferred`.
+
+    `Policy()` is the CATALOG default, where `clearance` is a `preference` (only `work_auth`
+    ships as `blocker`). `BLOCK_ALL` is the shape the live store actually runs, and the one
+    the P5 reference policy scores under: every family a `blocker`, the harshest severity
+    this row can meet. If a `preference` family's severity could turn a resolved preference
+    into a veto, the all-`blocker` case reads `ineligible` and this test fails — which is the
+    only way this change could start dropping real jobs."""
+    facts = Facts(security_clearance=ClearanceFact(scheme="unspecified", level="none",
+                                                   state="none"))
+    result = evaluate("A security clearance is preferred.", facts, policy, catalog)
+    assert [(r.rule_id, r.requiredness, r.disposition) for r in result.requirements] == [
+        ("clearance:clearance_preferred", "preferred", "unmet")
+    ]
+    assert result.verdict == "eligible"
 
 
 # ------------------------------------------------------ shipped-default severity (D-035)

@@ -361,13 +361,25 @@ def _resolve_clearance(detection: Detection, facts: Facts, family: FamilySpec) -
             return Resolution(MET, "can obtain a clearance after hire", support)
         return Resolution(UNMET, "cannot obtain a clearance after hire", support)
     if pattern.implies == "clearance_preferred":
-        if sc is not None and sc.state in ("active", "current"):
-            return Resolution(
-                MET,
-                "holds an active clearance",
-                _fact_support("security_clearance.level", sc.level),
-            )
-        return Resolution(UNKNOWN, "preference; no decidable comparison")
+        # Decided from the SAME declared state the levelled rules read. A preference is not
+        # undecidable: a profile that declares `state: none` has answered "do you hold a
+        # clearance?", and the keystone reserves ABSTAIN for a field that is missing or
+        # unresolvable -- not for a resolved field whose answer happens to be `no`. The old
+        # unconditional abstain made this rule 100%-abstain for every user who holds nothing,
+        # which is a monitoring failure, not conservatism: it is dead weight in the abstain
+        # report that hides the rules which genuinely cannot resolve.
+        #
+        # The row cannot veto under ANY policy, including an all-`blocker` one: the catalog
+        # fixes this pattern at `requiredness: preferred`, and engine.evaluate's `blocking()`
+        # counts only `required` rows. So the disposition is evidence, never a gate.
+        if sc is None or sc.state is None:
+            return Resolution(UNKNOWN, "missing_profile_field:security_clearance.state")
+        support = _fact_support("security_clearance.level", sc.level)
+        if sc.state in ("active", "current"):
+            return Resolution(MET, "holds an active clearance", support)
+        if sc.state == "none":
+            return Resolution(UNMET, "holds no clearance", support)
+        return Resolution(UNKNOWN, f"clearance state is {sc.state!r}")
     if sc is None:
         return Resolution(UNKNOWN, "no clearance declared")
     support = _fact_support("security_clearance.level", sc.level)

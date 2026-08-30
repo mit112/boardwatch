@@ -560,6 +560,55 @@ def test_an_access_only_requirement_is_decidable(catalog) -> None:
     assert _one(catalog, body, without, "polygraph_required") == "unknown"
 
 
+_PREFERRED = "A security clearance is preferred."
+
+
+@pytest.mark.parametrize(("state", "level", "expected"),
+                         [("active", "secret", "met"), ("current", "secret", "met"),
+                          ("none", "none", "unmet"),
+                          ("expired", "secret", "unknown"), ("interim", "secret", "unknown"),
+                          ("unspecified", "secret", "unknown")])
+def test_a_preferred_clearance_resolves_on_the_declared_state(
+    catalog, state: str, level: str, expected: str
+) -> None:
+    """A preference is DECIDABLE from the same declared state the levelled rules read: a
+    profile that says `state: none` has answered "do you hold a clearance?", so `unmet` is a
+    resolution, not a guess. This rule used to abstain on every state but `active`/`current`,
+    which pinned it at 100% abstain for every user who holds nothing — the keystone calls
+    that a monitoring failure, because the abstain report exists to surface rules that CANNOT
+    resolve and a rule that merely declines to is noise hiding them."""
+    facts = _clearance(scheme="us_dod", level=level, state=state)
+    assert _one(catalog, _PREFERRED, facts, "clearance_preferred") == expected
+
+
+@pytest.mark.parametrize("facts", [Facts(),
+                                   Facts(security_clearance=ClearanceFact(scheme="us_dod",
+                                                                          level="secret"))])
+def test_a_preferred_clearance_abstains_by_field_name_when_the_state_is_undeclared(
+    catalog, facts: Facts
+) -> None:
+    """The keystone abstain, in its declared form. A user who carries no clearance facts at
+    all — which is every user until they answer the question — must abstain, and the
+    rationale must NAME the field so the abstain report can attribute it rather than report
+    an unattributable "no decidable comparison"."""
+    dets = [d for d in detect(_PREFERRED, catalog, enabled_families=ALL)
+            if d.pattern.id == "clearance_preferred"]
+    resolution = resolve(dets[0], facts, catalog.family("clearance"))
+    assert resolution.disposition == "unknown"
+    assert resolution.rationale == "missing_profile_field:security_clearance.state"
+
+
+def test_a_resolved_clearance_preference_cites_the_field_it_read(catalog) -> None:
+    """"No flags" != cleared: a row that resolves carries the profile field it resolved
+    against. The old unconditional abstain returned an EMPTY support chain, so the one row
+    this rule ever produced pointed at nothing."""
+    facts = _clearance(scheme="unspecified", level="none", state="none")
+    dets = [d for d in detect(_PREFERRED, catalog, enabled_families=ALL)
+            if d.pattern.id == "clearance_preferred"]
+    support = resolve(dets[0], facts, catalog.family("clearance")).support
+    assert [s.profile_locator["field"] for s in support] == ["facts.security_clearance.level"]
+
+
 _OBTAIN = "Must be able to obtain a security clearance."
 
 
