@@ -15,6 +15,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
 import { StatusBand } from "../components/StatusBand";
+import type { QueueFacet } from "../components/StatusBand";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ToastRequest } from "../hooks/useToasts";
 import { matchesQuery, sortRows } from "../lib/sort";
@@ -52,6 +53,14 @@ export function QueuePage({
 
   const [query, setQuery] = useState("");
   const [minScore, setMinScore] = useState("");
+  /*
+   * The verdict facet from the status band, shared across BOTH lanes exactly like `query` and
+   * `minScore` — it expresses "what am I looking for", which spans the apply queue and the review
+   * list. `null` is "all". Applied AFTER `filtered`/`filteredReview` below, never inside them, so
+   * the band's own counts stay put and the reader can switch straight from one facet to another
+   * instead of the cell they need to click dropping to zero.
+   */
+  const [facet, setFacet] = useState<QueueFacet | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "rank", direction: "asc" });
   /*
    * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
@@ -236,7 +245,10 @@ export function QueuePage({
     });
   }, [data, removed, query, minScore]);
 
-  const visible = useMemo(() => sortRows(filtered, sort, rankOf), [filtered, sort, rankOf]);
+  const visible = useMemo(() => {
+    const base = facet === null ? filtered : filtered.filter((row) => row.verdict === facet);
+    return sortRows(base, sort, rankOf);
+  }, [filtered, facet, sort, rankOf]);
 
   /*
    * The toolbar's search and score floor apply to BOTH lanes. A filter that silently skipped the
@@ -255,10 +267,14 @@ export function QueuePage({
     });
   }, [data, removed, query, minScore]);
 
-  const visibleReview = useMemo(
-    () => sortRows(filteredReview, reviewSort, reviewRankOf),
-    [filteredReview, reviewSort, reviewRankOf],
-  );
+  const visibleReview = useMemo(() => {
+    // The facet reaches the review lane too: a review lead can be `eligible` — held only for its
+    // location — so filtering "eligible" while skipping this list is the documented "make the
+    // review list look empty for a matching filter" failure.
+    const base =
+      facet === null ? filteredReview : filteredReview.filter((row) => row.verdict === facet);
+    return sortRows(base, reviewSort, reviewRankOf);
+  }, [filteredReview, facet, reviewSort, reviewRankOf]);
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -432,6 +448,18 @@ export function QueuePage({
     setReviewSort((current) => nextSort(current, key));
   }, []);
 
+  // Clicking the active facet's band cell again clears it — one control, both directions.
+  const toggleFacet = useCallback((next: QueueFacet) => {
+    setFacet((current) => (current === next ? null : next));
+  }, []);
+
+  // The empty grid must name the lever that emptied it. With a facet on, the two default
+  // sentences point at the text box and the score floor — neither of which is what is filtering.
+  const emptyHint =
+    facet === null
+      ? "Clear the text box or lower the minimum score."
+      : `Clear the text box, lower the minimum score, or turn off the ${facet}-only filter.`;
+
   if (loadError !== null) {
     /*
      * `role="alert"`, and a second line that says what to DO. This state renders as the whole page
@@ -463,13 +491,36 @@ export function QueuePage({
       {/* Grouped, and carrying its own `gap-4` so the spacing is unchanged, only so that the band,
           the toolbar and the refresh line take ONE `inert` while the sheet covers them. */}
       <div className="flex flex-col gap-4" inert={sheetOpen}>
-        <StatusBand counts={bandCounts} showing={visible.length} total={data.rows.length} />
+        <StatusBand
+          counts={bandCounts}
+          showing={visible.length}
+          total={data.rows.length}
+          activeFacet={facet}
+          onToggleFacet={toggleFacet}
+        />
         <QueueToolbar
           query={query}
           onQuery={setQuery}
           minScore={minScore}
           onMinScore={setMinScore}
         />
+
+        {/* The active facet stated in words next to a plain clear, so it is obvious a filter is on
+            and how to drop it — the pressed band cell shows which, this shows that. */}
+        {facet !== null ? (
+          <p className="flex items-center gap-3 text-sm text-fg-2">
+            <span>Showing {facet} only.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setFacet(null);
+              }}
+              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+            >
+              Show all
+            </button>
+          </p>
+        ) : null}
 
         {newCount > 0 && stashed !== null ? (
           <p className="flex items-center gap-3 text-sm text-fg-2">
@@ -521,6 +572,7 @@ export function QueuePage({
               rankOf={rankOf}
               sort={sort}
               onSort={onSort}
+              emptyHint={emptyHint}
               selectedId={selected}
               activeId={activeId}
               onActivate={setActiveId}

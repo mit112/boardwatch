@@ -1,6 +1,16 @@
 import type { QueueCounts } from "../api/types";
 import { EM_DASH, formatTimestamp } from "../lib/format";
 
+/**
+ * The band cells a reader can click to see only that bucket. Both are VERDICTS, so a facet filters
+ * the apply lane AND the review lane, exactly as the text search and score floor do — a review-lane
+ * lead can be `eligible` (held only for its location), and dropping it would be the documented
+ * "make the review list look empty for a matching filter" failure. `ineligible` is deliberately not
+ * here: it is drained, never listed, so nothing could be shown. `review` is a LANE, not a verdict,
+ * and would need different behaviour — left static for now.
+ */
+export type QueueFacet = "eligible" | "uncertain";
+
 /*
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones
  * beside it.
@@ -20,6 +30,8 @@ function Metric({
   note,
   emphasis = false,
   order = 0,
+  active,
+  onToggle,
 }: {
   label: string;
   value: string;
@@ -28,23 +40,58 @@ function Metric({
   /* Drives the entry stagger and nothing else. Hand-written rather than a `map` index, because
      each cell below carries its own `note` and is therefore written out one by one. */
   order?: number;
+  /* When `onToggle` is set the whole cell becomes a filter toggle and `active` is its pressed
+     state; left undefined the cell is a plain readout, byte-for-byte as before. */
+  active?: boolean;
+  onToggle?: () => void;
 }) {
-  return (
-    <div
-      className="enter-up flex min-w-28 flex-col gap-2 px-6 py-5"
-      style={{ "--stagger": `${String(order * 40)}ms` } as React.CSSProperties}
-    >
-      <span className="label-micro text-fg-3">{label}</span>
+  const shell = "enter-up flex min-w-28 flex-col gap-2 px-6 py-5";
+  const stagger = { "--stagger": `${String(order * 40)}ms` } as React.CSSProperties;
+  const body = (
+    <>
+      <span className={`label-micro ${active ? "text-fg-2" : "text-fg-3"}`}>{label}</span>
       {/* The emphasis jump is deliberately large — 2.25rem against 1.25rem. `in queue` and
           `eligible` are the two figures the owner opens the page to read; the rest of the row is
           context for them, and a band where every cell shouts equally has no headline at all. */}
       <span
-        className={`font-display tabular-nums ${emphasis ? "text-4xl leading-none text-fg" : "text-xl leading-none text-fg-2"}`}
+        className={`font-display tabular-nums ${emphasis ? "text-4xl leading-none" : "text-xl leading-none"} ${active || emphasis ? "text-fg" : "text-fg-2"}`}
         {...(note ? { title: note } : {})}
       >
         {value}
       </span>
-    </div>
+    </>
+  );
+
+  if (onToggle === undefined) {
+    return (
+      <div className={shell} style={stagger}>
+        {body}
+      </div>
+    );
+  }
+
+  /*
+   * A real `<button>`, so role, keyboard operation and the global focus ring come for free, and
+   * `aria-pressed` carries the on/off state. The pressed treatment is the app's own active idiom
+   * (see `NavTab`): a fill plus an inset accent bar plus brighter text — three channels, never
+   * colour alone (SC 1.4.1). The `aria-label` STARTS with the visible label and value so Label in
+   * Name holds (SC 2.5.3), then names the action, which `aria-pressed` alone never conveys.
+   */
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={`${label} ${value} — ${active ? "showing only these, activate to clear" : "show only these"}`}
+      onClick={onToggle}
+      className={`${shell} cursor-pointer text-left transition-colors duration-[120ms] ease-snap ${
+        active
+          ? "bg-surface-3 shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+          : "hover:bg-surface-2"
+      }`}
+      style={stagger}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -52,10 +99,14 @@ export function StatusBand({
   counts,
   showing,
   total,
+  activeFacet,
+  onToggleFacet,
 }: {
   counts: QueueCounts;
   showing: number;
   total: number;
+  activeFacet: QueueFacet | null;
+  onToggleFacet: (facet: QueueFacet) => void;
 }) {
   return (
     <section
@@ -67,14 +118,22 @@ export function StatusBand({
         label="eligible"
         value={counts.eligible.toLocaleString()}
         emphasis
-        note="Affirmatively eligible. Never includes uncertain."
+        note="Affirmatively eligible. Never includes uncertain. Click to show only these."
         order={1}
+        active={activeFacet === "eligible"}
+        onToggle={() => {
+          onToggleFacet("eligible");
+        }}
       />
       <Metric
         label="uncertain"
         value={counts.uncertain.toLocaleString()}
-        note="Its own bucket: not yet known, and never added into eligible."
+        note="Its own bucket: not yet known, and never added into eligible. Click to show only these."
         order={2}
+        active={activeFacet === "uncertain"}
+        onToggle={() => {
+          onToggleFacet("uncertain");
+        }}
       />
       <Metric
         label="review"

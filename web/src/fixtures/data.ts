@@ -354,6 +354,33 @@ const AUTHORED: QueueRow[] = [
     off_target_reason: null,
     review_reason: "non_us_location",
   },
+  {
+    posting_id: 41615,
+    job_id: 30990,
+    title: "Software Engineer, Developer Platform",
+    company: "Shopify",
+    location: "Toronto, Ontario, Canada",
+    remote_policy: "remote",
+    posted_days: 6,
+    first_seen: "2026-08-23T11:40:00Z",
+    status: "open",
+    // ELIGIBLE, and still in the review lane: the verdict is affirmative and the location alone
+    // holds it. This is the case a verdict facet must NOT drop from the review list — filtering
+    // "eligible" has to reach both lanes, or a real appliable-abroad lead vanishes silently.
+    verdict: "eligible",
+    apply_url: "https://www.shopify.com/careers/41615",
+    delivered_run_id: 114,
+    tex_uri: "file://~/boardwatch-applications/2026-08-23/tailored-41615.tex",
+    pdf_uri: "file://~/boardwatch-applications/2026-08-23/tailored-41615.pdf",
+    target_flag: null,
+    thin_jd: false,
+    off_target: false,
+    pdf_available: true,
+    score: 74.1,
+    coverage: 0.63,
+    off_target_reason: null,
+    review_reason: "non_us_location",
+  },
 ];
 
 const COMPANIES = [
