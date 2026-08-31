@@ -752,6 +752,56 @@ def test_a_review_lead_is_listed_not_dropped_and_the_band_reconciles(
     assert counts["in_queue"] == 1
 
 
+def test_a_closed_lead_leaves_both_lists_and_is_counted_as_closed_not_ineligible(
+    live: Live, engine: Engine
+) -> None:
+    """The page has to mirror the folder tree, and the mirror is where it silently breaks.
+
+    A closed lead drains to `_closed` on disk. If the page keeps deriving `ineligible` as "the
+    delivered set minus what is listed", the same lead is reported as ineligible here while
+    sitting in `_closed` there — a page and a folder tree disagreeing about one lead, which is
+    the single failure `queue_payload` is arranged against.
+
+    `counts["ineligible"] == 0` is the assertion that carries the test. Without it every arm
+    below still passes when the closed lead is miscounted, because it is absent from both lists
+    either way — absence is exactly what the two remainders have in common.
+    """
+    with engine.begin() as conn:
+        live_lead, _ = _deliver(conn, "live", title="Software Engineer")
+        dead_lead, _ = _deliver(conn, "dead", title="Software Engineer")
+        conn.execute(
+            update(postings).where(postings.c.id == dead_lead).values(status="closed")
+        )
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    counts = payload["counts"]
+    listed = {row["posting_id"] for row in payload["rows"]} | {
+        row["posting_id"] for row in payload["review"]
+    }
+    assert listed == {live_lead}, "the closed lead is still being listed as work"
+    assert counts["closed"] == 1
+    assert counts["ineligible"] == 0, "a closed lead was counted as an eligibility rejection"
+    assert counts["review"] == 0
+    assert counts["in_queue"] == 1
+
+
+def test_an_unverifiable_lead_is_never_counted_as_closed(live: Live, engine: Engine) -> None:
+    """The fail-open direction, on the wire.
+
+    `unverifiable` means open on a board nothing enumerates (D-324). It is one `status` value
+    away from `closed` and a drain keyed on `!= "open"` would sweep it, so the page is asserted
+    to keep it as listed work — the arm that the closed-lead test above cannot see.
+    """
+    with engine.begin() as conn:
+        unverifiable, _ = _deliver(conn, "unwatched", title="Software Engineer", watched=False)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    rows = {row["posting_id"]: row for row in payload["rows"]}
+    assert rows[unverifiable]["status"] == "unverifiable", "premise: the label must be reached"
+    assert payload["counts"]["closed"] == 0
+    assert payload["counts"]["in_queue"] == 1
+
+
 def test_coverage_is_a_live_fraction_and_thin_jd_is_derived_from_it(
     live: Live, engine: Engine
 ) -> None:

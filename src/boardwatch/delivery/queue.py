@@ -67,10 +67,11 @@ from sqlalchemy import Connection, select
 
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
-from boardwatch.delivery.review_gate import REVIEW_DIR, lane
+from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, lane
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     QueueRow,
+    closed_job_ids,
     delivered_unapplied,
     ineligible_job_ids,
     queue_detail,
@@ -196,6 +197,7 @@ class ReconcileReport:
     to_skipped: int = 0
     to_ineligible: int = 0
     to_review: int = 0
+    to_closed: int = 0
     to_queue: int = 0
     unclassified: tuple[str, ...] = ()
     failures: tuple[FolderFailure, ...] = ()
@@ -212,6 +214,7 @@ class ReconcileReport:
             + self.to_skipped
             + self.to_ineligible
             + self.to_review
+            + self.to_closed
             + self.to_queue
         )
 
@@ -388,6 +391,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             title=row.title,
             experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
             eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+            posting_closed=row.closed,
         )
         for row in rows
     }
@@ -714,14 +718,27 @@ def _clear_staging(root: Path) -> None:
 def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     applied = applied_job_ids(conn)
     skipped = skipped_job_ids(conn)
+    closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
     entries, unclassified = _index(root)
-    counts = {APPLIED_DIR: 0, SKIPPED_DIR: 0, INELIGIBLE_DIR: 0, REVIEW_DIR: 0, "": 0}
+    counts = {
+        APPLIED_DIR: 0,
+        SKIPPED_DIR: 0,
+        INELIGIBLE_DIR: 0,
+        REVIEW_DIR: 0,
+        CLOSED_DIR: 0,
+        "": 0,
+    }
     failures: list[FolderFailure] = []
     for entry in sorted(entries.values(), key=lambda item: item.posting_id):
         wanted = _wanted_location(
-            entry, applied=applied, skipped=skipped, ineligible=ineligible, review=review
+            entry,
+            applied=applied,
+            skipped=skipped,
+            closed=closed,
+            ineligible=ineligible,
+            review=review,
         )
         if wanted == entry.location:
             continue
@@ -746,6 +763,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
         to_skipped=counts[SKIPPED_DIR],
         to_ineligible=counts[INELIGIBLE_DIR],
         to_review=counts[REVIEW_DIR],
+        to_closed=counts[CLOSED_DIR],
         to_queue=counts[""],
         unclassified=unclassified,
         failures=tuple(failures),
@@ -757,6 +775,7 @@ def _wanted_location(
     *,
     applied: dict[int, str],
     skipped: dict[int, str],
+    closed: set[int],
     ineligible: dict[int, str],
     review: set[int],
 ) -> str:
@@ -768,11 +787,20 @@ def _wanted_location(
     because a rule tightened, and a lead they chose to skip keeps that record. `review` ranks
     below `ineligible` — a lead that is both is ineligible, not merely unverified — and above the
     apply queue, so an unverified `uncertain` lead is held for a look rather than blind-applied.
+
+    `closed` sits between the owner statements and the derived verdicts, and both boundaries are
+    deliberate. It ranks BELOW them because an application the owner already sent is a fact about
+    what they did and does not stop being true when the requisition comes down. It ranks ABOVE
+    them because a closed posting cannot be applied to whatever the gate decided: filing it under
+    `_ineligible` would claim a verdict the gate never reached, and filing it under `_review`
+    would ask the owner to read a job that no longer exists.
     """
     if entry.job_id in applied:
         return APPLIED_DIR
     if entry.job_id in skipped:
         return SKIPPED_DIR
+    if entry.job_id in closed:
+        return CLOSED_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
     if entry.job_id in review:
@@ -894,6 +922,7 @@ def _detail(exc: BaseException) -> str:
 
 __all__ = [
     "APPLIED_DIR",
+    "CLOSED_DIR",
     "DEFAULT_QUEUE_ROOT",
     "DETAILS_FILE",
     "INELIGIBLE_DIR",

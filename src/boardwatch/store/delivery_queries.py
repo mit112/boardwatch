@@ -79,6 +79,11 @@ REMOTE_POLICY_UNKNOWN = "unknown"
 #: extraction queue and the eligibility queue, which is far worse than a wrong label (D-324).
 STATUS_UNVERIFIABLE = "unverifiable"
 
+#: The stored status that means the posting is gone. Named so the delivery drain compares against
+#: THIS rather than `!= "open"`, which would sweep `STATUS_UNVERIFIABLE` — a posting that is open
+#: and merely unenumerable — into a drain reserved for dead ones.
+STATUS_CLOSED = "closed"
+
 #: The one `companies.tags_json` entry this module reads. Nothing in `src/` writes that column
 #: today, so `target_flag` is `None` for every company on the live store; it is tri-state so that
 #: "this company carries no tags at all" can never render as "this company is not a target".
@@ -111,6 +116,17 @@ class QueueRow:
     #: requirement a newer verdict beside it had already resolved. Defaulted so a row built
     #: without it — every test fixture that predates the lane gates — behaves as before.
     requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS
+
+    @property
+    def closed(self) -> bool:
+        """Whether the posting is gone, as the delivery drain asks it.
+
+        A named predicate rather than a comparison repeated at each call site, so the one thing
+        that must never drift — that `STATUS_UNVERIFIABLE` is NOT closed — is stated once. An
+        unverifiable posting is open on a board nothing currently enumerates (D-324); draining it
+        as dead would bury live work for a fault that is entirely ours.
+        """
+        return self.status == STATUS_CLOSED
 
 
 @dataclass(frozen=True)
@@ -278,6 +294,20 @@ def ineligible_job_ids(conn: Connection) -> dict[int, str]:
     }
 
 
+def closed_job_ids(conn: Connection) -> set[int]:
+    """`job_id` for every delivered lead whose posting the store now reports closed.
+
+    Derived from `delivered_unapplied` for the same reason `ineligible_job_ids` is: the drain on
+    disk and the page cannot then disagree about the same lead. `skipped=set()` is deliberate too,
+    so the applied/skipped precedence stays in `_wanted_location` — an owner who already applied
+    keeps that record even after the requisition comes down.
+
+    This drain self-heals in both directions with no extra machinery: the set is recomputed every
+    reconcile, so a posting the liveness check reopens is drawn straight back out of `_closed`.
+    """
+    return {row.job_id for row in delivered_unapplied(conn, skipped=set()) if row.closed}
+
+
 def review_job_ids(conn: Connection) -> set[int]:
     """`job_id` for every delivered lead the verified-uncertain check routes to the review lane.
 
@@ -289,6 +319,12 @@ def review_job_ids(conn: Connection) -> set[int]:
     disk and the page cannot then disagree about a classification. `ineligible` is excluded here —
     it has its own drain — and `skipped=set()` is deliberate, so the applied/skipped precedence
     lives in `_wanted_location`, not here.
+
+    `posting_closed` is passed so this set means what its name says. A closed lead is NOT routed to
+    review, so including it would make the function state something false about that lead. No test
+    can currently observe the difference — `_wanted_location` ranks `closed` above `review`, so the
+    wrong answer is masked downstream — and that mask is precisely why the honesty has to live
+    here: the day the precedence changes, this function must already be right.
     """
     from boardwatch.delivery.review_gate import REVIEW_DIR, lane
 
@@ -302,6 +338,7 @@ def review_job_ids(conn: Connection) -> set[int]:
             title=row.title,
             experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
             eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+            posting_closed=row.closed,
         )
         == REVIEW_DIR
     }
@@ -414,11 +451,13 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
 
 __all__ = [
     "REMOTE_POLICY_UNKNOWN",
+    "STATUS_CLOSED",
     "STATUS_UNVERIFIABLE",
     "TARGET_TAG",
     "QueueDetail",
     "QueueRow",
     "RequirementView",
+    "closed_job_ids",
     "delivered_unapplied",
     "ineligible_job_ids",
     "queue_detail",

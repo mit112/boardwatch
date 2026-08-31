@@ -210,8 +210,14 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # not list it either, or the folder tree and the page disagree about the same lead. It is
     # COUNTED though — see `_counts`. Silently dropping rows from a report is the failure this
     # repository treats an unreported abstain as.
-    kept = [row for row in every if row.verdict != "ineligible"]
-    drained = len(every) - len(kept)
+    # Closed is taken out FIRST, matching `_wanted_location`'s precedence exactly: a lead that
+    # is both closed and ineligible drains to `_closed` on disk, so counting it as ineligible here
+    # would make the page and the folder tree disagree about the same lead — the one failure this
+    # module's whole design is arranged against. `row.closed` is `status == "closed"` and never
+    # `!= "open"`, so an `unverifiable` posting stays listed as the live work it is.
+    closed_rows = [row for row in every if row.closed]
+    kept = [row for row in every if not row.closed and row.verdict != "ineligible"]
+    drained = len(every) - len(kept) - len(closed_rows)
     facts = _live_facts(conn, ctx, kept)
 
     def rank_key(row: QueueRow) -> tuple[bool, float]:
@@ -221,6 +227,13 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # `review_gate.lane` rather than re-deriving "is this appliable" here is the whole point: a
     # second opinion in this module is how the page and the drain start disagreeing about one
     # lead, which is the defect `_ineligible` and `_review` both exist to prevent.
+    #
+    # `posting_closed` is redundant in both calls below and is passed anyway: `kept` already
+    # excludes every closed row, so the flag is provably False here and no test can observe its
+    # removal. It keeps the call shape byte-identical to `queue.py`'s and `review_job_ids`', which
+    # is what makes "the same function, called the same way" checkable by reading rather than by
+    # trusting. If `kept` ever stops excluding closed rows, this is what stops them landing in the
+    # blind-apply list.
     apply_rows = sorted(
         (
             r
@@ -231,6 +244,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
                 title=r.title,
                 experience_unconfirmed=r.requirement_flags.experience_unconfirmed,
                 eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
+                posting_closed=r.closed,
             )
             == ""
         ),
@@ -246,6 +260,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
                 title=r.title,
                 experience_unconfirmed=r.requirement_flags.experience_unconfirmed,
                 eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
+                posting_closed=r.closed,
             )
             != ""
         ),
@@ -259,7 +274,13 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         # this: it is `not_swe` ONLY, never `uncertain` (see this module's docstring), so most
         # review leads carry no flag at all and were previously indistinguishable on the page.
         "review": [_row_json(row, facts[row.posting_id], ctx) for row in review_rows],
-        "counts": _counts(conn, apply_rows, ineligible=drained, review=len(review_rows)),
+        "counts": _counts(
+            conn,
+            apply_rows,
+            ineligible=drained,
+            review=len(review_rows),
+            closed=len(closed_rows),
+        ),
         # A capability flag, not a preference: the button is hidden where the platform has no
         # file-manager handler, because a control that can only fail is worse than no control.
         "meta": {"reveal_supported": reveal_supported(ctx.platform)},
@@ -398,7 +419,12 @@ def _coverage_entry(term: str, *, covered: bool) -> dict[str, Any]:
 
 
 def _counts(
-    conn: Connection, rows: Sequence[QueueRow], *, ineligible: int = 0, review: int = 0
+    conn: Connection,
+    rows: Sequence[QueueRow],
+    *,
+    ineligible: int = 0,
+    review: int = 0,
+    closed: int = 0,
 ) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
 
@@ -426,6 +452,11 @@ def _counts(
         # `ineligible` has one: `in_queue` counts the apply lane, so without this the difference
         # between the apply lane and the delivered set is an unexplained remainder.
         "review": review,
+        # Its own cell for the third time, and for the same reason: `in_queue` counts the apply
+        # lane, which excludes these, so without a cell of their own the closed leads are an
+        # unexplained remainder between the apply lane and the delivered set. They are also not
+        # `ineligible` — nothing judged them, the employer took the requisition down.
+        "closed": closed,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
         "delivered_last_run": (

@@ -36,7 +36,7 @@ DESTINATION_BYTE_CAP = 240
 #: -- `_ineligible` is 11 bytes against the others' 8, and while it was listed only in
 #: `queue.py` every planned name was under-priced by 3 bytes, so `NameBudgetError` accepted
 #: names whose drained destination it had promised to refuse.
-DRAIN_DIRS: tuple[str, ...] = ("_applied", "_skipped", "_ineligible", "_review")
+DRAIN_DIRS: tuple[str, ...] = ("_applied", "_skipped", "_ineligible", "_review", "_closed")
 
 PDF_SUFFIX = ".pdf"
 
