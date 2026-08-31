@@ -1,6 +1,6 @@
 """The eligibility catalog: the SOLE source of family identity, questions, answer types,
-choices, ranks, implies vocabularies, exclusive groups, superset relations, negation cues
-and patterns (D-P2-4).
+choices, ranks, implies vocabularies, exclusive groups, refinement groups, superset relations,
+negation cues and patterns (D-P2-4).
 
 Nothing here is a source collection literal, because R9 flags any non-empty string
 collection at a declaration position in a scoped module and has NO allowlist. A registry
@@ -130,6 +130,7 @@ class FamilySpec:
     fields: tuple[FieldSpec, ...]
     implies_vocabulary: frozenset[str]
     exclusive_groups: tuple[frozenset[str], ...]
+    refinement_groups: tuple[frozenset[str], ...]
     patterns: tuple[PatternSpec, ...]
     superset_relations: tuple[dict[str, str], ...]
     tier: str
@@ -404,6 +405,19 @@ def _family(
         raise CatalogError(f"{where} must declare a non-empty 'implies_vocabulary'")
     declared = frozenset(str(value) for value in vocabulary)
     groups = _groups(raw.get("exclusive_groups"), where, declared)
+    refinement_groups = _groups(
+        raw.get("refinement_groups"), where, declared,
+        key="refinement_groups", label="refinement group",
+    )
+    shared_group_members = frozenset(
+        member for group in groups for member in group
+    ) & frozenset(member for group in refinement_groups for member in group)
+    if shared_group_members:
+        member = min(shared_group_members)
+        raise CatalogError(
+            f"{where}: {member!r} appears in both exclusive and refinement groups, which "
+            "would make the conflict rewrite order-dependent"
+        )
 
     raw_patterns = raw.get("patterns")
     if not isinstance(raw_patterns, list) or not raw_patterns:
@@ -429,7 +443,8 @@ def _family(
     return FamilySpec(
         id=family_id, label=label, fact=fact, answer_type=answer_type,
         default_policy=default_policy, question=question, fields=fields,
-        implies_vocabulary=declared, exclusive_groups=groups, patterns=tuple(patterns),
+        implies_vocabulary=declared, exclusive_groups=groups,
+        refinement_groups=refinement_groups, patterns=tuple(patterns),
         superset_relations=tuple(relations),
         tier=tier, applies_to=applies_to,
         near_miss_years_ceiling=near_miss_years_ceiling,

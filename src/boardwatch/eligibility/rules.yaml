@@ -114,9 +114,9 @@ families:
       # an abstain no fact could ever resolve. With the group gone the roll-up decides both
       # directions directly. Corpus-verified at 0 mismatches over all 1034 cases.
       #
-      # `experience_years` keeps its group deliberately: those three are PARALLEL BARS, where
-      # clearing a total bar while missing a skill-scoped one is genuinely ambiguous rather
-      # than a refinement. `clearance` keeps its group deliberately too -- clearable_required
+      # `experience_years` has a refinement group deliberately: those three are PARALLEL BARS,
+      # where clearing a total bar while missing a skill-scoped one is genuinely ambiguous
+      # rather than a refinement. `clearance` keeps its group deliberately too -- clearable_required
       # is a DISJUNCTION ("hold one, or be able to obtain one"), an escape hatch rather than a
       # weaker rung, which is why seven corpus cases assert that pair abstains.
       - [sponsorship_unavailable, sponsorship_available]
@@ -458,10 +458,12 @@ families:
       - activity_years_minimum
       - total_years_preferred
       - range_years_preferred
-    # All three in ONE group: if the total, range and scoped patterns ever overlap on the
-    # same text, the group conflicts and the family abstains instead of guessing. The
-    # regexes are tuned so the common forms fire exactly once; the group is the safety net.
-    exclusive_groups:
+    # These are PARALLEL BARS, not competing claims: a total-years floor beside a Python-years
+    # floor declares both requirements. Keep both rows for the roll-up when they agree. Only a
+    # profile that clears one member and misses another makes their relationship undecidable,
+    # so the refinement group abstains on that MET/UNMET straddle. The regexes are tuned so the
+    # common forms fire exactly once; this is the safety net for their genuine disagreement.
+    refinement_groups:
       - [total_years_minimum, range_years_minimum, scoped_years_minimum]
     patterns:
       # All three required patterns are SENTENCE-scoped, not clause-scoped, and their
@@ -531,7 +533,7 @@ families:
         abstain_by: [*degree_alternative_to_years]
       # The subject suppressor goes on ALL THREE, not just total_years_minimum. Left off
       # here, scoped_years_minimum fires on the company-side sentence on its own and the
-      # exclusive group these three share rewrites the genuine row to unknown anyway.
+      # refinement group these three share can rewrite the genuine row to unknown on a straddle.
       - id: scoped_years_minimum
         requiredness: required
         implies: scoped_years_minimum
@@ -548,14 +550,17 @@ families:
       # the source: aggregator summaries phrase a floor this way, and hiring.cafe is one of
       # boardwatch's own lanes, so the miss lands on a population it actively ingests.
       #
-      # Its own vocabulary value, and deliberately OUTSIDE the exclusive group. It resolves
+      # Its own vocabulary value, and deliberately OUTSIDE the refinement group. It resolves
       # exactly as scoped_years_minimum does -- only in the direction the total forces (D-319) --
-      # but it must not share that value: `engine.evaluate` collects group presence
-      # DOCUMENT-wide, not per sentence, so a scoped row here would conflict with a
-      # `total_years_minimum` row in an unrelated sentence and rewrite BOTH to unknown.
-      # Measured: as `scoped_years_minimum` this destroyed Disney's genuine "A minimum of 3
-      # years of relevant experience" block, because a different line read "3 year of
-      # developing cloud native applications".
+      # but it must not share that value: `engine.evaluate` collects group membership
+      # DOCUMENT-wide, not per sentence, so a scoped row here would join the refinement group's
+      # straddle test against a `total_years_minimum` row in an unrelated sentence.
+      # Measured, and it still bears under refinement semantics: as `scoped_years_minimum` this
+      # destroyed Disney's genuine "A minimum of 3 years of relevant experience" block, because
+      # a different line read "3 year of developing cloud native applications". The group no
+      # longer dissolves on mere co-occurrence, but a profile that CLEARS one of those lines
+      # and MISSES the other still straddles them, so keeping this value out of the group is
+      # what stops an unrelated sentence from reaching the genuine row at all.
       #
       # `(?<!to\s)` is load-bearing: "Up to 3 years building web applications" bounds the
       # candidate from ABOVE, and read as a floor it rejects the new-grad postings this tool
@@ -628,10 +633,9 @@ families:
       #    exists for the enumerated form, so the comma or the `and`/`or` is required rather
       #    than optional, which keeps it disjoint from the twin instead of a superset of it.
       #  * IT TAKES `activity_years_minimum`, NOT `scoped_years_minimum`, for the reason
-      #    spelled out at `scoped_years_activity`: group presence is collected DOCUMENT-wide,
-      #    so a scoped value here would conflict with a `total_years_minimum` row in an
-      #    unrelated sentence and rewrite BOTH to unknown -- turning a decided `ineligible`
-      #    into an abstain, which is the direction that puts a bad lead back in the queue.
+      #    spelled out at `scoped_years_activity`: group membership is collected
+      #    DOCUMENT-wide, so a scoped value here would join the refinement straddle test
+      #    against a `total_years_minimum` row in an unrelated sentence.
       - id: domain_list_years_minimum
         requiredness: required
         implies: activity_years_minimum
@@ -675,9 +679,9 @@ families:
       #    tool exists to find.
       #
       # It takes `activity_years_minimum`, NOT `scoped_years_minimum`, and the reason is the
-      # one written out at `scoped_years_activity`: group presence is collected DOCUMENT-wide,
-      # so a scoped value here would conflict with a `total_years_minimum` row in an unrelated
-      # sentence and rewrite BOTH to unknown.
+      # one written out at `scoped_years_activity`: group membership is collected
+      # DOCUMENT-wide, so a scoped value here would join the refinement straddle test against
+      # a `total_years_minimum` row in an unrelated sentence.
       - id: domain_years_minimum
         requiredness: required
         implies: activity_years_minimum
