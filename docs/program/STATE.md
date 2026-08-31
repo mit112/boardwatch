@@ -70,22 +70,28 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 
 ## Next action
 
-> **ONE PR IS GREEN AND WAITING ON A MERGE-TIMING CALL: #276 (D-380), the delivery-router narrowing.**
-> `make check` exit 0, `npm run lint` clean, **auto-merge deliberately DISARMED**. Mit ruled on the
-> gate LOGIC ("ship as built") after seeing the numbers; that was **not** a ruling on when to merge,
-> and the effect is large and retroactive:
+> **TWO PRs ARE GREEN AND HELD ON PURPOSE, to merge as ONE BATCH next session.** Mit's plan,
+> agreed at the close of the audit sprint: next session runs immediately after, he leaves right
+> after it, so it fixes the remaining findings, merges the batch, and does ONE ATTENDED RUN before
+> the fortnight. `auto-merge` is DISARMED on both — that is the plan, not an oversight.
 >
-> - **144 of 609 delivered leads move apply -> review — 23.6% of the queue. Apply lane 420 -> 276.**
-> - It re-lanes **already-delivered folders on the next run, with no explicit re-sync**: `queue.py`
->   recomputes the lane every delivery pass and `_index` scans `_review`.
-> - **All 144 are held by an ABSTAIN, none by a decided `unmet`**, and 213 of the 294 driving rows are
->   `experience_years:scoped_years_minimum` — in `STRUCTURALLY_UNDECIDABLE`, so those holds **cannot
->   clear on their own**. `_review` drains only by being read.
+> - **#276** delivery-router narrowing (D-380): moves **144 of 609** delivered leads to `_review`,
+>   **23.6% of the queue**, apply lane **420 -> 276** — and it is **RETROACTIVE and automatic**
+>   (`queue.py` recomputes the lane every pass; folders re-lane with no explicit re-sync).
+> - **#278** experience RANGE detection: a range could never reach a scoped tail, so 56 of 168
+>   years-jobs produced NO requirement row at all. Years jobs left in apply **56 -> 29**.
 >
-> So merging before the fortnight moves a third of the apply queue into a lane nobody will read for
-> two weeks. Merge with `gh pr merge 276 --squash`. Two rejected variants (40 movers / 0 movers) and
-> the full measurement are in the PR body and D-380.
+> They are **complementary** — #278 makes requirements visible, #276 acts on them. Merging one
+> without the other wastes most of the value.
 >
+> **The acceptance test is Mit's, in his words:** *"I don't want to see a job in the apply queue
+> where I can instantly spot something that makes it ineligible."* Measured tonight: **208 of 420
+> apply-lane folders (50%) trip something spottable** — 168 state 3+ years, 24 require US
+> citizenship, 18 mention clearance, 15 refuse sponsorship, 16 have an unclassifiable (often
+> plainly foreign) location. The full inventory, the ordered next-session task list, and the two
+> findings that must be DIAGNOSED before any pattern is written are in
+> **`.agent/2026-08-30-audit-sprint/HANDOFF.md`**.
+
 > **#275 (D-379) is MERGED** and live in the primary tree the 04:00 run executes: the work_auth
 > sponsorship leak is closed — `must be authorized to work in the US without sponsorship` no longer
 > reads as `eligible` for an EAD holder who needs sponsorship. 1,670 of 109,450 open postings carry
