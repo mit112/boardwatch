@@ -110,7 +110,7 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
         "contract_not_fte", "internship",
     ]
     assert len(catalog.negation_cues) == 26
-    assert sum(len(f.patterns) for f in catalog.families) == 45
+    assert sum(len(f.patterns) for f in catalog.families) == 47
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -149,7 +149,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # degree-gated disjunctive alternative makes the years bar abstain, not resolve unmet.
         "abstain_by": 9,
         "jurisdiction_map": 2,
-        "consumes_cues": 1,
+        "consumes_cues": 3,
     }
     # The doc-level idioms are stamped identically onto every pattern (prototype's
     # split-brain note: they ride on the pattern, not a module global).
