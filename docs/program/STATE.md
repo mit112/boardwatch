@@ -57,6 +57,13 @@ untouched. `_closed` is registered, derived into `_LOCATIONS`, created up front 
 scanned by `_index`, and does not move the byte budget. It does not exist on disk yet — correct,
 since nothing has run since the merge. Full check table in `METRICS.md`.
 
+**FIRST THING NEXT SESSION — verify run 135, the first execution of #284.** It was still pending
+at this close (tick 04:00 local, 2026-08-31). Confirm all three, because the queue alert keys on
+`queue_failed` ONLY and `moved` is printed but never thresholded, so a mis-fire is silent:
+`~/boardwatch-queue/_closed` now EXISTS; it holds ~70 folders; and the apply lane is ~151, not 203.
+If `_closed` is absent or empty while the apply lane is still 203, the drain did not fire and the
+run log is the only place that will say why.
+
 ### The seniority hold is 3 postings, not 5. It is dead, not deferred.
 
 Re-measured with the real gate and catalog against the lane that **survives** D-383's drain:

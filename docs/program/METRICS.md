@@ -9513,7 +9513,9 @@ split — only **18-41% of placeable delivered leads reach the blind-apply queue
   failure. Per D-376 a dead lane is pre-finalize and does **not** escalate, so the channel POSTed
   nothing — "expect silence on a normal day" now confirmed against real rows.
 
-**STATE is 203 lines**, up from 179 — over `CLAUDE.md`'s ~170 bar, under the file's own ~250 bar.
+**STATE is 214 lines**, up from 179 — over `CLAUDE.md`'s ~170 bar, under the file's own ~250 bar.
+(It grew again after the first count when D-385's owner rulings landed; the figure is re-measured
+here rather than left at the 203 written earlier in the session.)
 Two blocks were kept short deliberately (the #284 check table lives here, not there), and the
 `Delivery-drought` blocker row was CLOSED rather than deleted. The next session inherits the same
 lever the last one named, not a solved problem.
