@@ -403,10 +403,61 @@ def test_a_conflict_never_crosses_into_a_family_that_reuses_the_same_implies_nam
 
 
 def test_a_three_member_group_conflicts_on_any_two_distinct_values(catalog) -> None:
+    """The generic three-member property, now carried by `degree`.
+
+    It used to be asserted on work_auth's [citizenship_required, citizen_or_lpr_required,
+    authorization_required], which was REMOVED as a group on 2026-08-31: those three are a
+    strength ladder, not a mutual exclusion, so co-occurrence refines rather than conflicts
+    (see the two tests below). `degree` still declares a three-member group, so the mechanism
+    itself stays covered here rather than losing its only three-member case.
+    """
+    body = "A Bachelor's degree is required. A Bachelor's degree in Computer Science is required."
+    facts = Facts(highest_degree="bachelor")
+    result = evaluate(body, facts, BLOCK_ALL, catalog)
+    assert {r.rule_id for r in result.requirements} == {
+        "degree:bachelor_required", "degree:bachelor_in_field_required",
+    }
+    assert {r.disposition for r in result.requirements} == {"unknown"}
+
+
+def test_a_work_auth_refinement_decides_rather_than_dissolving(catalog) -> None:
+    """Citizenship REFINES authorization; it does not contradict it.
+
+    This is D-387's flagship document. While the three work_auth restriction values shared an
+    exclusive group, both rows were rewritten to `unknown` and the decisive `unmet` was thrown
+    away, so a non-citizen read `uncertain` on a posting that plainly excludes them. Removing
+    the group lets the roll-up's any-unmet-wins decide directly.
+
+    The assertion is on the ROWS as well as the verdict deliberately: `ineligible` alone would
+    also pass if both rows were `unmet` for the wrong reason, and the keystone requires the
+    evidence chain to name which rule decided against which profile field.
+    """
+    body = (
+        "Applicants must be authorized to work in the United States. "
+        "A natural-born U.S. citizen is required."
+    )
+    facts = Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us", needs_sponsorship=True))
+    result = evaluate(body, facts, BLOCK_ALL, catalog)
+    assert result.verdict == "ineligible"
+    assert {r.rule_id: r.disposition for r in result.requirements} == {
+        "work_auth:us_authorization_required": "met",
+        "work_auth:us_citizen_required": "unmet",
+    }
+
+
+def test_a_work_auth_refinement_a_citizen_satisfies_clears_both_arms(catalog) -> None:
+    """The other direction, and the reason removing the group is not simply harsher.
+
+    The same two-statement shape for someone who satisfies BOTH arms now clears both instead
+    of dissolving to `unknown`. Under the group this document was `uncertain` for a citizen —
+    an abstain that no fact could ever resolve.
+    """
     body = "Applicants must be US citizens. Must be authorized to work in the United States."
     facts = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction="us"))
     result = evaluate(body, facts, BLOCK_ALL, catalog)
-    assert {r.disposition for r in result.requirements} == {"unknown"}
+    assert result.verdict == "eligible"
+    assert {r.disposition for r in result.requirements} == {"met"}
 
 
 # ---------------------------------------------------------------- roll-up

@@ -60,6 +60,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A posting that states a work-authorisation requirement twice, the second time more strictly, is
+  no longer treated as contradicting itself.** "Applicants must be authorized to work in the United
+  States. A natural-born U.S. citizen is required." used to throw away BOTH requirements and report
+  that the posting says something contradictory — so a posting that plainly excludes a non-citizen
+  came back as "not sure", and a citizen, who satisfies both sentences, came back as "not sure" too:
+  an unresolvable answer that no fact about you could ever settle. The two sentences are not in
+  conflict. Being a citizen is a stricter version of being authorised, not the opposite of it, so
+  the second sentence narrows the first. Both are now read normally, which means the stricter one
+  decides and the looser one can no longer rescue it. Only this one grouping changed. A posting
+  cannot both offer and refuse visa sponsorship, so that pair still reports a contradiction; a
+  clearance you hold and a clearance you could obtain are genuine alternatives rather than degrees
+  of the same thing, so that pair still abstains; and two different experience bars are still
+  treated as possibly ambiguous rather than decided. Verified to leave all 1,034 recorded
+  eligibility cases with exactly the verdict and reasons they had before. (D-388)
+
 - **Two ways a posting could say "we will not sponsor a visa" and be read as saying nothing.** A
   refusal worded "we will never consider candidates who require visa sponsorship" was matched and
   then thrown away, because the rule that catches it had not declared "never" as a word it is
