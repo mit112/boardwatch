@@ -1123,8 +1123,8 @@ figure that has been counted twice; **~10.1% has been counted once, in a session
   today.
 - **~33 are unsupported-ATS and OUT OF SCOPE** — no new adapters (D-272).
 
-**Do not start this without re-reading `CLAUDE.md`'s "Breadth is last".** Adding input multiplies
-whatever is downstream of it, and the slate cap (D-345) has not yet been observed on a single run.
+**Note when starting this:** the slate cap (D-345) has not yet been observed firing on a single
+run, so its behaviour under a wider input set is unverified.
 
 ### The in-flight-run liveness probe (moved from STATE 2026-08-28e, verbatim — D-335/D-024)
 
@@ -1390,7 +1390,7 @@ genuinely for me"* — and D-352 above is the audit that answers it.
    `smartrecruiters` spend `detail_fetch_budget`, so the cheap batch carried none (D-367).
    **Batch 2 (the 24 cold boards) stays deferred** on the unchanged reason — hiring.cafe is still
    refusing us and those boards have never been timed cold. Not re-litigated.
-   **Read "Breadth is last" first — the slate cap is armed but has still not been observed FIRING.**
+   **Note: the slate cap is armed but has still not been observed FIRING.**
 
 ### D-361 disk half
 
@@ -1539,7 +1539,7 @@ cost more wall clock than the 20 Workday ones combined.
    which `Fetcher` serializes and `scan_workers` provably cannot help (D-346/D-347), so **4 boards
    cost more wall clock than the 20 Workday ones combined**. That SR figure is **DERIVED, not
    measured** — measuring it spends the cost the decision avoids. File:
-   `.agent/2026-08-28f-degree-audit/breadth-add.yaml`. **Read "Breadth is last" first.**
+   `.agent/2026-08-28f-degree-audit/breadth-add.yaml`.
 
 ## Moved out of STATE on 2026-08-30c — settled and held elsewhere, kept verbatim
 

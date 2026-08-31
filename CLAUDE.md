@@ -121,18 +121,6 @@ live store, and credentials local.
 
 ---
 
-## Breadth is last
-
-Breadth multiplies whatever is downstream of it. If dedup leaks, breadth multiplies duplicates. If
-liveness is unchecked, breadth multiplies dead postings. job-apps is the proof: ~15,000 companies, and on
-2026-08-05 it turned 942 candidates into 75 résumés into **zero applications**, with a 465-item queue
-nobody can work through.
-
-**Add input only after conversion is proven.** The constraint applies to input; output-side work (PDF
-emission, unattended running) is exempt because it multiplies nothing.
-
----
-
 ## Engineering defaults
 
 - Reuse existing code → platform/native feature → stdlib → small dependency → new code (last resort).
