@@ -112,16 +112,26 @@ config into `store/`. Three postings does not buy a layering change.
 
 ## Next action
 
-1. **RUN THE LEDGER DRAIN once #291 merges.** D-389 moves `engine_version` (engine.py and
-   catalog.py are both digested), so every stored verdict is re-keyed and a drain is owed. Trust
-   the tool, not raw SQL. D-388/#290 owes none — it moved no engine module.
-2. **Run the WATCHED first job-apps run.** The lane is armed and verified through `load_settings()`
-   but run 136 predates the arming. Expect ~190 records read / 49 direct-apply. D-385's "first run
-   watched" is still unsatisfied.
-3. **Read out run 136 when it finishes**, and confirm #288's 262-posting effect against the live
-   store. The 3-clean-post-fix provisional counter restarts with it (D-351 item 2 stands: not being
-   chased). **The corpus-regression detector is still dark until ~run 138 (~2026-09-04)** — do NOT
-   patch it.
+1. **THE LEDGER DRAIN IS OWED BUT WAS DELIBERATELY NOT RUN — this is a decision, not an omission.**
+   D-389 moved `engine_version` (`1+6a9fb2164f5b` -> `1+b472d5df53b3`), so a drain is formally due.
+   Checked through `boardwatch ledger show`, not raw SQL: `job_dispositions` is **900 rows, ALL
+   `built`, ZERO `skipped`**. Reopening a `built` row can only RE-DELIVER a lead already delivered,
+   and the recency-dominated ranker discounts reopened jobs — so the upside is zero and the cost is
+   900 re-queued leads. Re-check the `built`/`skipped` split before any future drain; the argument
+   holds only while `skipped` is empty.
+2. **READ OUT RUN 137 when it finishes — D-385's "first armed run watched" is SATISFIED.** Run 137
+   started manually 2026-08-31 14:45 and was watched. **Its job-apps lane result is already verified
+   from the store: 10 new companies at `provider='jobapps'`, 10 postings, which is exactly
+   `lane_new_companies_per_run` (10) and the ramp D-386 predicted (~103 employers over ~10 runs).**
+   The ten include **Apple, ByteDance, DeepMind and Amazon Web Services** — employers that use none
+   of the six ATS providers, so no board slug can reach them. That is the reach the lane exists for,
+   demonstrated on its first run. What remains is the funnel/morning artifacts and the delivery split.
+3. **Run 136 is COMPLETE and clean** (exit 0, read from a sentinel): board coverage **92.6%**
+   (84,461 of 91,214 stated) over 379 watched, **0 dark / 0 unscanned / 0 unreadable**; linkedin 365
+   attempted / 98 resolved / 10 new companies / 246 refused by the cap; hiring.cafe failed 14 of 14
+   facets exactly as D-369 predicts, which is the known lane outage and not a regression. The
+   3-clean-post-fix provisional counter restarts (D-351 item 2 stands: not being chased). **The
+   corpus-regression detector is still dark until ~run 138** — do NOT patch it.
 4. **The two HELD recall patches: DO NOT SHIP. This is a measured answer, not a hold.**
    `.agent/2026-08-31d-session/WIP-*.patch`. Both build, both probe correctly, both are
    corpus-clean, and they move **ZERO verdicts over the 25,264 evaluations whose bodies carry their
@@ -138,6 +148,11 @@ config into `store/`. Three postings does not buy a layering change.
 |---|---|
 | **#290** | the `work_auth` restriction ladder stops being an exclusive group; the other four groups stay, each for a different stated reason (D-388) |
 | **#291** | `refinement_groups` — a second group kind so `experience_years`' parallel bars abstain only on a real straddle; 913 of 1,868 decided (D-389) |
+
+Also this session, no PR: the **job-apps lane ARMED** against `resumes/` (the owner corrected the
+source — `APPLY_QUEUE/` is post-processed work, not a discovery feed), **8 merged-PR worktrees
+removed**, **run 136** completed clean, the primary tree pulled to `main` and the editable venv
+verified serving the merged catalog, and **run 137** started as the watched first armed run.
 
 Also this session, no PR: the **job-apps lane ARMED** against `resumes/` (owner's corrected source),
 **8 merged-PR worktrees removed**, and **run 136** started manually.
