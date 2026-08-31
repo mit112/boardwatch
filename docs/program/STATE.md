@@ -116,11 +116,17 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 > corpus-regression being a step detector blind to gradual drift. Both were verified against
 > synthetic data to actually fire, not just to run.
 
-> **THE ONE ACTION THAT MATTERS BEFORE THE ABSENCE: decide whether to ARM `BOARDWATCH_ALERT_URL`.** #258 is
-> merged and verified on `main` and through the editable venv, but it is a **strict no-op until armed**, so
-> without this the fortnight has no remote signal for a degraded-but-successful run. One line in the plist;
-> exact edit in `.agent/2026-08-30-session/ARMING-alert-escalation.md`. Deliberately left to Mit: it pages a
-> real person, and it depends on the healthchecks target actually reaching him.
+> **`BOARDWATCH_ALERT_URL` IS NOW ARMED — this is no longer an open action.** Verified 2026-08-30 in
+> `~/Library/LaunchAgents/com.boardwatch.run.plist`; the preflight reports "soft alerts WILL escalate".
+> The fortnight therefore HAS a remote signal for a degraded-but-successful run. Expect silence on a
+> normal day, and remember a dead LANE does not escalate (D-376).
+>
+> **Preflight re-run at the close of the audit sprint: EXIT 0, READY** — primary tree clean on `main`
+> at the merged work_auth fix, `tectonic`/`pdfinfo` both EXECUTED, wake armed 3:55AM, 15Gi free,
+> store at `p_runs_corpus_counts`, newest run 133 `ok`. Its single WARN ("last exit code is not 0")
+> is the known false alarm: `launchctl print` shows `runs = 0` / "never exited" because the agent was
+> RELOADED, while `boardwatch-run.log` has today's 05:55 mtime proving run 133 really executed. Not a
+> blocker — but do not read that WARN as a failed run, and do not read a `0` there as a clean one.
 >
 > **Run 133 already migrated the store** (`p_runs_board_split` -> `p_runs_corpus_counts`, `alembic_version`
 > confirmed) and populated the corpus columns for the first time. **`boardwatch web` was NOT restarted this
