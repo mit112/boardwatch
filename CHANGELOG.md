@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A closed posting now drains out of the apply queue into its own `_closed` folder.** A quarter of
+  the queue was dead: 52 of 203 top-level folders named a posting the board had already taken down,
+  the oldest delivered by run 71, because the queue recorded each posting's status and never read it
+  back. They now move to `_closed` — their own folder rather than `_ineligible` (nothing judged them;
+  the employer withdrew the requisition) or `_review` (there is nothing left to review). The move
+  runs in both directions, so a reopened requisition returns to the apply queue on the next run. A
+  posting whose board cannot currently be enumerated reads `unverifiable`, not `closed`, and is
+  deliberately left in the queue as the live work it is. An owner's `applied` or `skipped` still
+  wins: a job you already applied to stays where you put it when the posting comes down. 70 folders
+  move on the first run and the apply queue goes 203 → 151 (D-383).
+
 - **The queue's status band filters by verdict.** The `eligible` and `uncertain` cells are now
   toggle buttons: click one to show only that verdict, click again — or the `Show all` control — to
   clear. The filter reaches BOTH lanes, exactly like the existing text search and score floor, so an

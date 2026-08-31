@@ -21,135 +21,123 @@
 
 ## Current standing
 
-**THE QUEUE-AUDIT SPRINT IS COMPLETE AND MEASURED BY AN INDEPENDENT JUDGE. The acceptance test
-PARTLY PASSED, and the honest number is not the one the engine forecast.**
+**A QUARTER OF THE APPLY QUEUE WAS DEAD, AND NO INSTRUMENT THIS PROGRAM HAS BUILT COULD SEE IT.**
 
-Mit's test: *"I don't want to see a job in the apply queue where I can instantly spot something that
-makes it ineligible."* Four PRs shipped tonight (#276, #278, #280, #281) plus #275 earlier.
-**Apply lane 420 -> 203.**
+Measured 2026-08-31 through two independent paths that agree — the `details.json` sidecars and
+`postings.status` read directly off the live store — **52 of the 203 apply-queue folders named a
+posting the store reports `closed`**, plus 18 more in `_review`. The oldest was delivered by
+**run 71**. `_sync_queue` copied `postings.status` into `details.json` and nothing read it back, so
+a requisition that came down left its folder in the blind-apply list forever.
 
-Two instruments, reported apart on purpose — blending them is what made the old forecast wrong:
+**Apply-lane status in full: 118 open · 52 closed · 33 unverifiable** — only 58% confirmed live.
 
-| instrument | before | after |
-|---|---|---|
-| **engine census** (the same engine that would verify itself) | 208 of 420 = 49.5% | **48 of 203 = 23.6%** |
-| **independent blind judge**, apply lane, decoys excluded | 44 of 76 = 57.9% | **34 of 77 = 44.2%** |
+**Why the 2026-08-30 audit missed it: the blind judge read JD text, and liveness is not in the
+text.** So this COMPOUNDS with its 44.2% rather than overlapping. The other system already knew —
+job-apps' largest skip bucket is `_skipped/posting_closed/` at **466 folders**.
 
-**THE TWO DISAGREE, AND THAT IS THE FINDING.** The forecast "208 -> roughly 40" was computed with
-the engine's own regexes and the engine delivered it (48). The blind judge, which never sees
-boardwatch's verdicts, still calls **44%** of the apply lane spottable. The engine cannot see what
-it has no rule for, so a census built from its own nets under-reports by construction. **Never quote
-23.6% as the queue's quality** — quote it as the engine's own view, next to the judge's 44.2%.
+**Shipped as D-383 / #284.** A dedicated `_closed` drain, decided in `review_gate.classify` (the
+one function the folder tree and the page share, D-332), read above every verdict/location/role
+check, precedence `applied` > `skipped` > `closed` > `ineligible` > `review` > apply. It drains
+BOTH ways for free — the set is recomputed every reconcile, so a reopened posting returns.
+**`status == "closed"`, never `!= "open"`**: `unverifiable` is open-on-an-unenumerable-board
+(D-324) and sweeping it would bury live work. **70 folders move; apply 203 -> 151.**
 
-What the judge still finds in the apply lane (n=77, decoys excluded): **seniority mismatch 28**,
-**experience 21**, work_auth 5, role-family 6, clearance 1, degree 1. Vacuity control passed — 4 of 4
-known-answer decoys caught. Zero `ineligible` without a quoted span, both runs.
+**It cost nothing expensive**, and that is why it was the right thing to ship the night before an
+unattended fortnight: `engine_version()` resolves its four inputs sibling-only inside
+`eligibility/`, so **no re-evaluation, no ledger drain, no acceptance-counter reset**.
 
-**SENIORITY IS NOW THE LARGEST CLASS AND BOARDWATCH HAS NO GATE FOR IT.** `role_gate` decides role
-FAMILY, not level. 28 of 77 is bigger than any eligibility family. This is the top candidate for the
-next session, and it is exactly where job-apps wins (below).
+### The seniority gate was the top next action. It is measured at 5 postings. Do not build it yet.
 
-**job-apps FILTERS BETTER — measured, same judge, same facts, same night, neither system grading
-itself.** boardwatch apply **44.2% spottable** vs job-apps **16.2%** (13 of 80); role-family
-mismatch **6 vs 0**. **The mechanism is upstream pre-filtering:** job-apps keeps a curated H-1B
-sponsor allowlist and draws 65% of its queue from LinkedIn/Indeed, where the aggregator supplies a
-literal `Entry Level` facet (10 of 80 carry it; **0 of 80** on boardwatch, which sources direct from
-ATS boards that expose no such facet). This CORRECTS the standing "the gap is throughput, NOT an
-eligibility defect" line — true of REACH, false of filtering QUALITY.
+Two measurements overturned the plan, and both contradict what STATE said on 2026-08-30:
 
-**Three caveats that bound every number above, all found by cross-checking rather than assumed:**
-1. The first job-apps staging was **NOT blind** — its `job_description.txt` carries a job-apps
-   header (`Template: <family>` on 80 of 80, `Fit: N/100`, a live `URL:`) against 0 of 150 on the
-   boardwatch side. `stage_jobapps.py` now strips it and **fails closed**. Re-judged; the conclusion
-   held (16.2% vs the leaked 15.0%).
-2. **Judge sessions are NOT calibrated across runs** — `eligible` came back 0/150 one run and 47/80
-   another. Only the evidence-anchored `ineligible` axis and the part-B fit axes survive a
-   cross-session comparison. Never compare `eligible` rates.
-3. boardwatch's 80 includes **4 force-included decoys**; 76/77 is the unbiased denominator.
+1. **`rank/seniority_gate.py` is LIVE, not missing** — wired at `top_cmd.py:468` — and Mit's profile
+   reads `target_seniority_band = 'entry'`, so it is **armed, not inert**. "Nothing in the pipeline
+   reads level" was WRONG about the ranker; it is only true of the DELIVERY lane.
+2. The real gate, real catalog, all 203 apply-lane titles: **`in_band` 195 · `above_band` 5 ·
+   `uncertain` 3.** The five are one Director, three Managers and one Software Development Manager.
 
-**Run 134 succeeded** (exit 0, ~1h45m; the full 111,361-posting re-evaluation is the cost of a rules
-change). `engine_version` is now `1+6a9fb2164f5b`. hiring.cafe failed again exactly as D-369
-predicts — expected, not new.
+The three `Member of Technical Staff` rows stay `in_band` **by design** (masking added after 94 SWE
+MTS titles were falsely dropped over 26,997 postings). The 10 digit-level titles (eBay SWE 2/3,
+MongoDB 2/3, Snap Level 3, Garmin 2, Twilio L2) ABSTAIN because `leveling-bindings.yaml` is empty —
+per-operator data, open by design, and **not ours to write on Mit's behalf**.
+
+**The seam is real but small:** `review_gate.classify` has six decision points, none reads
+seniority, so a lead delivered before the gate was armed is never re-checked. That is a
+**5-posting** seam. The judge's 28 of 77 is mostly JD-BODY level and years prose — the *experience*
+family, not a title token — so a title-based gate cannot reach it.
 
 ---
 
 ## Next action
 
-1. **A SENIORITY GATE.** 28 of 77 apply-lane items, the largest single class, and nothing in the
-   pipeline reads level. Note the shape job-apps uses: an upstream aggregator facet, not JD prose.
-2. **Sponsorship recall round 2 — BUILT, MEASURED, DELIBERATELY NOT SHIPPED.** Patch and full
-   rationale at `.agent/2026-08-30-audit-sprint/WIP-sponsorship-recall-NOT-SHIPPED.patch` and its
-   README. It cannot be made correct without CAPTURING jurisdiction the way `no_sponsorship_offered`
-   does: a foreign-only guard produced a wrong `ineligible` on "For the London position…", and an
-   any-jurisdiction guard stands the patterns down on the three spans worth catching. **Upside is 5
-   apply-lane postings, not the 27 the sweep found** — that sweep predates run 134.
-3. **Two real bugs worth keeping whatever shape (2) takes:** `cannot CONFIRM that sponsorship is
-   available` answered `ineligible`; and a `\w+` word gap **cannot cross a hyphen**
-   (`immigration-related`) — the same class as the parenthesis in D-381, so audit every gap in the
-   catalog for it.
-4. **`does not include internships` kills EVERY experience row on ~6 Stripe postings.** A negation
-   cue inside a parenthetical suppresses the requirement it qualifies. Shared negation machinery —
-   too broad to change unattended, measured and left alone.
-5. **`(F/H)` is unreachable by `foreign_ad_gate`** — `_FRENCH_GENDER_MARKER` requires `h/f` order and
-   parentheses, so `(F/H)`, bare `H/F` and bare `F/H` all miss. Zero apply-lane escapes today.
+1. **job-apps ingestion — designed, blocked on ONE owner question** (below). Design at
+   `.agent/2026-08-31-session/INGEST-JOBAPPS-DESIGN.md`. The architectural answer is settled: it is
+   a **LANE, not a seventh provider** — the provider catalog is closed and gated in three places,
+   while `lanes/base.py` exists for exactly this and inherits every persistence/identity/dedup
+   invariant. Costs **zero** `engine_version` movement. Four points settled in discussion and not to
+   be re-argued: ingest raw DISCOVERY not verdicts; STRIP the header and fail closed; dedup on the
+   provider-namespaced ATS slug; import `_applied` FOLDERS never `applications.csv`.
+2. **The `rules.yaml` word-gap audit — MEASURED, NOT SHIPPED.**
+   `.agent/2026-08-31-session/HYPHEN-GAP-AUDIT.md`. 55 patterns: **9 HYPHEN, 9 PUNCTUATION, 18 SAFE,
+   19 no gap**, each verified through the real pipeline with a control. Two `consumes_cues` findings
+   sit beside it, one of which (`no_sponsorship_will_not_consider` omits `never`) is a **one-word
+   fix against a false `eligible`**. Held deliberately: `rules.yaml` re-keys `rules_hash` ->
+   `policy_version`, forces a ~111k re-evaluation, and re-arms the `exclusive_group` dissolution
+   trap a live-lane harness **cannot** see. Assert ZERO corpus verdict changes before recording.
+3. **A seniority hold in `review_gate` is worth 5 postings** — cheap and structurally right, but do
+   not present it as the big lever. See above.
+4. **Sponsorship recall round 2 — BUILT, MEASURED, DELIBERATELY NOT SHIPPED.** Patch and rationale
+   at `.agent/2026-08-30-audit-sprint/WIP-sponsorship-recall-NOT-SHIPPED.patch`. Upside is **5**
+   apply-lane postings, not the 27 an agent sweep found — that sweep predates run 134.
+5. **`does not include internships` kills EVERY experience row on ~6 Stripe postings**, and
+   **`(F/H)` is unreachable by `foreign_ad_gate`** (`_FRENCH_GENDER_MARKER` requires `h/f` order and
+   parentheses). Both measured, both left alone; zero apply-lane escapes today for the second.
 
 ---
 
-## Session 2026-08-30b — what shipped
+## Session 2026-08-31 — what shipped
 
 | PR | what |
 |---|---|
-| **#276** | unconfirmed-requirement leads route to `_review` (D-380) |
-| **#278** | experience bar stated as a RANGE |
-| **#280** | six recall patterns: citizenship, clearance stack, domain-years (D-381) |
-| **#281** | `eligible` no longer skips the role/location gates — R1 (D-382) |
+| **#284** | a closed posting drains to its own `_closed` lane (D-383) — apply 203 -> 151 |
 
-`make check` exit 0 on every one. **Two first-draft loosenings were caught by the gate, not by
-review**, and both are now memory entries: a pattern implying a DIFFERENT value from the same
-`exclusive_group` as a sibling makes the group CONFLICT and rewrites BOTH rows to `unknown` — seven
-corpus cases fell `ineligible` -> `uncertain`.
+`make check` exit 0 (8656 passed, 4 xfailed, 7m08s); CI green on every job. **Guards
+mutation-pinned: 10 mutants, a no-op control, 8 CAUGHT, 2 survivors PROVEN UNOBSERVABLE and
+documented at the site.** The first mutation pass caught a defect in the *tests*: the precedence arm
+asserted `applied`, which `delivered_unapplied` excludes unconditionally, making it **unobservable
+by construction** — retargeted to `skipped`, which is reachable.
 
-**Harness, all preserved under `.agent/2026-08-30-audit-sprint/audit-harness/`:** `stage_audit.py`
-(now searches ALL lanes for the decoys and **hard-fails** if one is missing — the old apply-only
-lookup would have silently dropped two once #276 re-laned them), `stage_jobapps.py`, `CODEX-PROMPT.md`,
-`JOBAPPS-PROMPT.md`, the before-baseline (`*-before-baseline.*`) and both after-runs.
-**Codex needs `-s workspace-write`; `--full-auto` is not a flag in codex-cli 0.151.0.**
+**A sidecar in `_ineligible` can go STALE** — sync excludes ineligible rows so their `details.json`
+is never rewritten; two claim `closed` while the store says `open`. Read the store, not the sidecar.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-8. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
-9. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28**: no time before
-   he steps back from active work (~2026-08-31, unattended after). **Not dropped — an accepted known
-   gap**, and the last multi-tenancy gap of its kind. Still owner-gated and still needs its own
-   brainstorm; D-054 forbids us authoring non-tech field content.
-10. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
+1. **Does job-apps keep running as a discovery engine feeding boardwatch, or is it retired once
+   boardwatch is the daily driver?** Ingestion creates a hard dependency on it continuing to run.
+   Measured, and it sharpens the question: the live queue's newest cohort is **2026-08-29** (already
+   2 days stale on 08-31), cadence is ~30-55/day on weekdays with **hard zero days at weekends** —
+   and per D-376 a dead LANE does not escalate, so a feed that stops is silent.
+2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
+   multi-tenancy gap of its kind; D-054 forbids us authoring non-tech field content.
+4. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
    one bundle.
+
 ## Open questions — Mit's, not to be resolved by fiat
 
-1. **The projection spec's six open questions** (§12) — soonest: whether `tailor run` should validate
-   the projection manifest, and whether persona's `entries` list survives stage 2.
-2. **The Snap `Level 5`/`Level 3` leak stays open by design** — with no bindings file every level
-   token abstains, so a level-named title is shortlisted carrying its reason. boardwatch ships no
-   verifiable claim about any company's ladder.
-3. **Whether `censored` boards publish a coverage ratio, and the 17 silent boards.** The
-   `detail_fetch_budget` half moved 2026-08-28: raised **50 → 400 in Mit's local config only** (never
-   the code default — a multi-tenancy call). **The "four censored boards are short 18,927" figure is
-   STALE against the current fleet**: the class is **15 boards and 43,371 postings that can never be
-   listed at all** (run 127), against an ~84,821-posting open corpus. **Sized, not solved, and no
-   budget can solve it** — those postings are never enumerated. See D-336.
-4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Surfaced by
-   run 129's location-split failure and **left unexamined** — it is role TAXONOMY, not dedup, and
-   possibly upstream of the whole slate-cap question. D-345 bounds the delivery damage; it does not
-   answer this.
+1. **The projection spec's six open questions** (§12).
+2. **The Snap `Level 3`/`Level 5` leak stays open by design** — with no bindings file every level
+   token abstains. boardwatch ships no verifiable claim about any company's ladder.
+3. **Whether `censored` boards publish a coverage ratio, and the 17 silent boards.** The class is
+   **15 boards and 43,371 postings that can never be listed at all** (run 127) against an ~84,821
+   open corpus. **Sized, not solved, and no budget can solve it.** See D-336.
+4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Role
+   TAXONOMY, not dedup. D-345 bounds the delivery damage; it does not answer this.
 
-*(Resolved and no longer open: **how to cap the delivery slate when one requisition is split across
-cities — RULED by Mit and shipped as D-345**, `(company_id, normalized_title, content_hash)` at N=1;
-do not reopen it as identity suppression, which is D-295 and is refused. Whether `runner.py` should
-keep swallowing a funnel-write failure — D-288. Clearance IS a blocker (D-257). Seniority band =
-`entry` (D-258). The launchd trigger fires (D-254), once daily at 04:00, a fallback rather than the
-thing to plan around.)*
-
----
+*(Resolved and no longer open: the delivery slate cap — D-345, `(company_id, normalized_title,
+content_hash)` at N=1; do not reopen as identity suppression, which is D-295 and is refused.
+Whether `runner.py` should keep swallowing a funnel-write failure — D-288. Clearance IS a blocker
+(D-257). Seniority band = `entry` (D-258), and it is **armed on the live profile**.)*
 
 ## Phase status
 
@@ -185,6 +173,7 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
+| **`boardwatch web` WILL OVER-REPORT THE APPLY LANE BY ~70 UNTIL RESTARTED** | #284 moves 70 folders to `_closed` on the next run, but the running viewer (pid from 2026-08-29d) holds **pre-merge Python in memory** (D-360: bundle from disk, API from the import at startup), so its `/api/queue` keeps counting them as apply-lane work. **#284 adds NO migration**, so restarting is safe as soon as a run has finished — that is the D-279 window. Until then the page over-reports and the FOLDER TREE is the truth. **A second, stray `boardwatch web` was also running** at this session's start, launched by a shell carrying another session's transcript path, alongside a 0-byte 8h-old `.git/index.lock` (cleared after confirming no git process held it). **If a peer session is live in the primary tree, declare ONE owner before merging there** | **Mit** (restart after a run) |
 | **`boardwatch web` IS RUNNING — started 2026-08-29d** | Started from the primary checkout on `main` with `--port 0 --no-open` and **verified through a second path**: `GET /` returns 200 and `GET /api/runs` returns **401 without a token and 200 with the bearer**. The session URL is `http://127.0.0.1:<port>/#<token>` — the token rides in the **fragment** so it never reaches a server log or a `Referer`, it is stable, and it lives at `~/Library/Application Support/boardwatch/web-token` (mode 0600). **The port is whatever `--port 0` picked**, so read it from the process rather than assuming: `lsof -nP -iTCP -sTCP:LISTEN -a -p $(pgrep -f 'boardwatch web')`. It was stopped and restarted once during this session to take the store lock for the D-370 cold scan — **never write to the store with the viewer up**, a WAL two-writer deadlock against a running pipeline is on record. The underlying skew is still structural (D-360): the bundle is served from **disk** and the API from the Python imported **at startup**, so any merge or branch switch under a running viewer separates the two — **DO NOT RESTART IT AS OF 2026-08-29f.** `main` now carries the `p_runs_corpus_counts` migration while the store is still at `p_runs_board_split` until the 04:00 run migrates it, and the viewer NEVER migrates (D-279) — restarting against a checkout AHEAD of the store 500s it. The running process holds the pre-merge code in memory and is correct either side of an additive migration, so leaving it alone is the safe action. Restart only AFTER a run has migrated the store; the bundle it serves is built on disk (`web/dist` is untracked) and only `make web` changes it. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page | **Mit** (restart after merges) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN; the HEADER LEVER FAILED and the remaining call is the OWNER'S** | **D-369/#245 shipped the search route's browser-navigation header set and run 133 is its readout: NEGATIVE.** Run 133 reproduced run 131's `SearchPageError` byte for byte (14 facets, 14 refusals), so **headers are ELIMINATED and that experiment must not be repeated.** D-368's other premises were already dead: the UA premise is FALSE (we have sent a Chrome UA since the lane shipped) and the volume premise did not survive the run log (run 128 spent ~28 requests; run 131 was refused on its FIRST request 14 h later). **What remains is the ENDPOINT — path-scoped protection on `/jobs/*`**: job-apps succeeds on `/`, our `/api/` calls succeeded every run through 128, our `/jobs/` calls have failed **14 of 14 on two separate runs**. That is a **compliance decision, not a repair** — robots.txt ALLOWS `/jobs/` and DISALLOWS job-apps' `?searchState=` form. **Still do NOT probe.** Half the lane coverage job-apps' edge comes from. **Second, smaller call:** ~196 refused requests over an unattended fortnight if the lane stays enabled (balanced; see Next action item 1) | **Mit** (the endpoint call, or send the drafted access request; and whether to leave the lane enabled) |
