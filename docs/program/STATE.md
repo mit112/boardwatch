@@ -128,7 +128,11 @@ already on `QueueRow` from a column the store already read.
    directions against three profiles, and both are corpus-clean — and they move **ZERO verdicts over
    the 25,264 evaluations whose bodies carry their own target surfaces**. No verdict-level upside,
    and they can reach the conflict class in item 1. They stay on disk as evidence, not as pending
-   work. **Do not re-raise them as a recall opportunity** — the measurement is in D-387, and the
+   work. **Checked at the ROW level too, because a verdict count can hide evidence-chain value:**
+   over 4,000 targeted evaluations (control 0 of 4,000) the held pair changes the rows of exactly
+   ONE, and there it dissolves three clearance rows to `unknown` through the item-1 conflict. Its
+   only observable effect is one evidence-chain DEGRADATION. **Do not re-raise them as a recall
+   opportunity** — the measurement is in D-387, and the
    surfaces they fix are real but change no decision this profile makes.
 5. **`reports/abstain.STRUCTURALLY_UNDECIDABLE` is stale for `experience_years:scoped_years_minimum`
    and the fix is one line.** D-319 made that rule decidable: at the current engine version it

@@ -19495,6 +19495,17 @@ skipped for a stale `catalog_version`, 25,264 compared, CONTROL 0 failures:**
 - **the HELD pair moves ZERO.** Not small: zero, over the whole population that carries their target
   surfaces.
 
+**AND THE ROW-LEVEL CHECK CLOSES IT, because a verdict count could have hidden evidence-chain value.**
+A held patch could add a requirement row without moving a verdict, which is worth something under
+"no flags is not cleared". Compared at the ROW level over 4,000 targeted evaluations (control 0 of
+4,000): the held pair changes the rows of **exactly ONE** evaluation, and what it adds there is
+`clearance:generic_clearance_required=unknown` alongside `clearable_required=unknown` and
+`clearable_leveled_required=unknown` — i.e. the newly-detected rule collided with `clearable_required`
+in `[active_clearance_required, clearable_required]` and dissolved all three to `unknown`. **Its only
+observable effect in 4,000 evaluations is one evidence-chain DEGRADATION through the very conflict
+this entry is about.** So the held patches are not merely zero-value; the one thing they do is the
+thing not to do.
+
 **So the held patches should NOT ship, and that is a measured answer rather than a hold.** They have
 no verdict-level upside on the population their own surfaces select, and they can reach the conflict
 class above. They stay on disk as evidence, not as pending work. (A 1,500-row newest-first sample had

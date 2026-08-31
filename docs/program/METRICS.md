@@ -9790,6 +9790,21 @@ the apply queue.
 carries its own target surfaces. That converts them from held work into a closed question — no
 verdict-level upside, and they can reach the conflict class above.
 
+**Checked at the ROW level as well**, because a verdict count can hide evidence-chain value — a new
+requirement row is worth something even at an unchanged verdict.
+
+| row-level, n=4,000 targeted, control 0 of 4,000 | |
+|---|---|
+| SHIPPED pair: verdict changes | 5 |
+| HELD pair: verdict changes | **0** |
+| HELD pair: evaluations whose REQUIREMENT ROWS changed at all | **1** |
+| what it added there | `generic_clearance_required=unknown` + `clearable_required=unknown` + `clearable_leveled_required=unknown` |
+
+That one case is the hazard itself: the newly-detected rule collided with `clearable_required` inside
+`[active_clearance_required, clearable_required]` and dissolved all three rows to `unknown`. **The
+held pair's only observable effect in 4,000 evaluations is one evidence-chain DEGRADATION** — so it is
+not merely zero-value, the one thing it does is the thing not to do.
+
 **The candidate populations, for the record** (current-engine posting versions, 113,634 total): 3,001
 carry `U.S.` and `clearance`; 4,809 a hyphen before `authorized to work`; 539 `-related sponsorship`;
 4,171 `U.S. Government`; 2 `natural-born`.
