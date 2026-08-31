@@ -19,6 +19,17 @@ All notable changes to this project are documented here. The format follows
   wins: a job you already applied to stays where you put it when the posting comes down. 70 folders
   move on the first run and the apply queue goes 203 → 151 (D-383).
 
+- **The run now notices if nothing reaches the apply queue, even while résumés keep being built.**
+  The existing delivery-drought alarm counts résumés, and a résumé is built whichever folder the lead
+  ends up in — so if the location, role or requirement checks broke all at once, every lead would be
+  filed under `_review`, résumés would keep appearing at the normal rate, and every existing alarm
+  would stay quiet while the apply queue got nothing for a fortnight. A second alarm now watches that
+  specific outcome: it fires when the last three clean runs each delivered leads that COULD have been
+  filed for applying and not one of them was. A run that delivered nothing at all stays quiet — that
+  is the first alarm's job — and leads that were judged ineligible, or whose posting has since come
+  down, are not counted either, because each of those has its own alarm and its own folder. Soft, so
+  it never fails the run: the leads are in `_review`, reviewable and not lost (D-384).
+
 - **The queue's status band filters by verdict.** The `eligible` and `uncertain` cells are now
   toggle buttons: click one to show only that verdict, click again — or the `Show all` control — to
   clear. The filter reaches BOTH lanes, exactly like the existing text search and score floor, so an

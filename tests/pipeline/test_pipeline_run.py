@@ -1611,6 +1611,7 @@ def test_a_clean_run_escalates_nothing(env: Path, tmp_path: Path, monkeypatch: p
         ("check_delivery_drought", "delivery-drought check not run"),
         ("check_liveness_blind", "liveness-blindness check not run"),
         ("check_corpus_regression", "corpus-regression check not run"),
+        ("check_apply_lane_drought", "apply-lane-drought check not run"),
     ],
 )
 def test_a_crashed_detector_is_recorded_DURABLY(
@@ -1647,4 +1648,44 @@ def test_a_crashed_detector_is_recorded_DURABLY(
     assert stored is not None and any(phrase in e for e in stored), (
         f"{phrase!r} reached summary.errors but NOT runs.errors_json — on return there is no "
         f"way to answer which day the detector stopped working"
+    )
+
+
+# --- a NEW soft alert must sit ABOVE `_emit_morning` --------------------------------------
+#
+# The invariant is easy to satisfy and easy to lose: below `_emit_morning` an alert still
+# fires, is still appended to `summary.errors`, and is still made durable by
+# `append_run_error` — so every other assertion about it passes — and it is INVISIBLE in the
+# digest, which is the one artifact an unattended owner reads. A mechanical rebase union lands
+# a new block below the digest without a conflict.
+
+
+def test_the_apply_lane_alert_reaches_the_MORNING_DIGEST(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins the CALL SITE's position, not merely that the alert is raised.
+
+    Fails against the same detector wired in below `_emit_morning`: `summary.errors` would
+    still carry the marker (so an assertion on that list cannot tell the two apart) while the
+    rendered digest would not. Asserting on the digest FILE is what discriminates.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(
+        runner_mod, "check_apply_lane_drought", lambda *_a, **_k: "MARKER-apply-lane"
+    )
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.morning is not None, "guard: the digest must have been written"
+    assert any("MARKER-apply-lane" in e for e in summary.errors), (
+        "guard: the alert must reach summary.errors at all"
+    )
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "MARKER-apply-lane" in rendered, (
+        "the apply-lane alert is missing from the morning digest — the call sits BELOW "
+        "`_emit_morning`, where it fires, is recorded, and is invisible to an absent owner"
     )
