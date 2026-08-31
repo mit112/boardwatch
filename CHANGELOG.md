@@ -30,6 +30,22 @@ All notable changes to this project are documented here. The format follows
   down, are not counted either, because each of those has its own alarm and its own folder. Soft, so
   it never fails the run: the leads are in `_review`, reviewable and not lost (D-384).
 
+- **boardwatch can now take job-apps' daily discovery as a source, so both tools feed one queue.**
+  job-apps finds postings boardwatch never sees — of its 189 direct-apply finds, 160 are not in this
+  store at all, and two thirds of them came through its hiring.cafe search, which is exactly what
+  boardwatch's own hiring.cafe lane currently cannot reach. Those finds are now readable as a lane:
+  job-apps supplies the discovery, and boardwatch still makes every decision about it, applying its
+  own eligibility, deduplication, liveness and ranking before anything reaches the queue. Nothing
+  job-apps concluded about a posting comes across — not its fit score, not its own filing decision —
+  because the header it writes above each job description is stripped, and a job description whose
+  header cannot be found is dropped rather than passed through. Postings whose only link is an
+  aggregator listing page are counted and skipped, since there is nothing to apply to behind them.
+  If the source folder is missing, unreadable, or holds nothing, the run says so in its errors
+  instead of quietly reporting no findings — which matters because job-apps has genuinely empty
+  days, so "found nothing" cannot be read as a fault on its own. **Off until you turn it on:** it
+  needs both a source path and the lane's name in your config, so merging it changes nothing
+  (D-386).
+
 - **The queue's status band filters by verdict.** The `eligible` and `uncertain` cells are now
   toggle buttons: click one to show only that verdict, click again — or the `Show all` control — to
   clear. The filter reaches BOTH lanes, exactly like the existing text search and score floor, so an

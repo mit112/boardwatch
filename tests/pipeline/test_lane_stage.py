@@ -948,3 +948,128 @@ def test_one_lanes_fetch_failing_costs_only_that_lane(
     assert len(errors) == 1
     assert "alpha" in errors[0]
     assert "aggregator down" in errors[0]
+
+
+# --------------------------------------------------------------------------------------
+# The jobapps lane through the REAL registry (D-386). Its whole health design rests on the
+# claim that a structural source failure becomes a `summary.errors` line rather than a clean
+# zero, and that claim is about THIS stage, not about the lane in isolation.
+# --------------------------------------------------------------------------------------
+
+
+def _jobapps_tree(root: Path, *, count: int = 2) -> Path:
+    """A minimal job-apps discovery tree, shaped as the live one is."""
+    rule = "=" * 80
+    marker = f"{rule}\nJOB DESCRIPTION\n{rule}"
+    for index in range(count):
+        folder = root / "Greenhouse" / f"Acme_Role_{index}"
+        folder.mkdir(parents=True)
+        (folder / "discovery_record.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "posting_id": f"pst_{index}",
+                    "primary_acquisition": "hiringcafe",
+                    "cohort_date": "2026-08-29",
+                    "canonical": {
+                        "company": "Acme",
+                        "title": f"Software Engineer {index}",
+                        "direct_url": f"https://job-boards.greenhouse.io/acme/jobs/{index}",
+                        "location": "Remote, United States",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (folder / "job_description.txt").write_text(
+            f"Company:  Acme\nFit:      40/100\n{marker}\n\nWe need a backend engineer.\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+def test_the_jobapps_lane_with_no_source_reports_an_ERROR_not_a_clean_zero(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The failure mode the guard exists for. job-apps has genuinely empty days, so a zero
+    carries no signal — an unset source has to be LOUD or it is invisible for a fortnight."""
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=("jobapps",)), insert_run(engine)
+    )
+
+    assert [report.name for report in reports] == [], (
+        "a lane that cannot read its source must be ABSENT, never reported with zeros"
+    )
+    assert len(errors) == 1
+    assert "jobapps" in errors[0]
+    assert "no source directory configured" in errors[0]
+
+
+def test_the_jobapps_lane_with_a_missing_directory_names_the_path_in_the_error(
+    engine: Engine, tmp_path: Path
+) -> None:
+    missing = tmp_path / "moved-away"
+    _, errors = _run_lanes(
+        engine,
+        _settings(tmp_path, lanes_enabled=("jobapps",), jobapps_discovery_dir=missing),
+        insert_run(engine),
+    )
+    assert len(errors) == 1
+    assert str(missing) in errors[0], "an operator has to be told WHICH path failed"
+
+
+def test_a_schema_bump_and_a_moved_queue_produce_DIFFERENT_error_lines(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Both end with zero usable records and want opposite fixes."""
+    future = _jobapps_tree(tmp_path / "future")
+    for record in future.rglob("discovery_record.json"):
+        payload = json.loads(record.read_text())
+        payload["schema_version"] = 99
+        record.write_text(json.dumps(payload), encoding="utf-8")
+
+    _, bumped = _run_lanes(
+        engine,
+        _settings(tmp_path, lanes_enabled=("jobapps",), jobapps_discovery_dir=future),
+        insert_run(engine),
+    )
+    empty = tmp_path / "empty"
+    (empty / "Greenhouse").mkdir(parents=True)
+    _, moved = _run_lanes(
+        engine,
+        _settings(tmp_path, lanes_enabled=("jobapps",), jobapps_discovery_dir=empty),
+        insert_run(engine),
+    )
+    assert "record format has probably moved" in bumped[0]
+    assert "no discovery record anywhere" in moved[0]
+    assert bumped[0] != moved[0]
+
+
+def test_the_jobapps_lane_ingests_through_the_real_stage_and_lands_postings(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The happy path through the registry, the admission cap, `apply_board` and the store —
+    not the lane in isolation."""
+    source = _jobapps_tree(tmp_path / "jobapps")
+    reports, errors = _run_lanes(
+        engine,
+        _settings(tmp_path, lanes_enabled=("jobapps",), jobapps_discovery_dir=source),
+        insert_run(engine),
+    )
+
+    assert errors == []
+    assert [report.name for report in reports] == ["jobapps"]
+    (report,) = reports
+    assert report.counts["body_inline"] == 2
+    assert report.is_silent_outage is False
+
+    with engine.connect() as conn:
+        titles = {
+            row.title for row in conn.execute(select(tables.postings.c.title)).all()
+        }
+        bodies = [row.body_text for row in conn.execute(select(tables.postings.c.body_text)).all()]
+    assert titles == {"Software Engineer 0", "Software Engineer 1"}
+    assert all("Fit:" not in (body or "") for body in bodies), (
+        "job-apps' authored header must not reach the stored body"
+    )
+    assert "greenhouse" in _stored_slugs(engine) or "acme" in _stored_slugs(engine)

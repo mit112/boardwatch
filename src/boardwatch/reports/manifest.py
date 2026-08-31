@@ -94,6 +94,9 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lane_new_companies_per_run",
         "lane_posting_budget",
         "lane_search_pages",
+        # D-385. WHERE a lane reads from, not how a posting is judged: the same record ingested
+        # from a moved directory must not re-key every permanent disposition.
+        "jobapps_discovery_dir",
         # D-325. OUT, on the same reasoning as `validator_max_age_hours`: these bound WHEN and
         # HOW OFTEN a posting is re-asked, never how the corpus is judged. What they can change
         # is corpus MEMBERSHIP — a proven-dead posting is closed — and membership has never been
