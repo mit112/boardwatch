@@ -88,6 +88,10 @@ already on `QueueRow` from a column the store already read.
    unattended**, because D-384 watches the lane SPLIT of what was delivered and therefore cannot see
    a bad INPUT. Design at `.agent/2026-08-31-session/INGEST-JOBAPPS-DESIGN.md`. Both feeds are live:
    boardwatch 04:00, job-apps 08:30 (`last exit code = 0`).
+   **Owner ruled 2026-08-31, so do not re-decide either: BUILD IT FIRST, in a clean gate
+   window (a disarmed lane delivers nothing during the absence, so there was no cost to
+   waiting and a contended 03:45 gate returns false failures), and ARM IT ON RETURN with the
+   first armed run WATCHED.** This is the next session's task 1.
 2. **The `rules.yaml` word-gap audit — MEASURED, NOT SHIPPED.**
    `.agent/2026-08-31-session/HYPHEN-GAP-AUDIT.md`. 55 patterns: **9 HYPHEN, 9 PUNCTUATION, 18 SAFE,
    19 no gap**, each verified through the real pipeline with a control. Two `consumes_cues` findings
