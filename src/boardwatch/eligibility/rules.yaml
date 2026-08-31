@@ -99,8 +99,27 @@ families:
       - sponsorship_unavailable
       - sponsorship_available
     exclusive_groups:
+      # A GENUINE mutual exclusion: one posting cannot both offer and refuse sponsorship, the
+      # two values carry no order, and neither refines the other -- so co-occurrence really is
+      # a contradiction and dissolving both rows is right.
+      #
+      # [citizenship_required, citizen_or_lpr_required, authorization_required] WAS a second
+      # group here and was REMOVED on 2026-08-31 (D-388). Those three are a STRENGTH LADDER,
+      # not a mutual exclusion: citizenship is strictly stronger than citizen-or-LPR, which is
+      # strictly stronger than authorization. A posting stating two of them REFINES itself.
+      # Grouping them meant "Applicants must be authorized to work in the United States."
+      # beside "A natural-born U.S. citizen is required." rewrote BOTH rows to `unknown` and
+      # discarded a decisive `unmet`, so a non-citizen read `uncertain` on a posting that
+      # plainly excludes them -- and a CITIZEN, who satisfies both arms, read `uncertain` too,
+      # an abstain no fact could ever resolve. With the group gone the roll-up decides both
+      # directions directly. Corpus-verified at 0 mismatches over all 1034 cases.
+      #
+      # `experience_years` keeps its group deliberately: those three are PARALLEL BARS, where
+      # clearing a total bar while missing a skill-scoped one is genuinely ambiguous rather
+      # than a refinement. `clearance` keeps its group deliberately too -- clearable_required
+      # is a DISJUNCTION ("hold one, or be able to obtain one"), an escape hatch rather than a
+      # weaker rung, which is why seven corpus cases assert that pair abstains.
       - [sponsorship_unavailable, sponsorship_available]
-      - [citizenship_required, citizen_or_lpr_required, authorization_required]
     # ONE CANONICAL MARKER VOCABULARY PER POSITION, findings 125-139. All six requirement
     # patterns below carry these two groups BYTE-IDENTICALLY, so a marker token can no longer
     # be present on one sibling and absent on another. That asymmetry is the shape behind
