@@ -9475,7 +9475,43 @@ digest renders `## Alerts / No alerts` and the test fails — while **both `summ
 still pass**, which is the proof that asserting on that list could not tell the two placements
 apart.
 
-**Verification:** GATE_RESULT_LINE
+**Verification:** `make check` **exit 0** — 8666 passed, 4 xfailed, 39:18; all six stages ran
+(`generalization: OK`, both indexes current, `ruff`, `mypy --strict`, web-test 35/35). Shipped as
+**#285**. The mutation campaign above was **re-run against the COMMITTED bytes** after a docstring
+reflow, because a count measured before an edit and published after it is not a count of what
+shipped.
+
+### The alarm is SILENT on the live store, with headroom
+
+Run read-only against the real store before shipping, because a brand-new alarm that already fires
+on healthy data is worse than no alarm:
+
+| run | placeable | reached apply | share |
+|---:|---:|---:|---:|
+| 134 | 40 | 15 | 37.5% |
+| 133 | 28 | 5 | 17.9% |
+| 131 | 22 | 9 | 40.9% |
+
+`check_apply_lane_drought` -> `None`, and non-zero on all three, so this is headroom rather than a
+threshold-hugging alarm. **Independently useful:** this is the first per-run measurement of the lane
+split — only **18-41% of placeable delivered leads reach the blind-apply queue**, the rest held in
+`_review`. Every prior figure was a folder count.
+
+### Read-only sweep — three STATE-adjacent claims re-checked
+
+- **Disk IMPROVED**: 93% used / **15 GiB** free, against the handoff's 94% / 13 GiB. Store 4.7 GB,
+  queue 41 MB, applications 70 MB. Still no reason to ship a disk guard.
+- **`runs` timestamps are UTC**, confirmed against `funnel-134.json`'s mtime (23:14 local vs
+  `finished_at` 04:12) rather than assumed. **Run 134 therefore ran the previous evening, so #284
+  had still never executed at this close** — run 135 is its first.
+- **Run 132 is `failed` with an empty `errors_json`, and it is NOT an open gap.** It predates #255
+  (`a46f36aa`, merged 2026-08-30), which records why a run failed. Two corrections were needed to
+  reach that: `git merge-base --is-ancestor` is **meaningless in a squash-merge repo** — it reported
+  "NOT merged" for all 70+ local branches, including ones known to have shipped — and the branch in
+  question had already landed as PR #255.
+- Runs 131/133/134 each carry exactly ONE error, all the same hiring.cafe 14-facet/14-refusal
+  failure. Per D-376 a dead lane is pre-finalize and does **not** escalate, so the channel POSTed
+  nothing — "expect silence on a normal day" now confirmed against real rows.
 
 **STATE is 203 lines**, up from 179 — over `CLAUDE.md`'s ~170 bar, under the file's own ~250 bar.
 Two blocks were kept short deliberately (the #284 check table lives here, not there), and the
