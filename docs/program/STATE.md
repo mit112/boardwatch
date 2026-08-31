@@ -70,6 +70,32 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 
 ## Next action
 
+> **ONE PR IS GREEN AND WAITING ON A MERGE-TIMING CALL: #276 (D-380), the delivery-router narrowing.**
+> `make check` exit 0, `npm run lint` clean, **auto-merge deliberately DISARMED**. Mit ruled on the
+> gate LOGIC ("ship as built") after seeing the numbers; that was **not** a ruling on when to merge,
+> and the effect is large and retroactive:
+>
+> - **144 of 609 delivered leads move apply -> review — 23.6% of the queue. Apply lane 420 -> 276.**
+> - It re-lanes **already-delivered folders on the next run, with no explicit re-sync**: `queue.py`
+>   recomputes the lane every delivery pass and `_index` scans `_review`.
+> - **All 144 are held by an ABSTAIN, none by a decided `unmet`**, and 213 of the 294 driving rows are
+>   `experience_years:scoped_years_minimum` — in `STRUCTURALLY_UNDECIDABLE`, so those holds **cannot
+>   clear on their own**. `_review` drains only by being read.
+>
+> So merging before the fortnight moves a third of the apply queue into a lane nobody will read for
+> two weeks. Merge with `gh pr merge 276 --squash`. Two rejected variants (40 movers / 0 movers) and
+> the full measurement are in the PR body and D-380.
+>
+> **#275 (D-379) is MERGED** and live in the primary tree the 04:00 run executes: the work_auth
+> sponsorship leak is closed — `must be authorized to work in the US without sponsorship` no longer
+> reads as `eligible` for an EAD holder who needs sponsorship. 1,670 of 109,450 open postings carry
+> one of the two surfaces. **No ledger drain is owed** — verified read-only: 780 dispositions, all
+> `built`, zero `skipped`, and the fix only narrows.
+>
+> Full sprint context, the three still-open owner-gated items, and the built-but-deferred **R1 patch**
+> (`R1-eligible-reorder.patch`) are in `.agent/2026-08-30-audit-sprint/HANDOFF.md`.
+
+
 > **RUN THIS BEFORE LEAVING, AND THE OTHER ONE ON RETURN.** Two read-only helpers were written this
 > session and neither is discoverable from the code:
 >
@@ -90,11 +116,17 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 > corpus-regression being a step detector blind to gradual drift. Both were verified against
 > synthetic data to actually fire, not just to run.
 
-> **THE ONE ACTION THAT MATTERS BEFORE THE ABSENCE: decide whether to ARM `BOARDWATCH_ALERT_URL`.** #258 is
-> merged and verified on `main` and through the editable venv, but it is a **strict no-op until armed**, so
-> without this the fortnight has no remote signal for a degraded-but-successful run. One line in the plist;
-> exact edit in `.agent/2026-08-30-session/ARMING-alert-escalation.md`. Deliberately left to Mit: it pages a
-> real person, and it depends on the healthchecks target actually reaching him.
+> **`BOARDWATCH_ALERT_URL` IS NOW ARMED — this is no longer an open action.** Verified 2026-08-30 in
+> `~/Library/LaunchAgents/com.boardwatch.run.plist`; the preflight reports "soft alerts WILL escalate".
+> The fortnight therefore HAS a remote signal for a degraded-but-successful run. Expect silence on a
+> normal day, and remember a dead LANE does not escalate (D-376).
+>
+> **Preflight re-run at the close of the audit sprint: EXIT 0, READY** — primary tree clean on `main`
+> at the merged work_auth fix, `tectonic`/`pdfinfo` both EXECUTED, wake armed 3:55AM, 15Gi free,
+> store at `p_runs_corpus_counts`, newest run 133 `ok`. Its single WARN ("last exit code is not 0")
+> is the known false alarm: `launchctl print` shows `runs = 0` / "never exited" because the agent was
+> RELOADED, while `boardwatch-run.log` has today's 05:55 mtime proving run 133 really executed. Not a
+> blocker — but do not read that WARN as a failed run, and do not read a `0` there as a clean one.
 >
 > **Run 133 already migrated the store** (`p_runs_board_split` -> `p_runs_corpus_counts`, `alembic_version`
 > confirmed) and populated the corpus columns for the first time. **`boardwatch web` was NOT restarted this
