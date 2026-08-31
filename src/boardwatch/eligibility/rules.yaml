@@ -386,11 +386,18 @@ families:
       # in the future" carries no refusal-verb frame (provide|offer|sponsor), so no_sponsorship_offered
       # never fired and the sentence cleared by silence. The "not" cue sits inside the span and is
       # declared consumed. Structure: "<refuse> ... <accept-verb> ... <require/need> sponsorship".
+      #
+      # `never` IS DECLARED because the pattern's refusal alternation spells `will\s+never`, so
+      # "We will never consider candidates who require visa sponsorship." MATCHED and was then
+      # dropped as cue-inside -- a polarity bug that reads exactly like a recall gap. The sibling
+      # `no_sponsorship_offered` above already declares it. Do not prune this list to the cues
+      # that look reachable by eye: a cue the pattern can span but does not declare is a rule
+      # that deletes its own row in silence.
       - id: no_sponsorship_will_not_consider
         requiredness: required
         implies: sponsorship_unavailable
         scope: sentence
-        consumes_cues: ["not", "cannot", "won't", "no"]
+        consumes_cues: ["not", "cannot", "won't", "no", "never"]
         requirement_text: "Candidates requiring sponsorship are not considered"
         pattern: '(?:will\s+not|do(?:es)?\s+not|cannot|can\x27t|will\s+never|won\x27t|(?:are|is)\s+unable\s+to)\s+(?:(?!\b(?:and|but|while|whereas)\b)\w+\s+){0,3}?(?:consider|accept|hire|employ|entertain)\s+(?:(?!\b(?:and|but|while|whereas)\b)[\w\x27]+\s+){0,6}?(?:requir(?:e|ing|es)|need(?:s|ing)?)\s+(?:(?!\b(?:and|but|while|whereas)\b)\w+\s+){0,3}?sponsorship'
 
