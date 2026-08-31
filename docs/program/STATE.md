@@ -112,10 +112,12 @@ already on `QueueRow` from a column the store already read.
    `implies` value so they corroborate, licensed by "the three already resolve IDENTICALLY in
    `resolve.py`", and these do not. The `work_auth` and `clearance` groups have the same defect and
    14 and 19 evaluations respectively, so they are cleanup, not the lever.
-2. **PR #288 — merge or hold, but read its "held" section first.** `make check` exit 0 on the branch
-   (8738 passed, 4 xfailed, 9m15s, read from the sentinel). Auto-merge deliberately NOT armed. Two
-   corpus-clean sponsorship recall fixes plus D-387, the CHANGELOG entry, STATE and METRICS. Holding
-   it costs nothing except that STATE and D-387 land later.
+2. **The next run pays a ~111k re-evaluation, and that is expected, not a fault.** #288 moved
+   `rules_hash`, so the first run after it re-evaluates the corpus and will be slower than run 135's
+   50 minutes. The 3-clean-post-fix provisional counter restarts with it (D-351 item 2 stands: not
+   being chased). **The corpus-regression detector is still dark until ~run 138 (~2026-09-04)** — do
+   NOT patch it; what stands in for it here is the measurement in D-387, which is a stronger
+   instrument than the detector: 25,264 live evaluations, control 0, and a byte-identical corpus.
 3. **ARM the job-apps lane — OWNER'S CALL, ON RETURN, FIRST RUN WATCHED.** The build is DONE (D-386,
    #286) and merged inert. D-385 ruled the arming question already and it is **not re-litigable**.
    **Two lines of local `config.toml` and no code change**: add `jobapps` to `lanes_enabled` and set
