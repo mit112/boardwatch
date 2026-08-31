@@ -21,48 +21,51 @@
 
 ## Current standing
 
-**THE ONE FAULT THAT COULD COST THE WHOLE FORTNIGHT NOW HAS AN INSTRUMENT.**
+**RUN 135 IS VERIFIED AND THE CLOSED-POSTING DRAIN FIRED CORRECTLY.** That was the previous
+close's first action and it is now answered, not pending. `_closed` exists and holds **70** folders;
+`runs.status` is `ok`; `funnel.fatal` is null; `funnel.errors` holds exactly **one** entry, the known
+hiring.cafe 14-facet/14-refusal `SearchPageError`. Cross-checked through the **store** rather than
+the drain's own folder count, because `queue_failed` is the only alerting key and `moved` is printed
+but never thresholded, so a mis-fire would have been silent: `closed_job_ids` **70** = 70 folders,
+`review_job_ids` **377** = 377, `ineligible_job_ids` **261** = 261. All three lanes reconcile exactly.
 
-`check_delivery_drought` counts `resume_tailored` artifacts, and the tailor writes one **whichever
-lane the lead routes to**. So a global break in location classification, the role gate or a
-requirement flag would send every lead to `_review`, keep artifacts flowing at the normal rate,
-leave the drought check abstaining on non-zero delivery and the heartbeat green — and ship **zero
-apply-ready leads for a fortnight with nothing firing.** Shipped as **D-384**: a per-run apply-lane
-drought detector, soft and non-fatal, firing only when the last 3 clean runs each delivered
-*placeable* leads and **none** reached the apply lane.
+**The apply lane reads 163, and the handoff's "~151" was not wrong — it was the drain-only figure.**
+The 70 folders split **apply 52 / `_review` 18**, exactly D-383's measurement, so the lane fell
+203 -> **151**; run 135 then delivered on top, with `apply_lane_placements` reporting **17 of 40**
+placeable leads reaching the apply lane. **Re-check this against 151 plus the run's own apply-lane
+arrivals, never against 151 alone.** (A `find -maxdepth 1 -type d` that does not exclude the root
+reports 164; the real count is 163.)
 
-**STATE had this open and sized it "materially bigger than it looks". That sizing measured a guard
-inside `_sync_queue`, and the premise was falsified by reading the code.** `review_job_ids`,
-`closed_job_ids` and `ineligible_job_ids` already take **only a connection**, and `QueueRow` already
-carries `delivered_run_id` — so the count composes from reads that exist, with **no** change to
-`review_gate`, none to `_sync_queue`, and none to the web server's result type. The generalisable
-form: **when a blocker says a change is too big, check whether the sizing was done against the
-implementation you would actually choose.**
+**#285's detector is reading the live store and correctly silent:** run 135 (40, **17**), run 134
+(40, 15), run 133 (28, 5) — all non-zero, and run 135 is the best split of the three at 42.5%.
 
-**The escalation channel is ARMED, and that is why this was worth building now.** Verified through
-the **LOADED launchd job, not the plist file**: `BOARDWATCH_ALERT_URL` is in
-`com.boardwatch.run`'s live environment and the 04:00 calendarinterval is registered. The
-2026-08-30 METRICS heading and the standing memory entry both still said the channel "ships
-DISARMED" — true of the ship state, false since it was armed the same day. A soft alert reaches an
-absent owner.
+**THE JOB-APPS INGESTION LANE IS BUILT, MERGED AND INERT (D-386, #286).** It carries the guard
+D-385 named as missing — **lane-health**, which D-376 records as absent because a dead lane does not
+escalate. A posting count cannot serve as one: job-apps has hard zero-cohort weekend days, so "no
+fresh records" carries no information. Two structural answers instead, neither a new detector: the
+**whole tree** is read every run rather than today's cohort, so `attempted` is stable by
+construction; and an absent, unreadable or record-free source **raises**, which `_run_lanes` already
+catches per lane into `summary.errors`. Pinned at the STAGE level by four integration tests driving
+the real `LANE_FACTORIES` entry, because the claim is about `_run_lanes` and not about the lane alone.
 
-### #284 was verified against the live store before its first run
+**Verified INERT in the live config after merging** — `lanes_enabled = ('hiringcafe', 'linkedin')`
+and `jobapps_discovery_dir = None`, read back through `load_settings()` because `Settings` ignores
+an unknown config key silently. Merging changed no unattended run.
 
-D-383 shipped hours earlier and had **never executed**; it moves 70 folders on run 134, and the
-queue alert keys on `queue_failed` only — `moved` is printed, never thresholded — so a mis-fire
-would have been silent for a fortnight. Verified: the closed set has **not drifted** (apply **52** /
-`_review` **18**, exactly D-383's figures, every folder resolving to a store row), and **"70 folders
-move" is EXACT** because `_status` only rewrites `open` -> `unverifiable`, leaving `closed`
-untouched. `_closed` is registered, derived into `_LOCATIONS`, created up front by `_ensure_root`,
-scanned by `_index`, and does not move the byte budget. It does not exist on disk yet — correct,
-since nothing has run since the merge. Full check table in `METRICS.md`.
+**The reach is larger than the design estimated, and the shape of it is the argument.** Of 737
+discovery records, 189 are direct-apply; **160 are absent from this store by URL** and 103 of their
+149 employers are unknown here by name. **126 of the 189 — two thirds — arrived through job-apps'
+own hiring.cafe acquisition**, i.e. the reach boardwatch's OWN hiring.cafe lane cannot get while it
+is refused 14 of 14 facets. This lane's largest contribution is routing around a lane that is down.
 
-**FIRST THING NEXT SESSION — verify run 135, the first execution of #284.** It was still pending
-at this close (tick 04:00 local, 2026-08-31). Confirm all three, because the queue alert keys on
-`queue_failed` ONLY and `moved` is printed but never thresholded, so a mis-fire is silent:
-`~/boardwatch-queue/_closed` now EXISTS; it holds ~70 folders; and the apply lane is ~151, not 203.
-If `_closed` is absent or empty while the apply lane is still 203, the drain did not fire and the
-run log is the only place that will say why.
+**The lesson worth carrying: I shipped a wrong dedup key and caught it by reading the precedent, not
+by testing.** The first cut deduped on job-apps' `posting_id`; the store keys on
+`(company_id, provider_posting_id)`, and `scan/apply.py` snapshots `existing` once, so two postings
+sharing one id both INSERT and the second violates UNIQUE **inside `apply_board`'s single
+transaction** — rolling the board back and discarding every later company plus the tally that would
+explain it. Zero collisions in the live tree today, so it was **structural, not observable**, and no
+test I would have thought to write would have caught it. `lanes/hiringcafe.py` had already written
+the hazard down.
 
 ### The seniority hold is 3 postings, not 5. It is dead, not deferred.
 
@@ -79,26 +82,17 @@ already on `QueueRow` from a column the store already read.
 
 ## Next action
 
-1. **job-apps ingestion — APPROVED, and the ask is ONE QUEUE (D-385).** Owner, 2026-08-31:
-   *"we use job apps's discovery as another source and boardwatch runs take it into consideration.
-   Everything leading to one queue for me to apply."* That is the target architecture, and it is why
-   the design is a **LANE, not a seventh provider**: a lane's output enters
-   `apply_board(..., scan_kind="lane")` and is then judged by boardwatch's OWN eligibility, dedup,
-   liveness and ranking — job-apps contributes DISCOVERY, boardwatch keeps every DECISION. There is
-   ONE queue (`~/boardwatch-queue`); job-apps' `APPLY_QUEUE` becomes an input to it. Costs **zero**
-   `engine_version` movement. Settled and not to be re-argued: ingest raw DISCOVERY never job-apps'
-   verdicts (its verdict rides in a provenance field the engine never reads — two systems' verdicts
-   in one queue is the second opinion `_review` exists to prevent); STRIP the header and fail closed;
-   dedup on the provider-namespaced ATS slug; import `_applied` FOLDERS never `applications.csv`.
-   **IT SHIPS DISARMED** behind a default-off setting, as D-376's escalation channel did, so merging
-   changes no unattended run until it is armed — and **the first armed run is watched, not
-   unattended**, because D-384 watches the lane SPLIT of what was delivered and therefore cannot see
-   a bad INPUT. Design at `.agent/2026-08-31-session/INGEST-JOBAPPS-DESIGN.md`. Both feeds are live:
-   boardwatch 04:00, job-apps 08:30 (`last exit code = 0`).
-   **Owner ruled 2026-08-31, so do not re-decide either: BUILD IT FIRST, in a clean gate
-   window (a disarmed lane delivers nothing during the absence, so there was no cost to
-   waiting and a contended 03:45 gate returns false failures), and ARM IT ON RETURN with the
-   first armed run WATCHED.** This is the next session's task 1.
+1. **ARM the job-apps lane — OWNER'S CALL, ON RETURN, FIRST RUN WATCHED.** The build is DONE
+   (D-386, #286) and merged inert. D-385 ruled the arming question already and it is **not
+   re-litigable**: arm on return, never during the absence, with the first armed run watched — because
+   per D-376 a mis-wired or dead lane does not escalate, and D-384 watches the lane SPLIT of what was
+   DELIVERED, so it structurally cannot see a bad INPUT. **Arming is two lines of local `config.toml`
+   and no code change**: add `jobapps` to `lanes_enabled` and set `jobapps_discovery_dir` to
+   job-apps' `APPLY_QUEUE`. Read both back through `load_settings()` — `Settings` ignores an unknown
+   key silently, so a typo arms nothing while looking armed. Expect ~188 postings across ~146
+   companies on the first armed run, with `lane_new_companies_per_run` (10) ramping the ~103 new
+   employers over ~10 runs. Do NOT re-raise whether to build it, and do not arm it unattended.
+
 2. **The `rules.yaml` word-gap audit — MEASURED, NOT SHIPPED.**
    `.agent/2026-08-31-session/HYPHEN-GAP-AUDIT.md`. 55 patterns: **9 HYPHEN, 9 PUNCTUATION, 18 SAFE,
    19 no gap**, each verified through the real pipeline with a control. Two `consumes_cues` findings
@@ -125,11 +119,12 @@ already on `QueueRow` from a column the store already read.
 *(No longer a next action: a seniority hold in `review_gate`. Re-measured at **3** postings and it
 needs profile+config in `store/` — see Current standing. Do not resurrect it as the big lever.)*
 
-## Session 2026-08-31b — what shipped
+## Session 2026-08-31c — what shipped
 
 | PR | what |
 |---|---|
-| **#285** | the apply lane gets its own drought detector (D-384) — the one fault `delivery_drought` is blind to |
+| **#286** | the job-apps ingestion lane, DISARMED, carrying the lane-health guard D-385 asked for (D-386) |
+| **#285** | the apply lane gets its own drought detector (D-384) — merged this session as `ebdc28da` |
 
 Previous session: **#284**, a closed posting drains to its own `_closed` lane (D-383), apply
 203 -> 151. **Verified this session against the live store before its first run** — see Current
@@ -215,7 +210,7 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
-| **`boardwatch web` WILL OVER-REPORT THE APPLY LANE BY ~70 UNTIL RESTARTED** | #284 moves 70 folders to `_closed` on the next run, but the running viewer (pid from 2026-08-29d) holds **pre-merge Python in memory** (D-360: bundle from disk, API from the import at startup), so its `/api/queue` keeps counting them as apply-lane work. **#284 adds NO migration**, so restarting is safe as soon as a run has finished — that is the D-279 window. Until then the page over-reports and the FOLDER TREE is the truth. **A second, stray `boardwatch web` was also running** at this session's start, launched by a shell carrying another session's transcript path, alongside a 0-byte 8h-old `.git/index.lock` (cleared after confirming no git process held it). **If a peer session is live in the primary tree, declare ONE owner before merging there** | **Mit** (restart after a run) |
-| **`boardwatch web` IS RUNNING — started 2026-08-29d** | Started from the primary checkout on `main` with `--port 0 --no-open` and **verified through a second path**: `GET /` returns 200 and `GET /api/runs` returns **401 without a token and 200 with the bearer**. The session URL is `http://127.0.0.1:<port>/#<token>` — the token rides in the **fragment** so it never reaches a server log or a `Referer`, it is stable, and it lives at `~/Library/Application Support/boardwatch/web-token` (mode 0600). **The port is whatever `--port 0` picked**, so read it from the process rather than assuming: `lsof -nP -iTCP -sTCP:LISTEN -a -p $(pgrep -f 'boardwatch web')`. It was stopped and restarted once during this session to take the store lock for the D-370 cold scan — **never write to the store with the viewer up**, a WAL two-writer deadlock against a running pipeline is on record. The underlying skew is still structural (D-360): the bundle is served from **disk** and the API from the Python imported **at startup**, so any merge or branch switch under a running viewer separates the two — **DO NOT RESTART IT AS OF 2026-08-29f.** `main` now carries the `p_runs_corpus_counts` migration while the store is still at `p_runs_board_split` until the 04:00 run migrates it, and the viewer NEVER migrates (D-279) — restarting against a checkout AHEAD of the store 500s it. The running process holds the pre-merge code in memory and is correct either side of an additive migration, so leaving it alone is the safe action. Restart only AFTER a run has migrated the store; the bundle it serves is built on disk (`web/dist` is untracked) and only `make web` changes it. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page | **Mit** (restart after merges) |
+| **`boardwatch web` IS NOW OVER-REPORTING THE APPLY LANE BY ~52, AND THE D-279 RESTART WINDOW IS OPEN** | **Run 135 has executed**, so this is no longer a prediction: 70 folders moved to `_closed` (52 of them out of the apply lane) while the running viewer (pid from 2026-08-29d) holds **pre-merge Python in memory** (D-360: bundle from disk, API from the import at startup), so its `/api/queue` keeps counting them as apply-lane work. **#284 adds no migration and #286 adds none either**, and run 135 has now migrated the store, so the checkout is NOT ahead of it — **the D-279 window is OPEN and a restart is safe as of 2026-08-31c**. Left running deliberately rather than restarted: it is a live process and the call is Mit's. Until it is restarted the page over-reports and the FOLDER TREE is the truth (apply **163**, `_closed` **70**, `_review` **377**, `_ineligible` **261**, all four reconciled against the store this session). **A second, stray `boardwatch web` was also running** at this session's start, launched by a shell carrying another session's transcript path, alongside a 0-byte 8h-old `.git/index.lock` (cleared after confirming no git process held it). **If a peer session is live in the primary tree, declare ONE owner before merging there** | **Mit** (restart after a run) |
+| **`boardwatch web` IS RUNNING — started 2026-08-29d** | Started from the primary checkout on `main` with `--port 0 --no-open` and **verified through a second path**: `GET /` returns 200 and `GET /api/runs` returns **401 without a token and 200 with the bearer**. The session URL is `http://127.0.0.1:<port>/#<token>` — the token rides in the **fragment** so it never reaches a server log or a `Referer`, it is stable, and it lives at `~/Library/Application Support/boardwatch/web-token` (mode 0600). **The port is whatever `--port 0` picked**, so read it from the process rather than assuming: `lsof -nP -iTCP -sTCP:LISTEN -a -p $(pgrep -f 'boardwatch web')`. It was stopped and restarted once during this session to take the store lock for the D-370 cold scan — **never write to the store with the viewer up**, a WAL two-writer deadlock against a running pipeline is on record. The underlying skew is still structural (D-360): the bundle is served from **disk** and the API from the Python imported **at startup**, so any merge or branch switch under a running viewer separates the two. The 2026-08-29f "DO NOT RESTART" instruction was conditional on the store being BEHIND the checkout; **run 135 has since migrated it, so that condition no longer holds** and a restart is safe (Mit's call). `main` now carries the `p_runs_corpus_counts` migration while the store is still at `p_runs_board_split` until the 04:00 run migrates it, and the viewer NEVER migrates (D-279) — restarting against a checkout AHEAD of the store 500s it. The running process holds the pre-merge code in memory and is correct either side of an additive migration, so leaving it alone is the safe action. Restart only AFTER a run has migrated the store; the bundle it serves is built on disk (`web/dist` is untracked) and only `make web` changes it. #232 makes a missing field degrade to the pre-#224 view instead of blanking the page | **Mit** (restart after merges) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
 | **hiring.cafe lane is DOWN; the HEADER LEVER FAILED and the remaining call is the OWNER'S** | **D-369/#245 shipped the search route's browser-navigation header set and run 133 is its readout: NEGATIVE.** Run 133 reproduced run 131's `SearchPageError` byte for byte (14 facets, 14 refusals), so **headers are ELIMINATED and that experiment must not be repeated.** D-368's other premises were already dead: the UA premise is FALSE (we have sent a Chrome UA since the lane shipped) and the volume premise did not survive the run log (run 128 spent ~28 requests; run 131 was refused on its FIRST request 14 h later). **What remains is the ENDPOINT — path-scoped protection on `/jobs/*`**: job-apps succeeds on `/`, our `/api/` calls succeeded every run through 128, our `/jobs/` calls have failed **14 of 14 on two separate runs**. That is a **compliance decision, not a repair** — robots.txt ALLOWS `/jobs/` and DISALLOWS job-apps' `?searchState=` form. **Still do NOT probe.** Half the lane coverage job-apps' edge comes from. **Second, smaller call:** ~196 refused requests over an unattended fortnight if the lane stays enabled (balanced; see Next action item 1) | **Mit** (the endpoint call, or send the drafted access request; and whether to leave the lane enabled) |
