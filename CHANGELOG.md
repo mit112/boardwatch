@@ -22,6 +22,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An eligible lead still has to be a US software role to reach the apply queue.** `eligible`
+  used to skip the location and role checks entirely, so a posting could be marked eligible and go
+  straight to the blindly-appliable queue while being neither — the audit found a "Field Auto
+  Adjuster" doing exactly that. Eligibility answers the six blocker families; it says nothing about
+  role family or country. Five leads move to the review lane, all of them titles with no software
+  signal rather than positively vetoed ones, and nothing is dropped. An eligible lead is still
+  exempt from the two unconfirmed-requirement holds, which is deliberate: those cannot see family
+  severity, and eligibility has already settled the blocking families. (D-382)
+
 - **Postings that require US citizenship, a clearance you cannot get, or years you do not have no
   longer reach the apply queue.** Six requirement phrasings produced no requirement row at all, so
   nothing downstream could act on them — a routing change cannot move a requirement that was never
