@@ -59,10 +59,11 @@ knowingly; the confirm is the control.
 
 ## 2. Ordering principle
 
-job-apps' principle — *breadth multiplies whatever is downstream of it* — is correct and I adopt it.
-**But it constrains input, not output.** PDF emission and unattended running are output-side: shipping them
-early multiplies nothing. They make the current small, precise funnel actionable. So the live gap can be
-closed early without violating the principle, and breadth still goes last.
+**RETIRED 2026-08-31, on the owner's call: the "breadth is last" ordering principle no longer binds.**
+It was carried from job-apps and was given more weight than it earned — it was used to defer input work
+on a downstream that is now instrumented rather than assumed. The phase list below is kept as the
+historical build order, not as a rule about what may be worked next. Input and output work are now
+sequenced on measured evidence like anything else.
 
 ```
 P0  Instrumentation        → anything below is measurable at all
@@ -77,10 +78,10 @@ P7  Breadth                → the three discovery lanes (PULLED FORWARD, D-280)
 ──  14-day acceptance run  → the same bar, confirming in the background
 ```
 
-**Breadth now precedes acceptance (D-280), and that is a departure from the principle above, taken
-knowingly.** Breadth still multiplies whatever is downstream of it — the reason it went last — but the
-downstream is now measured rather than assumed: dedup leakage and liveness are instrumented, and boardwatch
-reaches only 7.7% of job-apps' eligible yield (D-271) because of *company reach*, not fetch depth.
+**Breadth precedes acceptance (D-280).** The downstream it was once thought to multiply is now measured
+rather than assumed: dedup leakage and liveness are instrumented. boardwatch reaches only a fraction of
+job-apps' eligible yield (D-271, re-derived to 16.4% on 2026-08-30) because of *company reach*, not fetch
+depth.
 
 **Breadth is NOT required to hold B1, and the reason it was thought to be is measured false (D-281).**
 `built` is a permanent disposition, so every run retires its shortlist for good and the next 40 by rank
@@ -675,12 +676,11 @@ contains exactly that bit (`needs_sponsorship: true`). So the fix is one declare
 cheap — not a phase-sized rebuild. Worth stating precisely, because "the engine is non-functional" and
 "the engine is missing one input" imply very different amounts of work.
 
-**6. Output-side work can precede input-side work without violating job-apps' own ordering principle.**
-*Breadth multiplies whatever is downstream of it* constrains **input**. PDF emission and unattended
-running are downstream terminals — they multiply nothing. job-apps' roadmap puts them at positions 5 and 6
-of 7, which means ~4 phases of latency while Mit gets zero résumés a day. I move the résumé artifact gate
-to P1 and the unattended runner to P3, and keep breadth last. This is consistent with job-apps' principle,
-not a departure from it.
+**6. Output-side work precedes input-side work here.** job-apps' roadmap puts PDF emission and
+unattended running at positions 5 and 6 of 7, which means ~4 phases of latency while Mit gets zero résumés
+a day. I move the résumé artifact gate to P1 and the unattended runner to P3. (This was originally argued
+from job-apps' "breadth is last" principle; **that principle was retired on 2026-08-31** — see §2 — and
+the reordering stands on its own merits.)
 
 **7. No phase gate is "run for 14 days."**
 job-apps' Phase 5 gate is *"14 consecutive unattended days meeting §1's bar."* Using the acceptance run as
@@ -689,7 +689,7 @@ eligibility and the résumé gate. Running it at P5 guarantees either a reset or
 data. P3's gate is 7 days of *operational* stability; the bar is measured once, after P6.
 
 **Not disputed, and adopted wholesale:** the keystone abstain invariant · the three-tier rule taxonomy ·
-breadth-last · closed reason catalogs · certainty-determines-consequence in dedup · the fail-safe direction
+closed reason catalogs · certainty-determines-consequence in dedup · the fail-safe direction
 table · the lock discipline · the systemic-outage guard reading the decision field · never caching
 non-terminal verdicts · policy/prompt version split as the cache-invalidation knob · every quarantine
 needs a drain.

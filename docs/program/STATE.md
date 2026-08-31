@@ -159,6 +159,19 @@ Also this session, no PR: the **job-apps lane ARMED** against `resumes/` (owner'
 
 Previous session: **#288** two sponsorship recall fixes (D-387).
 
+## Doctrine change — "breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
+
+The `CLAUDE.md` section is **deleted** and the live pointers in `PROGRAM.md` and `STANDING-FACTS.md`
+are gone. It reasoned about an ASSUMED downstream; that downstream is instrumented now, so the
+question is answerable with numbers per change instead of settled in advance by an ordering rule.
+**Nothing replaces it** — input work is sequenced on measured evidence like anything else.
+
+**The decision logs are append-only and were deliberately left alone**, so D-280, D-296, D-345 and
+others still argue from the principle. **Meeting the phrase in an old entry does not make it
+current** — D-391 is the reason. Still live, and stated where they belong: every quarantine needs a
+drain designed in the same change; a cap never observed firing is unverified; the keystone invariant
+is untouched.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED 2026-08-31 — it keeps running.**
