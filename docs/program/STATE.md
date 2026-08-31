@@ -18,211 +18,102 @@
 ---
 
 
+
 ## Current standing
 
-**ARMING IS ONE PLIST LINE AND IT IS MIT'S CALL — IT IS THE ONLY ACTION THAT MAKES #258 DO ANYTHING.**
-`BOARDWATCH_ALERT_URL` is unset, so the code is a strict no-op today (verified through the editable venv).
-The exact edit, the reload commands and the two questions to settle first — do you want daily paging while
-away, and does your healthchecks target reach you — are in `.agent/2026-08-30-session/ARMING-alert-
-escalation.md`. **Deliberately not armed: it pages a real person.**
+**THE QUEUE-AUDIT SPRINT IS COMPLETE AND MEASURED BY AN INDEPENDENT JUDGE. The acceptance test
+PARTLY PASSED, and the honest number is not the one the engine forecast.**
 
-**RUN 134 IS THE FIRST PRODUCTION EXECUTION OF #258 AND #260 — RUN 133 IS NOT EVIDENCE FOR THEM.**
-Run 133 finished 10:52:56 UTC; #258 merged 11:03:05 UTC and #260 11:44:15 UTC, so both landed AFTER
-it. Run 133 IS the acceptance evidence for the ten 2026-08-29f PRs (#247-#256), which is what its
-`## Alerts` section proves — do not stretch it further. The escalation chain was instead proven
-end-to-end **in a real pipeline run** on an isolated store: a real detector result reached
-`summary.errors`, the digest rendered `## Alerts` above `## Discovery reach`, and the real
-`escalate_alerts` POSTed the body over a real socket, with the run surviving. That is a test
-environment, not production. **Expect run 134 to be the first time this code runs for real, and
-expect it to POST nothing** — the channel is unarmed, and even armed, run 133's only alert was a
-LANE error, which the finalize-block slice deliberately excludes.
+Mit's test: *"I don't want to see a job in the apply queue where I can instantly spot something that
+makes it ineligible."* Four PRs shipped tonight (#276, #278, #280, #281) plus #275 earlier.
+**Apply lane 420 -> 203.**
 
-**`check_intake_death` HAS NO RUN-STATUS FILTER, and both its siblings do — owner's call.**
-`intake_death.py:42-47` selects on `new_count IS NOT NULL` only, while `delivery_drought.py:50` and
-`corpus_regression.py:89` both filter `status == RUN_OK`; no test covers the status dimension. Two
-wrong directions, the second worse: a failed run with `new_count = 0` can contribute to a FALSE
-alert, and a failed run with `new_count > 0` **RESETS the window and MASKS** a real intake death —
-run 132 is exactly that shape (`status='failed'`, `new_count=400`, one board). **Not fixed here**:
-it cannot bite while nobody is running ad-hoc scans, it is not a one-line change (a seeded run
-defaults to `status='running'`, so adding the filter silences all six existing tests), and whether a
-FAILED run should count toward "intake died" is a judgement, not a typo.
+Two instruments, reported apart on purpose — blending them is what made the old forecast wrong:
 
-**TWO RESIDUALS ARE THE OWNER'S CALL, both recorded with numbers and neither fixed.** (a) Trailing
-`Director` defeats the seniority gate — 9 live titles of 84,724, 4 reaching an entry target; the
-directionality is deliberate and documented, but the docstring's supporting measurement was taken
-on a corpus **2.2x smaller**. (b) `STRUCTURALLY_UNDECIDABLE` in `reports/abstain.py` freezes two
-rules as never-decidable that returned **30,231** and **691** `unmet` on run 133, and
-`fully_abstaining_fixable` EXCLUDES anything so flagged — so a D-372-class regression in either
-would be masked. Revisiting D-253 is owner-gated.
+| instrument | before | after |
+|---|---|---|
+| **engine census** (the same engine that would verify itself) | 208 of 420 = 49.5% | **48 of 203 = 23.6%** |
+| **independent blind judge**, apply lane, decoys excluded | 44 of 76 = 57.9% | **34 of 77 = 44.2%** |
 
-**SAY WHICH ELIGIBILITY POLICY YOU MEAN, EVERY TIME (D-350)** — catalog and live profile diverge on **five
-of six** families (`rules.yaml`: only `work_auth` is a `blocker` default; live store: all six). Full rule in
-`STANDING-FACTS.md`.
+**THE TWO DISAGREE, AND THAT IS THE FINDING.** The forecast "208 -> roughly 40" was computed with
+the engine's own regexes and the engine delivered it (48). The blind judge, which never sees
+boardwatch's verdicts, still calls **44%** of the apply lane spottable. The engine cannot see what
+it has no rule for, so a census built from its own nets under-reports by construction. **Never quote
+23.6% as the queue's quality** — quote it as the engine's own view, next to the judge's 44.2%.
 
-**The lane question is CLOSED (D-346/D-347) — do not re-propose lane parallelism.** In `STANDING-FACTS.md`.
+What the judge still finds in the apply lane (n=77, decoys excluded): **seniority mismatch 28**,
+**experience 21**, work_auth 5, role-family 6, clearance 1, degree 1. Vacuity control passed — 4 of 4
+known-answer decoys caught. Zero `ineligible` without a quoted span, both runs.
 
-**Everything below this line is carried and remains true.** Gate P6 is 4 of 4; **the delivery cap is 40, set
-in the plist (D-366)** and the code default `DEFAULT_TOP_N` stays 10; breadth is argued on precision and
-capacity, never an application count (D-312). Board cost is provider-weighted and **s/board is a lying
-unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: `METRICS.md`.
+**SENIORITY IS NOW THE LARGEST CLASS AND BOARDWATCH HAS NO GATE FOR IT.** `role_gate` decides role
+FAMILY, not level. 28 of 77 is bigger than any eligibility family. This is the top candidate for the
+next session, and it is exactly where job-apps wins (below).
+
+**job-apps FILTERS BETTER — measured, same judge, same facts, same night, neither system grading
+itself.** boardwatch apply **44.2% spottable** vs job-apps **16.2%** (13 of 80); role-family
+mismatch **6 vs 0**. **The mechanism is upstream pre-filtering:** job-apps keeps a curated H-1B
+sponsor allowlist and draws 65% of its queue from LinkedIn/Indeed, where the aggregator supplies a
+literal `Entry Level` facet (10 of 80 carry it; **0 of 80** on boardwatch, which sources direct from
+ATS boards that expose no such facet). This CORRECTS the standing "the gap is throughput, NOT an
+eligibility defect" line — true of REACH, false of filtering QUALITY.
+
+**Three caveats that bound every number above, all found by cross-checking rather than assumed:**
+1. The first job-apps staging was **NOT blind** — its `job_description.txt` carries a job-apps
+   header (`Template: <family>` on 80 of 80, `Fit: N/100`, a live `URL:`) against 0 of 150 on the
+   boardwatch side. `stage_jobapps.py` now strips it and **fails closed**. Re-judged; the conclusion
+   held (16.2% vs the leaked 15.0%).
+2. **Judge sessions are NOT calibrated across runs** — `eligible` came back 0/150 one run and 47/80
+   another. Only the evidence-anchored `ineligible` axis and the part-B fit axes survive a
+   cross-session comparison. Never compare `eligible` rates.
+3. boardwatch's 80 includes **4 force-included decoys**; 76/77 is the unbiased denominator.
+
+**Run 134 succeeded** (exit 0, ~1h45m; the full 111,361-posting re-evaluation is the cost of a rules
+change). `engine_version` is now `1+6a9fb2164f5b`. hiring.cafe failed again exactly as D-369
+predicts — expected, not new.
 
 ---
 
 ## Next action
 
-> **TWO PRs ARE GREEN AND HELD ON PURPOSE, to merge as ONE BATCH next session.** Mit's plan,
-> agreed at the close of the audit sprint: next session runs immediately after, he leaves right
-> after it, so it fixes the remaining findings, merges the batch, and does ONE ATTENDED RUN before
-> the fortnight. `auto-merge` is DISARMED on both — that is the plan, not an oversight.
->
-> - **#276** delivery-router narrowing (D-380): moves **144 of 609** delivered leads to `_review`,
->   **23.6% of the queue**, apply lane **420 -> 276** — and it is **RETROACTIVE and automatic**
->   (`queue.py` recomputes the lane every pass; folders re-lane with no explicit re-sync).
-> - **#278** experience RANGE detection: a range could never reach a scoped tail, so 56 of 168
->   years-jobs produced NO requirement row at all. Years jobs left in apply **56 -> 29**.
->
-> They are **complementary** — #278 makes requirements visible, #276 acts on them. Merging one
-> without the other wastes most of the value.
->
-> **The acceptance test is Mit's, in his words:** *"I don't want to see a job in the apply queue
-> where I can instantly spot something that makes it ineligible."* Measured tonight: **208 of 420
-> apply-lane folders (50%) trip something spottable** — 168 state 3+ years, 24 require US
-> citizenship, 18 mention clearance, 15 refuse sponsorship, 16 have an unclassifiable (often
-> plainly foreign) location. The full inventory, the ordered next-session task list, and the two
-> findings that must be DIAGNOSED before any pattern is written are in
-> **`.agent/2026-08-30-audit-sprint/HANDOFF.md`**.
+1. **A SENIORITY GATE.** 28 of 77 apply-lane items, the largest single class, and nothing in the
+   pipeline reads level. Note the shape job-apps uses: an upstream aggregator facet, not JD prose.
+2. **Sponsorship recall round 2 — BUILT, MEASURED, DELIBERATELY NOT SHIPPED.** Patch and full
+   rationale at `.agent/2026-08-30-audit-sprint/WIP-sponsorship-recall-NOT-SHIPPED.patch` and its
+   README. It cannot be made correct without CAPTURING jurisdiction the way `no_sponsorship_offered`
+   does: a foreign-only guard produced a wrong `ineligible` on "For the London position…", and an
+   any-jurisdiction guard stands the patterns down on the three spans worth catching. **Upside is 5
+   apply-lane postings, not the 27 the sweep found** — that sweep predates run 134.
+3. **Two real bugs worth keeping whatever shape (2) takes:** `cannot CONFIRM that sponsorship is
+   available` answered `ineligible`; and a `\w+` word gap **cannot cross a hyphen**
+   (`immigration-related`) — the same class as the parenthesis in D-381, so audit every gap in the
+   catalog for it.
+4. **`does not include internships` kills EVERY experience row on ~6 Stripe postings.** A negation
+   cue inside a parenthetical suppresses the requirement it qualifies. Shared negation machinery —
+   too broad to change unattended, measured and left alone.
+5. **`(F/H)` is unreachable by `foreign_ad_gate`** — `_FRENCH_GENDER_MARKER` requires `h/f` order and
+   parentheses, so `(F/H)`, bare `H/F` and bare `F/H` all miss. Zero apply-lane escapes today.
 
-> **#275 (D-379) is MERGED** and live in the primary tree the 04:00 run executes: the work_auth
-> sponsorship leak is closed — `must be authorized to work in the US without sponsorship` no longer
-> reads as `eligible` for an EAD holder who needs sponsorship. 1,670 of 109,450 open postings carry
-> one of the two surfaces. **No ledger drain is owed** — verified read-only: 780 dispositions, all
-> `built`, zero `skipped`, and the fix only narrows.
->
-> Full sprint context, the three still-open owner-gated items, and the built-but-deferred **R1 patch**
-> (`R1-eligible-reorder.patch`) are in `.agent/2026-08-30-audit-sprint/HANDOFF.md`.
+---
 
+## Session 2026-08-30b — what shipped
 
-> **RUN THIS BEFORE LEAVING, AND THE OTHER ONE ON RETURN.** Two read-only helpers were written this
-> session and neither is discoverable from the code:
->
->     zsh    .agent/2026-08-30-session/preflight-before-leaving.sh
->     python3 .agent/2026-08-30-session/away-readout.py 133
->
-> The **preflight** exits 0 when nothing blocks a 14-day window, and checks the five things that
-> would actually cost a fortnight — including that the primary tree is **CLEAN**, not merely on
-> `main`, because the editable venv means the run executes the WORKING TREE and a stray edit
-> silently changes every subsequent night. **Its one irreplaceable check: it EXECUTES `tectonic`
-> and `pdfinfo` rather than only locating them**, which is exactly what boardwatch's own render
-> preflight does not do (`shutil.which` succeeds for a binary broken by a `brew upgrade`). Today it
-> is green with exactly two WARNs, and they are the two owner decisions below.
->
-> The **away-readout** replaces opening fourteen morning digests with one table per run, and flags
-> both a calendar day with NO run (what the heartbeat should have paged for) and a candidate-rate
-> collapse. It prints the rate for EVERY run, which is the compensating control for
-> corpus-regression being a step detector blind to gradual drift. Both were verified against
-> synthetic data to actually fire, not just to run.
+| PR | what |
+|---|---|
+| **#276** | unconfirmed-requirement leads route to `_review` (D-380) |
+| **#278** | experience bar stated as a RANGE |
+| **#280** | six recall patterns: citizenship, clearance stack, domain-years (D-381) |
+| **#281** | `eligible` no longer skips the role/location gates — R1 (D-382) |
 
-> **`BOARDWATCH_ALERT_URL` IS NOW ARMED — this is no longer an open action.** Verified 2026-08-30 in
-> `~/Library/LaunchAgents/com.boardwatch.run.plist`; the preflight reports "soft alerts WILL escalate".
-> The fortnight therefore HAS a remote signal for a degraded-but-successful run. Expect silence on a
-> normal day, and remember a dead LANE does not escalate (D-376).
->
-> **Preflight re-run at the close of the audit sprint: EXIT 0, READY** — primary tree clean on `main`
-> at the merged work_auth fix, `tectonic`/`pdfinfo` both EXECUTED, wake armed 3:55AM, 15Gi free,
-> store at `p_runs_corpus_counts`, newest run 133 `ok`. Its single WARN ("last exit code is not 0")
-> is the known false alarm: `launchctl print` shows `runs = 0` / "never exited" because the agent was
-> RELOADED, while `boardwatch-run.log` has today's 05:55 mtime proving run 133 really executed. Not a
-> blocker — but do not read that WARN as a failed run, and do not read a `0` there as a clean one.
->
-> **Run 133 already migrated the store** (`p_runs_board_split` -> `p_runs_corpus_counts`, `alembic_version`
-> confirmed) and populated the corpus columns for the first time. **`boardwatch web` was NOT restarted this
-> session and still need not be** — verified that PID 22459 holds no descriptor on `boardwatch.db`, so it
-> cannot block a WAL checkpoint; the viewer never migrates (D-279), so restarting it against a checkout
-> ahead of the store 500s it. It is now safe to restart *if wanted*, since the store has migrated.
->
-> **corpus-regression CANNOT FIRE until ~run 138 (~2026-09-04).** All 133 pre-existing runs have
-> `corpus_open/evaluated/candidates` NULL; run 133 is qualifying baseline point **1 of 6**. Bounded, and
-> **not worth patching** — the obvious zero-floor fix contradicts `test_abstains_below_the_window`, a
-> tested and documented decision. The one run the detector could not judge was run 133 itself, and that was
-> checked by hand: no collapse.
+`make check` exit 0 on every one. **Two first-draft loosenings were caught by the gate, not by
+review**, and both are now memory entries: a pattern implying a DIFFERENT value from the same
+`exclusive_group` as a sibling makes the group CONFLICT and rewrites BOTH rows to `unknown` — seven
+corpus cases fell `ineligible` -> `uncertain`.
 
-> **THE HEARTBEAT IS NOW SELF-REPORTING, BUT RECEIPT IS STILL MIT'S TO CONFIRM (D-375).**
-> `send_heartbeat()` used to return a `bool` whose value was discarded, with `False` meaning BOTH "refused"
-> and "no URL configured" — so the obvious "alert on falsy" fix would have fired on every unconfigured
-> install. It now returns `str | None` and a refused ping is recorded durably. **What it still cannot do is
-> prove the ping ARRIVED.** Open the healthchecks.io dashboard and confirm the 04:00 pings landed, and that
-> the notification target is one Mit reads while away. **Do NOT GET the ping URL to check — that
-> manufactures a green.** Note the heartbeat's own alert reaches NO artifact: the gate is last, after
-> `_emit_morning`, and no report reads a prior run's `errors_json` (verified, not assumed).
-
-1. **hiring.cafe: THE READOUT IS IN AND IT IS NEGATIVE — HEADERS ARE ELIMINATED (D-369, #245).** Run 133
-   failed exactly as run 131 did, byte for byte: `SearchPageError("every role facet yielded nothing (14
-   searched, 14 request failures)")`. It started 04:00 on 08-30, well after the fix committed 13:23 on
-   08-29, so it **is** the readout. The header hypothesis is dead. **Do not re-run this experiment.**
-   **What remains is the ENDPOINT, and it is the OWNER'S call, not an agent's.** Path-scoped protection on
-   `/jobs/*` is the strongest surviving hypothesis (volume is the weaker one): job-apps succeeds on `/`,
-   our `/api/` calls succeeded every run through 128, our `/jobs/` calls have now failed **14 of 14 on two
-   separate runs**. Moving off `/jobs/` is a **compliance decision, not a repair** — robots.txt ALLOWS
-   `/jobs/` and DISALLOWS job-apps' `?searchState=` form, so the compliant route is the blocked one. The
-   drafted, unsent access request is at `.agent/2026-08-28g-session/hiringcafe-access-request.md`.
-   **Still do NOT probe the site, even once.** Until it lifts, lane coverage is **HALVED**.
-   **A second, smaller decision now sits beside it:** left enabled, the lane will issue ~14 refused facet
-   requests per run — roughly **196 over an unattended fortnight** — to a host that refuses us. Disabling
-   it is one line in the LOCAL `config.toml` (`lanes_enabled`). Genuinely balanced and NOT actioned:
-   against disabling, those requests are within hiring.cafe's own published robots policy and 14/day is
-   trivial load; for disabling, it stops futile traffic and *may* help if the "more requests keep it
-   closed" premise holds — which is a hypothesis, not a measurement. Leaving it enabled preserves the only
-   signal that would show a recovery.
-
-
-2. **THE PACING TRIAL IS HELD, NOT CANCELLED (D-355).** #222 **is merged now** — the previous
-   STATE claimed that while the PR was still OPEN and RED, and the repo won (D-358). The lever ships
-   **disarmed**; arming is one config line plus a read-back check, and the whole procedure is in
-   `.agent/2026-08-28f-degree-audit/RUN131-CHECKLIST.md`. Mit held it on 2026-08-28 because
-   hiring.cafe began refusing us on a day that ran FOUR runs against a cadence of one, and
-   **raising the per-host rate 0.6 -> 1.0 req/s on that day is the wrong direction**. Revisit once
-   hiring.cafe is healthy and the run cadence is back to normal. **`Settings` does NOT forbid extra
-   keys, so a typo'd config key arms NOTHING silently — always read the value back through
-   `load_settings()`.**
-
-   **2026-08-29d — there is now a MECHANICAL reason too, not just a judgement call.** `_lane_fetcher`
-   builds its `Fetcher` from the **same `Settings`**, so `pace_from_request_start` applies to the
-   **LANE** as well as the scan. Arming it cuts the hiring.cafe facet interval from "1.0 s + response
-   time" to a flat 1.0 s — **2-4x faster against the host that is currently refusing us**, and a
-   **second variable in the D-369 readout**. Keep it disarmed at least until that run reads out. Live
-   config confirmed at this close: `per_host_delay_seconds=1.0`, `pace_from_request_start=False`,
-   `scan_workers=8`, `detail_fetch_budget=400`.
-
-   **The revert trigger is the PARTIAL RATE AMONG FETCHED BOARDS, and the two earlier versions were
-   both wrong (D-353).** Revert on **+5 pts or worse**; run 130 read 9.7%. Do NOT use a raw
-   `complete -> partial` count (background rate 3-6 EVERY run) and do NOT use the net of the two
-   (it read **-10 on run 130, which had no pacing change**, because `unchanged` collapsed 153 -> 36
-   when the validator TTL expired). Any `board_scans` query MUST filter `scan_kind='board'`.
-
-   **Run safety, worktrees and the shared scratchpad have moved to `STANDING-FACTS.md`** ("Moved out
-   of STATE on 2026-08-28g") — process-liveness guarding, the EDITABLE venv, PID-scoped kills, and
-   per-launch log/sentinel naming. Read that section before touching a live run or launching a gate.
-
-3. **THE PROVISIONAL PASS IS ALLOWED TO SLIP — "work comes first" (D-351).** #218 reset the
-   3-clean-run counter and it is **not being chased**. **Read it as UNBLOCKING: eligibility is NOT
-   frozen**, so rules work may land freely and a `rules_hash` bump is not costly on this basis until
-   the owner reopens the pass. The P4 blind review remains passed and does not repeat.
-
-4. **Phase 1b and its follow-up are COMPLETE — item RETIRED.** Detail moved verbatim to
-   `STANDING-FACTS.md` 2026-08-28h, including why #230 is keyed on the `role_vetoed` MEMBER and
-   must not be re-broadened to the review lane (D-354, D-359).
-
-5. **`main` IS GREEN** and stayed green across #240-#243. The three deflakes behind that, and the
-   standing rule they produced — **when a timing test flakes, ask what it MEASURED versus what it
-   CLAIMS**, and **mutate every new assertion** — are in `STANDING-FACTS.md`.
-
-6. **Re-read the queue after the next run.** The D-333 band moved 6,123 evaluations into `uncertain`
-   and D-332 routes them; `.agent/2026-08-27-queue-split/` holds the read-only harness.
-   `phase2_measure.py` correctly reports 0 movers — that is "already moved", not a broken query.
-
-7. **Deferred with numbers, do not re-derive:** job-apps' preferred-vs-required HEADING state
-   machine is **2 of 286** and architectural (D-320). The years-detection gap that sat here was
-   addressed by #218 — read that PR, not the old 24-leads/1.3% figure.
+**Harness, all preserved under `.agent/2026-08-30-audit-sprint/audit-harness/`:** `stage_audit.py`
+(now searches ALL lanes for the decoys and **hard-fails** if one is missing — the old apply-only
+lookup would have silently dropped two once #276 re-laned them), `stage_jobapps.py`, `CODEX-PROMPT.md`,
+`JOBAPPS-PROMPT.md`, the before-baseline (`*-before-baseline.*`) and both after-runs.
+**Codex needs `-s workspace-write`; `--full-auto` is not a flag in codex-cli 0.151.0.**
 
 ## Owner-gated — do NOT start or decide unilaterally
 
