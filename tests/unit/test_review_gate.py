@@ -11,12 +11,49 @@ gate that moves under the fixture fails here instead of passing vacuously.
 
 from __future__ import annotations
 
-from boardwatch.delivery.review_gate import REVIEW_DIR, classify, lane
+from boardwatch.delivery.review_gate import REVIEW_DIR, LaneDecision, classify, lane
 from boardwatch.rank.role_gate import role_verdict
 
 
-def test_eligible_always_applies_regardless_of_location_or_role() -> None:
-    assert lane(verdict="eligible", locations=["Kaunas, Lithuania"], title="Janitor") == ""
+def test_eligible_still_faces_the_location_and_role_gates() -> None:
+    """R1, and it REVERSES `test_eligible_always_applies_regardless_of_location_or_role`.
+
+    `eligible` used to short-circuit above both gates, so an eligible posting was
+    blindly-appliable however foreign or however far from software it was. The 2026-08-30
+    audit found a "Field Auto Adjuster" marked eligible sitting in the apply queue, and an
+    independent blind judge scored 5 role-family mismatches in 80 apply-lane items against a
+    comparison system's 0 in 80. Eligibility answers the six blocker families; it says nothing
+    about whether the role is software or the office is in the US.
+    """
+    assert lane(verdict="eligible", locations=["Kaunas, Lithuania"], title="Janitor") == REVIEW_DIR
+    assert classify(
+        verdict="eligible", locations=["Kaunas, Lithuania"], title="Software Engineer"
+    ) == LaneDecision(REVIEW_DIR, "non_us_location")
+    # `role_unconfirmed`, not `role_vetoed`: the title carries no software signal rather than a
+    # positive veto. That is the reason ALL FIVE items this gate moves on the live queue read
+    # `role=uncertain` — R1's population is the unconfirmed, not the vetoed.
+    assert classify(
+        verdict="eligible", locations=["Austin, TX"], title="Field Auto Adjuster"
+    ) == LaneDecision(REVIEW_DIR, "role_unconfirmed")
+    # ...and a confirmed US software role is still promoted, so the gate narrows rather than vetoes.
+    assert lane(verdict="eligible", locations=["Austin, TX"], title="Software Engineer") == ""
+
+
+def test_eligible_short_circuits_above_the_requirement_flag_gates() -> None:
+    """The SCOPE of R1, and the reason it does not open D-380's known R2 gap.
+
+    `eligible` falls through location and role, and stops there. Those flags ignore family
+    SEVERITY — which is policy-level and not stored per row — so a `preference`-family row that
+    could never block would hold an eligible lead for review. D-380 records that gap as reachable
+    only once this short-circuit moves BELOW the flags; this asserts it has not.
+    """
+    assert lane(
+        verdict="eligible",
+        locations=["Austin, TX"],
+        title="Software Engineer",
+        experience_unconfirmed=True,
+        eligibility_unconfirmed=True,
+    ) == ""
 
 
 def test_verified_uncertain_us_swe_is_promoted_to_apply() -> None:
@@ -138,8 +175,10 @@ def test_a_vetoed_title_and_an_unconfirmed_one_are_DIFFERENT_reasons() -> None:
 
 
 def test_the_apply_lane_carries_no_reason() -> None:
+    # Was `eligible` + Kaunas + Janitor, which R1 now holds for review. An eligible lead reaches
+    # the apply lane only when it is also confirmed US and confirmed software.
     assert classify(
-        verdict="eligible", locations=["Kaunas, Lithuania"], title="Janitor"
+        verdict="eligible", locations=["Austin, TX"], title="Software Engineer"
     ) == ("", None)
     assert classify(
         verdict="uncertain", locations=["San Jose, CA, United States"], title="Software Engineer"

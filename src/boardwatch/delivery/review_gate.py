@@ -1,12 +1,14 @@
 """Delivery-time apply/review lane classification.
 
-The queue already excludes ``ineligible`` (D-321); the gap is ``uncertain``, which
+The queue already excludes ``ineligible`` (D-321); the gap is every verdict that
 rides into the apply queue by failing open at a ranker gate — location ``unknown``
 passes the hard US gate (fail-open on the unclassifiable, by the visa ruling) and
 role ``uncertain`` passes the role gate. This re-checks both *positively*: an
-``uncertain`` lead reaches the blindly-appliable queue only when it is confirmed US
-and confirmed software. Anything else — a foreign/unknown location, a non-software
-title, or an unevaluated (``None``) verdict — routes to the review lane instead.
+lead reaches the blindly-appliable queue only when it is confirmed US and confirmed
+software. Anything else — a foreign/unknown location, a non-software title, or an
+unevaluated (``None``) verdict — routes to the review lane instead. That includes an
+``eligible`` lead: eligibility answers the six blocker families, and says nothing about
+whether the role is software or the office is in the US.
 
 Two further gates narrow the same fail-open from the other side. A lead can be US and
 software and still carry a requirement the engine could not confirm: an experience bar it
@@ -116,8 +118,6 @@ def classify(
     apply. The eligibility verdict, when it returns, can only move such a lead to
     ``ineligible`` (excluded) — never make a foreign or non-software lead appliable.
     """
-    if verdict == "eligible":
-        return LaneDecision("", None)
     if verdict == "ineligible":
         return LaneDecision(REVIEW_DIR, "ineligible_verdict")
     if classify_location(list(locations)) == "non_us":
@@ -127,6 +127,21 @@ def classify(
         return LaneDecision(REVIEW_DIR, "role_vetoed")
     if role != "swe":
         return LaneDecision(REVIEW_DIR, "role_unconfirmed")
+    # R1. `eligible` used to short-circuit ABOVE the two gates above, so an eligible posting was
+    # blindly-appliable however foreign or however far from software it was — the 2026-08-30 audit
+    # found a "Field Auto Adjuster" marked eligible sitting in the apply queue, and an independent
+    # blind judge scored 5 role-family mismatches in 80 apply-lane items against job-apps' 0 in 80.
+    # It now falls through location and role like every other verdict.
+    #
+    # IT STILL SHORT-CIRCUITS HERE, above the two requirement-flag gates, and that placement is the
+    # whole of the change's scope. `eligible` means the blocking families were DECIDED and cleared,
+    # so an unconfirmed-requirement hold below would be re-opening a settled question rather than
+    # narrowing a fail-open. It is also what keeps D-380's known R2 gap shut: those flags ignore
+    # family SEVERITY, which is policy-level and not stored per row, so a `preference`-family row
+    # that could never block would hold an eligible lead for review. D-380 records that gap as
+    # reachable ONLY once this short-circuit moves below the flags. It does not move below them.
+    if verdict == "eligible":
+        return LaneDecision("", None)
     # The hard-family abstain outranks the experience bar: it says a BLOCKING rule could not be
     # decided, which is a stronger reason to read the JD than a bar the engine did decide and the
     # lead simply may not clear. Reporting the weaker one when both hold would understate the hold.
