@@ -38,6 +38,17 @@ from boardwatch.rank.role_gate import role_verdict
 #: The review-lane drain directory. Registered in ``delivery.names.DRAIN_DIRS``.
 REVIEW_DIR = "_review"
 
+#: The closed-posting drain directory. Registered in ``delivery.names.DRAIN_DIRS``.
+#:
+#: Its OWN drain rather than a share of :data:`REVIEW_DIR`, because the two ask the reader for
+#: opposite things: a review lead is work to look at, and a closed one is work that no longer
+#: exists. Folding them together would put a dead posting in the same folder as live work and
+#: leave the reader to tell them apart by opening each one — which is the cost this drain exists
+#: to remove. Keeping it out of ``_ineligible`` matters for the same reason in reverse: closed is
+#: a fact about the world, not a verdict the eligibility gate reached, and blending the two would
+#: corrupt the lane-split numbers every precision report is read against.
+CLOSED_DIR = "_closed"
+
 #: Why a lead is held. A CLOSED catalog: one member per branch of :func:`classify`, so a value
 #: outside it is a bug rather than a new bucket, and the page's map over it stays exhaustive.
 #:
@@ -65,9 +76,10 @@ ReviewReason = Literal[
 class LaneDecision(NamedTuple):
     """One lane call: the drain directory (``""`` for the apply queue) and why.
 
-    ``reason`` is non-``None`` **exactly** when ``lane`` is :data:`REVIEW_DIR`. The two travel as
-    one value from one function so nothing downstream can pair a lane with a reason derived
-    somewhere else.
+    ``reason`` is non-``None`` **exactly** when ``lane`` is :data:`REVIEW_DIR` — :data:`CLOSED_DIR`
+    carries ``None`` like the apply queue does, because a closed posting is not being held for a
+    reason drawn from the review catalog; it is simply gone. The two travel as one value from one
+    function so nothing downstream can pair a lane with a reason derived somewhere else.
     """
 
     lane: str
@@ -81,6 +93,7 @@ def classify(
     title: str,
     experience_unconfirmed: bool = False,
     eligibility_unconfirmed: bool = False,
+    posting_closed: bool = False,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the six reasons held the lead.
 
@@ -118,6 +131,16 @@ def classify(
     apply. The eligibility verdict, when it returns, can only move such a lead to
     ``ineligible`` (excluded) — never make a foreign or non-software lead appliable.
     """
+    # ABOVE every other branch, and the ordering is the point: a closed posting cannot be applied
+    # to, so no verdict, location or role below can make it work again. Reaching this first is also
+    # what stops a dead lead consuming a review slot it can never be released from.
+    #
+    # `posting_closed` is `status == "closed"`, NEVER `status != "open"`. The third rendered status
+    # is `unverifiable` — open, but on a board nothing enumerates (D-324) — and draining it here
+    # would bury live postings whose only fault is that boardwatch cannot currently see their
+    # board. That is the fail-open direction a liveness judge is owed.
+    if posting_closed:
+        return LaneDecision(CLOSED_DIR, None)
     if verdict == "ineligible":
         return LaneDecision(REVIEW_DIR, "ineligible_verdict")
     if classify_location(list(locations)) == "non_us":
@@ -159,8 +182,9 @@ def lane(
     title: str,
     experience_unconfirmed: bool = False,
     eligibility_unconfirmed: bool = False,
+    posting_closed: bool = False,
 ) -> str:
-    """Return ``""`` for the apply queue or :data:`REVIEW_DIR` for the review lane.
+    """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
     A one-line projection of :func:`classify`, and deliberately nothing more: the lane and the
     reason are ONE decision, so the only way to be sure the folder tree and the page never
@@ -173,4 +197,5 @@ def lane(
         title=title,
         experience_unconfirmed=experience_unconfirmed,
         eligibility_unconfirmed=eligibility_unconfirmed,
+        posting_closed=posting_closed,
     ).lane

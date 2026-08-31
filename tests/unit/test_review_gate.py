@@ -11,7 +11,13 @@ gate that moves under the fixture fails here instead of passing vacuously.
 
 from __future__ import annotations
 
-from boardwatch.delivery.review_gate import REVIEW_DIR, LaneDecision, classify, lane
+from boardwatch.delivery.review_gate import (
+    CLOSED_DIR,
+    REVIEW_DIR,
+    LaneDecision,
+    classify,
+    lane,
+)
 from boardwatch.rank.role_gate import role_verdict
 
 
@@ -222,6 +228,49 @@ def test_lane_is_exactly_the_classifiers_lane_and_a_reason_appears_iff_it_is_rev
             locations,
             title,
         )
+        # The same lead with a dead requisition: the lane moves and the reason must NOT survive
+        # into it. A closed posting held under a review reason would be a lane carrying a reason
+        # drawn from a catalog that does not describe it.
+        closed_decision = classify(
+            verdict=verdict, locations=locations, title=title, posting_closed=True
+        )
+        assert closed_decision == LaneDecision(CLOSED_DIR, None), (verdict, locations, title)
+
+
+def test_a_closed_posting_outranks_every_other_branch() -> None:
+    """`posting_closed` is read FIRST, so no verdict, location or role below can override it.
+
+    Asserted against the strongest competitor in each direction: an `eligible` US software lead
+    (which short-circuits to the apply queue) and an `ineligible` one (which is the very first
+    review branch). Both go to `_closed`, because neither answer is reachable any more.
+    """
+    for verdict in ("eligible", "ineligible", "uncertain", None):
+        assert classify(
+            verdict=verdict,
+            locations=("Boston, MA",),
+            title="Software Engineer",
+            posting_closed=True,
+        ) == LaneDecision(CLOSED_DIR, None), verdict
+
+
+def test_the_closed_gate_is_inert_when_the_posting_is_open() -> None:
+    """The default is False, so every pre-existing caller keeps its exact behaviour.
+
+    This is the arm that fails if the branch is ever written as `if not posting_open:` — a lead
+    whose openness nobody stated would then drain as dead.
+    """
+    for verdict in ("eligible", "ineligible", "uncertain", None):
+        assert classify(
+            verdict=verdict, locations=("Boston, MA",), title="Software Engineer"
+        ) == classify(
+            verdict=verdict,
+            locations=("Boston, MA",),
+            title="Software Engineer",
+            posting_closed=False,
+        )
+        assert classify(
+            verdict=verdict, locations=("Boston, MA",), title="Software Engineer"
+        ).lane != CLOSED_DIR
 
 
 # ------------------------------------------------- the two requirement gates (R2, D-380)

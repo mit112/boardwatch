@@ -44,6 +44,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.delivery import DRAIN_DIRS, queue
 from boardwatch.delivery.queue import (
     APPLIED_DIR,
+    CLOSED_DIR,
     DETAILS_FILE,
     INELIGIBLE_DIR,
     JD_FILE,
@@ -905,7 +906,13 @@ def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
     pins the named constants to it so adding a fourth drain cannot repeat the trick.
     """
     assert set(queue._LOCATIONS) - {""} == set(DRAIN_DIRS)
-    assert set(DRAIN_DIRS) == {APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR}
+    assert set(DRAIN_DIRS) == {
+        APPLIED_DIR,
+        SKIPPED_DIR,
+        INELIGIBLE_DIR,
+        REVIEW_DIR,
+        CLOSED_DIR,
+    }
 
 
 def test_no_drain_directory_is_ever_reported_as_unclassified(
@@ -941,7 +948,7 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     """The ordering inside `_wanted_location`, tested directly.
 
     The two integration tests above cannot both reach this: `ineligible_job_ids` never reports an
-    APPLIED job, so that path is decided upstream. Calling the function with all three sets
+    APPLIED job, so that path is decided upstream. Calling the function with all five sets
     populated is the only way to pin the branch order, and reordering the branches fails this.
     """
     entry = queue._Entry(
@@ -950,21 +957,28 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     both = {7: "2026-08-26"}
     verdict = {7: "ineligible"}
     review = {7}
+    closed = {7}
     assert queue._wanted_location(
-        entry, applied=both, skipped={}, ineligible=verdict, review=review
+        entry, applied=both, skipped={}, closed=closed, ineligible=verdict, review=review
     ) == APPLIED_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped=both, ineligible=verdict, review=review
+        entry, applied={}, skipped=both, closed=closed, ineligible=verdict, review=review
     ) == SKIPPED_DIR
+    # closed ranks below BOTH owner statements and above both derived drains: the employer taking
+    # the requisition down does not un-say what the owner already decided, but it does settle a
+    # lead the gate could only have held for a second look.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, ineligible=verdict, review=review
+        entry, applied={}, skipped={}, closed=closed, ineligible=verdict, review=review
+    ) == CLOSED_DIR
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, closed=set(), ineligible=verdict, review=review
     ) == INELIGIBLE_DIR
     # review ranks below ineligible (a lead that is both is ineligible) and above the apply queue.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, ineligible={}, review=review
+        entry, applied={}, skipped={}, closed=set(), ineligible={}, review=review
     ) == REVIEW_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, ineligible={}, review=set()
+        entry, applied={}, skipped={}, closed=set(), ineligible={}, review=set()
     ) == ""
 
 
@@ -1396,9 +1410,10 @@ def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     # which is what let `_child_dirs` ship without knowing `_ineligible` existed.
     assert (root / INELIGIBLE_DIR).is_dir()
     assert (root / REVIEW_DIR).is_dir()
+    assert (root / CLOSED_DIR).is_dir()
     assert _folders(root) == []
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
-        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR]
+        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks
     # it, and `profile_bundle/locking.py` is explicit that its presence is not a signal.
@@ -1585,6 +1600,132 @@ def test_reconcile_moves_a_lead_into_review_when_it_stops_being_software(
     assert _folders(root) == [], "sync rebuilt a top-level folder for a review lead"
     assert len(_folders(root / REVIEW_DIR)) == 1
     assert report.created == 0
+
+
+def _set_status(conn: Connection, posting_id: int, status: str) -> None:
+    conn.execute(update(postings).where(postings.c.id == posting_id).values(status=status))
+
+
+@pytest.mark.parametrize(
+    ("status", "watched", "expected_lane"),
+    [
+        ("closed", True, CLOSED_DIR),
+        ("open", True, ""),
+        # `watched=False` is what makes `_status` render `unverifiable` (D-324): the posting is
+        # open, but nothing enumerates its board. THIS is the arm that fails against a drain
+        # keyed on `!= "open"`, which is the mutation the other two arms cannot see.
+        ("open", False, ""),
+    ],
+    ids=["closed-drains", "open-stays", "unverifiable-stays"],
+)
+def test_only_a_closed_posting_drains_to_the_closed_lane(
+    engine: Engine, root: Path, apps: Path, status: str, watched: bool, expected_lane: str
+) -> None:
+    """The three rendered statuses, one test, because any single arm passes vacuously.
+
+    An arm asserting only that `closed` drains is satisfied by a drain that sweeps everything;
+    an arm asserting only that `open` stays is satisfied by a drain that fires never. The
+    `unverifiable` arm is the one that pins the fail-open direction a liveness judge is owed.
+    """
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one", title="Software Engineer", watched=watched)
+        _set_status(conn, posting_id, status)
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert report.created == 1
+    assert _folders(root / expected_lane if expected_lane else root) == [
+        "Acme_Corp_Software_Engineer"
+    ]
+    if expected_lane != CLOSED_DIR:
+        assert _folders(root / CLOSED_DIR) == []
+
+
+def test_reconcile_drains_a_lead_to_closed_when_its_posting_closes(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The half that matters for a queue nobody has re-synced: a lead delivered while the
+    requisition was live is drawn out when it comes down, counted in `to_closed`, and NOT rebuilt
+    at the top level by the sync that follows."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 1
+
+    with engine.begin() as conn:
+        _set_status(conn, posting_id, "closed")
+    with engine.connect() as conn:
+        recon = reconcile_queue(conn, root=root)
+    assert recon.to_closed == 1
+    assert recon.moved == 1, "`moved` omits the new drain, so the run line reports 0"
+    assert _folders(root) == []
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Software_Engineer"]
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == [], "sync rebuilt a top-level folder for a closed lead"
+    assert report.created == 0
+
+
+def test_a_closed_lead_returns_to_the_apply_queue_when_its_posting_reopens(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The drain runs on BOTH sides of the gate. A quarantine with no re-entry path is a leak, and
+    a reopened requisition is exactly the case that proves this one has a drain rather than a
+    one-way trapdoor."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one", title="Software Engineer")
+        _set_status(conn, posting_id, "closed")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Software_Engineer"]
+
+    with engine.begin() as conn:
+        _set_status(conn, posting_id, "open")
+    with engine.connect() as conn:
+        recon = reconcile_queue(conn, root=root)
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert recon.to_queue == 1
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+    assert _folders(root / CLOSED_DIR) == []
+
+
+def test_closed_outranks_the_derived_drains_but_never_an_owner_statement(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Precedence, at both of its boundaries.
+
+    A closed lead that is ALSO non-software goes to `_closed`, not `_review`: asking the owner to
+    read a job that no longer exists is the cost this drain removes. But a lead the owner SKIPPED
+    stays in `_skipped` when the requisition comes down — a skip is a statement about what they
+    decided, and it does not stop being true.
+
+    `_skipped` is the owner statement asserted here rather than `_applied`, and the choice is
+    forced rather than stylistic: `closed_job_ids` is built from `delivered_unapplied`, which
+    excludes applied leads unconditionally, so an applied lead can never enter the closed set and
+    the closed-vs-applied ordering is unobservable by construction. `skipped=set()` keeps skipped
+    leads IN, so that boundary is real and a reordering there is a live defect.
+    """
+    with engine.begin() as conn:
+        review_id, _ = _deliver(conn, apps, "one", title="Front Office Agent")
+        _set_status(conn, review_id, "closed")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Front_Office_Agent"]
+    assert _folders(root / REVIEW_DIR) == []
+
+    with engine.begin() as conn:
+        skipped_id, skipped_job = _deliver(conn, apps, "two", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+    with engine.begin() as conn:
+        _set_status(conn, skipped_id, "closed")
+        mark_job_skipped(conn, job_id=skipped_job, at=NOW)
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root)
+    assert _folders(root / SKIPPED_DIR) == ["Acme_Corp_Software_Engineer"]
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Front_Office_Agent"]
 
 
 def test_a_review_lead_returns_to_the_apply_queue_when_it_becomes_software(
