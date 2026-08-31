@@ -49,6 +49,7 @@ from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
+from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
@@ -181,6 +182,13 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
         posting_budget=settings.lane_posting_budget,
         search_facets=facets,
         search_pages=settings.lane_search_pages,
+    ),
+    # Reads job-apps' discovery tree off the local disk (D-385). It takes neither the posting
+    # budget nor the facets: there are no requests to bound, and the source is already a
+    # filtered set rather than a search this lane composes. `facets` is still accepted by the
+    # factory signature, which is what keeps every registration site uniform.
+    JobAppsLane.name: lambda settings, facets: JobAppsLane(
+        source_dir=settings.jobapps_discovery_dir
     ),
 }
 

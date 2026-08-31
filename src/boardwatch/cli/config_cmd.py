@@ -96,6 +96,14 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "next run",
         "search pages one lane requests per facet, ≥1 (1 = the single page that shipped)",
     ),
+    # `str` and not `Path`: the value is written straight into `config.toml`, and a `Path` is not
+    # TOML-serializable. `Settings` coerces it back to a `Path` on load.
+    "jobapps_discovery_dir": (
+        str,
+        "next run",
+        "absolute path to job-apps' discovery output (its APPLY_QUEUE); the jobapps lane "
+        "reports an error without it",
+    ),
     "death_probe_budget": (
         int,
         "next run",

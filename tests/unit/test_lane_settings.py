@@ -101,3 +101,70 @@ def test_the_lane_knobs_do_not_move_the_config_hash(cfg: Path) -> None:
         }
     )
     assert config_hash(armed) == config_hash(base)
+
+
+# ---------------------------------------------------------------------------------------
+# The jobapps lane's source path (D-386). Arming is a config.toml edit, so the round-trip
+# through `load_settings` is the mechanism itself, not a detail about it.
+# ---------------------------------------------------------------------------------------
+
+
+def test_the_jobapps_source_ships_unset(cfg: Path) -> None:
+    """Inert TWICE over: an empty lane list AND no source path. Either alone stops the lane."""
+    assert load_settings(data_dir=None).jobapps_discovery_dir is None
+
+
+def test_the_jobapps_source_round_trips_from_config_toml_as_a_path(cfg: Path) -> None:
+    """The arming mechanism, asserted end to end.
+
+    `Settings` IGNORES an unknown config key silently, so a typo here would arm nothing while
+    looking armed. Reading the value back through `load_settings` is the only check that
+    distinguishes the two, and a TOML string has to coerce to `Path` for a hand edit to work at
+    all -- the CLI is not the only route in.
+    """
+    (cfg / "config.toml").write_text(
+        'jobapps_discovery_dir = "/srv/jobapps/APPLY_QUEUE"\n', encoding="utf-8"
+    )
+    loaded = load_settings(data_dir=None).jobapps_discovery_dir
+    assert loaded == Path("/srv/jobapps/APPLY_QUEUE")
+    assert isinstance(loaded, Path)
+
+
+def test_arming_the_jobapps_lane_needs_both_the_name_and_the_path(cfg: Path) -> None:
+    """Naming the lane without a path leaves it unable to read, which it REPORTS rather than
+    treating as an empty source."""
+    (cfg / "config.toml").write_text('lanes_enabled = ["jobapps"]\n', encoding="utf-8")
+    settings = load_settings(data_dir=None)
+    assert settings.lanes_enabled == ("jobapps",)
+    assert settings.jobapps_discovery_dir is None
+
+    from boardwatch.lanes.jobapps import JobAppsLane, JobAppsSourceError
+
+    with pytest.raises(JobAppsSourceError):
+        JobAppsLane(source_dir=settings.jobapps_discovery_dir).collect(
+            None,  # type: ignore[arg-type]
+            lambda provider, slug: True,
+        )
+
+
+def test_the_jobapps_source_round_trips_through_config_set(cfg: Path) -> None:
+    """A key that shows but cannot be written is still a gap. The caster is `str`, because the
+    value is written straight into TOML and a `Path` is not TOML-serializable."""
+    result = runner.invoke(app, ["config", "set", "jobapps_discovery_dir", "/srv/q"])
+    assert result.exit_code == 0, result.stdout
+    assert "jobapps_discovery_dir = /srv/q" in runner.invoke(app, ["config", "show"]).stdout
+    assert load_settings(data_dir=None).jobapps_discovery_dir == Path("/srv/q")
+
+
+def test_the_jobapps_source_does_not_move_the_config_hash(cfg: Path) -> None:
+    """WHERE a lane reads from is not how a posting is judged.
+
+    `policy_version` derives from `config_hash`, so classifying this IN would mark every
+    permanent `built`/`skipped` disposition stale the moment the source directory moved -- a
+    corpus-wide drain triggered by a path change that judged nothing.
+    """
+    from boardwatch.reports.manifest import config_hash
+
+    base = Settings(data_dir=cfg / "d", config_dir=cfg)
+    moved = base.model_copy(update={"jobapps_discovery_dir": Path("/srv/elsewhere")})
+    assert config_hash(moved) == config_hash(base)

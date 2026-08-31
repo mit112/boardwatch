@@ -154,6 +154,17 @@ class Settings(BaseModel):
     # which reports a lane that found nothing rather than one that was told not to look —
     # disarming a lane is what `lanes_enabled` is for.
     lane_search_pages: int = Field(default=1, ge=1)
+    # Where job-apps writes its discovery output (its `APPLY_QUEUE`), for the `jobapps` lane.
+    #
+    # A machine-local PATH, so there is no neutral default and None is the honest one: the lane
+    # raises `JobAppsSourceError` without it, which `_run_lanes` reports into `summary.errors`
+    # rather than recording an empty result nobody can tell from a quiet feed. Unset is also
+    # why registering the lane cannot change any existing run — `lanes_enabled` ships empty and
+    # this ships None, so both have to be set before anything reads a byte.
+    #
+    # Not a secret and not personal data: it is a directory on the operator's own disk, so it
+    # belongs in `config.toml` beside `data_dir` rather than in the environment.
+    jobapps_discovery_dir: Path | None = None
     # D-325 — the measured-death sweep. `postings` under a company with `watched = 0` get no
     # absence signal from any board scan (D-314), so the only evidence available is the stored
     # URL answering 404/410 twice. Both knobs bound the COST of asking, never the verdict.
