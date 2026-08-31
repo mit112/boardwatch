@@ -21,51 +21,52 @@
 
 ## Current standing
 
-**RUN 135 IS VERIFIED AND THE CLOSED-POSTING DRAIN FIRED CORRECTLY.** That was the previous
-close's first action and it is now answered, not pending. `_closed` exists and holds **70** folders;
-`runs.status` is `ok`; `funnel.fatal` is null; `funnel.errors` holds exactly **one** entry, the known
-hiring.cafe 14-facet/14-refusal `SearchPageError`. Cross-checked through the **store** rather than
-the drain's own folder count, because `queue_failed` is the only alerting key and `moved` is printed
-but never thresholded, so a mis-fire would have been silent: `closed_job_ids` **70** = 70 folders,
-`review_job_ids` **377** = 377, `ineligible_job_ids` **261** = 261. All three lanes reconcile exactly.
+**THE ENGINE READS A REFINEMENT AS A CONTRADICTION, and that is now the biggest measured precision
+item on the board.** `engine.py` stage 1 treats two distinct `implies` values from one
+`exclusive_groups` entry as a CONFLICT and rewrites every row in that group to `unknown`. The
+`work_auth` group is `[citizenship_required, citizen_or_lpr_required, authorization_required]`, so
+this document resolves `uncertain` with both rows `unknown` — on `main`, today, with no patch:
 
-**The apply lane reads 163, and the handoff's "~151" was not wrong — it was the drain-only figure.**
-The 70 folders split **apply 52 / `_review` 18**, exactly D-383's measurement, so the lane fell
-203 -> **151**; run 135 then delivered on top, with `apply_lane_placements` reporting **17 of 40**
-placeable leads reaching the apply lane. **Re-check this against 151 plus the run's own apply-lane
-arrivals, never against 151 alone.** (A `find -maxdepth 1 -type d` that does not exclude the root
-reports 164; the real count is 163.)
+    "Applicants must be authorized to work in the United States.
+     A natural-born U.S. citizen is required."
 
-**#285's detector is reading the live store and correctly silent:** run 135 (40, **17**), run 134
-(40, 15), run 133 (28, 5) — all non-zero, and run 135 is the best split of the three at 42.5%.
+Those sentences are not in conflict. Citizenship is strictly STRONGER than authorization; the second
+refines the first, and a decisive `unmet` is discarded. The same shape sits in `experience_years`
+("5+ years of software engineering experience" plus "3+ years of Python" is two requirements, not a
+contradiction), in `degree` and in `clearance`. `rules.yaml` says of the experience group that "the
+regexes are tuned so the common forms fire exactly once; the group is the safety net."
 
-**THE JOB-APPS INGESTION LANE IS BUILT, MERGED AND INERT (D-386, #286).** It carries the guard
-D-385 named as missing — **lane-health**, which D-376 records as absent because a dead lane does not
-escalate. A posting count cannot serve as one: job-apps has hard zero-cohort weekend days, so "no
-fresh records" carries no information. Two structural answers instead, neither a new detector: the
-**whole tree** is read every run rather than today's cohort, so `attempted` is stable by
-construction; and an absent, unreadable or record-free source **raises**, which `_run_lanes` already
-catches per lane into `summary.errors`. Pinned at the STAGE level by four integration tests driving
-the real `LANE_FACTORIES` entry, because the claim is about `_run_lanes` and not about the lane alone.
+**Sized, read-only, at the engine version DERIVED from run 135 (`1+6a9fb2164f5b`, 222,614
+evaluations): 8,429 of 124,980 `uncertain` evaluations carry a conflict-dissolved row, and NOT ONE of
+them has any other `required` row already `unmet`** — so for each of the 8,429 the dissolution is the
+only thing between it and a decided verdict. Counted again through a different path (re-run with
+every family's `exclusive_groups` emptied, reading the frozen JD and the stored profile snapshot and
+policy out of the store), **the majority flip `uncertain` -> `ineligible`**, with the shipped-catalog
+control reproducing the stored verdict first. Full numbers, method and caveats: D-387 and
+`.agent/2026-08-31d-session/FINDINGS.md`. **One `engine_version` spans TWO `catalog_version`s here
+(4,035 current / 4,394 stale), so filter on the catalog, not only the engine.**
 
-**Verified INERT in the live config after merging** — `lanes_enabled = ('hiringcafe', 'linkedin')`
-and `jobapps_discovery_dir = None`, read back through `load_settings()` because `Settings` ignores
-an unknown config key silently. Merging changed no unattended run.
+**Two word-gap recall fixes are ready on PR #288 and TWO MORE ARE HELD BEHIND THAT DECISION.** The
+shipped pair is unconditionally correct and corpus-clean. The held pair (the shared `work_auth`
+hyphen gap; the clearance clause gap admitting an abbreviation dot, which turns `Active Secret
+clearance for U.S. Government work is required.` from zero rows into `ineligible`) each make a
+hyphenated or dotted document reach the conflict its PLAIN TWIN ALREADY HITS — so each removes an
+inconsistency rather than creating one, and the cost is documents moving from a correct `ineligible`
+into the review queue. Fix the group first and both are clean wins; ship them first and `rules_hash`
+re-keys twice over the same ground.
 
-**The reach is larger than the design estimated, and the shape of it is the argument.** Of 737
-discovery records, 189 are direct-apply; **160 are absent from this store by URL** and 103 of their
-149 employers are unknown here by name. **126 of the 189 — two thirds — arrived through job-apps'
-own hiring.cafe acquisition**, i.e. the reach boardwatch's OWN hiring.cafe lane cannot get while it
-is refused 14 of 14 facets. This lane's largest contribution is routing around a lane that is down.
+**Run 135 remains verified and the closed-posting drain remains correct** (previous session, now
+settled): `_closed` 70 = the store's `closed_job_ids` 70, `_review` 377 = 377, `ineligible` 261 =
+261, apply lane **163 = 151 post-drain + run 135's own 17 arrivals**, which is not a fault. `#285`'s
+apply-lane drought detector reads the live store and is correctly silent — run 135 (40, 17), 134
+(40, 15), 133 (28, 5).
 
-**The lesson worth carrying: I shipped a wrong dedup key and caught it by reading the precedent, not
-by testing.** The first cut deduped on job-apps' `posting_id`; the store keys on
-`(company_id, provider_posting_id)`, and `scan/apply.py` snapshots `existing` once, so two postings
-sharing one id both INSERT and the second violates UNIQUE **inside `apply_board`'s single
-transaction** — rolling the board back and discarding every later company plus the tally that would
-explain it. Zero collisions in the live tree today, so it was **structural, not observable**, and no
-test I would have thought to write would have caught it. `lanes/hiringcafe.py` had already written
-the hazard down.
+**THE JOB-APPS INGESTION LANE IS BUILT, MERGED AND INERT (D-386, #286)** and verified inert in the
+live config through `load_settings()`: `lanes_enabled = ('hiringcafe', 'linkedin')`,
+`jobapps_discovery_dir = None`. Merging changed no unattended run. Only ARMING remains, and it is
+Mit's, on return, first run watched. Of 737 discovery records 189 are direct-apply, 160 absent from
+this store by URL, and **126 of the 189 arrived through job-apps' own hiring.cafe acquisition** — the
+reach boardwatch's own hiring.cafe lane cannot get while it is refused 14 of 14 facets.
 
 ### The seniority hold is 3 postings, not 5. It is dead, not deferred.
 
@@ -82,77 +83,67 @@ already on `QueueRow` from a column the store already read.
 
 ## Next action
 
-1. **ARM the job-apps lane — OWNER'S CALL, ON RETURN, FIRST RUN WATCHED.** The build is DONE
-   (D-386, #286) and merged inert. D-385 ruled the arming question already and it is **not
-   re-litigable**: arm on return, never during the absence, with the first armed run watched — because
-   per D-376 a mis-wired or dead lane does not escalate, and D-384 watches the lane SPLIT of what was
-   DELIVERED, so it structurally cannot see a bad INPUT. **Arming is two lines of local `config.toml`
-   and no code change**: add `jobapps` to `lanes_enabled` and set `jobapps_discovery_dir` to
-   job-apps' `APPLY_QUEUE`. Read both back through `load_settings()` — `Settings` ignores an unknown
-   key silently, so a typo arms nothing while looking armed. Expect ~188 postings across ~146
-   companies on the first armed run, with `lane_new_companies_per_run` (10) ramping the ~103 new
-   employers over ~10 runs. Do NOT re-raise whether to build it, and do not arm it unattended.
+1. **DECIDE the `exclusive_groups` question — it now gates four things.** See Current standing and
+   D-387. Is `authorization_required` in the same group as `citizenship_required` a contradiction or
+   a refinement? Same question for `total_years_minimum` vs `scoped_years_minimum`. It is a semantics
+   decision on the highest-volume family in the system, so it is the owner's, and it is the single
+   highest-value item measured this week. **The `contract_not_fte` precedent does NOT transfer** —
+   that family collapsed three patterns onto one `implies` value so they corroborate, licensed by
+   "the three already resolve IDENTICALLY in `resolve.py`", and these do not.
+2. **PR #288 — merge or hold, but read its "held" section first.** `make check` exit 0 on the branch
+   (8738 passed, 4 xfailed, 9m15s, read from the sentinel). Auto-merge deliberately NOT armed. Two
+   corpus-clean sponsorship recall fixes plus D-387, the CHANGELOG entry, STATE and METRICS. Holding
+   it costs nothing except that STATE and D-387 land later.
+3. **ARM the job-apps lane — OWNER'S CALL, ON RETURN, FIRST RUN WATCHED.** The build is DONE (D-386,
+   #286) and merged inert. D-385 ruled the arming question already and it is **not re-litigable**.
+   **Two lines of local `config.toml` and no code change**: add `jobapps` to `lanes_enabled` and set
+   `jobapps_discovery_dir` to job-apps' `APPLY_QUEUE`. Read both back through `load_settings()` — a
+   typo arms nothing while looking armed. Expect ~188 postings across ~146 companies on the first
+   armed run, with `lane_new_companies_per_run` (10) ramping ~103 new employers over ~10 runs.
+4. **The two HELD recall patches, once item 1 is decided.**
+   `.agent/2026-08-31d-session/WIP-workauth-hyphen-rows3to8-NOT-SHIPPED.patch` and
+   `WIP-clearance-abbreviation-dot-NOT-SHIPPED.patch`. Both built, probed in both directions against
+   three profiles, and **zero corpus verdict changes**. Ship them in ONE change with whatever item 1
+   decides: `rules_hash` re-keys once whether one pattern moves or twenty.
+5. **`reports/abstain.STRUCTURALLY_UNDECIDABLE` is stale for `experience_years:scoped_years_minimum`
+   and the fix is one line.** D-319 made that rule decidable: at the current engine version it
+   resolves `unmet` on 55,520 rows against 7,634 carrying the unconditional abstain. The report
+   effect is nil today (it is nowhere near fully abstaining, so `fully_abstaining` never includes it)
+   — but the docstring describes behaviour the resolver no longer has, and D-380's "a reason that can
+   never clear" reading was measured on the SHORTLIST population, not this one.
 
-2. **The `rules.yaml` word-gap audit — MEASURED, NOT SHIPPED.**
-   `.agent/2026-08-31-session/HYPHEN-GAP-AUDIT.md`. 55 patterns: **9 HYPHEN, 9 PUNCTUATION, 18 SAFE,
-   19 no gap**, each verified through the real pipeline with a control. Two `consumes_cues` findings
-   sit beside it, one of which (`no_sponsorship_will_not_consider` omits `never`) is a **one-word
-   fix against a false `eligible`**. Held deliberately: `rules.yaml` re-keys `rules_hash` ->
-   `policy_version`, forces a ~111k re-evaluation, and re-arms the `exclusive_group` dissolution
-   trap a live-lane harness **cannot** see — and the corpus-regression detector is **dark until
-   ~run 138**, so a rules change now would be the one change nothing is watching. Assert ZERO
-   corpus verdict changes before recording.
-3. **Ship items 2 and 4 as ONE rules change, not two.** The sponsorship WIP's own README records
-   that `does not provide IMMIGRATION-RELATED sponsorship` was missed until its word gap became
-   `[\w-]+` — **the same class as the audit's 9 HYPHEN rows**. `rules_hash` re-keys once whether
-   one pattern moves or twenty, so splitting them pays the ~111k re-evaluation twice for nothing.
-4. **Sponsorship recall round 2 — BUILT, MEASURED, DELIBERATELY NOT SHIPPED.** Patch and rationale
-   at `.agent/2026-08-30-audit-sprint/WIP-sponsorship-recall-NOT-SHIPPED.patch`. Its stated upside
-   of **5** apply-lane postings was measured against the **pre-drain 203** lane and is subject to
-   the same arithmetic that took the seniority hold from 5 to 3 — but the README names no posting
-   ids, so it **could not be re-intersected cheaply and was NOT re-measured**. A real re-measure
-   costs a `rules_hash` bump, so do it as part of item 3, never on its own.
-5. **`does not include internships` kills EVERY experience row on ~6 Stripe postings**, and
-   **`(F/H)` is unreachable by `foreign_ad_gate`** (`_FRENCH_GENDER_MARKER` requires `h/f` order and
-   parentheses). Both measured, both left alone; zero apply-lane escapes today for the second.
+*(No longer a next action: the `rules.yaml` word-gap audit as an open item — it was worked, and D-387
+records what shipped, what is held and behind what. The WIP `cannot confirm` lookahead is WITHDRAWN,
+not deferred: it fixes UNSHIPPED code, `main` already returns zero rows on that sentence. Re-measuring
+the sponsorship round-2 upside is WITHDRAWN too: its blocker is jurisdiction CAPTURE, which is design,
+not sizing. The audit's row 18 does not reproduce as a dot bug — `MS` and `M.S.` give identical rows.
+A seniority hold in `review_gate`: re-measured at 3 postings, needs profile+config in `store/`.)*
 
-*(No longer a next action: a seniority hold in `review_gate`. Re-measured at **3** postings and it
-needs profile+config in `store/` — see Current standing. Do not resurrect it as the big lever.)*
-
-## Session 2026-08-31c — what shipped
+## Session 2026-08-31d — what shipped
 
 | PR | what |
 |---|---|
-| **#286** | the job-apps ingestion lane, DISARMED, carrying the lane-health guard D-385 asked for (D-386) |
-| **#285** | the apply lane gets its own drought detector (D-384) — merged this session as `ebdc28da` |
+| **#288** | two sponsorship recall fixes: `never` declared in `consumes_cues`, and `\w+` -> `[\w-]+` so a hyphenated modifier stops hiding a refusal (D-387) |
 
-Previous session: **#284**, a closed posting drains to its own `_closed` lane (D-383), apply
-203 -> 151. **Verified this session against the live store before its first run** — see Current
-standing.
+Previous session: **#286** the job-apps ingestion lane (disarmed, D-386) and **#285** the apply-lane
+drought detector (D-384); before that **#284**, the `_closed` drain (D-383), apply 203 -> 151.
 
-**Mutation-pinned: 12 mutants + a no-op control, 11 CAUGHT, 1 survivor proven unobservable** (the
-two abstain checks commute, because arrivals are a subset of placeable leads). The call site is
-pinned separately, and needed to be: moving the block below `_emit_morning` fails the digest test
-while **both `summary.errors` guards still pass**.
+**The corpus was the baseline, not the check.** All 1034 cases were dumped with their production
+verdict and requirement rows BEFORE any edit — zero golden mismatches — and re-dumped after every
+commit. Zero verdict changes and zero row changes each time. That is also what made the held pair
+visible: **their corpus diff is zero too, and they still regress**, so the discriminating test here
+is a two-sentence probe, not the corpus.
 
-**The control is the number that mattered.** The FIRST campaign scored **all 13 CAUGHT including the
-no-op control**, because the runner passed `--timeout=120` and `pytest-timeout` is not installed, so
-every subprocess exited non-zero regardless of the mutation. Without a control that would have been
-recorded as a fully-pinned guard on evidence that proved nothing.
+**Both shipped fixes proven non-vacuous by reverting the catalog:** 2 of 5 new tests fail for the cue
+fix, 5 of 17 for the hyphen fix, and the tests that stay green are exactly the controls.
 
-`make check` exit 0 (8656 passed, 4 xfailed, 7m08s); CI green on every job. **Guards
-mutation-pinned: 10 mutants, a no-op control, 8 CAUGHT, 2 survivors PROVEN UNOBSERVABLE and
-documented at the site.** The first mutation pass caught a defect in the *tests*: the precedence arm
-asserted `applied`, which `delivered_unapplied` excludes unconditionally, making it **unobservable
-by construction** — retargeted to `skipped`, which is reachable.
-
-**A sidecar in `_ineligible` can go STALE** — sync excludes ineligible rows so their `details.json`
-is never rewritten; two claim `closed` while the store says `open`. Read the store, not the sidecar.
+`make check` exit 0 on the branch (8738 passed, 4 xfailed, 9m15s, coverage 95.67%), read from the
+sentinel rather than a completion notification.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
 1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED 2026-08-31 — it keeps running.**
-   See Next action 1. Both schedulers are armed: boardwatch 04:00, job-apps 08:30. Do not
+   See Next action 3. Both schedulers are armed: boardwatch 04:00, job-apps 08:30. Do not
    re-raise; the remaining judgement is only WHEN to build, not WHETHER.
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
@@ -201,6 +192,7 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 
 | Item | Detail | Owner |
 |---|---|---|
+| **The engine reads a REFINEMENT as a CONTRADICTION — 8,429 `uncertain` evaluations** | `engine.py` stage 1 makes two DISTINCT `implies` values from one `exclusive_groups` entry a CONFLICT and rewrites BOTH rows to `unknown`. `work_auth`'s group is `[citizenship_required, citizen_or_lpr_required, authorization_required]`, so "must be authorized to work in the US" plus "a natural-born U.S. citizen is required" resolves `uncertain` with a decisive `unmet` discarded — citizenship REFINES authorization. Same shape in `experience_years`, `degree`, `clearance`. **8,429 of 124,980 `uncertain` evaluations at the engine version derived from run 135 carry a conflict-dissolved row, and NOT ONE has any other `required` row already `unmet`**; re-running with the groups emptied flips the majority to `ineligible`, control-first. **Gates two built recall patches** (D-387). One `engine_version` spans TWO `catalog_version`s here — filter on the catalog. Do not copy the `contract_not_fte` collapse: its licensing condition ("the three resolve IDENTICALLY") fails for these | **Mit** (semantics call on the highest-volume family) |
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | ~~Delivery-drought cannot see APPLY-LANE starvation~~ **CLOSED by #285 / D-384** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, written **regardless of which lane `review_gate.lane()` routes to**, so a global misclassification shipped zero apply-ready leads with every existing alarm green. `check_apply_lane_drought` now fires when the last 3 clean runs each delivered PLACEABLE leads and none reached the apply lane. **The old sizing was wrong, not merely pessimistic**: it priced a guard inside `_sync_queue`, but the three job-id readers already take only a connection and `QueueRow` already carries `delivered_run_id`, so nothing in `review_gate`, `_sync_queue` or the web server's result type had to change. Known property, direction abstain-not-alarm: `delivered_unapplied` attributes a re-delivered job to the NEWER run, so an older run can read zero placeable and the window abstains | **CLOSED** |
 | ~~Four detector fallbacks are print-only, not durable~~ **CLOSED by #260** | The `intake-death` / `delivery-drought` / `liveness-blindness` / `corpus-regression` "check not run" handlers now call `append_run_error` like the three artifact-write handlers beside them, so a DETECTOR that crashes leaves a row in `runs.errors_json` and not only a digest line. Four one-line additions, inert on the normal path; each pinned by its OWN parametrised test, because a single test crashing all four passes while three of the four calls are missing. **Known shared property:** `append_run_error` is not internally defensive and these sit inside `except` handlers — matched to the three existing handlers deliberately rather than diverging; it needs two simultaneous failures and fails loudly via the withheld heartbeat | **CLOSED** |
