@@ -70,6 +70,32 @@ unit**. **Raising `scan_workers` above `le=8` stays RETIRED** (D-344). Numbers: 
 
 ## Next action
 
+> **ONE PR IS GREEN AND WAITING ON A MERGE-TIMING CALL: #276 (D-380), the delivery-router narrowing.**
+> `make check` exit 0, `npm run lint` clean, **auto-merge deliberately DISARMED**. Mit ruled on the
+> gate LOGIC ("ship as built") after seeing the numbers; that was **not** a ruling on when to merge,
+> and the effect is large and retroactive:
+>
+> - **144 of 609 delivered leads move apply -> review — 23.6% of the queue. Apply lane 420 -> 276.**
+> - It re-lanes **already-delivered folders on the next run, with no explicit re-sync**: `queue.py`
+>   recomputes the lane every delivery pass and `_index` scans `_review`.
+> - **All 144 are held by an ABSTAIN, none by a decided `unmet`**, and 213 of the 294 driving rows are
+>   `experience_years:scoped_years_minimum` — in `STRUCTURALLY_UNDECIDABLE`, so those holds **cannot
+>   clear on their own**. `_review` drains only by being read.
+>
+> So merging before the fortnight moves a third of the apply queue into a lane nobody will read for
+> two weeks. Merge with `gh pr merge 276 --squash`. Two rejected variants (40 movers / 0 movers) and
+> the full measurement are in the PR body and D-380.
+>
+> **#275 (D-379) is MERGED** and live in the primary tree the 04:00 run executes: the work_auth
+> sponsorship leak is closed — `must be authorized to work in the US without sponsorship` no longer
+> reads as `eligible` for an EAD holder who needs sponsorship. 1,670 of 109,450 open postings carry
+> one of the two surfaces. **No ledger drain is owed** — verified read-only: 780 dispositions, all
+> `built`, zero `skipped`, and the fix only narrows.
+>
+> Full sprint context, the three still-open owner-gated items, and the built-but-deferred **R1 patch**
+> (`R1-eligible-reorder.patch`) are in `.agent/2026-08-30-audit-sprint/HANDOFF.md`.
+
+
 > **RUN THIS BEFORE LEAVING, AND THE OTHER ONE ON RETURN.** Two read-only helpers were written this
 > session and neither is discoverable from the code:
 >
