@@ -72,13 +72,22 @@ already on `QueueRow` from a column the store already read.
 
 ## Next action
 
-1. **job-apps ingestion — designed, blocked on ONE owner question** (below). Design at
-   `.agent/2026-08-31-session/INGEST-JOBAPPS-DESIGN.md`. The architectural answer is settled: it is
-   a **LANE, not a seventh provider** — the provider catalog is closed and gated in three places,
-   while `lanes/base.py` exists for exactly this and inherits every persistence/identity/dedup
-   invariant. Costs **zero** `engine_version` movement. Four points settled in discussion and not to
-   be re-argued: ingest raw DISCOVERY not verdicts; STRIP the header and fail closed; dedup on the
-   provider-namespaced ATS slug; import `_applied` FOLDERS never `applications.csv`.
+1. **job-apps ingestion — APPROVED, and the ask is ONE QUEUE (D-385).** Owner, 2026-08-31:
+   *"we use job apps's discovery as another source and boardwatch runs take it into consideration.
+   Everything leading to one queue for me to apply."* That is the target architecture, and it is why
+   the design is a **LANE, not a seventh provider**: a lane's output enters
+   `apply_board(..., scan_kind="lane")` and is then judged by boardwatch's OWN eligibility, dedup,
+   liveness and ranking — job-apps contributes DISCOVERY, boardwatch keeps every DECISION. There is
+   ONE queue (`~/boardwatch-queue`); job-apps' `APPLY_QUEUE` becomes an input to it. Costs **zero**
+   `engine_version` movement. Settled and not to be re-argued: ingest raw DISCOVERY never job-apps'
+   verdicts (its verdict rides in a provenance field the engine never reads — two systems' verdicts
+   in one queue is the second opinion `_review` exists to prevent); STRIP the header and fail closed;
+   dedup on the provider-namespaced ATS slug; import `_applied` FOLDERS never `applications.csv`.
+   **IT SHIPS DISARMED** behind a default-off setting, as D-376's escalation channel did, so merging
+   changes no unattended run until it is armed — and **the first armed run is watched, not
+   unattended**, because D-384 watches the lane SPLIT of what was delivered and therefore cannot see
+   a bad INPUT. Design at `.agent/2026-08-31-session/INGEST-JOBAPPS-DESIGN.md`. Both feeds are live:
+   boardwatch 04:00, job-apps 08:30 (`last exit code = 0`).
 2. **The `rules.yaml` word-gap audit — MEASURED, NOT SHIPPED.**
    `.agent/2026-08-31-session/HYPHEN-GAP-AUDIT.md`. 55 patterns: **9 HYPHEN, 9 PUNCTUATION, 18 SAFE,
    19 no gap**, each verified through the real pipeline with a control. Two `consumes_cues` findings
@@ -136,11 +145,9 @@ is never rewritten; two claim `closed` while the store says `open`. Read the sto
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-1. **Does job-apps keep running as a discovery engine feeding boardwatch, or is it retired once
-   boardwatch is the daily driver?** Ingestion creates a hard dependency on it continuing to run.
-   Measured, and it sharpens the question: the live queue's newest cohort is **2026-08-29** (already
-   2 days stale on 08-31), cadence is ~30-55/day on weekdays with **hard zero days at weekends** —
-   and per D-376 a dead LANE does not escalate, so a feed that stops is silent.
+1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED 2026-08-31 — it keeps running.**
+   See Next action 1. Both schedulers are armed: boardwatch 04:00, job-apps 08:30. Do not
+   re-raise; the remaining judgement is only WHEN to build, not WHETHER.
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
    multi-tenancy gap of its kind; D-054 forbids us authoring non-tech field content.
