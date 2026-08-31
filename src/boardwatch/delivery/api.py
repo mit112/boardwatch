@@ -36,7 +36,7 @@ would assert a decision the gate declined to make, which is the same error as fo
 into a neighbour.
 
 `review_reason` is therefore a SEPARATE field and `off_target` must never be stretched to stand in
-for it. It names which of `review_gate.ReviewReason`'s four members held the lead, and it comes
+for it. It names which of `review_gate.ReviewReason`'s six members held the lead, and it comes
 from `review_gate.classify` — the same call `lane` projects, so the reason on a row and the lane
 the row arrived in are one decision and cannot disagree (D-332). It is `None` for every apply-lane
 row, which makes `review_reason is not None` and "this row came in `review`" the same statement.
@@ -222,11 +222,33 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # second opinion in this module is how the page and the drain start disagreeing about one
     # lead, which is the defect `_ineligible` and `_review` both exist to prevent.
     apply_rows = sorted(
-        (r for r in kept if lane(verdict=r.verdict, locations=r.locations, title=r.title) == ""),
+        (
+            r
+            for r in kept
+            if lane(
+                verdict=r.verdict,
+                locations=r.locations,
+                title=r.title,
+                experience_unconfirmed=r.requirement_flags.experience_unconfirmed,
+                eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
+            )
+            == ""
+        ),
         key=rank_key,
     )
     review_rows = sorted(
-        (r for r in kept if lane(verdict=r.verdict, locations=r.locations, title=r.title) != ""),
+        (
+            r
+            for r in kept
+            if lane(
+                verdict=r.verdict,
+                locations=r.locations,
+                title=r.title,
+                experience_unconfirmed=r.requirement_flags.experience_unconfirmed,
+                eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
+            )
+            != ""
+        ),
         key=rank_key,
     )
     return {
@@ -284,7 +306,13 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
     # From `classify`, which `lane` is a projection of, so this row's reason and the list it was
     # sorted into are the SAME decision rather than two that agree today. `None` on an apply-lane
     # row by construction: `classify` returns a reason only where it returns `REVIEW_DIR`.
-    held = classify(verdict=row.verdict, locations=row.locations, title=row.title).reason
+    held = classify(
+        verdict=row.verdict,
+        locations=row.locations,
+        title=row.title,
+        experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
+        eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+    ).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
     return {
         "posting_id": row.posting_id,

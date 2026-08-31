@@ -15,7 +15,8 @@ import { Badge } from "./Badge";
  *
  * `role_vetoed` and `role_unconfirmed` are worded as the different claims they are. Only the first
  * is a decision the gate made; the second is an abstain, and calling it "not software" would
- * assert the decision it declined to make.
+ * assert the decision it declined to make. `eligibility_unconfirmed` is worded the same way and for
+ * the same reason: it reports that a blocking rule ABSTAINED, never that the lead is ineligible.
  */
 const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
   non_us_location: {
@@ -36,6 +37,16 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     label: "ineligible verdict",
     reason:
       "Held for review: an ineligible verdict arrived on a lead the queue expected to have excluded.",
+  },
+  eligibility_unconfirmed: {
+    label: "eligibility unconfirmed",
+    reason:
+      "Held for review: a work-authorization or clearance rule abstained, so a blocking requirement could not be decided either way. That is not a finding that the lead is ineligible.",
+  },
+  experience_requirement: {
+    label: "experience requirement",
+    reason:
+      "Held for review: this posting states an experience requirement the profile does not confirm meeting.",
   },
 };
 

@@ -177,3 +177,109 @@ def test_lane_is_exactly_the_classifiers_lane_and_a_reason_appears_iff_it_is_rev
             locations,
             title,
         )
+
+
+# ------------------------------------------------- the two requirement gates (R2, D-380)
+
+
+def test_a_hard_family_abstain_holds_an_otherwise_appliable_lead() -> None:
+    """US, software, and past every older gate — held only because a BLOCKING rule abstained.
+
+    This is the lead the fail-open was spending: `uncertain` says the verdict could not be
+    settled, but not WHICH requirement was unsettled, so a work_auth or clearance abstain was
+    indistinguishable from a clean lead and rode into the blindly-appliable queue.
+    """
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        eligibility_unconfirmed=True,
+    ) == (REVIEW_DIR, "eligibility_unconfirmed")
+
+
+def test_an_unconfirmed_experience_bar_holds_an_otherwise_appliable_lead() -> None:
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        experience_unconfirmed=True,
+    ) == (REVIEW_DIR, "experience_requirement")
+
+
+def test_the_two_new_holds_are_DIFFERENT_reasons_and_the_abstain_OUTRANKS_the_bar() -> None:
+    """Both hold the lead, and when both apply the abstain is the one reported.
+
+    Same principle as `role_vetoed` vs `role_unconfirmed`: the reader acts on them
+    differently. A blocking rule that could not be decided has to be resolved before anything
+    is spent; a stated experience bar is a lead that may still be worth applying to. Reporting
+    the weaker one when both hold would understate the hold.
+    """
+    both = classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        experience_unconfirmed=True,
+        eligibility_unconfirmed=True,
+    )
+    assert both == (REVIEW_DIR, "eligibility_unconfirmed")
+    experience_only = classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        experience_unconfirmed=True,
+    )
+    assert both.reason != experience_only.reason
+
+
+def test_an_earlier_gate_still_wins_over_the_new_flags() -> None:
+    """Precedence is unchanged where it already existed: the flags are the LAST gates.
+
+    A foreign lead carrying an unconfirmed bar is still reported as foreign — the location is
+    the stronger, already-decided fact, and relabelling it would lose the reason the reader
+    needs. Without this the two new branches could silently capture leads the older gates own.
+    """
+    assert classify(
+        verdict="uncertain",
+        locations=["Kaunas, Lithuania"],
+        title="Software Engineer",
+        experience_unconfirmed=True,
+        eligibility_unconfirmed=True,
+    ) == (REVIEW_DIR, "non_us_location")
+    assert classify(
+        verdict="uncertain",
+        locations=["Chicago, Illinois, United States"],
+        title="Registered Nurse Practitioner",
+        eligibility_unconfirmed=True,
+    ) == (REVIEW_DIR, "role_vetoed")
+
+
+def test_both_flags_false_is_byte_for_byte_the_old_behaviour() -> None:
+    """The defaults are the old contract, so every un-updated call site is unaffected."""
+    for verdict, locations, title in _CASES:
+        assert classify(verdict=verdict, locations=locations, title=title) == classify(
+            verdict=verdict,
+            locations=locations,
+            title=title,
+            experience_unconfirmed=False,
+            eligibility_unconfirmed=False,
+        )
+
+
+def test_lane_projects_the_new_gates_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes more inputs."""
+    for experience, eligibility in ((False, False), (True, False), (False, True), (True, True)):
+        decision = classify(
+            verdict="uncertain",
+            locations=["San Jose, CA, United States"],
+            title="Software Engineer",
+            experience_unconfirmed=experience,
+            eligibility_unconfirmed=eligibility,
+        )
+        assert decision.lane == lane(
+            verdict="uncertain",
+            locations=["San Jose, CA, United States"],
+            title="Software Engineer",
+            experience_unconfirmed=experience,
+            eligibility_unconfirmed=eligibility,
+        )
+        assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)

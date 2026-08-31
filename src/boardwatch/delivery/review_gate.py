@@ -8,8 +8,21 @@ role ``uncertain`` passes the role gate. This re-checks both *positively*: an
 and confirmed software. Anything else — a foreign/unknown location, a non-software
 title, or an unevaluated (``None``) verdict — routes to the review lane instead.
 
-Pure re-derivation over the row's own fields; reads no stored eligibility state, so
-it introduces no state that can drift from the DB (D-323).
+Two further gates narrow the same fail-open from the other side. A lead can be US and
+software and still carry a requirement the engine could not confirm: an experience bar it
+does not meet or cannot resolve, or a hard-family (work_auth/clearance) rule that ABSTAINED.
+Those rode into the apply queue as ``uncertain``, because the verdict alone cannot say which
+requirement was unresolved. They now route to review — reviewable, NOT dropped, which is the
+narrowing the owner asked for: an abstain is not evidence of ineligibility and must never be
+spent as though it were (D-380).
+
+Reading those two gates means this is no longer a pure re-derivation over the row's own
+fields: it takes a two-boolean SUMMARY of the row's current requirement set, which the caller
+reads under the SAME identity as the verdict it passes alongside. That is a deliberate
+departure from D-323's "reads no stored eligibility state". The drift D-323 guarded against is
+this module reaching into the DB on its own and disagreeing with the caller's verdict; the
+summary travels WITH the verdict from one identity-scoped read, so the two cannot come from
+different evaluations. Both flags default False, which is exactly the old behaviour.
 """
 
 from __future__ import annotations
@@ -30,11 +43,20 @@ REVIEW_DIR = "_review"
 #: three answers and only ``not_swe`` is a veto; ``uncertain`` is an abstain, and reporting it as
 #: "not software" would assert the decision the gate declined to make — the same error as folding
 #: an abstain into a neighbour.
+#:
+#: ``experience_requirement`` and ``eligibility_unconfirmed`` are likewise separate, and neither is
+#: folded into an existing member. They are held for OPPOSITE reasons and the reader acts on them
+#: differently: an experience bar is a stated requirement the lead may still be worth applying to,
+#: while a hard-family abstain means a blocking rule could not be decided at all and the JD needs
+#: reading before anything is spent on it. Reporting either as ``role_unconfirmed`` would name the
+#: wrong gate; adding one member for both would lose the distinction the reader needs.
 ReviewReason = Literal[
     "ineligible_verdict",
     "non_us_location",
     "role_vetoed",
     "role_unconfirmed",
+    "eligibility_unconfirmed",
+    "experience_requirement",
 ]
 
 
@@ -50,8 +72,15 @@ class LaneDecision(NamedTuple):
     reason: ReviewReason | None
 
 
-def classify(*, verdict: str | None, locations: Sequence[str], title: str) -> LaneDecision:
-    """Decide the lane AND, in the same pass, which of the four reasons held the lead.
+def classify(
+    *,
+    verdict: str | None,
+    locations: Sequence[str],
+    title: str,
+    experience_unconfirmed: bool = False,
+    eligibility_unconfirmed: bool = False,
+) -> LaneDecision:
+    """Decide the lane AND, in the same pass, which of the six reasons held the lead.
 
     The single place either answer is computed. The reason is a by-product of the branch the
     lane decision already takes, never a re-derivation, which is why the two cannot disagree.
@@ -59,7 +88,17 @@ def classify(*, verdict: str | None, locations: Sequence[str], title: str) -> La
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
     blind-applied. Everything else — ``uncertain`` or an unevaluated ``None`` verdict —
-    is held for review when it is *confirmed* non-US or *confirmed* non-software.
+    is held for review when it is *confirmed* non-US, *confirmed* non-software, or carries
+    an unconfirmed requirement (the two flags below).
+
+    The two flags are read AFTER the ``eligible`` short-circuit, so they cannot move an
+    ``eligible`` lead. That is not a gap under a policy that makes the families blockers: a
+    ``work_auth``/``clearance``/``experience_years`` row resolving ``unmet`` or ``unknown``
+    is blocking, so the verdict cannot be ``eligible`` in the first place — the flags are
+    always False there. Under a policy that demotes one of those families below ``blocker``
+    the row stops blocking and the verdict CAN be ``eligible`` with the flag set; routing
+    that lead is a separate decision about whether ``eligible`` should face any gate at all,
+    which is not settled here and is deliberately left where it is.
 
     Location fails OPEN on ``unknown``, exactly as the hard US gate does (the visa ruling:
     an unclassifiable location is never blind-dropped). Only a confirmed ``non_us`` lead is
@@ -88,10 +127,24 @@ def classify(*, verdict: str | None, locations: Sequence[str], title: str) -> La
         return LaneDecision(REVIEW_DIR, "role_vetoed")
     if role != "swe":
         return LaneDecision(REVIEW_DIR, "role_unconfirmed")
+    # The hard-family abstain outranks the experience bar: it says a BLOCKING rule could not be
+    # decided, which is a stronger reason to read the JD than a bar the engine did decide and the
+    # lead simply may not clear. Reporting the weaker one when both hold would understate the hold.
+    if eligibility_unconfirmed:
+        return LaneDecision(REVIEW_DIR, "eligibility_unconfirmed")
+    if experience_unconfirmed:
+        return LaneDecision(REVIEW_DIR, "experience_requirement")
     return LaneDecision("", None)
 
 
-def lane(*, verdict: str | None, locations: Sequence[str], title: str) -> str:
+def lane(
+    *,
+    verdict: str | None,
+    locations: Sequence[str],
+    title: str,
+    experience_unconfirmed: bool = False,
+    eligibility_unconfirmed: bool = False,
+) -> str:
     """Return ``""`` for the apply queue or :data:`REVIEW_DIR` for the review lane.
 
     A one-line projection of :func:`classify`, and deliberately nothing more: the lane and the
@@ -99,4 +152,10 @@ def lane(*, verdict: str | None, locations: Sequence[str], title: str) -> str:
     disagree about a lead is for both to read the same call. Re-deriving either here would be the
     second opinion ``_review`` exists to prevent (D-332).
     """
-    return classify(verdict=verdict, locations=locations, title=title).lane
+    return classify(
+        verdict=verdict,
+        locations=locations,
+        title=title,
+        experience_unconfirmed=experience_unconfirmed,
+        eligibility_unconfirmed=eligibility_unconfirmed,
+    ).lane

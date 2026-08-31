@@ -39,12 +39,20 @@ export type PostingStatus = "open" | "closed" | "unverifiable";
  * `role_vetoed` and `role_unconfirmed` are separate members and must stay separate. The role gate
  * returns three answers and only `not_swe` is a veto; `uncertain` is an abstain, and rendering it
  * as "not software" would assert the decision the gate declined to make.
+ *
+ * `eligibility_unconfirmed` and `experience_requirement` are separate for the same kind of reason.
+ * The first says a BLOCKING rule (work authorization or clearance) abstained, so the JD has to be
+ * read before anything is spent on the lead; the second says a stated experience bar is not
+ * confirmed satisfied, which is a lead the reader may well still want. One member for both would
+ * lose the distinction that decides what the reader does next.
  */
 export type ReviewReason =
   | "ineligible_verdict"
   | "non_us_location"
   | "role_vetoed"
-  | "role_unconfirmed";
+  | "role_unconfirmed"
+  | "eligibility_unconfirmed"
+  | "experience_requirement";
 
 export interface QueueRow {
   posting_id: number;
