@@ -124,13 +124,13 @@ def version_id(db) -> int:
 # ---------------------------------------------------------------- derived version
 
 def test_an_activity_row_elsewhere_does_not_dissolve_a_total_years_block(catalog) -> None:
-    """The exclusive group is collected DOCUMENT-wide, not per sentence.
+    """The refinement group is collected DOCUMENT-wide, not per sentence.
 
-    `rules.yaml` describes the group as firing "if the total, range and scoped patterns ever
-    overlap on the same text", but `evaluate` builds `present` from every detection in the body,
-    so two rows in unrelated sentences are enough to conflict and rewrite BOTH to unknown. That
-    is why `scoped_years_activity` carries its own `activity_years_minimum` value instead of
-    reusing `scoped_years_minimum`.
+    `rules.yaml` describes the total, range and scoped bars as a single refinement decision, but
+    `evaluate` builds the group from every detection in the body. That is why
+    `scoped_years_activity` carries its own `activity_years_minimum` value instead of reusing
+    `scoped_years_minimum`: an unrelated activity sentence must not join the parallel-bars
+    decision.
 
     Measured on the real posting this is taken from: a Disney "Software Engineer I" stating "A
     minimum of 3 years of relevant experience" was correctly `ineligible`, and adding an
@@ -141,7 +141,7 @@ def test_an_activity_row_elsewhere_does_not_dissolve_a_total_years_block(catalog
     total floor on its own, which makes this body useless for its own subject: a dissolved-by-
     the-group row and a band-abstained row are both `unknown`, so the assertion could no longer
     tell them apart and would have passed for the wrong reason. Six is above the band, so the
-    exclusive-group property is tested exactly as before. The in-band behaviour of this same
+    refinement-group property is tested exactly as before. The in-band behaviour of this same
     shape is pinned separately, by rationale, in the test below.
     """
     body = (
@@ -310,6 +310,26 @@ def test_two_detections_that_disagree_on_one_implies_abstain_the_whole_cluster(c
     assert result.verdict == "uncertain"
 
 
+def test_one_implies_with_two_thresholds_keeps_stage_1b_rationale_not_the_refinement_one(
+    catalog,
+) -> None:
+    """A single member disagreeing with itself is stage 1b's case, NOT a refinement straddle.
+
+    `experience_years` is a refinement group, and the refinement pass runs BEFORE stage 1b. A
+    pass that tests only "met and unmet are both present" — without requiring TWO DISTINCT
+    members — swallows this document and relabels it, because both rows here are the SAME rule
+    (`total_years_minimum`) stating two thresholds. The disposition is `unknown` either way, so
+    the disposition assertions in the stage 1b test above CANNOT catch it; only the rationale
+    can, and under the keystone invariant the rationale is the evidence chain.
+    """
+    body = "8+ years of experience required. 3+ years of experience required."
+    result = evaluate(body, Facts(total_years_experience=5), BLOCK_ALL, catalog)
+    assert {r.rule_id for r in result.requirements} == {"experience_years:total_years_minimum"}
+    assert {r.rationale for r in result.requirements} == {
+        "the posting states more than one threshold for this requirement",
+    }
+
+
 def test_two_detections_that_agree_are_corroboration_not_a_split(catalog) -> None:
     """The positive control for the split above: when two detections of the same implies
     AGREE, stage 1b must NOT fire. Both stay unmet, and the roll-up's `any unmet` binds,
@@ -420,6 +440,95 @@ def test_a_three_member_group_conflicts_on_any_two_distinct_values(catalog) -> N
     assert {r.disposition for r in result.requirements} == {"unknown"}
 
 
+def test_a_refinement_group_straddle_abstains_with_its_own_rationale(catalog) -> None:
+    """The new group must dissolve a real straddle, not a mere co-occurrence.
+
+    Current code reaches the same `unknown` rows through `exclusive_groups`, but reports the
+    wrong contradiction rationale. That failure proves the new refinement branch, rather than
+    a global alteration of exclusive-group semantics, supplied the abstain.
+    """
+    body = (
+        "5+ years of professional experience required. "
+        "8+ years of Python experience required."
+    )
+    result = evaluate(
+        body,
+        Facts(total_years_experience=5),
+        Policy(families={"experience_years": "blocker"}),
+        catalog,
+    )
+    rows = [
+        row for row in result.requirements
+        if row.rule_id in {
+            "experience_years:total_years_minimum",
+            "experience_years:scoped_years_minimum",
+        }
+    ]
+    assert {row.disposition for row in rows} == {"unknown"}
+    assert {
+        row.rationale for row in rows
+    } == {"the posting's parallel requirements straddle the candidate's profile"}
+    assert result.verdict == "uncertain"
+
+
+def test_agreeing_refinement_rows_stand_for_the_rollup(catalog) -> None:
+    """Presence-only grouping in current code dissolves these two `unmet` parallel bars and
+    returns `uncertain`; a refinement group must retain them so the blocker roll-up rejects."""
+    body = (
+        "5+ years of professional experience required. "
+        "8+ years of Python experience required."
+    )
+    result = evaluate(
+        body,
+        Facts(total_years_experience=1),
+        Policy(families={"experience_years": "blocker"}),
+        catalog,
+    )
+    rows = [
+        row for row in result.requirements
+        if row.rule_id in {
+            "experience_years:total_years_minimum",
+            "experience_years:scoped_years_minimum",
+        }
+    ]
+    assert {row.disposition for row in rows} == {"unmet"}
+    assert result.verdict == "ineligible"
+
+
+def test_an_exclusive_group_keeps_presence_semantics(catalog) -> None:
+    """Current code has no refinement_groups data, so the first assertion fails before the
+    clearance control could falsely certify a data move that did not happen. The clearance
+    pair must still dissolve on presence, even though its rows disagree for a clearable user."""
+    assert catalog.family("experience_years").refinement_groups == (
+        frozenset({
+            "total_years_minimum",
+            "range_years_minimum",
+            "scoped_years_minimum",
+        }),
+    )
+    result = evaluate(
+        "Active Secret clearance is required. "
+        "Ability to obtain a security clearance is required.",
+        Facts(security_clearance=ClearanceFact(
+            scheme="unspecified", level="none", state="none", obtainable=True,
+        )),
+        Policy(families={"clearance": "blocker"}),
+        catalog,
+    )
+    rows = [
+        row for row in result.requirements
+        if row.rule_id in {
+            "clearance:active_secret_required",
+            "clearance:clearable_required",
+        }
+    ]
+    assert {row.disposition for row in rows} == {"unknown"}
+    assert {
+        row.rationale for row in rows
+    } == {"conflicting statements about this requirement appear in the posting"}
+    assert result.verdict == "uncertain"
+
+
 def test_a_work_auth_refinement_decides_rather_than_dissolving(catalog) -> None:
     """Citizenship REFINES authorization; it does not contradict it.
 
@@ -444,6 +553,13 @@ def test_a_work_auth_refinement_decides_rather_than_dissolving(catalog) -> None:
         "work_auth:us_authorization_required": "met",
         "work_auth:us_citizen_required": "unmet",
     }
+    # The RATIONALE, not only the disposition. A row can carry the right disposition and still
+    # report that the posting contradicts itself, which is the evidence chain the keystone
+    # invariant makes load-bearing -- and dispositions alone cannot tell the two apart.
+    assert {r.rule_id: r.rationale for r in result.requirements} == {
+        "work_auth:us_authorization_required": "authorized",
+        "work_auth:us_citizen_required": "not a citizen",
+    }
 
 
 def test_a_work_auth_refinement_a_citizen_satisfies_clears_both_arms(catalog) -> None:
@@ -458,6 +574,10 @@ def test_a_work_auth_refinement_a_citizen_satisfies_clears_both_arms(catalog) ->
     result = evaluate(body, facts, BLOCK_ALL, catalog)
     assert result.verdict == "eligible"
     assert {r.disposition for r in result.requirements} == {"met"}
+    assert {r.rule_id: r.rationale for r in result.requirements} == {
+        "work_auth:us_authorization_required": "authorized",
+        "work_auth:us_citizen_required": "citizen",
+    }
 
 
 # ---------------------------------------------------------------- roll-up

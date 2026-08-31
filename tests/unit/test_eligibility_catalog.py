@@ -344,6 +344,50 @@ def test_an_exclusive_implies_value_may_not_appear_in_two_groups(tmp_path: Path)
         load_rules(tmp_path)
 
 
+def test_refinement_groups_parse_as_a_second_group_kind(tmp_path: Path) -> None:
+    """Without the new loader field, a refinement group is silently unavailable to the
+    engine, so parallel experience bars would retain exclusive-group semantics."""
+    body = MINIMAL.replace(
+        "implies_vocabulary: [degree_required]",
+        "implies_vocabulary: [degree_required, related_degree_required]",
+    ).replace(
+        "    exclusive_groups: []\n",
+        "    refinement_groups: [[degree_required, related_degree_required]]\n",
+    )
+    _write(tmp_path, body)
+    catalog = load_rules(tmp_path)
+    assert catalog.family("degree").exclusive_groups == ()
+    assert catalog.family("degree").refinement_groups == (
+        frozenset({"degree_required", "related_degree_required"}),
+    )
+
+
+def test_a_group_member_cannot_be_both_exclusive_and_refinement(tmp_path: Path) -> None:
+    """Without the cross-kind guard, applying the two rewrites in the other order can
+    change which rationale wins for the same row."""
+    body = MINIMAL.replace(
+        "implies_vocabulary: [degree_required]",
+        "implies_vocabulary: [degree_required, related_degree_required]",
+    ).replace(
+        "    exclusive_groups: []\n",
+        "    exclusive_groups: [[degree_required, related_degree_required]]\n"
+        "    refinement_groups: [[degree_required, related_degree_required]]\n",
+    )
+    _write(tmp_path, body)
+    with pytest.raises(CatalogError, match="order-dependent"):
+        load_rules(tmp_path)
+
+
+def test_a_family_omitting_both_group_kinds_loads_empty_groups(tmp_path: Path) -> None:
+    """Without absent-block defaults for both kinds, existing families that need no
+    grouping stop loading when refinement_groups is introduced."""
+    _write(tmp_path, MINIMAL.replace("    exclusive_groups: []\n", ""))
+    catalog = load_rules(tmp_path)
+    family = catalog.family("degree")
+    assert family.exclusive_groups == ()
+    assert family.refinement_groups == ()
+
+
 _STUDY = """
     fields_of_study:
       - id: computer_science

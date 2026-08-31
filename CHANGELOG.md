@@ -60,6 +60,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Two different experience bars in one posting are no longer treated as the posting contradicting
+  itself.** "5+ years of software engineering experience" beside "3+ years of Python" is two
+  requirements, not a contradiction, but both were being thrown away and the posting came back as
+  "not sure" — even when you missed both bars. They now both count, and the posting is judged on
+  them. The one case that still abstains is the genuinely ambiguous one: where you CLEAR one bar and
+  MISS another, which no single number about your experience can settle. Measured over 1,868
+  recorded evaluations, 913 of them — 48.9% — now get a decision instead of landing in the review
+  queue. Only the experience family changed: a posting cannot both offer and refuse sponsorship, and
+  a clearance you hold versus one you could obtain are genuine alternatives, so those still report a
+  contradiction. Verified to leave all 1,034 recorded eligibility cases exactly as they were. (D-389)
+
 - **A posting that states a work-authorisation requirement twice, the second time more strictly, is
   no longer treated as contradicting itself.** "Applicants must be authorized to work in the United
   States. A natural-born U.S. citizen is required." used to throw away BOTH requirements and report

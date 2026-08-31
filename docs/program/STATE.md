@@ -44,10 +44,13 @@ removes an abstain **no fact could ever resolve**: a US citizen reading "Applica
 citizens. Must be authorized to work in the United States." was `uncertain` under the group and is
 now `eligible` with both rows `met`. Corpus 0 mismatches over 1,034.
 
-**THE 96% IS STILL OWED.** `experience_years` still dissolves **3,876** evaluations. Honouring the
-owner's ruling there needs a **second group kind in the catalog (`refinement_groups`), as versioned
-DATA** — because the corpus proves the rule cannot be applied globally. That is the next
-eligibility change and its design is recorded in D-388.
+**THE 96% SHIPPED TOO, as D-389/#291.** `refinement_groups` is a second group kind in the catalog,
+as versioned DATA: `exclusive_groups` keeps presence semantics, `refinement_groups` dissolves ONLY
+on a real `MET`/`UNMET` straddle, and `experience_years`' triple moves into it while every other
+family stays put — because the corpus proves the rule cannot be applied globally. **Priced over a
+PINNED 1,868-id set at run 135's catalog, baseline D-388's branch: 913 flip `uncertain` ->
+`ineligible` (48.9%)**, corpus 0/1034. **`engine_version` MOVES, so a LEDGER DRAIN IS OWED** once it
+merges — unlike D-388, which moved no engine module.
 
 **A measurement trap that produced a false number, recorded so it is not repeated.** `rule_id` is
 `family:pattern_id`, **not** `family:implies`, and the two coincide only for `experience_years`'
@@ -109,12 +112,9 @@ config into `store/`. Three postings does not buy a layering change.
 
 ## Next action
 
-1. **Build `refinement_groups` for `experience_years` — the 96%, and the largest remaining
-   precision item.** 3,876 evaluations. A second group kind in the catalog as versioned DATA:
-   groups that dissolve only when their rows actually DISAGREE, against `exclusive_groups` which
-   dissolve on presence. **The corpus proves it cannot be a global rule** (D-388): applied globally
-   it regresses 8 cases including a wrong `met`. Needs its own schema, validation, engine branch,
-   `rules.yaml` move, tests and measurement.
+1. **RUN THE LEDGER DRAIN once #291 merges.** D-389 moves `engine_version` (engine.py and
+   catalog.py are both digested), so every stored verdict is re-keyed and a drain is owed. Trust
+   the tool, not raw SQL. D-388/#290 owes none — it moved no engine module.
 2. **Run the WATCHED first job-apps run.** The lane is armed and verified through `load_settings()`
    but run 136 predates the arming. Expect ~190 records read / 49 direct-apply. D-385's "first run
    watched" is still unsatisfied.
@@ -137,6 +137,7 @@ config into `store/`. Three postings does not buy a layering change.
 | PR | what |
 |---|---|
 | **#290** | the `work_auth` restriction ladder stops being an exclusive group; the other four groups stay, each for a different stated reason (D-388) |
+| **#291** | `refinement_groups` — a second group kind so `experience_years`' parallel bars abstain only on a real straddle; 913 of 1,868 decided (D-389) |
 
 Also this session, no PR: the **job-apps lane ARMED** against `resumes/` (owner's corrected source),
 **8 merged-PR worktrees removed**, and **run 136** started manually.
@@ -195,7 +196,7 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 
 | Item | Detail | Owner |
 |---|---|---|
-| **The `experience_years` group still reads a REFINEMENT as a CONTRADICTION — 3,876 evaluations** | D-388/#290 fixed the `work_auth` ladder half (4 of 4 comparable flip `uncertain` -> `ineligible`, corpus 0/1034, **no `engine_version` movement so no ledger drain**). **The 96% remains**: `experience_years`' `[total_years_minimum, range_years_minimum, scoped_years_minimum]` are PARALLEL BARS, and the owner ruled they must keep abstaining on a REAL straddle (met on one, unmet on another) while deciding otherwise. **That cannot be a global engine rule** — applying stage 1b's disagreement test at stage 1 regresses **8 of 1,034 corpus cases**, reintroducing a wrong `ineligible` on obtainable-clearance documents and a **wrong `met`** for a doctorate holder, because `clearable_required` is a DISJUNCTION not a weaker rung. It needs a second group kind in the catalog (`refinement_groups`) as versioned DATA. Arm A (empty every group) is 2,674 of 4,035; the measured disagreement arm is 2,423 of 4,035. **`rule_id` is `family:pattern_id`, NOT `family:implies`** — they coincide only for this family's three members, and a derived arm therefore reports false zeros elsewhere. Price the code, not a model of it | **next eligibility change** (design settled in D-388) |
+| ~~The `experience_years` group reads a REFINEMENT as a CONTRADICTION~~ **CLOSED by #291 / D-389** | `refinement_groups` ships as a second group kind in versioned catalog DATA: `exclusive_groups` keeps PRESENCE semantics, `refinement_groups` dissolves only on a real `MET`/`UNMET` straddle. Only `experience_years` moved — **a global rule regresses 8 of 1,034 corpus cases** (D-388), because `clearable_required` is a DISJUNCTION not a weaker rung. **913 of a PINNED 1,868 flip `uncertain` -> `ineligible` (48.9%)**, corpus 0/1034 (predicted before review). **`engine_version` MOVES so a LEDGER DRAIN IS OWED.** Known property, direction deliberate: the refinement pass runs BEFORE stage 1b, so a same-implies split beside another present member dissolves the group where stage-1b-first would let a decisive `unmet` stand — the shipped order is the ABSTAIN direction | **CLOSED** |
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | ~~Delivery-drought cannot see APPLY-LANE starvation~~ **CLOSED by #285 / D-384** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, written **regardless of which lane `review_gate.lane()` routes to**, so a global misclassification shipped zero apply-ready leads with every existing alarm green. `check_apply_lane_drought` now fires when the last 3 clean runs each delivered PLACEABLE leads and none reached the apply lane. **The old sizing was wrong, not merely pessimistic**: it priced a guard inside `_sync_queue`, but the three job-id readers already take only a connection and `QueueRow` already carries `delivered_run_id`, so nothing in `review_gate`, `_sync_queue` or the web server's result type had to change. Known property, direction abstain-not-alarm: `delivered_unapplied` attributes a re-delivered job to the NEWER run, so an older run can read zero placeable and the window abstains | **CLOSED** |
 | ~~Four detector fallbacks are print-only, not durable~~ **CLOSED by #260** | The `intake-death` / `delivery-drought` / `liveness-blindness` / `corpus-regression` "check not run" handlers now call `append_run_error` like the three artifact-write handlers beside them, so a DETECTOR that crashes leaves a row in `runs.errors_json` and not only a digest line. Four one-line additions, inert on the normal path; each pinned by its OWN parametrised test, because a single test crashing all four passes while three of the four calls are missing. **Known shared property:** `append_run_error` is not internally defensive and these sit inside `except` handlers — matched to the three existing handlers deliberately rather than diverging; it needs two simultaneous failures and fails loudly via the withheld heartbeat | **CLOSED** |

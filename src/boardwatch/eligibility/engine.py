@@ -8,10 +8,11 @@ include_attributes=False keeps line numbers out of it.
 
 The roll-up reproduces .agent/p2-catalog/proto.py::evaluate (the reviewed prototype and the
 ORACLE this module was reconciled against) stage for stage: a per-detection abstain when the
-detection carries an `abstained` escape, then stage 1 exclusive-group conflict, then stage 1b
-split-threshold abstain, then the stage 2 policy roll-up. The prototype's abstain and stage 1b
-were both absent from the frozen task-7 brief; where brief and prototype disagreed, the
-prototype won (the brief's own Step rule), verified case by case against proto.evaluate.
+detection carries an `abstained` escape, then stage 1 exclusive-group conflict, then refinement
+group disagreement, then stage 1b split-threshold abstain, then the stage 2 policy roll-up. The
+prototype's abstain and stage 1b were both absent from the frozen task-7 brief; where brief and
+prototype disagreed, the prototype won (the brief's own Step rule), verified case by case against
+proto.evaluate.
 """
 
 from __future__ import annotations
@@ -263,6 +264,52 @@ def evaluate(
         else item
         for item in staged
     ]
+
+    # ---- refinement groups: parallel requirements can co-occur. They abstain only when the
+    # candidate clears one member while missing another; agreement is evidence for the roll-up.
+    # Like stage 1b below, the disagreement is keyed on a SET of dispositions, never row order.
+    # Named apart from stage 1b's `by_key` below rather than shared: stage 1b must recompute
+    # AFTER this pass, because a row this pass rewrites to `unknown` is no longer a `met` or an
+    # `unmet` for its split test. Sharing one snapshot would let a dissolved row keep voting.
+    refinement_dispositions: dict[tuple[str, str], set[str]] = {}
+    for item in staged:
+        refinement_dispositions.setdefault(
+            (item.detection.family, item.detection.pattern.implies), set()
+        ).add(item.disposition)
+    refinement_conflicted: set[tuple[str, str]] = set()
+    for family in catalog.families:
+        for group in family.refinement_groups:
+            overlap = {
+                value for value in group if (family.id, value) in refinement_dispositions
+            }
+            # TWO DISTINCT members or it is not a straddle. Without this, ONE member carrying
+            # two disagreeing detections satisfies the met/unmet test below and is dissolved
+            # here, which preempts stage 1b and mislabels it: "8+ years of experience required.
+            # 3+ years of experience required." is two thresholds for ONE requirement, not two
+            # parallel requirements, and its rows must carry stage 1b's rationale. The
+            # disposition is `unknown` either way, so only the EVIDENCE CHAIN distinguishes
+            # them — which is exactly what the keystone invariant makes load-bearing.
+            if len(overlap) < 2:
+                continue
+            seen = {
+                disposition
+                for value in overlap
+                for disposition in refinement_dispositions[(family.id, value)]
+            }
+            if MET in seen and UNMET in seen:
+                refinement_conflicted |= {(family.id, value) for value in overlap}
+    if refinement_conflicted:
+        staged = [
+            _Staged(
+                item.detection,
+                UNKNOWN,
+                "the posting's parallel requirements straddle the candidate's profile",
+                (),
+            )
+            if (item.detection.family, item.detection.pattern.implies) in refinement_conflicted
+            else item
+            for item in staged
+        ]
 
     # ---- stage 1b: two rows for the SAME (family, implies) that DISAGREE cannot both be
     # right, and "any unmet wins" in the roll-up would silently pick the harsher threshold.
