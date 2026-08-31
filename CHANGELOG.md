@@ -60,6 +60,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Two ways a posting could say "we will not sponsor a visa" and be read as saying nothing.** A
+  refusal worded "we will never consider candidates who require visa sponsorship" was matched and
+  then thrown away, because the rule that catches it had not declared "never" as a word it is
+  allowed to contain — so the sentence produced no requirement at all and the posting cleared by
+  silence. Separately, any hyphenated word between the refusal and the word "sponsorship" broke the
+  match outright: "we do not provide immigration-related sponsorship for this role" was invisible,
+  while the same sentence without the hyphen was caught. Both are now read the way their plain
+  equivalents already were. The change is narrow on purpose — it lets a hyphen into the gap between
+  words and nothing else, so a hyphenated phrase that is not about immigration still produces no
+  requirement, and someone who needs no sponsorship still passes both sentences. Verified to leave
+  every one of the 1,034 recorded eligibility cases with exactly the verdict and the reasons it had
+  before. Measured against the postings actually affected: **262 of them are now correctly rejected,
+  and nine of those had been reading as a match** — postings that state they will not sponsor a visa
+  and could have reached the apply queue anyway. (D-387)
+
 - **An eligible lead still has to be a US software role to reach the apply queue.** `eligible`
   used to skip the location and role checks entirely, so a posting could be marked eligible and go
   straight to the blindly-appliable queue while being neither — the audit found a "Field Auto
