@@ -34,10 +34,16 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
+# 4: kaunas / zhubei / wuxi / saint-etienne added to NON_US_CITIES and jiangsu to
+# NON_US_REGIONS, from the 2026-08-30 queue audit: six apply-lane postings named a plainly
+# foreign office and classified `unknown`, which FAILS OPEN into the apply lane. Each one
+# passes the curation test at the top of this file -- name the US employer the token would
+# cost you, and there is none. `Dublin` came up in the same batch and is STILL excluded,
+# for the reason already written above.
 # 3: US_STATE_NAME_TO_ABBREV added and the two state sets derived from it. The classifier's
 # own tokens are unchanged — the map exists so `core.normalize.canonical_location` can fold
 # "Austin, Texas" and "Austin, TX" to one identity component.
-LOCATION_DATA_VERSION = 3
+LOCATION_DATA_VERSION = 4
 
 # The one source of truth for US states: both sets below are DERIVED from it, so adding a
 # state is one edit, not three that can disagree. Values are USPS abbreviations, which is
@@ -127,6 +133,10 @@ NON_US_COUNTRIES = frozenset(
 # UNAMBIGUOUS non-US cities only (see the module docstring's curation rule).
 NON_US_CITIES = frozenset(
     {
+        # 2026-08-30 queue audit. Kaunas (LT), Zhubei (TW, the Hsinchu semiconductor belt),
+        # Wuxi (CN) and Saint-Etienne (FR) each appeared as a bare office name with no country
+        # suffix to do the work. None has a US namesake that could plausibly host an employer.
+        "kaunas", "zhubei", "wuxi", "saint-etienne", "st. etienne", "st etienne",
         "london", "toronto", "bengaluru", "bangalore", "vancouver", "amsterdam", "tokyo",
         "taipei", "shanghai", "madrid", "sydney", "tel aviv", "berlin", "montreal",
         "gurugram", "gurgaon", "hyderabad", "seoul", "singapore", "beijing", "shenzhen",
@@ -173,7 +183,9 @@ NON_US_CITIES = frozenset(
 NON_US_REGIONS = frozenset(
     {
         "emea", "apac", "latam", "europe", "uk", "eu", "asia", "anz", "middle east", "africa",
-        "saxony", "thuringia",
+        # Chinese provinces arrive as the second segment of a "City, Province" location with no
+        # country ever named ("Wuxi, Jiangsu"), exactly as the German states above do.
+        "saxony", "thuringia", "jiangsu",
     }
 )
 

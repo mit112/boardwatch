@@ -201,6 +201,76 @@ families:
           - "(?:\\s*,\\s*(?:(?:and\\s*/\\s*or|or|and|/)\\s*)?|\\s*(?:and\\s*/\\s*or|or|and|/)\\s*)(?:\\w+\\s+){0,3}?(?:permanent\\s+residen|green\\s*card|lawful|L\\.?P\\.?R\\.?)"
           - "or\\s+(?:otherwise\\s+)?(?:legally\\s+)?(?:authori[sz]ed|eligible|permitted)\\s+to\\s+work"
         pattern: '(?:(?:must\s+(?:be|have|hold|possess)|require[sd]?|(?:will\s+)?needs?(?:\s+to\s+(?:be|have|hold|possess))?|proof\s+of|able\s+to\s+(?:provide|show))|open\s+to|limited\s+to|restricted\s+to|only|eligible\s+applicants\s+are)\s+(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)\w+\s+){0,3}?(?:an?\s+){0,1}(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?|(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?(?:hip)?\s*(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[\w\x27]+\s+){0,3}?(?:required|mandatory|necessary|essential|compulsory|needed|non-?negotiable|a\s+must|a\s+requirement)'
+      # THREE RECALL PATTERNS for citizenship idioms that produced ZERO rows across the live
+      # apply lane, all four causes diagnosed before any of them was written (the F64 lesson:
+      # a pattern written against a guessed cause guards a case it cannot see). The resolver
+      # was NOT the problem -- `Must be a US citizen.` already decides `unmet` for
+      # ead_or_similar per D-322. Every miss was DETECTION.
+      #
+      # WHY NOT WIDEN THE THREE PATTERNS ABOVE. Each miss breaks a different structural
+      # assumption of the shared marker vocabulary, and widening the word gap enough to reach
+      # any of them re-opens the descriptive-prose false positives that the stop guard and the
+      # mandatory marker exist to close. Narrow siblings keep the parity table intact.
+      - id: us_person_export_control_required
+        requiredness: required
+        # ITAR/EAR "US person" admits citizens, LPRs AND protected individuals, so this is the
+        # citizen-OR-LPR surface, not the citizen-only one. It still decides `unmet` for
+        # ead_or_similar with needs_sponsorship -- a refugee or asylee EAD holder would not
+        # need sponsorship, so the two facts together exclude the protected-individual arm.
+        implies: citizen_or_lpr_required
+        jurisdiction: us
+        scope: sentence
+        requirement_text: "Must be a US person under export-control regulations"
+        # The export-control CONTEXT is mandatory, not decoration: it is what separates this
+        # from descriptive prose naming citizens. Both orders occur in the wild, hence the
+        # two arms. `(i)`/`(1)`/`a.` enumerators are why the shared 0-3 word gap could never
+        # reach the noun -- `\w+` does not cross a parenthesis - so the gap here is `.{0,N}`
+        # bounded by the sentence scope rather than a word run.
+        pattern: '(?:(?:export\s+(?:control|regulation|administration)s?|(?<!\w)I\.?T\.?A\.?R\.?(?!\w)|(?<!\w)E\.?A\.?R\.?(?!\w))[^\n]{0,200}?(?:must\s+be|shall\s+be|required\s+to\s+be|restricted\s+to)[^\n]{0,80}?(?:(?<!\w)U\.?S\.?|United\s+States)\s*(?:citizens?|persons?|nationals?)|(?:must\s+be|shall\s+be|required\s+to\s+be)[^\n]{0,80}?(?:(?<!\w)U\.?S\.?|United\s+States)\s*(?:citizens?|persons?|nationals?)[^\n]{0,200}?(?:export\s+(?:control|regulation|administration)s?|(?<!\w)I\.?T\.?A\.?R\.?(?!\w)))'
+
+      - id: us_citizen_standalone_required
+        requiredness: required
+        implies: citizenship_required
+        jurisdiction: us
+        scope: sentence
+        requirement_text: "Must be a US citizen"
+        # A bare noun phrase used AS the requirement: a qualifications bullet reading
+        # `US Citizen.` or `US Citizenship with an active Secret clearance`. No marker verb
+        # exists anywhere in the clause, so every marker-first and marker-last arm above is
+        # structurally unreachable.
+        #
+        # THE ANCHOR IS WHAT MAKES THIS SAFE. It fires only when the citizenship noun OPENS
+        # its sentence and is immediately closed by punctuation or a small continuation set.
+        # Unanchored it matched `... operated by the U.S. Citizenship and Immigration
+        # Services.` -- the E-Verify boilerplate that appears in a large share of US postings
+        # and names no requirement at all. That span is a NEGATIVE CONTROL, measured both ways.
+        #
+        # AND IT STOPS AT THE BARE NOUN. An `is required` continuation is deliberately NOT
+        # accepted, because `us_citizen_required`'s marker-LAST arm already owns that form.
+        # Accepting it here put a SECOND row on `U.S. citizenship is required, or candidates
+        # must hold lawful permanent resident status.` -- and because the two rows carry
+        # different values from ONE exclusive group (`citizenship_required` against
+        # `citizen_or_lpr_required`), the group conflicted and rewrote BOTH to unknown. Seven
+        # corpus cases went `ineligible`/`eligible` -> `uncertain` on that alone. A recall
+        # pattern that dissolves a decided sibling is a LOOSENING wearing a fix's name.
+        suppressed_by_sentence:
+          - "Citizenship\\s+and\\s+Immigration"
+          - "citizenship\\s+status"
+          - "(?:not|non-?discriminat|regardless\\s+of)"
+        pattern: '^\s*(?:[-*\u2022\u25cf\u00b7]\s*)?(?:(?<!\w)U\.?S\.?|United\s+States)\s+Citizens?(?:hip)?(?:\s+(?:required|only))?\s*(?:[.:;]|\s*$|,?\s+(?:with|and\s+an?\s+active))'
+
+      - id: us_citizen_predicate_required
+        requiredness: required
+        implies: citizenship_required
+        jurisdiction: us
+        scope: sentence
+        requirement_text: "Must be a US citizen"
+        # Two predicate forms the marker vocabulary cannot reach. `who are US citizens` puts
+        # the requirement in a relative clause with no marker verb of its own; `mandates ...
+        # be United States citizens` uses a marker verb (`mandates`) deliberately absent from
+        # the shared vocabulary, because adding it there would apply it to all six siblings.
+        pattern: '(?:who\s+(?:are|must\s+be)\s+(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?|(?:mandates?|stipulates?|dictates?)\s+[^\n]{0,90}?\bbe\s+(?:(?<!\w)U\.?S\.?|United\s+States|American)\s+citizens?)'
+
       # Both sponsorship patterns CAPTURE the jurisdiction their sentence scopes itself to.
       # Untethered, "For roles based in Canada, visa sponsorship is available." answered `met`
       # to a US applicant needing US sponsorship, and "For the London position, we cannot
@@ -509,6 +579,88 @@ families:
         requirement_text: "Years of experience scoped to a specific activity"
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
+      # TWO MORE RECALL SIBLINGS (2026-08-30 queue audit, second pass). Measured against the
+      # live apply lane AFTER the range fix landed: 25 postings still stated a bar and produced
+      # no row. They fall into exactly two shapes, and the residue was re-measured rather than
+      # taken from the earlier session's list -- which named shapes that the range fix had
+      # already closed, and missed the commonest one entirely.
+      #
+      # SHAPE 1, the DOMAIN LIST. `scoped_years_minimum`'s second tail alternative allows a
+      # head word plus at most two more before `experience`, and its word run is `[\w.+#/-]+`,
+      # which cannot cross a COMMA. Real postings enumerate:
+      #   "4+ years of software engineering or SRE experience"          (4 words)
+      #   "5+ years of DevOps, platform engineering, or SRE experience" (commas)
+      #   "3+ years of software development, software systems engineering, or software
+      #    validation experience"
+      # This sibling keeps the literal `experience` noun as the anchor -- the whole match still
+      # ends on it -- and only widens what may sit between it and the number.
+      #
+      # TWO CONSTRAINTS EARNED FROM THE FIRST DRAFT, which was gated and measured before it
+      # was believed:
+      #  * A LIST CONNECTOR IS MANDATORY. Without one this pattern matched everywhere the
+      #    plain scoped tail already matches, putting a duplicate row on 72 corpus cases. It
+      #    exists for the enumerated form, so the comma or the `and`/`or` is required rather
+      #    than optional, which keeps it disjoint from the twin instead of a superset of it.
+      #  * IT TAKES `activity_years_minimum`, NOT `scoped_years_minimum`, for the reason
+      #    spelled out at `scoped_years_activity`: group presence is collected DOCUMENT-wide,
+      #    so a scoped value here would conflict with a `total_years_minimum` row in an
+      #    unrelated sentence and rewrite BOTH to unknown -- turning a decided `ineligible`
+      #    into an abstain, which is the direction that puts a bad lead back in the queue.
+      - id: domain_list_years_minimum
+        requiredness: required
+        implies: activity_years_minimum
+        scope: sentence
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        requirement_text: "Years of experience scoped to a specific skill or domain"
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+(?:of|in))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?!(?:age|old|experience|equivalent|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}?\s*(?:,\s*|\s+(?:and|or)\s+)(?:[\w.+#/-]+\s+){0,3}?experience\b'
+
+      # SHAPE 2, NO `experience` NOUN ANYWHERE. "5+ years'' embedded SW", "15+ Years of Systems
+      # Engineering:", "2 years in SaaS, PaaS, or IaaS software development", "5 years of
+      # service in a related hardware/software position", "3+ year web development". The
+      # number and the domain carry the whole requirement; there is no noun for either scoped
+      # tail to anchor on, and no gerund for `scoped_years_activity`.
+      #
+      # THREE GUARDS, each earned from a span in the live residue rather than imagined:
+      #  * YEARS BOUNDED 2-19. Every false positive in the measured residue was company-side
+      #    tenure prose with a big number -- "30+ years of pioneering robotics research"
+      #    (Carnegie Mellon), "25 years. It''s a unique legacy of innovation" (NVIDIA). No
+      #    posting asks a candidate for 20+ years, so the bound costs nothing real and it is
+      #    cheaper and more legible than extending `company_side_years` to cover every way an
+      #    employer can boast about its own age.
+      #  * A STOPWORD HEAD. The HEDGES are in it as well as the tenure words: `5 years of
+      #    experience is required, 10 years preferred.` is one sentence, so the trailing
+      #    `10 years preferred` is reachable even though the hedge suppressor stood the
+      #    first half down -- the number a hedge qualifies is not a floor.
+      #    The COPULAS and modals are in it for a third reason again: `... 8 years is
+      #    preferred` and `... 3 years must be in a technical leadership role` put the verb
+      #    where a domain noun belongs, and a bare `is`/`must` is not a domain.
+      #    `pioneering`, `helping`, `combined`, and the determiners keep the
+      #    remaining tenure prose out. The GERUNDS are listed for a second reason: they belong
+      #    to `scoped_years_activity`, and letting both fire would put two rows on one span.
+      #  * NO `experience` NOUN IN THE REST OF THE CLAUSE. This is the pattern's own
+      #    definition made enforceable rather than merely stated: without it the pattern also
+      #    fired on every span the two scoped tails already cover, putting three rows on one
+      #    "2+ years of industry software engineering experience" instead of one. The verdict
+      #    was unchanged -- all three resolve the same way -- but the abstain report counts
+      #    rows, so the noise would have shown up as a fake jump in experience detections.
+      #  * `(?<!to\s)`, inherited from the activity twin. "Up to 3 years web development"
+      #    bounds from ABOVE; read as a floor it rejects exactly the new-grad postings this
+      #    tool exists to find.
+      #
+      # It takes `activity_years_minimum`, NOT `scoped_years_minimum`, and the reason is the
+      # one written out at `scoped_years_activity`: group presence is collected DOCUMENT-wide,
+      # so a scoped value here would conflict with a `total_years_minimum` row in an unrelated
+      # sentence and rewrite BOTH to unknown.
+      - id: domain_years_minimum
+        requiredness: required
+        implies: activity_years_minimum
+        scope: sentence
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        requirement_text: "Years of experience scoped to a specific domain"
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>[2-9]|1[0-9])\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
+
       # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
       # preferred." told a 2-year candidate they were INELIGIBLE. Two alternatives per
       # pattern because the hedge sits on either side of the number, and one regex cannot
@@ -748,6 +900,40 @@ families:
         # Polygraph and Public Trust are here for the same reason: "Ability to obtain a
         # polygraph is required." made a poly a HELD gate through polygraph_required.
         pattern: '(?:able|ability|eligible|eligibility|willing|willingness)\s+to\s+obtain(?:\s+and\s+maintain)?\s+(?:a\s+|an\s+)?(?:one|(?:U\.?S\.?\s+)?(?:government\s+|security\s+|T\.?S\.?\s*/\s*S\.?C\.?I\.?\s+|T\.?S\.?|Top\s+Secret\s+|Secret\s+|Confidential\s+|NATO\s+(?:Secret\s+|Confidential\s+)?|(?:D\.?O\.?E\.?\s+)?(?<!\w)Q(?!\w)\s+|(?:D\.?O\.?E\.?\s+)?(?<!\w)L(?!\w)\s+)?clearance|(?:current\s+|CI\s+|FS\s+)?poly(?:graph)?|Public\s+Trust(?:\s+determination)?|(?<!\w)S\.?A\.?P\.?(?!\w)\s+(?:program\s+)?access|S\.?C\.?I\.?(?!\w)(?:\s+access)?)|clearance[\s-]?eligible|clearable'
+      # RECALL SIBLING (2026-08-30 queue audit). Eleven apply-lane postings said
+      # "Eligible to obtain and maintain an active U.S. Secret security clearance" and fired
+      # NO clearance row, so a candidate whose fact declares `obtainable: false` was shown a
+      # defence-contractor role as blindly appliable.
+      #
+      # The gap is the ADJECTIVE STACK, not the verb. `clearable_required`'s object list is a
+      # single OPTIONAL group, so it admits exactly one modifier: it reads `Secret clearance`
+      # but not `Secret SECURITY clearance`, and not an `active`/`U.S.` adjective ahead of the
+      # level. Two further holes fall out of the same shape -- `T\.?S\.?` is the one branch
+      # written without a trailing `\s+`, so `a U.S. TS clearance` could not reach `clearance`
+      # across the space, and `eligible FOR a clearance` has no `to obtain` to match.
+      #
+      # A SIBLING, not a widening of the twin. Rewriting that object list would move every
+      # leveled pattern that mirrors it; this repeats the group with `*` so stacked modifiers
+      # compose, and leaves the twin byte-identical.
+      - id: clearable_leveled_required
+        requiredness: required
+        implies: clearable_required
+        scope: clause
+        requirement_text: "Must be able to obtain a security clearance"
+        # THE HEDGE GUARD IS NEW HERE AND DELIBERATE. The twin carries no hedge suppressor,
+        # which is survivable only because its reach is narrow -- measured across all three
+        # live lanes, zero postings hedge a phrasing it can see. This sibling reaches wider
+        # (`eligible for a ... clearance` is a common optional line), so `Willingness to
+        # obtain a clearance is a plus.` would become a wrong `ineligible` without it. That is
+        # the direction that silently deletes a real job, so it is guarded at the point the
+        # reach is added rather than left for the twin to inherit.
+        suppressed_by_unit:
+          - "(?:is\\s+)?(?:a\\s+)?(?:plus|preferred|desirable|desired|bonus|advantageous)"
+          - "nice[\\s-]to[\\s-]have"
+          - "not\\s+(?:required|necessary|mandatory)"
+        subject_suppressors: *company_side_clearance
+        pattern: '(?:able|ability|eligible|eligibility|willing|willingness)\s+(?:to\s+obtain(?:\s+and\s+maintain)?|for)\s+(?:a\s+|an\s+)?(?:(?:active|current)\s+)?(?:U\.?S\.?\s+)?(?:(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:(?:Top\s+Secret|Secret|Confidential|T\.?S\.?\s*/\s*S\.?C\.?I\.?|(?<!\w)T\.?S\.?(?!\w)|(?<!\w)S\.?C\.?I\.?(?!\w)|NATO|Public\s+Trust|(?:D\.?O\.?E\.?\s+)?(?<!\w)[QL](?!\w))\s+)*(?:security\s+)?clearance'
+
       - id: clearance_preferred
         requiredness: preferred
         implies: clearance_preferred

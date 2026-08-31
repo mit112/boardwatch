@@ -221,8 +221,8 @@ def test_the_artifact_reports_every_catalog_rule_not_just_the_ones_that_fired(
     _pipeline(env, out_root)
     abstain = _payload(out_root)["abstain"]
 
-    assert abstain["rule_count"] == 49
-    assert len(abstain["rules"]) == 49
+    assert abstain["rule_count"] == 55
+    assert len(abstain["rules"]) == 55
     assert abstain["never_fired"] > 0, "a single posting fired every rule in the catalog?"
     # Never-fired rules carry no rate at all, rather than the 0% that would rank them healthy.
     assert any(rule["abstain_rate"] is None for rule in abstain["rules"])
