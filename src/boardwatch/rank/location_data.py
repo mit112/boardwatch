@@ -34,6 +34,12 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
+# 5: hengelo added. An audit of the post-run apply lane found 4 genuinely foreign postings in
+# 203, and Hengelo was the ONLY one a token can fix: the other three are Paris and Dublin, both
+# excluded BY NAME above and deliberately left costing us those postings. Measured the way this
+# file prescribes -- every posting in the store mentioning `hengelo` is Thales, 17 of them, sole
+# location string "Hengelo", and there is NO US namesake it would cost. Latent pool behind it:
+# 492 open Thales postings currently classifying `unknown`.
 # 4: kaunas / zhubei / wuxi / saint-etienne added to NON_US_CITIES and jiangsu to
 # NON_US_REGIONS, from the 2026-08-30 queue audit: six apply-lane postings named a plainly
 # foreign office and classified `unknown`, which FAILS OPEN into the apply lane. Each one
@@ -43,7 +49,7 @@ from __future__ import annotations
 # 3: US_STATE_NAME_TO_ABBREV added and the two state sets derived from it. The classifier's
 # own tokens are unchanged — the map exists so `core.normalize.canonical_location` can fold
 # "Austin, Texas" and "Austin, TX" to one identity component.
-LOCATION_DATA_VERSION = 4
+LOCATION_DATA_VERSION = 5
 
 # The one source of truth for US states: both sets below are DERIVED from it, so adding a
 # state is one edit, not three that can disagree. Values are USPS abbreviations, which is
@@ -137,6 +143,7 @@ NON_US_CITIES = frozenset(
         # Wuxi (CN) and Saint-Etienne (FR) each appeared as a bare office name with no country
         # suffix to do the work. None has a US namesake that could plausibly host an employer.
         "kaunas", "zhubei", "wuxi", "saint-etienne", "st. etienne", "st etienne",
+        "hengelo",
         "london", "toronto", "bengaluru", "bangalore", "vancouver", "amsterdam", "tokyo",
         "taipei", "shanghai", "madrid", "sydney", "tel aviv", "berlin", "montreal",
         "gurugram", "gurgaon", "hyderabad", "seoul", "singapore", "beijing", "shenzhen",
