@@ -21,84 +21,62 @@
 
 ## Current standing
 
-**THE EXCLUSIVE-GROUP CONFLICT IS NOW PART-FIXED, AND THE PART THAT SHIPPED IS THE SMALL ONE.**
-D-387 sized it at 8,429 `uncertain` evaluations. The owner ruled this session: **dissolve only on a
-real disagreement where a straddle is genuinely ambiguous, and let a refinement decide otherwise.**
-D-388/#290 removes `[citizenship_required, citizen_or_lpr_required, authorization_required]` from
-`work_auth`'s `exclusive_groups` — a strength ladder, not a mutual exclusion — with **no engine
-change**, so **`engine_version` does not move and no ledger drain is owed**.
+**RUN 137 IS VERIFIED CLEAN, AND IT IS THE FIRST PRODUCTION RUN AT THE NEW ENGINE.** Started
+manually 2026-08-31 19:45:42 UTC, finished 21:44:14 UTC, **`status='ok'` and exit 0 read from a
+per-launch sentinel** — never from a notification and never from `SELECT status`, because
+`runs.finished_at` precedes process exit. 379 boards attempted, **0 failed**; board coverage
+**91.6%** with **0 dark / 0 unscanned / 0 unreadable**; 114,250 evaluated; **40 shortlisted -> 40
+tailored -> 40 PDF** with all three cross-checks agreeing. `partial` 7.9% (run 136: 8.2%), so the
+pacing trial's revert trigger is NOT firing. Sole error: **hiring.cafe 14 of 14 facets — the known
+D-369 outage**, not a regression. Heartbeat deliberately not sent on a manual run; its absence is
+intentional, not an unclean run. Numbers in `METRICS.md` (2026-08-31f).
 
-**The first implementation of that ruling was WRONG, and only the corpus caught it.** Applying stage
-1b's disagreement test (`MET` and `UNMET` both present) globally at stage 1 is attractive — it is the
-same question asked of a different key, twenty lines below in the same function — and it regressed
-**8 of the 1,034 corpus cases**: a wrong `ineligible` on obtainable-clearance documents and a **wrong
-`met`** for a doctorate holder. `clearable_required` is a **disjunction** ("hold one, or be able to
-obtain one"), an escape hatch, NOT a weaker rung; seven corpus cases say so by name. The engine
-change was reverted whole. **The verdict-level count never moved, so nothing but the corpus would
-have caught it.**
+**THE JOB-APPS LANE REACHED DELIVERY ON ITS FIRST ARMED RUN — that is the headline, not the
+ingest.** `161 attempted · 18 resolved · 10 new companies · 28 refused by the cap`. **10 admitted
+against a cap of 10, so `lane_new_companies_per_run` was OBSERVED FIRING** — verified, not merely
+armed. All 18 bodies arrived INLINE, so the lane cost **2.5 s** against linkedin's **245.2 s**: it
+reads local files and is nearly free. It admitted Apple, ByteDance, DeepMind, AWS, Akamai and five
+others — employers no board slug can reach — and **4 of the 40 delivered leads are lane-sourced**
+(Akamai, **Apple**, **DeepMind**, Dewpoint), confirmed through the `artifacts` table rather than the
+run log. **Delivery split, stated precisely: Akamai reached the APPLY queue; Apple, DeepMind and
+Dewpoint went to `_review`.** All four pass the US gate and all four are `uncertain`, so the split is
+neither location nor verdict: they fall past `eligible` in `review_gate.classify()`, and Akamai alone
+carries neither `eligibility_unconfirmed` nor `experience_unconfirmed`. By design (D-332).
 
-**What shipped is a CORRECTNESS fix, not a volume fix, and this file says so plainly.** At the engine
-version derived from run 135, exactly **8 `uncertain` evaluations carry a work_auth ladder
-dissolution, 4 at run 135's catalog, and all 4 comparable flip `uncertain` -> `ineligible`**. It also
-removes an abstain **no fact could ever resolve**: a US citizen reading "Applicants must be US
-citizens. Must be authorized to work in the United States." was `uncertain` under the group and is
-now `eligible` with both rows `met`. Corpus 0 mismatches over 1,034.
+**#290 + #291 REPRODUCE THEIR PRE-MERGE PRICING AT PRODUCTION SCALE (D-392).** Pinned to the
+**112,593 posting_versions shared** by runs 136 and 137, both complete: **2,398 `uncertain` ->
+`ineligible`**, 1 -> `eligible`, and **zero transitions of any other kind**. Against the affected
+population the rate is **2,398 / 4,053 = 59.17%**, versus the pre-merge full-population pricing of
+**2,423 / 4,035 = 60.07%** — population within 0.4%, rate within 0.9 pp, and **100% of flips inside
+the affected population, so zero collateral movement**.
 
-**THE 96% SHIPPED TOO, as D-389/#291.** `refinement_groups` is a second group kind in the catalog,
-as versioned DATA: `exclusive_groups` keeps presence semantics, `refinement_groups` dissolves ONLY
-on a real `MET`/`UNMET` straddle, and `experience_years`' triple moves into it while every other
-family stays put — because the corpus proves the rule cannot be applied globally. **Priced over a
-PINNED 1,868-id set at run 135's catalog, baseline D-388's branch: 913 flip `uncertain` ->
-`ineligible` (48.9%)**, corpus 0/1034. **`engine_version` MOVES, so a LEDGER DRAIN IS OWED** once it
-merges — unlike D-388, which moved no engine module.
+**Do not quote 48.9% as the comparator.** That figure is a **newest-first SAMPLE** of ~46% of the
+population, baselined on D-388's branch, so it prices #291's MARGINAL effect; runs 136 -> 137 measure
+#290+#291 COMBINED over the whole population. Comparing them invents a 10 pp overshoot that does not
+exist. The full-population figure's identity was confirmed by measurement, not assumption: the same
+predicate over the rows still stored at that catalog gives 3,979 + 56 = **4,035 exactly**.
 
-**A measurement trap that produced a false number, recorded so it is not repeated.** `rule_id` is
-`family:pattern_id`, **not** `family:implies`, and the two coincide only for `experience_years`'
-three group members. An arm derived by matching one against the other saw ZERO straddles in
-work_auth, degree and clearance. Re-measured by running the PATCHED ENGINE directly (control 400/400
-reproducing on `main`): **2,423 of 4,035, not the derived 2,500**, leaving 275 dissolved
-(`experience_years` 250, `degree` 12, `work_auth` 12, `contract_not_fte` 1). **Price the code, not a
-model of the code.**
-
-**THE JOB-APPS LANE IS ARMED — and its source is `resumes/`, NOT `APPLY_QUEUE/`.** The owner
-corrected this: `APPLY_QUEUE` is where a posting goes AFTER it is worked, so it is a
-post-processing destination, and its newest cohort is 2026-08-29 because nothing has been processed
-since. The daily discovery output is `resumes/<YYYY-MM-DD>/<Company_Title>/discovery_record.json`,
-which is **exactly** the two-level walk the lane already does — so arming needed **no code change**.
-Measured before arming: **190 readable records over 9 date folders, all `schema_version` 2, 49
-direct-apply** (2026-08-30: 18, 2026-08-31: 45; only 9 of the 172 date folders carry a record, the
-older ones predate the format). The per-date `_skipped/`, `_too_senior/` and `_eligibility_review/`
-folders sit one level DEEPER than the walk, so job-apps' own reject verdicts are excluded by
-construction, which is what D-386 designed. Armed in local `config.toml` and **read back through
-`load_settings()`**; backup at `config.toml.bak-prejobapps-20260831`. **The watched first run is
-still owed** — run 136 read its config at startup, so it does NOT include the lane.
+**A null control for this class of change is STRUCTURALLY UNAVAILABLE — do not manufacture one.**
+Inputs are reused on `(posting_version_id, profile_hash, rules_hash)` and evaluations are UNIQUE on
+`(input_id, engine_version)`, so a run that changes nothing re-evaluates nothing: runs 134 -> 135
+share **0** posting_versions and a "0 changes" reading there is 0-out-of-0. Validate the instrument
+with a **reference contrast** instead (133 -> 134: 108,969 shared, 9.14% changed). D-392.
 
 **job-apps IS still running, and it is not producing into the queue.** `com.mitsheth.job-discovery`
-fires 08:30 with `STAGE1_ONLY=1`; it ran today (`dedup_ledger.sqlite` mtime 2026-08-31 08:51:31) and
-wrote `resumes/2026-08-31/` (45 records). Whether `STAGE1_ONLY` is meant to stop it short of
-`APPLY_QUEUE` is an owner question, not a fault found here.
-
-**Run 136 is a MANUAL run started 2026-08-31 12:11 and was still executing at session close.**
-It matches the launchd invocation (`run --project --top 40`) and was launched **deliberately WITHOUT
-`BOARDWATCH_HEARTBEAT_URL`**: a manual ping resets the dead-man's switch and would delay detection of
-a failed 04:00 tick by ~7.5 h. **A reader comparing 136 to 135 will see no ping; that is intentional,
-not an unclean run.** Scan completed 379 boards (305 complete, 43 unchanged, 31 partial — `partial`
-12.9% early against run 135's final 16%, so the pacing trial's revert trigger is NOT firing), then
-`lanes`, then eligibility re-extracting 2,597 postings because #288 moved `rules_hash`. **Slow by
-design; not a fault.**
+fires 08:30 with `STAGE1_ONLY=1` and wrote `resumes/2026-08-31/`. Whether `STAGE1_ONLY` is meant to
+stop it short of `APPLY_QUEUE` is an owner question, not a fault found here.
 
 ### Corrections to this file, from the repo (the ritual's rule)
 
-1. **NO `boardwatch web` process is running.** Verified three ways (`pgrep -fl`, `ps aux`, `lsof`);
-   the only local listener is `bridge`. **The machine rebooted 2026-08-31 12:04**, which is what
-   ended both viewers. The two blocker rows below that described a running viewer, an apply-lane
-   over-report of ~52, and an OPEN D-279 restart window are **stale and have been removed** —
-   there is nothing to restart and no skew to carry.
-2. **Run 135 was today's 04:00 CDT tick and it PREDATES #288** (store timestamps are UTC:
-   09:00:03 -> 09:47:15 UTC; db mtime 04:50 local). #288 merged 11:57 CDT.
-3. **Nine leftover worktrees were all merged PRs** (checked with `gh pr list --head`, never
-   `merge-base`). Eight clean ones were removed on the owner's call; `bw-citizen` is preserved
-   with its 8 dirty files.
+1. The previous revision carried the **same "Also this session, no PR: the job-apps lane ARMED…"
+   paragraph twice**, with different tails. Removed in this rewrite; nothing else was lost.
+2. **Run 137's config hash equals run 136's even though the lane was armed between them, and that
+   is CORRECT.** `manifest.py` classifies `lanes_enabled`, the `lane_*` knobs and
+   `jobapps_discovery_dir` (D-385 by name) as `_CONFIG_IRRELEVANT`: lanes are ACQUISITION, not
+   judgement, and `policy_version` derives from `config_hash`, so classifying them IN would stale
+   every permanent disposition the moment a lane is armed. Checked before it was reported as a gap.
+3. The six soft detectors still sit **above** `_emit_morning` in `runner.py`; the ordering invariant
+   survived the four PRs merged 2026-08-31e.
 
 ### The seniority hold is 3 postings, not 5. It is dead, not deferred.
 
@@ -112,52 +90,36 @@ config into `store/`. Three postings does not buy a layering change.
 
 ## Next action
 
-1. **THE LEDGER DRAIN IS OWED BUT WAS DELIBERATELY NOT RUN — this is a decision, not an omission.**
-   D-389 moved `engine_version` (`1+6a9fb2164f5b` -> `1+b472d5df53b3`), so a drain is formally due.
-   Checked through `boardwatch ledger show`, not raw SQL: `job_dispositions` is **900 rows, ALL
-   `built`, ZERO `skipped`**. Reopening a `built` row can only RE-DELIVER a lead already delivered,
-   and the recency-dominated ranker discounts reopened jobs — so the upside is zero and the cost is
-   900 re-queued leads. Re-check the `built`/`skipped` split before any future drain; the argument
-   holds only while `skipped` is empty.
-2. **READ OUT RUN 137 when it finishes — D-385's "first armed run watched" is SATISFIED.** Run 137
-   started manually 2026-08-31 14:45 and was watched. **Its job-apps lane result is already verified
-   from the store: 10 new companies at `provider='jobapps'`, 10 postings, which is exactly
-   `lane_new_companies_per_run` (10) and the ramp D-386 predicted (~103 employers over ~10 runs).**
-   The ten include **Apple, ByteDance, DeepMind and Amazon Web Services** — employers that use none
-   of the six ATS providers, so no board slug can reach them. That is the reach the lane exists for,
-   demonstrated on its first run. What remains is the funnel/morning artifacts and the delivery split.
-3. **Run 136 is COMPLETE and clean** (exit 0, read from a sentinel): board coverage **92.6%**
-   (84,461 of 91,214 stated) over 379 watched, **0 dark / 0 unscanned / 0 unreadable**; linkedin 365
-   attempted / 98 resolved / 10 new companies / 246 refused by the cap; hiring.cafe failed 14 of 14
-   facets exactly as D-369 predicts, which is the known lane outage and not a regression. The
-   3-clean-post-fix provisional counter restarts (D-351 item 2 stands: not being chased). **The
-   corpus-regression detector is still dark until ~run 138** — do NOT patch it.
-4. **The two HELD recall patches: DO NOT SHIP. This is a measured answer, not a hold.**
-   `.agent/2026-08-31d-session/WIP-*.patch`. Both build, both probe correctly, both are
-   corpus-clean, and they move **ZERO verdicts over the 25,264 evaluations whose bodies carry their
-   own target surfaces**. Their one row-level effect is an evidence-chain DEGRADATION. **Do not
-   re-raise them as a recall opportunity.**
-5. **`reports/abstain.STRUCTURALLY_UNDECIDABLE` is stale for
-   `experience_years:scoped_years_minimum`** and it is NOT a one-line fix. D-319 made that rule
-   decidable (55,520 `unmet` against 7,634 genuine unconditional abstains). Removing the entry would
-   misreport those 7,634 as fixable. **Decide what membership MEANS before touching it.**
+1. **Nothing is owed on run 137 — it is read out and recorded.** The next scheduled tick is 04:00
+   local from the primary tree's `main`. D-385's "first armed run, watched" is **SATISFIED**.
+2. **`reports/abstain.STRUCTURALLY_UNDECIDABLE` — the data precondition is now MET, the DESIGN
+   question is not.** #291 re-keyed every stored evaluation and run 137's rows now exist at the new
+   `engine_version`, so figures taken before it are stale and the old sizing (21,516
+   `scoped_years_minimum` rows dissolved by the conflict) no longer describes anything. D-319 made
+   that rule decidable, so removing the entry would misreport ~7,634 genuine unconditional abstains
+   as fixable. **Decide what membership MEANS before touching it.**
+3. **The ledger drain owed by D-389 stays DECLINED (D-390), and it is a decision, not an omission.**
+   `job_dispositions` was 900 rows, ALL `built`, ZERO `skipped`; reopening a `built` row can only
+   RE-DELIVER. **The argument is CONDITIONAL — re-check the `built`/`skipped` split before any
+   future drain.**
+4. **The two held recall patches: DO NOT SHIP.** `.agent/2026-08-31d-session/WIP-*.patch`. Both
+   build, both probe correctly, both are corpus-clean, and they move **ZERO verdicts over 25,264
+   evaluations** carrying their own target surfaces; their one row-level effect is an evidence-chain
+   DEGRADATION. **This is a measured answer, not a hold — do not re-raise it as recall upside.**
+5. **The corpus-regression detector is still dark until ~run 138 — do NOT patch it.** It needs run
+   history and resolves itself. The provisional 3-clean-run counter restarted again (#290/#291 moved
+   `rules_hash`); run 137 is the first at the new hash, and D-351 item 2 stands — it is NOT being
+   chased.
 
-## Session 2026-08-31e — what shipped
+## Session 2026-08-31f — what shipped
 
-| PR | what |
-|---|---|
-| **#290** | the `work_auth` restriction ladder stops being an exclusive group; the other four groups stay, each for a different stated reason (D-388) |
-| **#291** | `refinement_groups` — a second group kind so `experience_years`' parallel bars abstain only on a real straddle; 913 of 1,868 decided (D-389) |
+Read-out and records only; no source changed. **Run 137 verified clean from its sentinel**, the
+job-apps lane's first armed run measured end-to-end **through delivery**, #290+#291 confirmed at
+production scale against the correct comparator, and **D-392** recorded so the vacuous control and
+the wrong comparator are not repeated. #293 (D-391) landed during the session; its diff was verified
+docs-only and `DECISIONS.md` checked entry-by-entry (314 -> 315, nothing dropped).
 
-Also this session, no PR: the **job-apps lane ARMED** against `resumes/` (the owner corrected the
-source — `APPLY_QUEUE/` is post-processed work, not a discovery feed), **8 merged-PR worktrees
-removed**, **run 136** completed clean, the primary tree pulled to `main` and the editable venv
-verified serving the merged catalog, and **run 137** started as the watched first armed run.
-
-Also this session, no PR: the **job-apps lane ARMED** against `resumes/` (owner's corrected source),
-**8 merged-PR worktrees removed**, and **run 136** started manually.
-
-Previous session: **#288** two sponsorship recall fixes (D-387).
+Previous session: **#290** (D-388), **#291** (D-389), **#292** (D-390), **#293** (D-391).
 
 ## Doctrine change — "breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
 
