@@ -46,6 +46,20 @@ control reproducing the stored verdict first. Full numbers, method and caveats: 
 `.agent/2026-08-31d-session/FINDINGS.md`. **One `engine_version` spans TWO `catalog_version`s here
 (4,035 current / 4,394 stale), so filter on the catalog, not only the engine.**
 
+**AND IT IS 96 PERCENT AN `experience_years` PROBLEM — which is why the ordering below is not what
+the finding first suggested.** By the family whose rows were dissolved, at the CURRENT catalog (4,035
+of the 8,429): `experience_years` **3,876**, `degree` 119, `clearance` 19, `work_auth` **14**,
+`contract_not_fte` 1. A document has to state BOTH an authorization and a citizenship requirement for
+the collision to be possible at all, and live postings rarely do. **So the group decision is an
+`experience_years` decision**, and it is NOT a reason to hold a work_auth or clearance recall fix.
+
+**Priced A/B/C against the live corpus, control first** (main = the store's catalog, branch = the two
+shipped fixes, held = branch + both held patches; 1,500 newest current-catalog evaluations, **control
+0 failures of 1,500**): the shipped pair moves **1 evaluation, `eligible` -> `ineligible`**, and the
+held pair moves **zero**. The held patches are therefore low-stakes both ways; a targeted run over the
+~7,500 postings whose bodies actually carry the dotted and hyphenated surfaces is what settles their
+upside. Script: `.agent/2026-08-31d-session/` (`0831d-price-held.py`, and the `-targeted` variant).
+
 **Two word-gap recall fixes are ready on PR #288 and TWO MORE ARE HELD BEHIND THAT DECISION.** The
 shipped pair is unconditionally correct and corpus-clean. The held pair (the shared `work_auth`
 hyphen gap; the clearance clause gap admitting an abbreviation dot, which turns `Active Secret
@@ -83,13 +97,16 @@ already on `QueueRow` from a column the store already read.
 
 ## Next action
 
-1. **DECIDE the `exclusive_groups` question — it now gates four things.** See Current standing and
-   D-387. Is `authorization_required` in the same group as `citizenship_required` a contradiction or
-   a refinement? Same question for `total_years_minimum` vs `scoped_years_minimum`. It is a semantics
-   decision on the highest-volume family in the system, so it is the owner's, and it is the single
-   highest-value item measured this week. **The `contract_not_fte` precedent does NOT transfer** —
-   that family collapsed three patterns onto one `implies` value so they corroborate, licensed by
-   "the three already resolve IDENTICALLY in `resolve.py`", and these do not.
+1. **DECIDE the `experience_years` `exclusive_groups` question — the largest measured precision item
+   on the board.** See Current standing and D-387. `[total_years_minimum, range_years_minimum,
+   scoped_years_minimum]` treats "5+ years of software engineering experience" beside "3+ years of
+   Python" as a CONTRADICTION and dissolves both rows to `unknown`: **3,876 evaluations at the
+   current catalog, none of which has any other `required` row already `unmet`**. It is a semantics
+   decision on the highest-volume family in the system, so it is the owner's. **The
+   `contract_not_fte` precedent does NOT transfer** — that family collapsed three patterns onto one
+   `implies` value so they corroborate, licensed by "the three already resolve IDENTICALLY in
+   `resolve.py`", and these do not. The `work_auth` and `clearance` groups have the same defect and
+   14 and 19 evaluations respectively, so they are cleanup, not the lever.
 2. **PR #288 — merge or hold, but read its "held" section first.** `make check` exit 0 on the branch
    (8738 passed, 4 xfailed, 9m15s, read from the sentinel). Auto-merge deliberately NOT armed. Two
    corpus-clean sponsorship recall fixes plus D-387, the CHANGELOG entry, STATE and METRICS. Holding
@@ -100,11 +117,13 @@ already on `QueueRow` from a column the store already read.
    `jobapps_discovery_dir` to job-apps' `APPLY_QUEUE`. Read both back through `load_settings()` — a
    typo arms nothing while looking armed. Expect ~188 postings across ~146 companies on the first
    armed run, with `lane_new_companies_per_run` (10) ramping ~103 new employers over ~10 runs.
-4. **The two HELD recall patches, once item 1 is decided.**
+4. **The two HELD recall patches — no longer blocked, just unpriced on the upside side.**
    `.agent/2026-08-31d-session/WIP-workauth-hyphen-rows3to8-NOT-SHIPPED.patch` and
    `WIP-clearance-abbreviation-dot-NOT-SHIPPED.patch`. Both built, probed in both directions against
-   three profiles, and **zero corpus verdict changes**. Ship them in ONE change with whatever item 1
-   decides: `rules_hash` re-keys once whether one pattern moves or twenty.
+   three profiles, **zero corpus verdict changes**, and **zero live verdict changes on the priced
+   1,500**. The regression they can reach is real and its live population is 14 + 19 evaluations, so
+   it is not a blocker. Finish the targeted run before shipping them, and ship them in ONE change
+   with whatever item 1 decides: `rules_hash` re-keys once whether one pattern moves or twenty.
 5. **`reports/abstain.STRUCTURALLY_UNDECIDABLE` is stale for `experience_years:scoped_years_minimum`
    and the fix is one line.** D-319 made that rule decidable: at the current engine version it
    resolves `unmet` on 55,520 rows against 7,634 carrying the unconditional abstain. The report
@@ -192,7 +211,7 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 
 | Item | Detail | Owner |
 |---|---|---|
-| **The engine reads a REFINEMENT as a CONTRADICTION — 8,429 `uncertain` evaluations** | `engine.py` stage 1 makes two DISTINCT `implies` values from one `exclusive_groups` entry a CONFLICT and rewrites BOTH rows to `unknown`. `work_auth`'s group is `[citizenship_required, citizen_or_lpr_required, authorization_required]`, so "must be authorized to work in the US" plus "a natural-born U.S. citizen is required" resolves `uncertain` with a decisive `unmet` discarded — citizenship REFINES authorization. Same shape in `experience_years`, `degree`, `clearance`. **8,429 of 124,980 `uncertain` evaluations at the engine version derived from run 135 carry a conflict-dissolved row, and NOT ONE has any other `required` row already `unmet`**; re-running with the groups emptied flips the majority to `ineligible`, control-first. **Gates two built recall patches** (D-387). One `engine_version` spans TWO `catalog_version`s here — filter on the catalog. Do not copy the `contract_not_fte` collapse: its licensing condition ("the three resolve IDENTICALLY") fails for these | **Mit** (semantics call on the highest-volume family) |
+| **The engine reads a REFINEMENT as a CONTRADICTION — 8,429 `uncertain` evaluations** | `engine.py` stage 1 makes two DISTINCT `implies` values from one `exclusive_groups` entry a CONFLICT and rewrites BOTH rows to `unknown`. `work_auth`'s group is `[citizenship_required, citizen_or_lpr_required, authorization_required]`, so "must be authorized to work in the US" plus "a natural-born U.S. citizen is required" resolves `uncertain` with a decisive `unmet` discarded — citizenship REFINES authorization. Same shape in `experience_years`, `degree`, `clearance`. **8,429 of 124,980 `uncertain` evaluations at the engine version derived from run 135 carry a conflict-dissolved row, and NOT ONE has any other `required` row already `unmet`**; re-running with the groups emptied flips the majority to `ineligible`, control-first. **By family, at the current catalog: `experience_years` 3,876 · `degree` 119 · `clearance` 19 · `work_auth` 14** — so this is an `experience_years` decision, and it does NOT gate the two held recall patches, which price at ZERO verdict changes on 1,500 live evaluations (D-387). One `engine_version` spans TWO `catalog_version`s here — filter on the catalog. Do not copy the `contract_not_fte` collapse: its licensing condition ("the three resolve IDENTICALLY") fails for these | **Mit** (semantics call on the highest-volume family) |
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | ~~Delivery-drought cannot see APPLY-LANE starvation~~ **CLOSED by #285 / D-384** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, written **regardless of which lane `review_gate.lane()` routes to**, so a global misclassification shipped zero apply-ready leads with every existing alarm green. `check_apply_lane_drought` now fires when the last 3 clean runs each delivered PLACEABLE leads and none reached the apply lane. **The old sizing was wrong, not merely pessimistic**: it priced a guard inside `_sync_queue`, but the three job-id readers already take only a connection and `QueueRow` already carries `delivered_run_id`, so nothing in `review_gate`, `_sync_queue` or the web server's result type had to change. Known property, direction abstain-not-alarm: `delivered_unapplied` attributes a re-delivered job to the NEWER run, so an older run can read zero placeable and the window abstains | **CLOSED** |
 | ~~Four detector fallbacks are print-only, not durable~~ **CLOSED by #260** | The `intake-death` / `delivery-drought` / `liveness-blindness` / `corpus-regression` "check not run" handlers now call `append_run_error` like the three artifact-write handlers beside them, so a DETECTOR that crashes leaves a row in `runs.errors_json` and not only a digest line. Four one-line additions, inert on the normal path; each pinned by its OWN parametrised test, because a single test crashing all four passes while three of the four calls are missing. **Known shared property:** `append_run_error` is not internally defensive and these sit inside `except` handlers — matched to the three existing handlers deliberately rather than diverging; it needs two simultaneous failures and fails loudly via the withheld heartbeat | **CLOSED** |

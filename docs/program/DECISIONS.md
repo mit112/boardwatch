@@ -19470,6 +19470,35 @@ policy out of the store, flips **191 of a 400 sample (47.75%) from `uncertain` t
 and the control ran first, with the shipped catalog reproducing the stored verdict on **400 of 400**,
 because a comparison whose baseline does not reproduce production measures nothing.
 
+**AND THE CONFLICT IS 96 PERCENT AN `experience_years` PROBLEM, which corrects the priority this
+entry first implied.** Broken down by the family whose rows were dissolved, restricted to the CURRENT
+`catalog_version` (4,035 of the 8,429; the rest were stored under a stale catalog):
+`experience_years` **3,876**, `degree` 119, `clearance` 16 (+3 alongside experience), `work_auth`
+**14**, `contract_not_fte` 1. So the two held patches touch the two SMALLEST classes — 14 and 19
+evaluations out of 124,980 `uncertain`, a base rate near 0.01% — because a document has to state
+BOTH an authorization and a citizenship requirement (or both an active-clearance and a clearable
+requirement) for the collision to be possible, and live postings rarely do. **The
+`exclusive_groups` question is real and is the owner's, but it is an `experience_years` question**
+— "5+ years of software engineering experience" beside "3+ years of Python" — not a reason to hold a
+work_auth or clearance recall fix.
+
+**Priced directly, A/B/C on three catalogs against the live corpus** (main = the store's catalog and
+the control, branch = the two shipped fixes, held = branch plus both held patches; 1,500 newest
+current-catalog evaluations, **control 0 failures of 1,500, zero stale**): the SHIPPED pair moves
+**1 evaluation, `eligible` -> `ineligible`** — a posting that was clearing by silence and is now
+correctly rejected — and the HELD pair moves **zero**. So the held patches are low-stakes in both
+directions on that sample, and the reason to hold them is no longer that they regress; it is that
+they showed no measured benefit at that sample size while costing a `rules_hash` bump. A targeted
+run over the ~7,500 postings whose bodies actually carry the dotted and hyphenated surfaces (3,001
+with `U.S.` and `clearance`, 4,809 with a hyphen before `authorized to work`, 539 with
+`-related sponsorship`) is the measurement that settles their upside.
+
+**THE PROCESS LESSON, and it is why this paragraph exists.** The hazard was found on a work_auth
+probe, sized across ALL families, and then reasoned about as if the aggregate belonged to work_auth.
+It belonged to a family neither patch touches. **A hazard found on family X, sized across all
+families, does not price a change to family X.** Break the number down by the thing the change
+actually moves before letting it order the work.
+
 **Held, both built and both corpus-clean** (patches in `.agent/2026-08-31d-session/`): the audit's
 rows 3-8 (the shared `work_auth` word gap, where all six requirement patterns must move together or
 the byte parity behind findings 66/68/69/84/88/89/102/103 breaks) and rows 10-17 (the clearance

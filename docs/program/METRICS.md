@@ -9735,6 +9735,51 @@ quote the 8,429-row pass.**
 `COUNT(*)` over a 969,661-row table spanning at least eight `engine_version` values, i.e. catalogs
 that no longer exist. It is recorded here only so nobody quotes it.
 
+### Which family actually dissolves — and it inverts the priority the finding first suggested
+
+Restricted to the CURRENT `catalog_version` (4,035 of the 8,429; the rest were stored under a stale
+catalog at the same `engine_version`):
+
+| family whose rows were dissolved | evaluations |
+|---|---|
+| `experience_years` | **3,876** (96.1%) |
+| `degree` | 119 |
+| `clearance` | 16, plus 3 alongside `experience_years` |
+| `work_auth` | **14** |
+| `contract_not_fte` | 1 |
+
+**The two held patches touch the two smallest classes** — 14 and 19 out of 124,980 `uncertain`, a
+base rate near 0.01%, because a document has to state BOTH an authorization and a citizenship
+requirement (or both an active-clearance and a clearable requirement) for the collision to be
+possible. The `exclusive_groups` decision is real and is the owner's, but it is an
+**`experience_years`** decision.
+
+**Process lesson.** The hazard was found on a work_auth probe, sized across ALL families, and then
+reasoned about as if the aggregate were work_auth's. It belonged to a family neither patch touches. A
+hazard found on family X, sized across all families, does not price a change to family X.
+
+### The held patches priced directly, A/B/C on three catalogs
+
+`main` (the store's catalog, and the control) · `branch` (the two shipped fixes) · `held` (branch plus
+both held patches). All three catalog versions confirmed distinct before comparing anything.
+
+| n=1,500 newest current-catalog evaluations | |
+|---|---|
+| stale `catalog_version`, skipped | **0** |
+| CONTROL: `main` failing to reproduce the stored verdict | **0** |
+| SHIPPED pair: verdict changes | **1** — `eligible` -> `ineligible` |
+| HELD pair: verdict changes on top of the shipped ones | **0** |
+
+The one shipped flip is the whole point of the change: a posting that was clearing by silence now
+resolves `ineligible`. The held pair is low-stakes in both directions at this sample size, so the
+reason to hold them is no longer that they regress — it is that they had shown no measured benefit
+while costing a `rules_hash` bump.
+
+**The populations their surfaces could reach** (current-engine posting versions, 113,634 total): 3,001
+carry `U.S.` and `clearance`; 4,809 carry a hyphen before `authorized to work`; 539 carry
+`-related sponsorship`; 2 carry `natural-born`. A targeted A/B/C over that union is the measurement
+that settles the upside, and its script is `0831d-price-held-targeted.py`.
+
 ### Two audit rows WITHDRAWN, not deferred, because they do not reproduce
 
 - **The WIP `cannot confirm` negative lookahead fixes UNSHIPPED code.** Probed on `main`:
