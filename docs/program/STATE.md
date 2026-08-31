@@ -90,26 +90,52 @@ config into `store/`. Three postings does not buy a layering change.
 
 ## Next action
 
-1. **Nothing is owed on run 137 — it is read out and recorded.** The next scheduled tick is 04:00
-   local from the primary tree's `main`. D-385's "first armed run, watched" is **SATISFIED**.
-2. **`reports/abstain.STRUCTURALLY_UNDECIDABLE` — the data precondition is now MET, the DESIGN
-   question is not.** #291 re-keyed every stored evaluation and run 137's rows now exist at the new
-   `engine_version`, so figures taken before it are stale and the old sizing (21,516
-   `scoped_years_minimum` rows dissolved by the conflict) no longer describes anything. D-319 made
-   that rule decidable, so removing the entry would misreport ~7,634 genuine unconditional abstains
-   as fixable. **Decide what membership MEANS before touching it.**
-3. **The ledger drain owed by D-389 stays DECLINED (D-390), and it is a decision, not an omission.**
-   `job_dispositions` was 900 rows, ALL `built`, ZERO `skipped`; reopening a `built` row can only
-   RE-DELIVER. **The argument is CONDITIONAL — re-check the `built`/`skipped` split before any
-   future drain.**
-4. **The two held recall patches: DO NOT SHIP.** `.agent/2026-08-31d-session/WIP-*.patch`. Both
-   build, both probe correctly, both are corpus-clean, and they move **ZERO verdicts over 25,264
-   evaluations** carrying their own target surfaces; their one row-level effect is an evidence-chain
-   DEGRADATION. **This is a measured answer, not a hold — do not re-raise it as recall upside.**
-5. **The corpus-regression detector is still dark until ~run 138 — do NOT patch it.** It needs run
-   history and resolves itself. The provisional 3-clean-run counter restarted again (#290/#291 moved
-   `rules_hash`); run 137 is the first at the new hash, and D-351 item 2 stands — it is NOT being
-   chased.
+**THE PROGRAM HAS A NEW SHAPE: absorb job-apps into boardwatch and retire it (D-393).** The full
+sequenced plan, with every measurement behind it, is
+`.agent/2026-08-31f-session/INVESTIGATION-next-session.md`. Read that before starting.
+
+**Phase 0 — nothing to record; D-393/D-394 already carry the owner decisions.**
+
+1. **SPEED — approved, independent of everything else, do it first (D-394).**
+   (a) memoize `split_units` (`detect.py:73`, pure, called ~55x per posting on one body with TWO
+   scopes); (b) parallelize `eligibility/preflight.py:175` with a **PROCESS** pool — regex holds the
+   GIL — keeping `write_evaluation` serial and one-commit-per-batch resumability; (c) arm
+   `pace_from_request_start`, **absent from the live config AND all four backups**, so the approved
+   trial never ran. Expect the eligibility stage **75.6 min -> ~8-12 min** on a rules-change run.
+2. **PER-LANE COMPANY CAP — approved.** Make `lane_new_companies_per_run` overridable per lane at
+   `runner.py:576`: jobapps unlimited, **linkedin stays 10**, because lane-discovered ashby/greenhouse/
+   lever companies become `watched=1` and would balloon the 379-board scan permanently. Adding a
+   `Settings` field has FOUR gated sites. **This does NOT increase what reaches the queue** — only
+   `--top 40` in the plist does, and that is still undecided.
+3. **YIELD WORK, biggest first** (shares of job-apps' attributed `built` output, D-393):
+   LinkedIn depth **46.5%** (lane exists, just throttled; port job-apps' query expansion) ->
+   hiring.cafe re-pointed at the **SSR surface 17.9%** (`/?searchState=`, parse `__NEXT_DATA__`;
+   **discovery only**, take `apply_url` and fetch the real JD) -> ingest the aggregator slice already
+   on disk **24.2%** (indeed + jobright, zero network) -> register/arm the GitHub-lists lane **8.1%**
+   (`lanes/github_lists.py` is BUILT but absent from `LANE_FACTORIES` and `lanes_enabled`) -> port
+   `linkedin_direct_backfill.py`'s stub recovery (~92% of LinkedIn stubs, plain GET + browser UA).
+4. **ONE QUEUE.** Import `APPLY_QUEUE/_applied/` (**64 folders**) into `hidden_applied` (built but
+   STARVED) — the FOLDERS, not the stale `applications.csv`. Then the **935 active** folders, which is
+   NOT a copy: they sit on Eightfold/iCIMS/Jobvite/Oracle/Rippling, boards with no adapter, against a
+   CLOSED six-provider catalog.
+5. **RETIRE job-apps ON EVIDENCE, last.** It keeps running until then (D-393).
+
+### Owed, found this session, not yet scheduled
+
+- **The jobapps lane's outage detector is UNSOUND.** Its docstring premise — "`attempted` is stable by
+  construction" — is false: `attempted` tracks Mit's UNPROCESSED BACKLOG. It was 737 when the lane was
+  designed and is **190** now purely because he drained the tree into `APPLY_QUEUE`. A zero reads as
+  "Mit caught up", which is exactly what the detector was built to exclude. Replace with a STRUCTURAL
+  check (source dir exists, holds >=1 date folder), never a record count.
+- **Cross-source dedup gap.** **24 employers are double-listed and 222 open postings share a title**
+  across a lane row and a board row. Only `exact_quad` suppresses and it folds in the body hash, so
+  two sources can never collide: **zero cross-provider groupings in 130,989 jobs**. It has not bitten
+  because job-apps' first 10 employers are unreachable by our boards; it will as the lanes ramp.
+- **`reports/abstain.STRUCTURALLY_UNDECIDABLE`** — data precondition now met, design question open
+  (see below).
+- The ledger drain stays DECLINED (D-390); re-check the `built`/`skipped` split before any future drain.
+- The two held recall patches at `.agent/2026-08-31d-session/WIP-*.patch` are **DO NOT SHIP** on
+  measured evidence. The corpus-regression detector stays dark until ~run 138; do NOT patch it.
 
 ## Session 2026-08-31f — what shipped
 
