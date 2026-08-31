@@ -473,6 +473,42 @@ families:
         requirement_text: "Years of experience scoped to a specific activity"
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
+      # FINDING (2026-08-30 queue audit): a RANGE could never reach the SCOPED tail, so the
+      # commonest way a JD states a bar -- "3-6 years of professional software engineering
+      # experience" -- produced NO experience row at all and the lead rode the delivery
+      # fail-open into the apply queue. Neither existing rule could fire: `scoped_years_minimum`
+      # is blocked at the low number (no bare `years` follows it) and at the high number (its
+      # `(?<![-–—\d])` lookbehind), while `range_years_minimum` demands `experience` immediately
+      # after the adjective run and so dies on any domain noun ("... professional SOFTWARE
+      # ENGINEERING experience") and on `experience IN` / `experience AS`.
+      #
+      # These two are the range head of `range_years_minimum` spliced onto the scoped and
+      # activity tails VERBATIM -- composed from those patterns rather than retyped, so the
+      # tails cannot drift from the twins they mirror. `years` captures the LOW end of the
+      # range, exactly as `range_years_minimum` does, which is the conservative read: a
+      # "3-6 years" bar is unmet for a 1-year profile on its floor alone.
+      #
+      # They carry the SAME suppressors as their twins, which is what keeps company-side prose
+      # out: "Our team has 10-15 years of combined experience" is stood down by
+      # `company_side_years`, and a hedged range by `years_hedges` (the hedged range already has
+      # its own `range_years_preferred`).
+      - id: scoped_range_years_minimum
+        requiredness: required
+        implies: scoped_years_minimum
+        scope: sentence
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        requirement_text: "Years of experience scoped to a specific skill or domain"
+        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,2}\s+experience\b)'
+      - id: scoped_range_years_activity
+        requiredness: required
+        implies: activity_years_minimum
+        scope: sentence
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        requirement_text: "Years of experience scoped to a specific activity"
+        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
+
       # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
       # preferred." told a 2-year candidate they were INELIGIBLE. Two alternatives per
       # pattern because the hedge sits on either side of the number, and one regex cannot
