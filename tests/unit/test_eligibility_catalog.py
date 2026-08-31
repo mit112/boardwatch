@@ -110,7 +110,7 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
         "contract_not_fte", "internship",
     ]
     assert len(catalog.negation_cues) == 26
-    assert sum(len(f.patterns) for f in catalog.families) == 49
+    assert sum(len(f.patterns) for f in catalog.families) == 55
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -134,8 +134,12 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # The scope split is deliberate: a refusal to engage contractors sits in a different
         # clause of the same sentence ("we are not able to ... or employ corp-to-corp"), which
         # a clause-scoped suppressor cannot see, so it lives on suppressed_by_sentence.
-        "suppressed_by_unit": 15,
-        "suppressed_by_sentence": 3,
+        # 2026-08-30 audit: +3 unit and +1 sentence. `clearable_leveled_required`,
+        # `domain_list_years_minimum` and `domain_years_minimum` each carry a hedge list, and
+        # `us_citizen_standalone_required` carries the sentence-scoped stand-down that keeps the
+        # `U.S. Citizenship and Immigration Services` E-Verify boilerplate out.
+        "suppressed_by_unit": 18,
+        "suppressed_by_sentence": 4,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
         # an ownership verb before an internship mention says the JD runs the programme. The
@@ -143,7 +147,10 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # `scoped_years_activity` carries both a subject suppressor and a unit one: an activity
         # gerund is exactly as vulnerable to the company's own tenure ("Our engineers have 30
         # years working with ...") and to a hedge as the noun forms it sits beside.
-        "subject_suppressors": 22,
+        # 2026-08-30 audit: +3, one per new pattern that can be fooled by company-side prose --
+        # the two years siblings and the clearance one. A recall pattern inherits its twin's
+        # exposure to "Our engineers have 30 years ..." the moment it widens the twin's reach.
+        "subject_suppressors": 25,
         # 7 on the degree family (degree_equivalence) + 2 on the experience family
         # (degree_alternative_to_years on total_ and range_years_minimum, D-073): a
         # degree-gated disjunctive alternative makes the years bar abstain, not resolve unmet.

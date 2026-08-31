@@ -32,14 +32,20 @@ def test_verified_uncertain_us_swe_is_promoted_to_apply() -> None:
 
 def test_unknown_location_fails_open_to_apply() -> None:
     # A bare "Remote" (and any location the classifier cannot place) reads `unknown`; the location
-    # check fails OPEN exactly as the hard US gate does, so it stays in the apply queue. An unlisted
-    # foreign city like "Kaunas Office" also reads `unknown` and slips through here — that is a
+    # check fails OPEN exactly as the hard US gate does, so it stays in the apply queue. A foreign
+    # city the catalog does not list also reads `unknown` and slips through here — that is a
     # classifier-coverage gap (D-294 pattern), not a reason to demote every remote lead.
+    #
+    # The example is "Dublin" rather than a city that is merely missing, and that is the durable
+    # choice: `location_data` excludes it ON PURPOSE, because Dublin OH is Cardinal Health's
+    # headquarters and the gate must never silently delete a US role. So this case cannot be
+    # closed by a later data edit the way "Kaunas Office" was — it stood here until the
+    # 2026-08-30 audit added Kaunas to NON_US_CITIES and quietly broke this assertion.
     assert lane(verdict="uncertain", locations=["Remote"], title="Software Engineer") == ""
     assert (
         lane(
             verdict="uncertain",
-            locations=["Kaunas Office"],
+            locations=["Dublin"],
             title="Associate JAVA Software Engineer",
         )
         == ""

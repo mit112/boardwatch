@@ -22,6 +22,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Postings that require US citizenship, a clearance you cannot get, or years you do not have no
+  longer reach the apply queue.** Six requirement phrasings produced no requirement row at all, so
+  nothing downstream could act on them — a routing change cannot move a requirement that was never
+  detected. Citizenship: an export-control clause that enumerates its options (`must be a (i) U.S.
+  citizen ...`), a bare `US Citizen.` qualifications bullet, `... who are U.S. citizens`, and
+  `mandates ... be United States citizens`. Clearance: a stacked adjective run such as `eligible to
+  obtain and maintain an active U.S. Secret security clearance`, which the existing rule could not
+  read because it admits only one modifier. Experience: a comma-separated domain list before the
+  word `experience`, and a bar with no `experience` noun anywhere (`15+ Years of Systems
+  Engineering:`). Measured on the live apply lane, 61 of 420 postings move and every one moves
+  toward more restrictive; none becomes newly appliable. The E-Verify boilerplate naming `U.S.
+  Citizenship and Immigration Services` is a negative control and still fires nothing, as are a
+  hedged clearance (`is a plus`) and an employer's own tenure prose (`30+ years of pioneering
+  robotics research`). (D-381)
+- **Four foreign offices that read as unplaceable now read as non-US.** `Kaunas Office`,
+  `ZHUBEI 01`, `Wuxi, Jiangsu` and `St. Etienne, FRA` classified `unknown`, which fails OPEN into
+  the apply queue by the visa ruling. Each is now a catalog token. `Dublin` is deliberately still
+  excluded — Dublin OH is a real employer's headquarters, and the gate must never silently delete a
+  US role. (D-381)
+
 - **A lead whose requirements could not be confirmed is held for review, not blindly appliable.**
   Being in the US and being a software role were the only positive checks the delivery lane made, so
   a posting whose work-authorization or clearance rule *abstained*, or whose stated experience bar

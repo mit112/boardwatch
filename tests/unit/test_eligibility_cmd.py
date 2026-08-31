@@ -260,12 +260,12 @@ def test_summary_with_no_evaluations_reports_zero(env: Path) -> None:
 
 def test_abstain_lists_every_catalog_rule_on_an_empty_database(env: Path) -> None:
     """The distinguishing behaviour vs `summary`: with zero rows, `summary` shows nothing and
-    `abstain` still shows all 49 rules, every one of them flagged `never fired`."""
+    `abstain` still shows all 55 rules, every one of them flagged `never fired`."""
     assert _run(env, ["init"], INIT_INPUT).exit_code == 0
     result = _run(env, ["eligibility", "abstain"])
 
     assert result.exit_code == 0
-    assert "49 rules · 49 never fired" in result.output
+    assert "55 rules · 55 never fired" in result.output
     assert "0 fire but never decide" in result.output
     # A rule with no rows is never reported as 0% — that would read as "never abstains".
     assert "0%" not in result.output
