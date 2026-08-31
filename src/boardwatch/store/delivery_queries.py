@@ -344,6 +344,62 @@ def review_job_ids(conn: Connection) -> set[int]:
     }
 
 
+def apply_lane_placements(
+    conn: Connection, *, run_ids: set[int]
+) -> dict[int, tuple[int, int]]:
+    """Per delivering run: how many of its leads were PLACEABLE, and how many reached the apply
+    lane. Keyed by `delivered_run_id`; a run in `run_ids` that delivered nothing is absent.
+
+    Exists so the apply-lane drought detector can ask "did this run's work reach the blind-apply
+    list?" without a second opinion about what the apply lane is. The lane call below is the SAME
+    call, with the SAME argument shape, that `review_job_ids` above and `delivery/queue.py` and
+    `delivery/api.py` make (D-332) — the whole reason this lives here rather than in `notify/` is
+    that this module already holds one, so the lane decision gains a reader and not a fourth site
+    that could drift.
+
+    PLACEABLE is narrower than delivered, and each exclusion is what stops the detector naming the
+    wrong gate:
+
+    * `ineligible` is excluded because it has its own drain and was never apply-lane work.
+    * `closed` is excluded because a dead requisition is a LIVENESS story with its own drain
+      (D-383). A run whose every lead has since come down would otherwise read as lane starvation,
+      which is a claim about the location/role/requirement gates that the evidence does not
+      support.
+
+    So a run with zero placeable leads reports `(0, 0)` and the detector abstains on it, rather
+    than firing on a fault it cannot see. `skipped=set()` matches the two sibling functions above:
+    the applied/skipped precedence belongs to `_wanted_location`, not to a read.
+
+    Whole-corpus, not per-run, is `delivered_unapplied`'s contract — it returns one row per
+    canonical job across ALL runs — so an OLDER run's count here is what survives to today, not
+    what it shipped on the day. That is the right quantity for this question (the detector asks
+    whether apply-lane work EXISTS, not what was once created) and it is why the counts must never
+    be read as a delivery-day record.
+    """
+    from boardwatch.delivery.review_gate import lane
+
+    placed: dict[int, tuple[int, int]] = {rid: (0, 0) for rid in run_ids}
+    for row in delivered_unapplied(conn, skipped=set()):
+        if row.delivered_run_id not in run_ids:
+            continue
+        if row.verdict == "ineligible" or row.closed:
+            continue
+        reached = (
+            lane(
+                verdict=row.verdict,
+                locations=row.locations,
+                title=row.title,
+                experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
+                eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+                posting_closed=row.closed,
+            )
+            == ""
+        )
+        placeable, in_apply = placed[row.delivered_run_id]
+        placed[row.delivered_run_id] = (placeable + 1, in_apply + int(reached))
+    return placed
+
+
 def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow]:
     """Every delivered, unapplied, unskipped lead across ALL runs, one row per canonical job.
 

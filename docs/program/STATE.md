@@ -21,50 +21,52 @@
 
 ## Current standing
 
-**A QUARTER OF THE APPLY QUEUE WAS DEAD, AND NO INSTRUMENT THIS PROGRAM HAS BUILT COULD SEE IT.**
+**THE ONE FAULT THAT COULD COST THE WHOLE FORTNIGHT NOW HAS AN INSTRUMENT.**
 
-Measured 2026-08-31 through two independent paths that agree — the `details.json` sidecars and
-`postings.status` read directly off the live store — **52 of the 203 apply-queue folders named a
-posting the store reports `closed`**, plus 18 more in `_review`. The oldest was delivered by
-**run 71**. `_sync_queue` copied `postings.status` into `details.json` and nothing read it back, so
-a requisition that came down left its folder in the blind-apply list forever.
+`check_delivery_drought` counts `resume_tailored` artifacts, and the tailor writes one **whichever
+lane the lead routes to**. So a global break in location classification, the role gate or a
+requirement flag would send every lead to `_review`, keep artifacts flowing at the normal rate,
+leave the drought check abstaining on non-zero delivery and the heartbeat green — and ship **zero
+apply-ready leads for a fortnight with nothing firing.** Shipped as **D-384**: a per-run apply-lane
+drought detector, soft and non-fatal, firing only when the last 3 clean runs each delivered
+*placeable* leads and **none** reached the apply lane.
 
-**Apply-lane status in full: 118 open · 52 closed · 33 unverifiable** — only 58% confirmed live.
+**STATE had this open and sized it "materially bigger than it looks". That sizing measured a guard
+inside `_sync_queue`, and the premise was falsified by reading the code.** `review_job_ids`,
+`closed_job_ids` and `ineligible_job_ids` already take **only a connection**, and `QueueRow` already
+carries `delivered_run_id` — so the count composes from reads that exist, with **no** change to
+`review_gate`, none to `_sync_queue`, and none to the web server's result type. The generalisable
+form: **when a blocker says a change is too big, check whether the sizing was done against the
+implementation you would actually choose.**
 
-**Why the 2026-08-30 audit missed it: the blind judge read JD text, and liveness is not in the
-text.** So this COMPOUNDS with its 44.2% rather than overlapping. The other system already knew —
-job-apps' largest skip bucket is `_skipped/posting_closed/` at **466 folders**.
+**The escalation channel is ARMED, and that is why this was worth building now.** Verified through
+the **LOADED launchd job, not the plist file**: `BOARDWATCH_ALERT_URL` is in
+`com.boardwatch.run`'s live environment and the 04:00 calendarinterval is registered. The
+2026-08-30 METRICS heading and the standing memory entry both still said the channel "ships
+DISARMED" — true of the ship state, false since it was armed the same day. A soft alert reaches an
+absent owner.
 
-**Shipped as D-383 / #284.** A dedicated `_closed` drain, decided in `review_gate.classify` (the
-one function the folder tree and the page share, D-332), read above every verdict/location/role
-check, precedence `applied` > `skipped` > `closed` > `ineligible` > `review` > apply. It drains
-BOTH ways for free — the set is recomputed every reconcile, so a reopened posting returns.
-**`status == "closed"`, never `!= "open"`**: `unverifiable` is open-on-an-unenumerable-board
-(D-324) and sweeping it would bury live work. **70 folders move; apply 203 -> 151.**
+### #284 was verified against the live store before its first run
 
-**It cost nothing expensive**, and that is why it was the right thing to ship the night before an
-unattended fortnight: `engine_version()` resolves its four inputs sibling-only inside
-`eligibility/`, so **no re-evaluation, no ledger drain, no acceptance-counter reset**.
+D-383 shipped hours earlier and had **never executed**; it moves 70 folders on run 134, and the
+queue alert keys on `queue_failed` only — `moved` is printed, never thresholded — so a mis-fire
+would have been silent for a fortnight. Verified: the closed set has **not drifted** (apply **52** /
+`_review` **18**, exactly D-383's figures, every folder resolving to a store row), and **"70 folders
+move" is EXACT** because `_status` only rewrites `open` -> `unverifiable`, leaving `closed`
+untouched. `_closed` is registered, derived into `_LOCATIONS`, created up front by `_ensure_root`,
+scanned by `_index`, and does not move the byte budget. It does not exist on disk yet — correct,
+since nothing has run since the merge. Full check table in `METRICS.md`.
 
-### The seniority gate was the top next action. It is measured at 5 postings. Do not build it yet.
+### The seniority hold is 3 postings, not 5. It is dead, not deferred.
 
-Two measurements overturned the plan, and both contradict what STATE said on 2026-08-30:
-
-1. **`rank/seniority_gate.py` is LIVE, not missing** — wired at `top_cmd.py:468` — and Mit's profile
-   reads `target_seniority_band = 'entry'`, so it is **armed, not inert**. "Nothing in the pipeline
-   reads level" was WRONG about the ranker; it is only true of the DELIVERY lane.
-2. The real gate, real catalog, all 203 apply-lane titles: **`in_band` 195 · `above_band` 5 ·
-   `uncertain` 3.** The five are one Director, three Managers and one Software Development Manager.
-
-The three `Member of Technical Staff` rows stay `in_band` **by design** (masking added after 94 SWE
-MTS titles were falsely dropped over 26,997 postings). The 10 digit-level titles (eBay SWE 2/3,
-MongoDB 2/3, Snap Level 3, Garmin 2, Twilio L2) ABSTAIN because `leveling-bindings.yaml` is empty —
-per-operator data, open by design, and **not ours to write on Mit's behalf**.
-
-**The seam is real but small:** `review_gate.classify` has six decision points, none reads
-seniority, so a lead delivered before the gate was armed is never re-checked. That is a
-**5-posting** seam. The judge's 28 of 77 is mostly JD-BODY level and years prose — the *experience*
-family, not a title token — so a title-based gate cannot reach it.
+Re-measured with the real gate and catalog against the lane that **survives** D-383's drain:
+`in_band` 146 / `above_band` **3** / `uncertain` 2 over 151, against 195/5/3 over the pre-drain 203.
+The two that vanished — Capital One `Director, Software Engineer` and Chewy `Software Development
+Manager` — are **already `closed`**, so #284 removes them for free. **Not built:**
+`seniority_verdict` needs four inputs (per-company scheme, target band, field tier, catalog) that a
+conn-only store read cannot reach without pushing profile and config into `store/`. Three postings
+does not buy a layering change, and **D-383's precedent does not transfer** — `row.closed` was
+already on `QueueRow` from a column the store already read.
 
 ---
 
@@ -83,23 +85,45 @@ family, not a title token — so a title-based gate cannot reach it.
    sit beside it, one of which (`no_sponsorship_will_not_consider` omits `never`) is a **one-word
    fix against a false `eligible`**. Held deliberately: `rules.yaml` re-keys `rules_hash` ->
    `policy_version`, forces a ~111k re-evaluation, and re-arms the `exclusive_group` dissolution
-   trap a live-lane harness **cannot** see. Assert ZERO corpus verdict changes before recording.
-3. **A seniority hold in `review_gate` is worth 5 postings** — cheap and structurally right, but do
-   not present it as the big lever. See above.
+   trap a live-lane harness **cannot** see — and the corpus-regression detector is **dark until
+   ~run 138**, so a rules change now would be the one change nothing is watching. Assert ZERO
+   corpus verdict changes before recording.
+3. **Ship items 2 and 4 as ONE rules change, not two.** The sponsorship WIP's own README records
+   that `does not provide IMMIGRATION-RELATED sponsorship` was missed until its word gap became
+   `[\w-]+` — **the same class as the audit's 9 HYPHEN rows**. `rules_hash` re-keys once whether
+   one pattern moves or twenty, so splitting them pays the ~111k re-evaluation twice for nothing.
 4. **Sponsorship recall round 2 — BUILT, MEASURED, DELIBERATELY NOT SHIPPED.** Patch and rationale
-   at `.agent/2026-08-30-audit-sprint/WIP-sponsorship-recall-NOT-SHIPPED.patch`. Upside is **5**
-   apply-lane postings, not the 27 an agent sweep found — that sweep predates run 134.
+   at `.agent/2026-08-30-audit-sprint/WIP-sponsorship-recall-NOT-SHIPPED.patch`. Its stated upside
+   of **5** apply-lane postings was measured against the **pre-drain 203** lane and is subject to
+   the same arithmetic that took the seniority hold from 5 to 3 — but the README names no posting
+   ids, so it **could not be re-intersected cheaply and was NOT re-measured**. A real re-measure
+   costs a `rules_hash` bump, so do it as part of item 3, never on its own.
 5. **`does not include internships` kills EVERY experience row on ~6 Stripe postings**, and
    **`(F/H)` is unreachable by `foreign_ad_gate`** (`_FRENCH_GENDER_MARKER` requires `h/f` order and
    parentheses). Both measured, both left alone; zero apply-lane escapes today for the second.
 
----
+*(No longer a next action: a seniority hold in `review_gate`. Re-measured at **3** postings and it
+needs profile+config in `store/` — see Current standing. Do not resurrect it as the big lever.)*
 
-## Session 2026-08-31 — what shipped
+## Session 2026-08-31b — what shipped
 
 | PR | what |
 |---|---|
-| **#284** | a closed posting drains to its own `_closed` lane (D-383) — apply 203 -> 151 |
+| **#285** | the apply lane gets its own drought detector (D-384) — the one fault `delivery_drought` is blind to |
+
+Previous session: **#284**, a closed posting drains to its own `_closed` lane (D-383), apply
+203 -> 151. **Verified this session against the live store before its first run** — see Current
+standing.
+
+**Mutation-pinned: 12 mutants + a no-op control, 11 CAUGHT, 1 survivor proven unobservable** (the
+two abstain checks commute, because arrivals are a subset of placeable leads). The call site is
+pinned separately, and needed to be: moving the block below `_emit_morning` fails the digest test
+while **both `summary.errors` guards still pass**.
+
+**The control is the number that mattered.** The FIRST campaign scored **all 13 CAUGHT including the
+no-op control**, because the runner passed `--timeout=120` and `pytest-timeout` is not installed, so
+every subprocess exited non-zero regardless of the mutation. Without a control that would have been
+recorded as a fully-pinned guard on evidence that proved nothing.
 
 `make check` exit 0 (8656 passed, 4 xfailed, 7m08s); CI green on every job. **Guards
 mutation-pinned: 10 mutants, a no-op control, 8 CAUGHT, 2 survivors PROVEN UNOBSERVABLE and
@@ -165,7 +189,7 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | Item | Detail | Owner |
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
-| **Delivery-drought cannot see APPLY-LANE starvation** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, which is written **regardless of which lane `review_gate.lane()` routes to**. If location classification broke globally every lead would go to `_review`, artifacts would keep appearing, drought would abstain, and the owner would get **zero apply-ready leads for a fortnight with nothing firing**. Verified open. Current split is healthy (run 133: 40 new to apply; 420 apply / 189 `_review` = 31%). NOT built: the lane decision lives in `_sync_queue`'s copy step (`delivery/queue.py:385`) and its result type is shared with the web server, so a guard is a materially bigger change than it looks — wrong thing to ship days before an absence | **Mit** (on return) |
+| ~~Delivery-drought cannot see APPLY-LANE starvation~~ **CLOSED by #285 / D-384** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, written **regardless of which lane `review_gate.lane()` routes to**, so a global misclassification shipped zero apply-ready leads with every existing alarm green. `check_apply_lane_drought` now fires when the last 3 clean runs each delivered PLACEABLE leads and none reached the apply lane. **The old sizing was wrong, not merely pessimistic**: it priced a guard inside `_sync_queue`, but the three job-id readers already take only a connection and `QueueRow` already carries `delivered_run_id`, so nothing in `review_gate`, `_sync_queue` or the web server's result type had to change. Known property, direction abstain-not-alarm: `delivered_unapplied` attributes a re-delivered job to the NEWER run, so an older run can read zero placeable and the window abstains | **CLOSED** |
 | ~~Four detector fallbacks are print-only, not durable~~ **CLOSED by #260** | The `intake-death` / `delivery-drought` / `liveness-blindness` / `corpus-regression` "check not run" handlers now call `append_run_error` like the three artifact-write handlers beside them, so a DETECTOR that crashes leaves a row in `runs.errors_json` and not only a digest line. Four one-line additions, inert on the normal path; each pinned by its OWN parametrised test, because a single test crashing all four passes while three of the four calls are missing. **Known shared property:** `append_run_error` is not internally defensive and these sit inside `except` handlers — matched to the three existing handlers deliberately rather than diverging; it needs two simultaneous failures and fails loudly via the withheld heartbeat | **CLOSED** |
 | **`companies.last_health` / `last_ok_at` are a LYING instrument** | 178 of 379 watched boards read NULL, which looks like "never succeeded" — **all 178 were scanned by run 133** (128 complete, 7 partial, 43 unchanged). The scan path does not maintain these columns. **Judge fleet health from `board_scans` per run instead**: run 133 was 379 attempted / 271 complete / 87 unchanged / 21 partial / **0 failed** | tooling gotcha |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |

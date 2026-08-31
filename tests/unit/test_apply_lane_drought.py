@@ -1,0 +1,265 @@
+"""Apply-lane drought detector. Each firing test names the wrong-version it rejects.
+
+A real schema on `tmp_path`, seeded through the FK chain out to a tailored artifact, because
+`apply_lane_placements` reads `delivered_unapplied` — which joins FROM `artifacts` outward, so a
+lead with no artifact is not delivered and this detector cannot see it.
+
+The lane is steered by LOCATION alone here, and deliberately: `Boston, MA` classifies `us` and
+routes to the apply queue, `Berlin, Germany` classifies `non_us` and routes to `_review`. Both
+were confirmed against the real `review_gate.classify` before these tests were written. No
+verdict is seeded, so every row reads `None` — which `classify` treats like `uncertain`, letting
+location decide. That covers the `closed` exclusion and both lanes through the real store path.
+The one exclusion the real path cannot reach cheaply is `ineligible`, and the last test says why
+and injects instead.
+
+`BOARDWATCH_CONFIG_DIR` is forced onto `tmp_path` for the reason `test_delivery_queries.py` gives:
+`delivered_unapplied` resolves the eligibility identity through `load_settings()`, and without it
+the read would run against whatever `rules.yaml` override sits in the developer's config dir.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import cast
+
+import pytest
+from sqlalchemy import Connection, Engine, insert
+
+from boardwatch.notify.apply_lane_drought import (
+    APPLY_LANE_DROUGHT_WINDOW,
+    check_apply_lane_drought,
+)
+from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import RUN_OK
+from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
+
+NOW = datetime(2026, 8, 31, 4, 0, 0)
+
+APPLY_LOCATION = ["Boston, MA"]
+REVIEW_LOCATION = ["Berlin, Germany"]
+
+
+@pytest.fixture(autouse=True)
+def _scratch_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
+
+
+@pytest.fixture()
+def engine(tmp_path: Path) -> Engine:
+    eng = get_engine(tmp_path / "data")
+    ensure_schema(eng)
+    return eng
+
+
+_counter = iter(range(1, 10_000))
+
+
+def _lead(
+    conn: Connection,
+    *,
+    run_id: int,
+    locations: list[str],
+    status: str = "open",
+    delivered_at: datetime = NOW,
+) -> None:
+    """One delivered lead on its own company and its own canonical job.
+
+    Its own job matters: `delivered_unapplied` collapses to ONE row per job, so two leads sharing
+    a job would silently seed one row and a count assertion would be off by the difference.
+    """
+    key = f"k{next(_counter)}"
+    company_id = int(
+        conn.execute(
+            insert(companies).values(
+                name=f"Acme {key}", provider="greenhouse", slug=f"acme-{key}",
+                source="user", watched=True,
+            )
+        ).inserted_primary_key[0]
+    )
+    job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+    posting_id = int(
+        conn.execute(
+            insert(postings).values(
+                company_id=company_id, job_id=job_id, provider_posting_id=key,
+                title="Software Engineer", normalized_title="software engineer",
+                url="https://boards.test/apply", locations_json=locations,
+                remote_policy="onsite", posted_at=NOW - timedelta(days=2), first_seen_at=NOW,
+                last_seen_at=NOW, status=status,
+                closed_at=NOW if status == "closed" else None,
+                consecutive_missing=0, content_hash=f"hash-{key}", body_text="body",
+            )
+        ).inserted_primary_key[0]
+    )
+    version_id = int(
+        conn.execute(
+            insert(posting_versions).values(
+                posting_id=posting_id, content_hash=f"v-{posting_id}", body_text="body",
+                captured_at=NOW, run_id=None, capture_reason="new",
+            )
+        ).inserted_primary_key[0]
+    )
+    conn.execute(
+        insert(artifacts).values(
+            posting_version_id=version_id, kind="resume_tailored",
+            uri=f"/out/{key}/tailored-{posting_id}.typ", generator="boardwatch.tailor",
+            media_type="text/x-tex", meta_json={"pdf_uri": None},
+            created_at=delivered_at, run_id=run_id,
+        )
+    )
+
+
+def _run(
+    engine: Engine,
+    *,
+    apply_lane: int = 0,
+    review_lane: int = 0,
+    closed: int = 0,
+    status: str = RUN_OK,
+) -> int:
+    """One run plus the leads it delivered, split by the lane each will classify into."""
+    with engine.begin() as conn:
+        run_id = int(
+            conn.execute(
+                insert(runs).values(
+                    started_at=NOW, finished_at=NOW, status=status, boards_attempted=0
+                )
+            ).inserted_primary_key[0]
+        )
+        for _ in range(apply_lane):
+            _lead(conn, run_id=run_id, locations=APPLY_LOCATION)
+        for _ in range(review_lane):
+            _lead(conn, run_id=run_id, locations=REVIEW_LOCATION)
+        for _ in range(closed):
+            _lead(conn, run_id=run_id, locations=APPLY_LOCATION, status="closed")
+    return run_id
+
+
+# ------------------------------------------------------------------------------------- the alarm
+
+
+def test_fires_when_every_run_placed_leads_and_none_reached_the_apply_lane(
+    engine: Engine,
+) -> None:
+    """The fault this detector exists for: leads keep being delivered — so `delivery_drought`
+    abstains and the heartbeat stays green — and every one is routed to review."""
+    ids = [_run(engine, review_lane=2) for _ in range(3)]
+    alert = check_apply_lane_drought(engine, window=3)
+    assert alert is not None
+    assert "0 of 6 placeable lead(s)" in alert
+    for run_id in ids:
+        assert str(run_id) in alert
+
+
+def test_silent_when_a_run_in_the_window_reached_the_apply_lane(engine: Engine) -> None:
+    # Rejects dropping the apply-arrivals check: ONE lead in the blind-apply list proves the
+    # location, role and requirement gates still pass something, which is the whole claim.
+    _run(engine, review_lane=2)
+    _run(engine, review_lane=2)
+    _run(engine, review_lane=2, apply_lane=1)  # newest placed one
+    assert check_apply_lane_drought(engine, window=3) is None
+
+
+def test_silent_when_a_run_placed_nothing(engine: Engine) -> None:
+    # The false-positive guard, and the anti-double-report guard in one. A run that delivered no
+    # placeable lead is `check_delivery_drought`'s story; firing here too would state two
+    # diagnoses for one cause. Rejects dropping the placeable>0 abstain, which would fire on
+    # every quiet day and on a fresh store.
+    _run(engine, review_lane=2)
+    _run(engine, review_lane=2)
+    _run(engine)  # delivered nothing at all
+    assert check_apply_lane_drought(engine, window=3) is None
+
+
+def test_closed_leads_are_not_placeable(engine: Engine) -> None:
+    """A run whose every lead has since come down is a LIVENESS story with its own drain
+    (D-383), not evidence about the lane gates.
+
+    Rejects removing the `row.closed` exclusion from `apply_lane_placements`: without it these
+    leads count as placeable, `lane` routes them to `_closed` rather than `""`, and the detector
+    fires — naming the location/role/requirement gates for a fault that is entirely liveness.
+    The control below proves the seeding really does produce leads this detector can see.
+    """
+    for _ in range(3):
+        _run(engine, closed=2)
+    assert check_apply_lane_drought(engine, window=3) is None
+    # Control: the same shape with OPEN postings in the review lane does fire, so the abstain
+    # above is attributable to `closed` and not to leads the detector never saw. These three
+    # become the newest clean runs, so they are the window.
+    for _ in range(3):
+        _run(engine, review_lane=2)
+    assert check_apply_lane_drought(engine, window=3) is not None
+
+
+def test_abstains_below_the_window(engine: Engine) -> None:
+    _run(engine, review_lane=2)
+    _run(engine, review_lane=2)
+    assert check_apply_lane_drought(engine, window=3) is None
+
+
+def test_only_clean_runs_count(engine: Engine) -> None:
+    # A later non-ok run (crashed or in-flight) is excluded, so the three clean starvations still
+    # fire, and its apply-lane delivery must not rescue the window. Rejects dropping the status
+    # filter.
+    for _ in range(3):
+        _run(engine, review_lane=2)
+    _run(engine, apply_lane=5, status="running")  # newest, not ok
+    assert check_apply_lane_drought(engine, window=3) is not None
+
+
+def test_default_window_is_three(engine: Engine) -> None:
+    assert APPLY_LANE_DROUGHT_WINDOW == 3
+    _run(engine, review_lane=2)
+    _run(engine, review_lane=2)
+    assert check_apply_lane_drought(engine) is None
+    _run(engine, review_lane=2)
+    assert check_apply_lane_drought(engine) is not None
+
+
+# ----------------------------------------------------------------------- the placeable-set fold
+
+
+def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run whose delivered leads have all since read `ineligible` is an eligibility COLLAPSE,
+    which `check_corpus_regression` owns. Counting them placeable here would fire a second
+    detector on one cause and name the lane gates for a fault in the rules or the facts.
+
+    The rows are INJECTED rather than seeded, and only here. Producing a genuine `ineligible`
+    through the store needs a profile whose work-auth and clearance facts resolve against the
+    live catalog — three probes against the real engine returned `uncertain`, because with no
+    resolvable fact every hard-family rule correctly ABSTAINS (the keystone invariant). The fold
+    under test takes `QueueRow`s and returns counts, so its inputs are exactly what is injected;
+    the real store path is covered end to end by every other test in this file.
+    """
+    from boardwatch.store import delivery_queries
+    from boardwatch.store.delivery_queries import QueueRow, apply_lane_placements
+
+    # `delivered_unapplied` is replaced below, so the connection is never touched; the fold
+    # takes it only to pass it on. `cast` rather than a live connection keeps the test to the
+    # fold and off the schema.
+    conn = cast(Connection, None)
+
+    def _row(posting_id: int, verdict: str | None, locations: tuple[str, ...]) -> QueueRow:
+        return QueueRow(
+            posting_id=posting_id, job_id=posting_id, title="Software Engineer",
+            company="Acme", location=", ".join(locations), locations=locations,
+            remote_policy="onsite", posted_days=2, first_seen=NOW, status="open",
+            verdict=verdict, apply_url="https://boards.test/apply", delivered_run_id=7,
+            tex_uri="/out/t.typ", pdf_uri=None, target_flag=None,
+        )
+
+    injected = [_row(1, "ineligible", ("Boston, MA",))]
+    monkeypatch.setattr(
+        delivery_queries, "delivered_unapplied", lambda conn, *, skipped: injected
+    )
+    # Both rows would route to `_review` — the ineligible one for its verdict, the foreign one
+    # for its location — so a fold that did not exclude ineligible would report them alike.
+    assert apply_lane_placements(conn, run_ids={7}) == {7: (0, 0)}
+
+    # Control: the SAME shape with the verdict cleared IS placeable, so the zero above is
+    # attributable to the `ineligible` exclusion and not to the row being invisible to the fold.
+    injected[:] = [_row(1, None, ("Berlin, Germany",))]
+    assert apply_lane_placements(conn, run_ids={7}) == {7: (1, 0)}
+    injected[:] = [_row(1, None, ("Boston, MA",))]
+    assert apply_lane_placements(conn, run_ids={7}) == {7: (1, 1)}

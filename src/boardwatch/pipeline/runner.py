@@ -51,6 +51,7 @@ from boardwatch.lanes.facets import role_facets
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.linkedin import LinkedInLane
 from boardwatch.notify.alert_escalation import escalate_alerts
+from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.corpus_regression import check_corpus_regression
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
@@ -1733,6 +1734,29 @@ def run_pipeline(
                 append_run_error(engine, run_id, drought)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"delivery-drought check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
+        # Apply-lane drought soft alert, and it sits HERE, immediately below its sibling, because
+        # the sibling is blind to exactly one fault: `check_delivery_drought` counts
+        # `resume_tailored` artifacts, which are written whichever lane the lead routes to. So a
+        # global break in location classification, the role gate or a requirement flag would send
+        # every lead to `_review`, keep artifacts flowing at the normal rate, leave the drought
+        # check abstaining and the heartbeat green — and ship zero apply-ready leads for a
+        # fortnight. Fires only when the last clean runs each delivered PLACEABLE leads and none
+        # reached the apply lane; a run that delivered nothing abstains and is the sibling's story.
+        # Non-fatal: those leads are in `_review`, reviewable and not lost.
+        #
+        # Above `_emit_morning` like every soft alert here — below it the alert still fires, is
+        # still recorded, and is invisible in the one artifact an unattended owner reads.
+        try:
+            lane_alert = check_apply_lane_drought(engine)
+            if lane_alert is not None:
+                console.print(f"  ! {lane_alert}", markup=False)
+                summary.errors.append(lane_alert)
+                append_run_error(engine, run_id, lane_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"apply-lane-drought check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
