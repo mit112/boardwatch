@@ -9717,19 +9717,22 @@ Re-ran the engine over the affected evaluations twice — once with the shipped 
 family's `exclusive_groups` emptied — reading the frozen JD, the stored profile snapshot and the
 stored policy out of the store, so the comparison is against what production actually did.
 
-| n=400, newest first | |
+| restricted to the CURRENT `catalog_version` | |
 |---|---|
-| control: stored verdict NOT reproduced | **0 of 400** |
-| `uncertain` -> `ineligible` | **191 (47.75%)** |
-| `uncertain` -> `uncertain` | 209 |
+| affected evaluations fetched | 8,429 |
+| skipped, stored under a stale `catalog_version` | 4,394 |
+| compared | **4,035** |
+| CONTROL: stored verdict NOT reproduced | **0 of 4,035** |
+| `uncertain` -> `ineligible` | **2,674 (66.3%)** |
+| `uncertain` -> `uncertain` | 1,359 |
+| `uncertain` -> `eligible` | 2 |
 
-A first full-population pass over all 8,429 returned **779 control mismatches** and 5,108 flips, and
-the mismatches are the reason it is not quoted as the headline: they are evaluations stored under the
-**stale** `catalog_version`, which the sample (newest first) contained none of. The re-run restricted
-to the current catalog was **still in flight at close** — `.agent/2026-08-31d-session/` records the
-script (`0831d-conflict-impact.py`, catalog filter included) so the next session finishes it in one
-command rather than rebuilding it. **Quote the 400-sample figure, or finish the filtered run; do not
-quote the 8,429-row pass.**
+**2,674 evaluations are `uncertain` only because the engine calls two compatible requirement
+statements a contradiction.** A newest-first 400-sample gave 47.75% and an unfiltered pass over all
+8,429 gave 779 control failures; the filtered figure above is the one to quote. **`engine_version`
+does not identify a catalog** — it digests the eligibility modules while the catalog is keyed
+separately, so this one `engine_version` spans two `catalog_version`s (4,035 / 4,394) and the
+unfiltered pass compared 4,394 rows against a catalog that never produced them.
 
 **A first pass reported 151,890 conflict-dissolved rows and that figure is VOID** — a whole-history
 `COUNT(*)` over a 969,661-row table spanning at least eight `engine_version` values, i.e. catalogs
@@ -9763,22 +9766,33 @@ hazard found on family X, sized across all families, does not price a change to 
 `main` (the store's catalog, and the control) · `branch` (the two shipped fixes) · `held` (branch plus
 both held patches). All three catalog versions confirmed distinct before comparing anything.
 
-| n=1,500 newest current-catalog evaluations | |
+Two passes. The first sampled 1,500 newest current-catalog evaluations and found **1** shipped flip
+and **0** held — too thin against these surfaces to decide anything, which is why the second was run.
+
+The second SELECTS ON THE SURFACES the changes actually reach: bodies carrying `U.S.`,
+`-related sponsorship`, or a hyphen immediately before `authorized to work`.
+
+| targeted A/B/C | |
 |---|---|
-| stale `catalog_version`, skipped | **0** |
+| rows fetched | **25,639** |
+| skipped for a stale `catalog_version` | 375 |
+| compared | **25,264** |
 | CONTROL: `main` failing to reproduce the stored verdict | **0** |
-| SHIPPED pair: verdict changes | **1** — `eligible` -> `ineligible` |
+| SHIPPED pair: `uncertain` -> `ineligible` | **253** |
+| SHIPPED pair: `eligible` -> `ineligible` | **9** |
 | HELD pair: verdict changes on top of the shipped ones | **0** |
 
-The one shipped flip is the whole point of the change: a posting that was clearing by silence now
-resolves `ineligible`. The held pair is low-stakes in both directions at this sample size, so the
-reason to hold them is no longer that they regress — it is that they had shown no measured benefit
-while costing a `rules_hash` bump.
+**The shipped pair is worth 262 postings, and the nine `eligible` -> `ineligible` are the ones that
+matter** — postings stating a sponsorship refusal that were reading `eligible` and could have reached
+the apply queue.
 
-**The populations their surfaces could reach** (current-engine posting versions, 113,634 total): 3,001
-carry `U.S.` and `clearance`; 4,809 carry a hyphen before `authorized to work`; 539 carry
-`-related sponsorship`; 2 carry `natural-born`. A targeted A/B/C over that union is the measurement
-that settles the upside, and its script is `0831d-price-held-targeted.py`.
+**The held pair is worth zero.** Not small: zero verdict changes over the entire population that
+carries its own target surfaces. That converts them from held work into a closed question — no
+verdict-level upside, and they can reach the conflict class above.
+
+**The candidate populations, for the record** (current-engine posting versions, 113,634 total): 3,001
+carry `U.S.` and `clearance`; 4,809 a hyphen before `authorized to work`; 539 `-related sponsorship`;
+4,171 `U.S. Government`; 2 `natural-born`.
 
 ### Two audit rows WITHDRAWN, not deferred, because they do not reproduce
 

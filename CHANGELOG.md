@@ -71,7 +71,9 @@ All notable changes to this project are documented here. The format follows
   words and nothing else, so a hyphenated phrase that is not about immigration still produces no
   requirement, and someone who needs no sponsorship still passes both sentences. Verified to leave
   every one of the 1,034 recorded eligibility cases with exactly the verdict and the reasons it had
-  before. (D-387)
+  before. Measured against the postings actually affected: **262 of them are now correctly rejected,
+  and nine of those had been reading as a match** — postings that state they will not sponsor a visa
+  and could have reached the apply queue anyway. (D-387)
 
 - **An eligible lead still has to be a US software role to reach the apply queue.** `eligible`
   used to skip the location and role checks entirely, so a posting could be marked eligible and go

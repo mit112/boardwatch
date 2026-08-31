@@ -19482,16 +19482,28 @@ requirement) for the collision to be possible, and live postings rarely do. **Th
 — "5+ years of software engineering experience" beside "3+ years of Python" — not a reason to hold a
 work_auth or clearance recall fix.
 
-**Priced directly, A/B/C on three catalogs against the live corpus** (main = the store's catalog and
-the control, branch = the two shipped fixes, held = branch plus both held patches; 1,500 newest
-current-catalog evaluations, **control 0 failures of 1,500, zero stale**): the SHIPPED pair moves
-**1 evaluation, `eligible` -> `ineligible`** — a posting that was clearing by silence and is now
-correctly rejected — and the HELD pair moves **zero**. So the held patches are low-stakes in both
-directions on that sample, and the reason to hold them is no longer that they regress; it is that
-they showed no measured benefit at that sample size while costing a `rules_hash` bump. A targeted
-run over the ~7,500 postings whose bodies actually carry the dotted and hyphenated surfaces (3,001
-with `U.S.` and `clearance`, 4,809 with a hyphen before `authorized to work`, 539 with
-`-related sponsorship`) is the measurement that settles their upside.
+**PRICED DIRECTLY, A/B/C on three catalogs against the live corpus, and the answer is decisive in
+both directions.** `main` = the store's catalog and the CONTROL, `branch` = the two shipped fixes,
+`held` = branch plus both held patches; the patched catalogs loaded as config-dir OVERRIDES so no
+worktree was edited. Selected on the surfaces the changes actually reach — bodies carrying `U.S.`,
+`-related sponsorship`, or a hyphen immediately before `authorized to work`. **25,639 rows, 375
+skipped for a stale `catalog_version`, 25,264 compared, CONTROL 0 failures:**
+
+- **the SHIPPED pair moves 262 evaluations: 253 `uncertain` -> `ineligible` and 9
+  `eligible` -> `ineligible`.** The nine are the ones that matter most — postings stating a
+  sponsorship refusal that were reading `eligible` and could have reached the apply queue.
+- **the HELD pair moves ZERO.** Not small: zero, over the whole population that carries their target
+  surfaces.
+
+**So the held patches should NOT ship, and that is a measured answer rather than a hold.** They have
+no verdict-level upside on the population their own surfaces select, and they can reach the conflict
+class above. They stay on disk as evidence, not as pending work. (A 1,500-row newest-first sample had
+shown 1 shipped flip and 0 held; it was too thin against these surfaces, which is why the targeted
+run was the one worth waiting for.)
+
+**And the finding itself is now measured, not extrapolated.** Restricted to the current catalog,
+4,035 comparable evaluations, **CONTROL 0 of 4,035**: emptying `exclusive_groups` flips **2,674
+(66.3%) from `uncertain` to `ineligible`**, 1,359 stay `uncertain`, and 2 become `eligible`.
 
 **THE PROCESS LESSON, and it is why this paragraph exists.** The hazard was found on a work_auth
 probe, sized across ALL families, and then reasoned about as if the aggregate belonged to work_auth.
