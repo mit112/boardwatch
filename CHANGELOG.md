@@ -22,6 +22,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lead whose requirements could not be confirmed is held for review, not blindly appliable.**
+  Being in the US and being a software role were the only positive checks the delivery lane made, so
+  a posting whose work-authorization or clearance rule *abstained*, or whose stated experience bar
+  the profile does not confirm meeting, went to the apply queue looking exactly like a clean lead.
+  Two new hold reasons carry it — "eligibility unconfirmed" and "experience requirement" — and both
+  are worded as what they are: an abstain is reported as an abstain, never as a finding that the
+  lead is ineligible. Held leads are reviewable, never dropped, and location and role still name the
+  hold when they own it. Only requirements the posting marks as *required* count, matching what the
+  verdict itself counts, so a "preferred" bar cannot hold a lead. **This re-lanes leads already in
+  the queue on the next run: 144 of 609 move, taking the apply queue from 420 to 276** (D-380).
+
 - **A posting that refuses sponsorship no longer reads as eligible.** "Must be authorized to work in
   the US *without sponsorship*" — the commonest way a JD states the restriction — produced only an
   authorization requirement, which is correctly *met* for someone holding an EAD, and no sponsorship
