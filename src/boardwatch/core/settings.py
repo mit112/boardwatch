@@ -76,6 +76,7 @@ def _default_lane_new_companies_overrides() -> dict[str, int | Literal["unlimite
     snapshot pin does not exempt it."""
     overrides: dict[str, int | Literal["unlimited"]] = {}
     overrides["jobapps"] = "unlimited"
+    overrides["hiringcafe"] = "unlimited"
     return overrides
 
 
@@ -152,11 +153,34 @@ class Settings(BaseModel):
     #
     # Ships with `jobapps` uncapped: its whole source tree caps out around 38-45 companies
     # total (28 refused to the shared cap in one measured run), so capping it slows reach for a
-    # lane an operator already curates and buys nothing. LinkedIn is deliberately NOT listed
-    # here and stays on `lane_new_companies_per_run`: it refused 264 companies to the same cap
-    # in one run, and a company that clears the cap and dereferences to a supported ATS becomes
-    # `watched=1` and joins the 379-board scan floor PERMANENTLY — uncapping it would balloon
-    # that floor forever.
+    # lane an operator already curates and buys nothing.
+    #
+    # `hiringcafe` is uncapped for the SAME KIND of reason — a bounded source, not a stream.
+    # Its search window is `dateFetchedPastNDays: 7`, a rolling pool that RECIRCULATES, so the
+    # same companies are offered back every run and the cap only slows a fixed backlog down.
+    # Measured over runs 116-127 in a stable regime: per-run refusals fell monotonically
+    # 240 -> 193 while the cap admitted 10 a run, the cumulative union of never-before-seen
+    # companies moved 250 -> 273 (mean 2.3 genuinely new per run), and consecutive-run overlap
+    # ran 0.90-0.96 Jaccard. Uncapped it drains in ONE run and then costs a couple of
+    # admissions a run.
+    #
+    # **LinkedIn is deliberately NOT listed here, and the reason recorded until 2026-09-01 was
+    # FALSE.** It said a lane company "becomes `watched=1` and joins the 379-board scan floor
+    # PERMANENTLY". It does not: `queries.upsert_lane_company` writes `watched=False` and its
+    # docstring calls that load-bearing (D-285), the only writers that set `watched=1` are
+    # `companies add`/`import`, and the store agrees — 485 of 499 `source='lane'` rows are
+    # unwatched while `boards_attempted` sat flat at 379 for seven consecutive runs during which
+    # the lanes admitted 250 companies. Lane admission has NO scan cost at all.
+    #
+    # The true reason LinkedIn stays capped is that it is an UNBOUNDED STREAM where hiringcafe
+    # is a pool, and a worse one per posting. Its window is `f_TPR=r86400` — a fresh 24-hour
+    # slice every run. Measured over runs 129-139: the cumulative union of distinct companies
+    # went 187 -> 1,294 with NO saturation, a mean 123 genuinely new per run, consecutive
+    # Jaccard 0.075-0.49 (median ~0.16), and exactly ONE company refused in all ten runs. And
+    # on quality it is the worst measured source: 13.4 eligible per 1,000 open postings in run
+    # 139 against a curated-board baseline of 33.4 and hiringcafe's 45.9. Uncapping it would go
+    # `lane_posting_budget`-bound immediately and drag that budget behind it, which is the
+    # genuinely unbounded lever. Raise it to a larger FIXED number if reach there is wanted.
     lane_new_companies_per_run_overrides: dict[str, int | Literal["unlimited"]] = Field(
         default_factory=_default_lane_new_companies_overrides
     )
