@@ -94,5 +94,16 @@ class AcquisitionTally:
 
         Not `resolved == 0` alone: a tier with nothing to do is not an outage, and reporting one
         would train the reader to ignore the signal.
+
+        `not_attemptable` is EXCLUDED from the attempt side, because that is what its name says:
+        the item was seen and deliberately not requested. Counting it made the predicate
+        contradict this docstring, and the effect was not theoretical -- 152 of the 160 hits in
+        the recorded hiring.cafe mix sit on an ATS with no body-inlined board, so a run that
+        resolved nothing simply because nothing reachable turned up printed SILENT OUTAGE while
+        being perfectly healthy. That is the cry-wolf this predicate exists to avoid.
+
+        It does not weaken the signal for the other lanes. `not_attemptable` there means the
+        request budget was spent -- and a run that spent its budget necessarily attempted the
+        requests it paid for, so those attempts are still counted here.
         """
-        return self.attempted > 0 and self.resolved == 0
+        return self.attempted - self._counts["not_attemptable"] > 0 and self.resolved == 0

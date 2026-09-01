@@ -340,15 +340,22 @@ def test_admits_is_asked_once_per_distinct_company_never_once_per_posting(tmp_pa
 
     result = HiringCafeLane().collect(_fetcher(tmp_path), _admits)
 
-    assert len(asked) == 40
-    assert len(set(asked)) == 40
-    assert set(asked) == {_expected_key(hit) for hit in hits}
+    # Once per COMPANY, never once per posting -- the contract this test exists for. The
+    # fixture's 160 postings sit on 40 companies, of which 2 are greenhouse; only those two are
+    # offered, because a company whose body can never be read must not charge the company cap.
+    bodyable = {_expected_key(hit) for hit in hits if hit["source"] == "grnhse"}
+    assert len(bodyable) == 2
+    assert len(asked) == 2
+    assert set(asked) == bodyable
+    # The other 38 are never asked, so they cannot starve the reachable two out of the cap.
+    assert len({_expected_key(hit) for hit in hits}) == 40
     # Refusal is free: no board was paid for, and one search GET was made, not two.
     assert search.call_count == 1
     assert all(route.call_count == 0 for route in boards.values())
     assert result.snapshots == ()
-    # Nothing attempted is not an outage — recording refusals here would say otherwise.
-    assert result.tally.attempted == 0
+    # The 152 hits on unbodyable hosts are counted, and counted as NOT attempted, so a lane
+    # that merely found nothing reachable does not read as an outage.
+    assert result.tally.counts["not_attemptable"] == 152
     assert result.tally.is_silent_outage is False
 
 
@@ -399,9 +406,15 @@ def test_a_company_the_lane_cannot_body_costs_no_request_and_is_counted(tmp_path
     assert result.tally.counts["not_attemptable"] == 8
     assert result.tally.resolved == 0
     assert result.snapshots == ()
-    # Attempted-and-resolved-nothing IS the outage signal, and it is on: this lane reaching
-    # only aggregator-only hosts is a real reduction in reach, not a quiet day.
-    assert result.tally.is_silent_outage is True
+    # NOT an outage, reversing this test's original assertion. `not_attemptable` means the item
+    # was seen and deliberately NOT requested, so it is not an attempt, and the predicate's own
+    # docstring is "attempts were made and none produced a body". The reversal is measured, not
+    # stylistic: 152 of the 160 recorded hits sit on an ATS with no body-inlined board, so
+    # all-aggregator is the ORDINARY result here and flagging it would fire on most healthy runs
+    # -- the cry-wolf the predicate exists to avoid. Real breakage is untouched: a board that
+    # 403s, 404s or returns an unreadable payload records `fetch_*`/`extracted_empty`, which are
+    # attempts and still raise the signal.
+    assert result.tally.is_silent_outage is False
 
 
 @respx.mock

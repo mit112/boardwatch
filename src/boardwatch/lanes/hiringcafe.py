@@ -534,15 +534,25 @@ class HiringCafeLane:
             # The unfaceted fallback keeps the single-search contract it shipped with: a
             # transport or structural failure on its FIRST page propagates, because with one
             # search there are no other results for it to cost.
-            entries, pages = self._facet_pages(fetcher, urls[0])
+            entries, pages, _late = self._facet_pages(fetcher, urls[0])
+            if not entries:
+                # The same all-empty check the faceted branch runs, and for the same reason.
+                # Returning here instead let an empty HTTP-200 SSR page read as a quiet day:
+                # zero entries, zero companies, nothing attempted, so the tally could not see
+                # it either. One search failing this way is the whole search failing.
+                raise SearchPageError(
+                    "the unfaceted search yielded nothing: the search route has moved, or the "
+                    "host is refusing us"
+                )
             return entries, ((urls[0], pages),)
 
         per_facet: list[list[_SearchEntry]] = []
         page_counts: list[tuple[str, int]] = []
         failed = 0
+        late_failures = 0
         for url in urls:
             try:
-                entries, pages = self._facet_pages(fetcher, url)
+                entries, pages, late_failure = self._facet_pages(fetcher, url)
             except (FetchFailure, SearchPageError):
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure.
                 # Fourteen requests means the seventh must not discard the six before it, and
@@ -555,6 +565,20 @@ class HiringCafeLane:
                 continue
             per_facet.append(entries)
             page_counts.append((url, pages))
+            late_failures += int(late_failure)
+
+        if len(page_counts) > 1 and late_failures == len(page_counts):
+            # Isolation must not become suppression. One facet losing page 4 keeps the three
+            # pages it paid for and says nothing about the host; EVERY facet losing a later
+            # page is the host degrading under exactly the paging this change introduced, and
+            # it would otherwise be invisible -- each facet reports the depth it reached, and a
+            # truncated depth looks identical to a short result set. Requires MORE THAN ONE
+            # facet: with a single facet "every facet" and "one facet" are the same statement,
+            # and one facet losing a later page is the isolated case that must stay tolerated.
+            raise SearchPageError(
+                f"every one of {late_failures} facet(s) failed after its first page: the host "
+                "is degrading under paging rather than running out of results"
+            )
 
         if not any(per_facet):
             # Not a quiet day. A bogus facet answers 200 with an empty list, so if the search
@@ -570,7 +594,7 @@ class HiringCafeLane:
         ]
         return interleaved, tuple(page_counts)
 
-    def _facet_pages(self, fetcher: Fetcher, url: str) -> tuple[list[_SearchEntry], int]:
+    def _facet_pages(self, fetcher: Fetcher, url: str) -> tuple[list[_SearchEntry], int, bool]:
         """One facet's hits over at most `self._search_pages` pages, and the pages fetched.
 
         **A PAGE WITH NO HITS MEANS TWO DIFFERENT THINGS AND THIS IS WHERE THEY SEPARATE.** On
@@ -599,6 +623,7 @@ class HiringCafeLane:
         entries: list[_SearchEntry] = []
         seen: set[str] = set()
         pages = 0
+        late_failure = False
         for page_index in range(self._search_pages):
             page = page_url(url, page_index)
             try:
@@ -607,6 +632,10 @@ class HiringCafeLane:
             except (FetchFailure, SearchPageError):
                 if page_index == 0:
                     raise
+                # Keep the pages already paid for, but SAY SO. Breaking silently made a facet
+                # that fails on every page after the first indistinguishable from one whose
+                # results genuinely ended there -- both report the same depth and no error.
+                late_failure = True
                 break
             pages += 1
             fresh: list[_SearchEntry] = []
@@ -622,7 +651,7 @@ class HiringCafeLane:
             seen |= new_ids
             if search_page.is_last_page or not new_ids:
                 break
-        return entries, pages
+        return entries, pages, late_failure
 
     def _board_postings(
         self,
