@@ -10,6 +10,7 @@ import json
 import plistlib
 from pathlib import Path
 
+import pytest
 from sqlalchemy import func, insert, select
 from typer.testing import CliRunner
 
@@ -45,6 +46,25 @@ def _seed(data_dir: Path) -> None:
         )
 
 
+def _seed_twin(data_dir: Path) -> None:
+    """A second, distinct requisition sharing the seeded posting's company and title."""
+    engine = get_engine(data_dir)
+    with engine.begin() as conn:
+        company_id = int(
+            conn.execute(select(companies.c.id).where(companies.c.name == "Acme")).scalar_one()
+        )
+        job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        conn.execute(
+            insert(postings).values(
+                company_id=company_id, job_id=job_id, provider_posting_id="b",
+                title="Software Engineer", normalized_title="software engineer", url=None,
+                locations_json=["Remote"], remote_policy="remote", first_seen_at=NOW,
+                last_seen_at=NOW, status="open", consecutive_missing=0, content_hash="b",
+                body_text="body b",
+            )
+        )
+
+
 def _applications(data_dir: Path) -> int:
     with get_engine(data_dir).connect() as conn:
         return int(conn.execute(select(func.count()).select_from(applications)).scalar_one())
@@ -71,7 +91,7 @@ def test_dry_run_reports_the_same_counts_and_writes_nothing(tmp_path: Path) -> N
     result = _run(data_dir, ["track", "import", str(_history(tmp_path)), "--dry-run"])
     assert result.exit_code == 0, result.output
     # Every bucket is printed, including the zeroes: absent must not read as zero.
-    for bucket in ("matched", "already_present", "unmatched", "malformed"):
+    for bucket in ("matched", "already_present", "unmatched", "malformed", "ambiguous"):
         assert bucket in result.output
     assert "would write 1 application" in result.output
     assert _applications(data_dir) == 0
@@ -93,6 +113,21 @@ def test_import_writes_and_the_report_carries_every_row(tmp_path: Path) -> None:
         ("unmatched", None),
     ]
     assert rows[0]["application_ids"] == [1]
+
+
+def test_a_refused_row_is_named_in_the_summary_not_only_in_the_table(tmp_path: Path) -> None:
+    """A refused row means an application the owner really made went unrecorded, and the fix
+    is theirs to make (supply a url for it). The bucket table alone reports it as a number
+    beside four other numbers; the summary line is the one line that gets read."""
+    data_dir = tmp_path / "store"
+    _seed(data_dir)
+    _seed_twin(data_dir)
+    path = tmp_path / "history.csv"
+    path.write_text("company,title\nAcme,Software Engineer\n", encoding="utf-8")
+    result = _run(data_dir, ["track", "import", str(path), "--allow-title-match"])
+    assert result.exit_code == 0, result.output
+    assert "1 row(s) matched several requisitions" in result.output
+    assert _applications(data_dir) == 0
 
 
 def test_an_unreadable_file_exits_one_without_touching_the_store(tmp_path: Path) -> None:
@@ -117,6 +152,31 @@ def _jobapps_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def test_a_directory_that_cannot_be_listed_exits_one_with_the_commands_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The listing raise site is what this covers: a raw `PermissionError` from `iterdir`
+    escapes `track import`'s `except` clause as a traceback, so the reader must translate it
+    to the type the command already catches. Injected at that one path rather than by
+    `chmod`, because click's own readability check intercepts an unopenable root first and
+    would make this pass without any translation at all."""
+    data_dir = tmp_path / "store"
+    _seed(data_dir)
+    root = _jobapps_dir(tmp_path)
+    real = Path.iterdir
+
+    def refuse(self: Path):  # type: ignore[no-untyped-def]
+        if self == root:
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", refuse)
+    result = _run(data_dir, ["track", "import", str(root)])
+    assert result.exit_code == 1
+    assert "cannot read" in result.output
+    assert _applications(data_dir) == 0
 
 
 def test_a_directory_is_read_as_a_jobapps_applied_tree(tmp_path: Path) -> None:

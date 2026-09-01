@@ -2,8 +2,10 @@
 
 What is asserted here is the contract the CLI depends on, not implementation detail:
 
-* **the four buckets partition the input** — every row lands in exactly one, so an unmatched
-  or malformed row is counted rather than dropped;
+* **the five buckets partition the input** — every row lands in exactly one, so an unmatched,
+  malformed or ambiguous row is counted rather than dropped;
+* **a weak-key match that fans out writes nothing** — one (company, title) covering several
+  requisitions is refused and reported, because a wrongly-applied job is hidden for good;
 * **the two keys are not equally trusted** — `company_title` matches nothing unless the caller
   opts in, and the key that matched is recorded per row;
 * **importing twice writes nothing the second time** — no duplicate application, no bumped
@@ -222,30 +224,40 @@ def test_the_url_key_wins_when_both_could_match(engine: Engine, tmp_path: Path) 
 
 
 def test_the_buckets_partition_every_input_row(engine: Engine, tmp_path: Path) -> None:
+    """All five buckets, each populated, summing to the input. Literal counts, not a derived set.
+
+    The fifth (`ambiguous`) is what makes this more than a rename: a bucket that is never
+    exercised cannot show that a refusal is still counted rather than dropped.
+    """
     with engine.begin() as conn:
         _posting(conn, url="https://boards.example.test/acme/1", key="a")
         tracked = _posting(conn, url="https://boards.example.test/acme/2", key="b")
         create_application(conn, job_id=tracked, status="applied", source="user")
+        # Two distinct requisitions sharing one normalised (company, title) and no URL.
+        _posting(conn, company="Duplo Corp", title="Platform Engineer", key="c", url=None)
+        _posting(conn, company="Duplo Corp", title="Platform Engineer", key="d", url=None)
     path = _write(
         tmp_path, "h.csv",
         "company,title,url,status\n"
         "Acme,SWE,https://boards.example.test/acme/1,applied\n"    # matched
         "Acme,SWE,https://boards.example.test/acme/2,applied\n"    # already present
         "Acme,SWE,https://boards.example.test/nowhere,applied\n"   # unmatched
-        "Acme,SWE,https://boards.example.test/acme/1,ghosted\n",   # malformed
+        "Acme,SWE,https://boards.example.test/acme/1,ghosted\n"    # malformed
+        "Duplo Corp,Platform Engineer,,applied\n",                 # ambiguous
     )
     rows, malformed = parse_history(path)
     with engine.begin() as conn:
-        report = import_history(conn, rows, malformed, allow_title_match=False)
+        report = import_history(conn, rows, malformed, allow_title_match=True)
     counts = report.counts()
     assert counts == {
         ImportBucket.MATCHED: 1,
         ImportBucket.ALREADY_PRESENT: 1,
         ImportBucket.UNMATCHED: 1,
         ImportBucket.MALFORMED: 1,
+        ImportBucket.AMBIGUOUS: 1,
     }
-    assert sum(counts.values()) == len(rows) + len(malformed) == 4
-    assert [result.line_no for result in report.results] == [2, 3, 4, 5]
+    assert sum(counts.values()) == len(rows) + len(malformed) == 5
+    assert [result.line_no for result in report.results] == [2, 3, 4, 5, 6]
 
 
 def test_applied_at_moves_submitted_at_but_not_created_at(engine: Engine, tmp_path: Path) -> None:
@@ -328,10 +340,17 @@ def test_a_closed_posting_still_matches(engine: Engine, tmp_path: Path) -> None:
     assert report.results[0].job_ids == (job_id,)
 
 
-def test_one_row_matching_several_jobs_writes_to_all_of_them(
+def test_an_ambiguous_company_title_row_writes_nothing_at_all(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """The (company, title) duplicate class is real; suppressing one sibling is not enough."""
+    """The weak key fanning out is a REFUSAL, not a licence to mark every candidate applied.
+
+    Two distinct requisitions at one employer share a normalised title. Writing an application
+    for both hides a job the owner never applied to, permanently and silently — the queue never
+    shows it again and nothing reports that it was suppressed. Showing a duplicate is recoverable;
+    this is not. So the row writes nothing and is reported `ambiguous`, carrying both job ids so
+    the audit says exactly which requisitions it refused to choose between.
+    """
     with engine.begin() as conn:
         first = _posting(conn, company="Acme Inc", title="Software Engineer", key="a", url=None)
         second = _posting(conn, company="Acme, Inc.", title="Software Engineer", key="b", url=None)
@@ -340,6 +359,75 @@ def test_one_row_matching_several_jobs_writes_to_all_of_them(
     )
     with engine.begin() as conn:
         report = import_history(conn, rows, malformed, allow_title_match=True)
+    result = report.results[0]
+    assert result.bucket is ImportBucket.AMBIGUOUS
+    assert result.match_key is MatchKey.COMPANY_TITLE
+    assert result.job_ids == tuple(sorted((first, second)))
+    assert result.application_ids == ()
+    with engine.connect() as conn:
+        assert _count(conn, applications) == 0
+        assert _count(conn, application_events) == 0
+        assert applied_job_ids(conn) == {}
+
+
+def test_an_ambiguous_row_stays_ambiguous_on_re_import(engine: Engine, tmp_path: Path) -> None:
+    """Refusing is stable: the second run neither writes nor reclassifies the row."""
+    with engine.begin() as conn:
+        _posting(conn, company="Acme Inc", title="Software Engineer", key="a", url=None)
+        _posting(conn, company="Acme, Inc.", title="Software Engineer", key="b", url=None)
+    rows, malformed = parse_history(
+        _write(tmp_path, "h.csv", "company,title\nAcme Inc,Software Engineer\n")
+    )
+    with engine.begin() as conn:
+        first = import_history(conn, rows, malformed, allow_title_match=True)
+    with engine.begin() as conn:
+        second = import_history(conn, rows, malformed, allow_title_match=True)
+    assert first.results[0].bucket is ImportBucket.AMBIGUOUS
+    assert second.results[0].bucket is ImportBucket.AMBIGUOUS
+    with engine.connect() as conn:
+        assert _count(conn, applications) == 0
+
+
+def test_an_ambiguous_row_is_refused_even_when_every_candidate_is_already_tracked(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Precedence: ambiguity is judged BEFORE the write loop, so it outranks `already_present`.
+
+    The refusal is about the match being untrustworthy, not about what the store already holds —
+    and judging it first is what keeps the bucket stable across re-runs.
+    """
+    with engine.begin() as conn:
+        first = _posting(conn, company="Acme Inc", title="Software Engineer", key="a", url=None)
+        second = _posting(conn, company="Acme, Inc.", title="Software Engineer", key="b", url=None)
+        create_application(conn, job_id=first, status="applied", source="user")
+        create_application(conn, job_id=second, status="applied", source="user")
+    rows, malformed = parse_history(
+        _write(tmp_path, "h.csv", "company,title\nAcme Inc,Software Engineer\n")
+    )
+    with engine.begin() as conn:
+        report = import_history(conn, rows, malformed, allow_title_match=True)
+    assert report.results[0].bucket is ImportBucket.AMBIGUOUS
+    assert report.results[0].application_ids == ()
+
+
+def test_a_url_key_that_covers_several_jobs_still_writes_to_all_of_them(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The URL key is exact, so a fan-out on it is one posting seen twice, not two requisitions.
+
+    Deliberately NOT changed alongside the company/title refusal: `normalize_url` folding two
+    stored postings onto one key means the same application really does cover both.
+    """
+    with engine.begin() as conn:
+        first = _posting(conn, key="a", url="https://boards.example.test/acme/1")
+        second = _posting(conn, key="b", url="https://www.boards.example.test/acme/1/?utm_source=x")
+    rows, malformed = parse_history(
+        _write(tmp_path, "h.csv", "company,title,url\nAcme,SWE,https://boards.example.test/acme/1\n")
+    )
+    with engine.begin() as conn:
+        report = import_history(conn, rows, malformed, allow_title_match=False)
+    assert report.results[0].bucket is ImportBucket.MATCHED
+    assert report.results[0].match_key is MatchKey.URL
     assert report.results[0].job_ids == tuple(sorted((first, second)))
     assert len(report.results[0].application_ids) == 2
 
