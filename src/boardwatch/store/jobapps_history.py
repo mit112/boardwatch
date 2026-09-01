@@ -30,6 +30,7 @@ from pathlib import Path
 
 from boardwatch.store.application_history import (
     DEFAULT_STATUS,
+    HistoryFormatError,
     HistoryRow,
     MalformedReason,
     MalformedRow,
@@ -108,17 +109,32 @@ def _read_apply_url(folder: Path) -> str | None:
 
 
 def read_jobapps_dir(path: Path) -> tuple[list[HistoryRow], list[MalformedRow]]:
-    """One row per immediate subdirectory of `path` — job-apps' `_applied/` layout.
+    """One row per immediate real subdirectory of `path` — job-apps' `_applied/` layout.
 
     Non-directory entries (job-apps leaves a `.DS_Store` alongside the folders) are skipped;
     they were never an application record, so they are not counted at all — counting them
     would inflate the "how many folders" denominator with entries that were never candidates.
-    Every subdirectory becomes exactly one `HistoryRow` or one `MalformedRow`: the same closed
-    contract `parse_history` gives a CSV/JSONL row, so nothing here is silently dropped.
+    **A symlinked entry is skipped on the same ground**, and for a second reason: `is_dir()`
+    follows links, and the sibling job-apps directory this tree sits in holds its `_skipped/`
+    verdicts — roles it decided against and the owner never applied to. A link is the one
+    entry whose target is not under `_applied/` by construction, so following it could mark a
+    never-applied role as applied, which hides it from the queue for good.
+
+    Every remaining subdirectory becomes exactly one `HistoryRow` or one `MalformedRow`: the
+    same closed contract `parse_history` gives a CSV/JSONL row, so nothing here is dropped.
+
+    A directory that cannot be listed raises `HistoryFormatError` — the same type
+    `parse_history` raises for a file it cannot read, which is what `track import` catches.
+    Typed at the raise site: no caller classifies this by matching an errno or a message.
     """
     rows: list[HistoryRow] = []
     malformed: list[MalformedRow] = []
-    folders = sorted(child for child in path.iterdir() if child.is_dir())
+    try:
+        folders = sorted(
+            child for child in path.iterdir() if not child.is_symlink() and child.is_dir()
+        )
+    except OSError as exc:
+        raise HistoryFormatError(f"{path}: the directory cannot be listed ({exc}).") from exc
     for line_no, folder in enumerate(folders, start=1):
         company, title, header_url = _read_header(folder / "job_description.txt")
         # The webloc is the link job-apps actually opened to apply, so it leads; the header's

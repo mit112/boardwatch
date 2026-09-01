@@ -110,7 +110,12 @@ class MalformedReason(StrEnum):
 
 
 class HistoryFormatError(ValueError):
-    """The file as a whole cannot be read — wrong suffix, or a header with no key column."""
+    """The input as a whole cannot be read.
+
+    A file with the wrong suffix or a header carrying no key column, or a directory that
+    cannot be listed. One type because there is one thing the caller can do about any of
+    them: report the path and stop, having read nothing.
+    """
 
 
 @dataclass(frozen=True)
