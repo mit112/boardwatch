@@ -163,7 +163,8 @@ def import_(
         False,
         "--allow-title-match",
         help="Also match on (company, title). Weaker than the url key: one title at a large "
-        "employer can cover several different requisitions.",
+        "employer can cover several different requisitions, and such a row is reported "
+        "'ambiguous' and written for none of them.",
     ),
     report: Path | None = typer.Option(  # noqa: B008
         None, "--report", help="Write a per-row JSONL audit here: bucket, matched key, job ids."
@@ -209,7 +210,11 @@ def import_(
         with report.open("w", encoding="utf-8") as stream:
             write_import_report(result.results, stream)
         console.print(f"per-row audit written to {report}")
-    elif counts[ImportBucket.UNMATCHED] or counts[ImportBucket.MALFORMED]:
+    elif (
+        counts[ImportBucket.UNMATCHED]
+        or counts[ImportBucket.MALFORMED]
+        or counts[ImportBucket.AMBIGUOUS]
+    ):
         console.print(
             "re-run with --report <path> to see which rows did not land and why."
         )

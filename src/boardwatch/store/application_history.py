@@ -25,6 +25,11 @@ Two keys, kept apart and never blended, because they have different confidence:
 * `company_title` is **weaker** — a large employer reposts one title across many requisitions,
   so it can match a different req at the same company. It is off unless the caller passes
   `allow_title_match`, and the key that matched is recorded per row so a human can check it.
+  **When it resolves to more than one job the row writes nothing** and is reported `ambiguous`:
+  the cost of guessing wrong is asymmetric. A job wrongly marked applied is dropped from the
+  queue for good and nothing ever reports that it was, whereas a job left unmarked merely
+  re-surfaces. Refusing keeps the loss recoverable. The `url` key is exact, so a fan-out there
+  is one posting stored twice rather than two requisitions, and it still writes to all of them.
 
 Matching runs against **every** posting, open or closed. `applications` records what the user
 did, keyed on the canonical `job_id`, and restricting the index to open postings would make
@@ -69,17 +74,22 @@ DEFAULT_STATUS: ApplicationStatus = "applied"
 
 
 class ImportBucket(StrEnum):
-    """Where an input row ended up. Closed: the four are exhaustive and disjoint.
+    """Where an input row ended up. Closed: the five are exhaustive and disjoint.
 
     A row matching several jobs where some already carry an application is `MATCHED` when this
     import wrote at least one row and `ALREADY_PRESENT` when it wrote none, so the buckets
     still sum to the input and "how many did this import write" stays answerable.
+
+    `AMBIGUOUS` is judged before either of those and outranks both: it says the *match* could
+    not be trusted, which is a fact about the key rather than about what the store already
+    holds, so a re-import classifies the same row the same way whatever was written meanwhile.
     """
 
     MATCHED = "matched"
     ALREADY_PRESENT = "already_present"
     UNMATCHED = "unmatched"
     MALFORMED = "malformed"
+    AMBIGUOUS = "ambiguous"
 
 
 class MatchKey(StrEnum):
@@ -299,6 +309,10 @@ def import_history(
 ) -> ImportReport:
     """Write an application for every matched job that does not already carry one.
 
+    Except when the weak key fanned out: a `company_title` match covering several jobs writes
+    nothing and is reported `ambiguous`. Marking a job applied hides it from the queue for
+    good, so guessing which requisition the row meant is the one error this cannot take back.
+
     Idempotent on the job, not on the file: a job with **any** application — at any status,
     including `withdrawn` — is left alone and reported `already_present`. Two consequences,
     both deliberate. Re-importing the same file writes nothing and never bumps `attempt_no`.
@@ -327,6 +341,21 @@ def import_history(
             )
             continue
         match_key, job_ids = found
+        if match_key is MatchKey.COMPANY_TITLE and len(job_ids) > 1:
+            # Refuse rather than guess. Both ids are kept so the audit names the requisitions
+            # this declined to choose between; resolving it means supplying a url for the row.
+            results.append(
+                RowResult(
+                    line_no=row.line_no,
+                    bucket=ImportBucket.AMBIGUOUS,
+                    company=row.company,
+                    title=row.title,
+                    url=row.url,
+                    match_key=match_key,
+                    job_ids=tuple(sorted(job_ids)),
+                )
+            )
+            continue
         written: list[int] = []
         for job_id in sorted(job_ids):
             if get_applications(conn, job_id):
