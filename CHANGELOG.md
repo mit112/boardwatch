@@ -110,6 +110,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A job description the tool barely understood no longer counts as a perfect skills match.** How
+  well a posting matches your skills was worked out as a plain fraction — of the skills recognised in
+  this job description, how many are yours — so a description yielding a single recognised skill, and
+  that skill being one of yours, read as a flawless match on the largest single part of the score.
+  That is one observation, not a fit, and it was putting jobs like "Technical Product Owner", "Global
+  Financial Crimes — Compliance Testing" and "Enterprise Mobility Engineer" near the top of the
+  shortlist: 16 of the top 100 were postings the tool had read two or fewer skills out of. The
+  fraction is now held toward neutral in proportion to how little evidence stands behind it, which
+  leaves a well-described job essentially untouched (14 of 27 skills moves by under a thousandth) and
+  stops a one-word match from outranking it. Measured over the 5,029 postings the last run could
+  actually have delivered, the share of the shortlist that is genuinely a software role rises from
+  90% to 100% at the top 40 and from 80% to 100% at the top 100 — which matters more now the daily
+  limit has gone from 40 to 100, since the extra 60 slots were where those postings sat.
+
 - **The job-apps lane no longer reports a failure when you have simply worked through the queue.**
   The lane reads a directory, so the failure it has to catch is the queue being renamed or moved —
   which looks exactly like a quiet day. It told those apart by counting records, on the assumption
