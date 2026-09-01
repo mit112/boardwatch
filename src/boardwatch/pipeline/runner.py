@@ -47,10 +47,16 @@ from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneResult
-from boardwatch.lanes.facets import role_facets
+from boardwatch.lanes.facets import (
+    MINED_FACET_WINDOW_DAYS,
+    LaneFacets,
+    mined_facet_candidates,
+    role_facets,
+    surviving_mined_facets,
+)
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.jobapps import JobAppsLane
-from boardwatch.lanes.linkedin import LinkedInLane
+from boardwatch.lanes.linkedin import LinkedInLane, search_urls
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.corpus_regression import check_corpus_regression
@@ -102,6 +108,7 @@ from boardwatch.scan.coordinator import (
 )
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
+from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
     RUN_FAILED,
@@ -153,12 +160,17 @@ DEFAULT_TOP_N = 10
 # `lane_posting_budget`, the ceiling on JD-body GETs it may make in a run — reaches it without
 # the lane importing config itself. `LaneResult` is the only thing it hands back.
 #
-# The second argument is the run's role facets, and it is passed in for a reason a default could
-# not serve: they are derived from the user's PROFILE row, which lives in the store, and a lane
-# that reached into the store to find its own search terms would be both untestable and the one
-# place a hardcoded role query could hide. Explicit at every registration site, so a new lane
-# cannot quietly forget to be multi-tenant.
-LaneFactory = Callable[[Settings, tuple[str, ...]], Lane]
+# The second argument is the run's facets, and it is passed in for a reason a default could
+# not serve: they are derived from the user's PROFILE row and her own delivered leads, both of
+# which live in the store, and a lane that reached into the store to find its own search terms
+# would be both untestable and the one place a hardcoded role query could hide. Explicit at every
+# registration site, so a new lane cannot quietly forget to be multi-tenant.
+#
+# The two halves arrive APART. Every faceted lane gets `profile` — those are the titles the user
+# asked for. `mined` is this repo's inference from her delivered leads, and it goes only to the
+# lane whose own conversion record is the evidence for it, so mining cannot quietly spend another
+# lane's request budget.
+LaneFactory = Callable[[Settings, LaneFacets], Lane]
 
 # The lane registry: the name a user writes in `settings.lanes_enabled` -> a factory for it. A
 # MAPPING and not a branch inside `_run_lanes`, so a second lane is one row here and no change
@@ -173,14 +185,19 @@ LaneFactory = Callable[[Settings, tuple[str, ...]], Lane]
 # map runs until an operator names it. Registration only makes a lane reachable.
 LANE_FACTORIES: dict[str, LaneFactory] = {
     HiringCafeLane.name: lambda settings, facets: HiringCafeLane(
-        posting_budget=settings.lane_posting_budget, search_facets=facets
+        posting_budget=settings.lane_posting_budget, search_facets=facets.profile
     ),
     # Only LinkedIn is handed `lane_search_pages`: its `start=` is a probed, working item offset,
     # while hiring.cafe has no recorded paging parameter and its `?page=` form is disallowed by
     # `robots.txt`, so passing the setting there would promise depth the lane cannot deliver.
+    #
+    # It is also the only lane handed the MINED facets, and for the matching reason: the trial
+    # record that prunes a barren mined term is this lane's own `keywords=` provenance
+    # (`store.facet_queries`). Handing them to a lane whose acquisitions leave no such record
+    # would buy searches nothing could ever measure or retire.
     LinkedInLane.name: lambda settings, facets: LinkedInLane(
         posting_budget=settings.lane_posting_budget,
-        search_facets=facets,
+        search_facets=facets.profile + facets.mined,
         search_pages=settings.lane_search_pages,
     ),
     # Reads job-apps' discovery tree off the local disk (D-385). It takes neither the posting
@@ -431,7 +448,7 @@ def _run_lanes(
         return reports, errors
     # Read ONCE for the stage, not once per lane: it is the same profile for every lane, and a
     # second read could only differ by racing a `profile set` mid-run.
-    facets = _profile_role_facets(engine)
+    facets = _lane_facets(engine)
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
@@ -495,19 +512,33 @@ def _run_lanes(
     return reports, errors
 
 
-def _profile_role_facets(engine: Engine) -> tuple[str, ...]:
-    """The user's target titles as lane search facets, or none if there is no profile yet.
+def _lane_facets(engine: Engine) -> LaneFacets:
+    """The run's two facet sources: the user's stated targets, and the ones her outcomes support.
 
     An absent profile is every store before onboarding runs, and an absent one yields NO facets
     rather than an error: a lane is additive breadth, so it must still run unfaceted, exactly as
     it did before the facet existed. `getattr` matches `rank.heuristic`'s read of the same
     column, which is nullable.
+
+    Mining runs on the SAME connection and is evidence-gated end to end, so a store with no
+    delivered leads yields no mined facets and the lanes ask exactly what they asked before.
+    Three reads, in the order the two rules need them: what the profile asks for, what the
+    delivered leads support, and — for those candidates only — what each has already bought.
     """
+    cutoff = utcnow() - timedelta(days=MINED_FACET_WINDOW_DAYS)
     with engine.connect() as conn:
         row = get_profile(conn)
-    if row is None:
-        return ()
-    return role_facets(getattr(row, "target_titles_json", None))
+        profile = role_facets(getattr(row, "target_titles_json", None)) if row is not None else ()
+        candidates = mined_facet_candidates(delivered_postings(conn, since=cutoff), profile)
+        if not candidates:
+            return LaneFacets(profile=profile)
+        # Built by the lane's own request builder rather than reassembled here, so the string a
+        # trial is looked up under is byte-identical to the one the lane would request. A second
+        # statement of that URL shape here could drift from the first without failing anything.
+        urls = dict(zip(candidates, search_urls(candidates), strict=True))
+        by_url = facet_trials(conn, tuple(urls.values()), since=cutoff)
+        trials = {term: by_url[url] for term, url in urls.items() if url in by_url}
+    return LaneFacets(profile=profile, mined=surviving_mined_facets(candidates, trials))
 
 
 def _collect_lane(

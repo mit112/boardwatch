@@ -18,6 +18,22 @@ All notable changes to this project are documented here. The format follows
   counted and listed as unmatched rather than quietly dropped. Running the import twice changes
   nothing the second time. No application date is invented: the folders only record when the résumé
   was written, not when you applied, so the import date is used rather than a fabricated one.
+- **The LinkedIn lane now also searches for the job titles your own delivered leads actually had.**
+  Until now it could only ask for the target titles you typed into your profile — which is what you
+  could write down before running anything, not what the market calls the jobs you get. Of the 957
+  postings this program has built a lead for, 26 distinct title spellings recurred at two or more
+  employers, and every one of them was absent from the profile entirely; each was a search the lane
+  never made. Those titles are now mined from your own store — a title counts only if leads were
+  built for it at two or more separate employers, so one employer's house style never becomes a
+  query — ranked by that evidence, and capped at 8 on top of your own facets, which is at most 40
+  extra search requests (about 40 seconds) on a lane already making around 198. A mined term this
+  lane has been credited with 150 postings and that has never once produced a lead is dropped; at
+  the weakest conversion rate any of your current facets manages, that is a 0.3% chance of dropping
+  one that was working. Both halves read a 30-day window, so a term you have moved on from ages out
+  on its own and a term dropped for being barren can earn its way back. Your stated target titles
+  are never displaced and never pruned. Nothing is written down: the terms are recomputed each run
+  from the store, so no title of yours enters the repository, and a store that has not built any
+  leads yet mines nothing and searches exactly as it did before.
 
 - **A closed posting now drains out of the apply queue into its own `_closed` folder.** A quarter of
   the queue was dead: 52 of 203 top-level folders named a posting the board had already taken down,
