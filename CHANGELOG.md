@@ -147,21 +147,25 @@ All notable changes to this project are documented here. The format follows
   was the wrong test: nothing ever fetches from a dereferenced link — it is only ever used to work
   out whether two sightings of a job are the same job — so what had to be readable was the
   requisition number, and that is printed at the end of every public Workday link. The evidence was
-  already here: **93,044 real Workday links in this instance's own store, on which reading the
-  requisition number back out of the link matches the number the board itself reported, 93,044 times
-  out of 93,044**, plus an independent 4,407 links from job-apps' own records spanning 606 employers
-  against our 117, of which every one that points at an actual job agrees. **The measured effect:
-  568 jobs job-apps found are now recognised as ones already on a watched board instead of being
-  listed a second time.**
+  already here: **93,044 real Workday links in this instance's own store, of which 87,413 are read
+  successfully and every single one of those matches the requisition number the board itself
+  reported — no mismatches at all** — plus an independent 4,521 links from job-apps' own records
+  spanning 606 employers against our 117, of which 4,456 are read. **The measured effect: 589 jobs
+  job-apps found are now recognised as ones already on a watched board instead of being listed a
+  second time.**
 
   Three kinds of link still refuse rather than guess, each for a measured reason. An employer whose
   careers page is itself named "Jobs" (Red Hat, PayPal, Carrier, Brandeis) puts a word in the link
   that the address reader already treats as decoration, so it would read the job's CITY as the name
   of the careers page and file the job under an employer that does not exist — 157 links in this
-  store take that path and are refused. A link with an unfamiliar extra step in it refuses, because
-  reading the wrong part as the requisition number would silently overwrite a real job. And Workday's
+  store take that path and are refused, along with 5,472 links on Workday's second address style and
+  a handful more; 5,631 of the 93,044 are declined in total rather than guessed at. A link where more
+  than one part could be read as the requisition number refuses too — for
+  `.../job/Engineer_REQ999/apply_REQ123` the last part is not the job's number, and taking it would
+  silently overwrite a different real job. Two Lowe's links are given up to that rule because their
+  location text happens to end in a number; that is the deliberate price of not guessing. And Workday's
   second address style is left alone: the same employer is already on file under the first style, so
-  reading the second would create a duplicate rather than remove one. A further **292** jobs are not
+  reading the second would create a duplicate rather than remove one. A further **307** jobs are not
   recognised only because the careers-page name is written in different capitals in the two places;
   that is counted and left alone, since changing it would rewrite how every Workday board on file is
   addressed.

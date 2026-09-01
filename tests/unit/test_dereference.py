@@ -172,10 +172,17 @@ def test_a_workday_reference_with_no_digit_bearing_token_refuses() -> None:
     digit requirement is what refuses it. This is the Workday analogue of the SmartRecruiters
     UUID case above.
     """
+    # This URL REACHES the workday branch and its last segment DOES carry an underscore, so
+    # the only thing refusing it is the digit requirement. The earlier version of this test
+    # used `M_tx` (refused for having no `job` segment) and `.../Engineer` (refused for having
+    # no underscore) -- both would have passed against the unsafe digitless `_([^_]+)$`.
+    with pytest.raises(UnresolvablePostingURL, match="not readable"):
+        parse_posting_target(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/Remote/Engineer_Staff"
+        )
+    # And the board-root form, which must refuse before the pattern is ever consulted.
     with pytest.raises(UnresolvablePostingURL):
         parse_posting_target("https://modernatx.wd1.myworkdayjobs.com/M_tx")
-    with pytest.raises(UnresolvablePostingURL):
-        parse_posting_target("https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/Remote/Engineer")
 
 
 def test_the_workday_reference_pattern_matches_the_providers_own_id_rule() -> None:
@@ -229,6 +236,55 @@ def test_a_workday_path_longer_than_the_measured_shape_refuses() -> None:
             "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/Remote-USA"
             "/Senior-Platform-Engineer_JR1000001-1/apply"
         )
+
+
+def test_a_second_reference_looking_segment_makes_the_workday_url_ambiguous() -> None:
+    """Two segments after `job` is `{location}/{ref}` in every measured URL -- but the shape
+    alone cannot tell that from `{ref}/{trailing_chrome}`, and reading the last segment of
+    `.../job/Engineer_REQ999/apply_REQ123` yields REQ123 while the posting is REQ999. Ingesting
+    that overwrites a real REQ123 as a revision, which is the defect class this module exists
+    to prevent and the reason lever, ashby and workable refuse a trailing chrome segment.
+
+    The length bound does NOT catch this: two post-`job` segments is a legal shape. Only
+    requiring the reference to be unambiguous does.
+
+    Measured cost: 2 of 91,871 real URLs, both Lowe's, whose location segment ends in a
+    digit-bearing token. Given up deliberately -- identity minting fails safe.
+    """
+    with pytest.raises(UnresolvablePostingURL, match="ambiguous"):
+        parse_posting_target(
+            "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/Engineer_REQ999/apply_REQ123"
+        )
+
+
+def test_an_unmeasured_segment_before_the_workday_career_site_refuses() -> None:
+    """The prefix is closed, not only the suffix. `slug_from_path` skips ANY number of chrome
+    or locale-shaped segments, so without this rule `login/12-34/AcmeCareers/job/...` resolves
+    as though it were a canonical URL -- which would contradict the closed-catalog invariant
+    this module states about itself.
+
+    The two forms that DO occur are admitted, and pinned here so the rule is not tightened
+    into a regression: a locale, and a repeat of the career site itself (measured:
+    `SemtechCareers/SemtechCareers`, `en-US/wellsfargojobs/wellsfargojobs`).
+    """
+    with pytest.raises(UnresolvablePostingURL, match="only a locale or a repeated career site"):
+        parse_posting_target(
+            "https://acme.wd5.myworkdayjobs.com/login/12-34/AcmeCareers/job/Austin/Eng_REQ999"
+        )
+
+    repeated = parse_posting_target(
+        "https://semtech.wd1.myworkdayjobs.com/SemtechCareers/SemtechCareers"
+        "/job/CAN---Richmond-BC/Product-Manager_REQ3"
+    )
+    assert repeated.slug == "semtech.wd1.myworkdayjobs.com/semtech/SemtechCareers"
+    assert repeated.posting_ref == "REQ3"
+
+    localed = parse_posting_target(
+        "https://wf.wd1.myworkdayjobs.com/en-US/wellsfargojobs/wellsfargojobs"
+        "/job/ALBUQUERQUE-NM/Business-Banker_R-568"
+    )
+    assert localed.slug == "wf.wd1.myworkdayjobs.com/wf/wellsfargojobs"
+    assert localed.posting_ref == "R-568"
 
 
 def test_a_workday_url_on_the_myworkdaysite_host_still_raises_unknown_board_url() -> None:

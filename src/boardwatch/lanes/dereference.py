@@ -8,11 +8,10 @@ run_scan already turns it into that company's whole board with no new code. Smar
 and Workday are different: they are the only two providers that define a `_detail_url`
 method, because their board list omits the body and a second per-posting request is
 needed to get one. Dereferencing a posting LINK is therefore only necessary for those two
-— and, as of this module, NEITHER of them can actually be dereferenced yet. Both are
-pending a live probe (see the SmartRecruiters and Workday sections below). The utility's
-present value is `parse_posting_target` for the four body-inlined providers, where a
-recovered `provider_posting_id` lets a later aggregator-sourced posting converge with a
-board scan through `UNIQUE(company_id, provider_posting_id)` instead of duplicating it.
+— and BOTH are now dereferenced, each on measured evidence rather than a live probe (see the
+SmartRecruiters and Workday sections below). All six providers resolve. Across every one, a
+recovered `provider_posting_id` lets a later aggregator-sourced posting converge with a board
+scan through `UNIQUE(company_id, provider_posting_id)` instead of duplicating it.
 
 This module supplies the missing half: reading the posting reference a detail fetch would
 need back out of a posting URL, reusing parse_board_target for host/slug matching rather
@@ -87,9 +86,18 @@ carried verbatim in the public URL's last segment.
 
 Measured, on the same bar SmartRecruiters had to clear: **93,044 provider-supplied
 `externalUrl`s in the live store, on which the extracted reference equals that company's
-stored `provider_posting_id` 93,044 out of 93,044**, and an INDEPENDENT 4,407 Workday URLs
-from job-apps' ledger across 606 distinct hosts (against our own 117), of which 4,398 yield
-the same reference and the 9 that do not are board roots carrying no posting at all. The
+stored `provider_posting_id` 93,044 out of 93,044**, with ZERO mismatches, counted through this
+function rather than through the pattern it uses.
+
+Measured through the same function, the FULL disposition is not all-resolves and should not be
+read as one (all figures 2026-09-01; the independent set is live and grows daily). Our store,
+93,044 URLs: **87,413 resolve and match the stored id with ZERO mismatches**, 5,472 raise
+`UnknownBoardURL` (the `myworkdaysite.com` family), 159 are refused — 157 by the site guard and
+2 by the ambiguity rule. The INDEPENDENT set is 4,521 Workday URLs from job-apps' ledger across
+606 distinct hosts against our own 117: **4,456 resolve, 48 are refused, 17 raise**. Refusals
+are not all board roots; most are the site-guard class below. The reference PATTERN agrees with
+`_posting_id` on 4,398 of 4,407 last segments as sampled, which is a narrower claim than
+"4,398 identities were produced" and is NOT evidence of coverage — coverage is the 4,456. The
 detail-fetch contract remains unproven and nothing here lifts it.
 
 THE SHAPE IS POSITIONAL, NOT A `_POSTING_PATH_SHAPES` ROW, and that is why Workday needs a
@@ -119,9 +127,9 @@ TWO KNOWN LIMITS, both measured, neither a guess. (1) `myworkdaysite.com` keeps 
 same tenant is stored under the other host, so `wd5.myworkdaysite.com/recruiting/chewy/External`
 would still not equal the stored `chewy.wd5.myworkdayjobs.com/chewy/External`. (2) Site case
 is preserved by `workday.split_slug` on purpose, so a URL spelling `Aderant_External_Careers`
-does not converge with a row stored `aderant_external_careers`. Of 4,344 independent Workday
-URLs that parse to a reference, **568 converge onto a posting the board scan already holds,
-and 292 more are lost to site case alone** — sized here, not fixed, because normalizing it
+does not converge with a row stored `aderant_external_careers`. Of 4,456 independent Workday
+URLs that parse to a reference, **589 converge onto a posting the board scan already holds,
+and 307 more are lost to site case alone** — sized here, not fixed, because normalizing it
 re-keys 54 stored slugs and their cache keys and reverses a deliberate decision.
 """
 
@@ -273,15 +281,48 @@ def _workday_posting_target(url: str, slug: str) -> PostingTarget:
             f"workday posting URLs are {{site}}/job/[{{location}}/]{{posting_ref}}; "
             f"{url!r} is not that shape"
         )
+    # The PREFIX is closed too, not just the suffix. `slug_from_path` skips ANY number of chrome
+    # or locale-shaped segments, so without this every one of them is silently tolerated and
+    # `login/12-34/AcmeCareers/job/...` resolves as though it were canonical. Measured over
+    # 91,871 real URLs the only segments that ever precede the career site are a locale
+    # (`en-US`) and a repeat of the site itself (`SemtechCareers/SemtechCareers`,
+    # `en-US/wellsfargojobs/wellsfargojobs`); nothing else occurs, so nothing else is admitted.
+    # Refusing the rest costs 0 of 91,871.
+    if not all(
+        (len(s) == 5 and s[2] == "-") or s == segments[verb - 1] for s in segments[: verb - 1]
+    ):
+        raise UnresolvablePostingURL(
+            f"workday posting URLs carry only a locale or a repeated career site before "
+            f"{_WORKDAY_VERB!r}; {url!r} carries {segments[: verb - 1]!r}"
+        )
     # THE GUARD, and the reason this is not a two-line change. `slug_from_path` skips any
-    # segment in workday's `_CHROME_SEGMENTS`, which contains `jobs` — so a tenant whose
-    # career site is named `Jobs` (redhat, paypal, brandeis, carrier) has its LOCATION read
-    # as the site and mints a company row for a board that does not exist. Refusing on the
-    # mismatch is what keeps an unknown shape raising instead of converging onto a fiction.
+    # segment in workday's `_CHROME_SEGMENTS` — `wday`, `cxs`, `job`, `jobs`, `login`,
+    # `details` — and any locale-shaped one, so a tenant whose career site is named any of
+    # those has its LOCATION read as the site and mints a company row for a board that does
+    # not exist. `jobs` is the case with live evidence (redhat, paypal, brandeis, carrier;
+    # 157 URLs in the store, 38 independent), but a site named `Login` or `ab-cd` fails the
+    # same way and `split_slug` permits all of them. Refusing on the mismatch keeps an unknown
+    # shape raising instead of converging onto a fiction; it is a refusal, NOT a repair, and
+    # `posting_identity` tier 2 still mints the wrong slug for these.
     if segments[verb - 1] != slug.rsplit("/", 1)[-1]:
         raise UnresolvablePostingURL(
             f"workday career site {slug.rsplit('/', 1)[-1]!r} is not the segment before "
             f"{_WORKDAY_VERB!r} ({segments[verb - 1]!r}) in {url!r}"
+        )
+    # AMBIGUITY. Two segments after `job` is `{location}/{ref}` in every measured URL, but
+    # the shape alone cannot distinguish it from `{ref}/{trailing_chrome}`: given
+    # `.../job/Engineer_REQ999/apply_REQ123`, reading the last segment yields REQ123 while the
+    # posting is REQ999, and ingesting that overwrites a real REQ123 as a revision. So the
+    # reference must be UNAMBIGUOUS -- no earlier post-`job` segment may also look like one.
+    # Measured cost of the refusal: 2 of 91,871 real URLs, both Lowe's, whose LOCATION segment
+    # (`LWS_USA_LPS---Rancho-Cucamonga-CA-4546`) happens to end in a digit-bearing token. Their
+    # last segment does resolve correctly, so those two are given up deliberately -- identity
+    # minting fails safe, and 0.002% is the price of not depending on trailing chrome never
+    # carrying an underscore.
+    if any(_POSTING_REF_PATTERNS["workday"].search(s) for s in segments[verb + 1 : -1]):
+        raise UnresolvablePostingURL(
+            f"workday posting reference is ambiguous in {url!r}: more than one segment after "
+            f"{_WORKDAY_VERB!r} reads as a reference"
         )
     matched = _POSTING_REF_PATTERNS["workday"].search(segments[-1])
     if matched is None:
