@@ -671,6 +671,16 @@ class HiringCafeLane:
                 # decode failure as a snapshot with no postings rather than by raising.
                 tally.record("fetch_gone" if snapshot.status != "failed" else "extracted_empty")
                 continue
+            if not posting.body_text.strip():
+                # The board answered, and answered with NO BODY. Dropping the HTML login-wall
+                # and quality-floor checks is defensible for a provider's structured field --
+                # it is the same bytes the scan stage stores without them -- but an ABSENT body
+                # is not a body, and reporting it as resolved is how a lane reads healthy while
+                # delivering nothing judgeable. The scan path calls that `extracted_empty` and
+                # so does this one; the keystone invariant needs a real span to quote, and
+                # there is none here.
+                tally.record("extracted_empty")
+                continue
             # `body_inline`, not `body_fetched`: the body arrived WITH the listing, which is
             # the distinction the two outcomes exist to record. The request was one per
             # company, not one per posting.

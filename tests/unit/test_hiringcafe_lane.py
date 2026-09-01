@@ -511,6 +511,32 @@ def test_the_request_budget_caps_board_gets_and_counts_what_it_skipped(tmp_path)
 
 
 @respx.mock
+def test_a_board_row_with_an_empty_body_is_not_reported_as_resolved(tmp_path):
+    """An ABSENT body is not a body, however structured the field it arrived in.
+
+    The old two-hop path ran `assess_body` and rejected this as `extracted_empty`. Taking the
+    provider's row verbatim dropped that floor along with the login-wall check, and an empty
+    `content` then stored a posting with a blank body, counted `body_inline`, and raised no
+    outage. The keystone invariant needs a real span to quote, and a blank body has none.
+    """
+    hits = _reachable("acme-blank", range(2))
+    _mock_search(hits)
+    # Derived from the pinned greenhouse capture and then BLANKED, so the row is otherwise a
+    # real one: same shape, same ids, only the body emptied.
+    blanked = json.loads(greenhouse_board_payload(hits))
+    for job in blanked["jobs"]:
+        job["content"] = ""
+    _mock_boards(hits, content=json.dumps(blanked).encode())
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.tally.counts["body_inline"] == 0
+    assert result.tally.counts["extracted_empty"] == 2
+    assert result.tally.resolved == 0
+    assert result.snapshots == ()
+
+
+@respx.mock
 def test_an_unbodyable_company_never_spends_the_company_cap(tmp_path):
     """The cap rations REQUESTS, and no request is reachable for an unbodyable company.
 
