@@ -116,6 +116,33 @@ All notable changes to this project are documented here. The format follows
   one: it shows the review lane alone and hides the apply queue, and re-scopes the "Showing N of M"
   readout to that lane (D-378).
 
+- **boardwatch can now search LinkedIn city by city, which is the only way it reaches a large set
+  of jobs a nationwide search never returns at all.** Its LinkedIn search sent no location, on a
+  belief recorded in the code that adding one "was measured to return an id-identical set". That
+  belief was false, and re-running the measurement against the same endpoint is what showed it: a
+  nationwide search returned 10 jobs, **none** of them in Texas; the same search pinned to Austin
+  returned 10 that shared **not one job** with it, 9 of them in Texas; pinned to Boston, again
+  nothing shared, and 10 of 10 in Massachusetts. Pinning a location does not narrow the nationwide
+  result — it returns a different set of jobs, and those jobs were unreachable before. You give
+  boardwatch a list of cities, and each run it works through some combinations of your target job
+  titles crossed with those cities, so the whole grid is covered over several **runs** rather than
+  bought all at once. (If you list few enough titles and cities that the grid fits inside one run's
+  allowance, it simply buys the whole grid every run.) Switch it on with, for example,
+  `boardwatch config set lane_search_hubs '["Austin, TX", "Boston, MA"]'`;
+  `lane_hub_combos_per_run` (default 12) sets how many combinations one run buys and
+  `lane_hub_distance_miles` (default 25) how far around each city to look. **Left unset, which is
+  the default, nothing about your runs changes** — no extra requests, and no country's cities are
+  assumed on your behalf.
+
+  **Two things to know before switching it on, because neither is obvious.** Each combination is
+  searched to the same depth as an ordinary search, so a run's extra requests are roughly
+  `lane_hub_combos_per_run` × `lane_search_pages`, not `lane_hub_combos_per_run`. And the point of
+  reaching new cities is reaching new **employers**, which is limited separately by
+  `lane_new_companies_per_run`: at its default of 10, LinkedIn's ordinary searches already offer up
+  far more new employers than that every run — 267 and 344 were turned away in the last two runs —
+  so turning hubs on without also raising that number buys extra requests and almost no new
+  employers.
+
 ### Changed
 
 - **The hiring.cafe search no longer takes 30 runs to work through the employers it already

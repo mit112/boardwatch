@@ -35,6 +35,20 @@ def test_every_lane_ships_off(cfg: Path) -> None:
     assert settings.lanes_enabled == ()
 
 
+def test_linkedin_hub_nets_ship_inert_with_user_independent_defaults(cfg: Path) -> None:
+    settings = load_settings(data_dir=None)
+
+    assert settings.lane_search_hubs == ()
+    assert settings.lane_hub_combos_per_run == 12
+    assert settings.lane_hub_distance_miles == 25
+
+    (cfg / "config.toml").write_text(
+        'lane_search_hubs = ["Austin, TX", "Boston, MA"]\n', encoding="utf-8"
+    )
+    loaded = load_settings(data_dir=None)
+    assert loaded.lane_search_hubs == ("Austin, TX", "Boston, MA")
+
+
 def test_the_two_budgets_default_to_the_documented_values(cfg: Path) -> None:
     """10 matches `lanes.admission.DEFAULT_NEW_COMPANIES_PER_RUN`; 60 is the body-GET ceiling."""
     from boardwatch.lanes.admission import DEFAULT_NEW_COMPANIES_PER_RUN
@@ -144,6 +158,9 @@ def test_the_lane_knobs_do_not_move_the_config_hash(cfg: Path) -> None:
             "lane_new_companies_per_run": 3,
             "lane_new_companies_per_run_overrides": {"alpha": 1},
             "lane_posting_budget": 1,
+            "lane_search_hubs": ("Austin, TX",),
+            "lane_hub_combos_per_run": 1,
+            "lane_hub_distance_miles": 50,
         }
     )
     assert config_hash(armed) == config_hash(base)

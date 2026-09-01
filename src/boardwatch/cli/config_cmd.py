@@ -4,6 +4,7 @@ user's unknown-but-harmless keys survive a set."""
 
 from __future__ import annotations
 
+import json
 import tomllib
 from collections.abc import Callable
 from typing import Any
@@ -33,6 +34,43 @@ def _lane_names(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+def _search_hubs(raw: str) -> list[str]:
+    """`lane_search_hubs` from one CLI string, as a JSON array.
+
+    **NOT comma-separated, unlike `lanes_enabled`, and that difference is the whole point.** A
+    hub is a human place name and the ones LinkedIn's `location=` accepts CONTAIN a comma —
+    "Austin, TX". Cast through `_lane_names` this value split into two hubs, "Austin" and "TX",
+    and the lane searched two places the user never named while reporting that it had searched
+    theirs. `"Austin, TX,Boston, MA"` became four. There is no separator a place name cannot
+    contain, so the fix is a representation that QUOTES its elements rather than a different
+    delimiter to split on.
+
+    A LIST, not a tuple, for the same reason `_lane_names` returns one: the value is written
+    straight into config.toml by `tomli_w`, which has no tuple form, and pydantic coerces it back
+    to a tuple on load. That also makes the round trip exact — TOML's array of strings is the
+    same shape as the JSON array accepted here.
+
+    Blank disables hub nets, matching the inert default, rather than registering a hub named "".
+    """
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "expected a JSON array of hub names, e.g. "
+            '\'["Austin, TX", "Boston, MA"]\' (a hub name contains a comma, so a bare '
+            "comma-separated list cannot express one)"
+        ) from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise ValueError(
+            'expected a JSON ARRAY OF STRINGS, e.g. \'["Austin, TX", "Boston, MA"]\', '
+            f"got {parsed!r}"
+        )
+    return [item.strip() for item in parsed if item.strip()]
+
+
 # key → (caster, "takes effect", units note). weights.* are nested under [weights].
 # Every scalar `Settings` field except the two paths, which are CLI/env-level and not settable
 # here. `test_every_scalar_setting_is_reachable_from_the_cli` asserts that exhaustively, because
@@ -41,9 +79,8 @@ def _lane_names(raw: str) -> list[str]:
 # `recency_half_life_days` all shipped invisible to `config show` and unsettable by `config set`,
 # while the README promised the command "prints every key". Range and enum validation happens by
 # constructing a `Settings` with the new value, so a caster here only has to parse.
-# Annotated because `lanes_enabled`'s caster is a function returning a list while every
-# other one is a scalar type; without this mypy joins them to `object` and the call below
-# stops type-checking.
+# Annotated because the lane-list casters return lists while every other one is a scalar type;
+# without this mypy joins them to `object` and the call below stops type-checking.
 def _str_to_bool(raw: str) -> bool:
     v = raw.strip().lower()
     if v in {"true", "1", "yes", "on"}:
@@ -87,6 +124,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "lanes_enabled": (
         _lane_names, "next run", "comma-separated lane names; blank disarms every lane"
     ),
+    "lane_search_hubs": (
+        _search_hubs,
+        "next run",
+        'JSON array of LinkedIn search hubs, e.g. \'["Austin, TX", "Boston, MA"]\'; '
+        "blank disables hub nets",
+    ),
     "lane_new_companies_per_run": (
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
     ),
@@ -95,6 +138,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         int,
         "next run",
         "search pages one lane requests per facet, ≥1 (1 = the single page that shipped)",
+    ),
+    "lane_hub_combos_per_run": (
+        int, "next run", "LinkedIn term/hub combinations searched per run, ≥0"
+    ),
+    "lane_hub_distance_miles": (
+        int, "next run", "LinkedIn hub search radius in miles, ≥0"
     ),
     # `str` and not `Path`: the value is written straight into `config.toml`, and a `Path` is not
     # TOML-serializable. `Settings` coerces it back to a `Path` on load.
@@ -262,7 +311,7 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
     if key == "llm.max_calls_per_run":
         old = settings.llm.max_calls_per_run
         try:
-            # `list[str]` is here for `lanes_enabled`, the one non-scalar in `_SCALAR_KEYS`.
+            # `list[str]` is here for the list-valued lane keys in `_SCALAR_KEYS`.
             new: int | float | list[str] = int(value)
             LLMTier(**{**settings.llm.model_dump(), "max_calls_per_run": new})  # ge=1 check
         except (ValueError, ValidationError) as exc:

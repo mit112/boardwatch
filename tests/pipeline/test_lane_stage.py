@@ -39,7 +39,13 @@ from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.linkedin import search_urls
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline import runner as runner_mod
-from boardwatch.pipeline.runner import PipelineSummary, _collect_lane, _run_lanes, run_pipeline
+from boardwatch.pipeline.runner import (
+    PipelineSummary,
+    _collect_lane,
+    _linkedin_lane,
+    _run_lanes,
+    run_pipeline,
+)
 from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
@@ -1204,8 +1210,72 @@ def test_only_the_lane_whose_provenance_can_retire_a_mined_facet_receives_one(
     facets = LaneFacets(profile=("registered nurse",), mined=("perioperative nurse",))
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
 
-    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets)
+    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets, rotation_index=0)
     hiringcafe_lane = runner_mod.LANE_FACTORIES["hiringcafe"](settings, facets)
 
     assert linkedin_lane._search_facets == ("registered nurse", "perioperative nurse")
     assert hiringcafe_lane._search_facets == ("registered nurse",)
+
+
+# --------------------------------------------------------------------------------------
+# LinkedIn hub nets: the two boundaries the lane stage owns
+# --------------------------------------------------------------------------------------
+
+def test_the_hub_rotation_advances_PER_RUN_and_is_never_a_fixed_constant(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The half of the rotation no unit test of `hub_nets` can reach.
+
+    `hub_nets` is tested exhaustively against a `rotation_index` a test hands it. That says
+    nothing about which index PRODUCTION hands it, and the whole rotation collapses if the answer
+    is a constant: the lane would draw the same cells forever while every test stayed green and
+    the run reported that it had searched its nets.
+
+    Two runs are made and the values that actually cross the boundary are compared to the run ids
+    the store assigned. It was the calendar date ordinal, which made **two runs on one day draw
+    the identical slice** -- so the assertion is deliberately made on two runs created back to
+    back, which share a date and must still differ.
+    """
+    recorded: list[int] = []
+
+    def _factory(_settings: Settings, _facets: LaneFacets, *, rotation_index: int) -> StubLane:
+        recorded.append(rotation_index)
+        return StubLane([])
+
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"linkedin": _factory})
+    settings = _settings(tmp_path, lanes_enabled=("linkedin",))
+    first, second = insert_run(engine), insert_run(engine)
+    _run_lanes(engine, settings, first)
+    _run_lanes(engine, settings, second)
+
+    assert recorded == [first, second]
+    assert first != second, "two runs must not share a rotation index"
+
+
+def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
+    tmp_path: Path,
+) -> None:
+    """The contract `_linkedin_lane` states, pinned where it can be broken silently.
+
+    A USA-wide facet costs one request per term whether it was asked for or inferred, so
+    `search_facets` gets both halves. A NET costs one request per term PER HUB, so folding the
+    mined half into the matrix multiplies the number of days a full rotation takes by however
+    many titles the repo happened to infer that week -- and the user's DECLARED targets reach
+    each metro proportionally later, which is the one thing the net exists to do.
+
+    Both halves are asserted: dropping `mined` from `search_facets` would be a real regression
+    too, and a test that only checked the nets would not see it.
+    """
+    lane = _linkedin_lane(
+        Settings(
+            data_dir=tmp_path,
+            config_dir=tmp_path,
+            lane_search_hubs=("Austin, TX",),
+            lane_hub_combos_per_run=99,
+        ),
+        LaneFacets(profile=("software engineer",), mined=("platform engineer",)),
+        rotation_index=0,
+    )
+
+    assert lane._search_facets == ("software engineer", "platform engineer")
+    assert lane._search_nets == (("software engineer", "Austin, TX"),)

@@ -402,10 +402,13 @@ def test_the_lane_is_registered_but_off_by_default(tmp_path):
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_posting_budget=7)
     assert "linkedin" in LANE_FACTORIES
-    built = LANE_FACTORIES["linkedin"](settings, LaneFacets(profile=("software-engineer",)))
+    built = LANE_FACTORIES["linkedin"](
+        settings, LaneFacets(profile=("software-engineer",)), rotation_index=0
+    )
     assert isinstance(built, LinkedInLane)
     assert built._posting_budget == 7
     assert built._search_facets == ("software-engineer",)
+    assert built._search_nets == ()
     # Off by default: nothing in the registry runs until an operator names it.
     assert "linkedin" not in settings.lanes_enabled
 
@@ -416,8 +419,8 @@ def test_the_lane_is_registered_but_off_by_default(tmp_path):
 # `keywords=` is honoured, and the evidence is an id set rather than a plausible-looking page:
 # the faceted search returned 10 software roles at 9 named employers and shared ZERO of 10 ids
 # with the unfaceted search, whose 10 cards were dishwasher, crew member, cleaner and bar back.
-# `location=` is silently ignored -- id-identical to no-location, exactly like `f_WT=2` -- so it
-# must never be sent, which is why the URL builder is asserted on the string it builds.
+# `location=` is honored by the endpoint for an explicit geo-pinned net, while a facet URL omits it
+# so the default-off path keeps its shipped request shape.
 # ---------------------------------------------------------------------------------------
 
 
@@ -471,11 +474,7 @@ def _one_card_per_company(prefix: str, id_base: int, count: int) -> list[Card]:
 
 
 def test_a_facet_becomes_a_keywords_query_and_never_a_location_one():
-    """`keywords=` is honoured (0 of 10 ids shared with the unfaceted set); `location=` is not.
-
-    A silently ignored parameter is worse than an absent one: the run would report that it had
-    constrained the search to the US while the response was the same one no-location returns.
-    """
+    """`keywords=` is honored, while a facet remains a no-location search."""
     urls = linkedin.search_urls(("software engineer", "site reliability engineer"))
 
     assert urls == (
@@ -485,6 +484,16 @@ def test_a_facet_becomes_a_keywords_query_and_never_a_location_one():
         "?keywords=site%20reliability%20engineer&f_TPR=r86400",
     )
     assert not any("location" in url or "start=" in url for url in urls)
+
+
+def test_a_net_url_quotes_the_term_and_geo_hub_and_carries_distance():
+    url = linkedin.search_net_url("software engineer", "Austin, TX", 25)
+
+    assert url == (
+        f"{_SEARCH_PREFIX}?keywords=software%20engineer&location=Austin%2C%20TX&"
+        "distance=25&f_TPR=r86400"
+    )
+    assert "Austin, TX" not in url
 
 
 def test_no_facets_falls_back_to_the_search_url_that_shipped():
@@ -503,6 +512,8 @@ def test_the_facets_are_a_second_keyword_argument_and_stored_as_a_tuple():
         "posting_budget",
         "search_facets",
         "search_pages",
+        "search_nets",
+        "hub_distance_miles",
     ]
     assert LinkedInLane(search_facets=["software engineer"])._search_facets == (
         "software engineer",
@@ -980,11 +991,117 @@ def test_the_registry_hands_the_lane_the_configured_page_ceiling(tmp_path):
     from boardwatch.pipeline.runner import LANE_FACTORIES
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_search_pages=5)
-    built = LANE_FACTORIES["linkedin"](settings, LaneFacets(profile=("software engineer",)))
+    built = LANE_FACTORIES["linkedin"](
+        settings, LaneFacets(profile=("software engineer",)), rotation_index=0
+    )
 
     assert built._search_pages == 5
     # Default 1 -- no existing user's request volume moves.
     assert Settings(data_dir=tmp_path, config_dir=tmp_path).lane_search_pages == 1
     assert LANE_FACTORIES["linkedin"](
-        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets()
+        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets(), rotation_index=0
     )._search_pages == 1
+
+
+def test_the_registry_builds_hub_nets_from_the_linkedin_settings(tmp_path):
+    from boardwatch.pipeline.runner import LANE_FACTORIES
+
+    settings = Settings(
+        data_dir=tmp_path,
+        config_dir=tmp_path,
+        lane_search_hubs=("Austin, TX", "Boston, MA"),
+        lane_hub_combos_per_run=1,
+        lane_hub_distance_miles=50,
+    )
+    built = LANE_FACTORIES["linkedin"](
+        settings, LaneFacets(profile=("software engineer",)), rotation_index=1
+    )
+
+    assert built._search_nets == (("software engineer", "Boston, MA"),)
+    assert built._hub_distance_miles == 50
+
+
+@respx.mock
+def test_a_net_is_searched_and_reported_as_its_own_search(tmp_path):
+    cards = search_cards()[:2]
+    _mock_facet("software engineer", cards)
+    net_url = linkedin.search_net_url("software engineer", "Austin, TX", 25)
+    net = respx.get(net_url).mock(
+        return_value=httpx.Response(200, text=search_page_html(cards))
+    )
+    _mock_bodies(cards)
+
+    result = LinkedInLane(
+        search_facets=("software engineer",),
+        search_nets=(("software engineer", "Austin, TX"),),
+        hub_distance_miles=25,
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert net.call_count == 1
+    assert result.search_pages == ((_facet_url("software engineer"), 1), (net_url, 1))
+
+
+@respx.mock
+def test_a_net_uses_the_same_pagination_rule_as_a_facet(tmp_path):
+    facet_cards = _one_card_per_company("acme", 4_120_000_000, 1)
+    net_page_zero_cards = _one_card_per_company("beacon", 4_130_000_000, 1)
+    net_page_one_cards = _one_card_per_company("charlie", 4_140_000_000, 1)
+    _mock_facet("software engineer", facet_cards)
+    # The facet's SECOND page, as the empty page a facet shorter than the ceiling really
+    # returns: `card_nodes` refuses it, `_facet_pages` reads that as the end of the result set
+    # on any page after the first, and the facet stops at one page. Without this the request is
+    # unmocked and the test fails on the facet rather than on the net it is about.
+    _mock_facet_page("software engineer", 1, None)
+    net_url = linkedin.search_net_url("software engineer", "Austin, TX", 25)
+    net_page_zero = respx.get(net_url).mock(
+        return_value=httpx.Response(200, text=search_page_html(net_page_zero_cards))
+    )
+    net_page_one = respx.get(f"{net_url}&start=10").mock(
+        return_value=httpx.Response(200, text=search_page_html(net_page_one_cards))
+    )
+    _mock_bodies(facet_cards + net_page_zero_cards + net_page_one_cards)
+
+    result = LinkedInLane(
+        search_facets=("software engineer",),
+        search_nets=(("software engineer", "Austin, TX"),),
+        hub_distance_miles=25,
+        search_pages=2,
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert (net_page_zero.call_count, net_page_one.call_count) == (1, 1)
+    assert result.search_pages == (
+        (_facet_url("software engineer"), 1),
+        (net_url, 2),
+    )
+
+
+@respx.mock
+def test_a_company_found_only_by_a_net_reaches_the_corpus(tmp_path):
+    """The net's whole PURPOSE, asserted on the output rather than on the request.
+
+    `test_a_net_is_searched_and_reported_as_its_own_search` proves the net URL was requested and
+    counted as its own search. It cannot prove a net contributes anything, because it serves the
+    facet and the net the SAME cards -- every company in its result is one the facet already
+    found, so that test stays green against a lane that fetched every net and threw the response
+    away. Here the net is the only place `beacon-00` appears, so its snapshot exists if and only
+    if a net's card actually became a posting. The snapshot's URL is asserted too: it is the
+    provenance that says which search paid for the company, and it is the net's URL, not the
+    facet's.
+    """
+    facet_cards = _one_card_per_company("acme", 4_120_000_000, 1)
+    net_cards = _one_card_per_company("beacon", 4_130_000_000, 1)
+    _mock_facet("software engineer", facet_cards)
+    net_url = linkedin.search_net_url("software engineer", "Austin, TX", 25)
+    respx.get(net_url).mock(return_value=httpx.Response(200, text=search_page_html(net_cards)))
+    _mock_bodies(facet_cards + net_cards)
+
+    result = LinkedInLane(
+        search_facets=("software engineer",),
+        search_nets=(("software engineer", "Austin, TX"),),
+        hub_distance_miles=25,
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert {snapshot.slug for snapshot in result.snapshots} == {"acme-00", "beacon-00"}
+    net_only = next(s for s in result.snapshots if s.slug == "beacon-00")
+    assert [posting.title for posting in net_only.snapshot.postings] == ["Backend Engineer"]
+    assert net_only.snapshot.url == net_url

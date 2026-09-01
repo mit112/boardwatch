@@ -205,6 +205,12 @@ class Settings(BaseModel):
     # which reports a lane that found nothing rather than one that was told not to look —
     # disarming a lane is what `lanes_enabled` is for.
     lane_search_pages: int = Field(default=1, ge=1)
+    # User-supplied geographic hubs for LinkedIn search nets. Empty is inert: no net is built,
+    # so existing users' request shapes and counts stay unchanged, and no country's metros are
+    # encoded in the default.
+    lane_search_hubs: tuple[str, ...] = ()
+    lane_hub_combos_per_run: int = Field(default=12, ge=0)
+    lane_hub_distance_miles: int = Field(default=25, ge=0)
     # Where job-apps writes its discovery output (its `APPLY_QUEUE`), for the `jobapps` lane.
     #
     # A machine-local PATH, so there is no neutral default and None is the honest one: the lane

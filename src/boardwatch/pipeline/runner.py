@@ -51,6 +51,7 @@ from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import (
     MINED_FACET_WINDOW_DAYS,
     LaneFacets,
+    hub_nets,
     mined_facet_candidates,
     role_facets,
     surviving_mined_facets,
@@ -171,11 +172,50 @@ DEFAULT_TOP_N = 10
 # asked for. `mined` is this repo's inference from her delivered leads, and it goes only to the
 # lane whose own conversion record is the evidence for it, so mining cannot quietly spend another
 # lane's request budget.
-LaneFactory = Callable[[Settings, LaneFacets], Lane]
+LaneFactory = Callable[..., Lane]
+
+
+def _linkedin_lane(
+    settings: Settings, facets: LaneFacets, *, rotation_index: int
+) -> LinkedInLane:
+    """The LinkedIn lane for one run. `rotation_index` selects this run's slice of the hub matrix.
+
+    **`rotation_index` HAS NO DEFAULT ON PURPOSE.** A default of 0 is a silent-zero path: every
+    caller that forgot to pass one would draw the same cells of the matrix forever, the rotation
+    would never advance, and no test would go red — the lane would still fetch, still report, and
+    still look correct. Making it required means the one caller that has a run row to read it
+    from must produce it.
+
+    **The nets cross the hubs with `facets.profile` ONLY, never `facets.mined`, and that
+    boundary lives here.** `search_facets` gets both halves because a USA-wide search is one
+    request per term either way. A NET is one request per term PER HUB, so folding the mined
+    half in multiplies the matrix — and therefore the number of days a full rotation takes — by
+    however many titles this repo happened to infer that week. The user's DECLARED targets would
+    reach each metro proportionally later, which is the one thing the net exists to do. Mined
+    facets are already searched USA-wide by the facet path above; they are an inference from
+    delivered leads, not an ask, and they do not get to slow down the ask.
+    """
+    return LinkedInLane(
+        posting_budget=settings.lane_posting_budget,
+        search_facets=facets.profile + facets.mined,
+        search_pages=settings.lane_search_pages,
+        search_nets=hub_nets(
+            facets.profile,
+            settings.lane_search_hubs,
+            rotation_index=rotation_index,
+            combos_per_run=settings.lane_hub_combos_per_run,
+        ),
+        hub_distance_miles=settings.lane_hub_distance_miles,
+    )
+
 
 # The lane registry: the name a user writes in `settings.lanes_enabled` -> a factory for it. A
-# MAPPING and not a branch inside `_run_lanes`, so a second lane is one row here and no change
-# to the stage that drives it.
+# MAPPING, so a second lane is one row here. It is no longer branch-FREE: `_run_lanes` special-
+# cases `linkedin` to hand it a rotation index, which is the one thing a factory cannot derive
+# from `Settings` and `LaneFacets` alone. That branch is a known wart -- it is the shared
+# registration surface Wave 0 existed to remove -- and the fix is to hand every factory a small
+# run context instead of widening the signature per lane. Deferred so it does not collide with
+# a lane being built concurrently against this same file.
 #
 # A name in `lanes_enabled` with no row here is reported into `summary.errors` and skipped —
 # never silently ignored, because a typo in config would then be indistinguishable from a lane
@@ -202,11 +242,7 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # trial record that prunes a barren mined term is this lane's own `keywords=` provenance
     # (`store.facet_queries`). Handing them to a lane whose acquisitions leave no such record
     # would buy searches nothing could ever measure or retire.
-    LinkedInLane.name: lambda settings, facets: LinkedInLane(
-        posting_budget=settings.lane_posting_budget,
-        search_facets=facets.profile + facets.mined,
-        search_pages=settings.lane_search_pages,
-    ),
+    LinkedInLane.name: _linkedin_lane,
     # Reads job-apps' discovery tree off the local disk (D-385). It takes neither the posting
     # budget nor the facets: there are no requests to bound, and the source is already a
     # filtered set rather than a search this lane composes. `facets` is still accepted by the
@@ -446,6 +482,27 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
     )
 
 
+def _rotation_index(run_id: int) -> int:
+    """This run's position in the hub-net rotation. **The run's OWN id, not its date.**
+
+    It was the persisted UTC date ordinal, and a calendar stride is wrong here in two ways that
+    only appear off the daily path. **Two runs on one day drew the IDENTICAL slice** and the
+    second paid full price for cells the first had just fetched -- and runs here are on demand,
+    with the 04:00 schedule only a fallback, so several runs a day is the normal case during a
+    session. Worse, on any REGULAR non-daily cadence the reachable window starts are the
+    multiples of `gcd(stride * combos_per_run, len(matrix))`, so a user running weekly would
+    search a fixed subset of their matrix **forever**, with nothing anywhere reporting it.
+
+    A run counter removes both: the window advances exactly once per run, whatever the calendar
+    does. `run_id` is monotonic, so consecutive runs step by exactly `combos_per_run`; a gap
+    (a crashed run that took an id) only makes the stride irregular, which broadens coverage
+    rather than narrowing it -- the starvation above needs a CONSTANT stride. It is still read
+    off the run row, which is the reproducibility the old docstring actually argued for; the
+    date was never the load-bearing part.
+    """
+    return run_id
+
+
 def _run_lanes(
     engine: Engine, settings: Settings, run_id: int
 ) -> tuple[list[LaneReport], list[str]]:
@@ -485,7 +542,12 @@ def _run_lanes(
             errors.append(f"lane {name}: not a registered lane (registered: {registered})")
             continue
         try:
-            resolved.append((name, factory(settings, facets)))
+            if name == LinkedInLane.name:
+                resolved.append(
+                    (name, factory(settings, facets, rotation_index=_rotation_index(run_id)))
+                )
+            else:
+                resolved.append((name, factory(settings, facets)))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {exc!r}")
     if not resolved:
