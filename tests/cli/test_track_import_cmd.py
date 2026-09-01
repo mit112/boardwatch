@@ -46,6 +46,25 @@ def _seed(data_dir: Path) -> None:
         )
 
 
+def _seed_twin(data_dir: Path) -> None:
+    """A second, distinct requisition sharing the seeded posting's company and title."""
+    engine = get_engine(data_dir)
+    with engine.begin() as conn:
+        company_id = int(
+            conn.execute(select(companies.c.id).where(companies.c.name == "Acme")).scalar_one()
+        )
+        job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        conn.execute(
+            insert(postings).values(
+                company_id=company_id, job_id=job_id, provider_posting_id="b",
+                title="Software Engineer", normalized_title="software engineer", url=None,
+                locations_json=["Remote"], remote_policy="remote", first_seen_at=NOW,
+                last_seen_at=NOW, status="open", consecutive_missing=0, content_hash="b",
+                body_text="body b",
+            )
+        )
+
+
 def _applications(data_dir: Path) -> int:
     with get_engine(data_dir).connect() as conn:
         return int(conn.execute(select(func.count()).select_from(applications)).scalar_one())
@@ -94,6 +113,21 @@ def test_import_writes_and_the_report_carries_every_row(tmp_path: Path) -> None:
         ("unmatched", None),
     ]
     assert rows[0]["application_ids"] == [1]
+
+
+def test_a_refused_row_is_named_in_the_summary_not_only_in_the_table(tmp_path: Path) -> None:
+    """A refused row means an application the owner really made went unrecorded, and the fix
+    is theirs to make (supply a url for it). The bucket table alone reports it as a number
+    beside four other numbers; the summary line is the one line that gets read."""
+    data_dir = tmp_path / "store"
+    _seed(data_dir)
+    _seed_twin(data_dir)
+    path = tmp_path / "history.csv"
+    path.write_text("company,title\nAcme,Software Engineer\n", encoding="utf-8")
+    result = _run(data_dir, ["track", "import", str(path), "--allow-title-match"])
+    assert result.exit_code == 0, result.output
+    assert "1 row(s) matched several requisitions" in result.output
+    assert _applications(data_dir) == 0
 
 
 def test_an_unreadable_file_exits_one_without_touching_the_store(tmp_path: Path) -> None:
