@@ -133,13 +133,24 @@ class Fetcher:
         return self._dispatch("GET", url, validators, None, headers)
 
     def post_json(
-        self, url: str, body: dict[str, Any], validators: ResponseValidators | None = None
+        self,
+        url: str,
+        body: dict[str, Any],
+        validators: ResponseValidators | None = None,
+        *,
+        headers: Mapping[str, str] | None = None,
     ) -> FetchResult:
         """A JSON POST through the SAME per-host lock, pacing, backoff and status
         classification as get(). Workday's CXS search endpoint has no GET form (a GET
         returns 400), and a 2000-posting board is 100+ requests to one host, so routing
-        POST through the existing per-host serialization is the point, not a formality."""
-        return self._dispatch("POST", url, validators, body, None)
+        POST through the existing per-host serialization is the point, not a formality.
+
+        `headers` is the same escape hatch `get()` documents, and it has ONE caller: the Indeed
+        lane, whose endpoint answers only to that vendor's own app headers. It cannot be a
+        client-level header set for the reason `get()`'s own note gives — one `Fetcher` serves
+        every lane, and those headers must not leak onto a request to any other host. Merged
+        UNDER the conditional-GET validators, exactly as `get()` merges them."""
+        return self._dispatch("POST", url, validators, body, headers)
 
     def _dispatch(
         self,

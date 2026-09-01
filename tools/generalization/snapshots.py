@@ -68,6 +68,13 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.lane_search_hubs": (),
     "Settings.lane_hub_combos_per_run": 12,
     "Settings.lane_hub_distance_miles": 25,
+    # The Indeed lane's page ceiling and page size. Neutral on the axis this table classifies on:
+    # both bound how much the lane may ASK for, and neither says anything about roles, seniority,
+    # geography or field. 1 x 100 is the shape that was measured, so the defaults add no request
+    # to any run beyond the one the lane makes by existing — and the lane itself is off until an
+    # operator names it in `lanes_enabled`.
+    "Settings.indeed_search_pages": 1,
+    "Settings.indeed_results_per_page": 100,
     # D-385. A machine-local path with no neutral default: any value here would be one
     # operator's filesystem. None ships the `jobapps` lane inert, and it encodes no view about
     # roles, seniority, geography or field.
@@ -138,6 +145,8 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.lane_search_hubs": "preference",
     "Settings.lane_hub_combos_per_run": "operational",
     "Settings.lane_hub_distance_miles": "operational",
+    "Settings.indeed_search_pages": "operational",
+    "Settings.indeed_results_per_page": "operational",
     "Settings.jobapps_discovery_dir": "path",
     "Settings.jobapps_queue_dir": "path",
     "Settings.death_probe_budget": "operational",
