@@ -24,6 +24,7 @@ from boardwatch.store.application_history import (
     parse_history,
     write_import_report,
 )
+from boardwatch.store.jobapps_history import read_jobapps_dir
 from boardwatch.store.applications import (
     ApplicationStatus,
     create_application,
@@ -147,7 +148,8 @@ def list_(
 _IMPORT_HELP = (
     "CSV or JSONL of prior applications, with columns "
     f"{', '.join(COLUMNS)}. A row needs a url, or both a company and a title; "
-    f"status defaults to {DEFAULT_STATUS!r} and applied_at to now."
+    f"status defaults to {DEFAULT_STATUS!r} and applied_at to now. A directory is read as a "
+    "job-apps `_applied/` folder tree instead: one row per subfolder."
 )
 
 
@@ -155,7 +157,7 @@ _IMPORT_HELP = (
 def import_(
     ctx: typer.Context,
     path: Path = typer.Argument(  # noqa: B008
-        ..., exists=True, dir_okay=False, help=_IMPORT_HELP
+        ..., exists=True, dir_okay=True, help=_IMPORT_HELP
     ),
     allow_title_match: bool = typer.Option(
         False,
@@ -180,7 +182,7 @@ def import_(
     left alone, including one you withdrew.
     """
     try:
-        rows, malformed = parse_history(path)
+        rows, malformed = read_jobapps_dir(path) if path.is_dir() else parse_history(path)
     except (HistoryFormatError, UnicodeDecodeError) as exc:
         console.print(f"[red]cannot read {path}: {exc}[/red]")
         raise typer.Exit(code=1) from exc
