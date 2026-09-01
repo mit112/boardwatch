@@ -41,6 +41,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.lanes import linkedin
 from boardwatch.lanes.base import Lane
+from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.linkedin import (
     LANE_PROVIDER,
     LinkedInLane,
@@ -401,7 +402,7 @@ def test_the_lane_is_registered_but_off_by_default(tmp_path):
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_posting_budget=7)
     assert "linkedin" in LANE_FACTORIES
-    built = LANE_FACTORIES["linkedin"](settings, ("software-engineer",))
+    built = LANE_FACTORIES["linkedin"](settings, LaneFacets(profile=("software-engineer",)))
     assert isinstance(built, LinkedInLane)
     assert built._posting_budget == 7
     assert built._search_facets == ("software-engineer",)
@@ -979,11 +980,11 @@ def test_the_registry_hands_the_lane_the_configured_page_ceiling(tmp_path):
     from boardwatch.pipeline.runner import LANE_FACTORIES
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_search_pages=5)
-    built = LANE_FACTORIES["linkedin"](settings, ("software engineer",))
+    built = LANE_FACTORIES["linkedin"](settings, LaneFacets(profile=("software engineer",)))
 
     assert built._search_pages == 5
     # Default 1 -- no existing user's request volume moves.
     assert Settings(data_dir=tmp_path, config_dir=tmp_path).lane_search_pages == 1
     assert LANE_FACTORIES["linkedin"](
-        Settings(data_dir=tmp_path, config_dir=tmp_path), ()
+        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets()
     )._search_pages == 1

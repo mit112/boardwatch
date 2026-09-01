@@ -34,6 +34,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes import hiringcafe
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
+from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import PipelineSummary, _collect_lane, _run_lanes, run_pipeline
@@ -690,12 +691,17 @@ def _profile(engine: Engine, target_titles: list[str]) -> None:
 def _facets_handed_to_the_lane(
     engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> list[tuple[str, ...]]:
-    """Every facet tuple the stage constructed a lane with."""
+    """Every PROFILE facet tuple the stage constructed a lane with.
+
+    The profile half only. Mined facets are a separate source with separate evidence and their
+    own tests (`tests/unit/test_lane_facet_mining.py`); folding them in here would make these
+    three assertions about the profile pass or fail on delivered-lead history instead.
+    """
     handed: list[tuple[str, ...]] = []
     lane = StubLane([("hiringcafe", "src:acme")])
 
-    def _factory(_settings: Settings, facets: tuple[str, ...]) -> StubLane:
-        handed.append(facets)
+    def _factory(_settings: Settings, facets: LaneFacets) -> StubLane:
+        handed.append(facets.profile)
         return lane
 
     monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": _factory})
