@@ -21,147 +21,114 @@
 
 ## Current standing
 
-**RUN 139 IS VERIFIED CLEAN AND IT ANSWERS THE QUESTION D-399 EXISTS TO ASK.** Invoked on demand
-10:37 CDT, finished 16:12 UTC. **Sentinel exit 0**, `status='ok'`, **34m55s**. 379 boards attempted,
-**1 failed** (marqeta HTTP 404 — the same dead board as run 138, not systemic), 233 complete / 32
-partial / 113 unchanged. 26,878 seen, 1,656 new, 1,016 closed, **96 tailored résumés** delivered.
+**RUN 140 IS VERIFIED CLEAN AND EVERY PREDICTION IT WAS INVOKED TO TEST CONFIRMED.** Sentinel exit
+**0**, `status='ok'`, **44m55s**. 379 boards attempted, 1 failed (marqeta 404, the same dead board),
+293 complete. 27,747 seen, 1,785 new, 843 closed, **96 tailored résumés**. `engine_version`
+**UNCHANGED at `1+532b917626c0`** — the run's "taxonomy changed" line is the EXTRACTION taxonomy, not
+the eligibility engine, so **no ledger drain is owed**.
 
-**ONLY 2,197 POSTINGS WERE NEWLY JUDGED, against run 138's 115,703 — because `engine_version` DID
-NOT MOVE.** It reads `1+532b917626c0` on current main, exactly run 138's stored value. None of
-#306/#307/#308/#310/#311/#312/#313 re-keyed the eligibility ledger; they are discovery and identity
-code, not digested eligibility modules. **No ledger drain is owed.**
+| prediction | result |
+|---|---|
+| hiring.cafe cap -> 0 refused, ~291 new companies | **0 refused, 291 new** (resolved bodies 262 -> 801) |
+| delivery queue failures 4 -> 0 | **1** — and it is the predicted pre-existing eBay 131368 conflict |
+| onX / WellSky / Generalmotors get queue folders | **all three have folders** |
 
-**GATE 1 DID NOT MOVE, AND THE COMPOSITION CHANGE IS THE FINDING.** Identical 216-posting population
-over the identical window, so this is apples-to-apples with the 2026-09-01 reading:
+**GATE 1 MOVED FOR THE FIRST TIME: 20.4% -> 22.2%** (independent 44 -> 48, same 216 population).
+Gate 3 **HELD at 48**; carry 48 forward as the baseline. **The coupling COLLAPSED: `jobapps` lane
+share of delivered leads 49.0% -> 2.1%** (2 of 96). Run 139's 49.0% was the artifact — it was the
+lane's first armed run, admitting 102 companies from a one-off backfill; run 140 admitted **0**.
 
-| bucket | 2026-09-01 | run 139 |
-|---|---|---|
-| independent | 44 | **44** |
-| lane-only | 0 | **38** |
-| not held at all | 172 | **134** |
+**THE SESSION'S REAL OUTPUT IS `docs/program/RETIREMENT-PLAN.md` (#324).** Every session since the
+`jobapps` lane shipped had re-run the comparison against job-apps and then reached for a boardwatch
+knob. That file holds the finished analysis — the gap decomposed by tier with the arithmetic,
+job-apps' full 33-source list against boardwatch's 8, job-apps' three LinkedIn mechanisms, the
+settled-and-refused list, and reproduction commands. **Read it before proposing any discovery work.**
 
-**Exactly 38 postings moved from `absent` to `lane-only` and ZERO to `independent`.** That is the
-empirical confirmation of what D-399 recorded in advance about #307 and #308 — they consume more of
-job-apps' output rather than reproducing its discovery. Coverage is an UPPER bound: the instrument's
-company+title fallback is fuzzy and can over-credit.
+**THE FINDING THAT UNBLOCKS GATE 1: `location=` on LinkedIn's guest endpoint is NOT inert, and a
+shipped docstring said it was (D-409).** `page_url` claimed it "was measured to return an id-identical
+set". Probed live: no location -> 0 of 10 cards in TX; `location=Austin, TX&distance=25` -> **0 shared
+ids, 9 of 10 in TX**; Boston -> **0 shared, 10 of 10 in MA**. It binds, filters, and returns a
+DISJOINT population. **A wrong measurement in a docstring is worse than none — it stopped every later
+session from looking**, and it is why the lever was hunted in page depth and caps instead.
 
-**THE COUPLING NEARLY TRIPLED, and it is the largest number in the read-out.** `jobapps` lane share
-of delivered leads: run 138 **17.7%** (17 of 96) -> run 139 **49.0%** (47 of 96). Every independent
-route lost slate share to it (linkedin 40->24, greenhouse 12->6, ashby 10->4) because `--top 100` is
-fixed and the lane's 177 resolved postings displaced them on rank. **49% of delivered output now dies
-the day job-apps is switched off.**
-
-**GATE 2 WAS READ FOR THE FIRST TIME, AND THE FIGURES IT WAS SET AGAINST WERE INVERTED (D-404).**
-The recorded "precision ... 16.2% vs 44.2%" is backwards: **44.2% was boardwatch's DEFECT rate and
-16.2% job-apps'**; as precision that is 55.8% vs 83.8%. The `D-372` citation is wrong too — that is
-the `clearance_preferred` resolver bug; the real ones are D-382/D-383. New reading, both sides, same
-judge, same day: **boardwatch 74.7% precision, job-apps 98.7% — a 24.0-point gap against a 5-point
-bar, NOT MET.** The **two-sided decoy control is now BUILT and both arms PASS** (5/5 and 4/4), which
-is what makes the job-apps figure usable at all. **Round 1 of this reading was a staging bug of mine**
-— see D-404; it reported 15.3 points, and correcting it WIDENED the gap rather than narrowing it.
-
-**THREE PRs SHIPPED, AND THE TWO MOST VALUABLE FINDINGS CAME FROM READING RUN 139 OUT — not from
-building anything.** #315 corrected three claims #313 falsified. #316 fixed a queue defect that had
-silently dropped **3 of 96 delivered leads** and had never been reported by any prior run. #317
-uncapped hiring.cafe and corrected a FALSE reason recorded in `settings.py` for capping LinkedIn.
+**SMARTRECRUITERS WAS STORING RAW HTML IN 99.9% OF ITS BODIES, AND IT IS NOW FIXED AND DRAINED
+(D-408, #323).** 2,992 of 2,996 open postings carried markup against 0.0% for every other converting
+provider. The parser fix alone would have repaired NOTHING — `known_posting_ids` keeps stored
+postings out of detail fetching — which **an adversarial review caught against my own briefed
+premise**. Drain applied over 3,311 rows: **3,307 rewritten**, verified through five paths other than
+the command's own report (markup 0, hash mismatches 0, 3,307 `revised` versions with NULL `run_id`,
+originals still holding the HTML, 0 open postings missing an identity row).
 
 ## Next action
 
-**1. INVOKE RUN 140 AND READ IT OUT.** It is the first run carrying #316 (the queue fix — the 3 lost
-leads should land) and #317 (hiring.cafe uncapped — expect a **one-run drain of ~291 companies** and
-~+6 min). Confirm from the run line that `hiringcafe` reports **0 refused by the cap**, and that the
-delivery queue reports **0 failed** rather than 4. Then re-read gates 1 and 3 with
-`./.venv/bin/python .agent/2026-09-01b-session/retirement_readiness.py`.
+**EXECUTE `docs/program/RETIREMENT-PLAN.md`, IN PARALLEL. Do not re-derive its analysis.** The owner's
+instruction is to prioritise wall-clock and run as much concurrently as possible.
 
-**2. GATE 1 STILL NEEDS DISCOVERY THAT DOES NOT EXIST YET, and neither shipped lever supplies it.**
-Measured against job-apps' last 14 cohorts (258 distinct companies): **96 of 258 (37%) have no
-boardwatch company row at all**, and only **17** of those sit in the refused backlog. Un-throttling
-both caps closes **≈18%** of the company-level gap (a LOWER bound — a name join undercounts). The
-remaining ~79 were surfaced by **neither lane**. **A NATIVE JOBRIGHT LANE IS NOW REFUSED (D-406)** — probed
-live before any code, it fails BOTH shapes: as a `Lane` it serves **zero JSON-LD**, has no employer JD
-field and **no employer board URL** (so the #304 hiring.cafe manoeuvre has nothing to resolve
-through), and its eligibility fields are jobright's OWN judgments; as a `github_lists`-style emitter,
-**`parse_board_target` resolves 0 of 882** of its README's links. **Indeed is the opposite case and
-remains viable** — its admitted bodies are the EMPLOYER's own text (0 Indeed chrome; posting 135278 is
-8,946 bytes of Amazon's JD).
+1. **Start the drop audit first** (plan §5 Track D). No source files, no gate, no conflicts — it
+   soaks through every other track's gate time. Run 140 dropped **60,491 hard-filtered + 39,404
+   non-SWE**, unaudited, and nothing in `src/` or `tools/` implements a false-drop measurement. It
+   bears on gate 1 AND gate 2.
+2. **Land Wave 0** — one PR adding every settings field every track needs, registered in all four
+   gated sites, so the shared edit surface stops forcing serialization. One gate.
+3. **Dispatch Tracks A, B, C together**, one worktree each: LinkedIn geo nets; the native Indeed
+   lane; the `gh_jid` resolver. Queue gates **two at a time** — a contended `make check` reports
+   `Error 143` and reads as a false negative. sol-review each; reviews cost no gate time.
+4. **Re-read gate 1 after one run**, then Wave 2 (tier-D adapters, which **must be LANES, not a
+   seventh `Provider`**).
 
-**BUT INDEED IS THE SECOND PRIORITY, NOT THE FIRST — D-407 corrects D-406 on this.** Sizing the gate-1
-gap BY SOURCE (job-apps' 216-posting eligible cohort): **linkedin 96, of which 82 ABSENT -> +82,
-ceiling 58.3%**; direct/other 74 (+56); **indeed 38 -> +36, ceiling 37.0%**; jobright 8 (+6).
-**LinkedIn is worth 2.3x Indeed and boardwatch ALREADY RUNS that lane** — no dependency, no adapter.
-And Indeed's dependency is **measured-unavoidable**: two real `viewjob` URLs return **HTTP 401/403**.
+**IN FLIGHT AT CLOSE:** Track A is built and pushed on `feat/linkedin-hub-nets` (worktree
+`../bw-hubnets`) — the nets, the rotation, the `location=`/`distance=` URL builder, the docstring
+correction, and all four gated registration sites. **NOT MERGED, and it FAILED its first gate**
+(`mypy --strict`: `Returning Any from function declared to return "int"` at `runner.py:470`, from
+`scalar_one()` being typed `Any`); fixed with an `int()` cast and re-gated, result unread at close.
+**A `gpt-5.6-sol` review was also unread at close.** Its author's handoff asserted "no unresolved
+implementation ambiguity remains" while the gate was red — so verify both before landing, and treat
+the delegated handoff as a claim rather than evidence.
 
-**THE NEXT BUILD IS `lane_search_pages` 5 -> 10, and it is SIZED AND WAITING ON MIT.** The ceiling
-**binds on 21 of 22 facets** (all fetched exactly 5; only `software engineer 2` stopped short), so they
-are TRUNCATED. Cost **+105 pages ~= +2.3 min** at the lane's measured 1.33 s/request. Right-sized at
-10: ~+162 distinct cards takes 162 -> ~324, **crossing the 300 posting budget**, so one step is the
-whole move. **Do NOT raise `lane_posting_budget`** — run 139's linkedin lane reached 162 of 300, and
-its 520 `not_attemptable` are cross-facet DUPLICATES (76.2%), not budget (corrected in #320).
+### Owed, found earlier, not yet scheduled
 
-**3. GATE 2's TWO-SIDED DECOY CONTROL IS DONE — both arms catch 4-5 of 4-5.** What remains owed is
-SENSITIVITY, not gross detection: the planted decoys are egregious, and the job-apps arm returned
-`uncertain` **75 of 80**, so the control bounds gross insensitivity and not a subtle seniority or
-experience signal. A subtler decoy set is the next refinement if the 5-point bar is to be decidable.
-
-### Owed, found this session, not yet scheduled
-
-- **The `ashby:Lightfield` duplicate pair stays as recorded residue (D-405, Mit's call).** 19
-  duplicated open postings, **zero artifacts ever delivered**, ~192 wasted evaluations (0.016% of the
-  corpus). Pre-guard: `stored_slug` landed 2026-08-28 02:48, the duplicate was created 08-27 19:44.
-  The drain is owed — merge onto company 323, delete 348 — when something next touches company
-  identity or the Ashby lane.
-- **`_identity_hash` includes the mutable `apply_url`** (an independent review found this), so a
-  disambiguated queue folder's name can churn when a scan refreshes that URL. Pre-existing and
-  independent of #316; it weakens "a folder the owner can keep open" while leaving the narrow stated
-  invariant true.
+- **`ashby:Lightfield` duplicate pair stays as recorded residue (D-405, Mit's call).** 19 duplicated
+  open postings, **zero artifacts ever delivered**. Drain owed — merge onto company 323, delete 348 —
+  when something next touches company identity or the Ashby lane.
 - **One queue failure survives #316 and is pre-existing**: `posting 131368: eBay_..._59eb81b3 already
-  exists at its destination`. A null control confirms unfixed `main` performs that same rename on its
-  own, so it is neither caused nor fixed by #316.
-- **9 postings carry jobright PAGE TEXT as their JD, and 14 carry LinkedIn chrome (D-406).** The
-  jobright ones include its own `H1B Sponsor Likely` label inside what boardwatch treats as the frozen
-  JD. **ZERO evidence spans quote it today** and the keystone invariant holds, but `work_auth` is a
-  blocker family, so the fix shape is an INGEST precondition: a lane body must be the employer's own
-  text. #307's contract, not a queue or cap question.
-- **`_identity_hash` reads the mutable `apply_url`, and the exposure is 27.8%** — of 861 offered
-  leads, **239** carry the eight-hex suffix in their folder name and can therefore churn when a scan
-  refreshes that URL. A rename is reported as `moved` and keeps its contents, so the cost is the
-  owner's open path changing, not data loss. Dropping `apply_url` from the hash input would re-key
-  239 folders in one run — a far bigger blast radius than #316's priced 2, so it needs its own sizing.
+  exists at its destination`. A null control confirms unfixed `main` performs the same rename, so it
+  is neither caused nor fixed by #316. Still present in run 140.
+- **`_identity_hash` reads the mutable `apply_url`; exposure is 239 of 861 offered leads (27.8%)**
+  carrying the eight-hex suffix in their folder name. A rename is reported as `moved` and keeps its
+  contents, so the cost is the owner's open path changing, not data loss. Dropping `apply_url` would
+  re-key 239 folders in one run. **DEFERRED by Mit 2026-09-01** as the lowest-value of four.
+- **9 postings carry jobright PAGE TEXT as their JD, including its own `H1B Sponsor Likely` label
+  (D-406).** ZERO evidence spans quote it and the keystone invariant holds, but `work_auth` is a
+  blocker family. Mit ruled 2026-09-01: **add a lane-body ingest precondition and quarantine the 9
+  with a drain.** Not started. (Measured wider than recorded: 12 postings carry a `jobright.ai` URL,
+  9 with full page-text bodies and 3 stubs; 8 carry the H1B label.)
+- **`lane_search_pages` was raised 5 -> 10 on the owner's call, and it reaches at most 11 of the 77
+  LinkedIn misses.** Recommend reverting to 5 once the geo nets land: it costs ~+2.3 min/run and
+  doubles hiring.cafe's volume on a robots-disallowed path. Owner's call, not unilateral.
 - The ledger drain stays DECLINED (D-390). The two held recall patches at
   `.agent/2026-08-31d-session/WIP-*.patch` are **DO NOT SHIP** on measured evidence.
 
-## Session 2026-09-01c — what shipped
+## Session 2026-09-01d — what shipped
 
-Run 139 invoked and read out; **SEVEN PRs, each verified on `main` by CONTENT**. Four of them correct a claim this repo had already shipped — three of those were mine, made this session.
+**Three PRs merged, one open, one config change, and the drain applied to the live store.**
 
-- **#315** — `lanes/dereference.py`'s module docstring still said the career-site defect was live and
-  needed "a separate change"; #313 had already made it. One file, two contradictory accounts.
-- **#316** — three delivered leads never reached the queue, and run 139 is the FIRST run to report a
-  queue failure at all. Two causes: a case-SENSITIVE collision key against a case-INSENSITIVE
-  filesystem (2 leads — **CI is Linux and cannot reproduce it**), and a canonical-`job_id` re-point
-  where a converged lane copy left the folder identifying neither the offered posting nor its job
-  (1 lead). Plus the run had been recording a COUNT with no cause. **An independent review after the
-  gate passed found a third, pre-existing defect the gate did not.** D-402.
-- **#317** — hiring.cafe uncapped (a recirculating 7-day POOL, drains in one run, **1.37x** the
-  curated eligible density), LinkedIn left capped on the TRUE reason (an unbounded 24-hour STREAM at
-  **0.40x** — the worst measured source). The reason recorded in `settings.py` was **false**: lane
-  companies are written `watched=False` and never join the scan floor. D-403.
-- **#318** — the session record itself, and **D-404**: gate 2 read for the FIRST time since D-399 set
-  the bar. The figures the bar was set against were **INVERTED** (44.2% was boardwatch's DEFECT rate,
-  not job-apps' precision) and **mis-cited** (`D-372` is the `clearance_preferred` resolver bug; the
-  real ones are D-382/D-383). New reading: **boardwatch 74.7% precision vs job-apps 98.7% — a
-  24.0-point gap, NOT MET.** The two-sided decoy control D-404 called owed is BUILT and both arms pass.
-  **Round 1 of that reading was a staging bug of mine** — auto-merge was pulled before the wrong 15.3
-  figure shipped. Plus **D-405**, `ashby:Lightfield` recorded as residue with its drain owed.
-- **#319 — D-406: a native Jobright lane is REFUSED**, probed live before any code. Zero JSON-LD, no
-  employer JD field, **no employer board URL** (so #304's hiring.cafe manoeuvre has nothing to resolve
-  through), and `parse_board_target` resolves **0 of 882** of its README's links.
-- **#320** — `outcomes.py`: `not_attemptable` outside hiring.cafe is **not** "the budget was spent".
-  Two of the linkedin lane's three sites run BEFORE the budget loop. The claim pointed at the wrong
-  knob, and that is not hypothetical — it is the conclusion I drew from it before checking the arithmetic.
-- **#321 — D-407, correcting D-406 an hour after shipping it.** D-406 recommended Indeed FIRST without
-  sizing it against the gate. Sized: **LinkedIn is worth +82 (ceiling 58.3%) against Indeed's +36
-  (37.0%) — 2.3x, on a lane that already exists.** The next build is `lane_search_pages` 5 -> 10.
+- **#320** — `outcomes.py`: `not_attemptable` outside hiring.cafe is not "the budget was spent".
+- **#322** — STATE's shipped section named all seven of session 2026-09-01c's PRs.
+- **#323 — D-408.** SmartRecruiters HTML -> text, plus `boardwatch postings reparse-bodies`, the
+  drain the scan path cannot reach. **Applied: 3,307 postings, 5,984 identity rows.**
+- **#324 — D-409.** `RETIREMENT-PLAN.md`, arranged for parallel execution, indexed in `CLAUDE.md`.
+- **Config:** `lane_search_pages` 5 -> 10, verified through `load_settings()` rather than the file.
+- **D-410:** Indeed **APPROVED by the owner**, and measured to need **no JobSpy dependency** — one
+  `httpx` POST returns 100 postings with full inline JDs in 0.57 s, ~420x cheaper per JD than the
+  LinkedIn lane.
+
+**Three proposals were refused with measurements rather than opinions**, two of them mine: a native
+Indeed lane on the robots-allowed path (one 200, then a captcha), a JD-body recovery layer (**0 of 61**
+`jobapps` stubs dereference to anything), and the `gh_jid` resolver as a gate-1 lever (**5 of 216** —
+real, cheap, but not a lever). **And one claim of mine was retracted mid-session:** "31.6% of
+delivered leads are below the body floor" measured the INSTRUMENT, not the leads — 2,571 of workday's
+2,795 below-floor postings fail on `<1 section marker`, and posting 59284 is 3,397 chars over 20
+lines with 0 markers. Extending the floor to the ATS path as-is would have dropped ~4,500 real JDs.
 
 ## Doctrine change — "breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
 
@@ -178,9 +145,12 @@ is untouched.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED 2026-08-31 — it keeps running.**
-   See Next action 3. Both schedulers are armed: boardwatch 04:00, job-apps 08:30. Do not
-   re-raise; the remaining judgement is only WHEN to build, not WHETHER.
+1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED — it keeps running until gate 1 is
+   met.** Both schedulers armed: boardwatch 04:00, job-apps 08:30. **The retirement work is now a
+   written plan, not a question: `docs/program/RETIREMENT-PLAN.md`.** Do not re-raise WHETHER, and do
+   not re-derive the gap analysis.
+   ~~2. Indeed's dependency posture.~~ **DECIDED by Mit 2026-09-01 (D-410): approved.** Closed; do
+   not re-open or re-probe.
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
    multi-tenancy gap of its kind; D-054 forbids us authoring non-tech field content.
