@@ -43,7 +43,21 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # operator already curates. Not neutral in the "says nothing about roles/geography/field"
     # sense the other lane knobs are — it names a SPECIFIC lane — but it is still an acquisition
     # cost knob, not a ranking preference, which is the axis this table classifies on.
-    "Settings.lane_new_companies_per_run_overrides": {"jobapps": "unlimited"},
+    #
+    # `hiringcafe` added 2026-09-01 (D-405), and the neutrality question R10 exists to force is
+    # answered on the LANE, not on this operator's data: hiring.cafe's search window is
+    # `dateFetchedPastNDays: 7`, a rolling pool that recirculates the same employers every run
+    # for ANY user of it, so the cap can only slow a fixed backlog rather than bound a stream.
+    # Nothing about the entry depends on which roles, geography or field the operator wants.
+    # The acquisition cost it could still grow — network requests — remains bounded by
+    # `lane_posting_budget`, which is unchanged and which is the knob that actually caps spend.
+    # `linkedin` is deliberately absent: its window is a fresh 24-hour slice, measured at ~123
+    # genuinely new companies per run with no saturation over ten runs, so uncapping it would
+    # bound nothing.
+    "Settings.lane_new_companies_per_run_overrides": {
+        "jobapps": "unlimited",
+        "hiringcafe": "unlimited",
+    },
     "Settings.lane_posting_budget": 60,
     # Search pages per facet. 1 is the neutral default because it is the behaviour that shipped:
     # it adds no request to any existing user's run and encodes no view about roles, seniority,

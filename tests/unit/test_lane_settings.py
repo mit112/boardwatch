@@ -44,13 +44,49 @@ def test_the_two_budgets_default_to_the_documented_values(cfg: Path) -> None:
     assert settings.lane_posting_budget == 60
 
 
-def test_jobapps_ships_uncapped_and_no_other_lane_is_overridden(cfg: Path) -> None:
-    """The target configuration (per-lane cap override): job-apps' whole source tree caps out
-    around 38-45 companies total, so the shared cap buys nothing there and only slows reach.
-    LinkedIn refused 264 companies to the same cap in one run, so it stays on the shared
-    default and is deliberately absent from this mapping."""
+def test_only_the_two_BOUNDED_lanes_ship_uncapped_and_linkedin_does_not(cfg: Path) -> None:
+    """The override mapping separates BOUNDED sources from STREAMS, and that is the whole rule.
+
+    `jobapps`' source tree caps out around 38-45 companies in total. `hiringcafe` searches
+    `dateFetchedPastNDays: 7`, a rolling pool that RECIRCULATES the same companies every run —
+    measured over runs 116-127, per-run refusals fell monotonically 240 -> 193 while the cap
+    admitted 10 a run and consecutive-run overlap ran 0.90-0.96 Jaccard. A cap on either only
+    slows a fixed backlog down.
+
+    **`linkedin` must stay absent**, and this test pins that as much as it pins the two entries.
+    Its window is `f_TPR=r86400`, a fresh 24-hour slice: over runs 129-139 the cumulative union
+    of companies went 187 -> 1,294 with no saturation and exactly one company refused in all ten
+    runs. An exact-equality assertion is deliberate — a lane added to this mapping without the
+    bounded-source evidence should fail here rather than quietly uncap a stream.
+    """
     settings = load_settings(data_dir=None)
-    assert settings.lane_new_companies_per_run_overrides == {"jobapps": "unlimited"}
+    assert settings.lane_new_companies_per_run_overrides == {
+        "jobapps": "unlimited",
+        "hiringcafe": "unlimited",
+    }
+    assert "linkedin" not in settings.lane_new_companies_per_run_overrides
+
+
+def test_the_shipped_overrides_RESOLVE_to_uncapped_for_the_pool_lanes_only(cfg: Path) -> None:
+    """The mapping above is data; this is the behaviour it buys, and nothing covered it.
+
+    `_lane_company_cap` is the ONE site that resolves a lane's cap, and `"unlimited"` has to
+    become `CompanyBudget`'s `None` sentinel rather than 0 — 0 means "admit nothing and still
+    report every refusal", so a translation bug here would silently turn an uncapped lane into a
+    lane that admits none of its finds and looks like it is working.
+
+    Asserted per lane rather than on the dict, so this fails if the resolution changes even
+    though the shipped mapping does not — and it pins that an unnamed lane still lands on the
+    shared default.
+    """
+    from boardwatch.pipeline.runner import _lane_company_cap
+
+    settings = load_settings(data_dir=None)
+    assert _lane_company_cap(settings, "hiringcafe") is None, "hiringcafe must be uncapped"
+    assert _lane_company_cap(settings, "jobapps") is None, "jobapps must be uncapped"
+    assert _lane_company_cap(settings, "linkedin") == settings.lane_new_companies_per_run
+    assert _lane_company_cap(settings, "linkedin") == 10, "the shared default is the point"
+    assert _lane_company_cap(settings, "a-lane-nobody-named") == 10
 
 
 def test_a_lane_list_loads_from_config_toml_as_a_tuple(cfg: Path) -> None:

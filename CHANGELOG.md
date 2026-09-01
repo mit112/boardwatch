@@ -118,6 +118,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The hiring.cafe search no longer takes 30 runs to work through the employers it already
+  found.** New employers a search discovers are admitted 10 per run. For hiring.cafe that limit
+  was only ever slowing down a queue it had already filled: its search looks back 7 days, so the
+  same employers come round again every run rather than new ones arriving. Measured across a
+  stable stretch of eleven runs — the number of employers turned away fell steadily from 240 to
+  193 while 10 a run were let in, and 90-96% of the ones turned away were the same as the run
+  before. It is now unlimited for this search, which clears the ~291 waiting in one run and then
+  costs a couple a run. They are also **better than average**: employers found this way produced
+  45.9 eligible jobs per 1,000 openings against 33.4 for the hand-curated boards.
+
+  **LinkedIn is deliberately left as it was**, and the reason recorded in the code for that was
+  wrong and is corrected. It claimed an employer found by a search eventually joins the permanent
+  list of boards scanned every run, so lifting the limit would grow that list forever. It does
+  not: employers found by a search are recorded but never added to the scanned list, and the count
+  of scanned boards has sat at 379 for seven runs while 250 such employers were found. The real
+  reason to leave LinkedIn alone is that it is a genuine stream rather than a queue — it looks
+  back only 24 hours, so over ten runs it produced 1,294 distinct employers with no sign of
+  slowing, and they are the weakest source measured at 13.4 eligible per 1,000 openings.
+
 - **Judging the day's postings now takes minutes instead of over an hour.** Every open posting is
   tested against the rule catalog, and that ran one posting at a time on a single core — so a run
   that changed the rules, and therefore had to re-judge the whole backlog, spent 75.6 minutes there.
