@@ -262,7 +262,12 @@ def test_every_scalar_setting_is_reachable_from_the_cli() -> None:
     # surfaces (weights.*, llm.*, notify.*).
     nested = {"weights", "llm", "notify"}
     paths = {"data_dir", "config_dir"}
-    scalar = set(Settings.model_fields) - nested - paths
+    # A per-lane MAPPING, not a scalar `_SCALAR_KEYS` can cast: `config set`'s casters each
+    # parse one string into one value, and a lane name isn't known ahead of time to give one a
+    # key of its own. Deliberately config.toml-only — hand-edit the `[lane_new_companies_per_run_overrides]`
+    # table; `config show` omits it for the same reason.
+    non_scalar = {"lane_new_companies_per_run_overrides"}
+    scalar = set(Settings.model_fields) - nested - paths - non_scalar
 
     assert scalar == set(_SCALAR_KEYS), (
         f"missing from config show/set: {sorted(scalar - set(_SCALAR_KEYS))}; "

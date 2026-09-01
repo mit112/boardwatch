@@ -44,6 +44,15 @@ def test_a_negative_cap_is_rejected_at_construction():
         CompanyBudget(limit=-1)
 
 
+def test_a_none_limit_is_uncapped_and_never_refuses():
+    """The per-lane "unlimited" override resolves to `limit=None`, not `limit=0` — 0 already
+    means the opposite (the off switch above). `None` must admit every distinct company."""
+    budget = CompanyBudget(limit=None)
+    for slug in ("a", "b", "c", "d", "e"):
+        assert budget.admit("greenhouse", slug) is True
+    assert budget.refused == ()
+
+
 def test_the_same_slug_on_two_providers_is_two_companies():
     """`companies` is UNIQUE(provider, slug), so greenhouse:acme and lever:acme are two
     rows. A budget keyed on a shared display name would charge one slot for both and take

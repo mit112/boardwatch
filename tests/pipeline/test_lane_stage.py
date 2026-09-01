@@ -301,6 +301,47 @@ def test_the_cap_still_refuses_companies_the_store_has_never_seen(
     assert _open_posting_ids(engine) == {"src:a-1"}
 
 
+def test_a_lane_with_an_override_gets_its_own_cap_and_a_lane_without_falls_back(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-lane cap override. Three lanes, one run, so a bug that applies the override to
+    every lane and a bug that ignores the override both fail this test:
+
+      * `overridden` is named in `lane_new_companies_per_run_overrides` with its OWN, smaller
+        cap than the shared default.
+      * `unlimited` is named with `"unlimited"` and must admit every company offered, well past
+        the shared default.
+      * `shared` is named nowhere and must fall back to `lane_new_companies_per_run` unchanged.
+    """
+    overridden = StubLane([("greenhouse", s) for s in ("a", "b", "c")])
+    unlimited = StubLane([("greenhouse", s) for s in ("d", "e", "f", "g")])
+    shared = StubLane([("greenhouse", s) for s in ("h", "i", "j")])
+    overridden.name, unlimited.name, shared.name = "overridden", "unlimited", "shared"
+    monkeypatch.setattr(
+        runner_mod,
+        "LANE_FACTORIES",
+        {
+            "overridden": lambda _s, _f: overridden,
+            "unlimited": lambda _s, _f: unlimited,
+            "shared": lambda _s, _f: shared,
+        },
+    )
+
+    settings = _settings(
+        tmp_path,
+        lanes_enabled=("overridden", "unlimited", "shared"),
+        lane_new_companies_per_run=2,
+        lane_new_companies_per_run_overrides={"overridden": 1, "unlimited": "unlimited"},
+    )
+    reports, errors = _run_lanes(engine, settings, insert_run(engine))
+
+    assert errors == []
+    by_name = {report.name: report for report in reports}
+    assert len(by_name["overridden"].admitted) == 1, "must use its OWN cap, not the shared 2"
+    assert len(by_name["unlimited"].admitted) == 4, "'unlimited' must admit everything offered"
+    assert len(by_name["shared"].admitted) == 2, "no override: must fall back to the shared cap"
+
+
 def test_admission_holds_no_connection_open_across_the_lanes_network_work(
     engine: Engine, tmp_path: Path
 ) -> None:

@@ -44,6 +44,15 @@ def test_the_two_budgets_default_to_the_documented_values(cfg: Path) -> None:
     assert settings.lane_posting_budget == 60
 
 
+def test_jobapps_ships_uncapped_and_no_other_lane_is_overridden(cfg: Path) -> None:
+    """The target configuration (per-lane cap override): job-apps' whole source tree caps out
+    around 38-45 companies total, so the shared cap buys nothing there and only slows reach.
+    LinkedIn refused 264 companies to the same cap in one run, so it stays on the shared
+    default and is deliberately absent from this mapping."""
+    settings = load_settings(data_dir=None)
+    assert settings.lane_new_companies_per_run_overrides == {"jobapps": "unlimited"}
+
+
 def test_a_lane_list_loads_from_config_toml_as_a_tuple(cfg: Path) -> None:
     """TOML has no tuple, so the array has to coerce — otherwise arming a lane by hand-editing
     config.toml would fail validation and the only route in would be the CLI."""
@@ -97,6 +106,7 @@ def test_the_lane_knobs_do_not_move_the_config_hash(cfg: Path) -> None:
         update={
             "lanes_enabled": ("alpha",),
             "lane_new_companies_per_run": 3,
+            "lane_new_companies_per_run_overrides": {"alpha": 1},
             "lane_posting_budget": 1,
         }
     )

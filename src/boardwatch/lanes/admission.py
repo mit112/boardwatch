@@ -47,10 +47,15 @@ class CompanyBudget:
     never widens, and the refusal list looks exactly like a normal capped run, so nothing
     reports the failure. The is-it-new check belongs with the runner that holds the
     connection and is deliberately NOT built here.
+
+    `limit=None` is uncapped: `admit()` never refuses. NOT `limit=0` — 0 already means
+    something real and different (the off switch: admit nothing, still report every refusal),
+    so a caller that wants "no cap" for one lane has to say so, not repurpose the value that
+    already means the opposite.
     """
 
-    def __init__(self, limit: int) -> None:
-        if limit < 0:
+    def __init__(self, limit: int | None) -> None:
+        if limit is not None and limit < 0:
             raise ValueError(f"company budget cannot be negative: {limit}")
         self._limit = limit
         self._admitted: list[CompanyKey] = []
@@ -61,7 +66,7 @@ class CompanyBudget:
         if key in self._admitted:
             # Already paid for. Two postings from one employer are one company.
             return True
-        if len(self._admitted) >= self._limit:
+        if self._limit is not None and len(self._admitted) >= self._limit:
             # Deduplicated on the same rule as `_admitted`, and for the same reason: a refusal
             # COUNT that lists one employer three times overstates how much reach the cap cost,
             # which is the one number this report exists to give. Re-asking about an already

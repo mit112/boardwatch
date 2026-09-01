@@ -38,6 +38,12 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # caps on acquisition cost, not preferences: they bound the request budget against a host
     # nobody here operates and say nothing about which postings are wanted.
     "Settings.lane_new_companies_per_run": 10,
+    # Per-lane override of the cap above. `jobapps` ships uncapped: its whole source tree caps
+    # out around 38-45 companies total, so a cap buys nothing but slows reach for a lane an
+    # operator already curates. Not neutral in the "says nothing about roles/geography/field"
+    # sense the other lane knobs are — it names a SPECIFIC lane — but it is still an acquisition
+    # cost knob, not a ranking preference, which is the axis this table classifies on.
+    "Settings.lane_new_companies_per_run_overrides": {"jobapps": "unlimited"},
     "Settings.lane_posting_budget": 60,
     # Search pages per facet. 1 is the neutral default because it is the behaviour that shipped:
     # it adds no request to any existing user's run and encodes no view about roles, seniority,
@@ -106,6 +112,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.zero_skill_coverage_prior": "preference",
     "Settings.lanes_enabled": "capability",
     "Settings.lane_new_companies_per_run": "operational",
+    "Settings.lane_new_companies_per_run_overrides": "operational",
     "Settings.lane_posting_budget": "operational",
     "Settings.lane_search_pages": "operational",
     "Settings.jobapps_discovery_dir": "path",
