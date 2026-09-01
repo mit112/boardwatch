@@ -71,7 +71,7 @@ def test_dry_run_reports_the_same_counts_and_writes_nothing(tmp_path: Path) -> N
     result = _run(data_dir, ["track", "import", str(_history(tmp_path)), "--dry-run"])
     assert result.exit_code == 0, result.output
     # Every bucket is printed, including the zeroes: absent must not read as zero.
-    for bucket in ("matched", "already_present", "unmatched", "malformed"):
+    for bucket in ("matched", "already_present", "unmatched", "malformed", "ambiguous"):
         assert bucket in result.output
     assert "would write 1 application" in result.output
     assert _applications(data_dir) == 0
