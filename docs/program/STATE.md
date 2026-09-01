@@ -21,97 +21,105 @@
 
 ## Current standing
 
-**SIX PRs MERGED, NO PRODUCTION RUN. Run 138 is still the latest**; every number below is measured
-read-only against the live store or against job-apps' ledger as an independent set. **Run 139 is the
-first run that can move a lane number** — the 2026-09-01 measurement window predates hiring.cafe's
-first clean run, LinkedIn facet mining arming, and #307/#308 entirely.
+**RUN 139 IS VERIFIED CLEAN AND IT ANSWERS THE QUESTION D-399 EXISTS TO ASK.** Invoked on demand
+10:37 CDT, finished 16:12 UTC. **Sentinel exit 0**, `status='ok'`, **34m55s**. 379 boards attempted,
+**1 failed** (marqeta HTTP 404 — the same dead board as run 138, not systemic), 233 complete / 32
+partial / 113 unchanged. 26,878 seen, 1,656 new, 1,016 closed, **96 tailored résumés** delivered.
 
-Merged: **#306** SmartRecruiters dereference · **#307** aggregator slice · **#308** promoted-queue
-root · **#310** Workday dereference · **#311** D-399 · **#312** the case-claim correction · **#313**
-the `slug_from_path` chrome fix (gated green, auto-merge armed at close — **verify by main's
-CONTENT**: `git grep -c "read by GRAMMAR" origin/main -- src/boardwatch/providers/workday.py`).
+**ONLY 2,197 POSTINGS WERE NEWLY JUDGED, against run 138's 115,703 — because `engine_version` DID
+NOT MOVE.** It reads `1+532b917626c0` on current main, exactly run 138's stored value. None of
+#306/#307/#308/#310/#311/#312/#313 re-keyed the eligibility ledger; they are discovery and identity
+code, not digested eligibility modules. **No ledger drain is owed.**
 
-**WORKDAY IS DEREFERENCED, AND IT IS THE LARGEST CONVERGENCE ITEM THE PROGRAM HAS SHIPPED.** 87,413
-of 93,044 provider-supplied `externalUrl`s resolve with the extracted reference equal to the stored
-`provider_posting_id` and **ZERO mismatches**; an independent arm of 4,521 URLs across **606 hosts
-against our own 117** resolves 4,456. **896 job-apps finds now converge onto a posting the board scan
-already holds** — against D-397's measured 44-posting prize for the suppressor it declined to build.
-The old refusal was aimed at the wrong contract: a `PostingTarget` is never fetched, so what had to
-be recoverable was `provider_posting_id`, not the `externalPath`. That contract is still unproven.
+**GATE 1 DID NOT MOVE, AND THE COMPOSITION CHANGE IS THE FINDING.** Identical 216-posting population
+over the identical window, so this is apples-to-apples with the 2026-09-01 reading:
 
-**A NUMBER THIS PROGRAM PUBLISHED WAS WRONG FOR TWO HOURS, AND THE CORRECTION IS THE MORE USEFUL
-RESULT (D-401).** #310 shipped "589 converge, 307 lost to site case". The 307 were never lost:
-`stored_slug` folds case and `upsert_lane_company` calls it for every lane snapshot. The figure came
-from joining `(slug, ref)` as STRINGS while production resolves the company case-insensitively
-first — **a join only models convergence if it models the resolver**. Corrected in #312 to **896**.
+| bucket | 2026-09-01 | run 139 |
+|---|---|---|
+| independent | 44 | **44** |
+| lane-only | 0 | **38** |
+| not held at all | 172 | **134** |
 
-**A MEASURED, OWNER-APPROVED, BUILT CHANGE WAS THEN REFUSED AT ZERO BENEFIT (D-401).** The premise
-behind Workday site-case preservation *is* false — 60 of 133 watched companies already store a
-lowercased site holding 31,395 clean-scanned postings, and a live CXS A/B returned identical totals
-both ways (nvidia 2000/2000, bdx 576/576, roche 224/224). The migration was still discarded, because
-`stored_slug` already delivers the convergence it was built to buy. **It was also already recorded as
-D-339**, reachable with `tools.decisions --find slug case` in one command; the log was not searched
-before the proposal was built.
+**Exactly 38 postings moved from `absent` to `lane-only` and ZERO to `independent`.** That is the
+empirical confirmation of what D-399 recorded in advance about #307 and #308 — they consume more of
+job-apps' output rather than reproducing its discovery. Coverage is an UPPER bound: the instrument's
+company+title fallback is fuzzy and can over-credit.
 
-**THE `slug_from_path` CHROME DEFECT IS FIXED (D-400, #313).** `_CHROME_SEGMENTS` contains `jobs`, so
-a tenant whose career site is named `Jobs` had its site skipped and the job's **city** read as the
-site — a fictional company row per city, 157 live URLs, and neither `redhat/jobs` nor `paypal/jobs`
-(325 postings, both watched) could be added by pasting its URL. Site derivation is positional now;
-misread URLs through `parse_board_target` go **157 -> 0** over 113,074 real URLs.
+**THE COUPLING NEARLY TRIPLED, and it is the largest number in the read-out.** `jobapps` lane share
+of delivered leads: run 138 **17.7%** (17 of 96) -> run 139 **49.0%** (47 of 96). Every independent
+route lost slate share to it (linkedin 40->24, greenhouse 12->6, ashby 10->4) because `--top 100` is
+fixed and the lane's 177 resolved postings displaced them on rank. **49% of delivered output now dies
+the day job-apps is switched off.**
 
-**JOB-APPS RETIREMENT NOW HAS A BAR, AND THE FIRST READING IS FAR FROM IT (D-399).** Coverage
-**20.4%** against a bar of 80%; precision a **28-point** gap; and **17 of run 138's 96 delivered
-leads flow through the jobapps lane**, so 17.7% of delivery dies on switch-off. Company reach re-run
-on the identical window still reads 16.4% and is the WRONG instrument — structurally blind to
-aggregator lane work.
+**GATE 2 WAS READ FOR THE FIRST TIME, AND THE FIGURES IT WAS SET AGAINST WERE INVERTED (D-404).**
+The recorded "precision ... 16.2% vs 44.2%" is backwards: **44.2% was boardwatch's DEFECT rate and
+16.2% job-apps'**; as precision that is 55.8% vs 83.8%. The `D-372` citation is wrong too — that is
+the `clearance_preferred` resolver bug; the real ones are D-382/D-383. New reading, both sides, same
+judge, same day: **boardwatch 74.7% precision, job-apps 98.7% — a 24.0-point gap against a 5-point
+bar, NOT MET.** The **two-sided decoy control is now BUILT and both arms PASS** (5/5 and 4/4), which
+is what makes the job-apps figure usable at all. **Round 1 of this reading was a staging bug of mine**
+— see D-404; it reported 15.3 points, and correcting it WIDENED the gap rather than narrowing it.
+
+**THREE PRs SHIPPED, AND THE TWO MOST VALUABLE FINDINGS CAME FROM READING RUN 139 OUT — not from
+building anything.** #315 corrected three claims #313 falsified. #316 fixed a queue defect that had
+silently dropped **3 of 96 delivered leads** and had never been reported by any prior run. #317
+uncapped hiring.cafe and corrected a FALSE reason recorded in `settings.py` for capping LinkedIn.
 
 ## Next action
 
-1. **Confirm #313 landed** (auto-merge was armed at close; gate exit 0, 8,848 passed). Check main's
-   CONTENT, never the PR page.
-2. **INVOKE RUN 139.** Nothing else can move a lane number. It is the first run carrying #304's
-   hiring.cafe fix at full effect, #302's LinkedIn facet mining, #307's aggregator slice, #308's
-   promoted-queue root, and the Workday/SmartRecruiters dereferences. Read it out against D-399's
-   gates with `.agent/2026-09-01b-session/retirement_readiness.py`.
-3. **Then, on evidence: the native Indeed and Jobright lanes.** They are 24.2% of job-apps' built
-   output (D-393) and the only remaining work that moves D-399 gate 1. **#307 and #308 do NOT** —
-   they consume more of job-apps' output rather than reproducing its discovery, which is defensible
-   sequencing but must not be scored as progress (recorded in D-399 for exactly this reason).
+**1. INVOKE RUN 140 AND READ IT OUT.** It is the first run carrying #316 (the queue fix — the 3 lost
+leads should land) and #317 (hiring.cafe uncapped — expect a **one-run drain of ~291 companies** and
+~+6 min). Confirm from the run line that `hiringcafe` reports **0 refused by the cap**, and that the
+delivery queue reports **0 failed** rather than 4. Then re-read gates 1 and 3 with
+`./.venv/bin/python .agent/2026-09-01b-session/retirement_readiness.py`.
+
+**2. GATE 1 STILL NEEDS DISCOVERY THAT DOES NOT EXIST YET, and neither shipped lever supplies it.**
+Measured against job-apps' last 14 cohorts (258 distinct companies): **96 of 258 (37%) have no
+boardwatch company row at all**, and only **17** of those sit in the refused backlog. Un-throttling
+both caps closes **≈18%** of the company-level gap (a LOWER bound — a name join undercounts). The
+remaining ~79 were surfaced by **neither lane**. The replacement work is **native Jobright** (cheap:
+a static GitHub raw README plus JobPosting JSON-LD detail pages, no dependency, ~10-31 eligible
+postings/day) and **native Indeed** (~40-57/day, but it rests on `JobSpy`, a third-party scraping
+dependency — **an owner call, not a silent pick**).
+
+**3. GATE 2's TWO-SIDED DECOY CONTROL IS DONE — both arms catch 4-5 of 4-5.** What remains owed is
+SENSITIVITY, not gross detection: the planted decoys are egregious, and the job-apps arm returned
+`uncertain` **75 of 80**, so the control bounds gross insensitivity and not a subtle seniority or
+experience signal. A subtler decoy set is the next refinement if the 5-point bar is to be decidable.
 
 ### Owed, found this session, not yet scheduled
 
-- **The aggregator slice and the promoted-queue root SHIPPED** — #307 and #308. `is_direct_apply`'s
-  premise ("landing pages the user cannot apply from") was false for `indeed`/`jobright`, which carry
-  posting-specific URLs and are how the owner already applies. `linkedin` stays out on a different,
-  measured reason. **Neither advances job-apps retirement** — see D-399.
-- **Cross-source dedup — RULED, do not build a suppressor (D-397). The minimum correct fix is now
-  COMPLETE.** Six independent barriers, not one; flipping `cross_host.suppresses` is ACTIVELY UNSAFE
-  because two call sites hardcode `identity_kind="exact_quad"`, and the measured prize was 22 groups
-  / 44 postings. The targeted dereference expansion that D-397 named as the correct alternative is
-  **done on both providers — SmartRecruiters (#306) and Workday (#310) — and Workday alone converges
-  896**, twenty times the suppressor's prize. Unknown shapes still raise.
-- **Do NOT propose lowercasing Workday slugs (D-401, and D-339 before it).** Proposed, sized,
-  owner-approved, BUILT and abandoned this session at zero measured benefit. The premise it attacked
-  is genuinely false — the CXS endpoint is case-insensitive, probed — but `stored_slug` already folds
-  case, so there is nothing to gain and a 54-row irreversible migration to lose.
-- **hiring.cafe pacing (D-397 defect 5) is DISCLOSED, not fixed** — one boundary request per run can
-  fall inside the >=1.0s window; the only real fix is process-wide pacing state, which would wreck
-  the gate.
-- **`reports/abstain.STRUCTURALLY_UNDECIDABLE`** — data precondition now met, design question open
-  (see below).
-- The ledger drain stays DECLINED (D-390); re-check the `built`/`skipped` split before any future drain.
-- The two held recall patches at `.agent/2026-08-31d-session/WIP-*.patch` are **DO NOT SHIP** on
-  measured evidence. The corpus-regression detector stays dark until ~run 138; do NOT patch it.
+- **The `ashby:Lightfield` duplicate pair stays as recorded residue (D-405, Mit's call).** 19
+  duplicated open postings, **zero artifacts ever delivered**, ~192 wasted evaluations (0.016% of the
+  corpus). Pre-guard: `stored_slug` landed 2026-08-28 02:48, the duplicate was created 08-27 19:44.
+  The drain is owed — merge onto company 323, delete 348 — when something next touches company
+  identity or the Ashby lane.
+- **`_identity_hash` includes the mutable `apply_url`** (an independent review found this), so a
+  disambiguated queue folder's name can churn when a scan refreshes that URL. Pre-existing and
+  independent of #316; it weakens "a folder the owner can keep open" while leaving the narrow stated
+  invariant true.
+- **One queue failure survives #316 and is pre-existing**: `posting 131368: eBay_..._59eb81b3 already
+  exists at its destination`. A null control confirms unfixed `main` performs that same rename on its
+  own, so it is neither caused nor fixed by #316.
+- The ledger drain stays DECLINED (D-390). The two held recall patches at
+  `.agent/2026-08-31d-session/WIP-*.patch` are **DO NOT SHIP** on measured evidence.
 
-## Session 2026-08-31f — what shipped
+## Session 2026-09-01c — what shipped
 
-Read-out and records only; no source changed. **Run 137 verified clean from its sentinel**, the
-job-apps lane's first armed run measured end-to-end **through delivery**, #290+#291 confirmed at
-production scale against the correct comparator, and **D-392** recorded so the vacuous control and
-the wrong comparator are not repeated. #293 (D-391) landed during the session; its diff was verified
-docs-only and `DECISIONS.md` checked entry-by-entry (314 -> 315, nothing dropped).
+Run 139 invoked and read out; **three PRs merged, each verified on `main` by CONTENT**.
 
-Previous session: **#290** (D-388), **#291** (D-389), **#292** (D-390), **#293** (D-391).
+- **#315** — `lanes/dereference.py`'s module docstring still said the career-site defect was live and
+  needed "a separate change"; #313 had already made it. One file, two contradictory accounts.
+- **#316** — three delivered leads never reached the queue, and run 139 is the FIRST run to report a
+  queue failure at all. Two causes: a case-SENSITIVE collision key against a case-INSENSITIVE
+  filesystem (2 leads — **CI is Linux and cannot reproduce it**), and a canonical-`job_id` re-point
+  where a converged lane copy left the folder identifying neither the offered posting nor its job
+  (1 lead). Plus the run had been recording a COUNT with no cause. **An independent review after the
+  gate passed found a third, pre-existing defect the gate did not.** D-402.
+- **#317** — hiring.cafe uncapped (a recirculating 7-day POOL, drains in one run, **1.37x** the
+  curated eligible density), LinkedIn left capped on the TRUE reason (an unbounded 24-hour STREAM at
+  **0.40x** — the worst measured source). The reason recorded in `settings.py` was **false**: lane
+  companies are written `watched=False` and never join the scan floor. D-403.
 
 ## Doctrine change — "breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
 
