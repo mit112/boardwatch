@@ -1,8 +1,13 @@
 """Lane 1: hiring.cafe (SSR search surface, re-pointed 2026-08-31 under D-393).
 
-Every request shape here is one this repo has actually made. One of them, and no others:
+Every request shape here is one this repo has actually made. Two of them, and no others:
 
     GET https://hiringcafe.com/?searchState={json}&page={n}   -- search, server-rendered
+    GET <the employer's own board, via that provider's `board_url`>  -- one GET, every body
+
+The second is a request the SCAN stage already makes, reused rather than reinvented; the
+retired `GET /api/job-description?id=` is gone, having been refused on every attempt since
+run 129.
 
 No key, no cookie, no TLS bypass, no app impersonation. That last clause is why this lane
 exists at all: Indeed's free body is reachable only behind a key lifted from its iOS app with
@@ -64,14 +69,47 @@ typical sample passes. Splitting on `___` mis-attributes 36 of 160 (22.5%) in th
 `taleo_careersection` separates with single underscores, `fountain`'s `board_token` itself
 contains `___`, and `saashr` differs in case from its own `board_token`. `source` and
 `board_token` are explicit top-level keys and non-blank on all 160. This module reads those and
-uses `objectID` for nothing but the JD endpoint's `id` parameter.
+uses `objectID` opaquely -- as the fallback posting id and as the per-facet paging key, never
+split.
 
-WHAT THE LANE TRUSTS FROM THE PAYLOAD, AND WHAT IT DOES NOT. `v5_processed_job_data` is
-untrusted for eligibility (D-278) and stays that way: the eligibility engine is body-only, so
-it structurally cannot read these fields. The location TEXT lives nowhere else in the payload
-(`_geoloc` is coordinates, and `rank/location_gate` matches text), so `workplace_*` populates
-`RawPosting.locations` as provider-asserted metadata at exactly the trust level greenhouse's
-`location.name` already has -- and never as evidence for a verdict.
+**THE SSR PAYLOAD IS DISCOVERY-ONLY. IT IS NEVER THE FROZEN JD.** There is no `description`
+field in a hit. What there is is `v5_processed_job_data.requirements_summary` and
+`technical_tools`, and those are hiring.cafe's OWN SYNTHESIZED summary of the posting, not one
+sentence the employer wrote. `INELIGIBLE` must carry a quoted span from the frozen JD, so
+feeding that summary into eligibility would attribute words to an employer that never wrote
+them -- a fabricated span, quoted from a source the reader would take for the JD. D-278 already
+rules `v5_processed_job_data` untrusted for eligibility; this reinforces it rather than
+weakening it. What the hit is used for is identity, company, location and `apply_url`, and
+nothing else.
+
+SO WHERE DOES A BODY COME FROM. From the EMPLOYER's own board, and only where this repo can
+already read one. `hit_identity` dereferences `apply_url`; when it names a greenhouse, lever,
+ashby or workable posting, that company's board is fetched ONCE and every body arrives inline
+with the listing, and the postings handed on are the provider's own -- byte-identical to what
+the scan stage produces, which is what makes the convergence through
+`UNIQUE(company_id, provider_posting_id)` exact instead of an endless revision war. Measured
+over the 232 hiringcafe-sourced postings this repo has built: a posting reference is
+recoverable for 34 of them (14.7%), a company for 41.8%, and 58.2% land on a host among some
+46 ATS shapes with no board target at all.
+
+TWO RATES ARE ON RECORD AND THEY DISAGREE; NEITHER HAS BEEN RE-MEASURED SINCE. 14.7% is over
+BUILT postings -- rows that already cleared the role and quality gates. The 2026-08-23 contract's
+sample of 160 RAW `ssrHits` puts it at 5.0%: 8 greenhouse hits on 2 of 40 companies, with no
+lever, ashby or workable source appearing at all. Raw hits are what this lane actually groups, so
+5% is the conservative number for how many companies one search can reach, and the true figure is
+somewhere in that band. It matters for one thing: with 14 facets a run still reaches dozens of
+bodyable companies, but an UNFACETED profile makes one search, and a run that reaches none of
+them leaves `attempted > 0` with `resolved == 0` -- `AcquisitionTally.is_silent_outage`, printed
+as SILENT OUTAGE. That is honest here (the lane really did deliver nothing) but it is thin
+evidence, so the first live run's tally is what should settle the rate.
+
+WHAT THAT LEAVES ON THE TABLE, STATED RATHER THAN HIDDEN. The other 85.3% are counted
+`not_attemptable` -- seen, and not fetched -- because reading a body off an arbitrary ATS page
+is generic HTML JD extraction, which is a separate decision and a keystone-invariant-sensitive
+one: whatever it extracted would become the frozen JD that every `INELIGIBLE` span is quoted
+from. The retired `/api/job-description` endpoint used to cover them and has been refused on
+every attempt since run 129, so the lane's reach through this change goes from ZERO to 14.7%,
+not from 100% to 14.7%.
 """
 
 from __future__ import annotations
@@ -80,18 +118,18 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import zip_longest
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 from urllib.parse import quote
 
 from selectolax.parser import HTMLParser
 
 from boardwatch.core.board_urls import UnknownBoardURL
-from boardwatch.core.models import RawPosting
-from boardwatch.core.politeness import Fetcher, FetchFailure
+from boardwatch.core.models import BoardSnapshot, RawPosting
+from boardwatch.core.politeness import Fetcher, FetchFailure, identifying_user_agent
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.dereference import UnresolvablePostingURL, parse_posting_target
 from boardwatch.lanes.outcomes import AcquisitionOutcome, AcquisitionTally
-from boardwatch.lanes.quality import assess_body
+from boardwatch.providers.registry import build_providers
 
 LANE_NAME = "hiringcafe"
 
@@ -104,10 +142,15 @@ LANE_PROVIDER = "hiringcafe"
 # addressed `hiring.cafe` and read its 200 back from `hiringcafe.com`, so naming the canonical
 # host here is what keeps a redirect off every page request.
 SEARCH_URL = "https://hiringcafe.com/"
-_JOB_DESCRIPTION_URL = "https://hiringcafe.com/api/job-description?id="
 
-# D8's ceiling on body GETs per lane per run. A hard cap rather than a pacing knob: the search
-# page returns ~159 hits and the runner's company cap does not bound postings, only companies.
+# D8's ceiling on body requests per lane per run. A hard cap rather than a pacing knob: the
+# search returns ~150 hits a page and the runner's company cap does not bound postings, only
+# NEW companies -- an already-stored one is admitted free, so nothing else bounds this.
+#
+# One request now buys every body at one company rather than one body, so this bounds COMPANIES
+# reached here where it bounds postings in the LinkedIn lane. The unit it was always written in
+# -- requests, "the lane's whole network cost" -- is unchanged; what changed is how much reach
+# each one buys, which is the whole advantage of a body-inlined board.
 DEFAULT_POSTING_BUDGET = 60
 
 # Search pages requested per facet. 1 is the single-page behaviour the lane shipped with and
@@ -295,8 +338,36 @@ def company_name(hit: dict[str, Any]) -> str:
     return name or _text(hit.get("board_token"))
 
 
-def job_description_url(object_id: str) -> str:
-    return f"{_JOB_DESCRIPTION_URL}{quote(object_id, safe='')}"
+@runtime_checkable
+class _BodyInlinedProvider(Protocol):
+    """A provider whose board response carries every body, decodable without a second request.
+
+    STRUCTURAL, not a hand-written list, and that is deliberate: "adding a member to a set needs
+    ONE source of truth", and this set already has one. `parse_payload` exists on exactly the
+    providers whose board response is self-contained -- greenhouse, lever, ashby and workable --
+    and its absence on smartrecruiters and workday is not an oversight but the fact that their
+    bodies need a per-posting detail GET. `lanes.dereference` refuses those two a posting
+    reference for the same underlying reason, so the two sets agree without either naming the
+    other; and if they ever stop agreeing, the mismatch lands in `not_attemptable`, which is
+    counted, rather than in an exception or a silent skip.
+    """
+
+    def board_url(self, slug: str) -> str: ...
+
+    def parse_payload(self, content: bytes, *, url: str) -> BoardSnapshot: ...
+
+
+def _body_inlined_providers() -> dict[str, _BodyInlinedProvider]:
+    """The registry's providers that can answer a board with its bodies, by name.
+
+    Built once per `collect` rather than per company: `build_providers` instantiates all six on
+    every call, and a lane can touch dozens of companies in a run.
+    """
+    return {
+        name: provider
+        for name, provider in build_providers().items()
+        if isinstance(provider, _BodyInlinedProvider)
+    }
 
 
 def search_state(query: str) -> dict[str, Any]:
@@ -370,7 +441,7 @@ class HiringCafeLane:
         self._search_pages = max(1, search_pages)
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
-        """One search GET per role facet, then one body GET per posting at an admitted company.
+        """Search pages per facet, then ONE board GET per admitted body-inlined company.
 
         `admits` is asked once per distinct `(provider, slug)`, in first-seen order, BEFORE any
         body is fetched -- the protocol's contract, and the only ordering under which the
@@ -378,6 +449,7 @@ class HiringCafeLane:
         """
         entries, search_pages = self._search(fetcher)
 
+        board_providers = _body_inlined_providers()
         tally = AcquisitionTally()
         by_company = _group_by_company(entries, tally)
         snapshots: list[LaneCompanySnapshot] = []
@@ -389,19 +461,22 @@ class HiringCafeLane:
                 # are reported by name through `admission.CompanyBudget.refused`, which is the
                 # channel designed for them.
                 continue
-            postings: list[RawPosting] = []
-            for identity, hit in company_hits.hits:
-                if remaining <= 0:
-                    # Seen, not requested. The catalog is closed, and `not_attemptable` is its
-                    # only member meaning that -- its stated reason (no resolvable URL) is
-                    # narrower than this condition, but counting is the invariant and a silent
-                    # drop is what the catalog exists to prevent.
+            board = board_providers.get(provider)
+            if board is None or remaining <= 0:
+                # Seen, not requested. Two ways to get here and one bucket for both, because
+                # the catalog is closed and `not_attemptable` is its only member meaning
+                # "seen and NOT fetched": the per-run request budget was already spent, or
+                # this company sits on an aggregator-only host whose body this repo has no
+                # evidenced way to read. A silent drop is what the catalog exists to prevent.
+                for _ in company_hits.hits:
                     tally.record("not_attemptable")
-                    continue
-                remaining -= 1
-                posting = self._fetch_posting(fetcher, identity, hit, tally)
-                if posting is not None:
-                    postings.append(posting)
+                continue
+            # ONE request buys every body at this company, so the budget is charged per
+            # COMPANY here where the LinkedIn lane charges it per posting. Same unit in both --
+            # `lane_posting_budget` bounds requests, which is what its own comment says it is
+            # for -- but it binds far less here, which is the point of a body-inlined board.
+            remaining -= 1
+            postings = self._board_postings(fetcher, board, slug, company_hits.hits, tally)
             if postings:
                 # A company whose every body was refused yields no snapshot: an empty one would
                 # still write a `board_scans` row and oblige a company row for zero postings,
@@ -532,26 +607,59 @@ class HiringCafeLane:
                 break
         return entries, pages
 
-    def _fetch_posting(
+    def _board_postings(
         self,
         fetcher: Fetcher,
-        identity: HitIdentity,
-        hit: dict[str, Any],
+        provider: _BodyInlinedProvider,
+        slug: str,
+        hits: list[tuple[HitIdentity, dict[str, Any]]],
         tally: AcquisitionTally,
-    ) -> RawPosting | None:
-        object_id = _text(hit.get("objectID"))
+    ) -> list[RawPosting]:
+        """One GET of this employer's own board, and every hit it can account for.
+
+        THE POSTINGS ARE THE PROVIDER'S, VERBATIM, and that is the substantive choice here. The
+        alternative -- rebuilding a `RawPosting` from the aggregator hit with the provider's
+        body pasted in -- would write a row that DIFFERS from the one a board scan produces for
+        the same `(company_id, provider_posting_id)`, in its url, its locations, its dates and
+        its `raw_json`. The two would then converge onto one row and each subsequent scan would
+        rewrite it as a revision of the other. Taking the provider's row means the convergence
+        `hit_identity` exists to create is exact: this lane hands `apply_board` the same bytes
+        the scan stage would have.
+
+        THE UA IS RESTORED FOR THIS REQUEST. The lane client carries a browser UA for the
+        aggregator (D-369). An ATS provider's own host is owed the identifying one under D22 --
+        `pipeline._lane_fetcher` says so in its own docstring -- so the lane issues this GET
+        itself, with the header put back, rather than through `provider.fetch_board`, which
+        takes no headers. Owning the GET also keeps `FetchFailure` typed at the raise site:
+        `fetch_board` converts it to a status plus a message, and recovering 403 from 404 out
+        of that message would be classifying behaviour by string-matching it.
+        """
+        board_url = provider.board_url(slug)
         try:
-            result = fetcher.get(job_description_url(object_id))
+            result = fetcher.get(board_url, headers={"User-Agent": identifying_user_agent()})
         except FetchFailure as exc:
-            tally.record(_failure_outcome(exc))
-            return None
-        title = _title(hit)
-        body_text, rejection = assess_body(_description(result.content), title=title)
-        if rejection is not None:
-            tally.record(rejection.outcome)
-            return None
-        tally.record("body_fetched")
-        return _raw_posting(identity, hit, title=title, body_text=body_text)
+            outcome = _failure_outcome(exc)
+            for _ in hits:
+                tally.record(outcome)
+            return []
+        snapshot = provider.parse_payload(result.content, url=board_url)
+        by_posting_id = {posting.provider_posting_id: posting for posting in snapshot.postings}
+        postings: list[RawPosting] = []
+        for identity, _hit in hits:
+            posting = by_posting_id.get(identity.posting_id)
+            if posting is None:
+                # The aggregator listed it and the employer's own board does not. That is a
+                # posting that has gone, which is what `fetch_gone` means -- and it is also
+                # what an unreadable payload produces, because `parse_payload` reports a
+                # decode failure as a snapshot with no postings rather than by raising.
+                tally.record("fetch_gone" if snapshot.status != "failed" else "extracted_empty")
+                continue
+            # `body_inline`, not `body_fetched`: the body arrived WITH the listing, which is
+            # the distinction the two outcomes exist to record. The request was one per
+            # company, not one per posting.
+            tally.record("body_inline")
+            postings.append(posting)
+        return postings
 
 
 def _failure_outcome(exc: FetchFailure) -> AcquisitionOutcome:
@@ -567,21 +675,6 @@ def _failure_outcome(exc: FetchFailure) -> AcquisitionOutcome:
         return "fetch_gone"
     return "fetch_unavailable"
 
-
-def _description(content: bytes) -> str:
-    """`job.job_information.description` -- the HTML body, the one field the search omits.
-
-    An unreadable payload returns "" rather than raising: `assess_body` then reports
-    `extracted_empty`, which is what the catalog means by "a response arrived and extraction
-    produced nothing substantive". A second failure mode here would need a second outcome name
-    and the catalog is closed.
-    """
-    try:
-        payload = json.loads(content)
-        description = payload["job"]["job_information"]["description"]
-    except (ValueError, KeyError, TypeError):
-        return ""
-    return description if isinstance(description, str) else ""
 
 
 def _group_by_company(
@@ -635,26 +728,6 @@ def _group_by_company(
     return grouped
 
 
-def _raw_posting(
-    identity: HitIdentity, hit: dict[str, Any], *, title: str, body_text: str
-) -> RawPosting:
-    return RawPosting(
-        provider_posting_id=identity.posting_id,
-        title=title,
-        # The employer's own URL, not a hiring.cafe permalink: it is what the user clicks, and
-        # in the convergence case it is the same URL the ATS provider would have recorded.
-        url=_text(hit.get("apply_url")),
-        locations=_locations(hit),
-        # `posted_at`/`updated_at`/`remote_policy` stay unset. No date field appears in the
-        # recorded top-level key list, and `v5_processed_job_data.workplace_type` is recorded
-        # as present but its value vocabulary is not -- mapping it would be a guess, and an
-        # unknown remote policy is already the honest default.
-        body_text=body_text,
-        # The JD HTML is deliberately NOT duplicated in here: `body_text` already carries it,
-        # and `raw_json` is persisted per posting version.
-        raw_json={"hit": hit},
-    )
-
 
 def _title(hit: dict[str, Any]) -> str:
     info = hit.get("job_information")
@@ -662,29 +735,6 @@ def _title(hit: dict[str, Any]) -> str:
         return ""
     return _text(info.get("title")) or _text(info.get("job_title_raw"))
 
-
-def _locations(hit: dict[str, Any]) -> list[str]:
-    """Location TEXT out of `v5_processed_job_data.workplace_*`, the only place it exists.
-
-    `_geoloc` is `[{"lat": ..., "lon": ...}]` and is never read: `rank/location_gate` matches
-    text, so a coordinate reaches it as an unrecognized segment and resolves `unknown`, which
-    fails OPEN through the hard US gate. A silently useless location is worse than none.
-
-    Each `workplace_*` value is accepted as either a string or a list of them. The probe
-    recorded the key names, not their types, and the gate classifies per segment either way.
-    """
-    processed = hit.get("v5_processed_job_data")
-    if not isinstance(processed, dict):
-        return []
-    formatted = _text(processed.get("formatted_workplace_location"))
-    if formatted:
-        return [formatted]
-    segments: list[str] = []
-    for key in ("workplace_cities", "workplace_states", "workplace_countries"):
-        for value in _text_list(processed.get(key)):
-            if value not in segments:
-                segments.append(value)
-    return segments
 
 
 def _text(value: Any) -> str:

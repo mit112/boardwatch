@@ -418,10 +418,23 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
     edge behaviour is no reason to stop identifying ourselves to boards that answer us honestly.
 
     The cost is real and is why the separation is stated rather than assumed: per-host pacing
-    state lives per `Fetcher` instance, so these two do not share a delay. That is safe here
-    ONLY because they never target the same host — the providers get provider hosts, the lane
-    gets its aggregator. A lane that resolved a body through a provider's own API would defeat
-    the per-host serialization on both sides at once, with neither instance able to see it.
+    state lives per `Fetcher` instance, so these two do not share a delay.
+
+    **THE HIRING.CAFE LANE NOW DOES TARGET A PROVIDER HOST**, and the two halves of what that
+    used to rule out are answered separately rather than together.
+
+    * IDENTITY is preserved outright. That lane restores `politeness.identifying_user_agent()`
+      per request for a provider board (`Fetcher.get(headers=...)`), so a board that answers us
+      honestly still gets the honest UA. D22 is unweakened; only the aggregator sees the
+      browser UA, which is what D-369 bought it.
+    * PACING is weakened in one narrow way, and it is bounded rather than argued away: the two
+      instances keep separate per-host state, so the lane's first request to a provider host is
+      not spaced against the scan's last one. Nothing CONCURRENT results — `run()` runs the
+      scan stage, then the projection preflight, then this stage, strictly in that order, so
+      the two never have a request in flight at the same time. What remains is that one
+      boundary request can fall inside the >=1.0s window. Within the lane stage the contract
+      holds unchanged, because one `Fetcher` serves every lane and its per-host lock is held
+      for each request's full duration.
     """
     return Fetcher(
         settings,

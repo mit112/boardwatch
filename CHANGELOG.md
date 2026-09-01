@@ -134,6 +134,35 @@ All notable changes to this project are documented here. The format follows
   in it — an absent or unreadable source, or one with no group folder at all, is still a break and
   still fails loudly, while a queue that is intact but currently empty is reported as the clean zero
   it is.
+- **The hiring.cafe source is working again, after being refused on every request since run 129.**
+  It had been asking for a role as a page address (`/jobs/software-engineer`); that address now
+  answers a refusal, every time, for every one of the fourteen job titles the profile lists. The
+  cause was never how the request identified itself — the previous attempt at that changed nothing.
+  It was the address. The site's own search — the one a person using the site actually gets — works
+  fine, and the owner has approved using it (D-393). The source now asks the same way a browser
+  does, and reads results the same way. It can also turn pages for the first time: two pages of a
+  live search were measured and shared no listing at all, so page two really is more results rather
+  than the same ones again, and the run report finally says how deep each search read.
+
+  **What it asks for is only what the profile says.** The reference implementation this borrows from
+  also narrows its search by seniority, years of experience, security clearance and country. None of
+  those are sent. Every one of them is a fact about a particular person, and every one is something
+  boardwatch decides for itself, posting by posting, with a rule that is allowed to answer "I cannot
+  tell". Putting them in the search address would let the address make that decision instead, and
+  would bake one person's situation into a tool meant to fit anyone who runs it.
+
+  **How a job description is obtained has changed, and covers less.** Descriptions used to come from
+  an endpoint that has been refusing every request since run 129, so what it currently covers is
+  nothing. Where a listing points at a Greenhouse, Lever, Ashby or Workable board — 34 of the 232
+  postings this source has produced, about one in seven — boardwatch now reads that employer's own
+  board once and gets every description on it in the same request, exactly as its regular scan does.
+  The rest are recorded as seen-and-not-fetched rather than quietly dropped. Reading a description
+  off any of the other ~46 kinds of hiring site is a separate decision and is not part of this.
+
+  The site's own summary of a posting is never used as the job description, and this is the point on
+  which the change is strictest. That summary is written by hiring.cafe, not by the employer, so
+  quoting it as the employer's words when explaining why you were ruled out would put words in an
+  employer's mouth that they never said.
 
 - **Two different experience bars in one posting are no longer treated as the posting contradicting
   itself.** "5+ years of software engineering experience" beside "3+ years of Python" is two

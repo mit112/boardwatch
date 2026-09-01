@@ -76,11 +76,22 @@ class FetchResult:
     observed_validators: ResponseValidators | None
 
 
+def identifying_user_agent() -> str:
+    """The UA D22 owes any board that answers us honestly: our name, version and repository.
+
+    A function rather than a constant, and exported rather than inlined, because a SECOND
+    caller now needs the same string: `pipeline.runner` gives the lane client a browser UA for
+    the aggregator it talks to, so a lane that reaches a provider's own host has to restore
+    this one per request. Two spellings of it would let them drift apart silently, and the one
+    that drifted would be the one nobody reads.
+    """
+    return f"boardwatch/{package_version('boardwatch')} (+https://github.com/mit112/boardwatch)"
+
+
 class Fetcher:
     def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
-        ua = f"boardwatch/{package_version('boardwatch')} (+https://github.com/mit112/boardwatch)"
         self._client = client or httpx.Client(
-            headers={"User-Agent": ua}, timeout=30.0, follow_redirects=True
+            headers={"User-Agent": identifying_user_agent()}, timeout=30.0, follow_redirects=True
         )
         self._delay = max(settings.per_host_delay_seconds, PER_HOST_DELAY_FLOOR)
         self._pace_from_start = settings.pace_from_request_start
@@ -106,10 +117,14 @@ class Fetcher:
     ) -> FetchResult:
         """One GET, optionally carrying caller-supplied request headers.
 
-        `headers` exists for ONE caller and is documented here so a second one has to justify
-        itself: the hiring.cafe lane's search route needs the header set a browser sends for a
-        top-level navigation, and it must not leak onto that lane's JSON body endpoint or onto
-        the other lane sharing this client (D-369). Client-level headers could not express that.
+        `headers` exists for TWO callers, both in the hiring.cafe lane, and each is documented
+        here so a third has to justify itself. Its SEARCH route needs the header set a browser
+        sends for a top-level navigation, and that set must not leak onto the other lane sharing
+        this client (D-369). Its BOARD route is the opposite direction: the lane client carries
+        a browser UA for the aggregator, and a request this lane makes to an ATS provider's own
+        host has to restore `identifying_user_agent()` — D22 is owed to a board that answers us
+        honestly, whatever the aggregator's edge behaviour made necessary elsewhere.
+        Client-level headers could express neither.
 
         They are merged UNDER the conditional-GET validators, so a caller cannot suppress an
         `If-None-Match` by passing one of its own — the validator half is this client's

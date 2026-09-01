@@ -18,6 +18,7 @@ from __future__ import annotations
 import inspect
 import json
 from collections import Counter
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -30,29 +31,46 @@ from hiringcafe_shape import (
     REVIEW_BY,
     ROBOTS_ALLOWED_PREFIX,
     ROBOTS_DISALLOWED_FORMS,
+    SSR_PROBED_PAGE_HITS,
+    SSR_PROBED_PAGE_OVERLAP,
     SUPERSEDED_BY,
     board_token,
-    job_description_payload,
+    greenhouse_board_payload,
     search_hits,
     search_page_html,
 )
 
-from boardwatch.core.politeness import Fetcher
+from boardwatch.core.politeness import Fetcher, identifying_user_agent
 from boardwatch.core.settings import Settings
 from boardwatch.lanes import hiringcafe
 from boardwatch.lanes.base import Lane
 from boardwatch.lanes.hiringcafe import SEARCH_URL, HiringCafeLane, SearchPageError, hit_identity
+from boardwatch.providers.greenhouse import GreenhouseProvider
+from boardwatch.providers.registry import build_providers
 
-_JD_PREFIX = "https://hiringcafe.com/api/job-description"
+# The UA `pipeline.runner` gives the lane client. Spelled out here rather than imported: the
+# point of `_browser_fetcher` is to reproduce a client whose identity DIFFERS from the one the
+# board route must restore, and importing the runner's constant would make the two agree by
+# construction if that constant ever changed to the identifying UA.
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+)
+
+
+def _settings(tmp_path: Path) -> Settings:
+    return Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, per_host_delay_seconds=0.25
+    )
 
 
 def _fetcher(tmp_path: Path) -> Fetcher:
-    return Fetcher(
-        Settings(
-            data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1,
-            per_host_delay_seconds=0.25,
-        )
-    )
+    return Fetcher(_settings(tmp_path))
+
+
+def _browser_fetcher(tmp_path: Path) -> Fetcher:
+    """A `Fetcher` shaped like `pipeline._lane_fetcher`'s: browser UA on the CLIENT."""
+    return Fetcher(_settings(tmp_path), httpx.Client(headers={"User-Agent": _BROWSER_UA}))
 
 
 def _split_object_id(object_id: str) -> tuple[str, str] | None:
@@ -223,16 +241,71 @@ def _mock_search(hits: list[dict[str, Any]] | None = None) -> respx.Route:
     return _mock_page("", 0, search_hits() if hits is None else hits)
 
 
-def _mock_bodies(hits: list[dict[str, Any]], status: int = 200) -> respx.Route:
-    by_id = {hit["objectID"]: hit for hit in hits}
+def _mock_any_board() -> respx.Route:
+    """A catch-all for every body-inlined provider host, so "no body was fetched" is asserted
+    against a route that WOULD have answered rather than against an unmocked-request error."""
+    hosts = tuple(
+        {
+            httpx.URL(build_providers()[name].board_url("probe")).host
+            for name in ("greenhouse", "lever", "ashby", "workable")
+        }
+    )
+    return respx.route(host__in=hosts).mock(
+        return_value=httpx.Response(200, content=b'{"jobs": []}')
+    )
 
-    def _respond(request: httpx.Request) -> httpx.Response:
-        hit = by_id.get(request.url.params["id"])
-        if hit is None or status != 200:
-            return httpx.Response(status, json={"error": "Job not found."})
-        return httpx.Response(200, content=job_description_payload(hit))
 
-    return respx.get(url__startswith=_JD_PREFIX).mock(side_effect=_respond)
+def _as_greenhouse(hit: dict[str, Any], slug: str, posting_id: int) -> dict[str, Any]:
+    """One recorded hit re-pointed at a greenhouse board -- the 14.7% the lane can body.
+
+    Only `apply_url` and the two fields that describe where it lives are changed, so
+    everything the lane reads OFF the hit (title, objectID, company block) stays the recorded
+    shape. The fixture's own 8 grnhse hits sit on two boards, which is not enough companies to
+    exercise a per-company budget, and inventing whole hits would drift from the recorded shape.
+    """
+    return dict(
+        hit,
+        source="grnhse",
+        board_token=slug,
+        apply_url=f"https://boards.greenhouse.io/{slug}/jobs/{posting_id}",
+    )
+
+
+def _reachable(slug: str, offsets: Sequence[int]) -> list[dict[str, Any]]:
+    """`len(offsets)` hits at one greenhouse board, keyed off distinct recorded hits."""
+    base = search_hits()
+    return [_as_greenhouse(base[i], slug, 6_100_000 + i) for i in offsets]
+
+
+def _board_url(slug: str) -> str:
+    return GreenhouseProvider().board_url(slug)
+
+
+def _mock_boards(
+    hits: Sequence[dict[str, Any]], *, status: int = 200, content: bytes | None = None
+) -> dict[str, respx.Route]:
+    """One route per greenhouse board these hits name. Nothing else can serve a body.
+
+    Deliberately NOT a catch-all route: a lane that reached for a body anywhere else -- the
+    retired `/api/job-description`, an employer's HTML page, an ATS this repo has no adapter
+    for -- gets an unmocked-request error rather than a body, which is the assertion that the
+    two-hop shape has really moved.
+    """
+    by_slug: dict[str, list[dict[str, Any]]] = {}
+    for hit in hits:
+        if hit["source"] == "grnhse":
+            by_slug.setdefault(hit["board_token"], []).append(hit)
+    routes: dict[str, respx.Route] = {}
+    for slug, slug_hits in by_slug.items():
+        response = (
+            httpx.Response(status)
+            if status != 200
+            else httpx.Response(
+                200, content=greenhouse_board_payload(slug_hits) if content is None else content
+            )
+        )
+        routes[slug] = respx.get(_board_url(slug)).mock(return_value=response)
+    return routes
 
 
 @respx.mock
@@ -240,7 +313,7 @@ def test_admits_is_asked_once_per_distinct_company_never_once_per_posting(tmp_pa
     """D1's contract. 160 postings sit on 40 companies; the cap counts companies."""
     hits = search_hits()
     search = _mock_search(hits)
-    bodies = _mock_bodies(hits)
+    boards = _mock_boards(hits)
     asked: list[tuple[str, str]] = []
 
     def _admits(provider: str, slug: str) -> bool:
@@ -252,9 +325,9 @@ def test_admits_is_asked_once_per_distinct_company_never_once_per_posting(tmp_pa
     assert len(asked) == 40
     assert len(set(asked)) == 40
     assert set(asked) == {_expected_key(hit) for hit in hits}
-    # Refusal is free: no body was paid for, and one search GET was made, not two.
+    # Refusal is free: no board was paid for, and one search GET was made, not two.
     assert search.call_count == 1
-    assert bodies.call_count == 0
+    assert all(route.call_count == 0 for route in boards.values())
     assert result.snapshots == ()
     # Nothing attempted is not an outage — recording refusals here would say otherwise.
     assert result.tally.attempted == 0
@@ -262,59 +335,126 @@ def test_admits_is_asked_once_per_distinct_company_never_once_per_posting(tmp_pa
 
 
 @respx.mock
-def test_one_search_get_and_one_body_get_per_admitted_posting(tmp_path):
-    hits = search_hits()
+def test_one_board_get_serves_every_posting_at_that_company(tmp_path):
+    """The shape of the second hop after D-393: one GET per COMPANY, not one per posting.
+
+    That is the whole reason a body-inlined provider is the only one the lane resolves through:
+    four postings arrive for one request, so `body_inline` is the honest outcome and the
+    posting budget stops being the binding constraint it was against a per-posting endpoint.
+    """
+    hits = _reachable("acme-inline", range(4))
     search = _mock_search(hits)
-    bodies = _mock_bodies(hits)
-    wanted = ("hiringcafe", f"icims2:{board_token('icims2', 0)}")
+    boards = _mock_boards(hits)
 
     result = HiringCafeLane().collect(
-        _fetcher(tmp_path), lambda provider, slug: (provider, slug) == wanted
+        _fetcher(tmp_path), lambda provider, slug: (provider, slug) == ("greenhouse", "acme-inline")
     )
 
     assert search.call_count == 1  # one page, because `search_pages` defaults to 1
-    assert bodies.call_count == 4  # four postings at the one admitted company
-    assert result.tally.counts["body_fetched"] == 4
+    assert boards["acme-inline"].call_count == 1  # ONE board GET for all four postings
+    assert result.tally.counts["body_inline"] == 4
+    assert result.tally.counts["body_fetched"] == 0  # the per-posting endpoint is gone
     assert result.tally.resolved == 4
     assert result.tally.is_silent_outage is False
 
     (snapshot,) = result.snapshots
-    assert (snapshot.provider, snapshot.slug) == wanted
+    assert (snapshot.provider, snapshot.slug) == ("greenhouse", "acme-inline")
     assert snapshot.snapshot.status == "partial"  # never `complete`; an empty one closes a board
     assert len(snapshot.snapshot.postings) == 4
 
 
 @respx.mock
-def test_a_posting_carries_the_employer_url_and_the_workplace_location(tmp_path):
-    hits = search_hits()
+def test_a_company_the_lane_cannot_body_costs_no_request_and_is_counted(tmp_path):
+    """The 85.3%: an aggregator-only host has no evidenced body source, so nothing is fetched.
+
+    `not_attemptable` is the closed catalog's member for "seen and NOT fetched", and every one
+    of those hits has to reach it -- a silent drop is exactly what the catalog exists to stop,
+    and it is what would make this change look like a quiet lane instead of a bounded one.
+    """
+    hits = search_hits()[:8]  # icims2 and friends: `apply_url` names no board this repo parses
     _mock_search(hits)
-    _mock_bodies(hits)
-    wanted = ("hiringcafe", f"icims2:{board_token('icims2', 0)}")
+    boards = _mock_boards(hits)
 
-    result = HiringCafeLane().collect(
-        _fetcher(tmp_path), lambda provider, slug: (provider, slug) == wanted
-    )
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert boards == {}  # no board route was even needed
+    assert result.tally.counts["not_attemptable"] == 8
+    assert result.tally.resolved == 0
+    assert result.snapshots == ()
+    # Attempted-and-resolved-nothing IS the outage signal, and it is on: this lane reaching
+    # only aggregator-only hosts is a real reduction in reach, not a quiet day.
+    assert result.tally.is_silent_outage is True
+
+
+@respx.mock
+def test_the_posting_taken_is_the_provider_s_own_row_not_a_rebuilt_one(tmp_path):
+    """Verbatim, and this is the assertion that says so field by field.
+
+    Rebuilding the row from the aggregator hit would put the hiring.cafe `apply_url`, the
+    `workplace_*` location text and the hit itself into a row that a later board scan writes
+    differently for the SAME `(company_id, provider_posting_id)` -- so the two converge onto one
+    row and rewrite each other as revisions forever. Taking greenhouse's row means the lane
+    hands `apply_board` what the scan stage would have handed it.
+    """
+    hits = _reachable("acme-inline", range(2))
+    _mock_search(hits)
+    _mock_boards(hits)
+    board = GreenhouseProvider().parse_payload(greenhouse_board_payload(hits), url="x")
+    expected = {posting.provider_posting_id: posting for posting in board.postings}
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    for posting in result.snapshots[0].snapshot.postings:
+        assert posting == expected[posting.provider_posting_id]
     posting = result.snapshots[0].snapshot.postings[0]
-    source_hit = posting.raw_json["hit"]
+    # Greenhouse's own fields, none of them the aggregator's.
+    assert posting.url.startswith("https://boards.greenhouse.io/acme-inline/jobs/")
+    assert posting.body_text and "hiring.cafe" not in posting.body_text
+    assert posting.raw_json.get("absolute_url") == posting.url
+    assert "hit" not in posting.raw_json
+    # The synthesized summary the SSR payload does carry never becomes the frozen JD.
+    assert "v5_processed_job_data" not in posting.raw_json
 
-    assert posting.url == source_hit["apply_url"]
-    assert posting.provider_posting_id == source_hit["objectID"]
-    assert posting.title == source_hit["job_information"]["title"]
-    assert posting.body_text.startswith(source_hit["job_information"]["title"])
-    # Location text, never a coordinate: `rank.location_gate` matches text, so a lat/lon would
-    # resolve `unknown` and fail OPEN through the hard US gate.
-    assert posting.locations == [
-        source_hit["v5_processed_job_data"]["formatted_workplace_location"]
+
+@respx.mock
+def test_the_synthesized_summary_never_reaches_a_stored_body(tmp_path):
+    """The keystone invariant, as a trap rather than a claim.
+
+    `v5_processed_job_data.requirements_summary` is hiring.cafe's OWN synthesis, not the
+    employer's prose, so an `INELIGIBLE` quoting it would attribute words to an employer that
+    never wrote them. The marker below appears in that field and NOWHERE in the greenhouse
+    board response, so it can only reach `body_text` by the summary being used as the body.
+    """
+    marker = "SYNTHESIZED-SUMMARY-MUST-NOT-BE-QUOTED"
+    hits = _reachable("acme-inline", range(2))
+    hits = [
+        dict(hit, v5_processed_job_data=dict(hit["v5_processed_job_data"],
+                                             requirements_summary=marker,
+                                             technical_tools=[marker]))
+        for hit in hits
     ]
-    assert not any("lat" in location for location in posting.locations)
-    assert posting.remote_policy == "unknown"  # `workplace_type`'s vocabulary is unrecorded
+    _mock_search(hits)
+    _mock_boards(hits)
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    stored = [
+        posting
+        for company in result.snapshots
+        for posting in company.snapshot.postings
+    ]
+    assert stored, "nothing was stored, so this trap proved nothing"
+    for posting in stored:
+        assert marker not in posting.body_text
+        assert marker not in json.dumps(posting.raw_json)
 
 
 @respx.mock
 def test_the_greenhouse_convergence_case_is_keyed_on_greenhouse(tmp_path):
+    """The recorded 8/160: a hit whose `apply_url` names a board a provider already scans."""
     hits = search_hits()
     _mock_search(hits)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane().collect(
         _fetcher(tmp_path), lambda provider, slug: provider == "greenhouse"
@@ -331,21 +471,25 @@ def test_the_greenhouse_convergence_case_is_keyed_on_greenhouse(tmp_path):
 
 
 @respx.mock
-def test_the_posting_budget_caps_body_gets_and_counts_what_it_skipped(tmp_path):
-    hits = search_hits()
+def test_the_request_budget_caps_board_gets_and_counts_what_it_skipped(tmp_path):
+    """The budget's unit is REQUESTS, as it always was; here one request is one company."""
+    hits = (
+        _reachable("acme-one", range(4))
+        + _reachable("acme-two", range(4, 8))
+        + _reachable("acme-three", range(8, 12))
+    )
     _mock_search(hits)
-    bodies = _mock_bodies(hits)
-    wanted = ("hiringcafe", f"icims2:{board_token('icims2', 0)}")
+    boards = _mock_boards(hits)
 
     result = HiringCafeLane(posting_budget=2).collect(
-        _fetcher(tmp_path), lambda provider, slug: (provider, slug) == wanted
+        _fetcher(tmp_path), lambda provider, slug: True
     )
 
-    assert bodies.call_count == 2
-    assert result.tally.counts["body_fetched"] == 2
-    # Seen and not requested is counted, never dropped silently.
-    assert result.tally.counts["not_attemptable"] == 2
-    assert result.tally.attempted == 4
+    assert sum(route.call_count for route in boards.values()) == 2
+    assert result.tally.counts["body_inline"] == 8
+    # The third company was seen and never requested, and every one of its hits is counted.
+    assert result.tally.counts["not_attemptable"] == 4
+    assert result.tally.attempted == 12
 
 
 @respx.mock
@@ -353,54 +497,59 @@ def test_the_posting_budget_caps_body_gets_and_counts_what_it_skipped(tmp_path):
     "status,outcome",
     [(403, "fetch_refused"), (404, "fetch_gone"), (418, "fetch_unavailable")],
 )
-def test_a_failed_body_lands_in_its_own_bucket(tmp_path, status, outcome):
-    """Folding these is exactly how the prior art hid an eleven-day outage."""
-    hits = search_hits()
-    _mock_search(hits)
-    _mock_bodies(hits, status=status)
-    wanted = ("hiringcafe", f"icims2:{board_token('icims2', 0)}")
+def test_a_failed_board_get_lands_in_its_own_bucket(tmp_path, status, outcome):
+    """Folding these is exactly how the prior art hid an eleven-day outage.
 
-    result = HiringCafeLane().collect(
-        _fetcher(tmp_path), lambda provider, slug: (provider, slug) == wanted
-    )
+    Keeping them apart is also why the lane issues this GET itself: `Provider.fetch_board`
+    turns a typed `FetchFailure` into a status plus a message, and recovering 403 from 404 out
+    of that message would be classifying behaviour by string-matching it.
+    """
+    hits = _reachable("acme-inline", range(4))
+    _mock_search(hits)
+    _mock_boards(hits, status=status)
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
 
     assert result.tally.counts[outcome] == 4
     assert result.tally.resolved == 0
     assert result.tally.is_silent_outage is True
-    # A company whose every body failed writes no snapshot, so no company row is owed for it.
+    # A company whose board failed writes no snapshot, so no company row is owed for it.
     assert result.snapshots == ()
 
 
 @respx.mock
-def test_a_login_wall_body_is_rejected_rather_than_stored(tmp_path):
-    hits = search_hits()[:4]
+def test_an_unreadable_board_payload_is_extracted_empty(tmp_path):
+    """A 200 that decodes to nothing is not a fetch failure and must not read as one."""
+    hits = _reachable("acme-inline", range(4))
     _mock_search(hits)
-    respx.get(url__startswith=_JD_PREFIX).mock(
-        return_value=httpx.Response(
-            200,
-            json={"job": {"job_information": {"description":
-                "<h2>Sign in to continue</h2><p>You must be logged in. Create an account.</p>"
-            }}},
-        )
-    )
-
-    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
-
-    assert result.tally.counts["rejected_login_wall"] == 4
-    assert result.snapshots == ()
-
-
-@respx.mock
-def test_a_body_payload_the_endpoint_cannot_serve_is_extracted_empty(tmp_path):
-    hits = search_hits()[:4]
-    _mock_search(hits)
-    respx.get(url__startswith=_JD_PREFIX).mock(
-        return_value=httpx.Response(200, json={"job": {}})
-    )
+    _mock_boards(hits, content=b"{}")
 
     result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
 
     assert result.tally.counts["extracted_empty"] == 4
+    assert result.tally.counts["fetch_gone"] == 0
+    assert result.snapshots == ()
+
+
+@respx.mock
+def test_a_posting_the_employers_board_no_longer_lists_is_gone_not_empty(tmp_path):
+    """The aggregator's index lags the employer's board, and that is not a defect here.
+
+    Split from the unreadable-payload case above on purpose: both produce no posting, and only
+    one of them means something is wrong with us.
+    """
+    listed, delisted = _reachable("acme-inline", range(2)), _reachable("acme-inline", range(2, 4))
+    _mock_search(listed + delisted)
+    respx.get(_board_url("acme-inline")).mock(
+        return_value=httpx.Response(200, content=greenhouse_board_payload(listed))
+    )
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.tally.counts["body_inline"] == 2
+    assert result.tally.counts["fetch_gone"] == 2
+    assert result.tally.counts["extracted_empty"] == 0
+    assert len(result.snapshots[0].snapshot.postings) == 2
 
 
 def test_parsing_survives_a_closing_tag_inside_a_json_string_value():
@@ -491,51 +640,47 @@ def test_the_company_name_reads_the_enriched_block_and_falls_back_to_the_board_t
     assert hiringcafe.company_name({"board_token": "acme"}) == "acme"
 
 
-def test_the_object_id_is_percent_encoded_into_the_jd_url():
-    """`fountain`'s board_token carries dots and a `___` run; it must survive as one value."""
-    url = hiringcafe.job_description_url("fountain___us-3.fountain.com___acme23___d545")
-    assert url == (
-        "https://hiringcafe.com/api/job-description?id="
-        "fountain___us-3.fountain.com___acme23___d545"
-    )
-    assert hiringcafe.job_description_url("a&b=c").endswith("id=a%26b%3Dc")
-
-
 @respx.mock
-def test_locations_fall_back_to_the_workplace_arrays_and_tolerate_a_bare_string(tmp_path):
-    """The probe recorded the `workplace_*` key names, not their types."""
-    hit = dict(
-        search_hits()[0],
-        v5_processed_job_data={
-            "workplace_cities": "Seattle",  # bare string rather than a list
-            "workplace_states": ["Washington", "Washington"],  # deduped, order kept
-            "workplace_countries": None,  # a key the live payload sometimes nulls
-        },
+def test_the_retired_per_posting_body_endpoint_is_never_requested(tmp_path):
+    """`/api/job-description?id=` was refused on every attempt from run 129 onward.
+
+    Asserted BEHAVIOURALLY, against a route that would have answered: a dead endpoint left in
+    place keeps producing measured zeros, which reads as a lane that tried, and the whole point
+    of dropping it is that the tally now says "seen and not fetched" instead of "refused". The
+    hits below are the aggregator-only case, which is the one that used to reach it.
+    """
+    retired = respx.route(host="hiringcafe.com", path__startswith="/api/").mock(
+        return_value=httpx.Response(200, json={"job": {"job_information": {"description": "x"}}})
     )
-    _mock_search([hit])
-    _mock_bodies([hit])
+    _mock_search(search_hits()[:8])
 
     result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
-    posting = result.snapshots[0].snapshot.postings[0]
-    assert posting.locations == ["Seattle", "Washington"]
+
+    assert retired.call_count == 0
+    assert result.tally.counts["not_attemptable"] == 8
+    assert not hasattr(hiringcafe, "job_description_url")
 
 
 @respx.mock
-def test_a_hit_with_no_title_is_refused_before_its_body_is_paid_for(tmp_path):
-    """A posting with no title cannot be ranked or shown, and one GET would buy nothing."""
-    untitled = dict(search_hits()[0], job_information=None)
-    unlocated = dict(search_hits()[1])
-    unlocated.pop("v5_processed_job_data")
-    search = _mock_search([untitled, unlocated])
-    bodies = _mock_bodies([untitled, unlocated])
+def test_a_hit_with_no_title_is_refused_before_its_company_is_paid_for(tmp_path):
+    """A posting with no title cannot be ranked or shown, and no GET would buy one.
+
+    The untitled hit sits on its OWN board, so if it were not dropped before the request the
+    board GET for it would be made -- which is what the unmocked-route error would show.
+    """
+    (untitled,) = _reachable("acme-untitled", range(1))
+    untitled = dict(untitled, job_information=None)
+    titled = _reachable("acme-inline", range(1, 3))
+    search = _mock_search([untitled, *titled])
+    boards = _mock_boards(titled)
 
     result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
 
     assert search.call_count == 1
-    assert bodies.call_count == 1  # the untitled hit was never fetched
+    assert "acme-untitled" not in boards
+    assert boards["acme-inline"].call_count == 1
     assert result.tally.counts["not_attemptable"] == 1
-    # A hit with no processed block reports NO location rather than a coordinate.
-    assert result.snapshots[0].snapshot.postings[0].locations == []
+    assert result.tally.counts["body_inline"] == 2
 
 
 # --- the role facet (contract §4's deferred extension) -------------------------------------
@@ -632,7 +777,7 @@ def test_one_search_per_facet_and_the_unfaceted_page_is_never_requested(tmp_path
     root = _mock_search(hits)
     swe = _mock_facet("software engineer", hits[:4])
     ios = _mock_facet("ios engineer", hits[4:8])
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     HiringCafeLane(search_facets=("software engineer", "ios engineer")).collect(
         _fetcher(tmp_path), lambda provider, slug: True
@@ -649,17 +794,18 @@ def test_a_posting_listed_under_two_facets_costs_one_body_get_not_two(tmp_path):
     same posting — and a second body GET for it is a paid-for duplicate. It is also the crash
     D-306 fixed: two rows with one `provider_posting_id` violate UNIQUE inside one transaction.
     """
-    shared = search_hits()[:3]
+    shared = _reachable("acme-inline", range(3))
     _mock_facet("software engineer", shared)
     _mock_facet("backend engineer", shared)
-    bodies = _mock_bodies(shared)
+    boards = _mock_boards(shared)
 
     result = HiringCafeLane(search_facets=("software engineer", "backend engineer")).collect(
         _fetcher(tmp_path), lambda provider, slug: True
     )
 
-    assert bodies.call_count == 3
-    assert result.tally.counts["body_fetched"] == 3
+    # ONE board GET covers all three postings across both facets, not one per facet.
+    assert boards["acme-inline"].call_count == 1
+    assert result.tally.counts["body_inline"] == 3
     # The three re-listed hits were SEEN and not fetched; a silent drop is what the catalog exists
     # to prevent.
     assert result.tally.counts["not_attemptable"] == 3
@@ -677,24 +823,20 @@ def test_the_body_budget_spreads_across_facets_instead_of_being_eaten_by_the_fir
     contributes nothing — the feature would deliver only the profile's first title while
     reporting that fourteen facets ran.
     """
-    hits = search_hits()
-    first, second = hits[:20], hits[20:40]
+    first = [_reachable(f"acme-a{n}", [n]) [0] for n in range(20)]
+    second = [_reachable(f"acme-b{n}", [20 + n])[0] for n in range(20)]
     _mock_facet("software engineer", first)
     _mock_facet("ios engineer", second)
-    _mock_bodies(hits)
+    _mock_boards(first + second)
 
     result = HiringCafeLane(
         posting_budget=6, search_facets=("software engineer", "ios engineer")
     ).collect(_fetcher(tmp_path), lambda provider, slug: True)
 
-    fetched = {
-        posting.provider_posting_id
-        for company in result.snapshots
-        for posting in company.snapshot.postings
-    }
-    from_first = {hit["objectID"] for hit in first} & fetched
-    from_second = {hit["objectID"] for hit in second} & fetched
-    assert len(fetched) == 6
+    reached = {company.slug for company in result.snapshots}
+    from_first = {hit["board_token"] for hit in first} & reached
+    from_second = {hit["board_token"] for hit in second} & reached
+    assert len(reached) == 6  # the budget's six requests, one company each
     assert from_first and from_second, "one facet took the entire body budget"
 
 
@@ -703,9 +845,9 @@ def test_the_snapshot_records_the_facet_page_a_company_was_found_on(tmp_path):
     """Provenance has to name the URL actually requested. Recording the unfaceted root would
     cite a page this run never fetched.
     """
-    hits = search_hits()[:2]
+    hits = _reachable("acme-inline", range(2))
     _mock_facet("ios engineer", hits)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(search_facets=("ios engineer",)).collect(
         _fetcher(tmp_path), lambda provider, slug: True
@@ -725,14 +867,14 @@ def test_every_facet_returning_nothing_raises_instead_of_reporting_a_quiet_day(t
     """
     _mock_facet("software engineer", None)
     _mock_facet("ios engineer", None)
-    bodies = _mock_bodies([])
+    boards = _mock_any_board()
 
     with pytest.raises(SearchPageError, match="facet"):
         HiringCafeLane(search_facets=("software engineer", "ios engineer")).collect(
             _fetcher(tmp_path), lambda provider, slug: True
         )
 
-    assert bodies.call_count == 0
+    assert boards.call_count == 0
 
 
 @respx.mock
@@ -740,16 +882,16 @@ def test_one_empty_facet_among_several_is_tolerated_rather_than_fatal(tmp_path):
     """A single unproductive target title is a profile-data matter, not an outage. Raising here
     would let one odd title in a profile disable the whole lane.
     """
-    hits = search_hits()[:3]
+    hits = _reachable("acme-inline", range(3))
     _mock_facet("software engineer", hits)
     _mock_facet("zzq not a real role", None)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(
         search_facets=("software engineer", "zzq not a real role")
     ).collect(_fetcher(tmp_path), lambda provider, slug: True)
 
-    assert result.tally.counts["body_fetched"] == 3
+    assert result.tally.counts["body_inline"] == 3
     assert result.tally.is_silent_outage is False
 
 
@@ -762,16 +904,16 @@ def test_one_facet_whose_request_fails_does_not_cost_the_others_their_results(tm
     discards six facets' worth of already-paid-for work. The fetcher has already retried with
     backoff by the time it raises, so this is the surviving-failure case, not a transient one.
     """
-    hits = search_hits()[:3]
+    hits = _reachable("acme-inline", range(3))
     _mock_facet("software engineer", hits)
     respx.get(_page("ios engineer", 0)).mock(return_value=httpx.Response(503))
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(
         search_facets=("software engineer", "ios engineer")
     ).collect(_fetcher(tmp_path), lambda provider, slug: True)
 
-    assert result.tally.counts["body_fetched"] == 3
+    assert result.tally.counts["body_inline"] == 3
     assert result.tally.is_silent_outage is False
 
 
@@ -782,14 +924,14 @@ def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tm
     respx.get(url__startswith=f"{SEARCH_URL}?searchState=").mock(
         return_value=httpx.Response(403)
     )
-    bodies = _mock_bodies([])
+    boards = _mock_any_board()
 
     with pytest.raises(SearchPageError, match="facet"):
         HiringCafeLane(search_facets=("software engineer", "ios engineer")).collect(
             _fetcher(tmp_path), lambda provider, slug: True
         )
 
-    assert bodies.call_count == 0
+    assert boards.call_count == 0
 
 
 # --- paging (D-393; `&page=N` measured live 2026-08-31) ------------------------------------
@@ -799,6 +941,23 @@ def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tm
 # on page 0 and 133 on page 1 with ZERO id overlap, so the parameter turns a page rather than
 # re-serving one. `LaneResult.search_pages` was `()` for this lane before and is now real
 # depth, which is the difference between "the facet ran out" and "the ceiling truncated it".
+
+
+def test_the_paging_fixture_reproduces_the_probe_s_disjoint_pages():
+    """The two recorded numbers, and the one that carries the argument.
+
+    143 and 133 hits are counts; ZERO shared ids is the finding -- it is what separates a real
+    offset from a host that re-serves page 0, which is the failure mode paging against someone
+    else's `&page=` would otherwise hide. Written as literals here rather than imported, so the
+    recorded constants in `hiringcafe_shape` cannot drift without this going red.
+    """
+    hits = _reachable("acme-inline", range(8))
+    page_zero = hiringcafe.parse_search_page(search_page_html(hits[:4], page=0))
+    page_one = hiringcafe.parse_search_page(search_page_html(hits[4:], page=1))
+    ids = ({hit["objectID"] for hit in page_zero.hits}, {hit["objectID"] for hit in page_one.hits})
+
+    assert SSR_PROBED_PAGE_HITS == (143, 133)
+    assert len(ids[0] & ids[1]) == SSR_PROBED_PAGE_OVERLAP == 0
 
 
 @respx.mock
@@ -812,7 +971,7 @@ def test_the_default_ceiling_requests_exactly_one_page_and_names_it_page_zero(tm
     hits = search_hits()[:2]
     first = _mock_page("ios engineer", 0, hits)
     later = _mock_page("ios engineer", 1, hits)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(search_facets=("ios engineer",)).collect(
         _fetcher(tmp_path), lambda provider, slug: True
@@ -831,13 +990,13 @@ def test_paging_stops_where_the_host_says_the_results_end(tmp_path):
     -- a facet that stopped short RAN OUT, while one that filled the ceiling was TRUNCATED, and
     a posting count cannot tell those apart.
     """
-    hits = search_hits()
+    hits = _reachable("acme-inline", range(12))
     pages = [
         _mock_page("ios engineer", 0, hits[:4]),
         _mock_page("ios engineer", 1, hits[4:8], is_last_page=True),
         _mock_page("ios engineer", 2, hits[8:12]),
     ]
-    _mock_bodies(hits)
+    _mock_boards(hits[:8])
 
     result = HiringCafeLane(search_facets=("ios engineer",), search_pages=5).collect(
         _fetcher(tmp_path), lambda provider, slug: True
@@ -846,7 +1005,7 @@ def test_paging_stops_where_the_host_says_the_results_end(tmp_path):
     assert [route.call_count for route in pages] == [1, 1, 0]
     assert result.search_pages == ((_search_url("ios engineer"), 2),)
     # Both pages' hits reached the tally; the second page is reach, not bookkeeping.
-    assert result.tally.counts["body_fetched"] == 8
+    assert result.tally.counts["body_inline"] == 8
 
 
 @respx.mock
@@ -858,13 +1017,13 @@ def test_a_page_that_re_serves_hits_already_held_ends_the_facet(tmp_path):
     would one that quietly stopped honouring `&page=` at all, which is the failure mode that
     matters here because `&page=` is one parameter on a URL nobody here operates.
     """
-    hits = search_hits()[:4]
+    hits = _reachable("acme-inline", range(8))
     pages = [
-        _mock_page("ios engineer", 0, hits),
-        _mock_page("ios engineer", 1, hits),  # the same four hits again
-        _mock_page("ios engineer", 2, search_hits()[4:8]),
+        _mock_page("ios engineer", 0, hits[:4]),
+        _mock_page("ios engineer", 1, hits[:4]),  # the same four hits again
+        _mock_page("ios engineer", 2, hits[4:]),
     ]
-    _mock_bodies(search_hits())
+    _mock_boards(hits[:4])
 
     result = HiringCafeLane(search_facets=("ios engineer",), search_pages=4).collect(
         _fetcher(tmp_path), lambda provider, slug: True
@@ -872,7 +1031,7 @@ def test_a_page_that_re_serves_hits_already_held_ends_the_facet(tmp_path):
 
     assert [route.call_count for route in pages] == [1, 1, 0]
     assert result.search_pages == ((_search_url("ios engineer"), 2),)
-    assert result.tally.counts["body_fetched"] == 4
+    assert result.tally.counts["body_inline"] == 4
 
 
 @respx.mock
@@ -883,16 +1042,16 @@ def test_a_later_page_failing_keeps_the_pages_already_paid_for(tmp_path):
     one refused on page 4 keeps the three pages already bought. Folding them would either
     discard paid-for reach or hide the refusal.
     """
-    hits = search_hits()[:4]
+    hits = _reachable("acme-inline", range(4))
     _mock_page("ios engineer", 0, hits)
     respx.get(_page("ios engineer", 1)).mock(return_value=httpx.Response(503))
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(search_facets=("ios engineer",), search_pages=3).collect(
         _fetcher(tmp_path), lambda provider, slug: True
     )
 
-    assert result.tally.counts["body_fetched"] == 4
+    assert result.tally.counts["body_inline"] == 4
     assert result.search_pages == ((_search_url("ios engineer"), 1),)
 
 
@@ -908,7 +1067,7 @@ def test_depth_is_reported_per_facet_including_the_one_that_failed(tmp_path):
     _mock_page("software engineer", 0, hits[:4])
     _mock_page("software engineer", 1, hits[4:8], is_last_page=True)
     respx.get(_page("ios engineer", 0)).mock(return_value=httpx.Response(403))
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(
         search_facets=("software engineer", "ios engineer"), search_pages=4
@@ -927,17 +1086,17 @@ def test_the_unfaceted_search_pages_exactly_as_a_faceted_one_does(tmp_path):
     Pinned separately because `_search` has two arms and the tests above exercise only the
     faceted one -- paging added to that arm alone would pass every one of them.
     """
-    hits = search_hits()
+    hits = _reachable("acme-inline", range(8))
     _mock_page("", 0, hits[:4])
     _mock_page("", 1, hits[4:8], is_last_page=True)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     result = HiringCafeLane(search_pages=3).collect(
         _fetcher(tmp_path), lambda provider, slug: True
     )
 
     assert result.search_pages == ((_search_url(), 2),)
-    assert result.tally.counts["body_fetched"] == 8
+    assert result.tally.counts["body_inline"] == 8
 
 
 def test_a_search_pages_ceiling_below_one_still_fetches_a_page(tmp_path):
@@ -1004,7 +1163,7 @@ def test_a_search_get_presents_itself_as_the_navigation_its_user_agent_claims(tm
     """
     hits = search_hits()[:2]
     swe = _mock_facet("software engineer", hits)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     HiringCafeLane(search_facets=("software engineer",)).collect(
         _fetcher(tmp_path), lambda provider, slug: True
@@ -1030,7 +1189,7 @@ def test_the_unfaceted_fallback_search_presents_itself_the_same_way(tmp_path):
     """
     hits = search_hits()[:2]
     root = _mock_search(hits)
-    _mock_bodies(hits)
+    _mock_boards(hits)
 
     HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
 
@@ -1038,27 +1197,37 @@ def test_the_unfaceted_fallback_search_presents_itself_the_same_way(tmp_path):
 
 
 @respx.mock
-def test_the_navigation_headers_never_reach_the_json_body_endpoint(tmp_path):
-    """`/api/job-description` is an XHR, and it is the half of this lane that still WORKS.
+def test_a_provider_board_gets_the_identifying_ua_the_aggregator_does_not(tmp_path):
+    """D22, restored per request on the one route that is owed it.
 
-    A browser fetching JSON sends `Accept: */*` and `Sec-Fetch-Dest: empty`, so putting the
-    navigation set on the shared client would have made every body GET incoherent in the
-    opposite direction -- and would have changed the other lane on that client at the same
-    time, which is the second variable D-364's one-at-a-time rule exists to prevent.
+    `pipeline._lane_fetcher` gives this lane's client a BROWSER UA, because the aggregator
+    refused the honest one's request shape (D-369). An ATS provider's own board is a different
+    matter: it answers us honestly and is owed our name. So the board GET puts the identifying
+    UA back, and the navigation header set -- which describes a top-level HTML navigation --
+    must not follow it onto a JSON API.
+
+    Driven through a browser-UA client on purpose. Against the default `Fetcher` the client's
+    UA is ALREADY the identifying one, so this test would pass with the per-request header
+    deleted and prove nothing.
     """
-    hits = search_hits()[:2]
-    _mock_facet("software engineer", hits)
-    bodies = _mock_bodies(hits)
+    hits = _reachable("acme-inline", range(2))
+    search = _mock_facet("software engineer", hits)
+    boards = _mock_boards(hits)
 
     HiringCafeLane(search_facets=("software engineer",)).collect(
-        _fetcher(tmp_path), lambda provider, slug: True
+        _browser_fetcher(tmp_path), lambda provider, slug: True
     )
 
-    assert bodies.call_count == 2
-    for call in bodies.calls:
-        assert call.request.headers["Accept"] == "*/*"
-        assert "Sec-Fetch-Mode" not in call.request.headers
-        assert "Upgrade-Insecure-Requests" not in call.request.headers
+    assert boards["acme-inline"].call_count == 1
+    board_request = boards["acme-inline"].calls[0].request
+    assert board_request.headers["User-Agent"] == identifying_user_agent()
+    assert board_request.headers["User-Agent"].startswith("boardwatch/")
+    assert "Sec-Fetch-Mode" not in board_request.headers
+    assert "Upgrade-Insecure-Requests" not in board_request.headers
+    assert board_request.headers["Accept"] == "*/*"
+    # ...and the aggregator still gets the browser UA the lane client carries.
+    assert search.calls[0].request.headers["User-Agent"] == _BROWSER_UA
+    assert search.calls[0].request.headers["Accept"].startswith("text/html")
 
 
 def test_the_search_header_set_asserts_nothing_the_user_agent_does_not_already(tmp_path):
