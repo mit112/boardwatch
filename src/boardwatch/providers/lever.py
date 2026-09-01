@@ -40,13 +40,24 @@ class LeverProvider:
                 status="unchanged", postings=[], url=request.url,
                 observed_validators=None, error=None,
             )
+        snapshot = self.parse_payload(result.content, url=request.url)
+        return snapshot.model_copy(update={"observed_validators": result.observed_validators})
+
+    def parse_payload(self, content: bytes, *, url: str) -> BoardSnapshot:
+        """The complete decode -> BoardSnapshot path (observed_validators is set by the caller).
+
+        Split out of fetch_board, mirroring ashby's method of the same name, so a caller that
+        already holds the response bytes can reuse this provider's parsing without a second
+        request -- the hiring.cafe lane resolves a body-inlined board that way, because it has
+        to issue the GET itself to send the identifying UA a provider host is owed.
+        """
         try:
-            raw_postings = json.loads(result.content)
+            raw_postings = json.loads(content)
             if not isinstance(raw_postings, list):
                 raise TypeError("Lever board payload is not a JSON array")
         except (ValueError, TypeError) as exc:
             return BoardSnapshot(
-                status="failed", postings=[], url=request.url,
+                status="failed", postings=[], url=url,
                 observed_validators=None, error=f"invalid board payload: {exc}",
             )
         postings: list[RawPosting] = []
@@ -70,8 +81,8 @@ class LeverProvider:
         return BoardSnapshot(
             status=status,
             postings=postings,
-            url=request.url,
-            observed_validators=result.observed_validators,
+            url=url,
+            observed_validators=None,
             error=error,
             # This API states no total. None, deliberately — see D-271 and D-028.
             board_reported_total=None,

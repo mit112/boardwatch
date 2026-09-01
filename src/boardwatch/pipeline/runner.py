@@ -184,15 +184,21 @@ LaneFactory = Callable[[Settings, LaneFacets], Lane]
 # Registered is NOT enabled: `settings.lanes_enabled` is empty by default, so nothing in this
 # map runs until an operator names it. Registration only makes a lane reachable.
 LANE_FACTORIES: dict[str, LaneFactory] = {
+    # `lane_search_pages` reaches hiring.cafe as of the SSR re-point (D-393): `&page=N` was
+    # measured on 2026-08-31 to return a disjoint hit set, so the setting now buys real depth
+    # here rather than promising depth the lane cannot deliver.
     HiringCafeLane.name: lambda settings, facets: HiringCafeLane(
-        posting_budget=settings.lane_posting_budget, search_facets=facets.profile
+        posting_budget=settings.lane_posting_budget,
+        search_facets=facets.profile,
+        search_pages=settings.lane_search_pages,
     ),
-    # Only LinkedIn is handed `lane_search_pages`: its `start=` is a probed, working item offset,
-    # while hiring.cafe has no recorded paging parameter and its `?page=` form is disallowed by
-    # `robots.txt`, so passing the setting there would promise depth the lane cannot deliver.
+    # BOTH lanes now read `lane_search_pages`, through different URL builders: LinkedIn's
+    # `start=` is a probed, working ITEM offset, while hiring.cafe's `&page=` is a page number
+    # on the SSR surface D-393 approved. The older note here said hiring.cafe had no working
+    # paging parameter; that was true of the retired `/jobs/*` form only.
     #
-    # It is also the only lane handed the MINED facets, and for the matching reason: the trial
-    # record that prunes a barren mined term is this lane's own `keywords=` provenance
+    # LinkedIn is still the only lane handed the MINED facets, and that reason is unchanged: the
+    # trial record that prunes a barren mined term is this lane's own `keywords=` provenance
     # (`store.facet_queries`). Handing them to a lane whose acquisitions leave no such record
     # would buy searches nothing could ever measure or retire.
     LinkedInLane.name: lambda settings, facets: LinkedInLane(
@@ -412,10 +418,23 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
     edge behaviour is no reason to stop identifying ourselves to boards that answer us honestly.
 
     The cost is real and is why the separation is stated rather than assumed: per-host pacing
-    state lives per `Fetcher` instance, so these two do not share a delay. That is safe here
-    ONLY because they never target the same host — the providers get provider hosts, the lane
-    gets its aggregator. A lane that resolved a body through a provider's own API would defeat
-    the per-host serialization on both sides at once, with neither instance able to see it.
+    state lives per `Fetcher` instance, so these two do not share a delay.
+
+    **THE HIRING.CAFE LANE NOW DOES TARGET A PROVIDER HOST**, and the two halves of what that
+    used to rule out are answered separately rather than together.
+
+    * IDENTITY is preserved outright. That lane restores `politeness.identifying_user_agent()`
+      per request for a provider board (`Fetcher.get(headers=...)`), so a board that answers us
+      honestly still gets the honest UA. D22 is unweakened; only the aggregator sees the
+      browser UA, which is what D-369 bought it.
+    * PACING is weakened in one narrow way, and it is bounded rather than argued away: the two
+      instances keep separate per-host state, so the lane's first request to a provider host is
+      not spaced against the scan's last one. Nothing CONCURRENT results — `run()` runs the
+      scan stage, then the projection preflight, then this stage, strictly in that order, so
+      the two never have a request in flight at the same time. What remains is that one
+      boundary request can fall inside the >=1.0s window. Within the lane stage the contract
+      holds unchanged, because one `Fetcher` serves every lane and its per-host lock is held
+      for each request's full duration.
     """
     return Fetcher(
         settings,

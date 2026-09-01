@@ -73,14 +73,25 @@ class GreenhouseProvider:
                 status="unchanged", postings=[], url=request.url,
                 observed_validators=None, error=None,
             )
+        snapshot = self.parse_payload(result.content, url=request.url)
+        return snapshot.model_copy(update={"observed_validators": result.observed_validators})
+
+    def parse_payload(self, content: bytes, *, url: str) -> BoardSnapshot:
+        """The complete decode → BoardSnapshot path (observed_validators is set by the caller).
+
+        Split out of fetch_board, mirroring ashby's method of the same name, so a caller that
+        already holds the response bytes can reuse this provider's parsing without a second
+        request — the hiring.cafe lane resolves a body-inlined board that way, because it has
+        to issue the GET itself to send the identifying UA a provider host is owed.
+        """
         try:
-            payload = json.loads(result.content)
+            payload = json.loads(content)
             jobs = payload["jobs"]
             if not isinstance(jobs, list):
                 raise TypeError("jobs is not a list")
         except (ValueError, KeyError, TypeError) as exc:
             return BoardSnapshot(
-                status="failed", postings=[], url=request.url,
+                status="failed", postings=[], url=url,
                 observed_validators=None, error=f"invalid board payload: {exc}",
             )
         board_total = _meta_total(payload)
@@ -103,8 +114,8 @@ class GreenhouseProvider:
         return BoardSnapshot(
             status=status,
             postings=postings,
-            url=request.url,
-            observed_validators=result.observed_validators,
+            url=url,
+            observed_validators=None,
             error=error,
             board_reported_total=board_total,
             board_enumerated=count_listed_ids(jobs, "id"),

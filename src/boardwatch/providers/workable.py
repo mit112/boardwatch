@@ -63,8 +63,19 @@ class WorkableProvider:
                 status="unchanged", postings=[], url=request.url,
                 observed_validators=None, error=None,
             )
+        snapshot = self.parse_payload(result.content, url=request.url)
+        return snapshot.model_copy(update={"observed_validators": result.observed_validators})
+
+    def parse_payload(self, content: bytes, *, url: str) -> BoardSnapshot:
+        """The complete decode -> BoardSnapshot path (observed_validators is set by the caller).
+
+        Split out of fetch_board, mirroring ashby's method of the same name, so a caller that
+        already holds the response bytes can reuse this provider's parsing without a second
+        request -- the hiring.cafe lane resolves a body-inlined board that way, because it has
+        to issue the GET itself to send the identifying UA a provider host is owed.
+        """
         try:
-            payload = json.loads(result.content)
+            payload = json.loads(content)
             if not isinstance(payload, dict):
                 raise TypeError("Workable payload is not an object")
             jobs = payload["jobs"]
@@ -72,7 +83,7 @@ class WorkableProvider:
                 raise TypeError("Workable 'jobs' is not a list")
         except (ValueError, KeyError, TypeError) as exc:
             return BoardSnapshot(
-                status="failed", postings=[], url=request.url,
+                status="failed", postings=[], url=url,
                 observed_validators=None, error=f"invalid board payload: {exc}",
             )
         postings: list[RawPosting] = []
@@ -87,7 +98,7 @@ class WorkableProvider:
                 errors.append(f"job {job.get('shortcode', '?')}: {exc}")
         if errors and not postings and jobs:
             return BoardSnapshot(
-                status="failed", postings=[], url=request.url,
+                status="failed", postings=[], url=url,
                 observed_validators=None, error=f"all {len(jobs)} jobs failed to parse",
             )
         if errors:
@@ -99,8 +110,8 @@ class WorkableProvider:
         return BoardSnapshot(
             status=status,
             postings=postings,
-            url=request.url,
-            observed_validators=result.observed_validators,
+            url=url,
+            observed_validators=None,
             error=error,
             # This API states no total. None, deliberately — see D-271 and D-028.
             board_reported_total=None,

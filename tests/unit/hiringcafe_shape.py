@@ -32,20 +32,37 @@ is a dated edit to `REVIEW_BY` below with the reason recorded beside it.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from copy import deepcopy
 from datetime import date
+from pathlib import Path
 from typing import Any
+
+# The greenhouse provider's own recorded capture. Read at build time, never copied into this
+# file: one recorded shape, one place to re-capture it.
+_GREENHOUSE_CAPTURE = Path(__file__).resolve().parents[1] / "fixtures/greenhouse/normal.json"
 
 # The probe session. Both documents are dated the same day.
 PROBED = date(2026, 8, 23)
 # PROBED + 90, the window `tools/generalization/fixtures.py` uses for the six ATS captures.
 REVIEW_BY = date(2026, 11, 21)
 
-# `robots.txt`, read 2026-08-26, when the role facet shipped. RECORDED rather than remembered
-# because the lane's whole request shape follows from these three rules: the role route is a
-# PATH precisely because the query forms are disallowed. If the Allow ever narrows, or a
-# Disallow widens to cover `/jobs/`, the lane is in violation and nothing else in this repo
-# would notice -- the requests would keep succeeding. Re-read these when rolling `REVIEW_BY`.
+# `robots.txt`, read 2026-08-26. KEPT, not deleted, and no longer the lane's constraint.
+#
+# These three rules are why the lane originally asked for a role as a PATH segment. That path
+# form was refused on the first request of every run from run 129 onward -- a standing outage
+# that D-369's header work did not move, because the headers were never the cause. **D-393 (the
+# owner) approves the `?searchState=` form for this project, superseding both D-369 and this
+# host's robots.txt.** The reference implementation this repo is absorbing has used it in
+# production for months.
+#
+# They stay recorded for two reasons. A superseded rule that is deleted looks like a rule that
+# never existed, and the next reader re-derives the path form from scratch. And the ruling is
+# scoped to THIS host: `ROBOTS_DISALLOWED_FORMS` is now what the lane's URL builder is asserted
+# to produce rather than to avoid, so an accidental revert to the path form fails a test instead
+# of quietly restoring the outage. Re-read them when rolling `REVIEW_BY`.
 ROBOTS_READ = date(2026, 8, 26)
+SUPERSEDED_BY = "D-393"
 ROBOTS_ALLOWED_PREFIX = "/jobs/"
 ROBOTS_DISALLOWED_FORMS: tuple[str, ...] = ("?searchState=", "?page=", "&page=")
 
@@ -86,11 +103,20 @@ MISPARSED_BY_SOURCE: tuple[tuple[str, int], ...] = (
 )
 MISPARSED_HITS = sum(count for _, count in MISPARSED_BY_SOURCE)
 
-# Contract §1's paging siblings. Recorded, never acted on: the parameter that turns a page is
-# not in the contract, so the lane makes one GET.
+# Contract §1's paging siblings, now ACTED ON -- `&page=N` is the parameter, measured.
+#
+# The 2026-08-31 SSR probe made two GETs 1.5s apart against the exact searchState
+# `hiringcafe.search_state` builds (`software engineer`, `sortBy: date`, 7-day window, and NONE
+# of the reference implementation's user-specific pre-filters). Page 0 answered 200 with 143
+# hits, page 1 with 133, `ssrError` None and `ssrIsLastPage` False on both, `ssrPage` echoing
+# the number requested -- and the two pages shared ZERO hit ids. That last number is the one
+# that matters: it is what separates a real offset from a host that re-serves page 0.
+SSR_PROBED = date(2026, 8, 31)
 SSR_PAGE = 0
 SSR_PAGE_SIZE = 40
 SSR_IS_LAST_PAGE = False
+SSR_PROBED_PAGE_HITS: tuple[int, int] = (143, 133)
+SSR_PROBED_PAGE_OVERLAP = 0
 SSR_TOTAL_COUNT = 3_886_890
 SSR_COMPANY_COUNT = 123_343
 
@@ -180,37 +206,6 @@ def apply_url(source: str, index: int, seq: int) -> str:
     return f"https://careers.{employer(index)}.test/jobs/{4200 + seq}"
 
 
-def job_description_html(title: str, employer_label: str) -> str:
-    """A JD body in the recorded shape: `<H1>` first, then real section headings.
-
-    The `Sign in` in the footer is load-bearing, not decoration. Nearly every real posting page
-    carries one, so a one-sided login-wall test rejects the whole corpus; this fixture makes
-    that regression fail rather than pass.
-    """
-    return (
-        f"<H1>{title}</H1>"
-        f"<p>{employer_label} is hiring a {title.lower()} to join a small team that ships "
-        "weekly. This posting is open to applicants already able to work in the United "
-        "States, and the team works on site four days a week.</p>"
-        "<h2>Responsibilities</h2>"
-        "<ul>"
-        "<li>Own a service end to end, from design through operation.</li>"
-        "<li>Review your teammates' changes and keep the build green.</li>"
-        "<li>Write down what you learned so the next person does not relearn it.</li>"
-        "<li>Answer the on-call pager one week in six.</li>"
-        "</ul>"
-        "<h2>Qualifications</h2>"
-        "<ul>"
-        "<li>Comfortable reading code you did not write.</li>"
-        "<li>Some experience with a relational database.</li>"
-        "<li>Able to explain a tradeoff in writing.</li>"
-        "</ul>"
-        "<h2>Benefits</h2>"
-        "<p>Health cover from day one, a training budget, and paid time off that the team "
-        "actually takes.</p>"
-        "<footer><a href='/account'>Sign in</a></footer>"
-    )
-
 
 def hit(source: str, index: int, seq: int) -> dict[str, Any]:
     """One `ssrHits` entry, carrying every top-level key plan §0 recorded."""
@@ -278,19 +273,30 @@ def search_hits() -> list[dict[str, Any]]:
     return hits
 
 
-def search_page_html(hits: list[dict[str, Any]] | None = None) -> str:
+def search_page_html(
+    hits: list[dict[str, Any]] | None = None,
+    *,
+    page: int = SSR_PAGE,
+    is_last_page: bool = SSR_IS_LAST_PAGE,
+    error: str | None = None,
+) -> str:
     """The server-rendered page, with the payload inside `<script id="__NEXT_DATA__">`.
 
     The surrounding markup carries a `</script>`-free `</div>` inside a JSON string value on
     purpose: that is what defeated a regex extractor on the real page.
+
+    `page` / `is_last_page` / `error` are the three paging-era knobs. `ssrError` is a key the
+    real payload carries on every response and holds `None` on a healthy one, so a fixture that
+    omitted it could not exercise the arm that raises on a 200 carrying a search-side failure.
     """
     payload = {
         "props": {
             "pageProps": {
                 "ssrHits": search_hits() if hits is None else hits,
-                "ssrPage": SSR_PAGE,
+                "ssrPage": page,
                 "ssrPageSize": SSR_PAGE_SIZE,
-                "ssrIsLastPage": SSR_IS_LAST_PAGE,
+                "ssrIsLastPage": is_last_page,
+                "ssrError": error,
                 "ssrTotalCount": SSR_TOTAL_COUNT,
                 "ssrCompanyCount": SSR_COMPANY_COUNT,
                 "ssrTimings": {"esLatencyMs": 365},
@@ -307,8 +313,34 @@ def search_page_html(hits: list[dict[str, Any]] | None = None) -> str:
     )
 
 
-def job_description_payload(one_hit: dict[str, Any]) -> bytes:
-    """`GET /api/job-description?id=...` -> `{"job": {"job_information": {"description": ...}}}`."""
-    info = one_hit["job_information"]
-    body = job_description_html(info["title"], one_hit["enriched_company_data"]["name"])
-    return json.dumps({"job": {"job_information": {"description": body}}}).encode("utf-8")
+def greenhouse_board_payload(hits: Sequence[dict[str, Any]]) -> bytes:
+    """The employer's own greenhouse board, carrying a body for each of `hits`.
+
+    DERIVED FROM THE PINNED PROVIDER CAPTURE, not authored here, and that is the point. Since
+    the lane resolves a body-inlined board by handing the response to that provider's own
+    parser, a board payload invented in this file would prove only that the lane can read a
+    shape this file made up -- the exact defect the module docstring above warns about. So the
+    job objects come from `tests/fixtures/greenhouse/normal.json`, whose README records it as
+    the live API's response shape captured in an attended session, and only `id` and
+    `absolute_url` are re-keyed onto the ids the hits' `apply_url`s already point at.
+
+    Drift therefore fails: if greenhouse's recorded shape is ever re-captured, this payload
+    changes with it, and if the file stops being a `{jobs: [...]}` object this raises here
+    rather than quietly producing a board with nothing on it.
+    """
+    payload = json.loads(_GREENHOUSE_CAPTURE.read_text(encoding="utf-8"))
+    templates = payload["jobs"]
+    if not templates:
+        raise ValueError(f"{_GREENHOUSE_CAPTURE} lists no jobs to derive a board from")
+    jobs: list[dict[str, Any]] = []
+    for index, one_hit in enumerate(hits):
+        job = deepcopy(templates[index % len(templates)])
+        url = one_hit["apply_url"]
+        # `lanes.dereference` reads a greenhouse posting reference as the last path segment,
+        # and `providers.greenhouse.parse_job` reads `id`. Keying both off the same URL is
+        # what makes the convergence under test real rather than arranged.
+        job["id"] = int(url.rsplit("/", 1)[-1])
+        job["absolute_url"] = url
+        job["title"] = one_hit["job_information"]["title"]
+        jobs.append(job)
+    return json.dumps({"jobs": jobs, "meta": {"total": len(jobs)}}).encode("utf-8")
