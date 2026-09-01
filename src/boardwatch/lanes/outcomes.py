@@ -102,8 +102,18 @@ class AcquisitionTally:
         resolved nothing simply because nothing reachable turned up printed SILENT OUTAGE while
         being perfectly healthy. That is the cry-wolf this predicate exists to avoid.
 
-        It does not weaken the signal for the other lanes. `not_attemptable` there means the
-        request budget was spent -- and a run that spent its budget necessarily attempted the
-        requests it paid for, so those attempts are still counted here.
+        It does not weaken the signal for the other lanes, but the REASON is not the one this
+        docstring gave until 2026-09-01. It said `not_attemptable` in the other lanes "means the
+        request budget was spent". **That is only one of its three causes in `lanes/linkedin.py`,
+        and measurably the rarest.** The other two fire in `_group_by_company`, which runs BEFORE
+        the budget loop: an `UnparseableCard`, and a posting already seen UNDER ANOTHER FACET --
+        and `software engineer` and `backend engineer` overlap by design, so the second is the
+        bulk. Run 139 measured it: 682 cards seen, 520 counted `not_attemptable`, **162 surviving
+        grouping against a budget of 300**, so `remaining <= 0` never fired at all.
+
+        Left uncorrected this would point a reader at the wrong knob -- raising
+        `lane_posting_budget` to recover those 520, when the lane never reaches the budget it has.
+        The predicate itself is unaffected: every one of the three causes is "seen and not
+        requested", which is exactly what must be excluded from the attempt side.
         """
         return self.attempted - self._counts["not_attemptable"] > 0 and self.resolved == 0
