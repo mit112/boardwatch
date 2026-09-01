@@ -467,7 +467,7 @@ def _run_day_ordinal(engine: Engine, run_id: int) -> int:
         started_at = conn.execute(
             select(runs.c.started_at).where(runs.c.id == run_id)
         ).scalar_one()
-    return started_at.date().toordinal()
+    return int(started_at.date().toordinal())
 
 
 def _run_lanes(
