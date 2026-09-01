@@ -27,6 +27,7 @@ Four properties drive this design:
 
 companyDescription is deliberately EXCLUDED from body_text: it is identical boilerplate
 across a company's whole board and would pollute content_hash (revision detection).
+SmartRecruiters section text is HTML; html_to_text() IS on this path.
 Empty sections yield an empty body_text — observed on live active postings, not an error.
 `fetch_board` must never raise: every JSON level is validated as dict/list before use.
 Salary is never mined (D19).
@@ -39,6 +40,7 @@ from datetime import datetime
 from typing import Any
 
 from boardwatch.core.clock import to_naive_utc
+from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.providers.base import BoardHealth, health_from_failure
@@ -234,7 +236,7 @@ def _body_text(detail: dict[str, Any]) -> str:
     sections = (detail.get("jobAd") or {}).get("sections") or {}
     parts: list[str] = []
     for key in _BODY_SECTIONS:
-        text = str((sections.get(key) or {}).get("text") or "").strip()
+        text = html_to_text(str((sections.get(key) or {}).get("text") or "").strip())
         if text:
             parts.append(text)
     return "\n\n".join(parts)

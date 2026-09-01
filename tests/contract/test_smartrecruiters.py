@@ -11,7 +11,7 @@ from boardwatch.core.models import BoardRequest, ResponseValidators
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
-from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
+from boardwatch.providers.smartrecruiters import SmartRecruitersProvider, _body_text
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "smartrecruiters"
 LIST_URL = "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100&offset=0"
@@ -80,6 +80,60 @@ def test_board_url_is_canonical() -> None:
 def test_normalize_slug_lowercases() -> None:
     assert SmartRecruitersProvider.normalize_slug("Visa") == "visa"
     assert SmartRecruitersProvider.normalize_slug("VISA") == "visa"
+
+
+def test_body_text_converts_html_sections_and_preserves_list_item_order() -> None:
+    detail = {
+        "jobAd": {
+            "sections": {
+                "jobDescription": {"text": "<p>Lead the platform.</p>"},
+                "qualifications": {
+                    "text": (
+                        "<p>Required skills:</p>"
+                        "<ul><li>Python</li><li>SQL</li></ul>"
+                    )
+                },
+                "additionalInformation": {"text": "<div></div>"},
+            }
+        }
+    }
+
+    body = _body_text(detail)
+
+    # Tag syntax, not bare angle brackets: a correctly converted `5 &gt; 3` yields "5 > 3",
+    # which a bare `">" not in body` would reject.
+    assert "<p>" not in body and "<ul>" not in body and "<li>" not in body
+    assert body == "Lead the platform.\n\nRequired skills:\nPython\nSQL"
+
+
+def test_body_text_keeps_one_blank_line_between_converted_sections() -> None:
+    detail = {
+        "jobAd": {
+            "sections": {
+                "jobDescription": {"text": "<p>First section.</p>"},
+                "qualifications": {"text": "<div>Second section.</div>"},
+                "additionalInformation": {"text": "<br>Third section."},
+            }
+        }
+    }
+
+    assert _body_text(detail) == (
+        "First section.\n\nSecond section.\n\nThird section."
+    )
+
+
+def test_body_text_skips_markup_only_sections_after_conversion() -> None:
+    detail = {
+        "jobAd": {
+            "sections": {
+                "jobDescription": {"text": "<p>First section.</p>"},
+                "qualifications": {"text": "<p></p>"},
+                "additionalInformation": {"text": "<p>Last section.</p>"},
+            }
+        }
+    }
+
+    assert _body_text(detail) == "First section.\n\nLast section."
 
 
 @respx.mock
