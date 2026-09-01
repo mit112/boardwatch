@@ -340,8 +340,15 @@ class JobAppsLane:
 
     name = LANE_NAME
 
-    def __init__(self, source_dir: Path | None) -> None:
+    def __init__(self, source_dir: Path | None, queue_dir: Path | None = None) -> None:
+        # TWO roots, because job-apps MOVES a folder out of the discovery tree when it promotes
+        # it. Measured: discovery holds 190 records and the promoted queue holds 737 -- so a
+        # posting became invisible to boardwatch at exactly the moment it became one the owner
+        # was working on. Each root keeps its own structural check; `queue_dir` unset is the
+        # previous behaviour exactly.
         self._source_dir = source_dir
+        self._queue_dir = queue_dir
+        self._roots = tuple(root for root in (source_dir, queue_dir) if root is not None)
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
         """Every direct-apply record in the tree, grouped by the company identity it resolves to.
@@ -444,12 +451,23 @@ class JobAppsLane:
         parse. A tree that exists and holds group folders but currently has zero records in
         them is the owner having caught up, not a break, and returns an empty list.
         """
-        root = self._source_dir
-        if root is None:
+        if not self._roots:
             raise JobAppsSourceError(
                 "no source directory configured; set `jobapps_discovery_dir` or take "
                 f"{LANE_NAME!r} out of `lanes_enabled`"
             )
+        records: list[_Record] = []
+        for root in self._roots:
+            records.extend(self._records_under(root))
+        return records
+
+    def _records_under(self, root: Path) -> list[_Record]:
+        """One root's readable records, with that root's own structural check.
+
+        Per root rather than across them: a break in EITHER tree has to be visible. Folding them
+        would let a moved discovery tree hide behind a healthy queue tree, which is the exact
+        failure this lane's structural check exists to catch.
+        """
         if not root.is_dir():
             raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
         try:

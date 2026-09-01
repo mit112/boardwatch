@@ -53,6 +53,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # operator's filesystem. None ships the `jobapps` lane inert, and it encodes no view about
     # roles, seniority, geography or field.
     "Settings.jobapps_discovery_dir": None,
+    "Settings.jobapps_queue_dir": None,
     # D-325. Caps on how much the measured-death sweep may ASK, not on what it may conclude:
     # 50 probes is under a minute of a run, and 24 hours is one natural period between asking
     # the same posting twice. Neutral by construction — neither says anything about roles,
@@ -116,6 +117,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.lane_posting_budget": "operational",
     "Settings.lane_search_pages": "operational",
     "Settings.jobapps_discovery_dir": "path",
+    "Settings.jobapps_queue_dir": "path",
     "Settings.death_probe_budget": "operational",
     "Settings.death_probe_ttl_hours": "operational",
     "Settings.weights": "preference",

@@ -192,6 +192,16 @@ class Settings(BaseModel):
     # Not a secret and not personal data: it is a directory on the operator's own disk, so it
     # belongs in `config.toml` beside `data_dir` rather than in the environment.
     jobapps_discovery_dir: Path | None = None
+    # D-393 item 4 ("one queue"). job-apps MOVES a posting's folder out of the discovery tree
+    # when it promotes it, so boardwatch loses sight of a posting at exactly the moment it
+    # becomes one the owner is working. Measured: the discovery tree holds 190 records while the
+    # promoted queue holds 737 -- and 737 is the figure the lane's own docstring was written
+    # against, before the drain. This is a SECOND root, not a replacement: the two hold different
+    # populations and both are wanted.
+    #
+    # Same reasoning as the field above -- a directory on the operator's own disk, not a secret,
+    # and `None` until they set it, so nothing changes for an instance that does not.
+    jobapps_queue_dir: Path | None = None
     # D-325 — the measured-death sweep. `postings` under a company with `watched = 0` get no
     # absence signal from any board scan (D-314), so the only evidence available is the stored
     # URL answering 404/410 twice. Both knobs bound the COST of asking, never the verdict.
