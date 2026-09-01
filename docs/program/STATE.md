@@ -77,10 +77,14 @@ delivery queue reports **0 failed** rather than 4. Then re-read gates 1 and 3 wi
 Measured against job-apps' last 14 cohorts (258 distinct companies): **96 of 258 (37%) have no
 boardwatch company row at all**, and only **17** of those sit in the refused backlog. Un-throttling
 both caps closes **≈18%** of the company-level gap (a LOWER bound — a name join undercounts). The
-remaining ~79 were surfaced by **neither lane**. The replacement work is **native Jobright** (cheap:
-a static GitHub raw README plus JobPosting JSON-LD detail pages, no dependency, ~10-31 eligible
-postings/day) and **native Indeed** (~40-57/day, but it rests on `JobSpy`, a third-party scraping
-dependency — **an owner call, not a silent pick**).
+remaining ~79 were surfaced by **neither lane**. **A NATIVE JOBRIGHT LANE IS NOW REFUSED (D-406)** — probed
+live before any code, it fails BOTH shapes: as a `Lane` it serves **zero JSON-LD**, has no employer JD
+field and **no employer board URL** (so the #304 hiring.cafe manoeuvre has nothing to resolve
+through), and its eligibility fields are jobright's OWN judgments; as a `github_lists`-style emitter,
+**`parse_board_target` resolves 0 of 882** of its README's links. **Indeed is the opposite case and
+remains viable** — its admitted bodies are the EMPLOYER's own text (0 Indeed chrome; posting 135278 is
+8,946 bytes of Amazon's JD). So the native-lane work is **Indeed ALONE**, ~40-57 eligible/day, and its
+blocker is not technical: it is the **`JobSpy` dependency, which is an owner call, not a silent pick**.
 
 **3. GATE 2's TWO-SIDED DECOY CONTROL IS DONE — both arms catch 4-5 of 4-5.** What remains owed is
 SENSITIVITY, not gross detection: the planted decoys are egregious, and the job-apps arm returned
@@ -101,6 +105,16 @@ experience signal. A subtler decoy set is the next refinement if the 5-point bar
 - **One queue failure survives #316 and is pre-existing**: `posting 131368: eBay_..._59eb81b3 already
   exists at its destination`. A null control confirms unfixed `main` performs that same rename on its
   own, so it is neither caused nor fixed by #316.
+- **9 postings carry jobright PAGE TEXT as their JD, and 14 carry LinkedIn chrome (D-406).** The
+  jobright ones include its own `H1B Sponsor Likely` label inside what boardwatch treats as the frozen
+  JD. **ZERO evidence spans quote it today** and the keystone invariant holds, but `work_auth` is a
+  blocker family, so the fix shape is an INGEST precondition: a lane body must be the employer's own
+  text. #307's contract, not a queue or cap question.
+- **`_identity_hash` reads the mutable `apply_url`, and the exposure is 27.8%** — of 861 offered
+  leads, **239** carry the eight-hex suffix in their folder name and can therefore churn when a scan
+  refreshes that URL. A rename is reported as `moved` and keeps its contents, so the cost is the
+  owner's open path changing, not data loss. Dropping `apply_url` from the hash input would re-key
+  239 folders in one run — a far bigger blast radius than #316's priced 2, so it needs its own sizing.
 - The ledger drain stays DECLINED (D-390). The two held recall patches at
   `.agent/2026-08-31d-session/WIP-*.patch` are **DO NOT SHIP** on measured evidence.
 
