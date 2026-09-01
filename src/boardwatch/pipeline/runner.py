@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
+from itertools import zip_longest
 from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING
@@ -1742,7 +1743,8 @@ def run_pipeline(
         # `run_cmd` prints that list after the call returns and a silently unwritten queue is a
         # queue the owner will trust anyway.
         try:
-            queue_failed = _sync_queue(engine, settings, console)
+            lead_failures, folder_failures = _sync_queue(engine, settings, console)
+            queue_failures = _interleave(lead_failures, folder_failures)
             # Per-lead failures used to stop at the log line above, which is defensible while
             # somebody is watching the run and is not defensible unattended: `run_cmd` prints that
             # line into a file nobody opens, so a queue that had quietly stopped copying leads was
@@ -1752,8 +1754,19 @@ def run_pipeline(
             # `append_run_error` because `finish_run` has already committed. Still NOT fatal, for
             # the reason the block comment above gives: the queue holds COPIES, and the dated tree
             # and the funnel are the run's real output.
-            if queue_failed:
-                note = f"delivery queue: {queue_failed} lead folder(s) failed to copy or drain"
+            if queue_failures:
+                # Capped rather than joined whole: a systemic queue fault fails every lead, and a
+                # note carrying hundreds of details would be stored in `runs.errors_json` and
+                # reprinted into the morning digest. Three name the shape; the count stays exact.
+                # `_interleave` is what stops three lead failures hiding every folder failure —
+                # the cap would otherwise fall entirely inside whichever kind came first.
+                shown = "; ".join(queue_failures[:3])
+                if len(queue_failures) > 3:
+                    shown += f"; +{len(queue_failures) - 3} more"
+                note = (
+                    f"delivery queue: {len(queue_failures)} lead folder(s) failed to copy or "
+                    f"drain — {shown}"
+                )
                 console.print(f"  ! {note}", markup=False)
                 summary.errors.append(note)
                 append_run_error(engine, run_id, note)
@@ -2204,7 +2217,22 @@ def _emit_morning(
     return write_morning(artifact, day_dir)
 
 
-def _sync_queue(engine: Engine, settings: Settings, console: Console) -> int:
+def _interleave(first: list[str], second: list[str]) -> list[str]:
+    """Both lists represented from the front, so a capped view cannot fall inside just one.
+
+    Taken one from each in turn rather than concatenated: the caller shows the first three, and a
+    concatenation ordered lead-then-folder would let three lead failures suppress every folder
+    cause. Order within each kind is preserved.
+    """
+    merged: list[str] = []
+    for pair in zip_longest(first, second):
+        merged.extend(item for item in pair if item is not None)
+    return merged
+
+
+def _sync_queue(
+    engine: Engine, settings: Settings, console: Console
+) -> tuple[list[str], list[str]]:
     """Drain, then rebuild, the delivery queue on disk from what the store says (design §4.3).
 
     **Reconcile first**, the same order and for the same reason as `delivery/server.py`'s
@@ -2217,8 +2245,25 @@ def _sync_queue(engine: Engine, settings: Settings, console: Console) -> int:
 
     Neither entry point raises on contention: both report `contended=True`, so a scheduled run
     colliding with a serving web app is a normal outcome that changed nothing, not an error. Both
-    also report per-lead failures inside their report rather than raising; the total failed count is
-    returned so the caller can record it durably, and it is still never re-raised here.
+    also report per-lead failures inside their report rather than raising; those failures are
+    returned so the caller can record them durably, and they are still never re-raised here.
+
+    **ONE STRING PER FAILURE, NOT A COUNT.** `LeadFailure` and `FolderFailure` each already carry
+    a `detail`, and this function used to discard both and return `len()`. So the run line and
+    `runs.errors_json` said `4 lead folder(s) failed` with the cause recorded nowhere — which is
+    the same invisibility the block comment at the call site escalated this to fix, just one step
+    further along: a number with no reason is not something an unattended owner can act on. Run
+    139 is the measured case, and diagnosing its four took a store-versus-disk reconstruction that
+    the detail strings would have answered outright.
+
+    **THE TWO KINDS ARE RETURNED SEPARATELY, not concatenated.** The caller shows only the first
+    few, so a flat list ordered sync-then-drain would let three lead failures hide every folder
+    failure behind them. Keeping them apart lets the caller sample from both, and it does so
+    without classifying anything by string-matching a message.
+
+    Control characters are stripped from each detail: a queue folder may have been RENAMED by the
+    owner (`_index` supports exactly that), so its name is untrusted text that reaches a one-line
+    console print and a Markdown bullet in the morning digest.
 
     `DEFAULT_QUEUE_ROOT` is read from this module's namespace at call time rather than captured in
     a default argument, so a test can redirect the root by name; a `Settings` field would add four
@@ -2240,9 +2285,27 @@ def _sync_queue(engine: Engine, settings: Settings, console: Console) -> int:
         markup=False,
     )
     # Both halves of the partition: a lead `sync_queue` could not write, and a folder
-    # `reconcile_queue` could not move. They are one number to the caller because the answer to
+    # `reconcile_queue` could not move. They are one list to the caller because the answer to
     # either is the same — the queue on disk no longer matches what the store says was delivered.
-    return synced.failed + drained.failed
+    # Named by what each report identifies its failures BY, which differs for a reason:
+    # `sync_queue` works from the database and knows the posting, `reconcile_queue` works from
+    # disk and knows only the folder.
+    return (
+        [f"posting {item.posting_id}: {_oneline(item.detail)}" for item in synced.failures],
+        [f"folder {_oneline(item.folder)}: {_oneline(item.detail)}" for item in drained.failures],
+    )
+
+
+def _oneline(text: str) -> str:
+    """Untrusted text flattened to one line for a console print and a Markdown bullet.
+
+    Queue folder names are owner-renameable, so a newline or a control character in one would
+    break the single-line alert the digest promises. Replaced rather than dropped so the length
+    still reflects what was there.
+    """
+    return "".join(
+        " " if character < " " or character == "\x7f" else character for character in text
+    )
 
 
 def _ensure_dir(path: Path) -> Path:

@@ -54,6 +54,8 @@ from boardwatch.delivery.queue import (
     SKIPPED_DIR,
     URL_FILE,
     WEBLOC_FILE,
+    _identity_hash,
+    _plan,
     reconcile_queue,
     sync_queue,
 )
@@ -64,7 +66,7 @@ from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application, set_application_status
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.delivery_queries import QueueDetail
+from boardwatch.store.delivery_queries import QueueDetail, QueueRow
 from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.queue_state import mark_job_skipped, unmark_job_skipped
 from boardwatch.store.tables import (
@@ -134,6 +136,28 @@ def _lead_folder(apps: Path, key: str, *, pdf: bool = True) -> tuple[Path, Path]
     for sidecar in SIDECARS:
         (folder / sidecar).write_text(f"{sidecar} for {key}\n", encoding="utf-8")
     return typ, pdf_path
+
+
+def _queue_row(posting_id: int, company: str, title: str) -> QueueRow:
+    """A minimal `QueueRow` for the naming pass, which reads only these fields."""
+    return QueueRow(
+        posting_id=posting_id,
+        job_id=posting_id,
+        title=title,
+        company=company,
+        location=None,
+        locations=(),
+        remote_policy=None,
+        posted_days=None,
+        first_seen=NOW,
+        status="open",
+        verdict="eligible",
+        apply_url=f"https://example.test/{posting_id}",
+        delivered_run_id=1,
+        tex_uri="file:///lead.tex",
+        pdf_uri="file:///lead.pdf",
+        target_flag=None,
+    )
 
 
 def _deliver(
@@ -1072,6 +1096,106 @@ def test_two_postings_with_the_same_company_and_title_each_keep_their_own_folder
         claimed[int(str(details["posting_id"]))] = pdfs[0].read_bytes()
     assert set(claimed) == {first, second}
     assert claimed[first] != claimed[second], "both folders hold the same PDF, so one was lost"
+
+
+def test_two_leads_whose_names_differ_only_in_case_are_still_disambiguated(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`onX` and `OnX` are two strings and, on macOS and Windows, ONE path.
+
+    The collision pass therefore keys on the case-FOLDED name. A case-sensitive `Counter` finds
+    no collision here, disambiguates neither lead, and the second one written finds its target
+    held by a folder that does not identify it — which cost run 139 two real leads.
+
+    **The assertion is on the folded name, not on the folder count, and that is the whole point.**
+    On a case-SENSITIVE filesystem the unfixed code creates two folders and reports no failure, so
+    `len(folders) == 2` passes against the defect and this test would be vacuous on Linux CI —
+    which is exactly where it runs. Requiring the two names to differ AFTER folding fails against
+    the unfixed code on every filesystem.
+    """
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one", company="onX", title="Full-Stack Engineer")
+        second, _ = _deliver(conn, apps, "two", company="OnX", title="Full-Stack Engineer")
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failed) == (2, 0), report.failures
+    folders = _folders(root)
+    assert len(folders) == 2, folders
+    assert len({name.casefold() for name in folders}) == 2, (
+        f"{folders} collapse to one path on a case-insensitive filesystem"
+    )
+    claimed = {int(str(_details(root / name)["posting_id"])) for name in folders}
+    assert claimed == {first, second}
+
+
+def test_a_lead_whose_canonical_job_MOVED_keeps_the_folder_it_already_has(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Identity resolution can converge a lane copy onto a native find, and then the posting a
+    folder was written under is no longer the posting `delivered_unapplied` offers — it dedups by
+    `job_id` and returns the most recently delivered posting of that job.
+
+    Run 139's measured case: the folder recorded posting 131367 while the store had moved it to
+    `job_id = 69007`, so the folder identified neither the offered posting nor the current job, the
+    sync raised `QueueConflictError`, and the lead got no folder at all. 896 such convergences were
+    measured in the Workday dereference, so this is a recurring shape, not a one-off.
+
+    Both postings share company and title on purpose: that is what makes the planned name collide
+    with the existing folder, which is what turns a stale claim into a FAILURE rather than a
+    harmless second folder. Fails against a version that matches folders by `posting_id` alone.
+    """
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"], _folders(root)
+
+    with engine.begin() as conn:
+        # Delivered LATER, so it wins the per-job dedup, and it has no folder of its own yet.
+        second, second_job = _deliver(conn, apps, "two")
+        # The convergence itself: the first posting is now recognised as the second's job.
+        conn.execute(update(postings).where(postings.c.id == first).values(job_id=second_job))
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failed == 0, report.failures
+    folders = _folders(root)
+    assert len(folders) == 1, f"the existing folder was orphaned or duplicated: {folders}"
+    claimed = int(str(_details(root / folders[0])["posting_id"]))
+    assert claimed == second, (
+        f"folder still claims posting {claimed}; it must be re-stamped to the offered posting "
+        f"{second}"
+    )
+
+
+def test_a_name_still_taken_after_disambiguation_is_REPORTED_not_returned_twice(
+    tmp_path: Path,
+) -> None:
+    """Disambiguation is one pass, so a retried name can still collide.
+
+    The reachable shape: two leads collide by case and both retry with an eight-hex suffix, and a
+    THIRD lead whose ORDINARY title happens to carry the first one's suffix plans the identical
+    folder. Before the final check, `_plan` returned two leads with the same folder and **no
+    failure at all**, and the loss landed later at write time on whichever was attempted second —
+    blaming the folder rather than the plan, and depending on write order for which lead survived.
+
+    Now the lowest `posting_id` keeps the folder and the rest are reported. Asserts on `_plan`
+    directly because the collision is a property of the PLAN; a two-lead test cannot reach it, and
+    a database-backed one cannot easily contrive a title carrying another row's digest.
+    """
+    first = _queue_row(1, "Acme", "Engineer")
+    second = _queue_row(2, "acme", "Engineer")
+    third = _queue_row(3, "Acme", f"Engineer {_identity_hash(first)[:8]}")
+
+    planned, failures = _plan([first, second, third], root=tmp_path, owner_name=OWNER)
+
+    folded = [names.folder.casefold() for names in planned.values()]
+    assert len(folded) == len(set(folded)), f"_plan returned a colliding folder twice: {folded}"
+    assert sorted(planned) == [1, 2], sorted(planned)
+    assert [failure.posting_id for failure in failures] == [3], failures
+    assert "still taken after disambiguation" in failures[0].detail, failures[0].detail
 
 
 def test_the_disambiguated_names_are_stable_across_syncs(
