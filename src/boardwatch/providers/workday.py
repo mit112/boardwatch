@@ -75,6 +75,13 @@ _MAX_PAGES = 150
 _HOST_FORBIDDEN = frozenset(":@?#\\%[]")
 # Path segments Workday puts around the site slug in a public career-site URL.
 _CHROME_SEGMENTS = frozenset({"wday", "cxs", "job", "jobs", "login", "details"})
+
+
+def _is_locale(segment: str) -> bool:
+    """`en-US`, `en-us`, `fr-CA`. Shape-based rather than a list, which is what lets an
+    unlisted locale still be skipped; the cost is that a 5-character site with a hyphen in
+    the third position would be read as one, and none exists in 113,074 measured URLs."""
+    return len(segment) == 5 and segment[2] == "-"
 _SLUG_FORM = "expected host/tenant/site, e.g. acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
 # workerSubType descriptors worth one extra paged query each. Facet ids are tenant-specific
 # Workday WIDs, so buckets are matched on the human-readable DESCRIPTOR — hardcoding a WID
@@ -305,17 +312,43 @@ class WorkdayProvider:
 
     @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:
-        """Composite slug from a pasted career-site URL. The tenant is the first host label;
-        the site is the first path segment that is neither a locale (en-US) nor Workday
-        chrome (wday/job/jobs/login/...)."""
+        """Composite slug from a pasted career-site URL, read by GRAMMAR rather than by
+        skipping chrome. The tenant is the first host label.
+
+        Workday serves two path shapes and each names the career site at a fixed position:
+        the CXS API form `/wday/cxs/{tenant}/{site}/jobs`, and the public form
+        `[{locale}/]{site}[/job/{location}/{ref}]`. So the site is the first segment that is
+        not a locale — full stop.
+
+        WHY NOT THE OLD SKIP-LOOP. It took the first segment that was neither a locale nor in
+        `_CHROME_SEGMENTS`, and `_CHROME_SEGMENTS` contains `jobs`. A tenant whose career site
+        is literally named `Jobs` therefore had its site SKIPPED and the next segment — the
+        job's CITY — returned as the site. Red Hat's
+        `redhat.wd5.myworkdayjobs.com/Jobs/job/Canberra/...` derived site `Canberra`, minting a
+        company row for a board that does not exist, a different one per city; and
+        `redhat.wd5.myworkdayjobs.com/jobs` pasted as a board URL returned None, so the two
+        boards in this class (`redhat/jobs` and `paypal/jobs`, 325 postings, both watched)
+        could only ever be added through the explicit `workday:host/tenant/site` form.
+        `store/queries.py:stored_slug` does NOT rescue it — that folds CASE, and `canberra` is
+        not a case variant of `jobs`.
+
+        Measured over 113,074 real Workday URLs (93,044 from this store's own scans plus 4,521
+        from an independent ledger, and every board URL in both): the first segment is `job` or
+        `details` in **zero** of them, and the grammar above resolves every remaining one. It
+        fixes 157 live posting URLs that derived a city.
+
+        A path whose first non-locale segment IS `job`/`details` carries no career site at all,
+        so it returns None rather than reading the location. `/wday/cxs` with nothing after it
+        is likewise not a board.
+        """
         tenant = host.split(".", 1)[0]
-        for part in parts:
-            if part.lower() in _CHROME_SEGMENTS:
-                continue
-            if len(part) == 5 and part[2] == "-":  # locale segment, e.g. en-US
-                continue
-            return f"{host}/{tenant}/{part}"
-        return None
+        lowered = [part.lower() for part in parts]
+        if lowered[:2] == ["wday", "cxs"]:
+            return f"{host}/{tenant}/{parts[3]}" if len(parts) >= 4 else None
+        index = 1 if parts and _is_locale(parts[0]) else 0
+        if index >= len(parts) or lowered[index] in ("job", "details"):
+            return None
+        return f"{host}/{tenant}/{parts[index]}"
 
     def board_url(self, slug: str) -> str:
         """Canonical fetch URL == the http_cache key. Raises ValueError on a malformed

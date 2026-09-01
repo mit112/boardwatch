@@ -144,22 +144,40 @@ def test_workday_round_trip() -> None:
     assert target.posting_ref == "JR1000001-1"
 
 
-def test_a_workday_site_named_jobs_refuses_rather_than_reading_the_location() -> None:
-    """The counter-example that makes the site guard load-bearing rather than decorative.
+def test_a_workday_site_named_jobs_now_resolves_instead_of_reading_the_location() -> None:
+    """This test USED to assert a refusal, and the change is the point.
 
-    `workday.slug_from_path` takes the first path segment not in `_CHROME_SEGMENTS`, and
-    `jobs` is in that set -- so for a tenant whose career site is literally named `Jobs`,
-    it skips the site and reads the LOCATION as the site. Measured in the live store:
-    `redhat.wd5.myworkdayjobs.com/Jobs/job/Canberra/...` derives site `Canberra`, and
-    `redhat/jobs` + `paypal/jobs` are real watched rows. Without this guard the URL would
-    resolve to a company row for a board that does not exist -- a different fiction per
-    location -- and mint a real requisition id against it.
+    `_CHROME_SEGMENTS` contains `jobs`, and `slug_from_path` skipped anything in it — so Red
+    Hat, whose career site is literally named `Jobs`, had its site skipped and the job's CITY
+    read as the site. The guard below refused those URLs, which was right as far as it went:
+    better to refuse than converge onto a company row for a board that does not exist.
 
-    157 URLs in the live store and 38 in an independent ledger take this branch.
+    `slug_from_path` is read by grammar now, so the site is derived CORRECTLY and the URL
+    resolves. Refusing 157 live URLs was a mitigation; resolving them is the fix.
+    """
+    target = parse_posting_target(
+        "https://redhat.wd5.myworkdayjobs.com/Jobs/job/Canberra/Senior-Consultant_R-040324-1"
+    )
+    assert target.slug == "redhat.wd5.myworkdayjobs.com/redhat/Jobs"
+    assert target.posting_ref == "R-040324-1"
+
+
+def test_a_derived_site_that_is_not_the_segment_before_job_still_refuses() -> None:
+    """The site guard, which survives the `slug_from_path` fix and is NOT dead code.
+
+    Its live case moved upstream — Red Hat resolves now — so what remains is contrived, and it
+    is pinned precisely because it is the only thing left that reaches it: `slug_from_path`
+    skips at most ONE leading locale, so a path carrying TWO derives the second locale as the
+    career site while the real one sits before `job`. Without the guard that mints a company
+    row named `fr-CA` and files a real requisition against it.
+
+    Checked rather than assumed: the prefix rule runs first and swallows every other shape that
+    used to reach here, so had this case not existed the guard would have been unreachable and
+    should have been deleted rather than kept for comfort.
     """
     with pytest.raises(UnresolvablePostingURL, match="is not the segment before"):
         parse_posting_target(
-            "https://redhat.wd5.myworkdayjobs.com/Jobs/job/Canberra/Senior-Consultant_R-040324-1"
+            "https://acme.wd5.myworkdayjobs.com/en-US/fr-CA/AcmeCareers/job/Austin/Eng_REQ999"
         )
 
 
