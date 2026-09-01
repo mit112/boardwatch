@@ -68,13 +68,17 @@ def _job_description(
     company: str | None = None,
     title: str | None = None,
     reversed_order: bool = False,
+    header_url: str | None = None,
+    body_text: str = "Some job text.",
 ) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     company_line = f"Company:  {company}" if company is not None else None
     role_line = f"Role:     {title}" if title is not None else None
     lines = [role_line, company_line] if reversed_order else [company_line, role_line]
+    if header_url is not None:
+        lines.append(f"URL:      {header_url}")
     body = "\n".join(line for line in lines if line is not None)
-    body += "\nLocation: Remote\n" + "=" * 40 + "\nSome job text.\n"
+    body += "\nLocation: Remote\n" + "=" * 40 + "\n" + body_text + "\n"
     (folder / "job_description.txt").write_text(body, encoding="utf-8")
 
 
@@ -177,6 +181,83 @@ def test_an_unescaped_ampersand_falls_back_instead_of_crashing(tmp_path: Path) -
     rows, malformed = read_jobapps_dir(root)
     assert malformed == []
     assert (rows[0].company, rows[0].title, rows[0].url) == ("Unescaped Co", "Engineer", None)
+
+
+def test_an_unreadable_webloc_falls_back_to_the_url_header(tmp_path: Path) -> None:
+    """The recoverable URL. Losing it costs a row the exact key and drops it onto the weak one.
+
+    `plistlib` fails on some of job-apps' own apply links, but the same URL is written a second
+    time into the job description header — so giving up on a URL here is a choice, not a
+    limit, and it is what pushes a row onto (company, title) where a fan-out gets it refused.
+    """
+    root = tmp_path / "_applied"
+    folder = root / "BadPlist_Co"
+    folder.mkdir(parents=True)
+    (folder / "1_apply.webloc").write_text("not a plist", encoding="utf-8")
+    _job_description(
+        folder, company="BadPlist Co", title="Engineer",
+        header_url="https://jobs.example-ats.test/badplist/77",
+    )
+    rows, malformed = read_jobapps_dir(root)
+    assert malformed == []
+    assert rows[0].url == "https://jobs.example-ats.test/badplist/77"
+
+
+def test_a_folder_with_no_webloc_at_all_still_uses_the_url_header(tmp_path: Path) -> None:
+    root = tmp_path / "_applied"
+    folder = root / "NoWebloc_Co"
+    _job_description(
+        folder, company="NoWebloc Co", title="Engineer",
+        header_url="https://jobs.example-ats.test/nowebloc/5",
+    )
+    rows, malformed = read_jobapps_dir(root)
+    assert malformed == []
+    assert rows[0].url == "https://jobs.example-ats.test/nowebloc/5"
+
+
+def test_a_url_header_alone_is_enough_to_key_a_folder(tmp_path: Path) -> None:
+    """No webloc and no company/title: the header URL is the only key, and it is enough."""
+    root = tmp_path / "_applied"
+    folder = root / "UrlOnly_Co"
+    folder.mkdir(parents=True)
+    (folder / "job_description.txt").write_text(
+        "URL:      https://jobs.example-ats.test/urlonly/9\n" + "=" * 40 + "\ntext\n",
+        encoding="utf-8",
+    )
+    rows, malformed = read_jobapps_dir(root)
+    assert malformed == []
+    assert (rows[0].company, rows[0].title, rows[0].url) == (
+        None, None, "https://jobs.example-ats.test/urlonly/9",
+    )
+
+
+def test_the_webloc_url_wins_over_the_header_url(tmp_path: Path) -> None:
+    """Precedence control: the webloc is the link job-apps actually opened to apply.
+
+    The header URL is the same posting seen through whatever surface found it — often an
+    aggregator listing — so it is the fallback, never the override.
+    """
+    root = tmp_path / "_applied"
+    folder = root / "Both_Co"
+    _webloc(folder, "https://jobs.example-ats.test/both/apply")
+    _job_description(
+        folder, company="Both Co", title="Engineer",
+        header_url="https://aggregator.example.test/listing/1",
+    )
+    rows, _ = read_jobapps_dir(root)
+    assert rows[0].url == "https://jobs.example-ats.test/both/apply"
+
+
+def test_a_url_line_inside_the_job_text_is_not_read_as_the_header(tmp_path: Path) -> None:
+    """Boundary control: the header ends at the `====` divider, so job text cannot supply a key."""
+    root = tmp_path / "_applied"
+    folder = root / "BodyUrl_Co"
+    _job_description(
+        folder, company="BodyUrl Co", title="Engineer",
+        body_text="Apply here.\nURL:      https://jobs.example-ats.test/from-the-body/1",
+    )
+    rows, _ = read_jobapps_dir(root)
+    assert rows[0].url is None
 
 
 def test_non_directory_entries_are_skipped_not_counted(tmp_path: Path) -> None:
