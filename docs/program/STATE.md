@@ -21,77 +21,79 @@
 
 ## Current standing
 
-**RUN 138 IS VERIFIED CLEAN AND IT SETTLES TWO THINGS AT ONCE.** Started 2026-09-01 09:00:05 UTC,
-finished 09:44:38, `status='ok'`. 379 boards attempted, **1 failed** (marqeta HTTP 404 — a dead
-board, not systemic), 282 complete / 18 partial. 27,840 seen, 2,006 new, 894 closed, **115,703
-evaluated**, **96 tailored résumés** delivered.
+**SIX PRs MERGED, NO PRODUCTION RUN. Run 138 is still the latest**; every number below is measured
+read-only against the live store or against job-apps' ledger as an independent set. **Run 139 is the
+first run that can move a lane number** — the 2026-09-01 measurement window predates hiring.cafe's
+first clean run, LinkedIn facet mining arming, and #307/#308 entirely.
 
-**THE SPEED CHANGE IS CONFIRMED AT PRODUCTION SCALE.** A full corpus re-judge in **44 m 33 s**,
-against run 137's 1 h 58 m and run 136's 2 h 30 m for the same class of work on FEWER postings.
-D-394 projected the eligibility stage 75.6 min -> ~8-12 min and the whole-run figure is consistent
-with it.
+Merged: **#306** SmartRecruiters dereference · **#307** aggregator slice · **#308** promoted-queue
+root · **#310** Workday dereference · **#311** D-399 · **#312** the case-claim correction · **#313**
+the `slug_from_path` chrome fix (gated green, auto-merge armed at close — **verify by main's
+CONTENT**: `git grep -c "read by GRAMMAR" origin/main -- src/boardwatch/providers/workday.py`).
 
-**THE NULL CONTROL D-392 CALLED STRUCTURALLY UNAVAILABLE WAS OBTAINED, AND IT PASSES (D-398).**
-113,178 shared `input_id`s at **99.1% coverage**, **ZERO of 113,178 verdicts changed**, and the
-`posting_version_id` cross-check agrees with 0 postings carrying more than one verdict. A non-zero
-count would have been a memoization bug rather than noise, so this is also #297's correctness test.
-D-392 is not superseded — what is recorded is the reproducible circumstance in which a control
-becomes available: a behaviour-preserving change to a DIGESTED module.
+**WORKDAY IS DEREFERENCED, AND IT IS THE LARGEST CONVERGENCE ITEM THE PROGRAM HAS SHIPPED.** 87,413
+of 93,044 provider-supplied `externalUrl`s resolve with the extracted reference equal to the stored
+`provider_posting_id` and **ZERO mismatches**; an independent arm of 4,521 URLs across **606 hosts
+against our own 117** resolves 4,456. **896 job-apps finds now converge onto a posting the board scan
+already holds** — against D-397's measured 44-posting prize for the suppressor it declined to build.
+The old refusal was aimed at the wrong contract: a `PostingTarget` is never fetched, so what had to
+be recoverable was `provider_posting_id`, not the `externalPath`. That contract is still unproven.
 
-**HIRING.CAFE IS BACK.** Run 138 reports **no hiring.cafe error at all** — the first clean run since
-129, ending a 14-of-14 refusal on every run. Its postings do not appear under a `hiringcafe` provider
-because the re-pointed lane resolves bodies through the EMPLOYER's own board, so they land under
-greenhouse/lever/ashby/workable by design.
+**A NUMBER THIS PROGRAM PUBLISHED WAS WRONG FOR TWO HOURS, AND THE CORRECTION IS THE MORE USEFUL
+RESULT (D-401).** #310 shipped "589 converge, 307 lost to site case". The 307 were never lost:
+`stored_slug` folds case and `upsert_lane_company` calls it for every lane snapshot. The figure came
+from joining `(slug, ref)` as STRINGS while production resolves the company case-insensitively
+first — **a join only models convergence if it models the resolver**. Corrected in #312 to **896**.
 
-**96 DELIVERED IS `--top 100` BINDING, NOT A YIELD CHANGE.** New postings by provider during the run
-window: workday 1,745, greenhouse 192, **linkedin 83** (facet mining live), ashby 76, smartrecruiters
-38, **jobapps 21**, lever 14, workable 5.
+**A MEASURED, OWNER-APPROVED, BUILT CHANGE WAS THEN REFUSED AT ZERO BENEFIT (D-401).** The premise
+behind Workday site-case preservation *is* false — 60 of 133 watched companies already store a
+lowercased site holding 31,395 clean-scanned postings, and a live CXS A/B returned identical totals
+both ways (nvidia 2000/2000, bdx 576/576, roche 224/224). The migration was still discarded, because
+`stored_slug` already delivers the convergence it was built to buy. **It was also already recorded as
+D-339**, reachable with `tools.decisions --find slug case` in one command; the log was not searched
+before the proposal was built.
 
-**ELEVEN PRs SHIPPED ACROSS THE SESSION, AND THE THREE MOST VALUABLE FINDINGS CAME FROM REVIEW AFTER
-A GREEN GATE**, not from the gate: a four-wide data-integrity fan-out in #300 (fixed by #303,
-D-396), a cap-starvation defect that would have left the "fixed" hiring.cafe lane delivering nothing
-(#304, D-397), and a dereference rule the codebase itself proposed that would have read `99` out of
-a UUID (#306, held). Two standing beliefs were refuted with measurement: the ranker is NOT
-recency-dominated (D-395) and the deliverable reservoir is **197, not 3,636**.
+**THE `slug_from_path` CHROME DEFECT IS FIXED (D-400, #313).** `_CHROME_SEGMENTS` contains `jobs`, so
+a tenant whose career site is named `Jobs` had its site skipped and the job's **city** read as the
+site — a fictional company row per city, 157 live URLs, and neither `redhat/jobs` nor `paypal/jobs`
+(325 postings, both watched) could be added by pasting its URL. Site derivation is positional now;
+misread URLs through `parse_board_target` go **157 -> 0** over 113,074 real URLs.
 
+**JOB-APPS RETIREMENT NOW HAS A BAR, AND THE FIRST READING IS FAR FROM IT (D-399).** Coverage
+**20.4%** against a bar of 80%; precision a **28-point** gap; and **17 of run 138's 96 delivered
+leads flow through the jobapps lane**, so 17.7% of delivery dies on switch-off. Company reach re-run
+on the identical window still reads 16.4% and is the WRONG instrument — structurally blind to
+aggregator lane work.
 
 ## Next action
 
-**THREE PRs ARE GATED GREEN AND DELIBERATELY HELD, waiting only on run 138 — which has now been read
-out. They can go in.** Merge order matters: **#307 first, then rebase #308** (both touch
-`lanes/jobapps.py`); **#306** is independent.
-
-1. **#307 — the aggregator slice.** Admits `indeed` + `jobright` to the lane's CLOSED direct-apply
-   set. Measured through the lane's OWN record walk (not a glob, which answers a different question
-   and said +4,752): of the 190 records it sees, admitted goes **49 -> 102**, a gain of **+53**
-   (indeed 48, jobright 5), at ZERO network cost because the bodies are on disk. **`linkedin` stays
-   out** at 88 records — our own lane covers it and the two identities cannot converge.
-2. **#308 — job-apps' promoted queue as a SECOND lane root.** job-apps MOVES a folder out of the
-   discovery tree when it promotes it, so boardwatch lost sight of a posting exactly when it became
-   one the owner was working. The promoted queue holds **737** records against discovery's 190 —
-   and 737 is the number this lane's docstring was written against, before the drain. Each root
-   keeps its OWN structural check. `jobapps_queue_dir` unset is today's behaviour exactly.
-3. **#306 — SmartRecruiters dereference.** Lifts a refusal the module itself said needed evidence:
-   3,041 real URLs where the extracted reference equals the provider's stored `provider_posting_id`
-   **3,041 / 3,041**. Anchored (`^(\d+)(?:-|$)`) rather than the module's own candidate `^\d+`,
-   which reads `99` out of a real UUID reference.
-
-**Then, and only on evidence: retire job-apps (D-393 item 5).** It keeps running at 08:30 until
-replacements are proven. Run both in parallel and compare yield first; the switch-off is Mit's call.
-
+1. **Confirm #313 landed** (auto-merge was armed at close; gate exit 0, 8,848 passed). Check main's
+   CONTENT, never the PR page.
+2. **INVOKE RUN 139.** Nothing else can move a lane number. It is the first run carrying #304's
+   hiring.cafe fix at full effect, #302's LinkedIn facet mining, #307's aggregator slice, #308's
+   promoted-queue root, and the Workday/SmartRecruiters dereferences. Read it out against D-399's
+   gates with `.agent/2026-09-01b-session/retirement_readiness.py`.
+3. **Then, on evidence: the native Indeed and Jobright lanes.** They are 24.2% of job-apps' built
+   output (D-393) and the only remaining work that moves D-399 gate 1. **#307 and #308 do NOT** —
+   they consume more of job-apps' output rather than reproducing its discovery, which is defensible
+   sequencing but must not be scored as progress (recorded in D-399 for exactly this reason).
 
 ### Owed, found this session, not yet scheduled
 
-- **The aggregator slice and the promoted-queue root are BUILT AND GATED** — #307 and #308, see
-  Next action. The owner-gated framing is retired: `is_direct_apply`'s premise ("landing pages the
-  user cannot apply from") is false for `indeed`/`jobright`, which carry posting-specific URLs and
-  are how the owner already applies. `linkedin` stays out on a different, measured reason.
-- **Cross-source dedup — RULED, do not build a suppressor (D-397).** Six independent barriers, not
-  one. Flipping `cross_host.suppresses` is ACTIVELY UNSAFE because two call sites hardcode
-  `identity_kind="exact_quad"`. Measured prize is 22 groups / 44 postings against 402 title-overlap
-  postings. The minimum correct fix is targeted dereference expansion, and **SmartRecruiters is now
-  done (#306)**; **Workday remains, and only after proving the public URL-to-`externalPath`
-  mapping**. Unknown shapes must keep raising.
+- **The aggregator slice and the promoted-queue root SHIPPED** — #307 and #308. `is_direct_apply`'s
+  premise ("landing pages the user cannot apply from") was false for `indeed`/`jobright`, which carry
+  posting-specific URLs and are how the owner already applies. `linkedin` stays out on a different,
+  measured reason. **Neither advances job-apps retirement** — see D-399.
+- **Cross-source dedup — RULED, do not build a suppressor (D-397). The minimum correct fix is now
+  COMPLETE.** Six independent barriers, not one; flipping `cross_host.suppresses` is ACTIVELY UNSAFE
+  because two call sites hardcode `identity_kind="exact_quad"`, and the measured prize was 22 groups
+  / 44 postings. The targeted dereference expansion that D-397 named as the correct alternative is
+  **done on both providers — SmartRecruiters (#306) and Workday (#310) — and Workday alone converges
+  896**, twenty times the suppressor's prize. Unknown shapes still raise.
+- **Do NOT propose lowercasing Workday slugs (D-401, and D-339 before it).** Proposed, sized,
+  owner-approved, BUILT and abandoned this session at zero measured benefit. The premise it attacked
+  is genuinely false — the CXS endpoint is case-insensitive, probed — but `stored_slug` already folds
+  case, so there is nothing to gain and a 54-row irreversible migration to lose.
 - **hiring.cafe pacing (D-397 defect 5) is DISCLOSED, not fixed** — one boundary request per run can
   fall inside the >=1.0s window; the only real fix is process-wide pacing state, which would wreck
   the gate.
@@ -187,4 +189,4 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
-| **hiring.cafe lane is DOWN; the HEADER LEVER FAILED and the remaining call is the OWNER'S** | **D-369/#245 shipped the search route's browser-navigation header set and run 133 is its readout: NEGATIVE.** Run 133 reproduced run 131's `SearchPageError` byte for byte (14 facets, 14 refusals), so **headers are ELIMINATED and that experiment must not be repeated.** D-368's other premises were already dead: the UA premise is FALSE (we have sent a Chrome UA since the lane shipped) and the volume premise did not survive the run log (run 128 spent ~28 requests; run 131 was refused on its FIRST request 14 h later). **What remains is the ENDPOINT — path-scoped protection on `/jobs/*`**: job-apps succeeds on `/`, our `/api/` calls succeeded every run through 128, our `/jobs/` calls have failed **14 of 14 on two separate runs**. That is a **compliance decision, not a repair** — robots.txt ALLOWS `/jobs/` and DISALLOWS job-apps' `?searchState=` form. **Still do NOT probe.** Half the lane coverage job-apps' edge comes from. **Second, smaller call:** ~196 refused requests over an unattended fortnight if the lane stays enabled (balanced; see Next action item 1) | **Mit** (the endpoint call, or send the drafted access request; and whether to leave the lane enabled) |
+| ~~**hiring.cafe lane is DOWN**~~ **CLOSED — run 138 reports NO hiring.cafe error**, the first clean run since 129, ending a 14-of-14 refusal. The lane was re-pointed at the SSR surface (#304, D-397) and resolves bodies through the EMPLOYER's own board, so its postings land under greenhouse/lever/ashby/workable and NOT under a `hiringcafe` provider — do not read that absence as failure. Historical detail follows | **History, kept only so the dead ends are not retried.** The header lever FAILED (D-369/#245, run 133 reproduced the refusal byte for byte) and headers are ELIMINATED — do not repeat that experiment. The UA and volume premises were both false. The cause was the ENDPOINT: our `/jobs/` calls were refused 14 of 14 while job-apps succeeded on `/`. **D-393 decision 1 reversed the do-not-probe hold on Mit's explicit call**, and #304 re-pointed the lane at the SSR surface, which is what run 138 proves works | **CLOSED** |
