@@ -368,6 +368,65 @@ def test_a_path_shorter_than_its_providers_shape_refuses() -> None:
         parse_posting_target("https://boards.greenhouse.io/embed/job_app")
 
 
+@pytest.mark.parametrize(
+    "url, expected_ref",
+    [
+        ("https://careers.roblox.com/jobs/8060254?gh_jid=8060254", "8060254"),
+        ("https://www.esri.com/careers/5225186007?gh_jid=5225186007", "5225186007"),
+        (
+            "https://app.careerpuck.com/job-board/lyft/job/8678744002?gh_jid=8678744002",
+            "8678744002",
+        ),
+    ],
+)
+def test_gh_jid_recovers_the_greenhouse_reference_with_no_slug(
+    url: str, expected_ref: str
+) -> None:
+    """Real employer-hosted Greenhouse postings, quoted as real by the requirement this pins.
+
+    None of these three hosts is a recognized Greenhouse board host, so `parse_board_target`
+    raises `UnknownBoardURL` for each one and previously the whole URL was discarded. `slug` is
+    None rather than guessed from the host -- see the module docstring's GH_JID section for why
+    that is not a smaller version of the ordinary case.
+    """
+    target = parse_posting_target(url)
+    assert target.provider == "greenhouse"
+    assert target.slug is None
+    assert target.posting_ref == expected_ref
+
+
+def test_gh_jid_absent_still_raises_unknown_board_url() -> None:
+    with pytest.raises(UnknownBoardURL):
+        parse_posting_target("https://careers.roblox.com/jobs/8060254")
+
+
+def test_gh_jid_with_a_non_numeric_value_refuses() -> None:
+    """Every measured `gh_jid` is a bare digit string. A value that is not one carries no
+    evidence this is even a real Greenhouse reference -- unlike the SmartRecruiters UUID case,
+    where the HOST already proves the provider, nothing here proves anything without a
+    well-formed value, so this refuses the same way an absent parameter does."""
+    with pytest.raises(UnknownBoardURL):
+        parse_posting_target("https://careers.roblox.com/jobs/8060254?gh_jid=abc123")
+
+
+def test_gh_jid_in_the_fragment_is_not_read_as_a_query_parameter() -> None:
+    """`parse_qsl` reads the QUERY component only. A naive substring search of the whole URL
+    would also match a `gh_jid` sitting after `#`, where nothing in the query carries it."""
+    with pytest.raises(UnknownBoardURL):
+        parse_posting_target("https://careers.roblox.com/jobs/8060254#gh_jid=8060254")
+
+
+def test_a_genuine_greenhouse_board_url_with_a_gh_jid_query_is_unaffected() -> None:
+    """The GH_JID fallback must never engage when the host already resolves: `parse_board_target`
+    matches `boards.greenhouse.io` before the fallback is ever consulted, so this must keep
+    resolving by the existing path rule -- slug included, not None -- exactly as it did before
+    this fallback existed."""
+    target = parse_posting_target("https://boards.greenhouse.io/acme/jobs/6000001?gh_jid=6000001")
+    assert target.provider == "greenhouse"
+    assert target.slug == "acme"
+    assert target.posting_ref == "6000001"
+
+
 def test_unrecognized_url_raises_unknown_board_url_not_unresolvable() -> None:
     # Not a recognized board target at all: board_urls' own error must propagate
     # unchanged, distinct from our UnresolvablePostingURL.

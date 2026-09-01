@@ -213,7 +213,9 @@ def posting_identity(record: _Record) -> _Identity:
     at board level, 121 reach the lane namespace.
 
     1. `parse_posting_target` -- a real provider, slug and posting reference. This is the same
-       convergence `lanes/hiringcafe.py` seeks through `apply_url`.
+       convergence `lanes/hiringcafe.py` seeks through `apply_url`. A `gh_jid` match carries no
+       slug (see `lanes/dereference.py`'s module docstring) and cannot build a company identity
+       on its own, so it falls through to tier 2 exactly as a raise would.
     2. `parse_board_target` -- a recognised board whose URL carries no posting reference this
        repo can evidence. The company still converges; only the reference falls back.
     3. The lane namespace, keyed on the employer's name. Name-keyed undercounts slightly (two
@@ -230,7 +232,8 @@ def posting_identity(record: _Record) -> _Identity:
     except (UnknownBoardURL, UnresolvablePostingURL):
         pass
     else:
-        return _Identity(target.provider, target.slug, target.posting_ref)
+        if target.slug is not None:
+            return _Identity(target.provider, target.slug, target.posting_ref)
     try:
         provider, slug = parse_board_target(record.direct_url)
     except UnknownBoardURL:

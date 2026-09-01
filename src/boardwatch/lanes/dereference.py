@@ -144,15 +144,58 @@ reason. Of 4,456 independent Workday URLs that parse to a reference, **896 conve
 posting the board scan already holds**. An earlier reading of 589 with "307 lost to site case"
 was an artifact of joining slug strings instead of modelling the resolver, and the 307 were
 never lost.
+
+GH_JID: RESOLVED as of 2026-09-01, for `provider_posting_id` ONLY — deliberately not for
+`slug`, and that is not a smaller version of the same claim. A real Greenhouse posting is very
+often served from the EMPLOYER'S OWN hostname rather than `boards.greenhouse.io`
+(`careers.roblox.com/jobs/8060254?gh_jid=8060254`,
+`www.esri.com/careers/5225186007?gh_jid=5225186007`,
+`app.careerpuck.com/job-board/lyft/job/8678744002?gh_jid=8678744002`), carrying the Greenhouse
+job id in a `gh_jid` query parameter. `parse_board_target` matches on host, and none of those
+three hosts is a recognized Greenhouse board host, so it raises `UnknownBoardURL` and the whole
+URL is discarded today. MEASURED: 7,406 open postings in the store carry a `gh_jid` and fail to
+resolve on that path; only 5 sit in the narrow gate-1 population, so the benefit this section
+buys is store-wide convergence, not a gate-1 fix.
+
+THE HOST NAMES NOTHING HERE, AND THAT IS THE WHOLE DIFFERENCE FROM EVERY OTHER SECTION ABOVE.
+Every other section in this docstring recovers `slug` from the HOST — a board hostname is what
+makes `boards.greenhouse.io/acme` the company `acme`. An employer-hosted URL carries no such
+signal: `careers.roblox.com` names Roblox's careers SITE, not a Greenhouse board slug, and
+guessing one from the hostname (stripping `careers.`, titlecasing, whatever) is exactly the
+defect class this module exists to refuse — a wrong slug mints a company row that does not
+exist and a real one never converges onto it. So `PostingTarget.slug` is `None` for exactly
+this case, never invented, and a caller that needs a company identity rather than a bare
+posting reference must check for it, the same way it already must check for
+`UnresolvablePostingURL`.
+
+THE RULE IS CLOSED ON TWO AXES, NOT ONE. (1) The parameter name: `gh_jid` only, matched by
+exact name via `parse_qsl` against the URL's QUERY component — never a substring search of the
+whole URL, which would also match a value living in the FRAGMENT after `#`, where nothing in
+the query actually carries it. `core/normalize.py:174` already carries a closed allowlist of
+id-bearing parameter names with `gh_jid` among them, for a different purpose — URL identity
+normalization across every provider, not provider attribution — and importing that allowlist
+here rather than naming `gh_jid` alone would silently widen this rule to `jid`, `lever_id` and
+five more names that belong to other providers or to none, attributing a posting to Greenhouse
+that is not Greenhouse. (2) The value: every measured `gh_jid` is a bare digit string, so a
+value that is not one refuses rather than guesses, on the same bar SmartRecruiters' UUID
+reference had to clear.
+
+WHAT THIS DOES NOT PROVE. The three URLs above are quoted as real by the source of this
+requirement; nothing here fetched any of them live (no network code runs in this module, and
+none was added for this change). The round-trip tests pin those three shapes plus the
+negatives the module's evidence bar demands: no `gh_jid`, a non-numeric one, one carried in the
+fragment rather than the query, and a genuine `boards.greenhouse.io` posting URL, which must
+keep resolving by its existing path rule, unchanged — that host always matches, so this
+fallback is reached only after `parse_board_target` has already raised `UnknownBoardURL`.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, parse_qsl, urlparse
 
-from boardwatch.core.board_urls import parse_board_target
+from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 
 # Provider -> the FIXED path segments that sit between the board slug and the posting
 # reference. A posting URL's path must be exactly `{slug}/{*fixed}/{ref}` — nothing
@@ -197,6 +240,14 @@ _POSTING_PATH_SHAPES: dict[str, tuple[str, ...]] = {
 # URL and `details` occurs in none, so a second member here would be a guess, not a catalog.
 _WORKDAY_VERB = "job"
 
+# GH_JID: the one case recognition does NOT start from a host match at all. Every entry above
+# is keyed by `provider`, which `parse_board_target` derives from HOST — but an employer-hosted
+# Greenhouse posting's host carries no board identity, so there is no `provider` to key a
+# catalog entry on until the query string has already been read. See the module docstring's
+# GH_JID section for the evidence and for why the value must be a bare digit string.
+_GH_JID_PARAM = "gh_jid"
+_GH_JID_VALUE = re.compile(r"\d+")
+
 
 class UnresolvablePostingURL(ValueError):
     """A recognized board URL that carries no posting reference this repo can evidence.
@@ -209,39 +260,84 @@ class UnresolvablePostingURL(ValueError):
 
 @dataclass(frozen=True)
 class PostingTarget:
+    """`(provider, slug, posting_ref)` for a posting URL.
+
+    `slug` is None for exactly one producer: the GH_JID fallback for an employer-hosted
+    Greenhouse posting, where the host carries no board identity to read a slug from (see the
+    module docstring). Every other producer — the shape rule for greenhouse/lever/ashby/
+    workable, smartrecruiters, workday — always supplies a real slug from
+    `parse_board_target`'s host match. A caller that needs a company identity, not just a bare
+    posting reference, must check for None rather than assume one.
+    """
+
     provider: str
-    slug: str
+    slug: str | None
     posting_ref: str
 
 
-def _path_segments(url: str) -> list[str]:
-    """Path segments, normalized EXACTLY as parse_board_target normalizes.
+def _parsed(url: str) -> ParseResult:
+    """`url`, normalized EXACTLY as parse_board_target normalizes, before urlparse runs.
 
     parse_board_target deliberately accepts scheme-less input by prefixing `https://`
     (`boards.greenhouse.io/acme` is a valid board target). Without the same prefix here,
     urlparse reads the hostname as the first path segment, so a bare board root would parse
     as a posting whose reference is the slug. Two functions in one call chain must not
-    disagree about their input domain.
+    disagree about their input domain. Factored out of `_path_segments` because the GH_JID
+    fallback needs the QUERY component, which no caller here previously read.
     """
     url = url.strip()
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    return [part for part in parsed.path.split("/") if part]
+    return urlparse(url if "://" in url else f"https://{url}")
+
+
+def _path_segments(url: str) -> list[str]:
+    """Path segments, normalized EXACTLY as parse_board_target normalizes. See `_parsed`."""
+    return [part for part in _parsed(url).path.split("/") if part]
+
+
+def _gh_jid_from_query(url: str) -> str | None:
+    """The `gh_jid` query value, or None when it is absent or not a bare digit string.
+
+    A closed, single-parameter rule: `gh_jid` only, matched by exact name via `parse_qsl`
+    against the URL's QUERY component — never a substring search of the whole URL, which
+    would also match a value sitting in the FRAGMENT after `#`, where nothing in the query
+    carries it. `core/normalize.py:174` already carries a closed allowlist of id-bearing
+    parameter names with `gh_jid` among them, for a different purpose — URL identity
+    normalization across every provider, not provider attribution — and importing it here
+    would silently widen this rule to `jid`, `lever_id` and five more names that belong to
+    other providers or to none, attributing a posting to Greenhouse that is not Greenhouse.
+    Every measured `gh_jid` is a bare digit string, so a value that is not one refuses on the
+    same bar SmartRecruiters' UUID reference had to clear.
+    """
+    for name, value in parse_qsl(_parsed(url).query):
+        if name == _GH_JID_PARAM and _GH_JID_VALUE.fullmatch(value):
+            return value
+    return None
 
 
 def parse_posting_target(url: str) -> PostingTarget:
     """(provider, slug, posting_ref) for a posting URL.
 
-    Raises board_urls.UnknownBoardURL, unchanged, when `url` is not a recognized board
-    target at all. Raises UnresolvablePostingURL when it IS recognized but this repo has
-    no evidenced way to read a posting reference back out of it: any path that is not
-    exactly its provider's posting shape — a bare board root, or a canonical posting URL
-    with a trailing chrome segment such as lever's `/apply` or ashby's `/application`
-    (see the module docstring).
+    Raises board_urls.UnknownBoardURL when `url` is not a recognized board target at all —
+    including an employer-hosted URL with no readable `gh_jid` to fall back on (see the
+    module docstring's GH_JID section). Raises UnresolvablePostingURL when it IS recognized
+    but this repo has no evidenced way to read a posting reference back out of it: any path
+    that is not exactly its provider's posting shape — a bare board root, or a canonical
+    posting URL with a trailing chrome segment such as lever's `/apply` or ashby's
+    `/application` (see the module docstring).
 
-    Workday takes its own branch because its shape is POSITIONAL rather than a fixed run
-    of segments between the slug and the reference.
+    Workday takes its own branch because its shape is POSITIONAL rather than a fixed run of
+    segments between the slug and the reference. GH_JID takes its own branch because it is
+    reached only when `parse_board_target` could not match ANY host — a `boards.greenhouse.io`
+    URL always matches that host first and never reaches it, so its existing path rule is
+    unaffected.
     """
-    provider, slug = parse_board_target(url)
+    try:
+        provider, slug = parse_board_target(url)
+    except UnknownBoardURL:
+        gh_jid = _gh_jid_from_query(url)
+        if gh_jid is None:
+            raise
+        return PostingTarget(provider="greenhouse", slug=None, posting_ref=gh_jid)
     if provider == "workday":
         return _workday_posting_target(url, slug)
     shape = _POSTING_PATH_SHAPES.get(provider)

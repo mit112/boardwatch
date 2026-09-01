@@ -305,7 +305,9 @@ def hit_identity(hit: dict[str, Any]) -> HitIdentity:
     the SAME `(company_id, provider_posting_id)` a later board scan produces, so the
     aggregator's copy converges through `UNIQUE(company_id, provider_posting_id)` instead of
     duplicating. Both dereference failures are ordinary here -- 95% of hits sit on an ATS this
-    repo has no adapter for, which is the reach the lane was built for, not an error.
+    repo has no adapter for, which is the reach the lane was built for, not an error. A `gh_jid`
+    match carries no slug (see `lanes/dereference.py`'s module docstring) and cannot build a
+    company identity on its own, so it falls through to the `source`/`board_token` tier below.
     """
     apply_url = _text(hit.get("apply_url"))
     if apply_url:
@@ -314,7 +316,8 @@ def hit_identity(hit: dict[str, Any]) -> HitIdentity:
         except (UnknownBoardURL, UnresolvablePostingURL):
             pass
         else:
-            return HitIdentity(target.provider, target.slug, target.posting_ref)
+            if target.slug is not None:
+                return HitIdentity(target.provider, target.slug, target.posting_ref)
     source = _text(hit.get("source"))
     board_token = _text(hit.get("board_token"))
     object_id = _text(hit.get("objectID"))
