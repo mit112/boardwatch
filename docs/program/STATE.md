@@ -21,116 +21,78 @@
 
 ## Current standing
 
-**RUN 137 IS VERIFIED CLEAN, AND IT IS THE FIRST PRODUCTION RUN AT THE NEW ENGINE.** Started
-manually 2026-08-31 19:45:42 UTC, finished 21:44:14 UTC, **`status='ok'` and exit 0 read from a
-per-launch sentinel** — never from a notification and never from `SELECT status`, because
-`runs.finished_at` precedes process exit. 379 boards attempted, **0 failed**; board coverage
-**91.6%** with **0 dark / 0 unscanned / 0 unreadable**; 114,250 evaluated; **40 shortlisted -> 40
-tailored -> 40 PDF** with all three cross-checks agreeing. `partial` 7.9% (run 136: 8.2%), so the
-pacing trial's revert trigger is NOT firing. Sole error: **hiring.cafe 14 of 14 facets — the known
-D-369 outage**, not a regression. Heartbeat deliberately not sent on a manual run; its absence is
-intentional, not an unclean run. Numbers in `METRICS.md` (2026-08-31f).
+**SEVEN PRs SHIPPED IN ONE SESSION, AND THE TWO THAT MATTER MOST WERE FOUND BY REVIEW AFTER A GREEN
+GATE.** #296 (per-lane company cap) and #297 (eligibility speed) merged SERVER-SIDE while the machine
+was powered off after a 19:58 reboot; #298 backfilled the changelog entries neither had written; #299
+(job-apps benign-zero detector), #300 (`_applied` import), #301 (ranking precision), #302 (LinkedIn
+facet mining) and #303 (the #300 blocker fix) followed.
 
-**THE JOB-APPS LANE REACHED DELIVERY ON ITS FIRST ARMED RUN — that is the headline, not the
-ingest.** `161 attempted · 18 resolved · 10 new companies · 28 refused by the cap`. **10 admitted
-against a cap of 10, so `lane_new_companies_per_run` was OBSERVED FIRING** — verified, not merely
-armed. All 18 bodies arrived INLINE, so the lane cost **2.5 s** against linkedin's **245.2 s**: it
-reads local files and is nearly free. It admitted Apple, ByteDance, DeepMind, AWS, Akamai and five
-others — employers no board slug can reach — and **4 of the 40 delivered leads are lane-sourced**
-(Akamai, **Apple**, **DeepMind**, Dewpoint), confirmed through the `artifacts` table rather than the
-run log. **Delivery split, stated precisely: Akamai reached the APPLY queue; Apple, DeepMind and
-Dewpoint went to `_review`.** All four pass the US gate and all four are `uncertain`, so the split is
-neither location nor verdict: they fall past `eligible` in `review_gate.classify()`, and Akamai alone
-carries neither `eligibility_unconfirmed` nor `experience_unconfirmed`. By design (D-332).
+**#300 SHIPPED A DATA-INTEGRITY BLOCKER AND A GREEN 8,767-TEST GATE DID NOT SEE IT.** `import_history`
+wrote an application for every job in the matched set; one of the real 64 `_applied` folders resolves
+on the weak `(company, title)` key to **four distinct job ids**. **No data was harmed** — the live
+store's 22 applications carry real `submitted_at` values spanning 2026-07-21..08-15 from an earlier CSV
+import, and the folder importer has never been run. Fixed in #303 (D-396).
 
-**#290 + #291 REPRODUCE THEIR PRE-MERGE PRICING AT PRODUCTION SCALE (D-392).** Pinned to the
-**112,593 posting_versions shared** by runs 136 and 137, both complete: **2,398 `uncertain` ->
-`ineligible`**, 1 -> `eligible`, and **zero transitions of any other kind**. Against the affected
-population the rate is **2,398 / 4,053 = 59.17%**, versus the pre-merge full-population pricing of
-**2,423 / 4,035 = 60.07%** — population within 0.4%, rate within 0.9 pp, and **100% of flips inside
-the affected population, so zero collateral movement**.
+**THE ELIGIBILITY ENGINE MOVED AND THE CORPUS IS PENDING.** `engine_version` is `1+532b917626c0`
+(was `1+b472d5df53b3`). The primary tree is parked on `main`, so the next unattended run re-judges the
+whole ~114k corpus WITH the optimisation — ~9 minutes rather than ~70. #297 was reviewed after the fact
+by an independent adversarial pass: **SHIP AS IS, no correctness defects**, with the fail-closed
+identity guard and spawn-mode child behaviour probed empirically rather than argued.
 
-**Do not quote 48.9% as the comparator.** That figure is a **newest-first SAMPLE** of ~46% of the
-population, baselined on D-388's branch, so it prices #291's MARGINAL effect; runs 136 -> 137 measure
-#290+#291 COMBINED over the whole population. Comparing them invents a 10 pp overshoot that does not
-exist. The full-population figure's identity was confirmed by measurement, not assumption: the same
-predicate over the rows still stored at that catalog gives 3,979 + 56 = **4,035 exactly**.
+**`--top` IS 100, NOT 40.** Changed at 19:55 on 2026-08-31 and confirmed LOADED via `launchctl print`,
+not merely written to the plist file. Authorized by Mit's answer that he applies to more than 40 a day.
+Combined with the uncapped job-apps lane, the ranking change, LinkedIn mining and the hiring.cafe
+re-point, **the next run is a heavily compound change — read it with that in mind.**
 
-**A null control for this class of change is STRUCTURALLY UNAVAILABLE — do not manufacture one.**
-Inputs are reused on `(posting_version_id, profile_hash, rules_hash)` and evaluations are UNIQUE on
-`(input_id, engine_version)`, so a run that changes nothing re-evaluates nothing: runs 134 -> 135
-share **0** posting_versions and a "0 changes" reading there is 0-out-of-0. Validate the instrument
-with a **reference contrast** instead (133 -> 134: 108,969 shared, 9.14% changed). D-392.
+**TWO STANDING BELIEFS WERE REFUTED THIS SESSION, BOTH LOAD-BEARING.** The ranker is NOT
+recency-dominated: the 100 pct-same-day figure is `first_seen_at` while the recency term reads
+`posted_at`, the buried tail scores WORSE, and zeroing the recency weight collapses precision@40 from
+90 pct to 47.5 pct. The deliverable reservoir is **197, not 3,636**. See D-395. Separately, Codex model
+ids are fully qualified and **sol is for review, luna for specified work** — a bare `luna` fails auth.
 
-**job-apps IS still running, and it is not producing into the queue.** `com.mitsheth.job-discovery`
-fires 08:30 with `STAGE1_ONLY=1` and wrote `resumes/2026-08-31/`. Whether `STAGE1_ONLY` is meant to
-stop it short of `APPLY_QUEUE` is an owner question, not a fault found here.
-
-### Corrections to this file, from the repo (the ritual's rule)
-
-1. The previous revision carried the **same "Also this session, no PR: the job-apps lane ARMED…"
-   paragraph twice**, with different tails. Removed in this rewrite; nothing else was lost.
-2. **Run 137's config hash equals run 136's even though the lane was armed between them, and that
-   is CORRECT.** `manifest.py` classifies `lanes_enabled`, the `lane_*` knobs and
-   `jobapps_discovery_dir` (D-385 by name) as `_CONFIG_IRRELEVANT`: lanes are ACQUISITION, not
-   judgement, and `policy_version` derives from `config_hash`, so classifying them IN would stale
-   every permanent disposition the moment a lane is armed. Checked before it was reported as a gap.
-3. The six soft detectors still sit **above** `_emit_morning` in `runner.py`; the ordering invariant
-   survived the four PRs merged 2026-08-31e.
-
-### The seniority hold is 3 postings, not 5. It is dead, not deferred.
-
-Re-measured with the real gate and catalog against the lane that **survives** D-383's drain:
-`in_band` 146 / `above_band` **3** / `uncertain` 2 over 151, against 195/5/3 over the pre-drain 203.
-The two that vanished are **already `closed`**, so #284 removes them for free. **Not built:**
-`seniority_verdict` needs four inputs a conn-only store read cannot reach without pushing profile and
-config into `store/`. Three postings does not buy a layering change.
-
----
 
 ## Next action
 
-**THE PROGRAM HAS A NEW SHAPE: absorb job-apps into boardwatch and retire it (D-393).** The full
-sequenced plan, with every measurement behind it, is
-`.agent/2026-08-31f-session/INVESTIGATION-next-session.md`. Read that before starting.
+**RUN 138 IS THE FIRST READ-OUT THAT MATTERS.** It is the first run at the new engine, at `--top 100`,
+with an uncapped job-apps lane, the ranking change and LinkedIn mining. Before anything else:
 
-**Phase 0 — nothing to record; D-393/D-394 already carry the owner decisions.**
+1. **Run `.agent/2026-08-31g-session/null_control.py`.** The speed change moves `engine_version`
+   while preserving behaviour, which is the null control D-392 called structurally unavailable. It
+   joins on `input_id` (correct HERE and only here, because this is an ENGINE-only change so
+   `rules_hash` is untouched and the input row is reused) and cross-checks the `posting_version_id`
+   join. **Expect ZERO verdict transitions; a non-zero count is a MEMOIZATION BUG, not noise.** It is
+   dry-run verified — the vacuity guard fires — and carries a coverage check against
+   `EXPECTED_OLD_ROWS = 114_250` so an interrupted run cannot read as a pass.
+2. **Read the hiring.cafe lane's tally.** Its resolvable rate is disputed: **14.7 pct** over 232 built
+   postings versus **5.0 pct** over the 160 raw `ssrHits` in the contract fixture. Raw hits are what
+   the lane groups, so 5 pct is the conservative figure, and run 138's tally settles it.
+3. **Read the ranking change against the delivered slate.** precision@40 90 -> 100 pct is an UPPER
+   BOUND measured without dedup or the slate cap.
 
-1. **SPEED — approved, independent of everything else, do it first (D-394).**
-   (a) memoize `split_units` (`detect.py:73`, pure, called ~55x per posting on one body with TWO
-   scopes); (b) parallelize `eligibility/preflight.py:175` with a **PROCESS** pool — regex holds the
-   GIL — keeping `write_evaluation` serial and one-commit-per-batch resumability; (c) arm
-   `pace_from_request_start`, **absent from the live config AND all four backups**, so the approved
-   trial never ran. Expect the eligibility stage **75.6 min -> ~8-12 min** on a rules-change run.
-2. **PER-LANE COMPANY CAP — approved.** Make `lane_new_companies_per_run` overridable per lane at
-   `runner.py:576`: jobapps unlimited, **linkedin stays 10**, because lane-discovered ashby/greenhouse/
-   lever companies become `watched=1` and would balloon the 379-board scan permanently. Adding a
-   `Settings` field has FOUR gated sites. **This does NOT increase what reaches the queue** — only
-   `--top 40` in the plist does, and that is still undecided.
-3. **YIELD WORK, biggest first** (shares of job-apps' attributed `built` output, D-393):
-   LinkedIn depth **46.5%** (lane exists, just throttled; port job-apps' query expansion) ->
-   hiring.cafe re-pointed at the **SSR surface 17.9%** (`/?searchState=`, parse `__NEXT_DATA__`;
-   **discovery only**, take `apply_url` and fetch the real JD) -> ingest the aggregator slice already
-   on disk **24.2%** (indeed + jobright, zero network) -> register/arm the GitHub-lists lane **8.1%**
-   (`lanes/github_lists.py` is BUILT but absent from `LANE_FACTORIES` and `lanes_enabled`) -> port
-   `linkedin_direct_backfill.py`'s stub recovery (~92% of LinkedIn stubs, plain GET + browser UA).
-4. **ONE QUEUE.** Import `APPLY_QUEUE/_applied/` (**64 folders**) into `hidden_applied` (built but
-   STARVED) — the FOLDERS, not the stale `applications.csv`. Then the **935 active** folders, which is
-   NOT a copy: they sit on Eightfold/iCIMS/Jobvite/Oracle/Rippling, boards with no adapter, against a
-   CLOSED six-provider catalog.
-5. **RETIRE job-apps ON EVIDENCE, last.** It keeps running until then (D-393).
+**THEN the remaining absorption work, in this order.** The full sequenced plan and every measurement
+behind it is `.agent/2026-08-31f-session/INVESTIGATION-next-session.md`; tonight's results and the
+defect lists are `.agent/2026-08-31g-session/RESULTS.md`.
+
 
 ### Owed, found this session, not yet scheduled
 
-- **The jobapps lane's outage detector is UNSOUND.** Its docstring premise — "`attempted` is stable by
-  construction" — is false: `attempted` tracks Mit's UNPROCESSED BACKLOG. It was 737 when the lane was
-  designed and is **190** now purely because he drained the tree into `APPLY_QUEUE`. A zero reads as
-  "Mit caught up", which is exactly what the detector was built to exclude. Replace with a STRUCTURAL
-  check (source dir exists, holds >=1 date folder), never a record count.
-- **Cross-source dedup gap.** **24 employers are double-listed and 222 open postings share a title**
-  across a lane row and a board row. Only `exact_quad` suppresses and it folds in the body hash, so
-  two sources can never collide: **zero cross-provider groupings in 130,989 jobs**. It has not bitten
-  because job-apps' first 10 employers are unreachable by our boards; it will as the lanes ramp.
+- **The aggregator slice (24.2 pct) is BUILT-READY but OWNER-GATED — see Open questions.** Ingesting
+  it means widening `lanes/jobapps.py`'s CLOSED `_DIRECT_APPLY_SOURCES`, whose own comment says those
+  are "aggregator pages with no reachable posting behind them" and whose `is_direct_apply` docstring
+  warns that getting it wrong permissively "ingests aggregator landing pages the user cannot apply
+  from". The investigation found the opposite in practice — job-apps simply applies through the
+  aggregator link. That contradiction is Mit's to settle, not ours.
+- **The 935 active `APPLY_QUEUE` folders** — NOT started, and NOT a repeat of #300: they sit on
+  Eightfold/iCIMS/Jobvite/Oracle/Rippling, boards with no adapter, against a CLOSED six-provider
+  catalog. Same identity problem as the aggregator slice.
+- **Cross-source dedup — RULED, do not build a suppressor (D-397).** Six independent barriers, not
+  one. Flipping `cross_host.suppresses` is ACTIVELY UNSAFE because two call sites hardcode
+  `identity_kind="exact_quad"`. Measured prize is 22 groups / 44 postings against 402 title-overlap
+  postings. Minimum correct fix is targeted dereference expansion, SmartRecruiters first and only
+  after pinning its real numeric-ID rule.
+- **hiring.cafe pacing (D-397 defect 5) is DISCLOSED, not fixed** — one boundary request per run can
+  fall inside the >=1.0s window; the only real fix is process-wide pacing state, which would wreck
+  the gate.
 - **`reports/abstain.STRUCTURALLY_UNDECIDABLE`** — data precondition now met, design question open
   (see below).
 - The ledger drain stays DECLINED (D-390); re-check the `built`/`skipped` split before any future drain.
