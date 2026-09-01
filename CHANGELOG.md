@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Jobs you are already working on in job-apps no longer disappear from boardwatch.** job-apps
+  moves a job's folder out of its discovery area the moment it promotes it into the queue you
+  actually work from — so boardwatch stopped being able to see a job at exactly the point it became
+  one you cared about. It now reads that promoted queue as a second place to look, alongside the
+  discovery area, and the two are checked separately so a problem with either one is still
+  reported rather than hidden by the other being healthy. Measured against the real folders: the
+  discovery area holds 190 records while the promoted queue holds **737** — and 737 is the figure
+  this part of the code was originally written against, before those folders moved. Set
+  `jobapps_queue_dir` to switch it on; leaving it unset behaves exactly as before.
+
 - **Two aggregator sources job-apps already finds are now taken in as well, at no network cost.**
   The job-apps lane only accepted finds whose link went straight to an employer's own job board, so
   everything found through Indeed or Jobright was counted and skipped even though the job description

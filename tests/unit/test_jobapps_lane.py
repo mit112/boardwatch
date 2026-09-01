@@ -99,6 +99,12 @@ def _collect(root: Path | None, tmp_path: Path, admits=lambda provider, slug: Tr
     return JobAppsLane(source_dir=root).collect(_fetcher(tmp_path), admits)
 
 
+def _collect_two(source: Path | None, queue: Path | None, tmp_path: Path):
+    return JobAppsLane(source_dir=source, queue_dir=queue).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+
 def _postings(result):
     return [posting for snapshot in result.snapshots for posting in snapshot.snapshot.postings]
 
@@ -304,6 +310,49 @@ def test_the_two_admitted_aggregators_are_ingested(tmp_path, acquisition):
     root = tmp_path / "queue"
     _write(root, "Other", "a", acquisition=acquisition)
     assert len(_postings(_collect(root, tmp_path))) == 1
+
+
+def test_the_promoted_queue_is_read_as_a_second_root(tmp_path):
+    """job-apps MOVES a folder out of the discovery tree when it promotes it, so a posting used
+    to become invisible to boardwatch at exactly the moment it became one the owner was working
+    on. Measured against the real trees: discovery holds 190 records and the promoted queue holds
+    737 -- and 737 is the number this lane's own docstring was written against, before the drain.
+    """
+    discovery = tmp_path / "resumes"
+    promoted = tmp_path / "APPLY_QUEUE"
+    # Distinct direct_urls, or the two collide on posting identity and the second is correctly
+    # deduped as an in-tree duplicate -- which would make this test pass for the wrong reason.
+    _write(
+        discovery, "Greenhouse", "fresh",
+        title="Fresh Discovery Role",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/1111111111",
+    )
+    _write(
+        promoted, "Ashby", "promoted",
+        title="Promoted Role", posting_id="pst_promoted",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/2222222222",
+    )
+
+    result = _collect_two(discovery, promoted, tmp_path)
+
+    titles = {posting.title for posting in _postings(result)}
+    assert titles == {"Fresh Discovery Role", "Promoted Role"}, titles
+
+
+def test_a_break_in_either_root_is_still_visible(tmp_path):
+    """Per root, never folded: a moved discovery tree must not hide behind a healthy queue tree.
+    Folding the two would defeat the structural check this lane exists to carry."""
+    discovery = tmp_path / "resumes"
+    promoted = tmp_path / "APPLY_QUEUE"
+    _write(promoted, "Ashby", "promoted")  # healthy
+    with pytest.raises(JobAppsSourceError):
+        _collect_two(discovery, promoted, tmp_path)  # discovery absent
+
+
+def test_an_unset_queue_root_is_exactly_the_previous_behaviour(tmp_path):
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a")
+    assert len(_postings(_collect_two(root, None, tmp_path))) == 1
 
 
 def test_an_unknown_acquisition_source_is_skipped_rather_than_trusted(tmp_path):

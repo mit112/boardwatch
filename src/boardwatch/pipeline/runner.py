@@ -211,7 +211,8 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # filtered set rather than a search this lane composes. `facets` is still accepted by the
     # factory signature, which is what keeps every registration site uniform.
     JobAppsLane.name: lambda settings, facets: JobAppsLane(
-        source_dir=settings.jobapps_discovery_dir
+        source_dir=settings.jobapps_discovery_dir,
+        queue_dir=settings.jobapps_queue_dir,
     ),
 }
 

@@ -104,6 +104,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "absolute path to job-apps' discovery output (its APPLY_QUEUE); the jobapps lane "
         "reports an error without it",
     ),
+    "jobapps_queue_dir": (
+        str,
+        "next run",
+        "absolute path to job-apps' PROMOTED queue (APPLY_QUEUE); read in addition to "
+        "jobapps_discovery_dir, because a promoted posting leaves the discovery tree",
+    ),
     "death_probe_budget": (
         int,
         "next run",
