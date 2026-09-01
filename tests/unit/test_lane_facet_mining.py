@@ -18,8 +18,6 @@ from __future__ import annotations
 import pytest
 
 from boardwatch.lanes.facets import (
-    MAX_MINED_FACET_WORDS,
-    MIN_TRIAL_POSTINGS,
     DeliveredPosting,
     FacetTrial,
     LaneFacets,
@@ -77,30 +75,24 @@ def test_a_title_only_one_employer_uses_is_not_mined():
     assert mined_facet_candidates(one_employer, ()) == ()
 
 
-def test_a_title_delivered_once_is_not_mined_however_many_employers_are_in_the_pool():
-    """A single lead is a coincidence. Both thresholds are needed and neither implies the
-    other: this pool has four employers and no title reaching two postings."""
-    singletons = _delivered(
-        ("Travel Nurse RN", 1, 1),
-        ("Perioperative Nurse", 2, 2),
-        ("Charge Nurse", 3, 3),
-        ("Nurse Navigator", 4, 4),
-    )
-
-    assert mined_facet_candidates(singletons, ()) == ()
+def test_a_title_delivered_at_one_employer_is_refused_and_at_two_is_admitted():
+    """The floor, pinned as the literal TWO rather than against the constant that sets it — an
+    assertion that reads its own subject cannot fail when the subject moves."""
+    assert mined_facet_candidates(_spread("Charge Nurse", count=1), ()) == ()
+    assert mined_facet_candidates(_spread("Charge Nurse", count=2), ()) == ("charge nurse",)
 
 
-def test_one_requisition_listed_in_several_cities_is_one_piece_of_evidence():
-    """Postings and employers are counted DISTINCTLY. Summing rows would let a single
-    multi-city requisition clear both thresholds on its own."""
-    duplicated = _delivered(
-        ("Travel Nurse RN", 1, 1),
-        ("Travel Nurse RN", 1, 1),
-        ("Travel Nurse RN", 1, 1),
-        ("Travel Nurse RN", 1, 1),
-    )
+def test_a_repeated_row_does_not_outrank_a_title_with_more_real_postings():
+    """Postings are counted DISTINCTLY, so a title cannot buy rank by being listed twice.
 
-    assert mined_facet_candidates(duplicated, ()) == ()
+    Ordering is the only place this is observable, and it is where it matters: the cap keeps the
+    best-evidenced eight, so an inflated count does not merely misreport — it takes a slot from
+    a title the user's leads actually support.
+    """
+    honest = _spread("Charge Nurse", count=3)
+    inflated = _spread("Travel Nurse RN", count=2, first_id=10) * 2
+
+    assert mined_facet_candidates(honest + inflated, ()) == ("charge nurse", "travel nurse rn")
 
 
 def test_the_raw_title_is_mined_and_not_the_stores_identity_normalization():
@@ -145,11 +137,11 @@ def test_a_title_longer_than_the_word_ceiling_is_not_mined():
     """A mined term is an EMPLOYER's words, not the user's, so it is held to a length the
     profile's own titles are not. An over-long term is not dangerous, only useless — and a
     facet that matches nothing still costs a request."""
-    long_title = " ".join(f"Word{n}" for n in range(MAX_MINED_FACET_WORDS + 1))
-    at_ceiling = " ".join(f"Word{n}" for n in range(MAX_MINED_FACET_WORDS))
+    six_words = "Registered Nurse Perioperative Nights Weekend Float"
+    five_words = "Registered Nurse Perioperative Nights Weekend"
 
-    assert mined_facet_candidates(_spread(long_title, count=3), ()) == ()
-    assert len(mined_facet_candidates(_spread(at_ceiling, count=3), ())) == 1
+    assert mined_facet_candidates(_spread(six_words, count=3), ()) == ()
+    assert len(mined_facet_candidates(_spread(five_words, count=3), ())) == 1
 
 
 def test_a_title_that_normalizes_to_nothing_yields_no_facet():
@@ -202,7 +194,7 @@ def test_a_facet_credited_with_enough_postings_and_no_delivered_lead_is_dropped(
     search never converts keeps its rank for as long as the title keeps being delivered on some
     board. Without this rule the barren facet is bought every run, forever.
     """
-    barren = FacetTrial(credited=MIN_TRIAL_POSTINGS, delivered=0)
+    barren = FacetTrial(credited=40, delivered=0)
 
     assert surviving_mined_facets(("charge nurse",), {"charge nurse": barren}) == ()
 
@@ -211,7 +203,7 @@ def test_one_delivered_lead_keeps_a_facet_no_matter_how_many_postings_it_took():
     """The rule is zero conversion, not a conversion RATE. The weakest of the 14 live profile
     facets delivered 2 leads from 52 credited postings; a rate threshold set anywhere above that
     would have retired a facet that was working."""
-    working = FacetTrial(credited=MIN_TRIAL_POSTINGS * 10, delivered=1)
+    working = FacetTrial(credited=400, delivered=1)
 
     assert surviving_mined_facets(("charge nurse",), {"charge nurse": working}) == ("charge nurse",)
 
@@ -219,8 +211,10 @@ def test_one_delivered_lead_keeps_a_facet_no_matter_how_many_postings_it_took():
 def test_a_facet_with_too_few_credited_postings_to_judge_is_kept():
     """Small-sample silence is not evidence of barrenness. A facet dropped on its first quiet
     run could never earn its way back, and the same store measured a working facet at 2 leads
-    per 52 postings — a run of 39 empty ones is ordinary."""
-    unproven = FacetTrial(credited=MIN_TRIAL_POSTINGS - 1, delivered=0)
+    per 52 credited postings — a run of 39 empty ones is ordinary. 39 and 40 are written as
+    LITERALS: an assertion phrased against the threshold constant moves with it and can never
+    catch the threshold being lowered."""
+    unproven = FacetTrial(credited=39, delivered=0)
 
     assert surviving_mined_facets(("charge nurse",), {"charge nurse": unproven}) == (
         "charge nurse",
@@ -255,7 +249,7 @@ def test_the_cap_truncates_the_ranking_rather_than_sampling_it():
 def test_a_pruned_facet_does_not_consume_a_slot():
     """The cap counts what is BOUGHT. Counting drops against it would let one barren term
     shrink the run's real facet set by one, silently."""
-    barren = FacetTrial(credited=MIN_TRIAL_POSTINGS, delivered=0)
+    barren = FacetTrial(credited=40, delivered=0)
     candidates = tuple(f"role number {n}" for n in range(30))
 
     kept = surviving_mined_facets(candidates, {candidates[0]: barren})

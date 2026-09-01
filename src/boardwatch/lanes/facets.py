@@ -29,8 +29,8 @@ program built a lead for. That is still not a title written into code — it is 
 `title` column any employer wrote, selected by the user's own pipeline, and a nurse running
 boardwatch mines nursing titles from it by exactly this path. The generation rule is stricter
 than the prior art's ("keep a term that correlates with >=1 built posting"): a term must have
-been delivered at least `MIN_DELIVERED_POSTINGS` times across at least `MIN_DELIVERED_COMPANIES`
-distinct employers, which is what separates a market-wide title from one employer's house style.
+been delivered at `MIN_DELIVERED_COMPANIES` distinct employers, which is what separates a
+market-wide title from one employer's house style.
 
 MINING IS EVIDENCE-GATED, SO A NEW STORE MINES NOTHING. With no built leads there are no
 candidates and the lane asks exactly what it asked before. That is the honest failure direction:
@@ -66,12 +66,15 @@ MAX_MINED_FACETS_PER_RUN = 8
 # out. Neither state is permanent, and neither needs a second mechanism to release it.
 MINED_FACET_WINDOW_DAYS = 30
 
-# A candidate must be a title the market repeats, not one requisition. Both halves are needed:
-# postings alone would promote one employer's ten-seat opening, and employers alone would
-# promote a coincidence. Measured on the live store, requiring two employers is what excludes
-# `servicenow developer` (10 postings, 1 employer) and `jr python developer` (4 postings, 1
-# employer) while keeping `full stack software engineer` (9 postings, 9 employers).
-MIN_DELIVERED_POSTINGS = 2
+# A candidate must be a title the MARKET repeats, not one employer's house style. Measured on
+# the live store, requiring two employers is what excludes `servicenow developer` (10 delivered
+# postings, all at 1 employer) and `jr python developer` (4 postings, 1 employer) while keeping
+# `full stack software engineer` (9 postings, 9 employers).
+#
+# ONE threshold, on employers, and deliberately not a second one on postings. Every posting has
+# exactly one company, so distinct employers can never exceed distinct postings: a posting floor
+# at or below this number could refuse nothing this one admits. A second constant that cannot
+# change an outcome is a knob a reader would reasonably believe in.
 MIN_DELIVERED_COMPANIES = 2
 
 # A ceiling on how long a mined term may be. The profile's titles are the user's own words and
@@ -209,8 +212,6 @@ def mined_facet_candidates(
 
     ranked: list[tuple[int, int, str]] = []
     for key, posting_ids in postings.items():
-        if len(posting_ids) < MIN_DELIVERED_POSTINGS:
-            continue
         if len(companies[key]) < MIN_DELIVERED_COMPANIES:
             continue
         best = min(spellings[key].items(), key=lambda item: (-len(item[1]), item[0]))[0]

@@ -11,9 +11,14 @@ one of which had delivered at least 2 leads. Nothing here needs a new column.
 WHY THE PROVENANCE IS MATCHED BY URL PREFIX AND NOT PARSED. The caller passes the URLs its own
 request builder produces, so the match is against the exact string that lane would request. A
 parser here would be a second, independent statement of another module's URL shape, free to drift
-from it silently; a prefix built by the shipping code cannot. `startswith(autoescape=True)` is
-not optional — a faceted URL is percent-encoded (`keywords=software%20engineer`), and an
-unescaped `%` is a LIKE wildcard that would credit one facet with another's postings.
+from it silently; a prefix built by the shipping code cannot.
+
+WHICH OF THE TWO PREFIX MATCHES IS LOAD-BEARING. The Python `str.startswith` in the loop is: it
+decides which facet each row is CREDITED to, and it is literal, so one facet can never take
+another's postings. The SQL `LIKE` narrows the fetch and decides nothing. `autoescape=True` is
+there because every multi-word facet URL is percent-encoded (`keywords=charge%20nurse`) and an
+unescaped `%` is a LIKE wildcard, so without it the query drags back other facets' rows for
+Python to throw away — a wider read, not a wrong answer.
 """
 
 from __future__ import annotations

@@ -32,11 +32,11 @@ from boardwatch.store.queries import insert_run, upsert_lane_company
 from boardwatch.store.tables import postings
 
 # The adversarial facet pair, and it is adversarial BY DESIGN. Both are ordinary ward titles, and
-# their search URLs are `keywords=ward%20b%20nurse` and `keywords=ward%2020b%20nurse`. Match a
-# provenance URL with an unescaped LIKE and the first one's pattern reads `%` as a wildcard, so it
-# claims the second one's postings and a barren facet is credited with another's conversions.
-# Percent-encoding guarantees a `%` in EVERY multi-word facet URL, so this is the ordinary case
-# with a visible consequence, not a rare one.
+# their search URLs are `keywords=ward%20b%20nurse` and `keywords=ward%2020b%20nurse`. Read as a
+# LIKE pattern, the first matches the second: `%` is a wildcard and percent-encoding puts one in
+# EVERY multi-word facet URL, so a SQL prefix match cannot decide which facet a provenance row
+# belongs to. Only the literal per-row check can, and this pair is what makes the difference
+# observable.
 WILDCARD_COLLISION_FACETS = ("ward b nurse", "ward 20b nurse")
 
 
@@ -76,17 +76,38 @@ def _acquire(engine: Engine, *, slug: str, url: str, raw: list[RawPosting]) -> l
 
 def _build_lead(engine: Engine, posting_id: int, *, decided_at=None) -> None:
     with engine.begin() as conn:
-        job_id = int(
-            conn.execute(select(postings.c.job_id).where(postings.c.id == posting_id)).scalar_one()
-        )
         record_disposition(
             conn,
-            job_id,
+            _job_id(conn, posting_id),
             disposition="built",
             reason="lead_built",
             policy_version="test-policy",
             now=decided_at or utcnow(),
         )
+
+
+def _surface_only(engine: Engine, posting_id: int) -> None:
+    """A job the program SURFACED and never built a lead for — the other live disposition.
+
+    Present so the built filter has something to refuse. A posting with no ledger row at all is
+    excluded by the join alone, so a test built only from those would stay green with the
+    disposition predicate deleted.
+    """
+    with engine.begin() as conn:
+        record_disposition(
+            conn,
+            _job_id(conn, posting_id),
+            disposition="seen",
+            reason="surfaced",
+            expires_at=utcnow() + timedelta(days=7),
+            now=utcnow(),
+        )
+
+
+def _job_id(conn, posting_id: int) -> int:
+    return int(
+        conn.execute(select(postings.c.job_id).where(postings.c.id == posting_id)).scalar_one()
+    )
 
 
 # ---------------------------------------------------------------------------------------
@@ -109,6 +130,7 @@ def test_only_postings_the_program_built_a_lead_for_are_evidence(engine: Engine)
         raw=[_raw("1", "Perioperative Nurse"), _raw("2", "Sales Agent")],
     )
     _build_lead(engine, kept)
+    _surface_only(engine, ignored)
 
     mined = delivered_postings(engine.connect(), since=utcnow() - timedelta(days=30))
 
@@ -176,12 +198,14 @@ def test_a_facet_is_credited_with_the_postings_its_own_search_page_acquired(
 def test_a_percent_encoded_facet_url_cannot_claim_another_facets_postings(
     engine: Engine,
 ) -> None:
-    """WILDCARD_COLLISION_FACETS, and the reason `startswith` is escaped.
+    """WILDCARD_COLLISION_FACETS: crediting is decided by a LITERAL prefix, per row.
 
     `ward b nurse` acquired nothing; `ward 20b nurse` acquired two postings and delivered one.
-    Match the provenance URL with a raw LIKE and the `%` in `keywords=ward%20b%20nurse` becomes a
-    wildcard, the first facet is credited with the second's two postings and its one delivered
-    lead, and a facet that has never converted anything is never pruned.
+    The SQL `LIKE` cannot make this call — every multi-word facet URL is percent-encoded, and
+    `%` is a LIKE wildcard — so the credit is decided in Python, where `str.startswith` is
+    literal. Drop that per-row check on the reasoning that the query already filtered, and the
+    barren facet is handed the productive one's two postings and its delivered lead, and a facet
+    that has never converted anything can never be pruned.
     """
     barren, productive = search_urls(WILDCARD_COLLISION_FACETS)
     ids = _acquire(engine, slug="mercy", url=productive, raw=[_raw("1", "A"), _raw("2", "B")])
