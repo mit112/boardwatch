@@ -158,7 +158,10 @@ class TestZeroSkillImputation:
             *args,
         )
         assert zero_skill.total == pytest.approx(0.7293, abs=5e-5)
-        assert seven.total == pytest.approx(0.9168, abs=5e-5)
+        # 7 of 8 shrinks to (7 + 0.50)/9 = 0.8333, not the raw 0.875 — the pseudo-count
+        # applies here too. The inversion this class exists to pin is unaffected: the
+        # zero-skill row still takes the prior, which is below any real majority match.
+        assert seven.total == pytest.approx(0.8960, abs=5e-5)
         assert zero_skill.total < seven.total  # the inversion, pinned
 
     def test_prior_is_configurable_and_zero_is_not_the_default(self) -> None:
@@ -204,6 +207,100 @@ class TestZeroSkillImputation:
         # Never "covers 0/0 skills": that would read as a measurement, not an assumption.
         assert why == "coverage assumed 0.50 · title · 2d"
         assert "\n" not in why
+
+
+class TestCoverageShrinksTowardThePrior:
+    """A coverage ratio is only as good as its denominator, and the denominator is whatever
+    the taxonomy recognised in one JD.
+
+    Measured over run 137's deliverable pool — the 5,029 open postings that cleared every
+    quarantine and were not held by the ledger — 16 of the top 100 by score were postings the
+    taxonomy read <=2 terms from, among them "Technical Product Owner (F/H)", "Global
+    Financial Crimes - Compliance Testing, AVP" and "Enterprise Mobility Engineer". Each
+    matched its single recognised term and so scored 1.00 on the component carrying half the
+    weight. `taxonomy.yaml` records the same finding from the data side (four generic terms
+    deleted because each, "as a posting's SOLE recognized skill ... degenerated
+    skill_coverage to 1.0 on ops/finance roles"), which fixes three postings and leaves the
+    next term to do it again.
+
+    Weights below are written as LITERALS rather than `RankWeights()`: an assertion that reads
+    the same defaults the scorer reads would still pass if both moved together.
+    """
+
+    def test_one_matched_term_out_of_one_is_not_a_perfect_fit(self) -> None:
+        weights = RankWeights(
+            skill_coverage=0.50, title_match=0.25, recency=0.15, location_fit=0.10
+        )
+        score = score_posting(
+            _profile(skills=frozenset({"Python"})), {"Python"}, "Backend Engineer", NOW,
+            ["New York"], "unknown", weights, NOW,
+        )
+        # (1 + 1.0 x 0.50) / (1 + 1.0). NOT 1.00.
+        assert score.components["skill_coverage"].value == pytest.approx(0.75)
+        assert score.covered == 1 and score.posting_skill_count == 1  # the evidence is intact
+
+    def test_a_rich_posting_is_left_essentially_alone(self) -> None:
+        """The claim that makes this a fix and not a re-weighting: it moves the thin end only."""
+        weights = RankWeights(
+            skill_coverage=0.50, title_match=0.25, recency=0.15, location_fit=0.10
+        )
+        profile_skills = frozenset(f"S{i:02d}" for i in range(1, 15))  # 14 skills
+        posting_skills = {f"S{i:02d}" for i in range(1, 28)}  # 27 terms, 14 of them matched
+        score = score_posting(
+            _profile(skills=profile_skills), posting_skills, "Backend Engineer", NOW,
+            ["New York"], "unknown", weights, NOW,
+        )
+        # (14 + 0.50) / 28 = 0.517857, against a raw 14/27 = 0.518519: a move of 0.00066.
+        assert score.components["skill_coverage"].value == pytest.approx(0.517857, abs=5e-7)
+        assert abs(score.components["skill_coverage"].value - 0.518519) < 0.001
+
+    def test_a_one_term_posting_no_longer_outranks_a_richly_matched_one(self) -> None:
+        """The ORDERING this change exists to fix.
+
+        Both postings are posted now and sit in the same city, so recency and location_fit are
+        identical and only coverage and title separate them. The thin one's title is barely a
+        match (0.3077) and the rich one's is exact, and the thin one still won.
+        """
+        weights = RankWeights(
+            skill_coverage=0.50, title_match=0.25, recency=0.15, location_fit=0.10
+        )
+        profile = _profile(skills=frozenset(f"S{i:02d}" for i in range(1, 15)))
+        common = (NOW, ["New York"], "unknown", weights, NOW)
+        thin = score_posting(profile, {"S01"}, "Technical Product Owner", *common)
+        rich = score_posting(
+            profile, {f"S{i:02d}" for i in range(1, 28)}, "Backend Engineer", *common
+        )
+        assert thin.total < rich.total
+        assert thin.total == pytest.approx(0.701923, abs=5e-7)
+        assert rich.total == pytest.approx(0.758929, abs=5e-7)
+
+        # And the SAME call against the pre-change scorer, which is exactly
+        # `coverage_pseudo_count=0.0`: the raw ratio, and the inversion is back.
+        raw_thin = score_posting(profile, {"S01"}, "Technical Product Owner", *common, 14.0,
+                                 0.50, 0.0)
+        raw_rich = score_posting(
+            profile, {f"S{i:02d}" for i in range(1, 28)}, "Backend Engineer", *common, 14.0,
+            0.50, 0.0,
+        )
+        assert raw_thin.components["skill_coverage"].value == 1.0
+        assert raw_thin.total > raw_rich.total  # the defect, pinned so the fix cannot lapse
+
+    def test_the_pseudo_count_reduces_to_the_zero_skill_prior(self) -> None:
+        """At skill_count=0 the formula IS the imputation, so the two rules cannot drift.
+
+        Left as two branches in the source because `skill_coverage()` returns undefined when
+        EITHER side is empty, and a profile with no skills must keep renormalizing rather than
+        take a fabricated number — but the values must agree where they overlap.
+        """
+        weights = RankWeights(
+            skill_coverage=0.50, title_match=0.25, recency=0.15, location_fit=0.10
+        )
+        imputed = score_posting(
+            _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown", weights, NOW,
+        )
+        assert imputed.components["skill_coverage"].value == pytest.approx(0.50)
+        # (0 + 1.0 x 0.50) / (0 + 1.0) == 0.50, the same number by the other route.
+        assert (0 + 1.0 * 0.50) / (0 + 1.0) == 0.50
 
 
 class TestRenormalization:
@@ -255,8 +352,8 @@ class TestRenormalization:
             RankWeights(), NOW,
         )
         assert score.components["title_match"].value is None
-        # coverage (2/3)x0.50 + recency 1.0x0.15 + location 1.0x0.10, over weight 0.75
-        assert score.total == pytest.approx(((2 / 3) * 0.50 + 0.15 + 0.10) / 0.75)
+        # coverage (2+0.50)/(3+1)x0.50 + recency 1.0x0.15 + location 1.0x0.10, over weight 0.75
+        assert score.total == pytest.approx((0.625 * 0.50 + 0.15 + 0.10) / 0.75)
 
 
 class TestHardFilters:
@@ -319,8 +416,15 @@ class TestExplain:
             "skill_coverage", "title_match", "recency", "location_fit"
         ]
         coverage_row = rows[0]
-        assert coverage_row.detail == "covers 2/3 skills"
-        assert coverage_row.weighted == pytest.approx((2 / 3) * 0.50)
+        # The detail names BOTH the evidence and the shrinkage, because `raw` is no longer
+        # covered/skill_count: a row reading "covers 2/3 skills" beside raw=0.625 would be an
+        # explanation contradicting the number it explains.
+        assert coverage_row.detail == (
+            "covers 2/3 skills, shrunk toward 0.50 on 3 term(s) of evidence"
+        )
+        assert coverage_row.weighted == pytest.approx(0.625 * 0.50)
+        # The one-line `why` still reports the raw counts, which are the measurement; the
+        # shrinkage is an assumption about them and belongs in the breakdown, not the summary.
         assert why_summary(score, NOW - timedelta(days=2), NOW) == "covers 2/3 skills · title · 2d"
 
     def test_no_skills_message_names_the_assumed_value(self) -> None:
