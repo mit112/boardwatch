@@ -109,18 +109,27 @@ and the reference is the last segment with at most one location segment between.
 occurs zero times in either population, and no URL carries a trailing `/apply`; were one to,
 `apply` holds no digit and the reference pattern refuses it.
 
-THE SITE GUARD IS THE LOAD-BEARING PART. `parse_board_target` derives the site through
-`workday.slug_from_path`, which takes the first segment that is not in that provider's
-`_CHROME_SEGMENTS` — and `jobs` IS in that set. So a tenant whose career site is literally
-named `Jobs` has the segment skipped and its LOCATION read as the site: Red Hat's
-`redhat.wd5.myworkdayjobs.com/jobs/job/Raleigh/...` derives site `Raleigh`. That mints a
-company row for a board that does not exist, silently, one per location. Measured: 38 URLs
-in the independent set (brandeis, carrier, redhat), and `redhat/jobs` + `paypal/jobs` are
-real watched rows reachable only through the explicit `workday:host/tenant/site` form.
-Requiring the derived site to EQUAL the segment before `job` refuses those instead.
-**That guard does not repair the underlying defect** — a refused URL still falls through to
-`posting_identity`'s tier 2, which calls `parse_board_target` directly and still mints the
-wrong slug. Fixing `slug_from_path` changes board IMPORT behaviour and is a separate change.
+THE SITE GUARD, AND WHY IT OUTLIVED THE DEFECT IT WAS WRITTEN FOR. `parse_board_target`
+derives the site through `workday.slug_from_path`. That function USED to take the first
+segment not in that provider's `_CHROME_SEGMENTS`, and `jobs` IS in that set, so a tenant
+whose career site is literally named `Jobs` had the segment skipped and its LOCATION read as
+the site: Red Hat's `redhat.wd5.myworkdayjobs.com/jobs/job/Raleigh/...` derived site
+`Raleigh`, minting a company row for a board that does not exist, one per location. Measured
+then: 157 live posting URLs here and 38 in the independent set (brandeis, carrier, redhat),
+with `redhat/jobs` + `paypal/jobs` real watched rows reachable only through the explicit
+`workday:host/tenant/site` form. This guard refused those rather than resolving them, and
+deliberately did not repair the cause.
+
+**THE CAUSE IS FIXED AND NO REPAIR IS OWED.** `slug_from_path` is read by GRAMMAR now (the
+site is the first non-locale segment), so `Jobs` resolves correctly and none of those URLs
+derives a city — including through `posting_identity` tier 2, which reaches the same function.
+The store was checked for the rows the old behaviour would have left: of 153 Workday company
+rows, ELEVEN tenants hold more than one site and every one is a real distinct career site
+(`bmo/External` + `bmo/campus`, `visa/Visa` + `visa/Visa_Early_Careers`, ...). **Zero
+city-as-site rows exist**, so the silent minting never actually landed one here and there is
+nothing to drain. The guard stays because it is still reachable on a different shape — see the
+comment at its own site, which names the surviving case and the check that confirmed one was
+left.
 
 TWO KNOWN LIMITS, both measured, neither a guess. (1) `myworkdaysite.com` keeps raising
 `UnknownBoardURL` from `parse_board_target`, and adding the host suffix would NOT help: the
