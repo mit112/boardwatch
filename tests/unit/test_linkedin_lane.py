@@ -403,7 +403,7 @@ def test_the_lane_is_registered_but_off_by_default(tmp_path):
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_posting_budget=7)
     assert "linkedin" in LANE_FACTORIES
     built = LANE_FACTORIES["linkedin"](
-        settings, LaneFacets(profile=("software-engineer",)), day_ordinal=0
+        settings, LaneFacets(profile=("software-engineer",)), rotation_index=0
     )
     assert isinstance(built, LinkedInLane)
     assert built._posting_budget == 7
@@ -992,14 +992,14 @@ def test_the_registry_hands_the_lane_the_configured_page_ceiling(tmp_path):
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_search_pages=5)
     built = LANE_FACTORIES["linkedin"](
-        settings, LaneFacets(profile=("software engineer",)), day_ordinal=0
+        settings, LaneFacets(profile=("software engineer",)), rotation_index=0
     )
 
     assert built._search_pages == 5
     # Default 1 -- no existing user's request volume moves.
     assert Settings(data_dir=tmp_path, config_dir=tmp_path).lane_search_pages == 1
     assert LANE_FACTORIES["linkedin"](
-        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets(), day_ordinal=0
+        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets(), rotation_index=0
     )._search_pages == 1
 
 
@@ -1014,7 +1014,7 @@ def test_the_registry_builds_hub_nets_from_the_linkedin_settings(tmp_path):
         lane_hub_distance_miles=50,
     )
     built = LANE_FACTORIES["linkedin"](
-        settings, LaneFacets(profile=("software engineer",)), day_ordinal=1
+        settings, LaneFacets(profile=("software engineer",)), rotation_index=1
     )
 
     assert built._search_nets == (("software engineer", "Boston, MA"),)

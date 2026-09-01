@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from threading import Barrier
 from time import sleep
@@ -1211,7 +1210,7 @@ def test_only_the_lane_whose_provenance_can_retire_a_mined_facet_receives_one(
     facets = LaneFacets(profile=("registered nurse",), mined=("perioperative nurse",))
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
 
-    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets, day_ordinal=0)
+    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets, rotation_index=0)
     hiringcafe_lane = runner_mod.LANE_FACTORIES["hiringcafe"](settings, facets)
 
     assert linkedin_lane._search_facets == ("registered nurse", "perioperative nurse")
@@ -1222,41 +1221,35 @@ def test_only_the_lane_whose_provenance_can_retire_a_mined_facet_receives_one(
 # LinkedIn hub nets: the two boundaries the lane stage owns
 # --------------------------------------------------------------------------------------
 
-# `date(2026, 3, 14).toordinal()`, written out as a LITERAL. Calling `toordinal()` here would
-# assert the implementation against its own expression and pass for any date the run row held,
-# including the fixed 0 this test exists to refuse.
-_PINNED_RUN_ORDINAL = 739689
-
-
-def test_the_hub_rotation_uses_the_RUNS_OWN_DATE_and_never_a_fixed_zero(
+def test_the_hub_rotation_advances_PER_RUN_and_is_never_a_fixed_constant(
     engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The half of the rotation no unit test of `hub_nets` can reach.
 
-    `hub_nets` is tested exhaustively against a `day_ordinal` a test hands it. That says nothing
-    about which ordinal PRODUCTION hands it, and the whole rotation collapses if the answer is a
-    constant: the lane would draw the same twelve cells of the matrix every day, forever, while
-    every test stayed green and the run reported that it had searched its nets. So this asserts
-    the value that actually crosses the boundary, against a run row whose date is pinned.
+    `hub_nets` is tested exhaustively against a `rotation_index` a test hands it. That says
+    nothing about which index PRODUCTION hands it, and the whole rotation collapses if the answer
+    is a constant: the lane would draw the same cells forever while every test stayed green and
+    the run reported that it had searched its nets.
+
+    Two runs are made and the values that actually cross the boundary are compared to the run ids
+    the store assigned. It was the calendar date ordinal, which made **two runs on one day draw
+    the identical slice** -- so the assertion is deliberately made on two runs created back to
+    back, which share a date and must still differ.
     """
     recorded: list[int] = []
 
-    def _factory(_settings: Settings, _facets: LaneFacets, *, day_ordinal: int) -> StubLane:
-        recorded.append(day_ordinal)
+    def _factory(_settings: Settings, _facets: LaneFacets, *, rotation_index: int) -> StubLane:
+        recorded.append(rotation_index)
         return StubLane([])
 
     monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"linkedin": _factory})
-    run_id = insert_run(engine)
-    with engine.begin() as conn:
-        conn.execute(
-            tables.runs.update()
-            .where(tables.runs.c.id == run_id)
-            .values(started_at=datetime(2026, 3, 14, 9, 30))
-        )
+    settings = _settings(tmp_path, lanes_enabled=("linkedin",))
+    first, second = insert_run(engine), insert_run(engine)
+    _run_lanes(engine, settings, first)
+    _run_lanes(engine, settings, second)
 
-    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("linkedin",)), run_id)
-
-    assert recorded == [_PINNED_RUN_ORDINAL]
+    assert recorded == [first, second]
+    assert first != second, "two runs must not share a rotation index"
 
 
 def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
@@ -1281,7 +1274,7 @@ def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
             lane_hub_combos_per_run=99,
         ),
         LaneFacets(profile=("software engineer",), mined=("platform engineer",)),
-        day_ordinal=0,
+        rotation_index=0,
     )
 
     assert lane._search_facets == ("software engineer", "platform engineer")

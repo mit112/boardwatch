@@ -93,8 +93,8 @@ def test_hub_nets_rotate_the_full_matrix_in_order_and_wrap():
         (term, hub) for term in terms for hub in hubs
     }
 
-    day_zero = hub_nets(terms, hubs, day_ordinal=0, combos_per_run=4)
-    day_one = hub_nets(terms, hubs, day_ordinal=1, combos_per_run=4)
+    day_zero = hub_nets(terms, hubs, rotation_index=0, combos_per_run=4)
+    day_one = hub_nets(terms, hubs, rotation_index=1, combos_per_run=4)
 
     assert day_zero == (
         ("alpha", "Austin"),
@@ -113,7 +113,7 @@ def test_hub_nets_rotate_the_full_matrix_in_order_and_wrap():
     assert set(day_zero + day_one) == matrix
 
     # The next rotation is independently reproducible and advances by the same stride.
-    assert hub_nets(terms, hubs, day_ordinal=2, combos_per_run=4) == (
+    assert hub_nets(terms, hubs, rotation_index=2, combos_per_run=4) == (
         ("alpha", "Chicago"),
         ("beta", "Austin"),
         ("beta", "Boston"),
@@ -125,7 +125,7 @@ def test_hub_nets_return_each_matrix_pair_once_when_the_budget_covers_it():
     terms = ("alpha", "beta")
     hubs = ("Austin", "Boston")
 
-    assert hub_nets(terms, hubs, day_ordinal=9, combos_per_run=99) == (
+    assert hub_nets(terms, hubs, rotation_index=9, combos_per_run=99) == (
         ("alpha", "Austin"),
         ("alpha", "Boston"),
         ("beta", "Austin"),
@@ -142,15 +142,24 @@ def test_hub_nets_return_each_matrix_pair_once_when_the_budget_covers_it():
     ],
 )
 def test_hub_nets_are_empty_when_any_required_input_is_empty(terms, hubs, combos_per_run):
-    assert hub_nets(terms, hubs, day_ordinal=0, combos_per_run=combos_per_run) == ()
+    assert hub_nets(terms, hubs, rotation_index=0, combos_per_run=combos_per_run) == ()
 
 
-def test_hub_nets_are_deterministic_for_identical_inputs():
-    inputs = (("alpha", "beta"), ("Austin", "Boston"), 17, 3)
+def test_hub_nets_are_a_function_of_the_config_AS_WRITTEN_not_of_iteration_order():
+    """Replaces a test that called `hub_nets` twice with identical arguments and asserted the
+    results matched. **No implementation fails that** -- not the pre-dedup one, not a fixed
+    `start=0`, not `return ()` -- and it could not even catch the set-iteration-order bug it
+    looked aimed at, because a `set` of strings iterates identically twice in one process.
 
-    assert hub_nets(
-        inputs[0], inputs[1], day_ordinal=inputs[2], combos_per_run=inputs[3]
-    ) == hub_nets(inputs[0], inputs[1], day_ordinal=inputs[2], combos_per_run=inputs[3])
+    The property actually wanted is that the matrix follows the ORDER the config was written in,
+    so two orderings of the same hubs must produce DIFFERENT slices. That fails against any
+    implementation that canonicalises the inputs through a set.
+    """
+    forward = hub_nets(("alpha",), ("Austin, TX", "Boston, MA"), rotation_index=0, combos_per_run=1)
+    reversed_ = hub_nets(("alpha",), ("Boston, MA", "Austin, TX"), rotation_index=0, combos_per_run=1)
+
+    assert forward == (("alpha", "Austin, TX"),)
+    assert reversed_ == (("alpha", "Boston, MA"),)
 
 
 def test_a_hub_named_twice_does_not_buy_the_same_search_twice():
@@ -165,7 +174,7 @@ def test_a_hub_named_twice_does_not_buy_the_same_search_twice():
     duplicated = hub_nets(
         ("alpha", "alpha"),
         ("Austin, TX", "Boston, MA", "Austin, TX"),
-        day_ordinal=0,
+        rotation_index=0,
         combos_per_run=99,
     )
 
@@ -179,7 +188,7 @@ def test_deduplication_preserves_first_seen_order_so_the_matrix_is_the_config_as
     assert hub_nets(
         ("beta", "alpha", "beta"),
         ("Boston, MA", "Austin, TX", "Boston, MA"),
-        day_ordinal=0,
+        rotation_index=0,
         combos_per_run=99,
     ) == (
         ("beta", "Boston, MA"),
@@ -203,8 +212,45 @@ def test_a_run_never_spends_two_of_its_combos_on_one_search():
         (("alpha", "alpha"), ("Austin, TX",), 2),
         (("alpha", "beta", "alpha"), ("Austin, TX", "Boston, MA", "Austin, TX"), 5),
     ):
-        for day_ordinal in range(8):
+        for rotation_index in range(8):
             slice_ = hub_nets(
-                terms, hubs, day_ordinal=day_ordinal, combos_per_run=combos
+                terms, hubs, rotation_index=rotation_index, combos_per_run=combos
             )
-            assert len(set(slice_)) == len(slice_), (terms, hubs, combos, day_ordinal)
+            assert len(set(slice_)) == len(slice_), (terms, hubs, combos, rotation_index)
+
+
+def test_consecutive_runs_are_disjoint_ONLY_when_the_matrix_is_at_least_twice_the_slice():
+    """The condition the contract used to omit, asserted from both sides.
+
+    A window of `c` cells on a ring of `m` cannot avoid its own successor once `2c > m` --
+    pigeonhole. The old docstring, the CHANGELOG and D-411 all claimed disjointness
+    unconditionally; it holds for the reference config (5 terms x 7 hubs, 12 per run) and fails
+    for every matrix under `2c`, which at the default `c = 12` is any matrix below 24 cells --
+    what an operator with four target titles and two hubs actually has.
+    """
+    # 2c <= m: disjoint, and two runs cover the matrix exactly.
+    terms, hubs = ("a", "b", "c", "d"), ("H1", "H2")          # m = 8
+    first = hub_nets(terms, hubs, rotation_index=0, combos_per_run=4)
+    second = hub_nets(terms, hubs, rotation_index=1, combos_per_run=4)
+    assert set(first) & set(second) == set()
+    assert set(first) | set(second) == {(t, h) for t in terms for h in hubs}
+
+    # m < 2c: overlap is FORCED, and is exactly 2c - m cells.
+    over_first = hub_nets(terms, hubs, rotation_index=0, combos_per_run=6)
+    over_second = hub_nets(terms, hubs, rotation_index=1, combos_per_run=6)
+    assert len(set(over_first) & set(over_second)) == 2 * 6 - 8
+
+    # c >= m: the whole matrix every run, and the rotation index cannot change it.
+    whole = {hub_nets(terms, hubs, rotation_index=r, combos_per_run=8) for r in range(5)}
+    assert len(whole) == 1
+
+
+def test_a_run_counter_advances_the_window_even_when_two_runs_share_a_day():
+    """Why the index is the run id and not the calendar date. Two runs on one day used to draw
+    the IDENTICAL slice and the second paid full price for cells the first had just fetched --
+    and runs here are on demand, so several a day is the normal case during a session."""
+    terms, hubs = ("a", "b", "c"), ("H1", "H2")               # m = 6
+    consecutive = [hub_nets(terms, hubs, rotation_index=r, combos_per_run=2) for r in (7, 8, 9)]
+
+    assert len({c for c in consecutive}) == 3
+    assert set().union(*(set(c) for c in consecutive)) == {(t, h) for t in terms for h in hubs}

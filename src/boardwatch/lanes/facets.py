@@ -189,27 +189,41 @@ def role_facets(target_titles: Sequence[str] | None) -> tuple[str, ...]:
 
 
 def hub_nets(
-    terms: Sequence[str], hubs: Sequence[str], *, day_ordinal: int, combos_per_run: int
+    terms: Sequence[str], hubs: Sequence[str], *, rotation_index: int, combos_per_run: int
 ) -> tuple[tuple[str, str], ...]:
-    """The deterministic rotating slice of the term-by-hub search matrix for one run.
+    """The deterministic rotating slice of the term-by-hub matrix for one run.
 
     A geo net is a term searched AT a hub. The full matrix is every term crossed with every hub,
     which is more searches than one run should buy, so a run takes `combos_per_run` of them and
-    the window advances by that many each day: `day_ordinal * combos_per_run` modulo the matrix
-    size. Consecutive runs therefore cover disjoint cells and the whole matrix is covered in
-    `ceil(len(matrix) / combos_per_run)` days, with no cell favoured and none starved. The
-    ordinal is the run's persisted UTC date, so the slice is reproducible from the run row rather
-    than from when the process happened to start.
+    the window advances by that many per RUN: `rotation_index * combos_per_run` modulo the matrix
+    size. `rotation_index` is the run's own id (see `pipeline/runner.py::_rotation_index`), so the
+    stride is one run, never one calendar day.
+
+    **THE CONTRACT, WITH ITS CONDITIONS, because the unconditional version of it was false.**
+    Write `m = len(matrix)` and `c = combos_per_run`:
+
+    - `c >= m`: the whole matrix is returned EVERY run. There is no rotation and none is needed.
+    - `2c <= m`: consecutive runs are DISJOINT, and the whole matrix is covered in `ceil(m / c)`
+      runs with no cell favoured and none starved.
+    - `m < 2c`: consecutive runs necessarily OVERLAP in `2c - m` cells -- a window of `c` cells on
+      a ring of `m` cannot avoid its own successor once it covers more than half the ring. Cover
+      is still complete in `ceil(m / c)` runs; the cost is that some cells are re-bought sooner.
+
+    An earlier version of this docstring asserted disjointness unconditionally. That is true for
+    the reference configuration (5 terms x 7 hubs, 12 per run) and false for every matrix under
+    `2c` -- at the default `c = 12`, any matrix below 24 cells, which is what a first-time
+    operator with four target titles and two hubs actually has. **Size `c` against `m`, or state
+    the overlap.**
 
     **TERMS AND HUBS ARE DEDUPLICATED FIRST, ORDER-PRESERVING, AND THAT IS NOT COSMETIC.**
     `Settings` enforces uniqueness on neither, so a config naming one hub twice put the identical
     `(term, hub)` cell in the matrix twice: the run bought the same search twice, and the slice
     returned fewer DISTINCT cells than `combos_per_run` promises, silently shrinking a run's
     reach in proportion to how often the user repeated themselves. Deduplicating the two INPUTS
-    rather than the product is what keeps the matrix rectangular, so the rotation arithmetic
-    above still describes it.
+    rather than the product is what keeps the matrix rectangular, so the arithmetic above still
+    describes it.
 
-    First-seen order is preserved, so the matrix — and therefore which cells a given day draws —
+    First-seen order is preserved, so the matrix -- and therefore which cells a given run draws --
     is a function of the config as written, not of a set's iteration order.
 
     `terms` is the profile's DECLARED facets only; mined facets are deliberately not crossed with
@@ -222,7 +236,7 @@ def hub_nets(
     matrix = [(term, hub) for term in unique_terms for hub in unique_hubs]
     if combos_per_run >= len(matrix):
         return tuple(matrix)
-    start = (day_ordinal * combos_per_run) % len(matrix)
+    start = (rotation_index * combos_per_run) % len(matrix)
     return tuple(matrix[(start + index) % len(matrix)] for index in range(combos_per_run))
 
 
