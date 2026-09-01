@@ -148,10 +148,15 @@ def read_jobapps_dir(path: Path) -> tuple[list[HistoryRow], list[MalformedRow]]:
     for line_no, folder in enumerate(folders, start=1):
         company, title, header_url = _read_header(folder / "job_description.txt")
         # The webloc is the link job-apps actually opened to apply, so it leads; the header's
-        # own `URL:` is the same posting seen through whatever surface found it, and covers
-        # the folders whose plist cannot be parsed. Keeping a row off the weak key is the
-        # point: `import_history` refuses a (company, title) match covering several
-        # requisitions, so a recoverable url is the difference between a row landing and not.
+        # own `URL:` covers the folders whose plist cannot be parsed. Keeping a row off the
+        # weak key is the point: `import_history` refuses a (company, title) match covering
+        # several requisitions, so a recoverable url decides whether the row lands at all.
+        #
+        # The header URL is NOT always the requisition — it is whatever surface found the
+        # role, and on the real tree it is an aggregator listing page as often as an ATS
+        # link. That is safe here only because the url key is exact: a listing-page URL
+        # matches a stored posting or it does not, and on no match the row falls through to
+        # company/title exactly as before. It is never treated as evidence about the posting.
         url = _read_apply_url(folder) or header_url
         if url is None and (company is None or title is None):
             malformed.append(

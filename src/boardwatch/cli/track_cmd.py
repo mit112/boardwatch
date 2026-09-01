@@ -206,6 +206,14 @@ def import_(
         console.print(f"dry run: would write {written} application(s). Nothing was saved.")
     else:
         console.print(f"wrote {written} application(s) from {len(result.results)} row(s).")
+    # Named on its own line, not left as one number in the table: a refused row is an
+    # application the owner really made that went unrecorded, and only they can resolve it.
+    if counts[ImportBucket.AMBIGUOUS]:
+        console.print(
+            f"{counts[ImportBucket.AMBIGUOUS]} row(s) matched several requisitions at one "
+            "employer and were recorded against none of them. Give those rows a url to "
+            "resolve them."
+        )
     if report is not None:
         with report.open("w", encoding="utf-8") as stream:
             write_import_report(result.results, stream)
