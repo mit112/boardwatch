@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import plistlib
 import re
+import xml.parsers.expat
 from pathlib import Path
 
 from boardwatch.store.application_history import (
@@ -82,7 +83,9 @@ def _read_apply_url(folder: Path) -> str | None:
     Two file names are observed (`1_apply.webloc`, `apply.webloc`); `*.webloc` covers both and
     any other numbering. A `.webloc` is a plist, read with `plistlib` rather than parsed by
     hand. A missing, unreadable, or malformed file yields `None` — not fatal on its own, since
-    the row can still resolve on company/title.
+    the row can still resolve on company/title. `ExpatError` is caught alongside `ValueError`
+    because it is observed in the wild: job-apps writes some Greenhouse embed URLs
+    (`...?for=x&token=y`) into the plist with the `&` left unescaped, which is invalid XML.
     """
     candidates = sorted(folder.glob("*.webloc"))
     if not candidates:
@@ -90,7 +93,7 @@ def _read_apply_url(folder: Path) -> str | None:
     try:
         with candidates[0].open("rb") as handle:
             plist = plistlib.load(handle)
-    except (OSError, ValueError):
+    except (OSError, ValueError, xml.parsers.expat.ExpatError):
         return None
     url = plist.get("URL") if isinstance(plist, dict) else None
     if not url:

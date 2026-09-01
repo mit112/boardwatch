@@ -157,6 +157,28 @@ def test_a_malformed_webloc_falls_back_to_company_title(tmp_path: Path) -> None:
     assert (rows[0].company, rows[0].title, rows[0].url) == ("BadPlist Co", "Engineer", None)
 
 
+def test_an_unescaped_ampersand_falls_back_instead_of_crashing(tmp_path: Path) -> None:
+    """Observed in 9 of the 64 real folders: job-apps writes some Greenhouse embed apply
+    links into the plist with a literal, unescaped `&` — invalid XML that `plistlib` raises
+    `xml.parsers.expat.ExpatError` on, not the `ValueError` a garbage file raises."""
+    root = tmp_path / "_applied"
+    folder = root / "Unescaped_Co"
+    folder.mkdir(parents=True)
+    (folder / "1_apply.webloc").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n\t<key>URL</key>\n'
+        "\t<string>https://job-boards.greenhouse.io/embed/job_app?for=x&token=1</string>\n"
+        "</dict>\n</plist>",
+        encoding="utf-8",
+    )
+    _job_description(folder, company="Unescaped Co", title="Engineer")
+    rows, malformed = read_jobapps_dir(root)
+    assert malformed == []
+    assert (rows[0].company, rows[0].title, rows[0].url) == ("Unescaped Co", "Engineer", None)
+
+
 def test_non_directory_entries_are_skipped_not_counted(tmp_path: Path) -> None:
     root = tmp_path / "_applied"
     root.mkdir(parents=True)
