@@ -608,6 +608,41 @@ class CurrentVersion:
     captured_at: datetime
 
 
+def canonical_job_ids(conn: Connection, posting_ids: Sequence[int]) -> dict[int, int]:
+    """`{posting_id: postings.job_id}` for the postings asked about, read fresh.
+
+    Exists because a delivery-queue folder records the `job_id` it was written under, and that
+    answer GOES STALE: identity resolution can converge a lane copy onto a native find, at which
+    point the posting's canonical job moves and the folder's stored value no longer names it.
+    Measured case, run 139: posting 131367 (a lane copy, `pst_2a1f2c22...`) now carries
+    `job_id = 69007`, the native Workday find (`JR-202618529`), while its folder still recorded
+    131367 — so the folder identified neither the offered posting nor the job it belonged to.
+
+    **Lives here rather than in `delivery_queries` because it binds an id list.** That module
+    forbids `.in_()` outright, and its own test enforces it: collecting posting ids and binding
+    them is the shape that hit SQLite's 32,766 bound-parameter cap at six call sites on
+    2026-08-23 and killed every scheduled run from that day on. Chunked through `id_chunks`
+    (D-288) like every other id-list read here, and `dict.update` is the EXACT merge because the
+    result is keyed on `posting_id`, the very column being chunked.
+
+    A posting the store no longer holds is simply absent rather than raising: a queue folder for
+    a deleted posting is the caller's problem to classify, not this query's.
+    """
+    if not posting_ids:
+        return {}
+    resolved: dict[int, int] = {}
+    for chunk in id_chunks(posting_ids):
+        resolved.update(
+            {
+                int(row.id): int(row.job_id)
+                for row in conn.execute(
+                    select(postings.c.id, postings.c.job_id).where(postings.c.id.in_(chunk))
+                ).all()
+            }
+        )
+    return resolved
+
+
 def current_posting_versions(
     conn: Connection, posting_ids: Sequence[int] | None = None
 ) -> dict[int, CurrentVersion]:

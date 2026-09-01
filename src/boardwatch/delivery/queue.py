@@ -71,13 +71,13 @@ from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, lane
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     QueueRow,
-    canonical_job_ids,
     closed_job_ids,
     delivered_unapplied,
     ineligible_job_ids,
     queue_detail,
     review_job_ids,
 )
+from boardwatch.store.queries import canonical_job_ids
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts
@@ -944,7 +944,7 @@ def _resolve_job_identity(
     the same refusal `_index` makes for two folders claiming one posting, and it costs nothing
     beyond leaving today's exact-posting behaviour in place for that lead.
     """
-    current = canonical_job_ids(conn, {entry.posting_id for entry in entries.values()})
+    current = canonical_job_ids(conn, sorted({entry.posting_id for entry in entries.values()}))
     refreshed: dict[int, _Entry] = {}
     by_job: dict[int, _Entry] = {}
     ambiguous: set[int] = set()
