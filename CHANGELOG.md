@@ -141,6 +141,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Two watched employers whose careers page is named "Jobs" are no longer misread as cities.**
+  Workday puts the name an employer gave its careers page into the job's web address, and the code
+  that reads that address treated a handful of words as decoration and skipped them — including the
+  word "jobs". For an employer whose careers page is genuinely called that, it skipped the real name
+  and read the next thing along, which is the job's **city**. Red Hat and PayPal are both in this
+  position: **325 jobs between them**, and every posting read this way was filed under an invented
+  employer named after wherever the job happened to be. Neither board could be added by pasting its
+  address either — that returned nothing at all, which is why both had to be added by hand in the
+  long form.
+
+  The address is now read by its actual structure rather than by skipping words: the careers page is
+  simply the first part that is not a language tag. Checked against **113,074 real Workday addresses**
+  — every one this instance has collected plus an independent set — where the structure holds in all
+  of them and the shape the old code was written for appears **zero** times. Through the path the
+  application actually uses, addresses that used to be misread are now **0**, down from 157.
+
 - **A Workday job found through a lane is now recognised as the same job the board scan already
   found.** Workday was the last provider refused outright, on the grounds that fetching one of its
   job descriptions needs an internal path nothing here could prove a public link maps back to. That

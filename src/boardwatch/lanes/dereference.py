@@ -299,15 +299,14 @@ def _workday_posting_target(url: str, slug: str) -> PostingTarget:
             f"workday posting URLs carry only a locale or a repeated career site before "
             f"{_WORKDAY_VERB!r}; {url!r} carries {segments[: verb - 1]!r}"
         )
-    # THE GUARD, and the reason this is not a two-line change. `slug_from_path` skips any
-    # segment in workday's `_CHROME_SEGMENTS` — `wday`, `cxs`, `job`, `jobs`, `login`,
-    # `details` — and any locale-shaped one, so a tenant whose career site is named any of
-    # those has its LOCATION read as the site and mints a company row for a board that does
-    # not exist. `jobs` is the case with live evidence (redhat, paypal, brandeis, carrier;
-    # 157 URLs in the store, 38 independent), but a site named `Login` or `ab-cd` fails the
-    # same way and `split_slug` permits all of them. Refusing on the mismatch keeps an unknown
-    # shape raising instead of converging onto a fiction; it is a refusal, NOT a repair, and
-    # `posting_identity` tier 2 still mints the wrong slug for these.
+    # THE GUARD. Its live case is GONE as of the `slug_from_path` rewrite: that function is read
+    # by grammar now, so a career site named `Jobs` (redhat, paypal, brandeis, carrier — 157
+    # URLs here, 38 independent) derives correctly and RESOLVES rather than being refused. This
+    # stays because it is not unreachable: `slug_from_path` skips at most one leading locale, so
+    # a path carrying two derives the second locale as the site while the real one sits before
+    # `job`. That was CHECKED, not assumed — the prefix rule above runs first and swallows every
+    # other shape that used to arrive here, and had nothing been left this guard would have been
+    # deleted rather than kept as decoration.
     if segments[verb - 1] != slug.rsplit("/", 1)[-1]:
         raise UnresolvablePostingURL(
             f"workday career site {slug.rsplit('/', 1)[-1]!r} is not the segment before "

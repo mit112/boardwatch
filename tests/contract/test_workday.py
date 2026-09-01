@@ -286,11 +286,58 @@ def test_healthcheck_malformed_slug_is_error(tmp_path: Path) -> None:
 # fetches, facet capture): fetch_board here is still exactly one POST at offset 0.
 
 
-def test_slug_from_path_skips_a_leading_chrome_segment() -> None:
-    # "job" precedes the real site segment in some pasted URLs; it must not be mistaken
-    # for the site itself (distinct from the locale-segment case already covered above)
+def test_a_path_that_opens_with_a_posting_segment_carries_no_career_site() -> None:
+    """REPLACES a test that asserted `["job", "AcmeCareers"]` yields site `AcmeCareers`.
+
+    Its stated premise was that "'job' precedes the real site segment in some pasted URLs".
+    That shape occurs in **zero of 113,074** real Workday URLs — 93,044 from this store's own
+    scans and 4,521 from an independent ledger, plus every board URL in both — and the answer
+    it pinned is the Red Hat defect in miniature: the segment after `job` is the LOCATION, so
+    returning it invents a board. A path that opens with a posting segment carries no career
+    site, and None is the honest answer.
+    """
     assert (
         WorkdayProvider.slug_from_path("acme.wd5.myworkdayjobs.com", ["job", "AcmeCareers"])
+        is None
+    )
+    assert (
+        WorkdayProvider.slug_from_path("acme.wd5.myworkdayjobs.com", ["details", "X"]) is None
+    )
+
+
+def test_a_career_site_named_like_workday_chrome_is_still_the_career_site() -> None:
+    """The live defect this rewrite exists for. `_CHROME_SEGMENTS` contains `jobs`, and the old
+    rule skipped any segment in it — so Red Hat, whose career site is literally named `Jobs`,
+    had its site skipped and the job's CITY returned instead.
+
+    Both halves are asserted because both were broken and they fail independently: the posting
+    URL derived `Canberra` (157 live URLs, one fictional company row per city), and the board
+    URL derived None, which is why `redhat/jobs` and `paypal/jobs` — 325 postings, both watched
+    — could only be added through the explicit `workday:host/tenant/site` form.
+
+    `store/queries.py:stored_slug` does NOT cover this: it folds CASE, and `canberra` is not a
+    case variant of `jobs`. Verified against a real store, not assumed.
+    """
+    assert (
+        WorkdayProvider.slug_from_path(
+            "redhat.wd5.myworkdayjobs.com", ["Jobs", "job", "Canberra", "Senior-Consultant_R-1"]
+        )
+        == "redhat.wd5.myworkdayjobs.com/redhat/Jobs"
+    )
+    assert (
+        WorkdayProvider.slug_from_path("redhat.wd5.myworkdayjobs.com", ["jobs"])
+        == "redhat.wd5.myworkdayjobs.com/redhat/jobs"
+    )
+
+
+def test_the_cxs_api_path_names_the_site_at_a_fixed_position() -> None:
+    """`/wday/cxs/{tenant}/{site}/jobs` is the fetch URL `board_url` builds, so a user pasting
+    one back is realistic. Read positionally, not by skipping: the old rule returned the TENANT
+    here, because `wday` and `cxs` were skipped and the tenant came next."""
+    assert (
+        WorkdayProvider.slug_from_path(
+            "acme.wd5.myworkdayjobs.com", ["wday", "cxs", "acme", "AcmeCareers", "jobs"]
+        )
         == "acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
     )
 
