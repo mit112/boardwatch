@@ -443,9 +443,14 @@ class HiringCafeLane:
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
         """Search pages per facet, then ONE board GET per admitted body-inlined company.
 
-        `admits` is asked once per distinct `(provider, slug)`, in first-seen order, BEFORE any
-        body is fetched -- the protocol's contract, and the only ordering under which the
-        per-run company cap saves requests instead of discarding paid-for ones.
+        `admits` is asked once per distinct `(provider, slug)` whose body this lane could
+        actually read, in first-seen order, BEFORE any body is fetched -- the protocol's
+        contract, and the only ordering under which the per-run company cap saves requests
+        instead of discarding paid-for ones.
+
+        A company on a provider with no body-inlined board is NOT offered to `admits` at all.
+        The cap rations requests, and no request is reachable for such a company; charging it
+        would let unreachable companies starve reachable ones out of the same budget.
         """
         entries, search_pages = self._search(fetcher)
 
@@ -455,19 +460,31 @@ class HiringCafeLane:
         snapshots: list[LaneCompanySnapshot] = []
         remaining = self._posting_budget
         for (provider, slug), company_hits in by_company.items():
+            board = board_providers.get(provider)
+            if board is None:
+                # UNREACHABLE BODY -- and `admits` is deliberately NOT asked. This company sits
+                # on an aggregator-only host whose body this repo has no evidenced way to read,
+                # so admitting it could never buy a posting. Asking anyway charges the per-run
+                # company cap, and because an unsupported company yields no snapshot it is never
+                # persisted, so it is "new" again next run and charges the cap FOREVER. Measured
+                # against the committed 160-hit fixture at the default cap of 10: nine iCIMS and
+                # one Oracle company exhausted the budget, BOTH greenhouse companies were refused,
+                # zero board requests were made, and the lane reported a silent outage while being
+                # perfectly healthy. Support is a property of the provider, not of the run, so it
+                # is settled before anything rationed is spent.
+                for _ in company_hits.hits:
+                    tally.record("not_attemptable")
+                continue
             if not admits(provider, slug):
                 # Nothing is tallied for a refused company: no request was attempted, and an
                 # outcome recorded here would inflate `attempted` with non-attempts. Refusals
                 # are reported by name through `admission.CompanyBudget.refused`, which is the
                 # channel designed for them.
                 continue
-            board = board_providers.get(provider)
-            if board is None or remaining <= 0:
-                # Seen, not requested. Two ways to get here and one bucket for both, because
-                # the catalog is closed and `not_attemptable` is its only member meaning
-                # "seen and NOT fetched": the per-run request budget was already spent, or
-                # this company sits on an aggregator-only host whose body this repo has no
-                # evidenced way to read. A silent drop is what the catalog exists to prevent.
+            if remaining <= 0:
+                # Seen, not requested: the per-run request budget was already spent. The catalog
+                # is closed and `not_attemptable` is its only member meaning "seen and NOT
+                # fetched". A silent drop is what the catalog exists to prevent.
                 for _ in company_hits.hits:
                     tally.record("not_attemptable")
                 continue

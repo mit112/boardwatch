@@ -271,6 +271,24 @@ def _as_greenhouse(hit: dict[str, Any], slug: str, posting_id: int) -> dict[str,
     )
 
 
+def _unreachable(slug: str, offsets: Sequence[int]) -> list[dict[str, Any]]:
+    """`len(offsets)` hits on an ATS this repo has NO body-inlined adapter for.
+
+    iCIMS is the real majority shape in the recorded mix, and it is the shape that starved the
+    reachable boards out of the company cap.
+    """
+    base = search_hits()
+    return [
+        dict(
+            base[i],
+            source="icims2",
+            board_token=slug,
+            apply_url=f"https://jobs.icims.com/{slug}/jobs/{7_100_000 + i}",
+        )
+        for i in offsets
+    ]
+
+
 def _reachable(slug: str, offsets: Sequence[int]) -> list[dict[str, Any]]:
     """`len(offsets)` hits at one greenhouse board, keyed off distinct recorded hits."""
     base = search_hits()
@@ -490,6 +508,44 @@ def test_the_request_budget_caps_board_gets_and_counts_what_it_skipped(tmp_path)
     # The third company was seen and never requested, and every one of its hits is counted.
     assert result.tally.counts["not_attemptable"] == 4
     assert result.tally.attempted == 12
+
+
+@respx.mock
+def test_an_unbodyable_company_never_spends_the_company_cap(tmp_path):
+    """The cap rations REQUESTS, and no request is reachable for an unbodyable company.
+
+    This is the defect that made the whole lane deliver nothing: `admits` used to be asked
+    before provider support was checked, so aggregator-only companies drank the budget and the
+    greenhouse boards -- the only ones a body can be read from -- were refused. Worse, an
+    unsupported company writes no snapshot and so is never persisted, making it "new" again on
+    the next run and charging the cap forever.
+
+    The cap here admits only the first TWO companies it is offered, and the two unbodyable ones
+    are offered first in search order.
+    """
+    hits = (
+        _unreachable("icims-one", range(0, 3))
+        + _unreachable("icims-two", range(3, 6))
+        + _reachable("acme-inline", range(6, 10))
+    )
+    _mock_search(hits)
+    boards = _mock_boards(hits)
+
+    offered: list[tuple[str, str]] = []
+
+    def admits(provider: str, slug: str) -> bool:
+        offered.append((provider, slug))
+        return len(offered) <= 2
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), admits)
+
+    # The two unbodyable companies are never OFFERED, so they cannot spend the cap.
+    assert offered == [("greenhouse", "acme-inline")]
+    # And the reachable board was actually read.
+    assert sum(route.call_count for route in boards.values()) == 1
+    assert result.tally.counts["body_inline"] == 4
+    # Their hits are still accounted for -- seen, not fetched, never silently dropped.
+    assert result.tally.counts["not_attemptable"] == 6
 
 
 @respx.mock
