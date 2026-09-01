@@ -541,6 +541,19 @@ class _FetchedLane:
     fetch_seconds: float
 
 
+def _lane_company_cap(settings: Settings, lane_name: str) -> int | None:
+    """This lane's cap on new companies: its override if one is named, else the shared default.
+
+    `"unlimited"` becomes `None`, which is `CompanyBudget`'s own uncapped sentinel — translated
+    here rather than in `Settings` so `CompanyBudget` stays the one place that decides what
+    "no cap" means.
+    """
+    override = settings.lane_new_companies_per_run_overrides.get(lane_name)
+    if override is None:
+        return settings.lane_new_companies_per_run
+    return None if override == "unlimited" else override
+
+
 def _fetch_lane(
     engine: Engine, settings: Settings, lane: Lane, fetcher: Fetcher
 ) -> _FetchedLane:
@@ -573,7 +586,7 @@ def _fetch_lane(
     concurrency those are SQLite READERS, which WAL permits alongside each other and alongside
     the single writer.
     """
-    budget = CompanyBudget(settings.lane_new_companies_per_run)
+    budget = CompanyBudget(_lane_company_cap(settings, lane.name))
 
     def admits(provider: str, slug: str) -> bool:
         with engine.connect() as conn:

@@ -92,6 +92,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # the funnel's `lanes` section names every lane that ran, with its outcome counts.
         "lanes_enabled",
         "lane_new_companies_per_run",
+        "lane_new_companies_per_run_overrides",
         "lane_posting_budget",
         "lane_search_pages",
         # D-385. WHERE a lane reads from, not how a posting is judged: the same record ingested

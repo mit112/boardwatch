@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from platformdirs import user_config_dir, user_data_dir
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 APP_NAME = "boardwatch"
 
@@ -67,6 +67,16 @@ class NotifyTier(BaseModel):
 
     desktop_enabled: bool = False
     webhook_enabled: bool = False
+
+
+def _default_lane_new_companies_overrides() -> dict[str, int | Literal["unlimited"]]:
+    """`Settings.lane_new_companies_per_run_overrides`'s shipped default, BUILT rather than a
+    module-level literal: R9 (`tools/generalization/defaults.py`) bans a non-empty
+    string-bearing collection default in this module outright, with no allowlist — the
+    snapshot pin does not exempt it."""
+    overrides: dict[str, int | Literal["unlimited"]] = {}
+    overrides["jobapps"] = "unlimited"
+    return overrides
 
 
 class Settings(BaseModel):
@@ -133,6 +143,23 @@ class Settings(BaseModel):
     # every addition is capped and both sides of the cap are reported. A company the store
     # ALREADY holds is admitted free and is not charged here — the cap counts reach added.
     lane_new_companies_per_run: int = Field(default=10, ge=0)
+    # Per-lane override of the cap above, by lane name (`lanes.admission.CompanyBudget`). A lane
+    # named here uses its own value instead of `lane_new_companies_per_run`; any other lane is
+    # unaffected. "unlimited" — a string, not 0 — is the sentinel for no cap: 0 already means
+    # something real and different on this knob (`CompanyBudget`'s off switch, admit nothing and
+    # still report every refusal), so reusing it here would collide with that meaning for a lane
+    # an operator later maps to 0 on purpose.
+    #
+    # Ships with `jobapps` uncapped: its whole source tree caps out around 38-45 companies
+    # total (28 refused to the shared cap in one measured run), so capping it slows reach for a
+    # lane an operator already curates and buys nothing. LinkedIn is deliberately NOT listed
+    # here and stays on `lane_new_companies_per_run`: it refused 264 companies to the same cap
+    # in one run, and a company that clears the cap and dereferences to a supported ATS becomes
+    # `watched=1` and joins the 379-board scan floor PERMANENTLY — uncapping it would balloon
+    # that floor forever.
+    lane_new_companies_per_run_overrides: dict[str, int | Literal["unlimited"]] = Field(
+        default_factory=_default_lane_new_companies_overrides
+    )
     # Hard ceiling on JD-body requests one lane may make in one run. A body costs one GET, so
     # this is the lane's whole network cost.
     #
@@ -182,6 +209,21 @@ class Settings(BaseModel):
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)
+
+    @field_validator("lane_new_companies_per_run_overrides")
+    @classmethod
+    def _lane_overrides_are_non_negative(
+        cls, value: dict[str, int | Literal["unlimited"]]
+    ) -> dict[str, int | Literal["unlimited"]]:
+        # Same floor as `lane_new_companies_per_run: Field(ge=0)`. A negative override is a
+        # typo, and `CompanyBudget` would otherwise raise it deep inside a run rather than at
+        # the edit that caused it.
+        for lane, cap in value.items():
+            if isinstance(cap, int) and cap < 0:
+                raise ValueError(
+                    f"lane_new_companies_per_run_overrides[{lane!r}] cannot be negative: {cap}"
+                )
+        return value
 
 
 def default_config_dir() -> Path:
