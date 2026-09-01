@@ -60,6 +60,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The job-apps lane no longer reports a failure when you have simply worked through the queue.**
+  The lane reads a directory, so the failure it has to catch is the queue being renamed or moved —
+  which looks exactly like a quiet day. It told those apart by counting records, on the assumption
+  that the directory holds a stable body of work. It does not: the count tracks whatever you have
+  not processed yet, and it has fallen from about 737 to 190 purely because you have been keeping
+  up. So a tidy queue raised a source error on a completely healthy system, which is the false alarm
+  the check was written to prevent. It now reads the directory's shape instead of counting what is
+  in it — an absent or unreadable source, or one with no group folder at all, is still a break and
+  still fails loudly, while a queue that is intact but currently empty is reported as the clean zero
+  it is.
+
 - **Two different experience bars in one posting are no longer treated as the posting contradicting
   itself.** "5+ years of software engineering experience" beside "3+ years of Python" is two
   requirements, not a contradiction, but both were being thrown away and the posting came back as
