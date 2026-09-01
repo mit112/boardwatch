@@ -12,12 +12,20 @@ All notable changes to this project are documented here. The format follows
   boardwatch could already hide a role you had marked as applied, but nothing fed that list, so it
   sat empty and every already-applied role kept re-surfacing in the queue. `track import` now
   accepts job-apps' `_applied/` directory as well as a file, reading each folder's own job
-  description header and apply link. Measured over the real 64 folders: all 64 parse, and 28 match a
-  posting boardwatch has actually seen (22 by URL, 6 more by company and title). The other 36 are
-  employers this instance never watched — a role it never saw cannot be recorded — and they are
-  counted and listed as unmatched rather than quietly dropped. Running the import twice changes
-  nothing the second time. No application date is invented: the folders only record when the résumé
-  was written, not when you applied, so the import date is used rather than a fabricated one.
+  description header and apply link. Measured over the real 64 folders: all 64 parse, and 27 are
+  recorded against a posting boardwatch has actually seen (22 by URL, 5 more by company and title).
+  The other 36 are employers this instance never watched — a role it never saw cannot be recorded —
+  and they are counted and listed as unmatched rather than quietly dropped. Running the import twice
+  changes nothing the second time. Matching on company and title is a request, not the default,
+  because it is the weaker of the two keys: **one folder whose company and title cover more than one
+  requisition at that employer is recorded against none of them** and is reported as `ambiguous`,
+  naming the requisitions it would have had to choose between. Marking a job applied removes it from
+  the queue for good and says nothing about having done so, so guessing there is the one mistake you
+  could not find afterwards; showing you a duplicate is the recoverable half of the trade. One of
+  the real 64 is ambiguous in exactly this way, over four requisitions. **The date is the day you
+  import, not the day you applied:** the folders record when the résumé was written, not when it was
+  sent, so there is no earlier date to recover, and recording no date at all would make an
+  application that really was submitted read as one that never was.
 - **The LinkedIn lane now also searches for the job titles your own delivered leads actually had.**
   Until now it could only ask for the target titles you typed into your profile — which is what you
   could write down before running anything, not what the market calls the jobs you get. Of the 957

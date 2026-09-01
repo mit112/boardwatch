@@ -16,9 +16,19 @@ observed empirically in its `_applied/` output. A folder that yields neither a u
 company and a title is `MalformedRow(reason=NO_KEY)` — the same closed reason a CSV row with
 no key column gets, since the failure is identical: nothing to match on.
 
-`applied_at` is never fabricated: job-apps stamps a folder's own mtime (and its files') with
-authoring time, not application time — the move into `_applied/` does not touch it — so every
-row here carries `applied_at=None` and takes `import_history`'s documented default of "now".
+**`applied_at` is the import date, not the application date, and the store records it as such.**
+job-apps stamps a folder's own mtime (and its files') with authoring time, not application time —
+the move into `_applied/` does not touch it — so there is no earlier date here to recover. Every
+row carries `applied_at=None` and takes `create_application`'s default of "now", which lands in
+`submitted_at` and in the created event's `occurred_at`.
+
+That is a deliberate choice over leaving `submitted_at` unset. It is the store's only record that
+a submission happened at all — `count_tracked_submitted` reads exactly `submitted_at IS NOT NULL`
+— so an unset column would make an application that really was submitted read as one that never
+was. An imprecise date is a smaller error than a false negative on the fact. The ledger keeps the
+distinction readable: the event's `recorded_at` and its `source` say the date came from an import.
+Nothing is silently distorted by it — the suppression path (`applied_job_ids`) keys on status, not
+on `submitted_at`, and no drought, freshness or date-window report reads the column.
 """
 
 from __future__ import annotations
