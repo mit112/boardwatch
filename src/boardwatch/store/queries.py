@@ -364,10 +364,17 @@ def stored_slug(conn: Connection, *, provider: str, slug: str) -> str | None:
 
     Returned rather than a bool so a caller can INSERT UNDER THE STORED SPELLING instead of its
     own. That is what keeps the guard from rewriting a live URL: nothing normalizes an existing
-    slug, and slug case is genuinely load-bearing for at least one provider — a Workday career
-    site is case-sensitive (`split_slug` preserves it deliberately; `NVIDIAExternalCareerSite`
-    and `external_experienced` are both real). A provider that wants its slugs folded says so
-    with `normalize_slug` (smartrecruiters does); this function only refuses the SECOND ROW.
+    slug, so the stored spelling is the one every existing URL and cache key already uses.
+
+    **Correction 2026-09-01:** this paragraph used to justify that by saying a Workday career
+    site is case-sensitive live. It is not — measured across three boards and three casing
+    styles, the CXS endpoint returns identical results either way (see `workday.split_slug`).
+    The justification is preservation-is-free, not preservation-is-required. Nothing about this
+    function changes: it is the guard that makes Workday case differences converge instead of
+    duplicating, which is precisely why lowering the case would buy nothing.
+
+    A provider that wants its slugs folded says so with `normalize_slug` (smartrecruiters does);
+    this function only refuses the SECOND ROW.
 
     Case folding happens on both sides in SQL, so both use SQLite's ASCII-only `lower()` and
     agree. Python's Unicode-aware `str.lower()` on one side would disagree with it above

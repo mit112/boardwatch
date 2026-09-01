@@ -94,8 +94,22 @@ _FACET_MAX_PAGES = 20  # 400 postings per bucket; intern/new-grad buckets are sm
 
 def split_slug(slug: str) -> tuple[str, str, str]:
     """(host, tenant, site) from the composite slug, canonicalized: host and tenant
-    lowercased, SITE CASE PRESERVED (site slugs are case-sensitive live —
-    NVIDIAExternalCareerSite, External_Career_Site and external_experienced are all real).
+    lowercased, SITE CASE PRESERVED.
+
+    The reason recorded here until 2026-09-01 was that "site slugs are case-sensitive live".
+    **That is false and was measured false**: an A/B of the CXS endpoint across three casing
+    styles returned identical totals for the stored casing and a lowercased one — nvidia
+    `NVIDIAExternalCareerSite` 2000/2000, bdx `EXTERNAL_CAREER_SITE_USA` 576/576, roche
+    `ROG-A2O-GENE` 224/224 — and 60 of 133 watched Workday companies were already STORED
+    lowercased against the provider's own casing, holding 31,395 postings scanned clean.
+
+    Case is still preserved, on a different and smaller reason: nothing requires lowering it.
+    Identity does not depend on it, because `store/queries.py:stored_slug` folds case and is
+    what stops one board being stored twice; lowering it would re-key 54 stored slugs and
+    orphan their `http_cache` validators to buy nothing. Preserving the provider's own spelling
+    is the cheaper default, NOT a correctness requirement — do not re-derive the old reason
+    from the varied casing of real sites, which is what produced it the first time.
+
     Raises ValueError on anything that is not a valid triple; board_urls._normalize_slug
     converts that to UnknownBoardURL so the CLI does not traceback."""
     parts = slug.strip().split("/")

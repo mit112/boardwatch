@@ -126,11 +126,15 @@ TWO KNOWN LIMITS, both measured, neither a guess. (1) `myworkdaysite.com` keeps 
 `UnknownBoardURL` from `parse_board_target`, and adding the host suffix would NOT help: the
 same tenant is stored under the other host, so `wd5.myworkdaysite.com/recruiting/chewy/External`
 would still not equal the stored `chewy.wd5.myworkdayjobs.com/chewy/External`. (2) Site case
-is preserved by `workday.split_slug` on purpose, so a URL spelling `Aderant_External_Careers`
-does not converge with a row stored `aderant_external_careers`. Of 4,456 independent Workday
-URLs that parse to a reference, **589 converge onto a posting the board scan already holds,
-and 307 more are lost to site case alone** — sized here, not fixed, because normalizing it
-re-keys 54 stored slugs and their cache keys and reverses a deliberate decision.
+is preserved by `workday.split_slug`, and that costs NOTHING here — a claim this paragraph got
+wrong once and is corrected in place rather than quietly dropped. `store/queries.py:stored_slug`
+folds case and `upsert_lane_company` calls it for every lane snapshot, so a URL spelling
+`Aderant_External_Careers` resolves to the row stored `aderant_external_careers` and converges
+against it; `pipeline/runner.py` takes the company id back from the upsert for exactly this
+reason. Of 4,456 independent Workday URLs that parse to a reference, **896 converge onto a
+posting the board scan already holds**. An earlier reading of 589 with "307 lost to site case"
+was an artifact of joining slug strings instead of modelling the resolver, and the 307 were
+never lost.
 """
 
 from __future__ import annotations
