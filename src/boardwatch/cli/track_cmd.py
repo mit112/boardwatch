@@ -24,7 +24,6 @@ from boardwatch.store.application_history import (
     parse_history,
     write_import_report,
 )
-from boardwatch.store.jobapps_history import read_jobapps_dir
 from boardwatch.store.applications import (
     ApplicationStatus,
     create_application,
@@ -34,6 +33,7 @@ from boardwatch.store.applications import (
     set_application_status,
 )
 from boardwatch.store.funnel_queries import job_id_for_posting, list_funnel
+from boardwatch.store.jobapps_history import read_jobapps_dir
 from boardwatch.store.queries import current_posting_versions
 
 track_app = typer.Typer(no_args_is_help=True, help="Track your own applications.")
