@@ -268,8 +268,12 @@ def test_cohort_date_is_not_used_as_a_posting_date(tmp_path):
 # ---------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("acquisition", ["linkedin", "indeed", "jobright"])
+@pytest.mark.parametrize("acquisition", ["linkedin"])
 def test_an_aggregator_only_record_is_counted_and_not_ingested(tmp_path, acquisition):
+    """`linkedin` is the aggregator that stays OUT, and deliberately so: boardwatch runs its own
+    LinkedIn lane, so admitting these would duplicate a lane we already have against an identity
+    scheme that cannot converge the two. It is the largest source in the tree (88 records), and
+    that reach is bought by un-throttling our own lane instead."""
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "ok")
     _write(root, "LinkedIn", "agg", acquisition=acquisition, posting_id="pst_agg")
@@ -284,6 +288,21 @@ def test_an_aggregator_only_record_is_counted_and_not_ingested(tmp_path, acquisi
 def test_a_direct_apply_record_is_ingested(tmp_path, acquisition):
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "a", acquisition=acquisition)
+    assert len(_postings(_collect(root, tmp_path))) == 1
+
+
+@pytest.mark.parametrize("acquisition", ["indeed", "jobright"])
+def test_the_two_admitted_aggregators_are_ingested(tmp_path, acquisition):
+    """The 24.2% slice (D-393 item 3). These two carry a posting-SPECIFIC url in
+    `canonical.direct_url` -- `indeed.com/viewjob?jk=<key>` and `jobright.ai/jobs/info/<id>` --
+    rather than a search page, and the JD body is already on disk, so the slice costs zero
+    network requests. Measured over the live tree: indeed 48 records, jobright 5.
+
+    Separate from `test_a_direct_apply_record_is_ingested` on purpose: these are the two the
+    closed set was widened for, and if a later change narrows it again this test names exactly
+    what was lost rather than one parametrise case going quiet."""
+    root = tmp_path / "queue"
+    _write(root, "Other", "a", acquisition=acquisition)
     assert len(_postings(_collect(root, tmp_path))) == 1
 
 

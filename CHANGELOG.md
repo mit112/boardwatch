@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Two aggregator sources job-apps already finds are now taken in as well, at no network cost.**
+  The job-apps lane only accepted finds whose link went straight to an employer's own job board, so
+  everything found through Indeed or Jobright was counted and skipped even though the job description
+  was already sitting on disk. Both of those record a link to the specific job rather than to a
+  search page, and applying through them is how those jobs were already being applied to, so they
+  are now taken in. Measured against the real source: the lane sees 190 finds and now uses **102 of
+  them instead of 49** — 48 more from Indeed, 5 from Jobright. **LinkedIn is deliberately still left
+  out**, and it is the largest source of the three (88 finds): boardwatch runs its own LinkedIn
+  search, so taking these too would list the same jobs twice with no way to tell they are the same.
+  That reach is being bought by widening our own search instead. Two costs, stated plainly: the
+  apply link is the aggregator's page rather than the employer's, and these jobs cannot be noticed
+  as closed by re-reading a board, so they retire only when a later check finds them gone.
+
 - **Roles you already applied to through job-apps can now be imported, so they stop coming back.**
   boardwatch could already hide a role you had marked as applied, but nothing fed that list, so it
   sat empty and every already-applied role kept re-surfacing in the queue. `track import` now

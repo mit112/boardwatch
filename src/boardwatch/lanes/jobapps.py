@@ -112,7 +112,30 @@ _HEADER_MARKER = f"{_SEPARATOR}\nJOB DESCRIPTION\n{_SEPARATOR}"
 # the time -- 74.9% of all records are aggregator pages with no reachable posting behind them.
 # A closed set, so a NEW acquisition source is skipped-and-counted rather than silently trusted.
 _DIRECT_APPLY_SOURCES = frozenset(
-    {"hiringcafe", "simplify", "speedyapply", "zapply", "hn", "vanshb03"}
+    {
+        "hiringcafe",
+        "simplify",
+        "speedyapply",
+        "zapply",
+        "hn",
+        "vanshb03",
+        # ADDED 2026-09-01 (D-393 item 3, the 24.2% aggregator slice). Both carry a
+        # posting-SPECIFIC url in `canonical.direct_url` -- `indeed.com/viewjob?jk=<key>` and
+        # `jobright.ai/jobs/info/<id>` -- not a search page, and the JD body is already on disk,
+        # so this costs ZERO network requests. Measured over the live tree: indeed 48 records,
+        # jobright 5.
+        #
+        # `linkedin` is deliberately NOT here even though it is the largest source (88 records).
+        # boardwatch runs its OWN LinkedIn lane, so admitting these would duplicate a lane we
+        # already have against an identity scheme that cannot converge the two -- the reach is
+        # bought by un-throttling that lane instead.
+        #
+        # The accepted cost, stated rather than discovered later: the apply URL is the
+        # aggregator's page, not the employer's, and these postings can never close by
+        # enumeration (D-314), so they retire only via the death probe or the zero-signal veto.
+        "indeed",
+        "jobright",
+    }
 )
 _DIRECT_APPLY_SUFFIX = "_api"
 
@@ -151,9 +174,15 @@ class _Identity:
 def is_direct_apply(primary_acquisition: str) -> bool:
     """Does this acquisition source yield a real apply URL?
 
-    Named and exported because it is the single filter that decides reach: it admits 189 of 737
-    live records. Getting it wrong in the permissive direction ingests aggregator landing pages
-    the user cannot apply from.
+    Named and exported because it is the single filter that decides reach.
+
+    Getting it wrong in the permissive direction ingests aggregator landing pages the user cannot
+    apply from -- which is why the set is CLOSED and a new acquisition source is skipped-and-
+    counted rather than silently trusted. Two aggregators were admitted deliberately on
+    2026-09-01 (see the set): they carry a posting-specific URL rather than a search page, and the
+    owner already applies through those links in the source system, so "cannot apply from" does
+    not hold for them. The remaining aggregator, `linkedin`, stays out because boardwatch runs its
+    own lane for it.
     """
     return (
         primary_acquisition in _DIRECT_APPLY_SOURCES
