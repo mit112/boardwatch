@@ -7,6 +7,7 @@ bucket is printed even at zero, and that `--report` writes one line per input ro
 """
 
 import json
+import plistlib
 from pathlib import Path
 
 from sqlalchemy import func, insert, select
@@ -103,3 +104,27 @@ def test_an_unreadable_file_exits_one_without_touching_the_store(tmp_path: Path)
     assert result.exit_code == 1
     assert "cannot read" in result.output
     assert _applications(data_dir) == 0
+
+
+def _jobapps_dir(tmp_path: Path) -> Path:
+    """A synthetic job-apps `_applied/` tree: one folder, matching the seeded posting by URL."""
+    root = tmp_path / "_applied"
+    folder = root / "Synthco_Widget_Engineer"
+    folder.mkdir(parents=True)
+    (folder / "1_apply.webloc").write_bytes(plistlib.dumps({"URL": URL}))
+    (folder / "job_description.txt").write_text(
+        "Company:  Acme\nRole:     Software Engineer\n" + "=" * 40 + "\ntext\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_a_directory_is_read_as_a_jobapps_applied_tree(tmp_path: Path) -> None:
+    """Pre-change, `dir_okay=False` rejects a directory outright with a usage error (exit 2)
+    before the store is ever touched. This is the one thing only the CLI wiring can get wrong."""
+    data_dir = tmp_path / "store"
+    _seed(data_dir)
+    result = _run(data_dir, ["track", "import", str(_jobapps_dir(tmp_path))])
+    assert result.exit_code == 0, result.output
+    assert "wrote 1 application(s) from 1 row(s)." in result.output
+    assert _applications(data_dir) == 1
