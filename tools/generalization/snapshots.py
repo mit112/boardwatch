@@ -145,6 +145,12 @@ EXPECTED_PARAM_DEFAULTS: dict[str, str] = {
     # of the component's own range, chosen so it needs no corpus statistic. A 0.0 here would
     # be the punitive default §3.6 forbids, so the value is worth re-reading on any change.
     "score_posting.zero_skill_prior": "0.50",
+    # Pseudo-count that shrinks skill_coverage toward zero_skill_prior. Not user-specific and
+    # deliberately NOT a Settings field: reports/manifest.py hashes the ranking knobs into the
+    # config hash, so a sibling setting would stale every ledger disposition and owe a drain
+    # for a change that alters no verdict. 1.0 is add-one smoothing — the smallest value that
+    # clears the thin-JD false positives out of the delivered slate; 0.0 restores the raw ratio.
+    "score_posting.coverage_pseudo_count": "1.0",
 }
 
 # The init wizard's prompt defaults, in source order. Every profile and filter

@@ -231,6 +231,7 @@ def test_the_heuristic_parameter_default_is_pinned() -> None:
     assert snap.EXPECTED_PARAM_DEFAULTS == {
         "score_posting.half_life_days": "14.0",
         "score_posting.zero_skill_prior": "0.50",
+        "score_posting.coverage_pseudo_count": "1.0",
     }
 
 

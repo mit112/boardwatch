@@ -14,6 +14,13 @@ case-folded. Undefined components renormalize over the remaining weights
 (§3.6; undefined triggers per plan deviation 7) — with one exception: a posting with no
 recognized skills at all takes a neutral imputed coverage instead, because renormalizing
 that component away is a promotion rather than a neutral act (see score_posting).
+
+skill_coverage is a RATIO, so it is only as trustworthy as its denominator, and the
+denominator is whatever the taxonomy happened to recognise in one JD. `score_posting`
+therefore shrinks it toward the same neutral prior by a pseudo-count before weighting it:
+one matched term out of one recognised term is not a 1.00 fit, it is one observation.
+Measured over the live deliverable pool, that ratio is the ranker's single largest source of
+false positives at the head of the slate (see score_posting).
 """
 
 from __future__ import annotations
@@ -266,10 +273,34 @@ def score_posting(
     now: datetime,
     half_life_days: float = 14.0,
     zero_skill_prior: float = 0.50,
+    coverage_pseudo_count: float = 1.0,
 ) -> Score:
     coverage_value, covered, skill_count = skill_coverage(profile.skills, posting_skills)
     if coverage_value is not None:
-        coverage_detail = f"covers {covered}/{skill_count} skills"
+        # Shrink the ratio toward the neutral prior by how much evidence it rests on. The raw
+        # ratio treats "1 of 1 recognised term matched" and "14 of 27 matched" as comparable
+        # estimates of fit, and the first one wins: it reads 1.00 on the component carrying
+        # HALF the weight, from a sample of size one. Measured over the 5,029-posting
+        # deliverable pool of run 137, that put 16 postings with <=2 recognised terms into the
+        # top 100 — "Technical Product Owner (F/H)", "Global Financial Crimes — Compliance
+        # Testing, AVP", "Enterprise Mobility Engineer" — and it is the same failure
+        # taxonomy.yaml already tried to fix from the data side by deleting four generic
+        # terms, which only moves the problem to whichever term is next.
+        #
+        # A pseudo-count is the smallest expression of that: at skill_count=0 it reduces
+        # exactly to zero_skill_prior (the imputation below), and by skill_count=27 it moves
+        # the value by <0.001, so it changes the thin end and leaves the rich end alone.
+        # It is NOT a filter — every posting keeps a defined coverage and its own evidence
+        # chain; only the ORDER changes.
+        coverage_value = (covered + coverage_pseudo_count * zero_skill_prior) / (
+            skill_count + coverage_pseudo_count
+        )
+        coverage_detail = (
+            f"covers {covered}/{skill_count} skills"
+            if coverage_pseudo_count <= 0.0
+            else f"covers {covered}/{skill_count} skills, shrunk toward "
+            f"{zero_skill_prior:.2f} on {skill_count} term(s) of evidence"
+        )
     elif not posting_skills and profile.skills:
         # Impute rather than renormalize (§3.6). Renormalizing is arithmetically identical
         # to imputing the weighted mean of the surviving components — a promotion, not a
