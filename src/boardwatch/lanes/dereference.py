@@ -75,12 +75,54 @@ exactly the kind this module refused SmartRecruiters for in the first place. Req
 digit run to END the id (`^(\d+)(?:-|$)`) refuses it instead. Out-of-catalog stays a
 failure, never a guess.
 
-WORKDAY: `_detail_url` needs an `externalPath` path-string, not an id, and the public
-`en-US/{site}/job/...` URL's mapping back to that CXS path is verified nowhere in this
-repo — the one recorded fixture (`externalUrl`) confirms a single tenant's shape, but
-nothing here confirms the locale segment, host, or chrome segments are stable across
-tenants. Guessing that mapping would fabricate a request contract, so every Workday
-posting URL refuses instead of a guess.
+WORKDAY: RESOLVED as of 2026-09-01 for IDENTITY, and deliberately not for fetching. The
+refusal above was written against the wrong contract. `_detail_url` does need an
+`externalPath` path-string that no public URL is proven to map back to — but a
+`PostingTarget` is never fetched. Both consumers read it for identity alone
+(`lanes/jobapps.py:282` feeds `posting_ref` straight into `RawPosting.provider_posting_id`;
+`lanes/hiringcafe.py:317` builds a `HitIdentity` from it), so what has to be recoverable is
+`provider_posting_id`, which `providers/workday.py:_posting_id` derives as the final
+`_`-delimited token of the externalPath's last segment when it holds a digit. That token is
+carried verbatim in the public URL's last segment.
+
+Measured, on the same bar SmartRecruiters had to clear: **93,044 provider-supplied
+`externalUrl`s in the live store, on which the extracted reference equals that company's
+stored `provider_posting_id` 93,044 out of 93,044**, and an INDEPENDENT 4,407 Workday URLs
+from job-apps' ledger across 606 distinct hosts (against our own 117), of which 4,398 yield
+the same reference and the 9 that do not are board roots carrying no posting at all. The
+detail-fetch contract remains unproven and nothing here lifts it.
+
+THE SHAPE IS POSITIONAL, NOT A `_POSTING_PATH_SHAPES` ROW, and that is why Workday needs a
+branch rather than a catalog entry. Its career site sits INSIDE the composite slug, and the
+segments around it vary: `{site}/job/{location}/{ref}`, `en-US/{site}/job/{location}/{ref}`
+and `{site}/job/{ref}` all occur. What is invariant across all 97,451 measured URLs is the
+position: `job` occurs exactly once, the career site is the segment IMMEDIATELY BEFORE it,
+and the reference is the last segment with at most one location segment between. `details`
+occurs zero times in either population, and no URL carries a trailing `/apply`; were one to,
+`apply` holds no digit and the reference pattern refuses it.
+
+THE SITE GUARD IS THE LOAD-BEARING PART. `parse_board_target` derives the site through
+`workday.slug_from_path`, which takes the first segment that is not in that provider's
+`_CHROME_SEGMENTS` — and `jobs` IS in that set. So a tenant whose career site is literally
+named `Jobs` has the segment skipped and its LOCATION read as the site: Red Hat's
+`redhat.wd5.myworkdayjobs.com/jobs/job/Raleigh/...` derives site `Raleigh`. That mints a
+company row for a board that does not exist, silently, one per location. Measured: 38 URLs
+in the independent set (brandeis, carrier, redhat), and `redhat/jobs` + `paypal/jobs` are
+real watched rows reachable only through the explicit `workday:host/tenant/site` form.
+Requiring the derived site to EQUAL the segment before `job` refuses those instead.
+**That guard does not repair the underlying defect** — a refused URL still falls through to
+`posting_identity`'s tier 2, which calls `parse_board_target` directly and still mints the
+wrong slug. Fixing `slug_from_path` changes board IMPORT behaviour and is a separate change.
+
+TWO KNOWN LIMITS, both measured, neither a guess. (1) `myworkdaysite.com` keeps raising
+`UnknownBoardURL` from `parse_board_target`, and adding the host suffix would NOT help: the
+same tenant is stored under the other host, so `wd5.myworkdaysite.com/recruiting/chewy/External`
+would still not equal the stored `chewy.wd5.myworkdayjobs.com/chewy/External`. (2) Site case
+is preserved by `workday.split_slug` on purpose, so a URL spelling `Aderant_External_Careers`
+does not converge with a row stored `aderant_external_careers`. Of 4,344 independent Workday
+URLs that parse to a reference, **568 converge onto a posting the board scan already holds,
+and 292 more are lost to site case alone** — sized here, not fixed, because normalizing it
+re-keys 54 stored slugs and their cache keys and reverses a deliberate decision.
 """
 
 from __future__ import annotations
@@ -95,8 +137,9 @@ from boardwatch.core.board_urls import parse_board_target
 # reference. A posting URL's path must be exactly `{slug}/{*fixed}/{ref}` — nothing
 # shorter, nothing longer. See the module docstring for the evidence behind each shape and
 # for why a longer path must refuse rather than read its last segment. A closed catalog:
-# any provider absent from it refuses rather than guesses. SmartRecruiters is deliberately
-# NOT in it, and neither is Workday — see the module docstring.
+# any provider absent from it refuses rather than guesses. Workday is deliberately NOT in it
+# and is NOT an omission: its shape is POSITIONAL, not a fixed run of segments, so it takes
+# its own branch in parse_posting_target — see the module docstring. The catalog stays closed.
 # The last path segment IS the posting reference for every provider above. SmartRecruiters is
 # the one provider where it is not: its segment is `{id}-{title-slug}`, so a reference has to be
 # read back out of it. Keyed here rather than special-cased in the function so the rule stays a
@@ -109,6 +152,15 @@ from boardwatch.core.board_urls import parse_board_target
 # refuses SmartRecruiters for in the first place. Anchored, it matches nothing and the URL refuses.
 _POSTING_REF_PATTERNS: dict[str, re.Pattern[str]] = {
     "smartrecruiters": re.compile(r"^(\d+)(?:-|$)"),
+    # Workday: the final `_`-delimited token, required to hold a digit. This must stay
+    # equivalent to `providers/workday.py:_posting_id`, because convergence is
+    # `UNIQUE(company_id, provider_posting_id)` and that function is what writes the stored
+    # side -- `test_the_workday_reference_pattern_matches_the_providers_own_id_rule` pins the
+    # equivalence rather than trusting the two to drift together. Expressed here rather than
+    # imported so this module keeps importing no provider code (see the docstring's no-network
+    # rule; `providers/workday` pulls in `core/politeness`). A last segment with no such token
+    # -- a board root, or `M_tx` -- matches nothing and the URL refuses.
+    "workday": re.compile(r"_([^_]*\d[^_]*)$"),
 }
 
 _POSTING_PATH_SHAPES: dict[str, tuple[str, ...]] = {
@@ -118,6 +170,11 @@ _POSTING_PATH_SHAPES: dict[str, tuple[str, ...]] = {
     "smartrecruiters": (),
     "workable": ("j",),
 }
+
+# The one segment a workday posting path is anchored on. Measured over 97,451 real URLs
+# (93,044 provider-supplied, 4,407 from an independent ledger): `job` occurs in every posting
+# URL and `details` occurs in none, so a second member here would be a guess, not a catalog.
+_WORKDAY_VERB = "job"
 
 
 class UnresolvablePostingURL(ValueError):
@@ -155,12 +212,17 @@ def parse_posting_target(url: str) -> PostingTarget:
 
     Raises board_urls.UnknownBoardURL, unchanged, when `url` is not a recognized board
     target at all. Raises UnresolvablePostingURL when it IS recognized but this repo has
-    no evidenced way to read a posting reference back out of it: any SmartRecruiters or
-    Workday posting URL, and any path that is not exactly its provider's posting shape —
-    a bare board root, or a canonical posting URL with a trailing chrome segment such as
-    lever's `/apply` or ashby's `/application` (see the module docstring).
+    no evidenced way to read a posting reference back out of it: any path that is not
+    exactly its provider's posting shape — a bare board root, or a canonical posting URL
+    with a trailing chrome segment such as lever's `/apply` or ashby's `/application`
+    (see the module docstring).
+
+    Workday takes its own branch because its shape is POSITIONAL rather than a fixed run
+    of segments between the slug and the reference.
     """
     provider, slug = parse_board_target(url)
+    if provider == "workday":
+        return _workday_posting_target(url, slug)
     shape = _POSTING_PATH_SHAPES.get(provider)
     if shape is None:
         raise UnresolvablePostingURL(
@@ -185,3 +247,45 @@ def parse_posting_target(url: str) -> PostingTarget:
             f"{provider!r} posting reference is not readable from {segments[-1]!r} in {url!r}"
         )
     return PostingTarget(provider=provider, slug=slug, posting_ref=matched.group(1))
+
+
+def _workday_posting_target(url: str, slug: str) -> PostingTarget:
+    """Workday's posting URL, read positionally. See the module docstring for the evidence.
+
+    Not expressible as a `_POSTING_PATH_SHAPES` row: the career site is part of the
+    composite slug, an optional `en-US` locale segment may precede it, and the location
+    segment between `job` and the reference is sometimes absent. What is invariant over the
+    97,451 measured URLs is that `job` occurs exactly once, the site is the segment
+    immediately before it, and the reference is the last segment.
+    """
+    segments = _path_segments(url)
+    lowered = [segment.lower() for segment in segments]
+    if lowered.count(_WORKDAY_VERB) != 1:
+        raise UnresolvablePostingURL(
+            f"a workday posting URL carries exactly one {_WORKDAY_VERB!r} segment; "
+            f"{url!r} carries {lowered.count(_WORKDAY_VERB)}"
+        )
+    verb = lowered.index(_WORKDAY_VERB)
+    # The site must precede `job`, and the reference must follow it with at most one
+    # location segment between. Anything longer is chrome this repo has not evidenced.
+    if verb == 0 or not 1 <= len(segments) - verb - 1 <= 2:
+        raise UnresolvablePostingURL(
+            f"workday posting URLs are {{site}}/job/[{{location}}/]{{posting_ref}}; "
+            f"{url!r} is not that shape"
+        )
+    # THE GUARD, and the reason this is not a two-line change. `slug_from_path` skips any
+    # segment in workday's `_CHROME_SEGMENTS`, which contains `jobs` — so a tenant whose
+    # career site is named `Jobs` (redhat, paypal, brandeis, carrier) has its LOCATION read
+    # as the site and mints a company row for a board that does not exist. Refusing on the
+    # mismatch is what keeps an unknown shape raising instead of converging onto a fiction.
+    if segments[verb - 1] != slug.rsplit("/", 1)[-1]:
+        raise UnresolvablePostingURL(
+            f"workday career site {slug.rsplit('/', 1)[-1]!r} is not the segment before "
+            f"{_WORKDAY_VERB!r} ({segments[verb - 1]!r}) in {url!r}"
+        )
+    matched = _POSTING_REF_PATTERNS["workday"].search(segments[-1])
+    if matched is None:
+        raise UnresolvablePostingURL(
+            f"workday posting reference is not readable from {segments[-1]!r} in {url!r}"
+        )
+    return PostingTarget(provider="workday", slug=slug, posting_ref=matched.group(1))

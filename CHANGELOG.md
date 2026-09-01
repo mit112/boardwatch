@@ -141,6 +141,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A Workday job found through a lane is now recognised as the same job the board scan already
+  found.** Workday was the last provider refused outright, on the grounds that fetching one of its
+  job descriptions needs an internal path nothing here could prove a public link maps back to. That
+  was the wrong test: nothing ever fetches from a dereferenced link — it is only ever used to work
+  out whether two sightings of a job are the same job — so what had to be readable was the
+  requisition number, and that is printed at the end of every public Workday link. The evidence was
+  already here: **93,044 real Workday links in this instance's own store, on which reading the
+  requisition number back out of the link matches the number the board itself reported, 93,044 times
+  out of 93,044**, plus an independent 4,407 links from job-apps' own records spanning 606 employers
+  against our 117, of which every one that points at an actual job agrees. **The measured effect:
+  568 jobs job-apps found are now recognised as ones already on a watched board instead of being
+  listed a second time.**
+
+  Three kinds of link still refuse rather than guess, each for a measured reason. An employer whose
+  careers page is itself named "Jobs" (Red Hat, PayPal, Carrier, Brandeis) puts a word in the link
+  that the address reader already treats as decoration, so it would read the job's CITY as the name
+  of the careers page and file the job under an employer that does not exist — 157 links in this
+  store take that path and are refused. A link with an unfamiliar extra step in it refuses, because
+  reading the wrong part as the requisition number would silently overwrite a real job. And Workday's
+  second address style is left alone: the same employer is already on file under the first style, so
+  reading the second would create a duplicate rather than remove one. A further **292** jobs are not
+  recognised only because the careers-page name is written in different capitals in the two places;
+  that is counted and left alone, since changing it would rewrite how every Workday board on file is
+  addressed.
+
 - **A SmartRecruiters job found through a lane is now recognised as the same job the board scan
   already found.** Every SmartRecruiters link was previously refused, because the only example this
   project held was an invented one and a real link puts the job's id and its title in a single piece
