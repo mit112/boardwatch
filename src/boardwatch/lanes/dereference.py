@@ -52,26 +52,28 @@ it closes after two misses. That is the same defect class this module already re
 SmartRecruiters for. An exact shape per provider is a CLOSED rule; a list of chrome
 suffixes to exclude would have to grow for every one a provider or an aggregator invents.
 
-SMARTRECRUITERS: the pinned fixture's `postingUrl` is doubly unevidenced, and a live probe
-raised the reason this module now refuses it. `smartrecruiters.py:213-216` reads
-`url = str(detail.get("postingUrl") or f"https://jobs.smartrecruiters.com/{identifier}/{posting_id}")`
-— unlike the four above, this provider has a CONSTRUCTED FALLBACK, and the fixture's
-`postingUrl` (`tests/fixtures/smartrecruiters/README.md`: "All text is synthetic... jobs.
-smartrecruiters.com/acme... invented") was authored to mimic that fallback's
-`.../{identifier}/{posting_id}` shape — a bare id as the last segment. SmartRecruiters'
-own public API documentation shows a real posting URL combines the numeric id and a title
-slug into a SINGLE path segment instead, e.g.
-`https://www.smartrecruiters.com/SmartRecruiters/12308096-quality-assurance-manager`.
-Against that real shape, `segments[-1]` is `"12308096-quality-assurance-manager"`, not the
-id `"12308096"` — the "last path segment" rule this module uses for the other four
-providers is WRONG for SmartRecruiters. Extracting a value a future fetch step would rely
-on, when there is now positive reason to believe it is wrong, is exactly the fabricated
-request contract this task exists to prevent — so every SmartRecruiters posting URL
-refuses. UNVERIFIED CANDIDATE for a future fix, not the rule shipped here: the leading
-digit run of the last path segment (`^\d+`) would recover `12308096` from both the real
-shape above and the fixture's constructed-fallback shape (`744000000000001` is already
-all digits). Adopting it needs a live probe pinning at least one real `postingUrl`, not an
-inference from documentation plus a synthetic fixture.
+SMARTRECRUITERS: RESOLVED as of 2026-09-01, and the evidence bar this paragraph set is the
+reason it took this long. It previously refused every SmartRecruiters posting URL, because
+the pinned fixture's `postingUrl` was authored to mimic the provider's CONSTRUCTED FALLBACK
+(`smartrecruiters.py:213-216`) rather than a real URL, and the real public shape combines
+the id and a title slug into ONE segment
+(`https://www.smartrecruiters.com/SmartRecruiters/12308096-quality-assurance-manager`), so
+the last-segment rule the other four providers use is wrong here. It named a candidate fix
+-- the leading digit run `^\d+` -- and required "a live probe pinning at least one real
+`postingUrl`, not an inference from documentation plus a synthetic fixture."
+
+What it got instead of one probe: **3,041 real SmartRecruiters posting URLs already in the
+live store, every one of them `jobs.smartrecruiters.com/{slug}/{digits}[-title]`, on which
+the extracted reference equals the provider's own stored `provider_posting_id` 3,041 times
+out of 3,041** -- the convergence proof this dereference exists to produce. A second,
+independent system's ledger supplied 363 more, of which 362 conform.
+
+**The 363rd is why the rule shipped here is ANCHORED and not the candidate.** SmartRecruiters
+also issues UUID references (`jobs.smartrecruiters.com/servicenow/99c06c61-284f-4c2b-bd4d-
+1a7b53bf3fa4`), and `^\d+` reads that as `99` -- a colliding two-character reference of
+exactly the kind this module refused SmartRecruiters for in the first place. Requiring the
+digit run to END the id (`^(\d+)(?:-|$)`) refuses it instead. Out-of-catalog stays a
+failure, never a guess.
 
 WORKDAY: `_detail_url` needs an `externalPath` path-string, not an id, and the public
 `en-US/{site}/job/...` URL's mapping back to that CXS path is verified nowhere in this
@@ -83,6 +85,7 @@ posting URL refuses instead of a guess.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -94,10 +97,25 @@ from boardwatch.core.board_urls import parse_board_target
 # for why a longer path must refuse rather than read its last segment. A closed catalog:
 # any provider absent from it refuses rather than guesses. SmartRecruiters is deliberately
 # NOT in it, and neither is Workday — see the module docstring.
+# The last path segment IS the posting reference for every provider above. SmartRecruiters is
+# the one provider where it is not: its segment is `{id}-{title-slug}`, so a reference has to be
+# read back out of it. Keyed here rather than special-cased in the function so the rule stays a
+# CLOSED per-provider fact, and a provider with no entry keeps using the whole segment.
+#
+# The digit run must END the id -- `(?:-|$)`, never a bare `^\d+`. The module text below records
+# `^\d+` as the candidate rule; against real data it is UNSAFE. SmartRecruiters also issues UUID
+# references (measured: `jobs.smartrecruiters.com/servicenow/99c06c61-284f-4c2b-bd4d-1a7b53bf3fa4`),
+# and `^\d+` reads that as `99` -- a short, colliding reference of exactly the kind this module
+# refuses SmartRecruiters for in the first place. Anchored, it matches nothing and the URL refuses.
+_POSTING_REF_PATTERNS: dict[str, re.Pattern[str]] = {
+    "smartrecruiters": re.compile(r"^(\d+)(?:-|$)"),
+}
+
 _POSTING_PATH_SHAPES: dict[str, tuple[str, ...]] = {
     "greenhouse": ("jobs",),
     "lever": (),
     "ashby": (),
+    "smartrecruiters": (),
     "workable": ("j",),
 }
 
@@ -155,4 +173,15 @@ def parse_posting_target(url: str) -> PostingTarget:
         raise UnresolvablePostingURL(
             f"{provider!r} posting URLs are {expected}; {url!r} is not that shape"
         )
-    return PostingTarget(provider=provider, slug=slug, posting_ref=segments[-1])
+    pattern = _POSTING_REF_PATTERNS.get(provider)
+    if pattern is None:
+        return PostingTarget(provider=provider, slug=slug, posting_ref=segments[-1])
+    matched = pattern.match(segments[-1])
+    if matched is None:
+        # An out-of-catalog shape refuses rather than guessing. Guessing here is the specific
+        # defect this module exists to prevent: a wrong reference collides on
+        # `UNIQUE(company_id, provider_posting_id)` and one real body is overwritten.
+        raise UnresolvablePostingURL(
+            f"{provider!r} posting reference is not readable from {segments[-1]!r} in {url!r}"
+        )
+    return PostingTarget(provider=provider, slug=slug, posting_ref=matched.group(1))
