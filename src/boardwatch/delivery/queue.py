@@ -468,6 +468,22 @@ def _plan(
     make the name depend on which lead was seen first, and a folder that renames itself when a
     sibling appears is at least reported as `moved`.
 
+    **THE COLLISION KEY IS CASE-FOLDED, because a filesystem's is.** Two leads that plan
+    `onX_Full_Stack_Engineer` and `OnX_Full_Stack_Engineer` are two distinct strings and one
+    single path on macOS and Windows, so a case-sensitive `Counter` finds no collision, neither
+    lead is disambiguated, and the second one to be written finds its target held by a folder
+    that does not identify it and fails. That is not hypothetical: it cost run 139 two of the
+    three leads it failed to queue (`onX`/`OnX`, `WellSky`/`Wellsky`), and **no test on a
+    case-sensitive CI filesystem can reproduce it** — on Linux both folders are created and
+    nothing raises. It is the same defect class as `ashby:Lightfield`/`ashby:lightfield`, which
+    `store/queries.py:stored_slug` exists to stop: case folded in one layer and not the
+    adjacent one.
+
+    `casefold()` rather than `lower()`, and it matters here: `slug()` deliberately keeps
+    non-ASCII letters, so a folder name can be French or Japanese, and both APFS and NTFS fold
+    case beyond ASCII. `slug()` normalizes to NFC first, so both sides of the comparison are
+    already in one normal form and folding is the only difference left to close.
+
     The disambiguator goes into the *title* handed to `plan_lead_names` rather than being appended
     to the returned folder, so the byte budget stays that function's responsibility. A title long
     enough to be truncated loses the suffix but gains `plan_lead_names`' own, which keys on the
@@ -490,13 +506,13 @@ def _plan(
             return None
 
     first = {row.posting_id: attempt(row, row.title) for row in rows}
-    shared = Counter(names.folder for names in first.values() if names is not None)
+    shared = Counter(names.folder.casefold() for names in first.values() if names is not None)
     planned: dict[int, LeadNames] = {}
     for row in rows:
         names = first[row.posting_id]
         if names is None:
             continue
-        if shared[names.folder] == 1:
+        if shared[names.folder.casefold()] == 1:
             planned[row.posting_id] = names
             continue
         suffix = identities[row.posting_id][:8]

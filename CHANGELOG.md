@@ -141,6 +141,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Leads whose folder name differed from another lead's only by capitalisation were silently
+  missing from your queue.** Two different jobs can produce almost the same folder name — `onX`
+  and `OnX`, `WellSky` and `Wellsky` — and when the only difference was capitalisation, the code
+  that spots clashing names treated them as two different names. macOS and Windows do not: to
+  them those are one and the same folder. So the first lead got the folder, the second found it
+  already taken by a job that was not its own, and was skipped. Run 139 lost **two of its 96
+  delivered leads** this way. Clashing names are now compared ignoring capitalisation, exactly as
+  the filesystem does, so both leads get a folder. This could never have shown up in automated
+  testing, which runs on Linux, where the two names really are different.
+
+- **When a lead could not be filed into the queue, the run now says which one and why.** It used
+  to report only a number — "4 lead folder(s) failed to copy or drain" — and throw away the reason
+  it had already worked out for each one. Working out which four leads and what went wrong meant
+  comparing the queue on disk against the database by hand. The run now names the lead and the
+  cause, in the morning digest and in the run's own record, capped at three so a widespread
+  problem cannot bury the digest.
+
 - **Two watched employers whose careers page is named "Jobs" are no longer misread as cities.**
   Workday puts the name an employer gave its careers page into the job's web address, and the code
   that reads that address treated a handful of words as decoration and skipped them — including the

@@ -179,6 +179,49 @@ def test_a_soft_alert_reaches_the_morning_digest_not_only_the_funnel(
     assert any("delivery queue not synced" in err for err in payload["errors"]), payload["errors"]
 
 
+def test_a_per_lead_queue_failure_reaches_the_digest_WITH_ITS_CAUSE(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A count is not a diagnosis.
+
+    `_sync_queue` used to return `len(failures)` and throw both reports' `detail` away, so a run
+    recorded `4 lead folder(s) failed to copy or drain` with the cause written down nowhere — and
+    working out which four leads and why took a store-versus-disk reconstruction after run 139.
+    This is the SECOND half of the invisibility the call site's block comment set out to fix: the
+    first was a queue failure not being durable at all, this is it being durable but unreadable.
+
+    Distinct from the sibling test above, which stubs a RAISE (`delivery queue not synced`). This
+    stubs the per-lead path, which is the one the run actually took and the one nothing covered.
+    Fails against a version that reports only the number.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def failures(*_a: object, **_k: object) -> list[str]:
+        return [
+            "posting 135423: QueueConflictError: onX_Full_Stack_Engineer already exists",
+            "folder Generalmotors_Software_Engineer: FileExistsError: destination taken",
+        ]
+
+    monkeypatch.setattr(runner_mod, "_sync_queue", failures)
+
+    summary = _pipeline(env, out_root)
+    payload = _payload(out_root, "morning")
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+
+    assert summary.fatal is None, "a per-lead queue failure must not fail the run (fail-open)"
+    note = next(err for err in summary.errors if "delivery queue:" in err)
+    assert "2 lead folder(s) failed to copy or drain" in note, note
+    # The whole point: the CAUSE, and the identity it is attached to.
+    assert "posting 135423" in note and "onX_Full_Stack_Engineer" in note, note
+    assert "folder Generalmotors_Software_Engineer" in note, note
+    # Durable and rendered, both halves, like every other alert in the finalize block.
+    assert any("posting 135423" in err for err in payload["errors"]), payload["errors"]
+    assert "posting 135423" in rendered
+
+
 def test_a_clean_run_says_no_alerts_in_the_digest(env: Path, tmp_path: Path) -> None:
     _ready(env)
     out_root = tmp_path / "apps"

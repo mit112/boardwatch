@@ -1074,6 +1074,37 @@ def test_two_postings_with_the_same_company_and_title_each_keep_their_own_folder
     assert claimed[first] != claimed[second], "both folders hold the same PDF, so one was lost"
 
 
+def test_two_leads_whose_names_differ_only_in_case_are_still_disambiguated(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`onX` and `OnX` are two strings and, on macOS and Windows, ONE path.
+
+    The collision pass therefore keys on the case-FOLDED name. A case-sensitive `Counter` finds
+    no collision here, disambiguates neither lead, and the second one written finds its target
+    held by a folder that does not identify it — which cost run 139 two real leads.
+
+    **The assertion is on the folded name, not on the folder count, and that is the whole point.**
+    On a case-SENSITIVE filesystem the unfixed code creates two folders and reports no failure, so
+    `len(folders) == 2` passes against the defect and this test would be vacuous on Linux CI —
+    which is exactly where it runs. Requiring the two names to differ AFTER folding fails against
+    the unfixed code on every filesystem.
+    """
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one", company="onX", title="Full-Stack Engineer")
+        second, _ = _deliver(conn, apps, "two", company="OnX", title="Full-Stack Engineer")
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failed) == (2, 0), report.failures
+    folders = _folders(root)
+    assert len(folders) == 2, folders
+    assert len({name.casefold() for name in folders}) == 2, (
+        f"{folders} collapse to one path on a case-insensitive filesystem"
+    )
+    claimed = {int(str(_details(root / name)["posting_id"])) for name in folders}
+    assert claimed == {first, second}
+
+
 def test_the_disambiguated_names_are_stable_across_syncs(
     engine: Engine, root: Path, apps: Path
 ) -> None:
