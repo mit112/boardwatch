@@ -236,11 +236,19 @@ def detect(
     caller passes a pre-sorted list rather than setting ordinals itself.
     """
     found: list[Detection] = []
+    # `split_units` is pure in (text, scope) and this loop only READS `offset` and `unit`,
+    # never mutating the list or the tuples, so one split per scope is shared across every
+    # pattern instead of being recomputed once per pattern (~55 times per posting).
+    # Keyed on the scope string a pattern actually declares, so a scope no enabled pattern
+    # uses is never computed and nothing here depends on how many scopes the catalog allows.
+    units_by_scope: dict[str, list[tuple[int, str]]] = {}
     for family in catalog.families:
         if family.id not in enabled_families:
             continue
         for pattern in family.patterns:
-            for offset, unit in split_units(body_text, pattern.scope):
+            if (units := units_by_scope.get(pattern.scope)) is None:
+                units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
+            for offset, unit in units:
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):

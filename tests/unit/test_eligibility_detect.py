@@ -392,3 +392,49 @@ def test_the_field_bridge_never_crosses_a_clause_terminator(catalog) -> None:
     body = "A Bachelor's degree in Computer Science; prior production experience is required."
     dets = detect(body, catalog, enabled_families=frozenset({"degree"}))
     assert "bachelor_in_field_required" not in [d.pattern.id for d in dets]
+
+
+# ---------------------------------------------------------------- unit-splitting cost
+
+def test_units_are_split_once_per_scope_not_once_per_pattern(
+    catalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`split_units` is pure in (body_text, scope), so `detect` must call it once per DISTINCT
+    scope, not once per pattern.
+
+    Every other test in this file asserts detection OUTPUT, which is identical either way, so
+    none of them can see this: the unmemoized loop called `split_units` once for each of the
+    catalog's 55 patterns and returned exactly the same rows. The cost was real — that repeated
+    split was ~37% of an `evaluate()` profile over real bodies.
+
+    The pattern-count assertion is what stops the call-count bound being trivially satisfied:
+    a two-pattern catalog would meet `<= 2` with no memoisation at all.
+    """
+    from boardwatch.eligibility import detect as detect_module
+
+    every_family = frozenset(family.id for family in catalog.families)
+    patterns_walked = sum(len(family.patterns) for family in catalog.families)
+    scopes = {pattern.scope for family in catalog.families for pattern in family.patterns}
+    assert patterns_walked >= 20, patterns_walked
+    assert len(scopes) >= 2, scopes
+
+    calls: list[str] = []
+    real = detect_module.split_units
+
+    def spy(text: str, scope: str) -> list[tuple[int, str]]:
+        calls.append(scope)
+        return real(text, scope)
+
+    monkeypatch.setattr(detect_module, "split_units", spy)
+    body = (
+        "Senior Backend Engineer. A Bachelor's degree in Computer Science is required. "
+        "Candidates must have 5+ years of experience with distributed systems, and an "
+        "active Secret clearance is required. We do not sponsor work visas; applicants "
+        "must be authorized to work in the United States."
+    )
+    detect_module.detect(body, catalog, enabled_families=every_family)
+
+    assert calls, "the spy never fired, so this test proves nothing"
+    assert len(calls) == len(set(calls)), calls  # no scope split twice
+    assert len(calls) <= len(scopes)
+    assert len(calls) <= 2  # the literal contract, independent of the catalog's shape

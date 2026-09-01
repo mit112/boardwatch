@@ -15,8 +15,9 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.audit import VerdictPresentation, load_audit
 from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.engine import engine_version
 from boardwatch.eligibility.facts import parse_facts, parse_policy
-from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import get_profile, save_profile
@@ -515,3 +516,159 @@ def test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting(env: Pat
     facts, _ = _profile(env)
     assert facts.work_authorization is not None
     assert facts.work_authorization.status == "citizen"  # the correction landed
+
+
+# ------------------------------------------------------- the parallel evaluation path
+
+PARALLEL_BODIES = (
+    DEGREE_BODY,
+    PLAIN_BODY,
+    "We require an active Secret clearance and 8+ years of experience.",
+    "This team does not sponsor work visas; applicants must already be authorized to "
+    "work in the United States.",
+    "A Master's degree in Computer Science is required, and 5+ years of experience "
+    "with distributed systems is required.",
+    "Interns welcome. No degree requirement of any kind.",
+)
+
+
+def _ledger(data_dir: Path) -> list[tuple[object, ...]]:
+    """Every persisted eligibility row, keyed on posting version rather than row id.
+
+    Row ids, timestamps and run ids are deliberately excluded: they differ between two
+    independently seeded stores for reasons that have nothing to do with the evaluation.
+    Everything the engine DECIDED is included, requirement rows and all.
+    """
+    joined = tables.eligibility_inputs.join(
+        tables.eligibility_evaluations,
+        tables.eligibility_evaluations.c.input_id == tables.eligibility_inputs.c.id,
+    ).outerjoin(
+        tables.eligibility_requirements,
+        tables.eligibility_requirements.c.evaluation_id == tables.eligibility_evaluations.c.id,
+    )
+    with get_engine(data_dir).connect() as conn:
+        return [
+            tuple(row)
+            for row in conn.execute(
+                select(
+                    tables.eligibility_inputs.c.posting_version_id,
+                    tables.eligibility_inputs.c.profile_hash,
+                    tables.eligibility_inputs.c.rules_hash,
+                    tables.eligibility_inputs.c.input_fingerprint,
+                    tables.eligibility_evaluations.c.engine_kind,
+                    tables.eligibility_evaluations.c.engine_version,
+                    tables.eligibility_evaluations.c.verdict,
+                    tables.eligibility_requirements.c.ordinal,
+                    tables.eligibility_requirements.c.rule_id,
+                    tables.eligibility_requirements.c.requiredness,
+                    tables.eligibility_requirements.c.requirement_text,
+                    tables.eligibility_requirements.c.jd_locator_json,
+                    tables.eligibility_requirements.c.disposition,
+                    tables.eligibility_requirements.c.rationale,
+                )
+                .select_from(joined)
+                .order_by(
+                    tables.eligibility_inputs.c.posting_version_id,
+                    tables.eligibility_requirements.c.ordinal,
+                )
+            ).all()
+        ]
+
+
+def _install(root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(root / "cfg"))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    data_dir = root / "data"
+    for index, body in enumerate(PARALLEL_BODIES):
+        _seed_posting(data_dir, body, slug=f"acme-{index}")
+    assert _run(data_dir, ["init"], INIT_INPUT).exit_code == 0
+    _set_facts_and_policy(data_dir)
+    return data_dir
+
+
+def test_the_parallel_path_writes_exactly_what_the_serial_path_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two identically seeded stores, one judged serially and one through a process pool.
+
+    A green test that only ever took the serial branch verifies nothing, so the pool
+    constructor is spied on: the serial run must build none, and the parallel run must build
+    exactly ONE for the whole stage. BATCH_SIZE is dropped to 2 so the six postings span
+    three commit batches — that is what makes "one pool" a real assertion rather than an
+    artefact of there being a single chunk, and it also holds the per-batch commit boundary
+    the resumability guarantee rests on.
+    """
+    from boardwatch.eligibility import preflight as preflight_module
+
+    built: list[object] = []
+    real_pool = preflight_module.ProcessPoolExecutor
+
+    def spy(*args: object, **kwargs: object) -> object:
+        built.append(kwargs.get("max_workers"))
+        return real_pool(*args, **kwargs)  # type: ignore[arg-type]
+
+    serial_dir = _install(tmp_path / "serial", monkeypatch)
+    monkeypatch.setattr(preflight_module, "ProcessPoolExecutor", spy)
+    serial_ctx = build_context(serial_dir)
+    serial_stats = run_eligibility(serial_ctx.engine, serial_ctx.settings, Console(quiet=True))
+    assert serial_stats.evaluated == len(PARALLEL_BODIES)
+    assert built == [], "the default threshold must keep a small backlog on the serial path"
+
+    parallel_dir = _install(tmp_path / "parallel", monkeypatch)
+    monkeypatch.setattr(preflight_module, "BATCH_SIZE", 2)
+    parallel_ctx = build_context(parallel_dir)
+    parallel_stats = run_eligibility(
+        parallel_ctx.engine,
+        parallel_ctx.settings,
+        Console(quiet=True),
+        workers=2,
+        parallel_threshold=1,
+    )
+    assert built == [2], built  # ONE pool for three batches, not one per batch
+    assert parallel_stats.evaluated == len(PARALLEL_BODIES)
+    assert parallel_stats.profile_hash == serial_stats.profile_hash
+    assert parallel_stats.rules_hash == serial_stats.rules_hash
+
+    serial_rows, parallel_rows = _ledger(serial_dir), _ledger(parallel_dir)
+    assert serial_rows == parallel_rows
+    verdicts = {row[0]: row[6] for row in serial_rows}
+    assert len(verdicts) == len(PARALLEL_BODIES)
+    assert len(set(verdicts.values())) >= 2, verdicts  # not one uniform verdict
+    assert any(row[8] is not None for row in serial_rows), "no requirement row was written"
+
+
+def test_a_worker_that_loads_a_different_identity_refuses_to_evaluate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pool initializer is the only thing between a child that rebuilt a DIFFERENT
+    catalog or engine and a ledger row attributed to an identity nothing evaluated under.
+    Those rows carry BEFORE UPDATE/DELETE RAISE(ABORT) triggers, so they can only be
+    superseded, never corrected — the guard has to actually fire.
+
+    Each of the three slots is wrongly supplied in turn, because a comparison mis-wired to
+    read the same hash twice would still refuse a wrong profile_hash and admit a wrong
+    rules_hash. Driven in-process rather than through a pool; the ACCEPTING path is what
+    `test_the_parallel_path_writes_exactly_what_the_serial_path_writes` proves, since a
+    raising initializer breaks the pool outright.
+    """
+    from boardwatch.eligibility import preflight as preflight_module
+
+    data_dir = _install(tmp_path / "guard", monkeypatch)
+    ctx = build_context(data_dir)
+    with ctx.engine.connect() as conn:
+        row = get_profile(conn)
+        pair = current_identity(conn, ctx.settings)
+    assert row is not None and pair is not None
+    profile_hash, rules_hash = pair
+    inputs = (ctx.settings.config_dir, row.eligibility_facts_json, row.eligibility_policy_json)
+
+    for wrong in (
+        ("not-the-profile-hash", rules_hash, engine_version()),
+        (profile_hash, "not-the-rules-hash", engine_version()),
+        (profile_hash, rules_hash, "9+ffffffffffff"),
+    ):
+        with pytest.raises(RuntimeError, match="different input identity"):
+            preflight_module._init_worker(*inputs, *wrong)
+
+    # The refusal precedes the assignment, so a rejected child holds no inputs at all.
+    assert preflight_module._WORKER_INPUTS is None
