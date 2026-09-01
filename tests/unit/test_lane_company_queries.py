@@ -140,6 +140,45 @@ def test_a_lane_slug_differing_only_in_case_reuses_the_stored_row(engine: Engine
     assert rows == ["Lightfield"], "the case variant was stored as a second company row"
 
 
+def test_a_workday_lane_find_converges_despite_a_different_career_site_case(
+    engine: Engine,
+) -> None:
+    """The composite-slug case, pinned separately from `ashby:Lightfield` because a plausible
+    and WRONG reading of the codebase says it does not hold.
+
+    `workday.split_slug` preserves the career site's case, and it used to justify that by
+    claiming Workday sites are case-sensitive live. Read together with the case-SENSITIVE
+    `UNIQUE(provider, slug)`, that invites the conclusion that a lane find spelling the site
+    `NVIDIAExternalCareerSite` mints a duplicate beside a board stored
+    `nvidiaexternalcareersite` and converges with nothing. **It does not** — `stored_slug` folds
+    case before the insert is ever attempted, and `pipeline/runner.py` takes the company id back
+    from the upsert rather than re-selecting on its own spelling, precisely so this works.
+
+    That wrong reading was acted on once: it produced a sized proposal to lowercase every stored
+    Workday slug, with a migration and 54 forced refetches, to buy a convergence the store was
+    already delivering. This test is what makes the next reader stop at a red bar instead.
+
+    Asserted on the composite form specifically: host and tenant are lowercased by `split_slug`
+    while the site is not, so a Workday slug is the one provider where a stored row and a lane
+    spelling can differ in exactly one of three components.
+    """
+    stored = "nvidia.wd5.myworkdayjobs.com/nvidia/nvidiaexternalcareersite"
+    lane_spelling = "nvidia.wd5.myworkdayjobs.com/nvidia/NVIDIAExternalCareerSite"
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="workday", slug=stored, name="NVIDIA", source="user")
+    original = _row(engine, provider="workday", slug=stored).id
+
+    with engine.begin() as conn:
+        landed = upsert_lane_company(
+            conn, provider="workday", slug=lane_spelling, name="Nvidia"
+        )
+
+    assert landed == original, "the lane find did not converge onto the watched board"
+    with engine.connect() as conn:
+        rows = conn.execute(select(companies.c.slug)).scalars().all()
+    assert rows == [stored], "a case variant was stored as a second Workday company row"
+
+
 def test_a_watch_on_a_case_variant_lands_on_the_stored_row_and_says_so(engine: Engine) -> None:
     """`companies add ashby:KAYAK` with `ashby:kayak` already watched. A silent no-op is the
     wrong outcome: the caller has to be able to tell the operator which row the watch hit."""
