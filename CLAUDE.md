@@ -34,6 +34,7 @@ followed — keep incidents out of this file.
 | `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. Kept near 170 lines. |
 | `docs/program/STANDING-FACTS.md` | Facts a fresh session should not re-derive, in six sections. Read the section for the subsystem you are about to touch — not the whole file. |
 | `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
+| `docs/program/RETIREMENT-PLAN.md` | **The job-apps retirement plan.** The finished gap analysis, job-apps' full source list, the phases, and what is already settled. Read before proposing any discovery work — it exists so the comparison is never re-derived. |
 | `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. Holds D-077 onward, and **the index for both decision files**. |
 | `docs/program/DECISIONS-ARCHIVE.md` | D-001 … D-076, verbatim. **Closed** — never append here. |
 | `docs/program/METRICS.md` | Per-run numbers. Gates are checked here. Holds the live tables, the P6-era records, and **the index for both metrics files**. |
