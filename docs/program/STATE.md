@@ -21,75 +21,77 @@
 
 ## Current standing
 
-**SEVEN PRs SHIPPED IN ONE SESSION, AND THE TWO THAT MATTER MOST WERE FOUND BY REVIEW AFTER A GREEN
-GATE.** #296 (per-lane company cap) and #297 (eligibility speed) merged SERVER-SIDE while the machine
-was powered off after a 19:58 reboot; #298 backfilled the changelog entries neither had written; #299
-(job-apps benign-zero detector), #300 (`_applied` import), #301 (ranking precision), #302 (LinkedIn
-facet mining) and #303 (the #300 blocker fix) followed.
+**RUN 138 IS VERIFIED CLEAN AND IT SETTLES TWO THINGS AT ONCE.** Started 2026-09-01 09:00:05 UTC,
+finished 09:44:38, `status='ok'`. 379 boards attempted, **1 failed** (marqeta HTTP 404 — a dead
+board, not systemic), 282 complete / 18 partial. 27,840 seen, 2,006 new, 894 closed, **115,703
+evaluated**, **96 tailored résumés** delivered.
 
-**#300 SHIPPED A DATA-INTEGRITY BLOCKER AND A GREEN 8,767-TEST GATE DID NOT SEE IT.** `import_history`
-wrote an application for every job in the matched set; one of the real 64 `_applied` folders resolves
-on the weak `(company, title)` key to **four distinct job ids**. **No data was harmed** — the live
-store's 22 applications carry real `submitted_at` values spanning 2026-07-21..08-15 from an earlier CSV
-import, and the folder importer has never been run. Fixed in #303 (D-396).
+**THE SPEED CHANGE IS CONFIRMED AT PRODUCTION SCALE.** A full corpus re-judge in **44 m 33 s**,
+against run 137's 1 h 58 m and run 136's 2 h 30 m for the same class of work on FEWER postings.
+D-394 projected the eligibility stage 75.6 min -> ~8-12 min and the whole-run figure is consistent
+with it.
 
-**THE ELIGIBILITY ENGINE MOVED AND THE CORPUS IS PENDING.** `engine_version` is `1+532b917626c0`
-(was `1+b472d5df53b3`). The primary tree is parked on `main`, so the next unattended run re-judges the
-whole ~114k corpus WITH the optimisation — ~9 minutes rather than ~70. #297 was reviewed after the fact
-by an independent adversarial pass: **SHIP AS IS, no correctness defects**, with the fail-closed
-identity guard and spawn-mode child behaviour probed empirically rather than argued.
+**THE NULL CONTROL D-392 CALLED STRUCTURALLY UNAVAILABLE WAS OBTAINED, AND IT PASSES (D-398).**
+113,178 shared `input_id`s at **99.1% coverage**, **ZERO of 113,178 verdicts changed**, and the
+`posting_version_id` cross-check agrees with 0 postings carrying more than one verdict. A non-zero
+count would have been a memoization bug rather than noise, so this is also #297's correctness test.
+D-392 is not superseded — what is recorded is the reproducible circumstance in which a control
+becomes available: a behaviour-preserving change to a DIGESTED module.
 
-**`--top` IS 100, NOT 40.** Changed at 19:55 on 2026-08-31 and confirmed LOADED via `launchctl print`,
-not merely written to the plist file. Authorized by Mit's answer that he applies to more than 40 a day.
-Combined with the uncapped job-apps lane, the ranking change, LinkedIn mining and the hiring.cafe
-re-point, **the next run is a heavily compound change — read it with that in mind.**
+**HIRING.CAFE IS BACK.** Run 138 reports **no hiring.cafe error at all** — the first clean run since
+129, ending a 14-of-14 refusal on every run. Its postings do not appear under a `hiringcafe` provider
+because the re-pointed lane resolves bodies through the EMPLOYER's own board, so they land under
+greenhouse/lever/ashby/workable by design.
 
-**TWO STANDING BELIEFS WERE REFUTED THIS SESSION, BOTH LOAD-BEARING.** The ranker is NOT
-recency-dominated: the 100 pct-same-day figure is `first_seen_at` while the recency term reads
-`posted_at`, the buried tail scores WORSE, and zeroing the recency weight collapses precision@40 from
-90 pct to 47.5 pct. The deliverable reservoir is **197, not 3,636**. See D-395. Separately, Codex model
-ids are fully qualified and **sol is for review, luna for specified work** — a bare `luna` fails auth.
+**96 DELIVERED IS `--top 100` BINDING, NOT A YIELD CHANGE.** New postings by provider during the run
+window: workday 1,745, greenhouse 192, **linkedin 83** (facet mining live), ashby 76, smartrecruiters
+38, **jobapps 21**, lever 14, workable 5.
+
+**ELEVEN PRs SHIPPED ACROSS THE SESSION, AND THE THREE MOST VALUABLE FINDINGS CAME FROM REVIEW AFTER
+A GREEN GATE**, not from the gate: a four-wide data-integrity fan-out in #300 (fixed by #303,
+D-396), a cap-starvation defect that would have left the "fixed" hiring.cafe lane delivering nothing
+(#304, D-397), and a dereference rule the codebase itself proposed that would have read `99` out of
+a UUID (#306, held). Two standing beliefs were refuted with measurement: the ranker is NOT
+recency-dominated (D-395) and the deliverable reservoir is **197, not 3,636**.
 
 
 ## Next action
 
-**RUN 138 IS THE FIRST READ-OUT THAT MATTERS.** It is the first run at the new engine, at `--top 100`,
-with an uncapped job-apps lane, the ranking change and LinkedIn mining. Before anything else:
+**THREE PRs ARE GATED GREEN AND DELIBERATELY HELD, waiting only on run 138 — which has now been read
+out. They can go in.** Merge order matters: **#307 first, then rebase #308** (both touch
+`lanes/jobapps.py`); **#306** is independent.
 
-1. **Run `.agent/2026-08-31g-session/null_control.py`.** The speed change moves `engine_version`
-   while preserving behaviour, which is the null control D-392 called structurally unavailable. It
-   joins on `input_id` (correct HERE and only here, because this is an ENGINE-only change so
-   `rules_hash` is untouched and the input row is reused) and cross-checks the `posting_version_id`
-   join. **Expect ZERO verdict transitions; a non-zero count is a MEMOIZATION BUG, not noise.** It is
-   dry-run verified — the vacuity guard fires — and carries a coverage check against
-   `EXPECTED_OLD_ROWS = 114_250` so an interrupted run cannot read as a pass.
-2. **Read the hiring.cafe lane's tally.** Its resolvable rate is disputed: **14.7 pct** over 232 built
-   postings versus **5.0 pct** over the 160 raw `ssrHits` in the contract fixture. Raw hits are what
-   the lane groups, so 5 pct is the conservative figure, and run 138's tally settles it.
-3. **Read the ranking change against the delivered slate.** precision@40 90 -> 100 pct is an UPPER
-   BOUND measured without dedup or the slate cap.
+1. **#307 — the aggregator slice.** Admits `indeed` + `jobright` to the lane's CLOSED direct-apply
+   set. Measured through the lane's OWN record walk (not a glob, which answers a different question
+   and said +4,752): of the 190 records it sees, admitted goes **49 -> 102**, a gain of **+53**
+   (indeed 48, jobright 5), at ZERO network cost because the bodies are on disk. **`linkedin` stays
+   out** at 88 records — our own lane covers it and the two identities cannot converge.
+2. **#308 — job-apps' promoted queue as a SECOND lane root.** job-apps MOVES a folder out of the
+   discovery tree when it promotes it, so boardwatch lost sight of a posting exactly when it became
+   one the owner was working. The promoted queue holds **737** records against discovery's 190 —
+   and 737 is the number this lane's docstring was written against, before the drain. Each root
+   keeps its OWN structural check. `jobapps_queue_dir` unset is today's behaviour exactly.
+3. **#306 — SmartRecruiters dereference.** Lifts a refusal the module itself said needed evidence:
+   3,041 real URLs where the extracted reference equals the provider's stored `provider_posting_id`
+   **3,041 / 3,041**. Anchored (`^(\d+)(?:-|$)`) rather than the module's own candidate `^\d+`,
+   which reads `99` out of a real UUID reference.
 
-**THEN the remaining absorption work, in this order.** The full sequenced plan and every measurement
-behind it is `.agent/2026-08-31f-session/INVESTIGATION-next-session.md`; tonight's results and the
-defect lists are `.agent/2026-08-31g-session/RESULTS.md`.
+**Then, and only on evidence: retire job-apps (D-393 item 5).** It keeps running at 08:30 until
+replacements are proven. Run both in parallel and compare yield first; the switch-off is Mit's call.
 
 
 ### Owed, found this session, not yet scheduled
 
-- **The aggregator slice (24.2 pct) is BUILT-READY but OWNER-GATED — see Open questions.** Ingesting
-  it means widening `lanes/jobapps.py`'s CLOSED `_DIRECT_APPLY_SOURCES`, whose own comment says those
-  are "aggregator pages with no reachable posting behind them" and whose `is_direct_apply` docstring
-  warns that getting it wrong permissively "ingests aggregator landing pages the user cannot apply
-  from". The investigation found the opposite in practice — job-apps simply applies through the
-  aggregator link. That contradiction is Mit's to settle, not ours.
-- **The 935 active `APPLY_QUEUE` folders** — NOT started, and NOT a repeat of #300: they sit on
-  Eightfold/iCIMS/Jobvite/Oracle/Rippling, boards with no adapter, against a CLOSED six-provider
-  catalog. Same identity problem as the aggregator slice.
+- **The aggregator slice and the promoted-queue root are BUILT AND GATED** — #307 and #308, see
+  Next action. The owner-gated framing is retired: `is_direct_apply`'s premise ("landing pages the
+  user cannot apply from") is false for `indeed`/`jobright`, which carry posting-specific URLs and
+  are how the owner already applies. `linkedin` stays out on a different, measured reason.
 - **Cross-source dedup — RULED, do not build a suppressor (D-397).** Six independent barriers, not
   one. Flipping `cross_host.suppresses` is ACTIVELY UNSAFE because two call sites hardcode
   `identity_kind="exact_quad"`. Measured prize is 22 groups / 44 postings against 402 title-overlap
-  postings. Minimum correct fix is targeted dereference expansion, SmartRecruiters first and only
-  after pinning its real numeric-ID rule.
+  postings. The minimum correct fix is targeted dereference expansion, and **SmartRecruiters is now
+  done (#306)**; **Workday remains, and only after proving the public URL-to-`externalPath`
+  mapping**. Unknown shapes must keep raising.
 - **hiring.cafe pacing (D-397 defect 5) is DISCLOSED, not fixed** — one boundary request per run can
   fall inside the >=1.0s window; the only real fix is process-wide pacing state, which would wreck
   the gate.
