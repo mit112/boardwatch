@@ -132,7 +132,7 @@ experience signal. A subtler decoy set is the next refinement if the 5-point bar
 
 ## Session 2026-09-01c — what shipped
 
-Run 139 invoked and read out; **three PRs merged, each verified on `main` by CONTENT**.
+Run 139 invoked and read out; **SEVEN PRs, each verified on `main` by CONTENT**. Four of them correct a claim this repo had already shipped — three of those were mine, made this session.
 
 - **#315** — `lanes/dereference.py`'s module docstring still said the career-site defect was live and
   needed "a separate change"; #313 had already made it. One file, two contradictory accounts.
@@ -146,6 +146,22 @@ Run 139 invoked and read out; **three PRs merged, each verified on `main` by CON
   curated eligible density), LinkedIn left capped on the TRUE reason (an unbounded 24-hour STREAM at
   **0.40x** — the worst measured source). The reason recorded in `settings.py` was **false**: lane
   companies are written `watched=False` and never join the scan floor. D-403.
+- **#318** — the session record itself, and **D-404**: gate 2 read for the FIRST time since D-399 set
+  the bar. The figures the bar was set against were **INVERTED** (44.2% was boardwatch's DEFECT rate,
+  not job-apps' precision) and **mis-cited** (`D-372` is the `clearance_preferred` resolver bug; the
+  real ones are D-382/D-383). New reading: **boardwatch 74.7% precision vs job-apps 98.7% — a
+  24.0-point gap, NOT MET.** The two-sided decoy control D-404 called owed is BUILT and both arms pass.
+  **Round 1 of that reading was a staging bug of mine** — auto-merge was pulled before the wrong 15.3
+  figure shipped. Plus **D-405**, `ashby:Lightfield` recorded as residue with its drain owed.
+- **#319 — D-406: a native Jobright lane is REFUSED**, probed live before any code. Zero JSON-LD, no
+  employer JD field, **no employer board URL** (so #304's hiring.cafe manoeuvre has nothing to resolve
+  through), and `parse_board_target` resolves **0 of 882** of its README's links.
+- **#320** — `outcomes.py`: `not_attemptable` outside hiring.cafe is **not** "the budget was spent".
+  Two of the linkedin lane's three sites run BEFORE the budget loop. The claim pointed at the wrong
+  knob, and that is not hypothetical — it is the conclusion I drew from it before checking the arithmetic.
+- **#321 — D-407, correcting D-406 an hour after shipping it.** D-406 recommended Indeed FIRST without
+  sizing it against the gate. Sized: **LinkedIn is worth +82 (ceiling 58.3%) against Indeed's +36
+  (37.0%) — 2.3x, on a lane that already exists.** The next build is `lane_search_pages` 5 -> 10.
 
 ## Doctrine change — "breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
 
