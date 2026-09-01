@@ -18,6 +18,7 @@ from boardwatch.cli.identities_cmd import identities_app
 from boardwatch.cli.init_cmd import init as _init
 from boardwatch.cli.ledger_cmd import ledger_app
 from boardwatch.cli.notify_cmd import notify as _notify
+from boardwatch.cli.postings_cmd import postings_app
 from boardwatch.cli.profile_bundle_cmd import profile_bundle_app
 from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.projection_cmd import resume_app
@@ -71,6 +72,7 @@ app.command("notify")(_notify)
 app.add_typer(eligibility_app, name="eligibility")
 app.add_typer(track_app, name="track")
 app.add_typer(identities_app, name="identities")
+app.add_typer(postings_app, name="postings")
 app.add_typer(ledger_app, name="ledger")
 app.command("export")(_export)
 app.add_typer(tailor_app, name="tailor")
