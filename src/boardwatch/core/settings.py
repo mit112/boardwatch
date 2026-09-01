@@ -171,8 +171,8 @@ class Settings(BaseModel):
     lane_posting_budget: int = Field(default=60, ge=1)
     # How many search pages a lane requests per facet. Only a lane whose search exposes a
     # working page parameter reads it: LinkedIn's `start=` is a real ITEM offset (10 cards to a
-    # page), while hiring.cafe has no recorded paging parameter and its `?page=` form is
-    # disallowed by `robots.txt`, so its one-page ceiling is structural, not configured.
+    # page) and hiring.cafe's `&page=` is a page number, both measured against the live host.
+    # The job-apps lane reads a local directory and has no search to page.
     #
     # **Default 1, which is byte-for-byte the behaviour every lane shipped with.** The knob
     # multiplies SEARCH requests per run by up to this factor against a host nobody here

@@ -1,21 +1,36 @@
-"""Lane 1: hiring.cafe (contract pinned live, 2026-08-23).
+"""Lane 1: hiring.cafe (SSR search surface, re-pointed 2026-08-31 under D-393).
 
-Every request shape here is one this repo has actually made. Two of them, and no others:
+Every request shape here is one this repo has actually made. One of them, and no others:
 
-    GET https://hiringcafe.com/jobs/{role}                   -- role search, server-rendered
-    GET https://hiringcafe.com/                              -- the same, unfaceted
-    GET https://hiringcafe.com/api/job-description?id={id}   -- one body, one request
+    GET https://hiringcafe.com/?searchState={json}&page={n}   -- search, server-rendered
 
 No key, no cookie, no TLS bypass, no app impersonation. That last clause is why this lane
 exists at all: Indeed's free body is reachable only behind a key lifted from its iOS app with
 certificate verification switched off, so Indeed is parked and hiring.cafe took lane 1.
 
-THE ROLE FACET IS A PATH, NOT A QUERY, AND `robots.txt` IS WHY (probed 2026-08-26). The
-obvious way to ask for one role is the site's own query-parameter search; it is DISALLOWED --
-`Disallow: /*?searchState=*`, alongside `Disallow: /*?page=*`. What is permitted is the path
-form: `Allow: /jobs/`, advertised in a `job-search-sitemap.xml` listing 10,000+ role pages. So
-the facet is a path segment, and `search_urls` is unit-tested on the string it builds rather
-than trusted, because the disallowed form differs from the allowed one by punctuation alone.
+WHY THE SURFACE MOVED. The lane shipped against the PATH form (`/jobs/{role}`) because
+`robots.txt` disallows `/*?searchState=*` and `/*?page=*`. From run 129 the path form was
+refused on its first request of every run -- 14 facets, 14 refusals, an outage that survived
+D-369's header work because the headers were never the cause. **The owner reversed the hold
+(D-393): the `?searchState=` form is approved for this project, superseding D-369 and this
+host's `robots.txt`.** The reference implementation this repo is absorbing has used that form
+in production for months. So the facet is a JSON query value again, and the disallowed-form
+assertions that used to guard `search_urls` are inverted rather than deleted -- see
+`tests/unit/hiringcafe_shape.py`, which records the rules and the ruling that supersedes them.
+
+WHAT THE searchState CARRIES, AND THE FOUR KEYS IT DELIBERATELY OMITS. The reference
+implementation pre-filters at the source on `seniorityLevel`, `roleYoeRange`,
+`commitmentTypes`, `securityClearances` and a fixed United States `locations` entry. **None of
+those are sent from here.** Every one is a fact about a particular USER -- their seniority,
+their years, their clearance, their country -- and boardwatch judges all four downstream with
+rules that must be able to return `ABSTAIN(missing_profile_field:X)`. A query parameter that
+removes those postings before any rule sees them makes the search string, not the eligibility
+engine, the thing that decided; the abstain rate would read 0% for a rule that never got the
+chance to fire. It also hard-codes one persona into a module, which is the first thing the
+multi-tenancy requirement forbids: facets come from the PROFILE, never from here. What IS sent
+is `searchQuery` (the profile's target title, via `lanes.facets`) plus two lane-MECHANICAL
+keys, `sortBy: "date"` and `dateFetchedPastNDays`, which describe how often this lane runs
+rather than who is running it.
 
 WHY A FACET AT ALL. Unfaceted, this lane returns the general labour market: of the 282 open
 postings the armed lanes had acquired by 2026-08-26, 3 were software roles and 197 were
@@ -26,18 +41,22 @@ via `lanes.facets`, never from a query written down here, which is what keeps th
 a user whose targets are not software at all.
 
 A BOGUS FACET ANSWERS 200 WITH ZERO HITS, NOT 404 -- probed. So an empty result does NOT report
-itself: if the role route ever moves, every facet returns nothing, no request fails, and the
+itself: if the search route ever moves, every facet returns nothing, no request fails, and the
 lane reports a clean quiet day forever -- the prior art's 11-run silent outage exactly. The
 tally cannot catch it either, because with no hits nothing is ever attempted and
 `is_silent_outage` stays False. Hence EVERY facet empty raises `SearchPageError`, while one
 empty facet among several does not: that is a profile-data matter, not an outage, and raising
 would let one odd target title disable the whole lane.
 
-PAGING IS STILL DELIBERATELY ABSENT. The response records `ssrPage`, `ssrPageSize` and
-`ssrIsLastPage`, so a second page plainly exists; the request parameter that turns one does NOT
-appear anywhere the probe reached, and `robots.txt` disallows the `?page=` form regardless.
-Inventing it would fabricate a request contract, the exact defect `lanes/dereference.py`
-refuses SmartRecruiters and Workday for.
+PAGING IS REAL NOW, and `&page=N` is measured rather than inferred. Two GETs on 2026-08-31,
+1.5s apart, against the exact searchState this module builds: page 0 returned 143 hits and
+page 1 returned 133, `ssrIsLastPage` False on both, `ssrPage` echoing the requested number,
+and **zero id overlap between the two pages** -- so the parameter turns a page instead of
+re-serving one. `LaneResult.search_pages` therefore reports true depth for this lane at last:
+a facet that stopped short of the ceiling ran out of results, and one that filled every page
+was truncated, which a posting count alone cannot tell apart. Pacing is the `Fetcher`'s
+per-host floor (>=1.0s), which is already stricter than the reference implementation's 0.5s
+sleep, so no lane-local delay is added.
 
 `objectID` IS AN OPAQUE KEY. It looks like `{source}___{board_token}___{id}` and is exactly
 that for 128 of 160 sampled hits, which is what makes it dangerous: a round-trip test over a
@@ -81,15 +100,27 @@ LANE_NAME = "hiringcafe"
 LANE_PROVIDER = "hiringcafe"
 
 # `hiring.cafe` 308-redirects to `hiringcafe.com`; the canonical host moved since the design
-# was written. Recorded so a future reader does not "correct" it back.
+# was written. Recorded so a future reader does not "correct" it back -- the 2026-08-31 probe
+# addressed `hiring.cafe` and read its 200 back from `hiringcafe.com`, so naming the canonical
+# host here is what keeps a redirect off every page request.
 SEARCH_URL = "https://hiringcafe.com/"
-# The role route. A PATH facet, because the query form is disallowed -- see the module docstring.
-_ROLE_SEARCH_URL = "https://hiringcafe.com/jobs/"
 _JOB_DESCRIPTION_URL = "https://hiringcafe.com/api/job-description?id="
 
 # D8's ceiling on body GETs per lane per run. A hard cap rather than a pacing knob: the search
 # page returns ~159 hits and the runner's company cap does not bound postings, only companies.
 DEFAULT_POSTING_BUDGET = 60
+
+# Search pages requested per facet. 1 is the single-page behaviour the lane shipped with and
+# stays the default; `Settings.lane_search_pages` is what raises it. Clamped in `__init__`
+# rather than trusted, so a lane constructed directly with 0 cannot fetch no page at all and
+# report the resulting silence as a quiet day.
+DEFAULT_SEARCH_PAGES = 1
+
+# How far back the search reaches, in days. A LANE-mechanical number, not a user-specific one:
+# it says how often this lane runs (daily, with slack for a missed day), not who is running it,
+# which is the line the module docstring draws around the searchState's other keys. It also
+# bounds the result set so that paging terminates on `ssrIsLastPage` rather than on the ceiling.
+SEARCH_RECENCY_DAYS = 7
 
 # The header set a browser sends for a top-level navigation, applied to the SEARCH route only
 # (D-369). The lane client has always carried a Chrome UA; what it did not carry was any of the
@@ -176,23 +207,51 @@ class _CompanyHits:
     hits: list[tuple[HitIdentity, dict[str, Any]]]
 
 
-def search_hits(page_html: str) -> list[dict[str, Any]]:
-    """`props.pageProps.ssrHits` out of the `__NEXT_DATA__` script block.
+@dataclass(frozen=True)
+class SearchPage:
+    """One server-rendered search page: its hits, and whether the host says it is the last.
+
+    `is_last_page` rides WITH the hits rather than being re-read by the caller, because the two
+    come out of one payload and a paging loop that had to fetch the flag separately could not
+    honour it. `True` only when the payload says so explicitly -- an absent or non-boolean
+    `ssrIsLastPage` reads as "not the last", so a renamed flag costs the ceiling's worth of
+    requests and stops on an empty page rather than silently truncating every facet to one.
+    """
+
+    hits: list[dict[str, Any]]
+    is_last_page: bool
+
+
+def parse_search_page(page_html: str) -> SearchPage:
+    """`props.pageProps` out of the `__NEXT_DATA__` script block, as hits + the last-page flag.
 
     Parsed with selectolax rather than a regex over the 1.28 MB page: the JSON contains
-    `</div>` inside string values, so a regex terminated on the wrong tag boundary.
+    `</div>` inside string values, so a regex terminated on the wrong tag boundary. (The
+    reference implementation regexes it and gets away with it; this repo measured the failure.)
+
+    `ssrError` is raised, never absorbed. The host reports a search-side failure IN a 200
+    response, so a caller that read only `ssrHits` would see an empty list and record the
+    quiet day this lane's whole design exists to make impossible.
     """
     node = HTMLParser(page_html).css_first("script#__NEXT_DATA__")
     if node is None:
         raise SearchPageError("no <script id='__NEXT_DATA__'> in the search page")
     try:
-        payload = json.loads(node.text())
-        hits = payload["props"]["pageProps"]["ssrHits"]
+        props = json.loads(node.text())["props"]["pageProps"]
     except (ValueError, KeyError, TypeError) as exc:
         raise SearchPageError(f"unreadable __NEXT_DATA__: {exc}") from exc
+    if not isinstance(props, dict):
+        raise SearchPageError(f"pageProps is {type(props).__name__}, not an object")
+    error = props.get("ssrError")
+    if error is not None:
+        raise SearchPageError(f"the search page reported ssrError: {error!r}")
+    hits = props.get("ssrHits")
     if not isinstance(hits, list):
         raise SearchPageError(f"ssrHits is {type(hits).__name__}, not a list")
-    return [hit for hit in hits if isinstance(hit, dict)]
+    return SearchPage(
+        hits=[hit for hit in hits if isinstance(hit, dict)],
+        is_last_page=props.get("ssrIsLastPage") is True,
+    )
 
 
 def hit_identity(hit: dict[str, Any]) -> HitIdentity:
@@ -240,23 +299,58 @@ def job_description_url(object_id: str) -> str:
     return f"{_JOB_DESCRIPTION_URL}{quote(object_id, safe='')}"
 
 
-def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
-    """One permitted role page per facet, or the unfaceted search when there are none.
+def search_state(query: str) -> dict[str, Any]:
+    """The search request's whole state object: ONE profile-derived key and two mechanical ones.
 
-    `lanes.facets` hands over a canonical TERM ("software engineer"); the hyphenated slug is
-    this route's own encoding and is applied here, not upstream, because LinkedIn's `keywords=`
-    needs the opposite (a space). `quote` with no safe characters then keeps the facet inside ONE
-    path segment, so a caller passing raw text cannot reshape the route into `/jobs/a/b`.
+    `searchQuery` is the user's target title, handed down from `profile.target_titles_json` via
+    `lanes.facets`. `sortBy` and `dateFetchedPastNDays` describe the lane's own cadence.
+
+    THE OMISSIONS ARE THE DESIGN. `seniorityLevel`, `roleYoeRange`, `commitmentTypes`,
+    `securityClearances` and a fixed `locations` entry are all available here and all left out,
+    for the reason the module docstring gives at length: each is a fact about one user that
+    boardwatch already judges with a rule that must be able to ABSTAIN, and filtering on it in
+    the query would let a URL decide what the eligibility engine is supposed to. Adding one is a
+    keystone-invariant change, not a tuning knob.
+
+    Key ORDER is fixed because the serialization is: `json.dumps` preserves insertion order, so
+    a reordering silently changes every URL this lane requests and every cache key derived from
+    one.
+    """
+    return {"searchQuery": query, "sortBy": "date", "dateFetchedPastNDays": SEARCH_RECENCY_DAYS}
+
+
+def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
+    """One SSR search URL per facet, or the unfaceted search when there are none.
+
+    `lanes.facets` hands over a canonical TERM ("software engineer") and it is sent VERBATIM as
+    the JSON `searchQuery`: the hyphenation the retired path form needed was that route's own
+    encoding, and applying it here would ask the host for a different phrase than the profile
+    names. `quote` with no safe characters percent-encodes the serialized state whole, so no
+    character a facet can contain -- `&`, `#`, `/`, `?` -- can escape the one query value it
+    belongs to and add a parameter of its own.
 
     The no-facet fallback is the behaviour that shipped, and it is a fallback rather than an
     error because a profile that names no target titles is a legitimate profile -- it is what
-    every user has before onboarding fills one in.
+    every user has before onboarding fills one in. It is now the SAME request shape with an
+    empty `searchQuery` rather than a different route, so the unfaceted user pages exactly as
+    the faceted one does.
     """
-    if not facets:
-        return (SEARCH_URL,)
+    terms = tuple(facets) or ("",)
     return tuple(
-        f"{_ROLE_SEARCH_URL}{quote(facet.replace(' ', '-'), safe='')}" for facet in facets
+        f"{SEARCH_URL}?searchState={quote(json.dumps(search_state(term)), safe='')}"
+        for term in terms
     )
+
+
+def page_url(search_url: str, page_index: int) -> str:
+    """`search_url` at page `page_index`, as the `&page=` parameter the probe measured.
+
+    **Page 0 is `&page=0`, spelled out.** That is the request the 2026-08-31 probe actually
+    made and the shape the reference implementation has used in production, so the first page
+    carries it too; suppressing it for page 0 would make the default configuration request a
+    URL nothing has ever measured, purely to look tidier.
+    """
+    return f"{search_url}&page={page_index}"
 
 
 class HiringCafeLane:
@@ -266,12 +360,14 @@ class HiringCafeLane:
         self,
         posting_budget: int = DEFAULT_POSTING_BUDGET,
         search_facets: Sequence[str] = (),
+        search_pages: int = DEFAULT_SEARCH_PAGES,
     ) -> None:
         self._posting_budget = posting_budget
         # Injected rather than read here, for the reason the registry comment in `runner.py`
         # gives: the facets come from the user's profile row, which lives in the store, and a
         # lane must not reach into the store to find its own configuration.
         self._search_facets = tuple(search_facets)
+        self._search_pages = max(1, search_pages)
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
         """One search GET per role facet, then one body GET per posting at an admitted company.
@@ -280,7 +376,7 @@ class HiringCafeLane:
         body is fetched -- the protocol's contract, and the only ordering under which the
         per-run company cap saves requests instead of discarding paid-for ones.
         """
-        entries = self._search(fetcher)
+        entries, search_pages = self._search(fetcher)
 
         tally = AcquisitionTally()
         by_company = _group_by_company(entries, tally)
@@ -324,31 +420,37 @@ class HiringCafeLane:
                         snapshot=lane_snapshot(postings, company_hits.url),
                     )
                 )
-        return LaneResult(snapshots=tuple(snapshots), tally=tally)
+        return LaneResult(snapshots=tuple(snapshots), tally=tally, search_pages=search_pages)
 
-    def _search(self, fetcher: Fetcher) -> list[_SearchEntry]:
+    def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:
         """Every configured search page, its hits paired with the URL they came from.
 
         The result is INTERLEAVED across facets, round-robin, and that is load-bearing rather
         than tidy. The body budget is spent in iteration order, so concatenating instead would
         let the first facet consume all of it and every later target title contribute nothing --
-        a lane reporting fourteen facets while delivering only the profile's first one.
+        a lane reporting fourteen facets while delivering only the profile's first one. Paging
+        does not change that: a facet's own pages are read in order and the interleave is across
+        facets, so facet two's page 1 is still worked before facet one's page 2.
+
+        The second return value is how many pages were actually fetched per facet, which is
+        REPORTED rather than inferred: a facet that stopped at page 2 of a 5-page ceiling ran
+        out of results, and a facet that filled every page is truncated. Those are different
+        facts about the same posting count and only the first is benign.
         """
         urls = search_urls(self._search_facets)
         if not self._search_facets:
             # The unfaceted fallback keeps the single-search contract it shipped with: a
-            # transport or structural failure propagates, because with one search there are no
-            # other results for it to cost.
-            result = fetcher.get(urls[0], headers=_SEARCH_HEADERS)
-            hits = search_hits(result.content.decode("utf-8", "replace"))
-            return [(urls[0], hit) for hit in hits]
+            # transport or structural failure on its FIRST page propagates, because with one
+            # search there are no other results for it to cost.
+            entries, pages = self._facet_pages(fetcher, urls[0])
+            return entries, ((urls[0], pages),)
 
         per_facet: list[list[_SearchEntry]] = []
+        page_counts: list[tuple[str, int]] = []
         failed = 0
         for url in urls:
             try:
-                result = fetcher.get(url, headers=_SEARCH_HEADERS)
-                hits = search_hits(result.content.decode("utf-8", "replace"))
+                entries, pages = self._facet_pages(fetcher, url)
             except (FetchFailure, SearchPageError):
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure.
                 # Fourteen requests means the seventh must not discard the six before it, and
@@ -357,19 +459,78 @@ class HiringCafeLane:
                 # suppression, which is what the all-empty check below is for.
                 failed += 1
                 per_facet.append([])
+                page_counts.append((url, 0))
                 continue
-            per_facet.append([(url, hit) for hit in hits])
+            per_facet.append(entries)
+            page_counts.append((url, pages))
 
         if not any(per_facet):
-            # Not a quiet day. A bogus facet answers 200 with an empty list, so if the role
+            # Not a quiet day. A bogus facet answers 200 with an empty list, so if the search
             # route moves, every facet empties, nothing raises, and no counter moves -- the
             # tally cannot see it either, because nothing was ever attempted.
             raise SearchPageError(
                 f"every role facet yielded nothing ({len(per_facet)} searched, {failed} request "
-                "failures): the role route has moved, the host is refusing us, or none of the "
-                "profile's target titles match a role page"
+                "failures): the search route has moved, the host is refusing us, or none of the "
+                "profile's target titles match a posting"
             )
-        return [entry for row in zip_longest(*per_facet) for entry in row if entry is not None]
+        interleaved = [
+            entry for row in zip_longest(*per_facet) for entry in row if entry is not None
+        ]
+        return interleaved, tuple(page_counts)
+
+    def _facet_pages(self, fetcher: Fetcher, url: str) -> tuple[list[_SearchEntry], int]:
+        """One facet's hits over at most `self._search_pages` pages, and the pages fetched.
+
+        **A PAGE WITH NO HITS MEANS TWO DIFFERENT THINGS AND THIS IS WHERE THEY SEPARATE.** On
+        the FIRST page it is the outage case a bogus facet also produces -- 200 with an empty
+        list -- and it is returned rather than raised, because one target title matching nothing
+        is a profile-data matter; `_search`'s all-empty check is what turns EVERY facet doing it
+        into the failure the runner must see. On a LATER page it is the ordinary end of a
+        facet's result set. `FetchFailure` and `SearchPageError` split the opposite way and for
+        the reason `linkedin._facet_pages` states: a facet refused on its first page produced
+        nothing and is a failure its caller must count, while one refused on page 4 keeps the
+        three pages already paid for.
+
+        `ssrIsLastPage` ends the facet, which is the whole point of paging against a host that
+        says where the end is. A page that adds no NEW hit ends it too -- that is the offset-wrap
+        tail `providers/workday.py` guards for the same reason, and it also covers a host that
+        stops honouring `&page=` and re-serves page 0, which the ceiling alone would let burn
+        every remaining request.
+
+        The entry carries the PAGE's URL, not the facet's first page. It is a URL this run
+        actually requested, which is the standard `BoardSnapshot.url` provenance is held to.
+
+        No sleep is added between pages. `Fetcher` paces per host at >=1.0s inside the lock it
+        holds for each request, which is already stricter than the reference implementation's
+        0.5s, so a lane-local delay would be a second, weaker pacing rule.
+        """
+        entries: list[_SearchEntry] = []
+        seen: set[str] = set()
+        pages = 0
+        for page_index in range(self._search_pages):
+            page = page_url(url, page_index)
+            try:
+                result = fetcher.get(page, headers=_SEARCH_HEADERS)
+                search_page = parse_search_page(result.content.decode("utf-8", "replace"))
+            except (FetchFailure, SearchPageError):
+                if page_index == 0:
+                    raise
+                break
+            pages += 1
+            fresh: list[_SearchEntry] = []
+            new_ids: set[str] = set()
+            for hit in search_page.hits:
+                object_id = _text(hit.get("objectID"))
+                if object_id and object_id in seen:
+                    continue
+                fresh.append((page, hit))
+                if object_id:
+                    new_ids.add(object_id)
+            entries.extend(fresh)
+            seen |= new_ids
+            if search_page.is_last_page or not new_ids:
+                break
+        return entries, pages
 
     def _fetch_posting(
         self,

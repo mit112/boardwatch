@@ -40,12 +40,22 @@ PROBED = date(2026, 8, 23)
 # PROBED + 90, the window `tools/generalization/fixtures.py` uses for the six ATS captures.
 REVIEW_BY = date(2026, 11, 21)
 
-# `robots.txt`, read 2026-08-26, when the role facet shipped. RECORDED rather than remembered
-# because the lane's whole request shape follows from these three rules: the role route is a
-# PATH precisely because the query forms are disallowed. If the Allow ever narrows, or a
-# Disallow widens to cover `/jobs/`, the lane is in violation and nothing else in this repo
-# would notice -- the requests would keep succeeding. Re-read these when rolling `REVIEW_BY`.
+# `robots.txt`, read 2026-08-26. KEPT, not deleted, and no longer the lane's constraint.
+#
+# These three rules are why the lane originally asked for a role as a PATH segment. That path
+# form was refused on the first request of every run from run 129 onward -- a standing outage
+# that D-369's header work did not move, because the headers were never the cause. **D-393 (the
+# owner) approves the `?searchState=` form for this project, superseding both D-369 and this
+# host's robots.txt.** The reference implementation this repo is absorbing has used it in
+# production for months.
+#
+# They stay recorded for two reasons. A superseded rule that is deleted looks like a rule that
+# never existed, and the next reader re-derives the path form from scratch. And the ruling is
+# scoped to THIS host: `ROBOTS_DISALLOWED_FORMS` is now what the lane's URL builder is asserted
+# to produce rather than to avoid, so an accidental revert to the path form fails a test instead
+# of quietly restoring the outage. Re-read them when rolling `REVIEW_BY`.
 ROBOTS_READ = date(2026, 8, 26)
+SUPERSEDED_BY = "D-393"
 ROBOTS_ALLOWED_PREFIX = "/jobs/"
 ROBOTS_DISALLOWED_FORMS: tuple[str, ...] = ("?searchState=", "?page=", "&page=")
 
@@ -86,11 +96,20 @@ MISPARSED_BY_SOURCE: tuple[tuple[str, int], ...] = (
 )
 MISPARSED_HITS = sum(count for _, count in MISPARSED_BY_SOURCE)
 
-# Contract §1's paging siblings. Recorded, never acted on: the parameter that turns a page is
-# not in the contract, so the lane makes one GET.
+# Contract §1's paging siblings, now ACTED ON -- `&page=N` is the parameter, measured.
+#
+# The 2026-08-31 SSR probe made two GETs 1.5s apart against the exact searchState
+# `hiringcafe.search_state` builds (`software engineer`, `sortBy: date`, 7-day window, and NONE
+# of the reference implementation's user-specific pre-filters). Page 0 answered 200 with 143
+# hits, page 1 with 133, `ssrError` None and `ssrIsLastPage` False on both, `ssrPage` echoing
+# the number requested -- and the two pages shared ZERO hit ids. That last number is the one
+# that matters: it is what separates a real offset from a host that re-serves page 0.
+SSR_PROBED = date(2026, 8, 31)
 SSR_PAGE = 0
 SSR_PAGE_SIZE = 40
 SSR_IS_LAST_PAGE = False
+SSR_PROBED_PAGE_HITS: tuple[int, int] = (143, 133)
+SSR_PROBED_PAGE_OVERLAP = 0
 SSR_TOTAL_COUNT = 3_886_890
 SSR_COMPANY_COUNT = 123_343
 
@@ -278,19 +297,30 @@ def search_hits() -> list[dict[str, Any]]:
     return hits
 
 
-def search_page_html(hits: list[dict[str, Any]] | None = None) -> str:
+def search_page_html(
+    hits: list[dict[str, Any]] | None = None,
+    *,
+    page: int = SSR_PAGE,
+    is_last_page: bool = SSR_IS_LAST_PAGE,
+    error: str | None = None,
+) -> str:
     """The server-rendered page, with the payload inside `<script id="__NEXT_DATA__">`.
 
     The surrounding markup carries a `</script>`-free `</div>` inside a JSON string value on
     purpose: that is what defeated a regex extractor on the real page.
+
+    `page` / `is_last_page` / `error` are the three paging-era knobs. `ssrError` is a key the
+    real payload carries on every response and holds `None` on a healthy one, so a fixture that
+    omitted it could not exercise the arm that raises on a 200 carrying a search-side failure.
     """
     payload = {
         "props": {
             "pageProps": {
                 "ssrHits": search_hits() if hits is None else hits,
-                "ssrPage": SSR_PAGE,
+                "ssrPage": page,
                 "ssrPageSize": SSR_PAGE_SIZE,
-                "ssrIsLastPage": SSR_IS_LAST_PAGE,
+                "ssrIsLastPage": is_last_page,
+                "ssrError": error,
                 "ssrTotalCount": SSR_TOTAL_COUNT,
                 "ssrCompanyCount": SSR_COMPANY_COUNT,
                 "ssrTimings": {"esLatencyMs": 365},

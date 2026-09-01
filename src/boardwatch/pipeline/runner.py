@@ -184,15 +184,21 @@ LaneFactory = Callable[[Settings, LaneFacets], Lane]
 # Registered is NOT enabled: `settings.lanes_enabled` is empty by default, so nothing in this
 # map runs until an operator names it. Registration only makes a lane reachable.
 LANE_FACTORIES: dict[str, LaneFactory] = {
+    # `lane_search_pages` reaches hiring.cafe as of the SSR re-point (D-393): `&page=N` was
+    # measured on 2026-08-31 to return a disjoint hit set, so the setting now buys real depth
+    # here rather than promising depth the lane cannot deliver.
     HiringCafeLane.name: lambda settings, facets: HiringCafeLane(
-        posting_budget=settings.lane_posting_budget, search_facets=facets.profile
+        posting_budget=settings.lane_posting_budget,
+        search_facets=facets.profile,
+        search_pages=settings.lane_search_pages,
     ),
-    # Only LinkedIn is handed `lane_search_pages`: its `start=` is a probed, working item offset,
-    # while hiring.cafe has no recorded paging parameter and its `?page=` form is disallowed by
-    # `robots.txt`, so passing the setting there would promise depth the lane cannot deliver.
+    # BOTH lanes now read `lane_search_pages`, through different URL builders: LinkedIn's
+    # `start=` is a probed, working ITEM offset, while hiring.cafe's `&page=` is a page number
+    # on the SSR surface D-393 approved. The older note here said hiring.cafe had no working
+    # paging parameter; that was true of the retired `/jobs/*` form only.
     #
-    # It is also the only lane handed the MINED facets, and for the matching reason: the trial
-    # record that prunes a barren mined term is this lane's own `keywords=` provenance
+    # LinkedIn is still the only lane handed the MINED facets, and that reason is unchanged: the
+    # trial record that prunes a barren mined term is this lane's own `keywords=` provenance
     # (`store.facet_queries`). Handing them to a lane whose acquisitions leave no such record
     # would buy searches nothing could ever measure or retire.
     LinkedInLane.name: lambda settings, facets: LinkedInLane(

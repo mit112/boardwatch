@@ -80,8 +80,8 @@ class LaneResult:
     because a posting count cannot tell a facet that RAN OUT of results from one that was
     TRUNCATED by the page ceiling. Both report fewer postings than the ceiling allows; only the
     first is benign, and the second is reach the run silently left on the table. Empty -- never
-    absent -- for a lane whose search does not paginate, which is honest: hiring.cafe has no
-    recorded paging parameter, so it has no page count to report rather than a page count of one.
+    absent -- for a lane that makes no search at all, which is honest: the job-apps lane reads a
+    local directory, so it has no page count to report rather than a page count of one.
     """
 
     snapshots: tuple[LaneCompanySnapshot, ...]
