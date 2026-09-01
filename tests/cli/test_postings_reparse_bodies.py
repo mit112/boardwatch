@@ -9,7 +9,6 @@ that empties a body it has no payload for.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -68,7 +67,10 @@ def _seed(data_dir: Path, *, status: str = "open", with_detail: bool = True) -> 
                     posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
                     status=status, consecutive_missing=0,
                     content_hash=content_hash(body), body_text=body,
-                    raw_json=json.dumps(raw) if with_detail else json.dumps({"listed": {}}),
+                    # A dict, not a JSON string: `raw_json` is a JSON column and a SELECT
+                    # hands back the decoded object. Seeding a string here made this suite pass
+                    # against a drain that called `json.loads` and crashed on the live store.
+                    raw_json=raw if with_detail else {"listed": {}},
                 )
             ).inserted_primary_key[0]
         )

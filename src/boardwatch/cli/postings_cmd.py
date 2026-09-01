@@ -20,7 +20,6 @@ no later run can reach. Identities are recomputed only for the OPEN ones, which 
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -82,15 +81,12 @@ def reparse_bodies(
         ).all()
         for posting_id, old_hash, raw_json in rows:
             scanned += 1
-            try:
-                raw = json.loads(raw_json) if raw_json else {}
-            except json.JSONDecodeError:
+            # `postings.raw_json` is a JSON column, so the driver hands back the decoded object,
+            # not a string. Anything other than a mapping is a payload this drain cannot read.
+            if not isinstance(raw_json, dict):
                 skipped += 1
                 continue
-            if not isinstance(raw, dict):
-                skipped += 1
-                continue
-            body = reparse(raw)
+            body = reparse(raw_json)
             if not body:
                 # No stored payload to re-derive from, or it yields nothing. Leaving the row as
                 # it stands is right: an empty body would collide on `content_hash("")` with
