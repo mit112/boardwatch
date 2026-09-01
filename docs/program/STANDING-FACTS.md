@@ -677,7 +677,7 @@ needs `hidden_handled == 0` (measured **8 / 48 / 128** on runs 68 / 69 / 71) and
 (`capped_by_top_n` is 3,603–3,683, so `visible` is 40 every run). (2) **The docstring's "D-246" attribution
 was never a ruling** — D-246 is the seniority-gate decision and says nothing about this guard. The obvious
 fix was built and **rejected before merge**: disarming on a rejection bucket makes the fatal UNREACHABLE,
-because `hidden_hard_filter` is corpus-scoped at **18,472–18,932** every run. **Root cause, and it
+because `hidden_hard_filter` is corpus-scoped — **18,472–18,932** when this was written at runs 68/69/71, and **60,491** at run 140 (D-412), the corpus having grown ~6x while the sentence did not. The RANGE rotted; the argument did not, and the argument is the point. **Root cause, and it
 generalises: the `hidden_*` buckets are an EXHAUSTIVE partition of the corpus, so "can this run explain the
 empty day?" is always yes by construction — a complete partition cannot evidence a silent failure.** Only
 the stale-premise docstrings were corrected, at both sites. **Owner call: run-scoped rank attribution is the
