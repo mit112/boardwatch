@@ -29,19 +29,23 @@ from rich.console import Console
 from sqlalchemy import Engine, insert, select
 
 from boardwatch.cli.run_cmd import _lane_lines
+from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes import hiringcafe
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.facets import LaneFacets
+from boardwatch.lanes.linkedin import search_urls
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import PipelineSummary, _collect_lane, _run_lanes, run_pipeline
 from boardwatch.reports.run_funnel import ARTIFACT_VERSION
+from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.queries import insert_run, save_profile
+from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.queries import insert_run, save_profile, upsert_lane_company
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
 LANE_URL = "https://aggregator.test/search"
@@ -1120,3 +1124,88 @@ def test_the_jobapps_lane_ingests_through_the_real_stage_and_lands_postings(
         "job-apps' authored header must not reach the stored body"
     )
     assert "greenhouse" in _stored_slugs(engine) or "acme" in _stored_slugs(engine)
+
+
+# --- the MINED facet reaches ONE lane, from the user's own delivered leads ------------------
+
+
+def _delivered_lead(engine: Engine, title: str, *, employers: int) -> None:
+    """One title, delivered at `employers` distinct employers, landed the way a run lands it.
+
+    Through `apply_board` and `record_disposition` rather than raw inserts, so the acquisition
+    provenance and the ledger row are the ones production writes. `employers` is what the miner's
+    two-employer threshold reads, so a helper that used one company would silently test nothing.
+    """
+    url = search_urls(("seeded facet",))[0]
+    for index in range(employers):
+        slug = f"employer-{index}"
+        with engine.begin() as conn:
+            company_id = upsert_lane_company(conn, provider="linkedin", slug=slug, name=slug)
+        raw = RawPosting(
+            provider_posting_id=f"{slug}-1",
+            title=title,
+            url=f"https://example.invalid/{slug}",
+            locations=["Anywhere"],
+            body_text="body",
+            raw_json={},
+        )
+        apply_board(
+            engine, lane_snapshot([raw], url), company_id, insert_run(engine), scan_kind="lane"
+        )
+        with engine.begin() as conn:
+            job_id = int(
+                conn.execute(
+                    select(tables.postings.c.job_id).where(
+                        tables.postings.c.company_id == company_id
+                    )
+                ).scalar_one()
+            )
+            record_disposition(
+                conn,
+                job_id,
+                disposition="built",
+                reason="lead_built",
+                policy_version="test-policy",
+                now=utcnow(),
+            )
+
+
+def test_the_stage_mines_a_facet_the_profile_never_asked_for(engine: Engine) -> None:
+    """The yield claim, asserted where it can actually be broken.
+
+    The profile asks for one title; the leads this program built name another, at two employers.
+    Before this change the stage read the profile and nothing else, so the second title was a
+    search the lane could never make however many runs delivered it.
+    """
+    _profile(engine, ["Registered Nurse"])
+    _delivered_lead(engine, "Perioperative Nurse", employers=2)
+
+    facets = runner_mod._lane_facets(engine)
+
+    assert facets.profile == ("registered nurse",)
+    assert facets.mined == ("perioperative nurse",)
+
+
+def test_a_store_with_no_delivered_leads_mines_nothing(engine: Engine) -> None:
+    """Every store before the program has built anything, and the honest answer there is the
+    behaviour that shipped: the profile's facets, and no inference on top of them."""
+    _profile(engine, ["Registered Nurse"])
+
+    assert runner_mod._lane_facets(engine) == LaneFacets(profile=("registered nurse",), mined=())
+
+
+def test_only_the_lane_whose_provenance_can_retire_a_mined_facet_receives_one(
+    tmp_path: Path,
+) -> None:
+    """Routing, and it is not tidiness. The trial record that prunes a barren mined term is the
+    LinkedIn lane's own `keywords=` provenance; a lane whose acquisitions leave no such record
+    would spend its request budget on terms nothing could ever measure or retire.
+    """
+    facets = LaneFacets(profile=("registered nurse",), mined=("perioperative nurse",))
+    settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
+
+    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets)
+    hiringcafe_lane = runner_mod.LANE_FACTORIES["hiringcafe"](settings, facets)
+
+    assert linkedin_lane._search_facets == ("registered nurse", "perioperative nurse")
+    assert hiringcafe_lane._search_facets == ("registered nurse",)
