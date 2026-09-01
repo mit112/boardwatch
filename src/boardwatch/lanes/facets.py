@@ -92,13 +92,24 @@ MAX_MINED_FACET_WORDS = 5
 # which is the safe direction and is visible in the funnel's own list of searches.
 MAX_MINED_CANDIDATES = 32
 
-# How many postings a mined facet must have been credited with, inside the window, before zero
-# deliveries from it is evidence rather than small-sample noise. Measured on the live store's own
-# 807 facet-credited postings: the WEAKEST of the 14 profile facets still delivered 2 leads from
-# 52 credited postings, so at that floor rate a facet with 40 credited postings and none
-# delivered is a genuinely different animal, not an unlucky one. Below this threshold a facet is
-# never pruned — no evidence yields no verdict, the same direction the eligibility rules take.
-MIN_TRIAL_POSTINGS = 40
+# How many postings a mined facet must have been credited with, INSIDE THE WINDOW, before zero
+# deliveries from it is evidence rather than small-sample noise. Below it a facet is never pruned
+# — no evidence yields no verdict, the same direction the eligibility rules take.
+#
+# Derived, not chosen. The floor conversion rate is the WEAKEST of the 14 live profile facets:
+# 2 leads delivered from 52 credited postings, 3.8%. A facet converting at that floor shows zero
+# deliveries across n credited postings with probability 0.962^n — 21% at n=40, 2.1% at n=100,
+# 0.3% here. A false prune costs a working search for a whole window, on the exact axis mining
+# exists to widen, so this is sized against that and not against reaction speed.
+#
+# THE COUNT HAS TO BE READ AGAINST THE WINDOW, and a count sized on a shorter one is the trap
+# here: the store's 807 facet-credited postings span 5 days and 21 runs, ~2.7 per facet per run,
+# so a searched facet accrues ~340 over a 30-day window at that cadence and crosses this in ~55
+# runs. Run cadence is the user's, not this module's — at one run a day the same facet may never
+# reach it inside the window and is simply never pruned. That direction is deliberate: not
+# pruning costs at most `lane_search_pages` requests a run against a hard cap of eight facets,
+# while pruning a working term costs leads.
+MIN_TRIAL_POSTINGS = 150
 
 # Runs of anything that is not a letter or digit collapse to one separator. A slash surviving
 # into a slug would change which URL is requested -- `/jobs/a/b` is not the role route -- so

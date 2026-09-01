@@ -207,7 +207,7 @@ def test_a_facet_credited_with_enough_postings_and_no_delivered_lead_is_dropped(
     search never converts keeps its rank for as long as the title keeps being delivered on some
     board. Without this rule the barren facet is bought every run, forever.
     """
-    barren = FacetTrial(credited=40, delivered=0)
+    barren = FacetTrial(credited=150, delivered=0)
 
     assert surviving_mined_facets(("charge nurse",), {"charge nurse": barren}) == ()
 
@@ -216,7 +216,7 @@ def test_one_delivered_lead_keeps_a_facet_no_matter_how_many_postings_it_took():
     """The rule is zero conversion, not a conversion RATE. The weakest of the 14 live profile
     facets delivered 2 leads from 52 credited postings; a rate threshold set anywhere above that
     would have retired a facet that was working."""
-    working = FacetTrial(credited=400, delivered=1)
+    working = FacetTrial(credited=1500, delivered=1)
 
     assert surviving_mined_facets(("charge nurse",), {"charge nurse": working}) == ("charge nurse",)
 
@@ -224,10 +224,10 @@ def test_one_delivered_lead_keeps_a_facet_no_matter_how_many_postings_it_took():
 def test_a_facet_with_too_few_credited_postings_to_judge_is_kept():
     """Small-sample silence is not evidence of barrenness. A facet dropped on its first quiet
     run could never earn its way back, and the same store measured a working facet at 2 leads
-    per 52 credited postings — a run of 39 empty ones is ordinary. 39 and 40 are written as
-    LITERALS: an assertion phrased against the threshold constant moves with it and can never
-    catch the threshold being lowered."""
-    unproven = FacetTrial(credited=39, delivered=0)
+    per 52 credited postings, so zero from 149 is a 0.3%-likely run of luck and zero from 40
+    would be a 21%-likely one. 149 and 150 are written as LITERALS: an assertion phrased against
+    the threshold constant moves with it and can never catch the threshold being lowered."""
+    unproven = FacetTrial(credited=149, delivered=0)
 
     assert surviving_mined_facets(("charge nurse",), {"charge nurse": unproven}) == (
         "charge nurse",
@@ -262,7 +262,7 @@ def test_the_cap_truncates_the_ranking_rather_than_sampling_it():
 def test_a_pruned_facet_does_not_consume_a_slot():
     """The cap counts what is BOUGHT. Counting drops against it would let one barren term
     shrink the run's real facet set by one, silently."""
-    barren = FacetTrial(credited=40, delivered=0)
+    barren = FacetTrial(credited=150, delivered=0)
     candidates = tuple(f"role number {n}" for n in range(30))
 
     kept = surviving_mined_facets(candidates, {candidates[0]: barren})
