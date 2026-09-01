@@ -263,10 +263,12 @@ boardwatch track import history.csv --report audit.jsonl
 ```
 
 A row is matched on its url, or — with `--allow-title-match`, which is weaker because one title
-at a large employer can cover several requisitions — on company and title. Nothing is dropped
-silently: every row is counted as matched, already present, unmatched or malformed, and
-`--report` writes each one out with the key that matched it. Re-running the same file writes
-nothing.
+at a large employer can cover several requisitions — on company and title. When that weaker key
+does cover several, the row is recorded against none of them: marking a job applied removes it
+from the queue for good, so guessing which requisition you meant is the one mistake you could not
+find afterwards. Nothing is dropped silently: every row is counted as matched, already present,
+unmatched, malformed or ambiguous, and `--report` writes each one out with the key that matched
+it and the jobs it covered. Re-running the same file writes nothing.
 
 ---
 
