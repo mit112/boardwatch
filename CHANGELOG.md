@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Roles you already applied to through job-apps can now be imported, so they stop coming back.**
+  boardwatch could already hide a role you had marked as applied, but nothing fed that list, so it
+  sat empty and every already-applied role kept re-surfacing in the queue. `track import` now
+  accepts job-apps' `_applied/` directory as well as a file, reading each folder's own job
+  description header and apply link. Measured over the real 64 folders: all 64 parse, and 28 match a
+  posting boardwatch has actually seen (22 by URL, 6 more by company and title). The other 36 are
+  employers this instance never watched — a role it never saw cannot be recorded — and they are
+  counted and listed as unmatched rather than quietly dropped. Running the import twice changes
+  nothing the second time. No application date is invented: the folders only record when the résumé
+  was written, not when you applied, so the import date is used rather than a fabricated one.
+
 - **A closed posting now drains out of the apply queue into its own `_closed` folder.** A quarter of
   the queue was dead: 52 of 203 top-level folders named a posting the board had already taken down,
   the oldest delivered by run 71, because the queue recorded each posting's status and never read it
