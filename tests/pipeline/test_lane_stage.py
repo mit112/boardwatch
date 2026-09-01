@@ -1075,14 +1075,14 @@ def test_a_schema_bump_and_a_moved_queue_produce_DIFFERENT_error_lines(
         insert_run(engine),
     )
     empty = tmp_path / "empty"
-    (empty / "Greenhouse").mkdir(parents=True)
+    empty.mkdir(parents=True)
     _, moved = _run_lanes(
         engine,
         _settings(tmp_path, lanes_enabled=("jobapps",), jobapps_discovery_dir=empty),
         insert_run(engine),
     )
     assert "record format has probably moved" in bumped[0]
-    assert "no discovery record anywhere" in moved[0]
+    assert "no group folder anywhere" in moved[0]
     assert bumped[0] != moved[0]
 
 
