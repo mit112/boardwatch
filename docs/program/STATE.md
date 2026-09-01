@@ -83,8 +83,20 @@ field and **no employer board URL** (so the #304 hiring.cafe manoeuvre has nothi
 through), and its eligibility fields are jobright's OWN judgments; as a `github_lists`-style emitter,
 **`parse_board_target` resolves 0 of 882** of its README's links. **Indeed is the opposite case and
 remains viable** — its admitted bodies are the EMPLOYER's own text (0 Indeed chrome; posting 135278 is
-8,946 bytes of Amazon's JD). So the native-lane work is **Indeed ALONE**, ~40-57 eligible/day, and its
-blocker is not technical: it is the **`JobSpy` dependency, which is an owner call, not a silent pick**.
+8,946 bytes of Amazon's JD).
+
+**BUT INDEED IS THE SECOND PRIORITY, NOT THE FIRST — D-407 corrects D-406 on this.** Sizing the gate-1
+gap BY SOURCE (job-apps' 216-posting eligible cohort): **linkedin 96, of which 82 ABSENT -> +82,
+ceiling 58.3%**; direct/other 74 (+56); **indeed 38 -> +36, ceiling 37.0%**; jobright 8 (+6).
+**LinkedIn is worth 2.3x Indeed and boardwatch ALREADY RUNS that lane** — no dependency, no adapter.
+And Indeed's dependency is **measured-unavoidable**: two real `viewjob` URLs return **HTTP 401/403**.
+
+**THE NEXT BUILD IS `lane_search_pages` 5 -> 10, and it is SIZED AND WAITING ON MIT.** The ceiling
+**binds on 21 of 22 facets** (all fetched exactly 5; only `software engineer 2` stopped short), so they
+are TRUNCATED. Cost **+105 pages ~= +2.3 min** at the lane's measured 1.33 s/request. Right-sized at
+10: ~+162 distinct cards takes 162 -> ~324, **crossing the 300 posting budget**, so one step is the
+whole move. **Do NOT raise `lane_posting_budget`** — run 139's linkedin lane reached 162 of 300, and
+its 520 `not_attemptable` are cross-facet DUPLICATES (76.2%), not budget (corrected in #320).
 
 **3. GATE 2's TWO-SIDED DECOY CONTROL IS DONE — both arms catch 4-5 of 4-5.** What remains owed is
 SENSITIVITY, not gross detection: the planted decoys are egregious, and the job-apps arm returned
