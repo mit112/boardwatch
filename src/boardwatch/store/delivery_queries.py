@@ -505,6 +505,26 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     )
 
 
+def canonical_job_ids(conn: Connection, posting_ids: set[int]) -> dict[int, int]:
+    """`{posting_id: postings.job_id}` for the postings asked about, read fresh.
+
+    Exists because a queue folder records the `job_id` it was written under, and that answer can
+    GO STALE: identity resolution can converge a lane copy onto a native find, at which point the
+    posting's canonical job moves and the folder's stored value no longer names it. Measured case,
+    run 139: posting 131367 (a lane copy, `pst_2a1f2c22...`) now carries `job_id = 69007`, the
+    native Workday find (`JR-202618529`), while its folder still recorded 131367.
+
+    A posting the store no longer holds is simply absent from the result rather than raising: a
+    folder for a deleted posting is the caller's problem to classify, not this query's.
+    """
+    if not posting_ids:
+        return {}
+    rows = conn.execute(
+        select(postings.c.id, postings.c.job_id).where(postings.c.id.in_(posting_ids))
+    ).all()
+    return {int(row.id): int(row.job_id) for row in rows}
+
+
 __all__ = [
     "REMOTE_POLICY_UNKNOWN",
     "STATUS_CLOSED",
@@ -513,6 +533,7 @@ __all__ = [
     "QueueDetail",
     "QueueRow",
     "RequirementView",
+    "canonical_job_ids",
     "closed_job_ids",
     "delivered_unapplied",
     "ineligible_job_ids",

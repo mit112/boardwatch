@@ -199,11 +199,18 @@ def test_a_per_lead_queue_failure_reaches_the_digest_WITH_ITS_CAUSE(
 
     import boardwatch.pipeline.runner as runner_mod
 
-    def failures(*_a: object, **_k: object) -> list[str]:
-        return [
-            "posting 135423: QueueConflictError: onX_Full_Stack_Engineer already exists",
-            "folder Generalmotors_Software_Engineer: FileExistsError: destination taken",
-        ]
+    # THREE lead failures against ONE folder failure, deliberately: the note shows only three, so
+    # a flat list ordered lead-then-folder would let the lead failures suppress the folder cause
+    # entirely. That is the shape this pins.
+    def failures(*_a: object, **_k: object) -> tuple[list[str], list[str]]:
+        return (
+            [
+                "posting 135423: QueueConflictError: onX_Full_Stack_Engineer already exists",
+                "posting 135340: QueueConflictError: WellSky_Associate already exists",
+                "posting 111111: NameBudgetError: queue root too long",
+            ],
+            ["folder Generalmotors_Software_Engineer: FileExistsError: destination taken"],
+        )
 
     monkeypatch.setattr(runner_mod, "_sync_queue", failures)
 
@@ -213,10 +220,12 @@ def test_a_per_lead_queue_failure_reaches_the_digest_WITH_ITS_CAUSE(
 
     assert summary.fatal is None, "a per-lead queue failure must not fail the run (fail-open)"
     note = next(err for err in summary.errors if "delivery queue:" in err)
-    assert "2 lead folder(s) failed to copy or drain" in note, note
+    assert "4 lead folder(s) failed to copy or drain" in note, note
     # The whole point: the CAUSE, and the identity it is attached to.
     assert "posting 135423" in note and "onX_Full_Stack_Engineer" in note, note
+    # And the folder cause SURVIVES the three-item cap, which is what interleaving buys.
     assert "folder Generalmotors_Software_Engineer" in note, note
+    assert "+1 more" in note, note
     # Durable and rendered, both halves, like every other alert in the finalize block.
     assert any("posting 135423" in err for err in payload["errors"]), payload["errors"]
     assert "posting 135423" in rendered

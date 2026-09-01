@@ -435,7 +435,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-399 | DECISIONS.md | 20148 | **JOB-APPS RETIREMENT GETS A STATED, MEASURABLE BAR.** D-393 decision 3 left the switch-off to Mit but named NO metric and NO threshold, so "are we covered yet" was unanswerable in principle. **Company reach is the WRONG INSTRUMENT** — re-run 2026-09-01 on the identical window it reads **16.4%, UNCHANGED**, because aggregators are 88.6% of job-apps' output (D-393) and an aggregator lane adds POSTINGS, not watched companies. **The obvious correction is ALSO wrong:** `posting_identity` tiers 1-2 resolve a lane find to its REAL provider, so a lane-copied row reads `companies.provider='workday'` and partitioning on provider counts it as INDEPENDENT; the only sound discriminator is the lane's own `{"jobapps":...}` key in `postings.raw_json` (14 of 45 lane-stamped rows would be miscounted). **Measured 2026-09-01: boardwatch independently holds 44 of 216 (20.4%) of job-apps' eligible set; 172 (79.6%) it does not hold at all. Run 138's 96 delivered by route: linkedin 40, JOBAPPS LANE 17, workday 13, greenhouse 12, ashby 10, hiringcafe 2 — 17.7% of delivery dies on switch-off.** THREE GATES: (1) independent coverage >= 80% on two consecutive weekly measurements; (2) blind-judge precision within 5 points of job-apps (today a 28-point gap, D-372) — coverage alone is NOT sufficient; (3) ANTI-DEGRADATION, the independent COUNT must not fall between measurements, or gate 1 is satisfiable by job-apps finding LESS (baseline 44). Thresholds are Mit's to overrule and the reasoning is stated. **Recorded so it is not mis-scored: #307 and #308 do NOT advance retirement** — both DEEPEN the coupling by consuming more of job-apps' output rather than reproducing its discovery. Measurement: `.agent/2026-09-01b-session/retirement_readiness.py`. **Run 139 is the first run that can move any gate.** |
 | D-400 | DECISIONS.md | 20220 | **A WORKDAY CAREER SITE NAMED LIKE WORKDAY CHROME WAS READ AS THE JOB'S CITY.** `slug_from_path` took the first segment that was neither a locale nor in `_CHROME_SEGMENTS` — and that set contains **`jobs`** — so a tenant whose site is literally named `Jobs` had it SKIPPED and the CITY returned: `redhat.../Jobs/job/Canberra/...` derived site `Canberra`, **a fictional company row per city, 157 live URLs + 38 independent**. `parse_board_target('https://redhat.wd5.myworkdayjobs.com/jobs')` also RAISED, so `redhat/jobs` and `paypal/jobs` (**325 postings, both watched**) could only be added via the explicit `workday:` form. **`stored_slug` does NOT rescue it** — it folds CASE and `canberra` is not a case variant of `jobs`; verified against a real store, the upsert lands on a SECOND row. FIX: read the site by GRAMMAR — the CXS form `/wday/cxs/{tenant}/{site}/jobs` and the public form `[{locale}/]{site}[/job/{location}/{ref}]` both name it positionally, so it is the first non-locale segment; `job`/`details` first ⇒ None. Measured over **113,074 real URLs**: first segment is `job`/`details` in **ZERO**, and through `parse_board_target` (the production caller — `myworkdaysite.com` is refused at the HOST and never reaches the function) misread URLs go **157 → 0**. **A shipped test was DELETED on that evidence** — it asserted `['job','AcmeCareers']` ⇒ site `AcmeCareers` on the premise that `job` precedes the site "in some pasted URLs"; that shape occurs ZERO times and the answer it pinned is this defect in miniature. **#310's site guard was CHECKED for deadness and KEPT** — its live case is gone (Red Hat resolves now) but a DOUBLE-LOCALE path still reaches it; had nothing reached it, it would have been deleted. |
 | D-401 | DECISIONS.md | 20271 | **"LOWERCASE EVERY WORKDAY SLUG" IS REFUSED — proposed, sized, owner-approved, BUILT, and abandoned.** The premise `split_slug` gave for preserving site case ("site slugs are case-sensitive live") **IS false and that part stands**: 60 of 133 watched companies ALREADY store a lowercased site differing from the provider's own casing, holding **31,395 postings** scanned clean; and an A/B probe of the CXS endpoint across three casing styles returned identical totals both ways (nvidia **2000/2000**, bdx **576/576**, roche **224/224**). **But the change was refused because its 307-convergence benefit DOES NOT EXIST.** `store/queries.py:stored_slug` folds case and `upsert_lane_company` calls it for EVERY lane snapshot, so a case-differing find already resolves to the stored row; `pipeline/runner.py` takes the id back from the upsert for exactly this reason. Verified empirically on the pre-change schema: existing id returned, NO second row. **True convergence is 896, not 589.** THE TRANSFERABLE ERROR: the 589/307 split came from joining `(slug, ref)` as STRINGS while production resolves the company case-insensitively FIRST — **a join only models convergence if it models the RESOLVER**. Cost of the refused change: 54 re-keyed rows, 54 orphaned `http_cache` validators, an IRREVERSIBLE migration, and 40 test edits — one of which was a REAL defect it introduced (#310's guard comparing a lowercased derived site to the URL's casing, refusing every non-lowercase Workday URL). Case preservation STANDS on the smaller true reason: nothing requires lowering it. Docstrings corrected in #312. **AND THIS WAS ALREADY D-339** ("a board slug differing only in case resolves to the stored row"), reachable with `tools.decisions --find slug case` in ONE command — the log was not searched before the proposal was built. |
-| D-402 | DECISIONS.md | 20323 | **THREE DELIVERED LEADS NEVER REACHED THE QUEUE; run 139 is the FIRST run to report a queue failure at all** (136/137/138 carry no queue entry). Store expected **1,141**, disk held **1,147** identified / **0** unclassified, **3 leads had no folder**. **TWO causes.** (1) FIXED — `_plan`'s collision `Counter` keyed the folder name CASE-SENSITIVELY, so `onX_...` and `OnX_...` were two strings and ONE path (probed: `Abc` makes `abc` resolve); exactly **2 groups collide by case alone** (`onX`/`OnX` 135423/135376, `WellSky`/`Wellsky` 135340/59035, all four distinct `job_id`s). Now `casefold()` — NOT `lower()`, since `slug()` keeps non-ASCII and APFS/NTFS fold beyond ASCII; `slug()` normalizes NFC first. Same class as `ashby:Lightfield` (D-339) — **case folded in one layer, not the adjacent one**. **CI CANNOT REPRODUCE IT** (Linux is case-sensitive; both folders get made and a COUNT assertion passes against the defect), so the test asserts the names differ AFTER FOLDING — verified failing with the production error verbatim. (2) DEFERRED with its mechanism NAMED — posting **131367 has `job_id = 69007`**: a lane copy (`pst_2a1f2c22…`) converged onto the native Workday find (`JR-202618529`), `delivered_unapplied` dedups on `job_id` and now returns the OTHER posting while `details.json` is stamped with the old one, so the folder stops identifying the lead. **Convergence working, surfacing as a queue failure — 896 such convergences exist, so it WILL recur.** `queue.py`'s "SPURIOUS and self-heals" comment is about the RECONCILE direction and is **false in the SYNC direction**. (3) `_sync_queue` returned `len()` and discarded the `detail` both reports already carried — the count-with-no-cause is why (2) took a store-vs-disk reconstruction; it now names lead and reason, capped at 3. The per-lead path had NO test (the only one stubs a RAISE), which is why a green gate missed it. |
+| D-402 | DECISIONS.md | 20323 | **THREE DELIVERED LEADS NEVER REACHED THE QUEUE; run 139 is the FIRST run to report a queue failure at all** (136/137/138 carry no queue entry). Store expected **1,141**, disk held **1,147** identified / **0** unclassified, **3 leads had no folder**. **TWO causes.** (1) FIXED — `_plan`'s collision `Counter` keyed the folder name CASE-SENSITIVELY, so `onX_...` and `OnX_...` were two strings and ONE path (probed: `Abc` makes `abc` resolve); exactly **2 groups collide by case alone** (`onX`/`OnX` 135423/135376, `WellSky`/`Wellsky` 135340/59035, all four distinct `job_id`s). Now `casefold()` — NOT `lower()`, since `slug()` keeps non-ASCII and APFS/NTFS fold beyond ASCII; `slug()` normalizes NFC first. Same class as `ashby:Lightfield` (D-339) — **case folded in one layer, not the adjacent one**. **CI CANNOT REPRODUCE IT** (Linux is case-sensitive; both folders get made and a COUNT assertion passes against the defect), so the test asserts the names differ AFTER FOLDING — verified failing with the production error verbatim. (2) FIXED (Mit's call) — posting **131367 has `job_id = 69007`**: a lane copy (`pst_2a1f2c22…`) converged onto the native Workday find (`JR-202618529`), `delivered_unapplied` dedups on `job_id` and now returns the OTHER posting while `details.json` is stamped with the old one, so the folder stops identifying the lead. **Convergence working, surfacing as a queue failure — 896 such convergences exist, so it WILL recur.** Matched on the CANONICAL job now (`posting_id` first, job second), and `job_id` was ALREADY the identity everywhere else (`_wanted_location`'s five sets, `applications`, skip state, `delivered_unapplied`'s dedup) — `_index` was the odd one out. **THE OBVIOUS FIX IS WRONG:** keying `_index` on the folder's RECORDED `job_id` misses every failing case, because that value is STALE exactly there (folder says 131367, store says 69007) — so it resolves the recorded `posting_id` through the STORE (`canonical_job_ids`). Measured read-only: missing folders **3 -> 2** (69007 rescued onto its existing folder), 1,145 of 1,147 folders in the by-job index, 2 ambiguous jobs correctly REFUSED. `queue.py`'s "SPURIOUS and self-heals" comment is about the RECONCILE direction and is **false in the SYNC direction**. (3) `_sync_queue` returned `len()` and discarded the `detail` both reports already carried — the count-with-no-cause is why (2) took a store-vs-disk reconstruction; it now names lead and reason, capped at 3. The per-lead path had NO test (the only one stubs a RAISE), which is why a green gate missed it. |
 
 ---
 
@@ -20320,7 +20320,7 @@ every Workday URL whose site is not already lowercase.
 existing URL and cache key uses. Do not re-derive the old reason from the varied casing of real
 sites — that inference is what produced the false claim the first time.
 
-## D-402 — three delivered leads never reached the queue: a case-folding gap FIXED, and a `job_id` re-point mechanism DEFERRED with its cause named
+## D-402 — three delivered leads never reached the queue: a case-folding gap and a `job_id` re-point, both FIXED
 
 **Context.** Run 139 is the first run ever to report `delivery queue: N lead folder(s) failed to
 copy or drain`; runs 136, 137 and 138 carry no queue entry in `runs.errors_json` at all. The count
@@ -20360,16 +20360,37 @@ code on every filesystem — confirmed by reverting only the two call sites and 
 the production error verbatim (`QueueConflictError: onX_Full_Stack_Engineer already exists and does
 not identify posting 1`).
 
-**Decision 2 — DEFER the `job_id` re-point, and state why rather than leaving it as a mystery.**
-The correct fix is a design question with more than one defensible answer: a folder currently
-identifies its lead by `posting_id`, while the query that offers leads deduplicates by `job_id`,
-so either `_index` must resolve through the canonical `job_id` or the sync must accept a folder
-whose recorded posting resolves to the same job. Both change how a folder is matched to a lead in
-the owner's live working queue, and picking one unattended is not warranted for one lead per run.
-**What this decision buys is that the mechanism is now named**: the next occurrence is not a fresh
-investigation. `queue.py`'s existing comment asserts this class of failure "is SPURIOUS and
-self-heals in the same run" — **that claim is about the RECONCILE direction and is false in the
-SYNC direction**, which is the one run 139 took; it did not self-heal.
+**Decision 2 — FIX the `job_id` re-point by matching folders on the canonical job.** Mit's call,
+2026-09-01, after being shown the two options. **`job_id` was already the identity everywhere
+else**, which is what makes this the coherent direction rather than a coin toss:
+`_wanted_location` tests `entry.job_id` against all five of its sets, `applications` keys on it,
+the skip state keys on it, and `delivered_unapplied` deduplicates on it. `_index` keying its dict
+on `posting_id` was the odd one out, and the two halves of this module disagreed with each other.
+
+**THE WRINKLE THAT MADE THE OBVIOUS FIX WRONG, and it is the transferable part.** "Key `_index` by
+`job_id`" does not work: `_index` reads `job_id` out of the folder's own `details.json`, and **that
+value is stale for exactly the folders that fail** — the Generalmotors folder records `job_id`
+131367 while the store has moved posting 131367 to job 69007. Matching on the recorded job would
+have missed every case it was meant to catch. The fix therefore resolves each folder's recorded
+`posting_id` through the STORE to its current canonical job (`canonical_job_ids`, a new read-only
+query) and indexes by that. A folder's stored identity is a claim about the past; the store is the
+only authority on what a posting's job is NOW.
+Matching is exact `posting_id` FIRST and canonical job SECOND, so a lead whose identity never
+moved keeps the folder it has and nothing renames itself; the fallback only ever rescues a lead
+that would otherwise be reported as a failure with no folder at all. A job that two folders both
+resolve to is **dropped from the by-job index rather than picked between**, the same refusal
+`_index` already makes for two folders claiming one posting.
+`reconcile_queue` gets the refreshed identity too, because `_wanted_location` would otherwise file
+a converged folder against the identity it was written under rather than the one it has now.
+**Verified against the live store, read-only:** leads with no folder go **3 → 2** under
+posting-then-job matching, the rescued one being exactly posting 69007 onto folder
+`Generalmotors_Software_Engineer_AV_Data_Collection`; the remaining 2 are cause 1's, which the
+case fold creates. Of 1,147 indexed folders, 1,145 land in the by-job index and 2 jobs are
+correctly refused as ambiguous.
+`queue.py`'s existing comment asserts this class of failure "is SPURIOUS and self-heals in the same
+run" — **that claim is about the RECONCILE direction and is false in the SYNC direction**, which is
+the one run 139 took; it did not self-heal, and the comment is left standing because it is true of
+the direction it describes.
 
 **Decision 3 — SURFACE the cause, which had no design choice in it.** `LeadFailure` and
 `FolderFailure` each already carried a `detail`; `_sync_queue` returned `len()` and discarded both.
@@ -20380,8 +20401,46 @@ is the second half of that same invisibility.** Nothing covered the per-lead pat
 test stubs a RAISE (`delivery queue not synced`), which is a different branch. That is why the gap
 survived a green gate.
 
+**Decision 4 — an independent `gpt-5.6-sol` review found a defect the gate did not, again.** Run
+after `make check` came back 0 on 8,850 tests, per the standing rule for anything touching identity.
+It returned BLOCKER on two counts and one of them was real and mine to fix.
+
+- **Its first blocker was already answered** by decision 2, which landed while the review was
+  reading: it argued the deferral was UNSAFE rather than incomplete, because `_wanted_location`
+  compares job-keyed `applied`/`skipped` sets against the FROZEN `entry.job_id`, so applying to
+  69007 would leave the stale folder in the active queue and the owner could apply twice. That is
+  exactly the drain path decision 2 refreshes. Worth recording because it independently confirms
+  that deferring cause 2 was the wrong call, on a consequence — double application — that the
+  original sizing (one lead per run) had not identified.
+- **Its second blocker was real, pre-existing, and is FIXED here.** `_plan` disambiguates in ONE
+  pass and never re-checks the retried names, so a retried name can still collide — with a
+  singleton that was never retried, or with another retried name. **Reproduced independently
+  rather than taken on the reviewer's word:** two leads colliding by case both retry, and a third
+  lead whose ORDINARY title carries the first one's eight-hex suffix plans the identical folder,
+  with `_plan` reporting **no failure at all**. `_fit`'s truncation does not establish uniqueness
+  either — it substitutes another eight-hex digest without re-checking. **This is not caused by the
+  case fold, but the case fold makes the retry path fire more often, so it widens the exposure.**
+  Fixed with a final folded-uniqueness pass that keeps the lowest `posting_id` and REPORTS the
+  rest, rather than resolving it with a longer suffix: extending the suffix is bounded by the byte
+  budget and re-enters `_fit`, which is the same problem one level down. The gain is that the loss
+  is deterministic and named at PLAN time instead of falling on whichever lead was written second.
+- **Two non-blocking findings taken:** the three-item cap could hide every drain cause behind three
+  sync failures, because the list was concatenated sync-then-drain — the two kinds are now returned
+  SEPARATELY and interleaved, and the kind is never recovered by string-matching a message. And a
+  queue folder is owner-renameable, so its name is untrusted text reaching a one-line console print
+  and a Markdown bullet; control characters are now flattened.
+- **One non-blocking finding NOT taken, recorded instead.** `_identity_hash` includes `apply_url`,
+  which a scan refreshes on every observation, so a disambiguated folder's name can churn when that
+  URL changes — and a lead whose colliding sibling is applied or skipped loses its suffix and gains
+  it back if that is undone. Pre-existing, independent of this change, and it weakens the broader
+  "a folder the owner can keep open" property while leaving the narrow stated invariant ("two syncs
+  of the same data agree") true. Not fixed here because it is a different question from this
+  incident.
+
 **Alternatives rejected.** Fixing only the case fold and leaving the count opaque (the reason cause
 2 cost a reconstruction). Making `_plan` check disk for occupied names, which would break its stated
 and load-bearing property that a name is a function of the database alone so two syncs of the same
-data agree. Repairing the three leads by hand in the live queue — the fix puts them there on the
-next run, and hand-editing the owner's working surface is not a substitute for the code being right.
+data agree. **Keying `_index` on the folder's recorded `job_id`** — the fix that looks right and is
+not, because that value is stale in precisely the failing cases. Repairing the three leads by hand
+in the live queue — the fix puts them there on the next run, and hand-editing the owner's working
+surface is not a substitute for the code being right.

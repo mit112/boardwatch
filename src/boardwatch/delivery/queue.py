@@ -58,7 +58,7 @@ import time
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from secrets import token_hex
 
@@ -71,6 +71,7 @@ from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, lane
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     QueueRow,
+    canonical_job_ids,
     closed_job_ids,
     delivered_unapplied,
     ineligible_job_ids,
@@ -396,14 +397,14 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         for row in rows
     }
     artifact_ids = _tailored_artifact_ids(conn)
-    entries, _ = _index(root)
+    entries, by_job = _resolve_job_identity(conn, _index(root)[0])
     planned, failures = _plan(rows, root=root, owner_name=owner_name)
     failed = {failure.posting_id for failure in failures}
 
     moved = 0
     for row in rows:
         names = planned.get(row.posting_id)
-        entry = entries.get(row.posting_id)
+        entry = _entry_for(row, entries, by_job)
         if names is None or entry is None:
             continue
         target = _dest(root, lane_of[row.posting_id], names.folder)
@@ -427,7 +428,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             try:
                 # `entry.path` is stale after the relocation pass; only its existence and its
                 # recorded hash are read here, and neither moved.
-                entry = entries.get(row.posting_id)
+                entry = _entry_for(row, entries, by_job)
                 target = _dest(root, lane_of[row.posting_id], names.folder)
                 if entry is None and target.exists():
                     raise QueueConflictError(
@@ -519,6 +520,44 @@ def _plan(
         retried = attempt(row, f"{row.title} {suffix}")
         if retried is not None:
             planned[row.posting_id] = retried
+
+    # FINAL FOLDED-UNIQUENESS CHECK. The disambiguation above is ONE pass, and a retried name can
+    # still collide — with a singleton that was never retried, or with another retried name. The
+    # reachable shape is a lead whose ORDINARY title happens to contain another lead's eight-hex
+    # suffix, which then plans the identical folder; `_fit`'s truncation does not establish
+    # uniqueness either, since it substitutes another eight-hex digest without re-checking.
+    # Reproduced: `Acme`/`Engineer` and `acme`/`Engineer` collide by case, both retry, and a third
+    # lead titled `Engineer <first lead's suffix>` plans the SAME folder as the first, with
+    # `_plan` reporting no failure at all.
+    #
+    # Left as a REPORTED failure rather than resolved with a longer suffix: extending it is bounded
+    # by the byte budget and would re-enter `_fit`, which is the same problem one level down. What
+    # this pass buys is that the loss is DETERMINISTIC and NAMED — the lowest `posting_id` keeps
+    # the folder and every other member is failed with the reason here, instead of whichever lead
+    # happened to be written second failing at write time with a `QueueConflictError` that blames
+    # the folder rather than the plan.
+    folded = Counter(names.folder.casefold() for names in planned.values())
+    for posting_id in sorted(planned):
+        names = planned[posting_id]
+        if folded[names.folder.casefold()] == 1:
+            continue
+        key = names.folder.casefold()
+        rivals = sorted(
+            other for other, item in planned.items() if item.folder.casefold() == key
+        )
+        if posting_id == rivals[0]:
+            continue
+        del planned[posting_id]
+        failures.append(
+            LeadFailure(
+                posting_id=posting_id,
+                detail=(
+                    f"planned folder {names.folder!r} is still taken after disambiguation by "
+                    f"posting {rivals[0]}; a title carrying another lead's suffix cannot be "
+                    f"separated by one"
+                ),
+            )
+        )
     return planned, failures
 
 
@@ -738,6 +777,10 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
     entries, unclassified = _index(root)
+    # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
+    # would otherwise be filed against the identity it was written under rather than the one it
+    # has now.
+    entries, _ = _resolve_job_identity(conn, entries)
     counts = {
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
@@ -876,6 +919,57 @@ def _index(root: Path) -> tuple[dict[int, _Entry], tuple[str, ...]]:
                 content_hash=_as_str(details.get("content_hash")) if details else None,
             )
     return entries, tuple(unclassified)
+
+
+def _resolve_job_identity(
+    conn: Connection, entries: dict[int, _Entry]
+) -> tuple[dict[int, _Entry], dict[int, _Entry]]:
+    """Refresh each folder's job identity from the store, and index the folders by it as well.
+
+    A folder records the `job_id` it was written under, and that answer GOES STALE. Identity
+    resolution can converge a lane copy onto a native find, and then the posting's canonical job
+    moves while `details.json` still names the old one. Run 139's measured case: posting 131367
+    (a lane copy) now carries `job_id = 69007`, the native Workday find, and its folder still
+    recorded 131367 — so the folder identified neither the posting `delivered_unapplied` offered
+    (69007, because it deduplicates on `job_id`) nor the job it actually belongs to. The lead was
+    reported as a failure and never got a folder.
+
+    **`job_id` is already the identity everywhere else here**, which is why this reconciles TO it:
+    `_wanted_location` tests `entry.job_id` against all five of its sets, `applications` keys on
+    it, the skip state keys on it, and `delivered_unapplied` deduplicates on it. `_index` keying
+    its dict on `posting_id` was the odd one out.
+
+    Returns the entries with a refreshed `job_id`, and a second index keyed by that job. **A job
+    two folders both resolve to is dropped from the by-job index rather than picked between** —
+    the same refusal `_index` makes for two folders claiming one posting, and it costs nothing
+    beyond leaving today's exact-posting behaviour in place for that lead.
+    """
+    current = canonical_job_ids(conn, {entry.posting_id for entry in entries.values()})
+    refreshed: dict[int, _Entry] = {}
+    by_job: dict[int, _Entry] = {}
+    ambiguous: set[int] = set()
+    for posting_id, entry in entries.items():
+        entry = replace(entry, job_id=current.get(posting_id, entry.job_id))
+        refreshed[posting_id] = entry
+        if entry.job_id in by_job:
+            ambiguous.add(entry.job_id)
+        else:
+            by_job[entry.job_id] = entry
+    for job_id in ambiguous:
+        by_job.pop(job_id, None)
+    return refreshed, by_job
+
+
+def _entry_for(
+    row: QueueRow, entries: dict[int, _Entry], by_job: dict[int, _Entry]
+) -> _Entry | None:
+    """The folder that already holds this lead, by posting first and canonical job second.
+
+    Exact posting first so a lead whose identity never moved keeps the folder it has and nothing
+    renames itself; the job fallback only ever rescues a lead that would otherwise be reported as
+    a failure and left with no folder at all.
+    """
+    return entries.get(row.posting_id) or by_job.get(row.job_id)
 
 
 def _child_dirs(base: Path) -> list[Path]:

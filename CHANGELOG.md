@@ -151,6 +151,24 @@ All notable changes to this project are documented here. The format follows
   the filesystem does, so both leads get a folder. This could never have shown up in automated
   testing, which runs on Linux, where the two names really are different.
 
+- **A lead no longer loses its queue folder when boardwatch works out that two listings are the
+  same job.** The same job is often found twice — once through an employer's own careers site and
+  once through a jobs feed — and boardwatch merges the two once it can tell. Your queue folder was
+  labelled with whichever listing it was first created from, so after a merge the folder no longer
+  matched the listing the queue was working from, and the lead was reported as a failure and left
+  with no folder at all. Folders are now matched on the merged job, so the folder you already have
+  is kept and relabelled. Checked against the real queue: this recovers one of the three leads run
+  139 lost, and 1,145 of 1,147 folders match cleanly — the two that do not are correctly left alone
+  rather than guessed at.
+
+- **A folder name that is still taken after boardwatch tries to make it unique is now reported
+  rather than quietly handed out twice.** When two leads want the same folder name, a short code is
+  added to tell them apart. That was done in a single pass and the results were never re-checked,
+  so in a rare case — a job title that happens to contain another lead's code — two leads could
+  still end up with the same name and nothing said so. Whichever was written second then failed
+  with a message blaming the folder rather than the naming. Now the first lead keeps the folder and
+  any other is reported with the real reason.
+
 - **When a lead could not be filed into the queue, the run now says which one and why.** It used
   to report only a number — "4 lead folder(s) failed to copy or drain" — and throw away the reason
   it had already worked out for each one. Working out which four leads and what went wrong meant
