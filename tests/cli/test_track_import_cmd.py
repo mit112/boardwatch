@@ -10,6 +10,7 @@ import json
 import plistlib
 from pathlib import Path
 
+import pytest
 from sqlalchemy import func, insert, select
 from typer.testing import CliRunner
 
@@ -117,6 +118,31 @@ def _jobapps_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def test_a_directory_that_cannot_be_listed_exits_one_with_the_commands_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The listing raise site is what this covers: a raw `PermissionError` from `iterdir`
+    escapes `track import`'s `except` clause as a traceback, so the reader must translate it
+    to the type the command already catches. Injected at that one path rather than by
+    `chmod`, because click's own readability check intercepts an unopenable root first and
+    would make this pass without any translation at all."""
+    data_dir = tmp_path / "store"
+    _seed(data_dir)
+    root = _jobapps_dir(tmp_path)
+    real = Path.iterdir
+
+    def refuse(self: Path):  # type: ignore[no-untyped-def]
+        if self == root:
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", refuse)
+    result = _run(data_dir, ["track", "import", str(root)])
+    assert result.exit_code == 1
+    assert "cannot read" in result.output
+    assert _applications(data_dir) == 0
 
 
 def test_a_directory_is_read_as_a_jobapps_applied_tree(tmp_path: Path) -> None:

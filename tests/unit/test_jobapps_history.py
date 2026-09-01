@@ -16,6 +16,7 @@ from sqlalchemy import Connection, Engine, func, insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.store.application_history import (
+    HistoryFormatError,
     ImportBucket,
     MalformedReason,
     import_history,
@@ -269,6 +270,37 @@ def test_non_directory_entries_are_skipped_not_counted(tmp_path: Path) -> None:
     _job_description(folder, company="OnlyRealOne Co", title="Engineer")
     rows, malformed = read_jobapps_dir(root)
     assert len(rows) + len(malformed) == 1
+
+
+def test_an_unreadable_directory_raises_the_typed_error_not_a_raw_oserror(
+    tmp_path: Path,
+) -> None:
+    """`track import` catches `HistoryFormatError`; a raw `PermissionError` escapes as a
+    traceback instead of the command's diagnostic. Typed at the raise site, never sniffed
+    from a message."""
+    root = tmp_path / "_applied"
+    root.mkdir(parents=True)
+    root.chmod(0o000)
+    try:
+        with pytest.raises(HistoryFormatError):
+            read_jobapps_dir(root)
+    finally:
+        root.chmod(0o755)
+
+
+def test_a_symlinked_entry_is_never_followed(tmp_path: Path) -> None:
+    """`is_dir()` follows symlinks with no confinement, so a link out of `_applied/` would
+    import a role that was never applied to — job-apps' own `_skipped/` verdicts sit one
+    directory away. A symlink is not an application record job-apps wrote, so it is skipped
+    exactly like the `.DS_Store` beside it: no row, no malformed row, not a candidate."""
+    outside = tmp_path / "elsewhere" / "NeverApplied_Co"
+    _webloc(outside, "https://jobs.example-ats.test/never/1")
+    _job_description(outside, company="NeverApplied Co", title="Engineer")
+    root = tmp_path / "_applied"
+    root.mkdir(parents=True)
+    (root / "NeverApplied_Co").symlink_to(outside, target_is_directory=True)
+    rows, malformed = read_jobapps_dir(root)
+    assert (rows, malformed) == ([], [])
 
 
 def test_folders_are_read_in_a_stable_sorted_order(tmp_path: Path) -> None:
