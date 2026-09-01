@@ -84,6 +84,14 @@ MIN_DELIVERED_COMPANIES = 2
 # request.
 MAX_MINED_FACET_WORDS = 5
 
+# How deep the ranked candidate list is carried past the run's cap. Every candidate costs one
+# `LIKE` term in the trial lookup's `WHERE`, so an unbounded list makes that query grow with the
+# user's delivered history — the same bound `store.queries.load_dispositions` chunks its `IN`
+# list for. Four times the run cap, so pruning has depth to work with: reaching the end of it
+# would mean 32 better-evidenced terms were all barren, and the run then buys FEWER facets,
+# which is the safe direction and is visible in the funnel's own list of searches.
+MAX_MINED_CANDIDATES = 32
+
 # How many postings a mined facet must have been credited with, inside the window, before zero
 # deliveries from it is evidence rather than small-sample noise. Measured on the live store's own
 # 807 facet-credited postings: the WEAKEST of the 14 profile facets still delivered 2 leads from
@@ -179,13 +187,16 @@ def _word_key(term: str) -> tuple[str, ...]:
 def mined_facet_candidates(
     delivered: Iterable[DeliveredPosting], role_facet_terms: Sequence[str]
 ) -> tuple[str, ...]:
-    """Search terms the user's own delivered leads support, best-evidenced first, UNCAPPED.
+    """Search terms the user's own delivered leads support, best-evidenced first.
 
-    Uncapped and un-pruned on purpose: this is the generation half, and it answers only "what
-    does the user's delivered history say the market calls these jobs". Whether a candidate has
-    already been tried and found barren is a different question with different evidence, and
+    Un-PRUNED on purpose: this is the generation half, and it answers only "what does the user's
+    delivered history say the market calls these jobs". Whether a candidate has already been
+    tried and found barren is a different question with different evidence, and
     `surviving_mined_facets` asks it. Folding them would make one function that could not report
     which rule dropped a term.
+
+    Cut at `MAX_MINED_CANDIDATES` rather than at the run cap, because the caller has to price
+    every candidate it returns and pruning has to have somewhere to go.
 
     A term the profile already asks for is excluded on the WORD KEY, not the spelling, so a
     permuted duplicate cannot slip past. Ordering is (postings, employers, term) descending,
@@ -217,7 +228,7 @@ def mined_facet_candidates(
         best = min(spellings[key].items(), key=lambda item: (-len(item[1]), item[0]))[0]
         ranked.append((len(posting_ids), len(companies[key]), best))
     ranked.sort(key=lambda row: (-row[0], -row[1], row[2]))
-    return tuple(term for _, _, term in ranked)
+    return tuple(term for _, _, term in ranked[:MAX_MINED_CANDIDATES])
 
 
 def surviving_mined_facets(

@@ -156,6 +156,19 @@ def test_no_delivered_leads_at_all_mines_nothing():
     assert mined_facet_candidates((), ("registered nurse",)) == ()
 
 
+def test_the_candidate_list_is_cut_before_the_caller_has_to_price_it():
+    """Every candidate costs one `LIKE` term in the trial lookup, so an unbounded list makes
+    that query grow with the user's delivered history. 32 as a LITERAL: four times the eight a
+    run may buy, which is depth for pruning without an unbounded read."""
+    delivered = tuple(
+        row
+        for index in range(60)
+        for row in _spread(f"Ward {index} Nurse", count=2, first_id=index * 10)
+    )
+
+    assert len(mined_facet_candidates(delivered, ())) == 32
+
+
 def test_the_ranking_is_fully_determined_so_one_store_yields_one_facet_list():
     """A run whose facet set varied between invocations could not be reproduced from the store
     that produced it — the same standard `role_facets`' truncating cap is held to. Ordering is
