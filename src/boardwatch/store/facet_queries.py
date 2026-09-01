@@ -6,7 +6,8 @@ Both already exist: `job_dispositions` has recorded `built` since P6 slice 2, an
 `posting_version_sources.source_url` has recorded the exact URL a version was observed at since
 P0. Measured on the live store 2026-08-31: 940 `built` dispositions over 957 postings, and 807
 posting-version rows carrying a faceted LinkedIn search URL across 21 runs and 14 facets, every
-one of which had delivered at least 2 leads. Nothing here needs a new column.
+one of which had delivered at least 2 leads (142 of the 940 built leads came through them).
+Nothing here needs a new column.
 
 WHY THE PROVENANCE IS MATCHED BY URL PREFIX AND NOT PARSED. The caller passes the URLs its own
 request builder produces, so the match is against the exact string that lane would request. A

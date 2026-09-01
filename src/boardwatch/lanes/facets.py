@@ -18,11 +18,10 @@ budgets, and no titles.
 
 WHY A PROFILE'S TITLES ARE NOT THE WHOLE ASK. A stated target title set is what the user could
 write down before running anything; it is not what the market calls the jobs she actually wants.
-Measured on the live store 2026-08-31, of 957 postings the program had built a lead for, only 26
-distinct title spellings recurred at two or more employers, and the largest — `software
-development engineer` (10 postings, 4 employers) and `junior software engineer` (13 postings, 5
-employers) — were absent from the profile entirely. Every one of those searches was a query the
-lane never made.
+Measured on the live store 2026-08-31 by running THIS module over it, of 957 postings the program
+had built a lead for, 26 distinct title spellings recurred at two or more employers, and the eight
+best-evidenced (16 delivered postings at 13 employers, down to 3 at 3) were absent from the
+profile entirely. Every one of those was a search the lane never made.
 
 So the second source of facets is the user's OWN DELIVERED OUTCOMES: the titles of postings this
 program built a lead for. That is still not a title written into code — it is the same
@@ -45,8 +44,14 @@ from dataclasses import dataclass
 
 # One facet is one search request, so an uncapped profile is an uncapped request count. Sized to
 # clear a realistic profile with headroom rather than to bind one: the live profile lists 14
-# target titles. It bounds SEARCH requests only — body GETs stay bounded by the lane's own
-# posting budget, so a wider facet set buys a better candidate pool at the same body cost.
+# target titles. It bounds SEARCH requests only, and body GETs stay bounded by the lane's own
+# `lane_posting_budget`.
+#
+# THAT IS A CEILING, NOT A CONSERVED TOTAL, and this comment used to read as though it were —
+# "a wider facet set buys a better candidate pool at the same body cost". Measured on runs
+# 134-137, the lane attempted 111-128 bodies against a budget of 300, so it was 172-189 under
+# the ceiling every time and a wider facet set buys MORE bodies, not the same ones re-sorted.
+# The body half is still bounded by a number the operator set; it is simply not free.
 #
 # This caps the PROFILE's facets alone. Mined facets carry their own, separate budget below, so
 # that a mined term can never displace a title the user actually asked for.
