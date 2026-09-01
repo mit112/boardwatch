@@ -131,6 +131,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A SmartRecruiters job found through a lane is now recognised as the same job the board scan
+  already found.** Every SmartRecruiters link was previously refused, because the only example this
+  project held was an invented one and a real link puts the job's id and its title in a single piece
+  of the address — so reading the address naively would have produced the title as the id, and two
+  different jobs at one employer would have overwritten each other. The evidence to settle it turned
+  out to be here already: 3,041 real SmartRecruiters links in this instance's own store, on which
+  reading the id back out of the address matches the id the board itself reported, 3,041 times out of
+  3,041. Links whose id is not readable — SmartRecruiters also issues a different, non-numeric kind —
+  are still refused rather than guessed at, because a wrong id silently overwrites a real job.
+
 - **A job description the tool barely understood no longer counts as a perfect skills match.** How
   well a posting matches your skills was worked out as a plain fraction — of the skills recognised in
   this job description, how many are yours — so a description yielding a single recognised skill, and

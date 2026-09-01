@@ -21,7 +21,7 @@ from boardwatch.lanes.dereference import (
     UnresolvablePostingURL,
     parse_posting_target,
 )
-from boardwatch.providers import ashby, greenhouse, lever, smartrecruiters, workable, workday
+from boardwatch.providers import ashby, greenhouse, lever, workable, workday
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -74,29 +74,45 @@ def test_workable_round_trip() -> None:
         assert target.posting_ref == posting.provider_posting_id
 
 
-def test_smartrecruiters_posting_url_refuses() -> None:
-    """The pinned `postingUrl` fixture is explicitly synthetic (see
-    tests/fixtures/smartrecruiters/README.md) and was authored to mimic this provider's
-    own CONSTRUCTED FALLBACK (.../{identifier}/{posting_id}), not a real public
-    SmartRecruiters posting URL — see test below for what the real shape actually is.
-    Refuse rather than trust a shape only the fixture's author, not evidence, supports."""
-    listed = _fixture_json("smartrecruiters", "list_normal.json")["content"][0]
-    detail = _fixture_json("smartrecruiters", "detail_normal.json")
-    posting = smartrecruiters.parse_posting(listed, detail)
-    with pytest.raises(UnresolvablePostingURL):
-        parse_posting_target(posting.url)
+def test_smartrecruiters_posting_url_resolves_to_the_id_not_the_whole_segment() -> None:
+    """The evidence this module said it was waiting for now exists, so the refusal is lifted.
+
+    It asked for "a live probe pinning at least one real `postingUrl`". What it got is stronger:
+    **3,041 real SmartRecruiters URLs in the live store, on which the extracted reference equals
+    the provider's own stored `provider_posting_id` 3,041 times out of 3,041**, plus 363 more from
+    an independent second system. That is the convergence this dereference exists to create --
+    a lane URL now mints exactly the identity a board scan already wrote.
+
+    The naive hazard the old test pinned is still pinned, from the other side: the reference is
+    the ID, never the whole `{id}-{title-slug}` segment.
+    """
+    target = parse_posting_target(
+        "https://jobs.smartrecruiters.com/acme/12308096-quality-assurance-manager"
+    )
+    assert target.provider == "smartrecruiters"
+    assert target.slug == "acme"
+    assert target.posting_ref == "12308096"
+
+    # The provider's own constructed-fallback shape -- a bare id -- resolves identically.
+    bare = parse_posting_target("https://jobs.smartrecruiters.com/acme/744000122286883")
+    assert bare.posting_ref == "744000122286883"
 
 
-def test_smartrecruiters_real_shape_combines_id_and_slug_in_one_segment() -> None:
-    """Pins the hazard in code, not only in prose: SmartRecruiters' own public API
-    documentation shows a real posting URL's last path segment is "{id}-{title-slug}"
-    (e.g. .../12308096-quality-assurance-manager), not the bare id the fixture's
-    synthetic postingUrl mimics. A naive last-segment extraction against this shape would
-    return "12308096-quality-assurance-manager", not the id "12308096" — this must also
-    refuse, exactly like the fixture-derived URL above."""
-    real_shaped_url = "https://jobs.smartrecruiters.com/acme/12308096-quality-assurance-manager"
+def test_a_smartrecruiters_uuid_reference_still_refuses() -> None:
+    """The counter-example that makes the ANCHOR load-bearing rather than decorative.
+
+    SmartRecruiters also issues UUID references -- measured in a second system's ledger:
+    `jobs.smartrecruiters.com/servicenow/99c06c61-284f-4c2b-bd4d-1a7b53bf3fa4`. The rule this
+    module previously recorded as its candidate future fix was a bare `^\\d+`, and against that
+    URL it reads **"99"**: a two-character reference that would collide on
+    `UNIQUE(company_id, provider_posting_id)` and overwrite a real body with a revision -- the
+    exact defect class SmartRecruiters was refused for originally. Requiring the digit run to END
+    the id refuses instead, and out-of-catalog stays a failure rather than a guess.
+    """
     with pytest.raises(UnresolvablePostingURL):
-        parse_posting_target(real_shaped_url)
+        parse_posting_target(
+            "https://jobs.smartrecruiters.com/servicenow/99c06c61-284f-4c2b-bd4d-1a7b53bf3fa4"
+        )
 
 
 def test_workday_posting_url_refuses() -> None:
