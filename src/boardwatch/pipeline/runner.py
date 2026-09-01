@@ -176,8 +176,25 @@ LaneFactory = Callable[..., Lane]
 
 
 def _linkedin_lane(
-    settings: Settings, facets: LaneFacets, *, day_ordinal: int = 0
+    settings: Settings, facets: LaneFacets, *, day_ordinal: int
 ) -> LinkedInLane:
+    """The LinkedIn lane for one run. `day_ordinal` selects this run's slice of the hub matrix.
+
+    **`day_ordinal` HAS NO DEFAULT ON PURPOSE.** A default of 0 is a silent-zero path: every
+    caller that forgot to pass one would draw the same twelve cells of the matrix forever, the
+    rotation would never advance, and no test would go red — the lane would still fetch, still
+    report, and still look correct. Making it required means the one caller that has a run row to
+    read it from must produce it.
+
+    **The nets cross the hubs with `facets.profile` ONLY, never `facets.mined`, and that
+    boundary lives here.** `search_facets` gets both halves because a USA-wide search is one
+    request per term either way. A NET is one request per term PER HUB, so folding the mined
+    half in multiplies the matrix — and therefore the number of days a full rotation takes — by
+    however many titles this repo happened to infer that week. The user's DECLARED targets would
+    reach each metro proportionally later, which is the one thing the net exists to do. Mined
+    facets are already searched USA-wide by the facet path above; they are an inference from
+    delivered leads, not an ask, and they do not get to slow down the ask.
+    """
     return LinkedInLane(
         posting_budget=settings.lane_posting_budget,
         search_facets=facets.profile + facets.mined,

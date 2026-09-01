@@ -4,6 +4,7 @@ user's unknown-but-harmless keys survive a set."""
 
 from __future__ import annotations
 
+import json
 import tomllib
 from collections.abc import Callable
 from typing import Any
@@ -31,6 +32,43 @@ def _lane_names(raw: str) -> list[str]:
     named "", which would then be reported as unknown on every run.
     """
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _search_hubs(raw: str) -> list[str]:
+    """`lane_search_hubs` from one CLI string, as a JSON array.
+
+    **NOT comma-separated, unlike `lanes_enabled`, and that difference is the whole point.** A
+    hub is a human place name and the ones LinkedIn's `location=` accepts CONTAIN a comma —
+    "Austin, TX". Cast through `_lane_names` this value split into two hubs, "Austin" and "TX",
+    and the lane searched two places the user never named while reporting that it had searched
+    theirs. `"Austin, TX,Boston, MA"` became four. There is no separator a place name cannot
+    contain, so the fix is a representation that QUOTES its elements rather than a different
+    delimiter to split on.
+
+    A LIST, not a tuple, for the same reason `_lane_names` returns one: the value is written
+    straight into config.toml by `tomli_w`, which has no tuple form, and pydantic coerces it back
+    to a tuple on load. That also makes the round trip exact — TOML's array of strings is the
+    same shape as the JSON array accepted here.
+
+    Blank disables hub nets, matching the inert default, rather than registering a hub named "".
+    """
+    text = raw.strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "expected a JSON array of hub names, e.g. "
+            '\'["Austin, TX", "Boston, MA"]\' (a hub name contains a comma, so a bare '
+            "comma-separated list cannot express one)"
+        ) from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise ValueError(
+            'expected a JSON ARRAY OF STRINGS, e.g. \'["Austin, TX", "Boston, MA"]\', '
+            f"got {parsed!r}"
+        )
+    return [item.strip() for item in parsed if item.strip()]
 
 
 # key → (caster, "takes effect", units note). weights.* are nested under [weights].
@@ -87,7 +125,10 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         _lane_names, "next run", "comma-separated lane names; blank disarms every lane"
     ),
     "lane_search_hubs": (
-        _lane_names, "next run", "comma-separated LinkedIn search hubs; blank disables hub nets"
+        _search_hubs,
+        "next run",
+        'JSON array of LinkedIn search hubs, e.g. \'["Austin, TX", "Boston, MA"]\'; '
+        "blank disables hub nets",
     ),
     "lane_new_companies_per_run": (
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"

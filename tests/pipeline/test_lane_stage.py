@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from threading import Barrier
 from time import sleep
@@ -39,7 +40,13 @@ from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.linkedin import search_urls
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline import runner as runner_mod
-from boardwatch.pipeline.runner import PipelineSummary, _collect_lane, _run_lanes, run_pipeline
+from boardwatch.pipeline.runner import (
+    PipelineSummary,
+    _collect_lane,
+    _linkedin_lane,
+    _run_lanes,
+    run_pipeline,
+)
 from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
@@ -1204,8 +1211,78 @@ def test_only_the_lane_whose_provenance_can_retire_a_mined_facet_receives_one(
     facets = LaneFacets(profile=("registered nurse",), mined=("perioperative nurse",))
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
 
-    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets)
+    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets, day_ordinal=0)
     hiringcafe_lane = runner_mod.LANE_FACTORIES["hiringcafe"](settings, facets)
 
     assert linkedin_lane._search_facets == ("registered nurse", "perioperative nurse")
     assert hiringcafe_lane._search_facets == ("registered nurse",)
+
+
+# --------------------------------------------------------------------------------------
+# LinkedIn hub nets: the two boundaries the lane stage owns
+# --------------------------------------------------------------------------------------
+
+# `date(2026, 3, 14).toordinal()`, written out as a LITERAL. Calling `toordinal()` here would
+# assert the implementation against its own expression and pass for any date the run row held,
+# including the fixed 0 this test exists to refuse.
+_PINNED_RUN_ORDINAL = 739689
+
+
+def test_the_hub_rotation_uses_the_RUNS_OWN_DATE_and_never_a_fixed_zero(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The half of the rotation no unit test of `hub_nets` can reach.
+
+    `hub_nets` is tested exhaustively against a `day_ordinal` a test hands it. That says nothing
+    about which ordinal PRODUCTION hands it, and the whole rotation collapses if the answer is a
+    constant: the lane would draw the same twelve cells of the matrix every day, forever, while
+    every test stayed green and the run reported that it had searched its nets. So this asserts
+    the value that actually crosses the boundary, against a run row whose date is pinned.
+    """
+    recorded: list[int] = []
+
+    def _factory(_settings: Settings, _facets: LaneFacets, *, day_ordinal: int) -> StubLane:
+        recorded.append(day_ordinal)
+        return StubLane([])
+
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"linkedin": _factory})
+    run_id = insert_run(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            tables.runs.update()
+            .where(tables.runs.c.id == run_id)
+            .values(started_at=datetime(2026, 3, 14, 9, 30))
+        )
+
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("linkedin",)), run_id)
+
+    assert recorded == [_PINNED_RUN_ORDINAL]
+
+
+def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
+    tmp_path: Path,
+) -> None:
+    """The contract `_linkedin_lane` states, pinned where it can be broken silently.
+
+    A USA-wide facet costs one request per term whether it was asked for or inferred, so
+    `search_facets` gets both halves. A NET costs one request per term PER HUB, so folding the
+    mined half into the matrix multiplies the number of days a full rotation takes by however
+    many titles the repo happened to infer that week -- and the user's DECLARED targets reach
+    each metro proportionally later, which is the one thing the net exists to do.
+
+    Both halves are asserted: dropping `mined` from `search_facets` would be a real regression
+    too, and a test that only checked the nets would not see it.
+    """
+    lane = _linkedin_lane(
+        Settings(
+            data_dir=tmp_path,
+            config_dir=tmp_path,
+            lane_search_hubs=("Austin, TX",),
+            lane_hub_combos_per_run=99,
+        ),
+        LaneFacets(profile=("software engineer",), mined=("platform engineer",)),
+        day_ordinal=0,
+    )
+
+    assert lane._search_facets == ("software engineer", "platform engineer")
+    assert lane._search_nets == (("software engineer", "Austin, TX"),)

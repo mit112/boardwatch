@@ -151,3 +151,60 @@ def test_hub_nets_are_deterministic_for_identical_inputs():
     assert hub_nets(
         inputs[0], inputs[1], day_ordinal=inputs[2], combos_per_run=inputs[3]
     ) == hub_nets(inputs[0], inputs[1], day_ordinal=inputs[2], combos_per_run=inputs[3])
+
+
+def test_a_hub_named_twice_does_not_buy_the_same_search_twice():
+    """The regression guard for a config that repeats itself.
+
+    `Settings` enforces uniqueness on neither terms nor hubs, so before the inputs were
+    deduplicated the identical `(term, hub)` cell sat in the matrix twice: the run paid for the
+    same request twice, and the slice returned FEWER DISTINCT cells than `combos_per_run`
+    promises -- a run's reach shrank in proportion to how often the user repeated a hub, silently
+    and with nothing in the report to show it.
+    """
+    duplicated = hub_nets(
+        ("alpha", "alpha"),
+        ("Austin, TX", "Boston, MA", "Austin, TX"),
+        day_ordinal=0,
+        combos_per_run=99,
+    )
+
+    assert duplicated == (("alpha", "Austin, TX"), ("alpha", "Boston, MA"))
+    assert len(set(duplicated)) == len(duplicated)
+
+
+def test_deduplication_preserves_first_seen_order_so_the_matrix_is_the_config_as_written():
+    """Order matters because it decides which cells a given day draws. A set would make the
+    slice depend on hash iteration order rather than on what the user wrote."""
+    assert hub_nets(
+        ("beta", "alpha", "beta"),
+        ("Boston, MA", "Austin, TX", "Boston, MA"),
+        day_ordinal=0,
+        combos_per_run=99,
+    ) == (
+        ("beta", "Boston, MA"),
+        ("beta", "Austin, TX"),
+        ("alpha", "Boston, MA"),
+        ("alpha", "Austin, TX"),
+    )
+
+
+def test_a_run_never_spends_two_of_its_combos_on_one_search():
+    """The consequence the dedup exists to prevent, stated as the property that costs money.
+
+    A run buys `combos_per_run` REQUESTS. Every cell the slice repeats is a request spent
+    fetching a page this run has already fetched, so the returned slice must never contain the
+    same `(term, hub)` twice no matter how the config repeats itself. Asserted as
+    `len(set(...)) == len(...)` rather than against an expected tuple, because that is the
+    invariant itself and it holds for every input rather than for the one that was written down.
+    """
+    for terms, hubs, combos in (
+        (("alpha",), ("Austin, TX", "Austin, TX"), 2),
+        (("alpha", "alpha"), ("Austin, TX",), 2),
+        (("alpha", "beta", "alpha"), ("Austin, TX", "Boston, MA", "Austin, TX"), 5),
+    ):
+        for day_ordinal in range(8):
+            slice_ = hub_nets(
+                terms, hubs, day_ordinal=day_ordinal, combos_per_run=combos
+            )
+            assert len(set(slice_)) == len(slice_), (terms, hubs, combos, day_ordinal)

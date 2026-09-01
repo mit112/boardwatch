@@ -96,6 +96,50 @@ def test_set_invalid_exits_nonzero_and_file_untouched(cfg, key, value) -> None:
     assert not (cfg / "config.toml").exists()  # nothing written on the failure path
 
 
+def test_set_keeps_a_search_hub_whose_NAME_CONTAINS_A_COMMA_intact(cfg) -> None:
+    """The regression guard for the defect `lane_search_hubs` shipped with.
+
+    The key was cast with `lanes_enabled`'s comma splitter. `config set lane_search_hubs
+    "Austin, TX"` therefore stored `("Austin", "TX")` -- the lane geo-searched two places the
+    user never named, found little, and reported that it had searched theirs.
+    `"Austin, TX,Boston, MA"` became four hubs. Every hub LinkedIn's `location=` accepts is a
+    "City, ST" pair, so this was not an edge case; it was every value the key has.
+
+    Asserted through the CLI and then through `load_settings`, because the store-and-reload is
+    the round trip that has to hold: `tomli_w` writes the list and pydantic must coerce the same
+    two strings back.
+    """
+    result = runner.invoke(
+        app,
+        [*_base(cfg), "config", "set", "lane_search_hubs", '["Austin, TX", "Boston, MA"]'],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert tomllib.loads((cfg / "config.toml").read_text())["lane_search_hubs"] == [
+        "Austin, TX",
+        "Boston, MA",
+    ]
+    assert load_settings(data_dir=cfg / "data").lane_search_hubs == ("Austin, TX", "Boston, MA")
+
+
+def test_set_refuses_a_bare_comma_separated_hub_list_rather_than_splitting_it(cfg) -> None:
+    """The failure has to be LOUD. A user who types the old comma form must be told, not quietly
+    given two wrong hubs -- silently mis-parsing is exactly the defect above."""
+    result = runner.invoke(
+        app, [*_base(cfg), "config", "set", "lane_search_hubs", "Austin, TX"]
+    )
+
+    assert result.exit_code == 1
+    assert not (cfg / "config.toml").exists()
+
+
+def test_set_a_blank_hub_list_disables_the_nets_rather_than_naming_an_empty_hub(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "lane_search_hubs", "[]"])
+
+    assert result.exit_code == 0, result.output
+    assert load_settings(data_dir=cfg / "data").lane_search_hubs == ()
+
+
 def test_set_preserves_unknown_user_keys(cfg) -> None:
     (cfg / "config.toml").write_text('mystery = "keep me"\n', encoding="utf-8")
     runner.invoke(app, [*_base(cfg), "config", "set", "scan_workers", "6"])

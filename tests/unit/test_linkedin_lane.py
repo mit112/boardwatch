@@ -402,7 +402,9 @@ def test_the_lane_is_registered_but_off_by_default(tmp_path):
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_posting_budget=7)
     assert "linkedin" in LANE_FACTORIES
-    built = LANE_FACTORIES["linkedin"](settings, LaneFacets(profile=("software-engineer",)))
+    built = LANE_FACTORIES["linkedin"](
+        settings, LaneFacets(profile=("software-engineer",)), day_ordinal=0
+    )
     assert isinstance(built, LinkedInLane)
     assert built._posting_budget == 7
     assert built._search_facets == ("software-engineer",)
@@ -989,13 +991,15 @@ def test_the_registry_hands_the_lane_the_configured_page_ceiling(tmp_path):
     from boardwatch.pipeline.runner import LANE_FACTORIES
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lane_search_pages=5)
-    built = LANE_FACTORIES["linkedin"](settings, LaneFacets(profile=("software engineer",)))
+    built = LANE_FACTORIES["linkedin"](
+        settings, LaneFacets(profile=("software engineer",)), day_ordinal=0
+    )
 
     assert built._search_pages == 5
     # Default 1 -- no existing user's request volume moves.
     assert Settings(data_dir=tmp_path, config_dir=tmp_path).lane_search_pages == 1
     assert LANE_FACTORIES["linkedin"](
-        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets()
+        Settings(data_dir=tmp_path, config_dir=tmp_path), LaneFacets(), day_ordinal=0
     )._search_pages == 1
 
 
@@ -1043,6 +1047,11 @@ def test_a_net_uses_the_same_pagination_rule_as_a_facet(tmp_path):
     net_page_zero_cards = _one_card_per_company("beacon", 4_130_000_000, 1)
     net_page_one_cards = _one_card_per_company("charlie", 4_140_000_000, 1)
     _mock_facet("software engineer", facet_cards)
+    # The facet's SECOND page, as the empty page a facet shorter than the ceiling really
+    # returns: `card_nodes` refuses it, `_facet_pages` reads that as the end of the result set
+    # on any page after the first, and the facet stops at one page. Without this the request is
+    # unmocked and the test fails on the facet rather than on the net it is about.
+    _mock_facet_page("software engineer", 1, None)
     net_url = linkedin.search_net_url("software engineer", "Austin, TX", 25)
     net_page_zero = respx.get(net_url).mock(
         return_value=httpx.Response(200, text=search_page_html(net_page_zero_cards))
@@ -1064,3 +1073,35 @@ def test_a_net_uses_the_same_pagination_rule_as_a_facet(tmp_path):
         (_facet_url("software engineer"), 1),
         (net_url, 2),
     )
+
+
+@respx.mock
+def test_a_company_found_only_by_a_net_reaches_the_corpus(tmp_path):
+    """The net's whole PURPOSE, asserted on the output rather than on the request.
+
+    `test_a_net_is_searched_and_reported_as_its_own_search` proves the net URL was requested and
+    counted as its own search. It cannot prove a net contributes anything, because it serves the
+    facet and the net the SAME cards -- every company in its result is one the facet already
+    found, so that test stays green against a lane that fetched every net and threw the response
+    away. Here the net is the only place `beacon-00` appears, so its snapshot exists if and only
+    if a net's card actually became a posting. The snapshot's URL is asserted too: it is the
+    provenance that says which search paid for the company, and it is the net's URL, not the
+    facet's.
+    """
+    facet_cards = _one_card_per_company("acme", 4_120_000_000, 1)
+    net_cards = _one_card_per_company("beacon", 4_130_000_000, 1)
+    _mock_facet("software engineer", facet_cards)
+    net_url = linkedin.search_net_url("software engineer", "Austin, TX", 25)
+    respx.get(net_url).mock(return_value=httpx.Response(200, text=search_page_html(net_cards)))
+    _mock_bodies(facet_cards + net_cards)
+
+    result = LinkedInLane(
+        search_facets=("software engineer",),
+        search_nets=(("software engineer", "Austin, TX"),),
+        hub_distance_miles=25,
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert {snapshot.slug for snapshot in result.snapshots} == {"acme-00", "beacon-00"}
+    net_only = next(s for s in result.snapshots if s.slug == "beacon-00")
+    assert [posting.title for posting in net_only.snapshot.postings] == ["Backend Engineer"]
+    assert net_only.snapshot.url == net_url
