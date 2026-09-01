@@ -58,6 +58,29 @@ All notable changes to this project are documented here. The format follows
   one: it shows the review lane alone and hides the apply queue, and re-scopes the "Showing N of M"
   readout to that lane (D-378).
 
+### Changed
+
+- **Judging the day's postings now takes minutes instead of over an hour.** Every open posting is
+  tested against the rule catalog, and that ran one posting at a time on a single core — so a run
+  that changed the rules, and therefore had to re-judge the whole backlog, spent 75.6 minutes there.
+  Two changes remove most of it. The first stops re-reading the same job description once per rule:
+  a posting is split into sentences and clauses once per scope and shared across all 55 patterns,
+  which on its own cuts a third off the judging time. The second spreads the backlog across every
+  core, since this is pure pattern matching that cannot be shared between threads. Measured over
+  1,000 real postings on 10 cores, the whole stage including its database writes went from 27.1 to
+  208.4 postings per second — about 70 minutes down to about 9 on a full re-judge. The writes still
+  happen in one place and in order, one commit per batch, so an interrupted run resumes exactly
+  where it did before, and every verdict is unchanged (D-394).
+
+- **A lane you already curate is no longer held to the same new-company cap as an open search.**
+  Each run admits only so many previously-unseen companies, which is the right brake on LinkedIn: a
+  company that clears the cap and resolves to a supported job board becomes permanently watched and
+  joins the 379-board scan on every later run, so 264 companies were refused in one run on purpose.
+  The job-apps lane is a different shape — its whole source is a directory you have already curated,
+  it tops out around 38-45 companies in total, and 28 were refused in a single run for no benefit.
+  The cap is now settable per lane, job-apps runs uncapped, and LinkedIn is unchanged. This does not
+  increase how many leads reach the queue; only the delivery count does that (D-394).
+
 ### Fixed
 
 - **Two different experience bars in one posting are no longer treated as the posting contradicting
