@@ -238,7 +238,22 @@ def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
 
 
 def search_net_url(term: str, hub: str, distance_miles: int) -> str:
-    """One geo-pinned keyword search, with the endpoint's parameters in contract order."""
+    """One geo-pinned keyword search, with the endpoint's parameters in contract order.
+
+    **WHY THIS EXISTS, MEASURED, because the claim it overturns was a docstring too.** The
+    module note above recorded `location=` as returning an id-identical set, and that sentence
+    stopped four sessions from looking here. Re-probed live 2026-09-01 against this same
+    endpoint, browser UA, `f_TPR=r604800`, `keywords=software engineer new grad`: no location
+    returned 10 cards with **0 of 10 in TX**; `location=Austin, TX&distance=25` returned 10
+    **sharing ZERO ids with it** and 9 of 10 in TX; `location=Boston, MA&distance=25` again
+    **0 shared** and 10 of 10 in MA. So a hub net does not narrow the nationwide result -- it
+    returns a DISJOINT population, which is the only reason a per-hub request can be worth its
+    cost. (D-409.)
+
+    A measurement written against someone else's endpoint has no expiry date and can be refuted
+    only by running it again. If this claim is ever load-bearing for something you are blocked
+    on, re-probe it rather than trusting this paragraph.
+    """
     return (
         f"{_SEARCH_ENDPOINT}?keywords={quote(term, safe='')}&location={quote(hub, safe='')}&"
         f"distance={distance_miles}&{_RECENCY_PARAM}"

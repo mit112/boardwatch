@@ -116,6 +116,22 @@ All notable changes to this project are documented here. The format follows
   one: it shows the review lane alone and hides the apply queue, and re-scopes the "Showing N of M"
   readout to that lane (D-378).
 
+- **boardwatch can now search LinkedIn city by city, which is the only way it reaches a large set
+  of jobs a nationwide search never returns at all.** Its LinkedIn search sent no location, on a
+  belief recorded in the code that adding one "was measured to return an id-identical set". That
+  belief was false, and re-running the measurement against the same endpoint is what showed it: a
+  nationwide search returned 10 jobs, **none** of them in Texas; the same search pinned to Austin
+  returned 10 that shared **not one job** with it, 9 of them in Texas; pinned to Boston, again
+  nothing shared, and 10 of 10 in Massachusetts. Pinning a location does not narrow the nationwide
+  result — it returns a different set of jobs, and those jobs were unreachable before. You give
+  boardwatch a list of cities, and each run it works through a few combinations of your target job
+  titles crossed with those cities, so the whole list is covered over a few days instead of being
+  bought all at once. Switch it on with, for example, `boardwatch config set lane_search_hubs
+  '["Austin, TX", "Boston, MA"]'`; `lane_hub_combos_per_run` (default 12) sets how many
+  combinations one run buys and `lane_hub_distance_miles` (default 25) how far around each city to
+  look. **Left unset, which is the default, nothing about your runs changes** — no extra requests,
+  and no country's cities are assumed on your behalf.
+
 ### Changed
 
 - **The hiring.cafe search no longer takes 30 runs to work through the employers it already
