@@ -24,23 +24,31 @@ blind audit set. Deliberately not walked: `_skipped/<reason>/`, whose DIRECTORY 
 in path form -- an ingester that recursed would inherit them silently. Two systems' verdicts in
 one queue is the second opinion `_review` exists to prevent.
 
-## Why this lane never reports a benign zero
+## Why a structural break is detected without trusting the record count
 
 The source is a directory, so the failure this lane must not have is the one an operator cannot
 see: a renamed or moved queue, or a layout change, yielding an empty `LaneResult` that reads
-exactly like a quiet feed. It cannot be distinguished by posting count, because job-apps has
-hard ZERO-cohort days on weekends -- so "no fresh records today" is normal and carries no signal.
+exactly like a quiet feed. It cannot be distinguished by posting count in EITHER direction. The
+tree does not hold a stable corpus -- `attempted` tracks the owner's unprocessed backlog, not a
+fixed population: he drains each group folder as he works it, and the record moves out to
+`_applied/`. That count was ~737 when this lane was designed and is 190 as of 2026-08-31, purely
+from him catching up; several of its group folders already hold zero. If he ever stopped
+processing it would instead grow monotonically. Neither a low count nor a high one is a health
+signal, so this lane never uses the count as one.
 
-Two things close that hole, and neither is new machinery:
+What it checks instead is structural, not numeric:
 
-* The whole tree is read every run, never just today's cohort. The tree holds ~737 records on a
-  weekend as on a weekday, so `attempted` is stable by construction and a structural break is
-  the only thing that can drive it to zero.
-* A source that is absent, unreadable, or holds no record at all raises `JobAppsSourceError`,
-  which `_run_lanes` catches PER LANE into `summary.errors`. A lane may never fail the run, and
-  this one does not; it fails LOUDLY instead of returning zeros. Where the source is intact but
-  no body could be recovered from it, the existing `AcquisitionTally.is_silent_outage` already
-  says so, and it is already carried into the funnel and printed by `run`.
+* `_records` reads the whole tree every run, never just today's cohort, and distinguishes a
+  directory layout that is intact from one that is not. The source being absent, unreadable, or
+  containing no group folder at all is the layout itself having moved, and raises
+  `JobAppsSourceError`. A tree that is there, with group folders present, but currently holding
+  zero discovery records in them, is the owner having caught up -- not a break -- and returns an
+  empty result rather than raising.
+* `JobAppsSourceError` is caught PER LANE by `_run_lanes` into `summary.errors`. A lane may never
+  fail the run, and this one does not; it fails LOUDLY instead of returning zeros for a break it
+  could detect. Where the source is intact but no body could be recovered from it, the existing
+  `AcquisitionTally.is_silent_outage` already says so, and it is already carried into the funnel
+  and printed by `run`.
 
 Per-record problems are counted, never raised: one malformed JD must not take the other 188 with
 it.
@@ -397,10 +405,15 @@ class JobAppsLane:
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
 
     def _records(self) -> list[_Record]:
-        """Every readable record in the tree, or `JobAppsSourceError` if the tree is not there.
+        """Every readable record in the tree.
 
         Two levels deep and never recursive: `<queue>/<ATS>/<posting folder>/`. Recursing would
         reach `_skipped/<reason>/`, whose directory names are job-apps' verdicts.
+
+        Raises `JobAppsSourceError` only for a STRUCTURAL break -- the source is absent,
+        unreadable, holds no group folder at all, or holds candidate records none of which
+        parse. A tree that exists and holds group folders but currently has zero records in
+        them is the owner having caught up, not a break, and returns an empty list.
         """
         root = self._source_dir
         if root is None:
@@ -410,16 +423,24 @@ class JobAppsLane:
             )
         if not root.is_dir():
             raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
+        try:
+            groups = sorted(entry for entry in root.iterdir() if entry.is_dir())
+        except OSError as error:
+            raise JobAppsSourceError(f"source directory is unreadable: {root}: {error}") from error
+        # `_SKIP_DIRS` (`_applied`, `_skipped`) are job-apps' own bookkeeping, never a group the
+        # owner adds postings under, so their presence alone cannot stand in for the queue being
+        # there. If NEITHER a group folder nor a skip folder exists, the layout itself is gone.
+        if not groups:
+            raise JobAppsSourceError(
+                f"no group folder anywhere under {root} -- the source directory is probably not "
+                f"job-apps' queue, or the queue has moved"
+            )
         records: list[_Record] = []
         # Counted separately so the two structural causes do not share one message. "The queue
         # moved" and "job-apps bumped its record format" both end with zero usable records and
         # want completely different fixes; a single line reading "no readable record" is the
         # difference between a five-minute and a fifty-minute diagnosis on return.
         candidates = 0
-        try:
-            groups = sorted(entry for entry in root.iterdir() if entry.is_dir())
-        except OSError as error:
-            raise JobAppsSourceError(f"source directory is unreadable: {root}: {error}") from error
         for group in groups:
             if group.name in _SKIP_DIRS:
                 continue
@@ -434,17 +455,15 @@ class JobAppsLane:
                 record = _read_record(folder)
                 if record is not None:
                     records.append(record)
-        if not records:
-            if candidates:
-                raise JobAppsSourceError(
-                    f"found {candidates} discovery record(s) under {root}, none readable at "
-                    f"schema version {SUPPORTED_SCHEMA_VERSION} -- job-apps' record format has "
-                    f"probably moved, so this lane needs updating rather than reconfiguring"
-                )
+        if not records and candidates:
             raise JobAppsSourceError(
-                f"no discovery record anywhere under {root} -- the source directory is probably "
-                f"not job-apps' queue, or the queue has moved"
+                f"found {candidates} discovery record(s) under {root}, none readable at "
+                f"schema version {SUPPORTED_SCHEMA_VERSION} -- job-apps' record format has "
+                f"probably moved, so this lane needs updating rather than reconfiguring"
             )
+        # Zero records with zero candidates and at least one group folder present: the owner has
+        # processed every posting out of the tree. Benign, and reported as a clean zero rather
+        # than raised -- see the module docstring.
         return records
 
     def _body(self, record: _Record) -> str | None:

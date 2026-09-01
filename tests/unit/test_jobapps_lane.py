@@ -1,9 +1,12 @@
 """The job-apps ingestion lane (D-385).
 
 The tests that matter most here are the ones about ABSENCE. A filesystem source can fail in a
-way a network source cannot -- by quietly not being there -- and job-apps has hard zero-cohort
-days on weekends, so a posting count of zero carries no signal on its own. Every test below that
-asserts a raise is asserting that the lane cannot report a benign zero.
+way a network source cannot -- by quietly not being there -- and the record count carries no
+health signal in either direction: it tracks the owner's backlog, not a fixed population, and
+group folders legitimately hold zero on any given day. The tests below that assert a raise are
+checking a STRUCTURAL break (an absent source, an unreadable one, no group folder at all, or
+candidates that fail to parse); the one that asserts no raise is checking that a tree which is
+intact but currently empty of records is reported as a clean zero instead.
 """
 
 from __future__ import annotations
@@ -143,11 +146,11 @@ def test_a_source_dir_that_is_a_file_raises(tmp_path):
         _collect(target, tmp_path)
 
 
-def test_a_tree_with_no_records_raises_rather_than_reporting_a_clean_zero(tmp_path):
+def test_a_tree_with_no_group_folder_at_all_raises(tmp_path):
     """The failure this lane exists to make visible: a renamed queue, or a layout change."""
     root = tmp_path / "queue"
-    (root / "Greenhouse" / "Some_Role").mkdir(parents=True)
-    with pytest.raises(JobAppsSourceError, match="no discovery record anywhere"):
+    root.mkdir()
+    with pytest.raises(JobAppsSourceError, match="no group folder anywhere"):
         _collect(root, tmp_path)
 
 
@@ -158,6 +161,21 @@ def test_a_schema_bump_is_reported_as_a_FORMAT_change_not_a_missing_queue(tmp_pa
     _write(root, "Greenhouse", "a", schema_version=SUPPORTED_SCHEMA_VERSION + 1)
     with pytest.raises(JobAppsSourceError, match="record format has probably moved"):
         _collect(root, tmp_path)
+
+
+# ---------------------------------------------------------------------------------------
+# A tree that is intact but currently empty is the owner catching up, not a break.
+# ---------------------------------------------------------------------------------------
+
+
+def test_group_folders_present_with_zero_records_returns_a_clean_zero_not_a_raise(tmp_path):
+    """`attempted` tracks the owner's backlog, not a fixed corpus -- he drains each group folder
+    as he works it, so a group folder that currently holds no discovery record is normal, not a
+    structural break. This must NOT raise."""
+    root = tmp_path / "queue"
+    (root / "Greenhouse" / "Some_Role").mkdir(parents=True)
+    result = _collect(root, tmp_path)
+    assert _postings(result) == []
 
 
 # ---------------------------------------------------------------------------------------
