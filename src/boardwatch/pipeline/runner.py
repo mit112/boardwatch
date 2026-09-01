@@ -51,6 +51,7 @@ from boardwatch.lanes.base import Lane, LaneResult
 from boardwatch.lanes.facets import (
     MINED_FACET_WINDOW_DAYS,
     LaneFacets,
+    hub_nets,
     mined_facet_candidates,
     role_facets,
     surviving_mined_facets,
@@ -124,7 +125,7 @@ from boardwatch.store.queries import (
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import lead_provenance
-from boardwatch.store.tables import postings
+from boardwatch.store.tables import postings, runs
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
 from boardwatch.tailor.persona import PersonaError
@@ -171,7 +172,25 @@ DEFAULT_TOP_N = 10
 # asked for. `mined` is this repo's inference from her delivered leads, and it goes only to the
 # lane whose own conversion record is the evidence for it, so mining cannot quietly spend another
 # lane's request budget.
-LaneFactory = Callable[[Settings, LaneFacets], Lane]
+LaneFactory = Callable[..., Lane]
+
+
+def _linkedin_lane(
+    settings: Settings, facets: LaneFacets, *, day_ordinal: int = 0
+) -> LinkedInLane:
+    return LinkedInLane(
+        posting_budget=settings.lane_posting_budget,
+        search_facets=facets.profile + facets.mined,
+        search_pages=settings.lane_search_pages,
+        search_nets=hub_nets(
+            facets.profile,
+            settings.lane_search_hubs,
+            day_ordinal=day_ordinal,
+            combos_per_run=settings.lane_hub_combos_per_run,
+        ),
+        hub_distance_miles=settings.lane_hub_distance_miles,
+    )
+
 
 # The lane registry: the name a user writes in `settings.lanes_enabled` -> a factory for it. A
 # MAPPING and not a branch inside `_run_lanes`, so a second lane is one row here and no change
@@ -202,11 +221,7 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # trial record that prunes a barren mined term is this lane's own `keywords=` provenance
     # (`store.facet_queries`). Handing them to a lane whose acquisitions leave no such record
     # would buy searches nothing could ever measure or retire.
-    LinkedInLane.name: lambda settings, facets: LinkedInLane(
-        posting_budget=settings.lane_posting_budget,
-        search_facets=facets.profile + facets.mined,
-        search_pages=settings.lane_search_pages,
-    ),
+    LinkedInLane.name: _linkedin_lane,
     # Reads job-apps' discovery tree off the local disk (D-385). It takes neither the posting
     # budget nor the facets: there are no requests to bound, and the source is already a
     # filtered set rather than a search this lane composes. `facets` is still accepted by the
@@ -446,6 +461,15 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
     )
 
 
+def _run_day_ordinal(engine: Engine, run_id: int) -> int:
+    """Use the persisted UTC date of this run for deterministic lane rotation."""
+    with engine.connect() as conn:
+        started_at = conn.execute(
+            select(runs.c.started_at).where(runs.c.id == run_id)
+        ).scalar_one()
+    return started_at.date().toordinal()
+
+
 def _run_lanes(
     engine: Engine, settings: Settings, run_id: int
 ) -> tuple[list[LaneReport], list[str]]:
@@ -478,6 +502,7 @@ def _run_lanes(
     # without a worker ever being started for it, and the resolved order is the one
     # `lanes_enabled` declares.
     resolved: list[tuple[str, Lane]] = []
+    day_ordinal: int | None = None
     for name in settings.lanes_enabled:
         factory = LANE_FACTORIES.get(name)
         if factory is None:
@@ -485,7 +510,12 @@ def _run_lanes(
             errors.append(f"lane {name}: not a registered lane (registered: {registered})")
             continue
         try:
-            resolved.append((name, factory(settings, facets)))
+            if name == LinkedInLane.name:
+                if day_ordinal is None:
+                    day_ordinal = _run_day_ordinal(engine, run_id)
+                resolved.append((name, factory(settings, facets, day_ordinal=day_ordinal)))
+            else:
+                resolved.append((name, factory(settings, facets)))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {exc!r}")
     if not resolved:

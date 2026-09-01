@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from boardwatch.lanes.facets import MAX_FACETS_PER_RUN, role_facets
+from boardwatch.lanes.facets import MAX_FACETS_PER_RUN, hub_nets, role_facets
 
 
 def test_a_target_title_becomes_a_normalized_search_TERM_not_a_url_slug():
@@ -83,3 +83,71 @@ def test_the_facet_count_is_capped_so_one_profile_cannot_size_a_run():
     # The cap TRUNCATES in profile order rather than sampling: a run whose facet set
     # varied between invocations could not be reproduced from the profile alone.
     assert facets == role_facets(many[:MAX_FACETS_PER_RUN])
+
+
+def test_hub_nets_rotate_the_full_matrix_in_order_and_wrap():
+    """Each run gets a deterministic contiguous slice, including the wrap at the matrix tail."""
+    terms = ("alpha", "beta")
+    hubs = ("Austin", "Boston", "Chicago")
+    matrix = {
+        (term, hub) for term in terms for hub in hubs
+    }
+
+    day_zero = hub_nets(terms, hubs, day_ordinal=0, combos_per_run=4)
+    day_one = hub_nets(terms, hubs, day_ordinal=1, combos_per_run=4)
+
+    assert day_zero == (
+        ("alpha", "Austin"),
+        ("alpha", "Boston"),
+        ("alpha", "Chicago"),
+        ("beta", "Austin"),
+    )
+    assert day_one == (
+        ("beta", "Boston"),
+        ("beta", "Chicago"),
+        ("alpha", "Austin"),
+        ("alpha", "Boston"),
+    )
+    assert len(set(day_zero)) == len(day_zero)
+    assert len(set(day_one)) == len(day_one)
+    assert set(day_zero + day_one) == matrix
+
+    # The next rotation is independently reproducible and advances by the same stride.
+    assert hub_nets(terms, hubs, day_ordinal=2, combos_per_run=4) == (
+        ("alpha", "Chicago"),
+        ("beta", "Austin"),
+        ("beta", "Boston"),
+        ("beta", "Chicago"),
+    )
+
+
+def test_hub_nets_return_each_matrix_pair_once_when_the_budget_covers_it():
+    terms = ("alpha", "beta")
+    hubs = ("Austin", "Boston")
+
+    assert hub_nets(terms, hubs, day_ordinal=9, combos_per_run=99) == (
+        ("alpha", "Austin"),
+        ("alpha", "Boston"),
+        ("beta", "Austin"),
+        ("beta", "Boston"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("terms", "hubs", "combos_per_run"),
+    [
+        (("alpha",), ("Austin",), 0),
+        ((), ("Austin",), 1),
+        (("alpha",), (), 1),
+    ],
+)
+def test_hub_nets_are_empty_when_any_required_input_is_empty(terms, hubs, combos_per_run):
+    assert hub_nets(terms, hubs, day_ordinal=0, combos_per_run=combos_per_run) == ()
+
+
+def test_hub_nets_are_deterministic_for_identical_inputs():
+    inputs = (("alpha", "beta"), ("Austin", "Boston"), 17, 3)
+
+    assert hub_nets(
+        inputs[0], inputs[1], day_ordinal=inputs[2], combos_per_run=inputs[3]
+    ) == hub_nets(inputs[0], inputs[1], day_ordinal=inputs[2], combos_per_run=inputs[3])

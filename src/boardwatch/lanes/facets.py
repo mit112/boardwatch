@@ -188,6 +188,19 @@ def role_facets(target_titles: Sequence[str] | None) -> tuple[str, ...]:
     return tuple(facets)
 
 
+def hub_nets(
+    terms: Sequence[str], hubs: Sequence[str], *, day_ordinal: int, combos_per_run: int
+) -> tuple[tuple[str, str], ...]:
+    """Return the deterministic rotating slice of the term-by-hub search matrix."""
+    if combos_per_run <= 0 or not terms or not hubs:
+        return ()
+    matrix = [(term, hub) for term in terms for hub in hubs]
+    if combos_per_run >= len(matrix):
+        return tuple(matrix)
+    start = (day_ordinal * combos_per_run) % len(matrix)
+    return tuple(matrix[(start + index) % len(matrix)] for index in range(combos_per_run))
+
+
 def _word_key(term: str) -> tuple[str, ...]:
     """A term's words, sorted — the identity two spellings of one query share.
 

@@ -1,10 +1,12 @@
 """Lane 2: LinkedIn guest search (contract transcribed from D-290, 2026-08-24).
 
-Contract: `docs/superpowers/research/2026-08-24-linkedin-lane-contract.md`. Two request shapes, and
-no others -- the search takes an optional keyword facet:
+Contract: `docs/superpowers/research/2026-08-24-linkedin-lane-contract.md`. Three search request
+shapes, and no others -- the search takes an optional keyword facet or geo-pinned net:
 
     GET .../seeMoreJobPostings/search?keywords={facet}&f_TPR=r86400  -- one facet's card list
     GET .../seeMoreJobPostings/search?f_TPR=r86400                   -- the same list, unfaceted
+    GET .../seeMoreJobPostings/search?keywords={term}&location={hub}&distance={miles}&f_TPR=r86400
+                                                                       -- one hub net's card list
     GET .../jobs-guest/jobs/api/jobPosting/{id}                      -- one body, one request
 
 No key, no cookie, no TLS bypass, no app impersonation -- the search answers 200 with no User-Agent
@@ -57,10 +59,11 @@ no cards is `card_nodes`' structural failure on the FIRST page and the ordinary 
 result set on any later one; a keyword with 23 matches has no page 3, so raising there would make a
 normal run look like an outage the moment the ceiling is raised above 1.
 
-`location=` IS SILENTLY IGNORED AND MUST NEVER BE SENT. `&location=United States` returned an
-id-identical set to no location at all, exactly like `f_WT=2` (remote) before it. Sending it would
-let a run report a constraint the response never applied, which is worse than carrying none: the
-hard US location gate downstream is the real one.
+`location=` and `distance=` are honored by this endpoint: a location-bound request returns a
+geographically filtered card set that is disjoint from the same-term no-location set. They are sent
+only for explicitly configured hub nets; facet and unfaceted URLs omit them so the default-off path
+keeps its shipped request shape. `f_WT=2` remains measured as id-identical to the unfiltered set and
+is never sent.
 """
 
 from __future__ import annotations
@@ -87,10 +90,9 @@ LANE_NAME = "linkedin"
 # six-provider board -- convergence is the P6 identity quad's job, downstream.
 LANE_PROVIDER = "linkedin"
 
-# Contract §1: the guest search, last-24h filtered. `f_TPR=r86400` is the one filter parameter the
-# probe evidenced; `f_WT=2` (remote) and `location=` both returned a byte-identical id set to
-# unfiltered and neither is sent. The endpoint and the filter are named separately because the
-# faceted URL carries the same two -- one literal per shape would let them drift apart.
+# Contract §1: the guest search, last-24h filtered. `f_TPR=r86400` is the filter parameter the probe
+# evidenced; `f_WT=2` (remote) remains id-identical to unfiltered and is never sent. `location=` and
+# `distance=` are added only by the explicit hub-net URL shape below.
 _SEARCH_ENDPOINT = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 _RECENCY_PARAM = "f_TPR=r86400"
 SEARCH_URL = f"{_SEARCH_ENDPOINT}?{_RECENCY_PARAM}"
@@ -104,9 +106,11 @@ DEFAULT_POSTING_BUDGET = 60
 # at 10 cards (`&start=10` and `&start=25` each returned 10, all new against `start=0`).
 SEARCH_PAGE_SIZE = 10
 
-# Search pages requested per facet. 1 is the shipped single-page behaviour and stays the default
+# Search pages requested per search. 1 is the shipped single-page behaviour and stays the default
 # here as well as in `Settings`, so a lane constructed directly in a test sends what it always did.
 DEFAULT_SEARCH_PAGES = 1
+
+DEFAULT_HUB_DISTANCE_MILES = 25
 
 
 class SearchPageError(ValueError):
@@ -214,8 +218,8 @@ def job_posting_url(job_id: str) -> str:
 def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
     """One keyword search per facet, in order, or the unfaceted search when there are no facets.
 
-    `location` is NOT sent, at any point, for either shape: the probe returned an id-identical set
-    with and without it, so a run carrying it would report a constraint the response never applied.
+    This builder creates facet and unfaceted searches, which omit `location` and `distance`. The
+    endpoint honors those parameters for the separate explicit hub-net builder below.
 
     `quote` with no safe characters keeps a facet inside the one parameter it belongs to. A title
     arriving with an `&` in it would otherwise append a parameter of its own and reshape the
@@ -233,6 +237,14 @@ def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
     )
 
 
+def search_net_url(term: str, hub: str, distance_miles: int) -> str:
+    """One geo-pinned keyword search, with the endpoint's parameters in contract order."""
+    return (
+        f"{_SEARCH_ENDPOINT}?keywords={quote(term, safe='')}&location={quote(hub, safe='')}&"
+        f"distance={distance_miles}&{_RECENCY_PARAM}"
+    )
+
+
 def page_url(search_url: str, page_index: int) -> str:
     """`search_url` at page `page_index`, as the ITEM offset `start=` actually takes.
 
@@ -241,9 +253,10 @@ def page_url(search_url: str, page_index: int) -> str:
     knob's default moves no user's request shape and not merely their request count. `&start=0`
     was never probed and asserting it is equivalent would be inventing a response.
 
-    Nothing else is added. `location=` and `f_WT=2` were both measured to return an id-identical
-    set and are never sent, at any offset -- a run carrying either would report a constraint the
-    response never applied.
+    The endpoint honors `location=` with `distance=` for a configured hub net, so those parameters
+    are already present when this function receives a net URL. Facet and unfaceted URLs omit them
+    by construction, preserving their existing request shapes. `f_WT=2` remains measured as
+    id-identical to the unfiltered set and is never sent.
     """
     if page_index <= 0:
         return search_url
@@ -258,18 +271,23 @@ class LinkedInLane:
         posting_budget: int = DEFAULT_POSTING_BUDGET,
         search_facets: Sequence[str] = (),
         search_pages: int = DEFAULT_SEARCH_PAGES,
+        search_nets: Sequence[tuple[str, str]] = (),
+        hub_distance_miles: int = DEFAULT_HUB_DISTANCE_MILES,
     ) -> None:
         self._posting_budget = posting_budget
         # Injected rather than read here: the facets are derived from the user's profile row, which
         # lives in the store, and a lane must not reach into the store for its own configuration.
         self._search_facets = tuple(search_facets)
-        # At most this many search pages per facet. Clamped at 1 rather than trusted: `Settings`
+        # At most this many search pages per search. Clamped at 1 rather than trusted: `Settings`
         # already floors it, but a lane constructed directly with 0 would fetch no search page at
         # all and report an empty run as a quiet day.
         self._search_pages = max(1, search_pages)
+        self._search_nets = tuple(search_nets)
+        self._hub_distance_miles = hub_distance_miles
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
-        """One search GET per keyword facet, then one body GET per posting at an admitted company.
+        """One search GET per configured facet or hub net, then one body GET per posting at an
+        admitted company.
 
         `admits` is asked once per distinct `(linkedin, slug)`, in first-seen order, BEFORE any body
         is fetched -- the protocol's contract, and the only ordering under which the per-run company
@@ -316,20 +334,22 @@ class LinkedInLane:
     def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:
         """Every configured search page, its card nodes paired with the URL they came from.
 
-        The result is INTERLEAVED across facets, round-robin, and that is load-bearing rather than
+        The result is INTERLEAVED across searches, round-robin, and that is load-bearing rather than
         tidy. The body budget is spent in iteration order, so concatenating instead would let the
-        first facet consume all of it and every later target title contribute nothing -- a lane
-        reporting fourteen facets while delivering only the profile's first one. Paging does not
-        change that: a facet's own pages are read in order and the interleave is across facets, so
-        facet two's page 1 is still worked before facet one's page 2.
+        first search consume all of it and every later target title or hub contribute nothing.
+        Paging does not change that: a search's own pages are read in order and the interleave is
+        across searches, so search two's page 1 is still worked before search one's page 2.
 
-        The second return value is how many pages were actually fetched per facet, which is
-        REPORTED rather than inferred: a facet that stopped at page 2 of a 5-page ceiling ran out
-        of results, and a facet that filled every page is truncated. Those are different facts
+        The second return value is how many pages were actually fetched per search, which is
+        REPORTED rather than inferred: a search that stopped at page 2 of a 5-page ceiling ran out
+        of results, and a search that filled every page is truncated. Those are different facts
         about the same posting count, and only the first is benign.
         """
-        urls = search_urls(self._search_facets)
-        if not self._search_facets:
+        urls = search_urls(self._search_facets) + tuple(
+            search_net_url(term, hub, self._hub_distance_miles)
+            for term, hub in self._search_nets
+        )
+        if not self._search_facets and not self._search_nets:
             # The unfaceted fallback keeps the single-search contract it shipped with: a transport
             # or structural failure on its FIRST page propagates, because with one facet there are
             # no other results for it to cost, and `card_nodes`' own message is the most specific
@@ -337,41 +357,42 @@ class LinkedInLane:
             entries, pages = self._facet_pages(fetcher, urls[0])
             return entries, ((urls[0], pages),)
 
-        per_facet: list[list[_SearchEntry]] = []
+        per_search: list[list[_SearchEntry]] = []
         page_counts: list[tuple[str, int]] = []
         failed = 0
         for url in urls:
             try:
                 entries, pages = self._facet_pages(fetcher, url)
             except (FetchFailure, SearchPageError):
-                # Per-facet isolation, the same shape D-307 gave a board's apply failure inside a
-                # scan. One search per target title means a run makes many, so the seventh must
-                # not discard the six already paid for; the fetcher has retried with backoff by
+                # Per-search isolation, the same shape D-307 gave a board's apply failure inside a
+                # scan. One search per target title or hub net means a run makes many, so the
+                # seventh must not discard the six already paid for; the fetcher has retried with
                 # the time it raises, so this is a surviving failure rather than a blip.
                 # `SearchPageError` belongs here too: `card_nodes` raises it on a page with no
                 # cards, and one keyword matching nothing is a profile-data matter -- raising
                 # would let a single odd target title disable the whole lane. Isolation must not
                 # become suppression, which is what the all-empty check below is for.
                 failed += 1
-                per_facet.append([])
+                per_search.append([])
                 page_counts.append((url, 0))
                 continue
-            per_facet.append(entries)
+            per_search.append(entries)
             page_counts.append((url, pages))
 
-        if not any(per_facet):
+        if not any(per_search):
             # Not a quiet day, and the tally cannot see it either: with no cards nothing is ever
             # attempted, so `is_silent_outage` stays False and the lane reports a clean run with no
             # postings forever -- the prior art's 11-run silent outage. The all-FAILED case is the
             # same guard on purpose, and both counts are named so a host refusing us stays
             # distinguishable from a profile whose target titles match nothing.
             raise SearchPageError(
-                f"every keyword facet yielded nothing ({len(per_facet)} searched, {failed} "
+                "every keyword facet or hub net yielded nothing "
+                f"({len(per_search)} searched, {failed} "
                 "request failures): the card fragment has moved, the host is refusing us, or "
                 "none of the profile's target titles match a posting"
             )
         interleaved = [
-            entry for row in zip_longest(*per_facet) for entry in row if entry is not None
+            entry for row in zip_longest(*per_search) for entry in row if entry is not None
         ]
         return interleaved, tuple(page_counts)
 

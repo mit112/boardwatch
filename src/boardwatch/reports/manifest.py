@@ -80,7 +80,8 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # corpus-wide drain from a knob that judged nothing.
         "validator_max_age_hours",
         "notify",              # delivery, post-selection: changes who is told, not which leads
-        # The four lane knobs are ACQUISITION, in the same class as `detail_fetch_budget`:
+        # The seven lane acquisition knobs are ACQUISITION, in the same class as
+        # `detail_fetch_budget`:
         # they decide how much corpus arrives, not how the corpus is judged. Corpus membership
         # has never been in this hash — watching a board changes it too, and that lives in the
         # store, not in `Settings`.
@@ -95,6 +96,9 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lane_new_companies_per_run_overrides",
         "lane_posting_budget",
         "lane_search_pages",
+        "lane_search_hubs",
+        "lane_hub_combos_per_run",
+        "lane_hub_distance_miles",
         # D-385. WHERE a lane reads from, not how a posting is judged: the same record ingested
         # from a moved directory must not re-key every permanent disposition.
         "jobapps_discovery_dir",

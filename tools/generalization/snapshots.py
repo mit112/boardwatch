@@ -63,6 +63,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # it adds no request to any existing user's run and encodes no view about roles, seniority,
     # geography or field — only how deep into a result set an operator has chosen to read.
     "Settings.lane_search_pages": 1,
+    # Empty is inert: hub nets are not built until the user supplies their own geographies. No
+    # country is encoded in the default, so the acquisition feature is neutral across tenants.
+    "Settings.lane_search_hubs": (),
+    "Settings.lane_hub_combos_per_run": 12,
+    "Settings.lane_hub_distance_miles": 25,
     # D-385. A machine-local path with no neutral default: any value here would be one
     # operator's filesystem. None ships the `jobapps` lane inert, and it encodes no view about
     # roles, seniority, geography or field.
@@ -130,6 +135,9 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.lane_new_companies_per_run_overrides": "operational",
     "Settings.lane_posting_budget": "operational",
     "Settings.lane_search_pages": "operational",
+    "Settings.lane_search_hubs": "preference",
+    "Settings.lane_hub_combos_per_run": "operational",
+    "Settings.lane_hub_distance_miles": "operational",
     "Settings.jobapps_discovery_dir": "path",
     "Settings.jobapps_queue_dir": "path",
     "Settings.death_probe_budget": "operational",

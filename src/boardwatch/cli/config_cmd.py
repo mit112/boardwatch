@@ -41,9 +41,8 @@ def _lane_names(raw: str) -> list[str]:
 # `recency_half_life_days` all shipped invisible to `config show` and unsettable by `config set`,
 # while the README promised the command "prints every key". Range and enum validation happens by
 # constructing a `Settings` with the new value, so a caster here only has to parse.
-# Annotated because `lanes_enabled`'s caster is a function returning a list while every
-# other one is a scalar type; without this mypy joins them to `object` and the call below
-# stops type-checking.
+# Annotated because the lane-list casters return lists while every other one is a scalar type;
+# without this mypy joins them to `object` and the call below stops type-checking.
 def _str_to_bool(raw: str) -> bool:
     v = raw.strip().lower()
     if v in {"true", "1", "yes", "on"}:
@@ -87,6 +86,9 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "lanes_enabled": (
         _lane_names, "next run", "comma-separated lane names; blank disarms every lane"
     ),
+    "lane_search_hubs": (
+        _lane_names, "next run", "comma-separated LinkedIn search hubs; blank disables hub nets"
+    ),
     "lane_new_companies_per_run": (
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
     ),
@@ -95,6 +97,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         int,
         "next run",
         "search pages one lane requests per facet, ≥1 (1 = the single page that shipped)",
+    ),
+    "lane_hub_combos_per_run": (
+        int, "next run", "LinkedIn term/hub combinations searched per run, ≥0"
+    ),
+    "lane_hub_distance_miles": (
+        int, "next run", "LinkedIn hub search radius in miles, ≥0"
     ),
     # `str` and not `Path`: the value is written straight into `config.toml`, and a `Path` is not
     # TOML-serializable. `Settings` coerces it back to a `Path` on load.
@@ -262,7 +270,7 @@ def set_(ctx: typer.Context, key: str, value: str) -> None:
     if key == "llm.max_calls_per_run":
         old = settings.llm.max_calls_per_run
         try:
-            # `list[str]` is here for `lanes_enabled`, the one non-scalar in `_SCALAR_KEYS`.
+            # `list[str]` is here for the list-valued lane keys in `_SCALAR_KEYS`.
             new: int | float | list[str] = int(value)
             LLMTier(**{**settings.llm.model_dump(), "max_calls_per_run": new})  # ge=1 check
         except (ValueError, ValidationError) as exc:
