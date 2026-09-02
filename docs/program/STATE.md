@@ -137,6 +137,34 @@ that is why none was built.
   (88.2%) none at all — and all 44 were discovered via hiringcafe/legacy/zapply/simplify, **not one
   via jobright**, so the reachable part needs no jobright lane.
 
+### CAN job-apps BE RETIRED? NOT YET — and the residual is LinkedIn alone (D-424)
+
+Asked directly at this session's close. **The original 80% goal was not achieved** (gate 1 never
+passed 22.7%) but it was **withdrawn** rather than failed, because it counted a population the
+owner's manual processing created. **And the backlog is the wrong axis:** D-423's one-time harvest of
+18,726 on-disk records is pure gain, but retirement asks whether boardwatch finds TOMORROW's
+postings. Processing the backlog cannot make retirement safe; skipping it cannot make it unsafe.
+
+**Cost of switching off today, two independent measures:** discovery **7,091 of 21,863 (32.4%)
+lane-only**; delivery **28 of 95 leads (29.5%)** in run 143 via the `jobapps` lane (140: 2.1%,
+141: 17.9%, 142: 2.1%). **That delivery share is inflated by the backlog** — the lane ingests records
+still unprocessed in the tree and they leave its view once the owner works them, so it tracks how
+recently he processed rather than dependency. **Steady state is not measurable until the backlog is
+cleared**, which is another reason to harvest first.
+
+| | standing |
+|---|---|
+| source coverage | **DONE — 94.4%** (99.6% ex-jobright) |
+| employer's own board | **94–100% recall — solved** |
+| **indeed** | 12.6% but **0 absent**; armed, and **fixes itself in ~7 daily runs** (D-417), no new work |
+| **hiringcafe** | **17.0% with a WORKING lane, 1,958 absent — UNEXPLAINED.** One investigation owed |
+| **linkedin** | **32.5%, 6,789 absent**; 57 of 77 sampled misses are employers with no ATS board |
+
+**The test is decidable now: retire when `lane-only` falls to a level the owner accepts losing.** It
+is measurable every run by D-421's script and is the exposure by construction. Sequence: harvest →
+let Indeed reach steady state → diagnose hiring.cafe → **re-measure ~2026-09-09**. The residual is
+then LinkedIn alone, which is a judgment about a population, not an engineering gap.
+
 ## Next action
 
 **1. RUN THE ONE-TIME job-apps HARVEST, AND TAKE THE SEED-DRAIN CONFIRMATION WITH IT.** Both need
