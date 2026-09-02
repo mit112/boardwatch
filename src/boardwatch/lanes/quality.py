@@ -237,8 +237,10 @@ def assess_body(html: str, *, title: str) -> tuple[str, BodyRejection | None]:
 # it, which is the one failure mode the evidence chain cannot detect after the fact.
 #
 # CLOSED and VERSIONED. A body carrying an aggregator phrase this catalog does not know is
-# reported as passing, never as a new kind of foreignness; widening the catalog is an edit
-# here plus a bump of the version below, which is what the drain keys its re-entry on.
+# reported as passing, never as a new kind of foreignness; widening the catalog is an edit here.
+# The version below is audit metadata a human may bump. What actually re-reaches every stored
+# body is the fingerprint (`catalog_fingerprint`, which moves on any marker edit) keying the
+# corpus re-sweep, and the drain re-running this current detector against each held body.
 
 FOREIGN_BODY_CATALOG_VERSION = 1
 

@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from boardwatch.eligibility.catalog import RulesCatalog
+from boardwatch.lanes.quality import is_employer_body
 
 # Verdict-cache invalidation knobs, ported from job-apps judge.py:14-15. Bump either to
 # force a clean re-judge of every JD once later tasks wire the cache key.
@@ -258,6 +259,15 @@ def build_label_request(
         }
         for r in rows
         if r.get("expected_verdict") is None
+        # The SEND boundary of the lane-body precondition (D-406) at the fourth eligibility seam.
+        # A worksheet body that is an aggregator's rendered PAGE — jobright's own `H1B Sponsor
+        # Likely` label and CTAs, not the employer's JD — must never reach the judge: reading that
+        # label it returns `ineligible(work_auth)` citing a third party's guess, which the CLI then
+        # writes to the answer key as ground truth. Mirrors `build_gate_request`'s SEND filter.
+        # This function is pure and cannot record the refusal; `apply_oracle_verdicts` enforces the
+        # same precondition on the write side, so a hand-authored verdicts file that never came
+        # through here is refused there too.
+        and is_employer_body(r.get("body_text", ""))
     ]
     return {
         "request_id": request_id,
@@ -322,6 +332,15 @@ def apply_oracle_verdicts(
     for v in verdicts:
         row = by_label.get(v.label)
         if row is None or _skip_row(row):
+            continue
+        # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most
+        # here: `accept_oracle_verdict` slices an `ineligible` span out of this very body, so a
+        # foreign body reaching it writes a FALSE `ineligible(work_auth)` answer-key row — and the
+        # answer key is what every precision measurement is scored against. Refused for STALE and
+        # HAND-AUTHORED verdicts alike (a verdicts file that names a foreign-body row is stopped
+        # here even though `build_label_request` never selected it), mirroring the gate APPLY
+        # boundary's `withhold_foreign_versions`.
+        if not is_employer_body(row.get("body_text", "")):
             continue
         was_stale_oracle = row.get("label_provenance") == "oracle"
         accepted = accept_oracle_verdict(v, row.get("body_text", ""), catalog)

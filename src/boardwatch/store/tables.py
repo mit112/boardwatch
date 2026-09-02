@@ -572,8 +572,9 @@ quarantined_bodies = Table(
     # re-derived by string-matching a message (`lanes.quality.ForeignBodyText` carries the same
     # tuple at the raise site).
     Column("markers_json", JSON, nullable=False),
-    # Which version of the closed marker catalog judged it. The drain's second re-entry path:
-    # a catalog corrected after a false positive is a different number here.
+    # Which version of the closed marker catalog judged it — audit metadata only, not a re-entry
+    # path. The drain re-runs the current detector against each held body, and the corpus re-sweep
+    # keys on `body_precondition_checks.catalog_fingerprint` — never on this integer.
     Column("catalog_version", Integer, nullable=False),
     Column("quarantined_at", DateTime, nullable=False),
     Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
