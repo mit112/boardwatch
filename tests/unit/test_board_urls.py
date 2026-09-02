@@ -276,6 +276,8 @@ def test_a_trailing_dns_root_dot_still_matches_the_registered_provider() -> None
         "not a url at all",              # urlsplit assigns a space-containing "hostname"
         "https://a.test:99999/x",        # port out of range; `.port` raises only when touched
         "https://-leading-hyphen.test/x",
+        "https://127.0.0.1/x",           # a bare IPv4 literal: no host filter is an address
+        "https://[::1]/x",               # a bare IPv6 literal, same reason
     ],
 )
 def test_a_malformed_value_takes_the_BASE_class_and_is_never_seedable(value: str) -> None:
@@ -294,3 +296,15 @@ def test_a_well_formed_unregistered_host_still_reaches_the_subclass() -> None:
     """The other direction: narrowing must not swallow the case the subclass exists for."""
     with pytest.raises(UnregisteredBoardHost):
         parse_board_target("https://careers.hireology.com/hireology2/2855936/description")
+
+
+def test_an_idn_unregistered_host_reaches_the_subclass_and_is_seedable() -> None:
+    """An internationalized-domain host `_is_hostname` used to reject on its raw `[a-z0-9_]` regex.
+
+    HTTPX dials its IDNA/punycode form and `seed_host` stores the unicode host, which a suffix
+    filter still selects -- so a real, drainable tenant board must reach `UnregisteredBoardHost`
+    (the lane's signal to file a tier-D seed), NOT the base class that means "malformed, never
+    seed". The host is unregistered, so this exercises the `_is_hostname` accept path directly.
+    """
+    with pytest.raises(UnregisteredBoardHost):
+        parse_board_target("https://tést.example-hcm.com/en/sites/CX_1/job/9601")

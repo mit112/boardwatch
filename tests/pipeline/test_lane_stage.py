@@ -91,17 +91,20 @@ class StubLane:
         resolver_errors: tuple[str, ...] = (),
         seed_attempts: tuple[tuple[int, bool], ...] = (),
         discovered_seeds: tuple[str, ...] = (),
+        refused_seeds: tuple[str, ...] = (),
     ) -> None:
         self._companies = companies
         self._outcomes = outcomes
         self._raises = raises
         # Carried onto the returned `LaneResult` so the stage can be presented a lane that crashed
         # its resolver on a seed (`resolver_errors`), a lane with a drainable backlog
-        # (`seed_attempts`), and a lane that discovered seed URLs to persist (`discovered_seeds`),
-        # without a real network resolver.
+        # (`seed_attempts`), a lane that discovered seed URLs to persist (`discovered_seeds`), and a
+        # lane whose producer dropped a malformed seed URL (`refused_seeds`), without a real
+        # network resolver.
         self._resolver_errors = resolver_errors
         self._seed_attempts = seed_attempts
         self._discovered_seeds = discovered_seeds
+        self._refused_seeds = refused_seeds
         # Spent inside `collect`, so it lands on the FETCH side of the timing boundary and
         # nowhere else. This is what lets a test locate the boundary rather than merely
         # observe that two numbers were produced.
@@ -145,6 +148,7 @@ class StubLane:
             resolver_errors=self._resolver_errors,
             seed_attempts=self._seed_attempts,
             discovered_seeds=self._discovered_seeds,
+            refused_seeds=self._refused_seeds,
         )
 
 
@@ -1144,6 +1148,72 @@ def test_a_refused_seed_url_reaches_the_RETURNED_errors_not_only_errors_json(
     finish_run(engine, run_id, errors=errors)
     assert sum("not safely" in note for note in _persisted()) == 1, (
         f"the refusal must be persisted EXACTLY ONCE, and only via finish_run: {_persisted()}"
+    )
+
+
+def test_a_refused_seed_url_reaches_the_errors_even_when_the_apply_fails(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER 2: a refusal note must survive a FAILED apply, not only a clean one.
+
+    `_apply_lane` captures the refusal note from `_persist_seed_work` (which runs on either path),
+    but the failed apply raises `_LaneApplyFailed` before it can RETURN the note, and `_run_lanes`
+    appends a returned note only on a clean apply. So without carrying the note on the exception, a
+    lane that both fails its apply AND emits an unroutable seed reports the apply failure and stays
+    silent about the refusal -- exactly on a run already in trouble. The apply is forced to fail;
+    the seed drain still runs, refuses `bad`, and its note must reach the RETURNED errors alongside
+    the apply-failed line.
+    """
+    bad, good = "https://tenant..applytojob.com/apply/Z", "https://newco.applytojob.com/apply/Y"
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], discovered_seeds=(good, bad)),
+    )
+
+    def _apply_boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("apply_board fell over")
+
+    monkeypatch.setattr(runner_mod, "apply_board", _apply_boom)
+    run_id = insert_run(engine)
+    reports, errors = _run_lanes(engine, _settings(tmp_path, lanes_enabled=["alpha"]), run_id)
+
+    assert reports == [], "a lane whose apply raised produces no report"
+    assert any("apply failed" in e and "apply_board fell over" in e for e in errors), errors
+    assert any("not safely" in e and "skipped" in e and bad in e for e in errors), (
+        f"the refusal must reach the RETURNED errors even when the apply failed: {errors}"
+    )
+    # The good seed still persisted -- the drain runs on the failed-apply path -- and the bad one
+    # never became an undrainable row.
+    with engine.connect() as conn:
+        stored = conn.execute(select(tables.lane_seeds.c.url)).scalars().all()
+    assert stored == [good], f"the drain must run on a failed apply, refusing only the bad url: {stored}"
+
+
+def test_a_producers_malformed_seed_url_surfaces_through_the_runner(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER 3, the runner-wiring half: `LaneResult.refused_seeds` must reach the RETURNED errors.
+
+    A producer (`indeed.tenant_seed_url`, `jsonld._discover`) drops a MALFORMED candidate before it
+    can become a `discovered_seeds` entry, so it never reaches the write point's `unroutable` note.
+    The runner surfaces it from the returned `LaneResult` on BOTH paths, like a resolver crash. The
+    lane APPLIES CLEANLY here, so this is purely the surfacing wiring; the producers are exercised
+    for real in `test_indeed_lane`/`test_jsonld_lane`.
+    """
+    _register(
+        monkeypatch,
+        alpha=StubLane(
+            [("hiringcafe", "src:a")],
+            refused_seeds=("https://127.0.0.1:443/x", "https://[broken"),
+        ),
+    )
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha"]), insert_run(engine)
+    )
+
+    assert [r.name for r in reports] == ["alpha"], "the clean apply must still be reported"
+    assert any("malformed" in e and "dropped" in e and "127.0.0.1" in e for e in errors), (
+        f"a producer's malformed seed url must reach the RETURNED errors: {errors}"
     )
 
 

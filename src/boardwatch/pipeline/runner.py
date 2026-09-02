@@ -656,6 +656,11 @@ def _run_lanes(
                 # even when the seed persistence beside it also failed (D-418), so this repr names
                 # the phase that actually broke rather than a masking persistence error.
                 errors.append(f"lane {name}: apply failed: {exc.cause!r}")
+                # The seed drain runs even on a failed apply, so a refusal it produced must still
+                # surface -- carried on the exception because the clean-apply return that appends it
+                # never happened here.
+                if exc.seed_refusal is not None:
+                    errors.append(exc.seed_refusal)
             except Exception as exc:  # noqa: BLE001 - one lane's apply must not take another's
                 # Any OTHER post-fetch failure (neither typed phase): still reported, still
                 # non-fatal, named as the apply phase because that is the dominant post-fetch write.
@@ -670,6 +675,12 @@ def _run_lanes(
             note = _resolver_error_note(name, fetched.result)
             if note is not None:
                 errors.append(note)
+            # A producer that dropped a MALFORMED seed URL before it could reach `record_seeds`.
+            # Surfaced from the returned `LaneResult` on BOTH paths (like the resolver-crash note):
+            # a producer's refusals are a fetch-phase fact, independent of whether the apply landed.
+            refused = _refused_seed_note(name, fetched.result)
+            if refused is not None:
+                errors.append(refused)
 
     # Back into `lanes_enabled` order. `as_completed` yields by completion, which would make the
     # funnel's lane list order depend on which aggregator answered first — a diff in every
@@ -810,9 +821,15 @@ class _LaneApplyFailed(Exception):
     wrapper; when persistence also broke, that failure rides along as this exception's `__cause__`.
     """
 
-    def __init__(self, cause: BaseException) -> None:
+    def __init__(self, cause: BaseException, *, seed_refusal: str | None = None) -> None:
         super().__init__(repr(cause))
         self.cause = cause
+        # The unroutable-seed refusal note `_persist_seed_work` RETURNED even though the apply
+        # failed. Carried here because the failed apply raises before `_apply_lane` can return it,
+        # and `_run_lanes` appends a returned note only on a clean apply -- so without this a drain
+        # goes quiet about its refusals exactly on the runs already in trouble. None when the seed
+        # persistence itself also failed (it returns nothing then) or when there was no refusal.
+        self.seed_refusal = seed_refusal
 
 
 class _LaneSeedPersistFailed(Exception):
@@ -869,10 +886,14 @@ def _apply_lane(
             raise _LaneSeedPersistFailed(persist_exc) from persist_exc
         # BOTH broke. The apply is the PRIMARY cause (D-418): it is what cost the run its postings
         # and must be reported every failed-apply run; the persistence failure rides along as this
-        # exception's `__cause__` rather than replacing it.
+        # exception's `__cause__` rather than replacing it. No refusal note to carry: persistence
+        # raised, so it returned nothing.
         raise _LaneApplyFailed(apply_error) from persist_exc
+    # Apply failed but the seed drain SUCCEEDED, so it may have RETURNED a refusal note. Carry it on
+    # the exception -- `_run_lanes` cannot reach the normal-return path that would otherwise append
+    # it, and a refused seed is still a real lane defect on a failed-apply run.
     if apply_error is not None:
-        raise _LaneApplyFailed(apply_error) from apply_error
+        raise _LaneApplyFailed(apply_error, seed_refusal=seed_refusal) from apply_error
 
     tally = result.tally
     return (
@@ -1058,6 +1079,28 @@ def _resolver_error_note(lane_name: str, result: LaneResult) -> str | None:
     return (
         f"lane {lane_name}: {len(result.resolver_errors)} seed(s) crashed the resolver, "
         f"first: {result.resolver_errors[0]}"
+    )
+
+
+def _refused_seed_note(lane_name: str, result: LaneResult) -> str | None:
+    """The one visible line for a run whose PRODUCER dropped a malformed seed URL, or `None`.
+
+    Distinct from `_persist_seed_work`'s `unroutable` note, which catches a malformed URL that
+    reached the single WRITE point: a producer (`indeed.tenant_seed_url`, `jsonld._discover`) drops
+    a malformed candidate BEFORE it ever becomes a `discovered_seeds` entry, so without this the
+    defect is invisible past the write path -- the absent-versus-zero confusion the acquisition
+    tally exists to prevent. The ordinary "resolves to a known board / names no vendor" case is NOT
+    carried in `refused_seeds`, so this never turns a quiet no-vendor day into noise. Built from the
+    returned `LaneResult` so `_run_lanes` can put it in its RETURNED errors -- the list that becomes
+    `summary.errors` and `runs.errors_json` (via `finish_run`) -- matching how a resolver crash and
+    a write-point refusal are each reported: one summary line names the count and the first.
+    """
+    if not result.refused_seeds:
+        return None
+    return (
+        f"lane {lane_name}: {len(result.refused_seeds)} discovered seed url(s) were malformed "
+        f"(bad scheme/host/port or control chars) and were dropped, first: "
+        f"{result.refused_seeds[0]!r}"
     )
 
 

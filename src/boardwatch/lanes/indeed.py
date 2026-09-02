@@ -551,23 +551,36 @@ def tenant_seed_url(job: dict[str, Any]) -> str | None:
     return None
 
 
-def _discovered_seeds(entries: list[_SearchEntry]) -> tuple[str, ...]:
-    """Every DISTINCT tier-D `viewJobUrl` this page saw, in first-seen order.
+def _discovered_seeds(entries: list[_SearchEntry]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Every DISTINCT tier-D `viewJobUrl` this page saw, and every MALFORMED one it dropped.
 
     Computed from every entry rather than from `_group_by_company`'s grouped output: a hit
     `hit_identity` cannot key AT ALL (`UnidentifiableHit`, no employer page and no posting key)
     still carries a real, unrecognized board URL worth seeding -- gating this on grouping would
     silently drop exactly the hits with the least other trace of themselves. A `dict` rather than
-    a `set` keeps the tuple in first-seen order for a reader diffing two runs; `record_seeds`'
+    a `set` keeps each tuple in first-seen order for a reader diffing two runs; `record_seeds`'
     own conflict clause already absorbs an in-batch duplicate, so the dedup here is a courtesy to
     the caller, not a correctness requirement.
+
+    A `viewJobUrl` that is PRESENT but not safely seedable (`_is_addressable_url` -- bad
+    scheme/host/port, a control char, an IP literal, a multi-dot host) is a MALFORMED value the
+    search endpoint handed us. It is carried out in the SECOND tuple for the runner to surface,
+    rather than dropped silently, so the defect is visible past `record_seeds`' write path. That is
+    distinct from the ordinary cases `tenant_seed_url` returns None for -- a URL that resolves to a
+    known board, or names a registered provider whose slug it lacks -- which are correctly silent
+    and are NOT carried here.
     """
     seeds: dict[str, None] = {}
+    refused: dict[str, None] = {}
     for _url, job in entries:
+        apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
+        if apply_url and not _is_addressable_url(apply_url):
+            refused[apply_url] = None
+            continue
         seed = tenant_seed_url(job)
         if seed is not None:
             seeds[seed] = None
-    return tuple(seeds)
+    return tuple(seeds), tuple(refused)
 
 
 def employer_slug(job: dict[str, Any]) -> str:
@@ -666,7 +679,7 @@ class IndeedLane:
         # run's company cap. RETURNED on `LaneResult.discovered_seeds` rather than written: this
         # runs in `_fetch_lane`'s worker thread, and `apply_board` is the pipeline's single
         # writer, so the runner persists it in the serial apply phase instead (D-413/D-414).
-        discovered_seeds = _discovered_seeds(entries)
+        discovered_seeds, refused_seeds = _discovered_seeds(entries)
 
         tally = AcquisitionTally()
         by_company = _group_by_company(entries, tally)
@@ -700,7 +713,7 @@ class IndeedLane:
                 )
         return LaneResult(
             snapshots=tuple(snapshots), tally=tally, search_pages=search_pages,
-            discovered_seeds=discovered_seeds,
+            discovered_seeds=discovered_seeds, refused_seeds=refused_seeds,
         )
 
     def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:

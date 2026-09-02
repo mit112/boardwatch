@@ -5,6 +5,7 @@ change here."""
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from urllib.parse import ParseResult, urlparse
 
@@ -151,9 +152,41 @@ _HOSTNAME_RE = re.compile(
 )
 
 
+def _is_ip_literal(host: str) -> bool:
+    """True if `host` is a bare IPv4/IPv6 address rather than a name.
+
+    An IP seed routes to nothing: no `hosts`/`host_suffixes` filter is an address, so the row can
+    never be selected and never drained. `ipaddress.ip_address` raises `ValueError` for anything
+    that is not a literal -- the ordinary case, a real hostname -- so a raise means "keep going".
+    """
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
 def _is_hostname(host: str) -> bool:
-    """Is this fit to be recorded as a seed's routing host?"""
-    return bool(host) and _HOSTNAME_RE.match(host) is not None
+    """Is this fit to be recorded as a seed's routing host?
+
+    A bare IP LITERAL (v4 or v6) is REFUSED (see `_is_ip_literal`) -- and `_HOSTNAME_RE` alone
+    accepts a dotted-quad (`127.0.0.1`), so that check is the guard that stops it.
+
+    A non-ASCII (IDN) host is VALIDATED BY ITS IDNA/PUNYCODE ENCODING rather than rejected. That
+    encoding is the form HTTPX actually dials, and `seed_host` stores the unicode host verbatim,
+    which a suffix filter still selects (`tést.applytojob.com` matches `%.applytojob.com`) -- so
+    refusing it, as a bare `[a-z0-9_]` regex does, dropped a real drainable vendor URL. The encoded
+    form is what the ASCII `_HOSTNAME_RE` then checks, so an empty/over-long label still fails.
+    """
+    if not host or _is_ip_literal(host):
+        return False
+    try:
+        ascii_host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        # The stdlib IDNA codec raises for an empty or over-63-char label -- a host no resolver
+        # could route anyway.
+        return False
+    return _HOSTNAME_RE.match(ascii_host) is not None
 
 
 def _has_usable_port(parsed: ParseResult) -> bool:
@@ -200,13 +233,18 @@ def is_seedable_url(value: str) -> bool:
       slip past `isspace()` yet HTTPX rejects them as `InvalidURL`; and `urlsplit` follows WHATWG
       and STRIPS tabs/newlines before parsing, so a value it silently cleans up would ROUTE fine
       yet persist a URL string no fetch log or human could match against the one actually dialed.
-    * a hostname that is not a valid host once `seed_host` strips its ONE trailing DNS-root dot --
+    * a hostname `_is_hostname` rejects once `seed_host`'s ONE trailing DNS-root dot is stripped:
       extra trailing dots or a malformed/empty label survive `parsed.hostname` non-empty yet store a
-      routing host (`tenant.applytojob.com.`) no exact/suffix resolver predicate ever selects, an
-      undrainable row. Validated AS STORED so this gate and `seed_host` cannot disagree.
+      routing host (`tenant.applytojob.com.`) no exact/suffix resolver predicate ever selects; AND a
+      bare IP literal (v4 or v6), which is not an address any `hosts`/`host_suffixes` filter matches
+      -- both undrainable rows. Validated on the once-dot-stripped host (the routable form; the
+      leading-`www.` strip `seed_host` also does only ever maps one valid host to another, so it
+      cannot change this verdict).
 
-    A valid `:443` and a single trailing DNS-root-dot URL both PASS -- `seed_host` still normalizes
-    those to a routing host the resolver filters match, so they seed and stay drainable.
+    A valid `:443`, a single trailing DNS-root-dot URL, and an IDN host all PASS -- `seed_host`
+    normalizes the first two to a routing host the resolver filters match, and an IDN host is
+    validated by its IDNA/punycode form (what HTTPX dials) while its stored unicode host is still
+    selected by a suffix filter, so all three seed and stay drainable.
     """
     if "://" not in value:
         return False
@@ -222,13 +260,17 @@ def is_seedable_url(value: str) -> bool:
         return False
     if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
         return False
-    # Validate the host AS `seed_host` WILL STORE IT. `seed_host` strips exactly ONE trailing
-    # DNS-root dot, so a hostname non-empty here but malformed after that strip -- extra trailing
-    # dots (`tenant.applytojob.com..` -> stored `tenant.applytojob.com.`) or an empty label
-    # (`tenant..applytojob.com`) -- would persist a routing host no exact/suffix resolver predicate
-    # can ever select. A bare non-empty check let those through. `_is_hostname` is the same fitness
-    # test `parse_board_target` applies before taking `UnregisteredBoardHost`, so both write paths
-    # agree on what a routable host is; it also subsumes the old `" " not in hostname` guard.
+    # Validate the host on the same once-dot-stripped form `seed_host` derives its routing key from.
+    # `seed_host` strips exactly ONE trailing DNS-root dot AND a leading `www.`; only the dot strip
+    # can turn a `parsed.hostname`-non-empty value into a malformed one -- extra trailing dots
+    # (`tenant.applytojob.com..` -> stored `tenant.applytojob.com.`) or an empty label
+    # (`tenant..applytojob.com`) persist a routing host no exact/suffix resolver predicate can ever
+    # select. The `www.` strip only ever maps one valid host to another, so it cannot change this
+    # verdict and is not applied here. A bare non-empty check let the malformed forms through.
+    # `_is_hostname` is the same fitness test `parse_board_target` applies before taking
+    # `UnregisteredBoardHost`, so both write paths agree on what a routable host is -- an IP literal
+    # is unfit, an IDN host is validated by its punycode form; it also subsumes the old
+    # `" " not in hostname` guard.
     return _is_hostname(hostname.removesuffix("."))
 
 

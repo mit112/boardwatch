@@ -63,6 +63,7 @@ from boardwatch.lanes.indeed import (
     IndeedLane,
     SearchPageError,
 )
+from boardwatch.pipeline.runner import _refused_seed_note
 
 runner = CliRunner()
 
@@ -585,6 +586,42 @@ def test_a_malformed_view_job_url_is_not_seeded_through_collect(tmp_path):
     }
 
 
+@respx.mock
+def test_a_malformed_view_job_url_surfaces_as_a_visible_refusal_note(tmp_path):
+    """BLOCKER 3, through the REAL producer. A malformed `viewJobUrl` used to be dropped silently by
+    `tenant_seed_url` -- invisible past the `not_attemptable` tally, never reaching a note. It must
+    now ride `LaneResult.refused_seeds` so the runner turns it into a visible operator line, WITHOUT
+    the ordinary "known provider / no vendor" case (which correctly returns None) becoming noise.
+
+    Two malformed shapes -- an IP literal and an unbalanced bracket -- ride `refused_seeds`; the
+    known-provider shortlink does NOT. `_refused_seed_note` is what `_run_lanes` appends, so a
+    non-None note here is the visible line an operator sees.
+    """
+    ip_hit = replace(TENANT_SEED_HIT, key="key9700", view_job_url="https://127.0.0.1:443/job/1")
+    _mock_one([ip_hit, MALFORMED_VIEW_JOB_URL_HIT, KNOWN_PROVIDER_UNROUTABLE_SEED_HIT])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    # Both malformed URLs are carried, in first-seen order; neither becomes a discovered seed, and
+    # the ordinary known-provider shortlink is NOT treated as a refusal.
+    assert result.refused_seeds == ("https://127.0.0.1:443/job/1", "https://[broken")
+    assert result.discovered_seeds == ()
+    note = _refused_seed_note("indeed", result)
+    assert note is not None and "malformed" in note and "127.0.0.1" in note
+
+
+def test_an_ordinary_unseedable_hit_produces_no_refusal_note(tmp_path):
+    """The control that keeps the note from becoming noise. A known provider's un-slugged shortlink
+    and a hit with no apply URL both return None from `tenant_seed_url` for ordinary reasons -- not
+    a malformed producer value -- so NOTHING rides `refused_seeds` and no note is produced."""
+    _mock_one([KNOWN_PROVIDER_UNROUTABLE_SEED_HIT, *search_hits(1)])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.refused_seeds == ()
+    assert _refused_seed_note("indeed", result) is None
+
+
 def test_a_non_absolute_garbage_string_is_not_seeded(tmp_path):
     """`urlparse` does not raise on this at all -- once `parse_board_target` prepends a scheme,
     it returns a literal, space-containing string as the "hostname". `parse_posting_target` then
@@ -608,6 +645,9 @@ def test_a_non_absolute_garbage_string_is_not_seeded(tmp_path):
         ("https://a.test/job/\x00x", False),      # NUL -- not whitespace, but HTTPX rejects it at fetch
         ("https://a.test/job/\x7fx", False),      # DEL -- the other char `isspace()` misses
         ("https://a.test:99999/x", False),        # a port outside 0-65535 -- `.port` raises here
+        ("https://127.0.0.1:443/job/1", False),   # a bare IPv4 literal -- no host filter is an address
+        ("https://[::1]/job/1", False),           # a bare IPv6 literal, same reason
+        ("https://tést.applytojob.com/apply/ABC/Title", True),  # IDN -- valid via its punycode form
     ],
 )
 def test_is_addressable_url_rejects_whitespace_control_chars_and_a_bad_port(value, addressable):
@@ -624,6 +664,22 @@ def test_an_out_of_range_port_is_not_seeded_though_the_bare_host_would_be(tmp_pa
     raises) -- a value HTTPX would reject at fetch never reaches the tier-D queue."""
     assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test/x"}}) == "https://a.test/x"
     assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test:99999/x"}}) is None
+
+
+def test_an_ip_literal_view_job_url_is_not_seeded_but_an_idn_host_is(tmp_path):
+    """The round-6 blocker, at the Indeed producer. A bare IP literal routes to no resolver, so it
+    must NOT seed (against HEAD `is_seedable_url` accepted `127.0.0.1` and it seeded an undrainable
+    row). An unregistered IDN host is a real tier-D board whose punycode form HTTPX dials and whose
+    stored unicode host a suffix filter selects, so it MUST seed -- refusing it dropped a live URL.
+    """
+    assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://127.0.0.1:443/job/1"}}) is None
+    assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://[::1]/job/1"}}) is None
+    assert (
+        indeed.tenant_seed_url(
+            {"recruit": {"viewJobUrl": "https://tést.example-hcm.com/en/sites/CX_1/job/9601"}}
+        )
+        == "https://tést.example-hcm.com/en/sites/CX_1/job/9601"
+    )
 
 
 def test_a_control_character_in_the_view_job_url_is_not_seeded(tmp_path):

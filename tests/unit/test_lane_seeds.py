@@ -373,6 +373,41 @@ def test_the_write_point_refuses_every_unseedable_shape_from_any_lane(
     assert {s.url for s in drainable} == set(valid)
 
 
+def test_an_idn_host_seeds_and_drains_while_an_ip_literal_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The hostname predicate, pinned end to end in BOTH directions (round-6 blocker 1).
+
+    A bare IP literal routes to nothing -- no `hosts`/`host_suffixes` filter is an address -- so it
+    must be REFUSED and reported, never stored as an undrainable row (against HEAD `_HOSTNAME_RE`
+    accepted `127.0.0.1` and it seeded). An internationalized-domain JazzHR host must be ACCEPTED:
+    HTTPX dials its punycode form, `seed_host` stores the unicode host, and the shipped
+    `%.applytojob.com` suffix query selects it -- so refusing it (as the raw `[a-z0-9_]` regex did)
+    dropped a real drainable URL. Revert `_is_hostname` and this fails in both directions at once.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    idn = "https://tést.applytojob.com/apply/ABC/Title"
+    ipv4 = "https://127.0.0.1:443/job/1"
+    ipv6 = "https://[2001:db8::1]/job/2"
+    with engine.begin() as conn:
+        written = record_seeds(
+            conn, (idn, ipv4, ipv6), discovered_by="indeed", run_id=run, now=NOW
+        )
+        drainable = unresolved_seeds(
+            conn,
+            hosts=frozenset(),
+            host_suffixes=frozenset({"applytojob.com"}),
+            max_attempts=9,
+            limit=9,
+        )
+
+    # Both IP literals refused, in input order; the IDN host seeded verbatim and selected by suffix.
+    assert written.unroutable == (ipv4, ipv6)
+    assert written.inserted == 1
+    assert [(s.host, s.url) for s in drainable] == [("tést.applytojob.com", idn)]
+
+
 def test_a_multi_dot_or_malformed_host_is_refused_rather_than_stored_undrainable(
     tmp_path: Path,
 ) -> None:

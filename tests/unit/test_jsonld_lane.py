@@ -750,6 +750,10 @@ def test_discovery_seeds_only_active_catalog_matching_urls(respx_mock: respx.Rou
     result = JsonLdLane(_Reader(())).collect(_fetcher(tmp_path), _Admits())
     # Deduplicated, in first-seen order: a caller reporting discovery must not count one twice.
     assert result.discovered_seeds == (HIREOLOGY_URL,)
+    # The CONTROL that keeps the malformed-seed note from becoming noise: the icims / greenhouse /
+    # paylocity URLs are well-formed but name no vendor this lane resolves -- ORDINARY catalog
+    # misses, not malformed producer values -- so none of them rides `refused_seeds`.
+    assert result.refused_seeds == ()
 
 
 def test_discovery_to_persistence_refuses_unseedable_urls_but_keeps_valid_ones(
@@ -784,6 +788,15 @@ def test_discovery_to_persistence_refuses_unseedable_urls_but_keeps_valid_ones(
     # `_discover` filters the four malformed shapes BEFORE `match_vendor`, so they never become
     # discovered seeds; the two valid ones survive, in first-seen order.
     assert result.discovered_seeds == (valid_port, valid_rootdot)
+    # The four malformed shapes are not dropped silently: they ride `refused_seeds` (in first-seen
+    # order) so the runner can surface a visible note, rather than looking like a lane that found
+    # nothing on those rows. Proven through the REAL producer (`_discover`), not injected.
+    assert result.refused_seeds == (
+        "https://newco.applytojob.com:99999/apply/ABC/Title",
+        "newco.applytojob.com/apply/ABC/Title",
+        "https://newco.applytojob.com/apply/ABC/\x00Title",
+        "https://newco.applytojob.com/apply/ABC/\x7fTitle",
+    )
 
     engine = get_engine(tmp_path / "seeds.db")
     ensure_schema(engine)
