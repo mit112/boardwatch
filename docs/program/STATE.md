@@ -65,7 +65,32 @@ is ~25 min on every future run, forever).
 664/773 because `indeed` produces and only `jsonld` consumes. Largest: `click.appcast.io` 144,
 **`grnh.se` 122**, `indeed.com` 68 (circular), `ttigroup.com` 50.
 
+**5. SHIPPED AND PUSHED: `cb7497ca..f1e06f0e`, 6 commits, CI GREEN.** `make check` exit 0 — 9,181
+passed, 4 xfailed, 95.53% coverage. CI on the two previously-unverified commits also came back green,
+so nothing is outstanding there.
+
+**THE GATE WAS GREEN ON A BROKEN CUT, FOR THE SECOND TIME (D-426).** Two `/code-review` rounds found
+**eleven** findings the gate passed — including a metric that printed **`claimable -3 (133.3%)`** under
+a concurrent write, a report that counted REGISTERED rather than ENABLED resolvers (inverting its own
+purpose on a default install), a leak metric that drifted toward "healthy" exactly as the leak grew,
+and a **tracked `$BW/boardwatch.db`** no gate can see. The new code was ALREADY mutation-pinned when
+all four shipped. **Mutation-pinning proves the tests catch the bugs you imagined; it says nothing
+about one needing a second connection, a non-default config, or `git ls-files` to see.** Three of the
+first round's six findings lived exactly where a test file was MISSING — and coverage still read 95%.
+**Route consequential changes through a review as well as the gate.**
+
 ## Next action
+
+**0. DECIDE THE BOARD-ADMISSION SAMPLE FIRST — it is larger than the engineering below and needs NO
+code.** D-425 measured **471** hiring.cafe boards that are one admission away (377 employers never
+seen, 94 known-unwatched). That is ~5x `grnh.se`'s yield for zero new code, but D-417's caveat is
+unrefuted — LinkedIn's cap went 10 → 50 and bought ONE posting — and 471 boards at run 143's measured
+**3.2s/board** is ~25 min added to EVERY future run, forever. **Neither "all 471" nor "none" is the
+right move: admit a SAMPLE of ~50 and read the yield over runs 145-147.** That settles D-417's caveat
+with data instead of argument, costs ~3 min/run to find out, and is reversible by the same
+`companies-pretierA-*.csv` artifact the tier-A admission already used. **Owner's call** — it reverses
+nothing, but it spends run budget permanently. Both levers below compete for that same budget, so
+building the smaller one first is backwards.
 
 **1. FOLLOW `grnh.se` REDIRECTS INTO THE EXISTING GREENHOUSE HANDLER.** **122 seeds** now (was 109),
 Greenhouse's own shortener, and `parse_board_target` already accepts both
@@ -92,11 +117,18 @@ diagnosed. **The residual is LinkedIn alone**, and that is a judgment about a po
 **3. SET PER-SOURCE THRESHOLDS** (owner). The instrument exists and has two readings; the bar does
 not.
 
-**4. `click.appcast.io` (144 seeds) is now LARGER than `grnh.se`** and nothing is known about it —
+**4. PROBE `click.appcast.io` BEFORE BUILDING ANY RESOLVER — at 144 seeds it is now LARGER than `grnh.se`** and nothing is known about it —
 an ad-click redirector, so one redirect-follow would reveal whether a board sits behind it. Cheap to
 answer, not yet answered.
 
 ### Owed, and specifically NOT done
+
+- **A PEER SESSION (`boardwatch-d3`) HELD 20 UNCOMMITTED FILES IN THE SHARED TREE AT THIS CLOSE** —
+  `delivery/api.py`, `delivery/server.py`, `store/queue_state.py`, `web/*` and a regenerated bundle.
+  **The 04:00 tick runs this tree's EDITABLE venv, so uncommitted peer work IS the unattended run's
+  code.** Raised with them and with the owner; not this session's to land or revert. Their half-rebuilt
+  bundle also fails `generalization` in the shared tree (a tracked asset deleted on disk), which is why
+  this session's final gate ran in a throwaway worktree — that failure is theirs, not the code's.
 
 - **`grnh.se` redirect-following is NOT built.** Diagnosed and sized only.
 - **Per-source thresholds are not set** — the owner's.

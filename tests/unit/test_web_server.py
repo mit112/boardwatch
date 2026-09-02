@@ -1003,6 +1003,38 @@ def test_skip_removes_a_lead_and_unskip_restores_it(live: Live, engine: Engine) 
     assert back["counts"]["skipped"] == 0
 
 
+def test_report_removes_a_lead_and_unreport_restores_it(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+
+    reported = call(live, f"/api/queue/{posting_id}/reported", method="POST", bearer=live.token)
+    assert reported.json() == {"outcome": "reported"}
+    gone = call(live, "/api/queue", bearer=live.token).json()
+    assert gone["rows"] == []
+    assert gone["counts"]["reported"] == 1
+    # A report is neither an application nor a skip: it must inflate neither of those counts.
+    assert gone["counts"]["applied_ever"] == 0
+    assert gone["counts"]["skipped"] == 0
+
+    undone = call(live, f"/api/queue/{posting_id}/unreport", method="POST", bearer=live.token)
+    assert undone.json() == {"outcome": "unreported"}
+    back = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["posting_id"] for row in back["rows"]] == [posting_id]
+    assert back["counts"]["reported"] == 0
+
+
+def test_reporting_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    assert (
+        call(live, "/api/queue/999999/reported", method="POST", bearer=live.token).status == 404
+    )
+    assert (
+        call(live, f"/api/queue/{posting_id}/reported", method="POST", bearer=live.token).status
+        == 200
+    )
+
+
 def test_marking_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engine) -> None:
     with engine.begin() as conn:
         posting_id, _job = _deliver(conn, "one")

@@ -98,7 +98,7 @@ from boardwatch.store.delivery_queries import (
 )
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
-from boardwatch.store.queue_state import skipped_job_ids
+from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts, extractions, postings, runs
 from boardwatch.tailor.coverage import (
@@ -188,8 +188,8 @@ class PdfFile:
 
 
 def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
-    """`GET /api/queue`: every delivered, unapplied, unskipped, non-ineligible lead, ranked now,
-    split into the APPLY lane (`rows`) and the REVIEW lane (`review`).
+    """`GET /api/queue`: every delivered, unapplied, unskipped, unreported, non-ineligible lead,
+    ranked now, split into the APPLY lane (`rows`) and the REVIEW lane (`review`).
 
     The split is `delivery.review_gate.lane`, the same single definition the folder tree uses
     (D-332), so `rows` holds exactly what `~/boardwatch-queue`'s top level holds and `review`
@@ -205,7 +205,12 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     against — keep `delivered_unapplied`'s most-recent-delivery-first order rather than an
     arbitrary one.
     """
-    every = delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
+    # A reported lead is one the owner flagged as wrongly-called-eligible, held for investigation
+    # rather than applied to. It leaves the queue exactly as a skip does — same exclusion, its own
+    # `queue.reported.*` key — so `delivered_unapplied` excludes both sets at once. Its own count
+    # cell below keeps `in_queue` free of an unexplained remainder, the same rule skip follows.
+    excluded = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    every = delivered_unapplied(conn, skipped=excluded)
     # An ineligible lead is not work: it is drained to `_ineligible` on disk, so the page must
     # not list it either, or the folder tree and the page disagree about the same lead. It is
     # COUNTED though — see `_counts`. Silently dropping rows from a report is the failure this
@@ -459,6 +464,10 @@ def _counts(
         "closed": closed,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
+        # Its own cell, never folded into `skipped`: a report is a distinct signal ("this looks
+        # wrongly-eligible, investigate"), not a disinterest. Excluded from `rows`, so without a
+        # cell of its own it would be an unexplained remainder against the delivered set.
+        "reported": len(reported_job_ids(conn)),
         "delivered_last_run": (
             0
             if last is None

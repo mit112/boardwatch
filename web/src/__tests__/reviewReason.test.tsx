@@ -98,6 +98,7 @@ describe("the role-vetoed compact row surfaces its evidence without a duplicate 
         onSelect={() => undefined}
         onApplied={() => undefined}
         onSkip={() => undefined}
+        onReport={() => undefined}
       />,
     );
 

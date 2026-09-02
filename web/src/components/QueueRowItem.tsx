@@ -114,6 +114,7 @@ export function QueueRowItem({
   onSelect,
   onApplied,
   onSkip,
+  onReport,
 }: {
   row: QueueRow;
   rank: number;
@@ -124,6 +125,7 @@ export function QueueRowItem({
   onSelect: () => void;
   onApplied: () => void;
   onSkip: () => void;
+  onReport: () => void;
 }) {
   const where = row.location ?? EM_DASH;
   const named = `${row.title} at ${row.company}`;
@@ -249,6 +251,12 @@ export function QueueRowItem({
                 hint={`Skip: ${named}`}
                 onClick={onSkip}
                 title="Skip this lead. Key: s"
+              />
+              <RowAction
+                label="Report"
+                hint={`Report as wrongly eligible: ${named}`}
+                onClick={onReport}
+                title="Report this lead as wrongly marked eligible, for investigation. Key: r"
               />
             </span>
           </div>

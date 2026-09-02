@@ -89,6 +89,9 @@ export function QueueToolbar({
           <Key>s</Key> skip
         </span>
         <span>
+          <Key>r</Key> report
+        </span>
+        <span>
           <Key>Esc</Key> close
         </span>
       </p>

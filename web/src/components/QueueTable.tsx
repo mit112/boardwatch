@@ -88,6 +88,7 @@ export function QueueTable({
   onOpenApply,
   onApplied,
   onSkip,
+  onReport,
   emptyHint = "Clear the text box or lower the minimum score.",
 }: {
   label: string;
@@ -103,6 +104,7 @@ export function QueueTable({
   onOpenApply: (row: QueueRow) => void;
   onApplied: (row: QueueRow) => void;
   onSkip: (row: QueueRow) => void;
+  onReport: (row: QueueRow) => void;
   /* Names the levers that would bring rows back. A verdict facet is a lever the two default
      sentences do not mention, so the empty state must say so or it points at the wrong control. */
   emptyHint?: string;
@@ -173,11 +175,17 @@ export function QueueTable({
           event.preventDefault();
           if (event.repeat) return;
           return onSkip(row);
+        // Refuses auto-repeat for the same reason `a` and `s` do: the row leaves the list on the
+        // first press, so a held `r` would walk a report down the queue onto its successors.
+        case "r":
+          event.preventDefault();
+          if (event.repeat) return;
+          return onReport(row);
         default:
           return;
       }
     },
-    [rows, onActivate, onSelect, onOpenApply, onApplied, onSkip],
+    [rows, onActivate, onSelect, onOpenApply, onApplied, onSkip, onReport],
   );
 
   return (
@@ -274,6 +282,9 @@ export function QueueTable({
               }}
               onSkip={() => {
                 onSkip(row);
+              }}
+              onReport={() => {
+                onReport(row);
               }}
             />
           ))}

@@ -54,6 +54,7 @@ export function queueResponse(rows: QueueRow[], review: QueueRow[] = []): QueueR
     review: review.length,
     applied_ever: 0,
     skipped: 0,
+    reported: 0,
     delivered_last_run: rows.length + review.length,
     last_run_finished: "2026-08-28T09:00:00Z",
   };

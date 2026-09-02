@@ -1,4 +1,10 @@
-"""Review-queue skip state, stored on the generic `app_state` KV table.
+"""Review-queue skip and report state, stored on the generic `app_state` KV table.
+
+Two independent queue-exclusion dimensions share this file because they share one mechanism:
+a **skip** is "not interested", a **report** is "this looks wrongly-eligible, hold it for
+investigation". Both take a lead out of the review queue, both key on the canonical `job_id`,
+and both are recoverable (`unmark_*`). Neither is an application. See the report functions
+below the skip ones.
 
 Skip deliberately does NOT live in `applications`. Two independent reasons, and either one
 alone would be enough:
@@ -71,3 +77,48 @@ def skipped_job_ids(conn: Connection) -> dict[int, str]:
         # rather than un-skipping the job.
         skipped[int(suffix)] = "" if row.value is None else str(row.value)
     return skipped
+
+
+# ---------------------------------------------------------------------------------------- report
+#
+# A report is the same mechanism as a skip on a DIFFERENT key, and deliberately so: the two are
+# independent dimensions (a lead can be neither, either, or both), so they must not share a row.
+# `queue.reported.<job_id>` -> the ISO-8601 instant it was reported. The read logic mirrors
+# `skipped_job_ids` rather than sharing a helper so that the skip reader — pinned by several tests
+# on its exact single-statement SQL — is left byte-for-byte unchanged.
+
+REPORT_KEY_PREFIX = "queue.reported."
+
+
+def _report_key(job_id: int) -> str:
+    return f"{REPORT_KEY_PREFIX}{job_id}"
+
+
+def mark_job_reported(conn: Connection, *, job_id: int, at: datetime) -> None:
+    """Flag a job as wrongly-eligible, for investigation. Idempotent: a repeat re-stamps `at`."""
+    set_state(conn, _report_key(job_id), at.isoformat())
+
+
+def unmark_job_reported(conn: Connection, *, job_id: int) -> None:
+    """Un-report a job. A job that was never reported is a no-op, not an error."""
+    conn.execute(delete(app_state).where(app_state.c.key == _report_key(job_id)))
+
+
+def reported_job_ids(conn: Connection) -> dict[int, str]:
+    """job_id -> the ISO-8601 instant it was reported, for every reported job.
+
+    ONE statement for the whole set, and the same prefix-scoping and `isdecimal` guard the skip
+    reader uses — see `skipped_job_ids` for why each of those matters.
+    """
+    rows = conn.execute(
+        select(app_state.c.key, app_state.c.value).where(
+            app_state.c.key.like(f"{REPORT_KEY_PREFIX}%")
+        )
+    ).all()
+    reported: dict[int, str] = {}
+    for row in rows:
+        suffix = str(row.key)[len(REPORT_KEY_PREFIX) :]
+        if not suffix.isdecimal():
+            continue
+        reported[int(suffix)] = "" if row.value is None else str(row.value)
+    return reported

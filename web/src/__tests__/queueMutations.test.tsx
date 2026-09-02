@@ -23,12 +23,14 @@ vi.mock("../api/client", () => ({
   markApplied: vi.fn(),
   markSkipped: vi.fn(),
   unskip: vi.fn(),
+  report: vi.fn(),
+  unreport: vi.fn(),
   revealFolder: vi.fn(),
   openPdf: vi.fn(),
 }));
 
 // Imported AFTER the mock factory, which vitest hoists above both.
-import { getQueue, markApplied, markSkipped, unskip } from "../api/client";
+import { getQueue, markApplied, markSkipped, report, unreport, unskip } from "../api/client";
 import { App } from "../App";
 
 // Mirrors QueuePage's collapse animation length. Advanced past, never asserted on.
@@ -86,6 +88,33 @@ describe("QueuePage write flows", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(vi.mocked(unskip)).toHaveBeenCalledWith(a.posting_id);
+    expect(titles()).toEqual(["Backend Engineer", "Analyst"]);
+  });
+
+  it("report resolves: the row leaves, and its undo toast calls unreport and restores it", async () => {
+    const { a } = await renderWithTwoRows();
+    vi.mocked(report).mockResolvedValue({ outcome: "reported" });
+    vi.mocked(unreport).mockResolvedValue({ outcome: "unreported" });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Report as wrongly eligible: Backend Engineer at Globex",
+      }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(COLLAPSE_MS);
+    });
+    // The report button is wired to `report`, not `markSkipped`: only `report` sees this id.
+    expect(vi.mocked(report)).toHaveBeenCalledWith(a.posting_id);
+    expect(titles()).toEqual(["Analyst"]);
+
+    expect(screen.getByText(/^Reported Globex — Backend Engineer/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(vi.mocked(unreport)).toHaveBeenCalledWith(a.posting_id);
     expect(titles()).toEqual(["Backend Engineer", "Analyst"]);
   });
 

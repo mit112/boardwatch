@@ -89,7 +89,12 @@ from boardwatch.store.db import (
     get_readonly_engine,
 )
 from boardwatch.store.funnel_queries import job_id_for_posting
-from boardwatch.store.queue_state import mark_job_skipped, unmark_job_skipped
+from boardwatch.store.queue_state import (
+    mark_job_reported,
+    mark_job_skipped,
+    unmark_job_reported,
+    unmark_job_skipped,
+)
 
 #: The one address this server may bind. A frozenset so the refusal reads as a closed catalog
 #: rather than as a `!=` somebody can widen without noticing.
@@ -130,7 +135,9 @@ READ_BUSY_TIMEOUT_MS = 500
 _ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _QUEUE = re.compile(r"^/api/queue$")
 _QUEUE_ITEM = re.compile(r"^/api/queue/(\d+)$")
-_QUEUE_ACTION = re.compile(r"^/api/queue/(\d+)/(applied|unapplied|skipped|unskip|reveal)$")
+_QUEUE_ACTION = re.compile(
+    r"^/api/queue/(\d+)/(applied|unapplied|skipped|unskip|reported|unreport|reveal)$"
+)
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
@@ -454,6 +461,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if action in ("skipped", "unskip"):
             self._skip(posting_id, skip=action == "skipped")
             return
+        if action in ("reported", "unreport"):
+            self._report(posting_id, report=action == "reported")
+            return
         result = self._write(
             lambda conn: (
                 mark_job_applied(conn, posting_id=posting_id, source="web")
@@ -494,6 +504,33 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "skipped" if skip else "unskipped"})
+
+    def _report(self, posting_id: int, *, report: bool) -> None:
+        """Flag a lead as wrongly-called-eligible (or clear that flag). Keys on the canonical
+        `job_id`, exactly like skip, so the flag survives its posting being revised or regrouped.
+
+        A report is deliberately its own dimension, not a skip: it says "hold this for
+        investigation", so an investigator can find every reported lead by its `queue.reported.*`
+        key and read back the frozen evidence chain that cleared it."""
+
+        def work(conn: Connection) -> MarkResult:
+            job_id = job_id_for_posting(conn, posting_id)
+            if job_id is None:
+                return MarkResult(MarkOutcome.NO_POSTING)
+            if report:
+                mark_job_reported(conn, job_id=job_id, at=utcnow())
+            else:
+                unmark_job_reported(conn, job_id=job_id)
+            return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id)
+
+        result = self._write(work)
+        if result is None:
+            return
+        if result.outcome is MarkOutcome.NO_POSTING:
+            self._error(HTTPStatus.NOT_FOUND, "no such posting")
+            return
+        self._reconcile()
+        self._json(HTTPStatus.OK, {"outcome": "reported" if report else "unreported"})
 
     def _write(self, work: Any) -> MarkResult | None:
         """The only write path. A bounded retry on a busy store, then 503 — never a five-second

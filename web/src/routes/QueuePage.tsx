@@ -6,6 +6,8 @@ import {
   getQueue,
   markApplied,
   markSkipped,
+  report,
+  unreport,
   unskip,
 } from "../api/client";
 import type { Answers, QueueCounts, QueueDetail, QueueResponse, QueueRow } from "../api/types";
@@ -24,7 +26,7 @@ import type { SortKey, SortState } from "../lib/sort";
 const COLLAPSE_MS = 200;
 const POLL_MS = 30_000;
 
-type Removal = "applied" | "skipped";
+type Removal = "applied" | "skipped" | "reported";
 
 function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
@@ -288,9 +290,11 @@ export function QueuePage({
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
     let skippedDelta = 0;
+    let reportedDelta = 0;
     for (const kind of removed.values()) {
       if (kind === "applied") appliedDelta += 1;
-      else skippedDelta += 1;
+      else if (kind === "skipped") skippedDelta += 1;
+      else reportedDelta += 1;
     }
     return {
       // Recomputed against the active filter.
@@ -307,6 +311,7 @@ export function QueuePage({
       review: filteredReview.length,
       applied_ever: (data?.counts.applied_ever ?? 0) + appliedDelta,
       skipped: (data?.counts.skipped ?? 0) + skippedDelta,
+      reported: (data?.counts.reported ?? 0) + reportedDelta,
       // Run-scoped facts, not filter-scoped: they come from the server unchanged.
       delivered_last_run: data?.counts.delivered_last_run ?? 0,
       last_run_finished: data?.counts.last_run_finished ?? null,
@@ -368,7 +373,8 @@ export function QueuePage({
       }, COLLAPSE_MS);
       if (selected === row.posting_id) setSelected(null);
 
-      const call = kind === "applied" ? markApplied : markSkipped;
+      const call =
+        kind === "applied" ? markApplied : kind === "skipped" ? markSkipped : report;
       void call(row.posting_id)
         .then(() => {
           if (kind === "skipped") {
@@ -382,6 +388,24 @@ export function QueuePage({
                   .catch((caught: unknown) => {
                     push({
                       message: errorMessage(caught, "Could not un-skip that lead."),
+                      tone: "error",
+                    });
+                  });
+              },
+            });
+            return;
+          }
+          if (kind === "reported") {
+            push({
+              message: `Reported ${row.company} — ${row.title} for review. It is held out of the queue until investigated.`,
+              undo: () => {
+                void unreport(row.posting_id)
+                  .then(() => {
+                    restore(row.posting_id);
+                  })
+                  .catch((caught: unknown) => {
+                    push({
+                      message: errorMessage(caught, "Could not un-report that lead."),
                       tone: "error",
                     });
                   });
@@ -618,6 +642,9 @@ export function QueuePage({
               onSkip={(row) => {
                 act(row, "skipped");
               }}
+              onReport={(row) => {
+                act(row, "reported");
+              }}
             />
           )}
 
@@ -718,6 +745,9 @@ export function QueuePage({
                           onSkip={(row) => {
                             act(row, "skipped");
                           }}
+                          onReport={(row) => {
+                            act(row, "reported");
+                          }}
                       />
                     )}
                   </div>
@@ -781,6 +811,10 @@ export function QueuePage({
               onSkip={() => {
                 const row = detail?.row;
                 if (row) act(row, "skipped");
+              }}
+              onReport={() => {
+                const row = detail?.row;
+                if (row) act(row, "reported");
               }}
               onToast={(message, tone) => {
                 push({ message, tone });

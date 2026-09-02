@@ -160,6 +160,7 @@ export function DetailPane({
   onClose,
   onApplied,
   onSkip,
+  onReport,
   onToast,
 }: {
   detail: QueueDetail | null;
@@ -169,6 +170,7 @@ export function DetailPane({
   onClose: () => void;
   onApplied: () => void;
   onSkip: () => void;
+  onReport: () => void;
   onToast: (message: string, tone: "info" | "error") => void;
 }) {
   const [shown, setShown] = useState(false);
@@ -371,6 +373,7 @@ export function DetailPane({
 
             <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
             <ActionButton label="Skip" onClick={onSkip} />
+            <ActionButton label="Report" onClick={onReport} />
           </section>
 
           <section>

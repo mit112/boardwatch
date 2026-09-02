@@ -23,6 +23,7 @@ import type {
   AppliedResponse,
   QueueDetail,
   QueueResponse,
+  ReportResponse,
   RevealResponse,
   RunFunnel,
   RunsResponse,
@@ -91,6 +92,12 @@ export const markSkipped = (postingId: number): Promise<SkipResponse> =>
 
 export const unskip = (postingId: number): Promise<SkipResponse> =>
   request<SkipResponse>(`/api/queue/${String(postingId)}/unskip`, "POST");
+
+export const report = (postingId: number): Promise<ReportResponse> =>
+  request<ReportResponse>(`/api/queue/${String(postingId)}/reported`, "POST");
+
+export const unreport = (postingId: number): Promise<ReportResponse> =>
+  request<ReportResponse>(`/api/queue/${String(postingId)}/unreport`, "POST");
 
 export const revealFolder = (postingId: number): Promise<RevealResponse> =>
   request<RevealResponse>(`/api/queue/${String(postingId)}/reveal`, "POST");

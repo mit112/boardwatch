@@ -70,6 +70,7 @@ describe("a field an older server never sent", () => {
         onSelect={() => undefined}
         onApplied={() => undefined}
         onSkip={() => undefined}
+        onReport={() => undefined}
       />,
     );
 

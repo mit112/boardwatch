@@ -23,6 +23,7 @@ const ALL_ROWS = [...QUEUE_ROWS, ...LATE_ROWS].sort(byRank);
 const bootedAt = Date.now();
 const appliedJobIds = new Set<number>();
 const skippedPostingIds = new Set<number>();
+const reportedPostingIds = new Set<number>();
 
 function pool(): QueueRow[] {
   const released = Date.now() - bootedAt > HOLD_MS;
@@ -40,7 +41,8 @@ function visibleRows(): QueueRow[] {
     (row) =>
       row.verdict !== "ineligible" &&
       !appliedJobIds.has(row.job_id) &&
-      !skippedPostingIds.has(row.posting_id),
+      !skippedPostingIds.has(row.posting_id) &&
+      !reportedPostingIds.has(row.posting_id),
   );
 }
 
@@ -72,7 +74,8 @@ function ineligibleCount(): number {
     (row) =>
       row.verdict === "ineligible" &&
       !appliedJobIds.has(row.job_id) &&
-      !skippedPostingIds.has(row.posting_id),
+      !skippedPostingIds.has(row.posting_id) &&
+      !reportedPostingIds.has(row.posting_id),
   ).length;
 }
 
@@ -91,6 +94,7 @@ function counts(rows: QueueRow[]): QueueCounts {
     review: reviewRows().length,
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
+    reported: reportedPostingIds.size,
     delivered_last_run: rows.filter((row) => row.delivered_run_id === (lastRun?.id ?? -1)).length,
     last_run_finished: lastRun?.finished ?? null,
   };
@@ -132,7 +136,8 @@ function route(method: string, path: string): unknown {
   const detailMatch = /^\/api\/queue\/(\d+)$/.exec(path);
   if (method === "GET" && detailMatch) return detailFor(findRow(Number(detailMatch[1])));
 
-  const actionMatch = /^\/api\/queue\/(\d+)\/(applied|skipped|unskip|reveal)$/.exec(path);
+  const actionMatch =
+    /^\/api\/queue\/(\d+)\/(applied|skipped|unskip|reported|unreport|reveal)$/.exec(path);
   if (method === "POST" && actionMatch) {
     const row = findRow(Number(actionMatch[1]));
     const action = actionMatch[2];
@@ -153,8 +158,16 @@ function route(method: string, path: string): unknown {
       skippedPostingIds.add(row.posting_id);
       return { outcome: "skipped" };
     }
-    skippedPostingIds.delete(row.posting_id);
-    return { outcome: "unskipped" };
+    if (action === "unskip") {
+      skippedPostingIds.delete(row.posting_id);
+      return { outcome: "unskipped" };
+    }
+    if (action === "reported") {
+      reportedPostingIds.add(row.posting_id);
+      return { outcome: "reported" };
+    }
+    reportedPostingIds.delete(row.posting_id);
+    return { outcome: "unreported" };
   }
 
   throw new FixtureError(404, `${method} ${path} is not in the contract`);

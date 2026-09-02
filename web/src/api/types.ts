@@ -118,6 +118,12 @@ export interface QueueCounts {
   review: number;
   applied_ever: number;
   skipped: number;
+  /**
+   * Leads the owner flagged as wrongly-called-eligible, held for investigation. Its own bucket,
+   * never folded into `skipped`: a report is a distinct signal, not disinterest. Excluded from
+   * `rows` like a skip, so it is counted here rather than left an unexplained remainder.
+   */
+  reported: number;
   delivered_last_run: number;
   last_run_finished: string | null;
 }
@@ -167,7 +173,9 @@ export type MarkOutcome =
   | "no_posting"
   | "no_job"
   | "skipped"
-  | "unskipped";
+  | "unskipped"
+  | "reported"
+  | "unreported";
 
 export interface AppliedResponse {
   outcome: MarkOutcome;
@@ -175,6 +183,10 @@ export interface AppliedResponse {
 }
 
 export interface SkipResponse {
+  outcome: MarkOutcome;
+}
+
+export interface ReportResponse {
   outcome: MarkOutcome;
 }
 

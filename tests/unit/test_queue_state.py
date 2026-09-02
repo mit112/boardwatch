@@ -23,9 +23,13 @@ from boardwatch.store.app_state import set_digest_cursor, set_notify_cursor, set
 from boardwatch.store.applications import create_application, get_application
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queue_state import (
+    REPORT_KEY_PREFIX,
     SKIP_KEY_PREFIX,
+    mark_job_reported,
     mark_job_skipped,
+    reported_job_ids,
     skipped_job_ids,
+    unmark_job_reported,
     unmark_job_skipped,
 )
 from boardwatch.store.tables import app_state, jobs
@@ -204,4 +208,71 @@ def test_an_applied_job_can_be_unskipped_without_touching_its_application(engine
         app = get_application(conn, app_id)
     assert app is not None
     assert app.status == "applied"
+    _assert_fks_clean(engine)
+
+
+# ---------------------------------------------------------------------------------------- report
+
+
+def test_a_report_round_trips_with_its_timestamp(engine: Engine) -> None:
+    at = datetime(2026, 9, 2, 17, 30, 5)
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        mark_job_reported(conn, job_id=job_id, at=at)
+    with engine.connect() as conn:
+        assert reported_job_ids(conn) == {job_id: at.isoformat()}
+        stored = conn.execute(
+            select(app_state.c.key).where(app_state.c.key == f"{REPORT_KEY_PREFIX}{job_id}")
+        ).scalar_one()
+    assert stored == f"queue.reported.{job_id}"
+    _assert_fks_clean(engine)
+
+
+def test_nothing_is_reported_on_a_fresh_store(engine: Engine) -> None:
+    with engine.connect() as conn:
+        assert reported_job_ids(conn) == {}
+
+
+def test_reporting_twice_is_idempotent(engine: Engine) -> None:
+    later = NOW + timedelta(hours=2)
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+        mark_job_reported(conn, job_id=job_id, at=later)
+    with engine.connect() as conn:
+        assert reported_job_ids(conn) == {job_id: later.isoformat()}
+        assert conn.execute(select(func.count()).select_from(app_state)).scalar_one() == 1
+    _assert_fks_clean(engine)
+
+
+def test_unreport_removes_only_that_job(engine: Engine) -> None:
+    with engine.begin() as conn:
+        kept = _job(conn)
+        dropped = _job(conn)
+        mark_job_reported(conn, job_id=kept, at=NOW)
+        mark_job_reported(conn, job_id=dropped, at=NOW)
+    with engine.begin() as conn:
+        unmark_job_reported(conn, job_id=dropped)
+    with engine.connect() as conn:
+        assert reported_job_ids(conn) == {kept: NOW.isoformat()}
+    _assert_fks_clean(engine)
+
+
+def test_report_and_skip_are_independent_dimensions(engine: Engine) -> None:
+    """The same job can be both, on separate keys, and un-marking one leaves the other. This is
+    the property that makes a report a distinct signal from a skip rather than a second name for
+    it."""
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        assert skipped_job_ids(conn) == {job_id: NOW.isoformat()}
+        assert reported_job_ids(conn) == {job_id: NOW.isoformat()}
+        assert conn.execute(select(func.count()).select_from(app_state)).scalar_one() == 2
+    with engine.begin() as conn:
+        unmark_job_skipped(conn, job_id=job_id)
+    with engine.connect() as conn:
+        assert skipped_job_ids(conn) == {}
+        assert reported_job_ids(conn) == {job_id: NOW.isoformat()}
     _assert_fks_clean(engine)
