@@ -189,7 +189,7 @@ def _seed_routes(
 ) -> list[ColumnElement[bool]]:
     """The predicate "this seed's host is claimed by a catalog spelling `hosts`/`host_suffixes`".
 
-    Shared, so `unresolved_seeds` (what a resolver SELECTS) and `unclaimed_seed_hosts` (what NO
+    Shared, so `unresolved_seeds` (what a resolver SELECTS) and `read_seed_claims` (what NO
     resolver can select) can never disagree about what "claimed" means. Two spellings of one
     routing rule is how a vendor joins the catalog and never the report — the same failure
     `jsonld.SEED_HOSTS` warns about one layer up — and here it is silent in the worse direction:
@@ -386,19 +386,6 @@ class UnclaimedHost:
     max_attempts_spent: int
 
 
-def count_unresolved_seeds(conn: Connection) -> int:
-    """The whole unresolved queue, claimed and unclaimed alike.
-
-    Kept for callers that want only the total. **`read_seed_claims` does NOT use it** — see that
-    function for why the two numbers must come from one statement rather than two.
-    """
-    return int(
-        conn.execute(
-            select(func.count()).select_from(lane_seeds).where(lane_seeds.c.resolved_at.is_(None))
-        ).scalar_one()
-    )
-
-
 @dataclass(frozen=True)
 class SeedClaimReading:
     """One reading of the seed queue: its size, and the hosts nothing can drain."""
@@ -466,10 +453,3 @@ def read_seed_claims(
             if not row.claimed
         ),
     )
-
-
-def unclaimed_seed_hosts(
-    conn: Connection, *, catalogs: tuple[ResolverCatalog, ...]
-) -> tuple[UnclaimedHost, ...]:
-    """Just the unclaimed half of `read_seed_claims`, for callers that do not need the total."""
-    return read_seed_claims(conn, catalogs=catalogs).unclaimed_hosts

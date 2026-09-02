@@ -43,8 +43,10 @@ SEED_RESOLVERS: dict[str, ResolverCatalog] = {
 }
 
 
-def enabled_catalogs(lanes_enabled: tuple[str, ...]) -> tuple[ResolverCatalog, ...]:
-    """The catalogs of the resolvers that will actually RUN, in `lanes_enabled` order.
+def enabled_catalogs(
+    lanes_enabled: tuple[str, ...],
+) -> tuple[tuple[str, ResolverCatalog], ...]:
+    """The resolvers that will actually RUN, as (lane name, catalog), in `lanes_enabled` order.
 
     **Registered is not enabled, and for this report the difference is the whole point.**
     `settings.lanes_enabled` is empty by default and `pipeline.runner` builds only the lanes it
@@ -52,9 +54,15 @@ def enabled_catalogs(lanes_enabled: tuple[str, ...]) -> tuple[ResolverCatalog, .
     Counting its hosts as claimable would take the leak's worst case — seeds nothing will ever
     select — and report it as the healthy half, which is the exact inversion this command exists to
     prevent.
+
+    **Name and catalog are returned together so the split and the line that reports it come from
+    ONE call.** Recomputing the enabled names alongside agrees only while both spellings hard-code
+    the same membership test: add a rule — dedupe a repeated lane name, require the lane to be in
+    `LANE_FACTORIES` — and the printed list claims a resolver is on while the split is computed as
+    if it were off. That is the silent divergence `_seed_routes` exists to prevent, one layer up.
     """
     return tuple(
-        SEED_RESOLVERS[name] for name in lanes_enabled if name in SEED_RESOLVERS
+        (name, SEED_RESOLVERS[name]) for name in lanes_enabled if name in SEED_RESOLVERS
     )
 
 

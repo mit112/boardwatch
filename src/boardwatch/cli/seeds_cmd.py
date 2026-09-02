@@ -61,8 +61,11 @@ def seeds(
         )
         raise typer.Exit(code=1)
 
-    catalogs = enabled_catalogs(app_ctx.settings.lanes_enabled)
-    enabled = [n for n in app_ctx.settings.lanes_enabled if n in SEED_RESOLVERS]
+    # ONE call feeds both the split and the line that reports it. Recomputing the enabled names
+    # here would agree only while both spellings hard-code the same membership test.
+    pairs = enabled_catalogs(app_ctx.settings.lanes_enabled)
+    enabled = [name for name, _ in pairs]
+    catalogs = tuple(catalog for _, catalog in pairs)
     with app_ctx.engine.connect() as conn:
         # ONE statement behind this call, and a transaction would NOT have been enough: pysqlite
         # does not begin one for a SELECT, so two reads straddle a concurrent insert even inside

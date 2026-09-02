@@ -30,7 +30,10 @@ def _modules_declaring_seed_hosts() -> set[str]:
     """
     root = Path(boardwatch.lanes.__file__).parent
     found = set()
-    for path in sorted(root.glob("*.py")):
+    # `rglob`, not `glob`: a resolver living in a lane SUBPACKAGE would otherwise never be found
+    # and the guard would pass while that resolver's whole backlog reported as unclaimed — the
+    # failure this guard is sold as preventing.
+    for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text())
         for node in tree.body:
             targets = (
@@ -39,7 +42,7 @@ def _modules_declaring_seed_hosts() -> set[str]:
                 else []
             )
             if any(isinstance(t, ast.Name) and t.id == "SEED_HOSTS" for t in targets):
-                found.add(path.stem)
+                found.add(path.relative_to(root).with_suffix("").as_posix().replace("/", "."))
     return found
 
 
@@ -49,7 +52,7 @@ def test_every_lane_that_declares_a_seed_catalog_is_in_the_registry() -> None:
     Matched on the catalog VALUES rather than on the lane name, so renaming a lane cannot quietly
     satisfy this while the registry still points at nothing.
     """
-    registered = {(c.hosts, c.host_suffixes) for c in SEED_RESOLVERS.values()}
+    registered = {(c.hosts, c.host_suffixes, c.max_attempts) for c in SEED_RESOLVERS.values()}
     declaring = _modules_declaring_seed_hosts()
     assert declaring, "no lane declares SEED_HOSTS — this guard would be vacuous"
     for name in declaring:
@@ -58,10 +61,19 @@ def test_every_lane_that_declares_a_seed_catalog_is_in_the_registry() -> None:
         # gives `host_suffixes` a `frozenset()` default precisely because an exact-hosts-only
         # resolver is a legitimate shape, and such a lane must fail with the message below rather
         # than with a bare AttributeError from the guard meant to protect it.
-        catalog = (module.SEED_HOSTS, getattr(module, "SEED_HOST_SUFFIXES", frozenset()))
+        # `max_attempts` is part of the identity, not just the host sets: a registry entry that
+        # hard-codes a ceiling instead of importing the lane's would pass a hosts-only check while
+        # every seed BETWEEN the two ceilings is misclassified. Both read with a default, because
+        # an exact-hosts-only resolver and a resolver taking the shared default are legitimate.
+        catalog = (
+            module.SEED_HOSTS,
+            getattr(module, "SEED_HOST_SUFFIXES", frozenset()),
+            getattr(module, "SEED_MAX_ATTEMPTS", None),
+        )
         assert catalog in registered, (
-            f"lane {name!r} declares a seed catalog that `SEED_RESOLVERS` does not carry, so "
-            f"every seed it can drain would be reported as claimable by nothing"
+            f"lane {name!r} declares a seed catalog that `SEED_RESOLVERS` does not carry (hosts, "
+            f"suffixes AND attempt ceiling must all match), so seeds it can drain would be "
+            f"reported as claimable by nothing"
         )
 
 
@@ -76,7 +88,7 @@ def test_only_ENABLED_resolvers_count_as_claiming_anything() -> None:
     assert enabled_catalogs(("hiringcafe", "linkedin")) == (), (
         "lanes that resolve no seeds must not claim any host"
     )
-    assert enabled_catalogs(("jsonld",)) == (SEED_RESOLVERS["jsonld"],)
+    assert enabled_catalogs(("jsonld",)) == (("jsonld", SEED_RESOLVERS["jsonld"]),)
     assert enabled_catalogs(("nonexistent",)) == ()
 
 

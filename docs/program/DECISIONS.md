@@ -22193,11 +22193,30 @@ convention — a share of nothing is not zero percent, and 0.0% would read as a 
 carrying `coverage_cmd`'s schema-absent/stale checks verbatim. **No alert wiring** — the
 finalize-block ordering invariant makes that a separate change with its own review.
 
-**All eight guards are mutation-pinned against a no-op control** — broadened suffix; empty-catalog
+**All ten guards are mutation-pinned against a no-op control** — broadened suffix; empty-catalog
 inversion; dropped attempt ceiling; the reading split back into two statements; registered-instead-of-
 enabled; resolver removed from the registry; `--json` ignoring `--limit`; the `--limit` guard moved
-back below the JSON return. Control passes, all eight mutations fail. A mutation campaign with no
+back below the JSON return; a registry ceiling diverging from its lane's; `enabled_catalogs`
+ignoring `lanes_enabled`. Control passes, all ten mutations fail. A mutation campaign with no
 control cannot tell a caught mutant from a broken harness.
+
+**A SECOND review round tightened three more things, none of them behavioural but all of them the
+same class of hazard.** `count_unresolved_seeds` and `unclaimed_seed_hosts` had **no production
+caller** — two public store functions existing only to be tested, the speculative surface the
+engineering defaults rule out — so both are gone and the tests read `read_seed_claims`. The CLI
+**recomputed the enabled-lane list beside `enabled_catalogs`**, agreeing only while both spellings
+hard-coded the same membership test, so `enabled_catalogs` now returns `(name, catalog)` pairs and
+one call feeds both the split and the line reporting it. And the registry guard was **narrower than
+its own claim**: it globbed only top-level `lanes/*.py` (a resolver in a subpackage would never be
+found) and matched only the host sets, so a registry entry hard-coding a ceiling different from the
+lane's would pass while every seed between the two ceilings was misclassified. It now walks
+recursively and `max_attempts` is part of the identity.
+
+**And the second round caught something no gate ever would: a stray `$BW/boardwatch.db` had been
+swept into a commit by `git add -A`.** A shell with an unset variable created a literal `$BW/`
+directory in the repo root; the database was empty, but `CLAUDE.md` forbids committing live-store
+artifacts and an untracked store is one `add -A` from becoming a tracked one a later run writes real
+postings into. Removed before the push, and `*.db`/`-shm`/`-wal` are now ignored.
 
 **The review is the reason this entry is trustworthy and the gate was not.** `make check` was green
 on the first cut — 9,172 passed, 95.47% coverage — with the negative-`claimable` race, the
