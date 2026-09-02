@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Two job sources can now hand work to each other, so a job found in one place can be fetched
+  from another.** Some employers' job boards can only be read one company at a time — there is no
+  way to search across them — so the place that *finds* a job and the place that can *read* it are
+  often not the same. boardwatch now writes down a job link it cannot read yet and picks it up on a
+  later run, keeping a record of who found it, how many times it has been tried, and when it was
+  finally read. A link that can never be read stops being retried instead of costing a request
+  every single day forever, and a link nothing has managed to read yet is never quietly forgotten.
+
+  Nothing about this changes what any existing run does: no new source is switched on, and the
+  only source that could write one of these links is off by default.
+
+  Behind that, every job source is now built the same way — one object describing the run, handed
+  to each source identically. Before this, one source needed an extra value that no other source
+  took, so the code that started them had a special case just for it, and each new source would
+  have added another. Adding a source is now one line, and getting it wrong is caught by the type
+  checker instead of at run time.
+
 - **A new Indeed source, off unless you switch it on.** boardwatch can now read Indeed's own
   search and take in the jobs it finds. Unlike every other source, the full job description
   arrives with the search results, so a page of 100 jobs costs **one request instead of 101** —

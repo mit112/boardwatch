@@ -21,192 +21,131 @@
 
 ## Current standing
 
-### Did session 2026-09-01e reach its goal? NO — and the reason is that no run happened
+### Did session 2026-09-01f reach its goal? PARTLY — the number moved by ONE POSTING, and the session's real product is that the goal itself is now priced
 
-**The goal, in the owner's words: "ensure that we are finding all the jobs that Job Apps is finding,
-so we can retire Job Apps."** That is gate 1 (D-399): independent coverage of job-apps' eligible set
-**>= 80%**.
+**The goal, in the owner's words: "ensure that we are finding all the jobs that Job Apps is
+finding, so we can retire Job Apps."** That is gate 1 (D-399): independent coverage of job-apps'
+eligible set **>= 80%**.
 
 | | |
 |---|---|
-| gate 1 at session start | **22.2%** (independent 48 of 216) |
-| gate 1 at session end | **22.2% — UNCHANGED** |
-| postings actually gained | **0** |
+| gate 1 at session start | 22.2% (independent 48 of 216) |
+| **gate 1 at session end** | **22.7% (independent 49 of 216)** |
+| postings gained | **+1** |
+| gate 3 anti-degradation | 49 vs baseline 44 — HELD (record 49) |
 
-**Nothing this session moved the number, and nothing could have**: gate 1 is only re-read from a
-pipeline run, and no run took place. Everything that landed is CAPABILITY plus three refutations.
-**Run 141 is the first moment any of it can be scored.**
+**RUN 141 HAPPENED and was read out in full** (D-417) — unlike last session, which shipped
+capability and could score none of it.
 
-What the plan (`RETIREMENT-PLAN.md` §5) asked for, against what happened:
+### THE MOST IMPORTANT THING THIS SESSION PRODUCED IS AN ARITHMETIC, NOT A FEATURE
 
-| step | outcome |
-|---|---|
-| Track D — drop audit, first | **DONE.** Refuted its own premise (D-412): 0 of 216, so filters are not a lever at all. |
-| Wave 0 — shared settings PR | **SKIPPED deliberately.** Track A already carried the registration sites. Cost: 4 rebase conflicts on exactly the surface Wave 0 existed to remove, and one of my resolutions shipped a syntax error the gate caught. The wall-clock call was probably still right; it was not free. |
-| Track A — LinkedIn geo nets | **MERGED (#326, D-411)**, and the owner's config armed afterwards. |
-| Track B — native Indeed lane | **MERGED (#327, D-414) but DISARMED**, and must stay so until D-414's two owed items close. Contributes **0** until armed. |
-| Track C — `gh_jid` resolver | **PARKED unmerged (D-415).** Built and green; measured to fix **2** rows, not 7,406. |
-| Review each track | **DONE.** #326 came back DO-NOT-SHIP on two false claims, one already in `DECISIONS.md`. |
-| Re-read gate 1 after one run | **NOT DONE — no run.** |
-| Wave 2 — tier-D adapters | **RECON ONLY (D-413).** No adapter built. |
+Priced end to end for the first time, against a bar of **173 of 216**:
 
-**Where the 168 misses stand, honestly:**
-
-| tier | size | status |
+| lever | postings | state |
 |---|---:|---|
-| A — providers already held | 11 | `gh_jid` half parked (worth 2, not 7,406); company-admission half not started |
-| B — linkedin.com | 77 | mechanism shipped + admission cap raised 10 -> 50. **Yield unknown until run 141** |
-| C — indeed.com | 35 | lane built, **disarmed**. Realised 0 |
-| D — ~30 other vendors | 45 | recon only. One generic JSON-LD lane would be worth 7 and clear the bar |
+| Indeed armed (steady state, ~7 daily runs) | +35 | built, DISARMED, blocked |
+| tier-A company admission | +3 | measured, owner-gated, NOT applied |
+| JSON-LD resolver lane | +2 | built; **measured to deliver 1 by run 2, both by ~run 6** |
+| Oracle HCM search lane | +6 | not built |
+| Amazon / Rippling / Eightfold / BambooHR | +4 | not built |
+| `gh_jid` resolver | +2 | built, PARKED (D-415) |
+| **everything above, all of it** | **+52 → 101 of 216 = 46.8%** | |
 
-**So the honest summary: the session bought three things — a mechanism that should unlock tier B, a
-lane that is ready but not switched on, and the removal of three wrong beliefs about where the gap
-was. It bought zero postings.**
+**Every identified, buildable lever outside LinkedIn lands at 46.8%.** The whole remaining path to
+80% runs through linkedin.com's 77 misses (35.6 points) — and **57 of those 77 are employers
+boardwatch has never seen at all**, dominated by staffing agencies, consultancies and board
+reposts that plausibly have no ATS board to admit. Reaching them means acquiring LinkedIn postings
+at volume, from the worst-quality measured source (13.4 eligible per 1,000 open, against 33.4 for
+curated boards and 45.9 for hiring.cafe).
 
+**So gate 1 >= 80% is NOT REACHABLE by the levers currently identified.** That is an owner
+question, not an engineering one, and it is question 1 below.
 
-**THE DROP AUDIT IS DONE AND IT REFUTED ITS OWN HYPOTHESIS (D-412).** Of job-apps' 216 eligible
-postings boardwatch drops **ZERO** at the hard filter and the non-SWE gate, on both join paths.
-**Relaxing both gates completely buys 0.0 gate-1 points.** Gate 1 sits where it does because
-**131 of 216 postings are not in the store at all**: it is an ACQUISITION problem, not a filtering
-one. That retires a cheap-points theory permanently and confirms Tracks A/B and tier-D adapters are
-the only levers. The instrument was verified first — the two pure functions reproduce run 140's own
-counters exactly (118,463 / 60,491 / 39,404). Measured false-drop rate **0.022%**, a lower bound.
+### The cap theory: direction confirmed, sizing refuted
 
-**LINKEDIN GEO NETS SHIPPED (#326, D-411) AND THE OWNER'S CONFIG IS ARMED.** `location=` is not
-inert (D-409), so the lane now searches term x hub. Live config, applied 2026-09-01e and read back
-through `load_settings`: **7 metros** (job-apps' `HUB_LOCATIONS`), `lane_hub_combos_per_run` **33**
-(98-cell matrix, `2c <= m` holds, so consecutive runs are disjoint and full cover takes **3 runs**),
-`lane_search_pages` **10 -> 5**, and **`linkedin` new-company cap 10 -> 50**.
+The LinkedIn company cap went 10 -> 50 and geo nets shipped. Refusals **ROSE 344 -> 617** while the
+lane admitted exactly the new cap. Admission still binds — D-411 was right about that — and
+relieving it fivefold bought **+1 posting**. **Do not raise that cap again on this evidence**
+(D-417). Fourth time this program has sized work off what a rule can MATCH rather than what it
+would FIX, after D-415, D-413 and D-412.
 
-**THE CAP IS THE POINT, AND IT IS WHY THE NETS ALONE WOULD HAVE BOUGHT NOTHING.** Review caught it:
-LinkedIn's `lane_new_companies_per_run` was the default **10** while run 139 refused 267 and run 140
-refused 344, and `_search` builds `search_urls(facets) + net_urls` so the facets exhaust the cap
-before a single net card is considered. **Tier B is ADMISSION-bound, not discovery-bound** — geo
-nets are necessary and not sufficient (D-411). Sized to stay inside the existing 300 posting budget:
-lane companies carry a mean 3.47 open postings and run 139 resolved 149.
+The rotation contract HOLDS, verified against live config and profile rather than a fixture: 98
+cells at 33/run, `2c <= m` holds, consecutive overlap 0, **union of three consecutive runs 98 of
+98, no repeats.**
 
-**THE NATIVE INDEED LANE IS BUILT AND SHIPS DISARMED (#327, D-414).** Every JD arrives inline, so
-the lane makes zero body requests; no dependency added. **DO NOT ARM IT** until D-414's two owed
-items close — chiefly that a converged posting's `locations_json`/`remote_policy`/`department` are
-overwritten unconditionally, which under this owner's `location_filter_mode = "hard"` can delete a
-lead the pipeline already held.
+### What shipped, and what did not
 
-**TIER D IS A SEED PROBLEM, NOT AN ADAPTER PROBLEM (D-413).** Every tier-D vendor is per-tenant with
-no cross-tenant search; of 39 misses only **6** have a seeded posting URL and **18 have no seed at
-all**. **ONE generic JSON-LD lane is worth 7 postings and clears the 80% bar (82.4%)** — build a URL
-resolver with a per-vendor strategy table, not ten search lanes. Avature is REFUSED (AWS WAF
-challenge ⇒ browser automation, out of scope), UKG DECLINED, iCIMS SKIPPED on the owner's call.
+**MERGED: #329 only** — Wave 0 (D-416): `LaneContext` plus `lane_seeds`, the durable
+discoverer→resolver handoff. Reviewed, DO-NOT-SHIP'd on two structural blockers, fixed, green.
 
-**Track C (`gh_jid`) is built, green and PARKED UNMERGED (D-415)** — the plan's "7,406" counts URLs
-the rule can parse, not duplicates it would fix; the real number is **2**.
+**FIVE BRANCHES BUILT AND NONE MERGED** (D-418). Each gated green with mutation-pinned guards, was
+reviewed, had a fix round, and was **re-reviewed** — and all five failed the second pass on NEW
+findings the fix rounds exposed:
+
+| PR | branch | where it stands |
+|---|---|---|
+| **#334** | T1 `fix/lane-observation-fidelity` | D-414(a)'s two blockers CLOSED. **3 new blockers**: freezing the body leaves JD v1 deciding forever on an unwatched lane-first company; `remote_policy` has the same permanent false-drop path; a secondhand UPDATE can record a false `exact_quad` |
+| **#333** | T2 `feat/jsonld-resolver-lane` | 4 of 6 blockers FIXED. **2 new**: a seed that RESOLVED at attempt two is written back unresolved at three and excluded forever; every exception becomes `extracted_empty` |
+| **#332** | T3 `feat/indeed-tenant-seed` | blocker fixed, recurred through a DNS-root dot, fixed again by hand. Awaiting a third gate |
+| **#331** | T5 `feat/lane-body-ingest-precondition` | 4 of 5 FIXED. **1 new blocker: a FOURTH eligibility seam** — the `eligibility label` oracle handshake, where a Jobright page was reproduced becoming an `ineligible` ANSWER-KEY row |
+| **#330** | T4 `fix/vice-president-provenance` | verdict-neutral over 93,236 titles, precedence FIXED. The **web UI suppression is still present**, so the corrected reason does not reach the user |
+
+**The structural lesson (D-418): in three of five, the FIX CREATED THE NEXT FINDING**, each by
+removing a bad behaviour without supplying what it stood in for. When a fix withdraws something
+downstream depended on — a refresh, a retry, a re-check — **name what now supplies it, in the same
+change.**
+
+**And the method finding (D-419): six branches, six first-round DO-NOT-SHIPs, and every one turned
+on a CLAIM the code did not honour.** Not one finding was a failing test. A green gate cannot see a
+false recorded claim, and three of the six had already been ACTED ON. Reviews cost no gate time.
 
 ## Next action
 
-**RUN 141, AND READ GATE 1 OFF IT.** Everything else this session was capability; this is the
-measurement that says whether tier B was really admission-bound. Expect the LinkedIn lane to admit
-up to 50 new companies and to spend up to 165 extra search requests on the nets.
+**1. FINISH THE FIVE OPEN PRs.** Each needs ONE more round, not a rewrite; every finding is
+recorded in `.agent/2026-09-01f-session/reviews/` with file:line and a minimal fix. Order matters:
 
-Read out of run 141, in this order:
-1. **Gate 1** (`retirement_readiness.py`) — independent coverage against the same 216 population.
-2. **Whether the cap still binds.** `linkedin ... refused by the cap` should fall sharply from 344.
-   If it does not, admission was not the constraint and D-411's reasoning needs revisiting.
-3. **Cost.** Total run time against run 140's 44m55s, and the lane's own `search_pages` table.
-4. **The rotation.** Three consecutive runs must cover all 98 cells with no repeats (D-411).
+- **#333 (T2) merges BEFORE #332 (T3).** T3 produces `lane_seeds` rows and T2 is the only consumer;
+  landing the producer first is a bucket with no drain. Indeed is disarmed so nothing can produce
+  today, but do not arm it until the resolver is merged AND armed.
+- **#334 (T1) gates arming Indeed** together with D-414(b).
 
-Then **Wave 2 rank #1** — the generic JSON-LD resolver lane (D-413) — and **D-414's two owed items**
-before Indeed is armed.
+**2. THEN ARM INDEED — the cheapest 16.2 points on the board, and no new discovery work.** Needs
+D-414(a) (#334) closed, D-414(b) (an `indeed` row in `lane_new_companies_per_run_overrides`), and
+T2's resolver merged. **Expect a FRACTION on the first armed run**: the lane's window is 24h and
+the 35 misses spread 3/6/17/3/6 by cohort day, so the full figure takes ~7 daily runs. Reading the
+first run as failure would be wrong.
 
-### How to run the next session — the owner asked for ALL of the remainder, in parallel
+**3. PUT QUESTION 1 BELOW TO THE OWNER WITH THE 46.8% ARITHMETIC.** Do not build more first — three
+of four sizings in this program have counted the wrong thing, and this is the first one that prices
+the whole remaining gap.
 
-**Implementers are Claude agents; reviewers are `gpt-5.6-sol`** (owner's call 2026-09-01e; ids are
-fully qualified — a bare `sol` fails auth). Reviews cost no gate time, so they overlap gates freely,
-and they earned their keep twice this session.
+### Owed, and specifically NOT done
 
-**START RUN 141 FIRST and let everything else proceed beside it.** It is the long pole (~45-60 min)
-and the only thing that can score the previous session. While it runs, **do not switch the primary
-tree's branch** — the daily driver uses that tree's EDITABLE venv, so a branch switch mutates a live
-run — and **do not let any other process write the live store.** All code work goes in worktrees.
-
-**DO WAVE 0 THIS TIME.** It was skipped on 2026-09-01e and the bill came due immediately: four
-rebase conflicts on exactly the shared registration surface it exists to remove, and one resolution
-shipped a syntax error (a conflict region cut across a tuple whose closing paren sat outside the
-block). At least two tracks below need settings or registration changes. One small PR first.
-
-| track | what | owns | notes |
-|---|---|---|---|
-| **T1** | **D-414(a)** — stop a converged posting overwriting the provider's `locations_json`/`remote_policy`/`department` | `scan/apply.py::_mutable_fields`, `lanes/indeed.py::raw_posting` | **BLOCKS arming Indeed.** Highest risk in the set: `apply_board` is the pipeline's single writer. Review hardest. |
-| **T2** | **Wave 2 rank #1** — generic JSON-LD resolver lane (Hireology, CareerPlug, Paylocity, JazzHR, Breezy, custom-domain iCIMS) | new `lanes/` module | Worth **7** postings; **clears the 80% bar at 82.4%**. Biggest new build. Spec: `.agent/2026-09-01e-session/tierD-recon.md`. **A LANE, not a 7th `Provider`.** |
-| **T3** | **Wave 2 rank #0** — capture Indeed's `recruit.viewJobUrl` tenant even when `parse_board_target` resolves nothing | `lanes/indeed.py` | The tier-D tenant firehose. Define the seed shape in Wave 0 so T2 and T3 do not collide. |
-| **T4** | `Vice President` is doing SENIORITY work inside the ROLE gate (D-412) | role gate | 31 of 70 cases. Outcome defensible, recorded reason FALSE. Small, self-contained. |
-| **T5** | jobright page-text bodies: lane-body ingest precondition + quarantine + drain (D-406) | lane ingest | Mit ruled this 2026-09-01; not started. **Design the drain in the same change.** |
-| **T6** | tier A — admit the companies behind the workday/workable/smartrecruiters misses | live store | A WRITE to the owner's store. Confirm before applying. |
-
-**Gate discipline: at most TWO concurrent `make check`.** A contended gate reports `Error 143` and
-reads as a false negative. The wait loop must be BSD-correct — `pgrep -fc` does not exist on macOS
-and silently no-ops:
-
-```sh
-while [ "$(pgrep -fl 'make check' | grep -c 'bin/make')" -ge 2 ]; do sleep 30; done
-```
-
-**Arm Indeed only after T1 lands**, then add its `lane_new_companies_per_run` override (D-414(b))
-— and remember any write to that dict must **restate every entry**, because a config value REPLACES
-the shipped default rather than merging.
-
-### Owed, found earlier, not yet scheduled
-
-- **D-414 (a): a converged Indeed posting overwrites the provider's structured fields**, not gated
-  on `content_hash`, in the same run the ranker reads. **Blocks arming the Indeed lane.**
-- **D-414 (b): the Indeed lane has no `lane_new_companies_per_run` override**, so it would discard
-  companies whose JDs already arrived, permanently — its window is 24h, not a recirculating pool.
-- **`Vice President` is doing seniority work inside the ROLE gate** (D-412) — 31 of 70 cases. The
-  outcome is defensible; the reason the audit trail records, "not software", is false.
-- **357 US postings the role gate itself calls `swe` are dropped by `excluded_title: II`/`III`**
-  (D-412). Correct by configuration, and the same call that costs the one Valon gate-1 point.
-  Owner-facing, not a defect.
-- **`boardwatch config set` STRIPS every comment from `config.toml`** — it round-trips through
-  `tomli_w`, which has no comment support. The live file carries 85 comment lines of recorded
-  reasoning, so **edit it textually**. (Learned the hard way this session: a scripted write
-  destroyed all 52 then-existing comments and they had to be restored from the backup.)
-- **`ashby:Lightfield` duplicate pair stays as recorded residue (D-405, Mit's call).** 19 duplicated
-  open postings, **zero artifacts ever delivered**. Drain owed when something next touches company
-  identity or the Ashby lane.
-- **One queue failure survives #316 and is pre-existing**: `posting 131368: eBay_..._59eb81b3 already
-  exists at its destination`. A null control confirms unfixed `main` performs the same rename.
-- **`_identity_hash` reads the mutable `apply_url`; exposure is 239 of 861 offered leads (27.8%)**.
-  **DEFERRED by Mit 2026-09-01** as the lowest-value of four.
-- **9 postings carry jobright PAGE TEXT as their JD (D-406).** Mit ruled 2026-09-01: add a lane-body
-  ingest precondition and quarantine the 9 with a drain. **Not started.**
-- The ledger drain stays DECLINED (D-390). The two held recall patches at
-  `.agent/2026-08-31d-session/WIP-*.patch` are **DO NOT SHIP** on measured evidence.
-
-## Session 2026-09-01e — what shipped
-
-**Two PRs, four decision entries, one live-config change, and two hypotheses killed with numbers.**
-
-- **#326 — LinkedIn geo-pinned hub nets** (D-411). Shipped inert; armed via config afterwards.
-- **#327 — the native Indeed lane** (D-414). Shipped **disarmed**, and must stay so until D-414's
-  owed items close.
-- **D-412** the drop audit, **D-413** tier-D recon, **D-415** Track C parked.
-- `STANDING-FACTS.md` corrected: `hidden_hard_filter` is **60,491**, not the recorded
-  18,472-18,932 from runs 68/69/71. The load-bearing claim (the `hidden_*` buckets are an exhaustive
-  partition, so they can never evidence a silent failure) survives; only the range rotted.
-
-**REVIEW EARNED ITS KEEP TWICE, AND BOTH FINDINGS WERE IN CLAIMS RATHER THAN CODE.** #326's first
-review returned DO-NOT-SHIP: its rotation contract asserted disjointness **unconditionally** (true
-only for `2c <= m`; at the default 12 combos every matrix under 24 cells overlaps) and that false
-claim had **already been written into `DECISIONS.md`** — the exact failure D-409 exists to punish.
-The same review found the rotation was keyed on the **calendar date**, so two runs in one day drew
-the identical slice and a weekly cadence would starve a fixed subset of the matrix forever. Both
-fixed; the index is now the run's own id.
-
-**Three sizing errors were caught by measuring rather than by reading the plan**, all the same
-shape — *a count of things a rule can MATCH is not a count of things it would FIX*: Track C's 7,406
-(real answer 2), tier D's vendor ranking (the seed, not the adapter, binds), and the drop audit's
-whole premise (zero). None was a bad measurement; each answered a question next to the one that
-mattered.
+- **The primary tree is on `8069007a`, one merge behind `origin/main` (`f7b5b56d`).** It was NOT
+  pulled because **run 142 (the 04:00 tick) was in flight off its editable venv** and a pull swaps
+  code and `rules.yaml` under a live run. **Pull it once run 142 finishes.**
+- **Run 142 has not been read out.** It ran on `8069007a`, i.e. pre-Wave-0 code, so it measures the
+  same configuration as run 141.
+- **Tier-A admission is NOT applied.** 3 admissible boards (Motorola Solutions, Keenfinity, Bosch
+  Group), worth at most 1.4 points. Candidate file ready at
+  `.agent/2026-09-01f-session/staging/t6/tierA-candidates.yaml`. `companies import` is a live-store
+  write and the owner has not confirmed it.
+- **`lane_seeds` has no "seeds no resolver claims" report.** `attempts` bounds a seed something has
+  TRIED; a seed nothing ever selects is never attempted, never aged out, and invisible.
+- Everything in the previous session's owed list that this one did not touch.
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+0. **NEW, AND IT IS NOW THE PROGRAM'S BIGGEST OPEN QUESTION: gate 1 >= 80% is not reachable by any
+   lever currently identified.** Priced end to end (D-417, METRICS 2026-09-01f), everything
+   buildable outside LinkedIn lands at **46.8%**. The remaining path runs entirely through
+   linkedin.com's 77 misses, and **57 of them are employers with no ATS board to admit** —
+   staffing agencies, consultancies and board reposts. Three options, and only the owner can pick:
+   **(a)** a much larger LinkedIn acquisition, accepting a measured 2.5-3.4x worse
+   eligible-per-posting rate and the corpus growth behind it; **(b)** accept that those 57 are a
+   class boardwatch will not serve and **move the bar** — D-399 set 80% before any of this was
+   measured; **(c)** a different discovery source for that population. **Do not build more toward
+   80% before this is answered.**
 
 1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED — it keeps running until gate 1 is
    met.** Both schedulers armed: boardwatch 04:00, job-apps 08:30. **The retirement work is now a
