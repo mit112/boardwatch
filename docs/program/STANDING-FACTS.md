@@ -1699,3 +1699,153 @@ min) are genuine scheduled ticks — delta 16.2 min — so the real margin is **
 every other full-scan run in the store is from the ad-hoc era. Re-derive from consecutive scheduled
 ticks once 134+ exist. Errs safe either way: the failure mode is a FALSE "down" email, never a
 missed real failure.
+
+---
+
+## Moved out of STATE on 2026-09-02b — the gate-1 redefinition, run 143's readout, the pre-harvest jobapps-tree analysis and the seed-leak first reading, kept verbatim
+
+All of this is settled and held by number elsewhere: gate 1's redefinition is **D-421**, the one-time harvest decision is **D-423** and it has now BEEN RUN (run 144, METRICS), the seed leak is **D-422** with its report shipped as **D-426**, and the retirement answer is **D-424**. Kept verbatim because the reasoning behind each number is worth not re-deriving.
+
+### Session 2026-09-02: the five branches merged, Indeed is ARMED and has RUN, and gate 1 was replaced by a different instrument
+
+**GATE 1 IS NO LONGER A COVERAGE PERCENTAGE.** The owner withdrew both the 80% bar (D-399) and the
+"cover most of what job-apps does daily" wording that briefly replaced it. **It is now PER-SOURCE
+RECALL, a rate** (D-421). Do not re-derive either retired bar.
+
+**Why**, in the owner's words: *"what I want you to compare is the same methodology or the sources
+that job apps have"* — job-apps' output grows daily so no two readings share a denominator, and he
+had already processed past discovery into the apply queue. **The old gate was worse than unstable:**
+it counted `eligibility` outcomes `eligible` (1,229) + `protected_applied` (45) and **excluded
+`moved` (3,963 — the apply-queue set, three times larger)** and `review` (2,484). `eligible` and
+`moved` only exist once he works a cohort, so 08-31, 09-01 and 09-02 carry zero of both. **Three of
+the seven days contributed nothing.** The "216" tracked his activity, not boardwatch's coverage.
+
+**First reading of the new gate — run 143, 14d window, 21,863 job-apps postings:**
+
+| | value |
+|---|---|
+| **recall, drawn-from sources** | **4,913 of 20,653 = 23.8%** |
+| employer's own board (lever/ashby/greenhouse/workday) | **94–100%** |
+| aggregator + search (linkedin 32.5%, hiringcafe 17.0%, indeed 12.6%) | **12–33%** |
+| **lane-only — dies the day job-apps stops** | **7,091 (32.4%)** |
+| never held at all | 9,715 (44.4%) |
+| **independent if job-apps stopped today** | **5,057 = 23.1%** |
+| source coverage | **94.4%**, or 99.6% excluding the deliberate jobright refusal |
+
+**The split is binary and falls on MECHANISM, not effort.** Reading the employer's own board gives
+~100% recall; reading an aggregator gives 12–33%. **Source coverage is essentially solved** — only 15
+of job-apps' 33 registered sources produce anything, and boardwatch draws from sources covering
+94.4% of its volume. Gate 3 HELD at 49 (baseline 44). **No numeric threshold is set, deliberately:**
+one number averages a solved mechanism against an unsolved one, which is how 80% hid that the
+direct-ATS half was already done. Setting it per source is the owner's call.
+
+### Run 143 — the first armed run
+
+379 boards / 290 complete / 54 unchanged / 33 partial / 2 failed, 41m59s. **31,350 postings seen**
+(142: 21,944), **2,894 new** (1,292), corpus 122,917. Verdicts **139 eligible** / 2,126 uncertain /
+1,566 ineligible. 95 leads delivered. Board stage 379 boards in 20m11s = **3.2s per board**, which
+is what auto-watch growth costs on every future run.
+
+| lane | attempted | resolved | new companies | refused by cap |
+|---|---:|---:|---:|---:|
+| linkedin | 1,564 | 273 | 50 (cap) | 463 |
+| **indeed** | **513** | **83** | **25 (CAP)** | **359** |
+| jobapps | 432 | 237 | 46 | 0 |
+| hiringcafe | 127 | 45 | 8 | 0 |
+| jsonld | 0 | 0 | 0 | 0 |
+
+**#331's body precondition fired in production:** 12 bodies withheld as "not the employer's own
+text" — all 12 from `jobright.ai`, all ingested by the `jobapps` lane, `h1b sponsor likely` in 9 of
+them, against 122,917 checks (0.01%, so precise rather than over-firing). **The contamination route
+was job-apps, not a jobright lane** — refusing that lane never kept jobright's judgments out;
+ingesting job-apps put them in. That is the sharpest argument for retirement the program has.
+
+### `lane_seeds` fills to 773, and 85.9% of it is unreachable (D-422)
+
+Zero → **773 rows in one run** (indeed 683, jsonld 90), **0 resolved, 0 attempts**. The
+`jsonld → 0 attempted` is lane ORDERING, not a defect: the resolver runs before the producer and the
+table was empty. **Run 144 must confirm the drain** — the handoff is unproven end to end until one
+does. **The real defect: only 109 of 773 (14.1%) are claimable by any resolver's host catalog; 664
+(85.9%) across 197 hosts are selected by nothing**, and `attempts` cannot bound them because an
+unselected seed is never attempted. `grnh.se` (109) is the cheapest win — Greenhouse's own shortener,
+and boardwatch already handles greenhouse. `eeho.fa.us2.oraclecloud.com` (Oracle HCM) and
+`lockheedmartin.eightfold.ai` (Eightfold) are D-417's unbuilt levers whose seeds are already
+arriving.
+
+### The job-apps discovery tree is only a QUARTER ingested — measured 2026-09-02
+
+The `jobapps` lane walks **exactly two levels** (`resumes/<date>/<posting>/`) and is deliberately
+non-recursive so it cannot reach `_skipped/<reason>/`, whose directory names are job-apps' own
+verdicts. **That intent is right** — reading them would inherit job-apps' judgments, the coupling
+D-421 measured. But the depth limit excludes two further buckets as collateral. Confirmed through a
+second path, not from reading the code: the tree holds exactly **432** `discovery_record.json` files
+at the lane's depth and run 143 logged `lane jobapps → 432 attempted`.
+
+| bucket | records | status |
+|---|---:|---|
+| lane's depth (top level per date) | **432** | read; **239** pass `is_direct_apply` |
+| **`_eligibility_review`** | **1,374** (1,357 parse) | **MISSED — unintended.** 669 pass the filter |
+| `_skipped` | 16,918 over 174 reasons | skipped by design |
+| `_too_senior` | **0 records** (49,662 folders, each with `job_description.txt` + an apply URL) | unreachable by this lane |
+
+`_eligibility_review` records are `schema_version: 2` with keys identical to what the lane reads —
+fully readable, out of reach only by depth. **Root cause is a shape mismatch:** the lane's docstring
+describes the tree as `<queue>/<ATS>/<posting>/`, so it was written expecting an ATS name at the
+middle level; `resumes/` puts a DATE there and job-apps files its triage buckets at that same level,
+one deeper than the walk goes.
+
+**`_skipped`'s 174 reasons are NOT uniform in risk, which bounds any future decision to mine it:**
+~45% is job-apps' own ROLE TAXONOMY (`non_swe_*`, 7,640 — and #330 corrected boardwatch's own role
+gate this morning for the same class of error), ~28% is PROFILE-DEPENDENT eligibility
+(`min_N_years_experience` ~3,100, `clearance_required` 589, `no_sponsorship`/visa ~330,
+`international_location` 327, `senior_title`/`senior_level` 420), and only ~17% is objective posting
+fact (`stub_jd` 1,922, `discovery_blocked_header` 606, `junk_folder_*` 373, `posting_closed`).
+**Only that last class is safe to take on job-apps' word.**
+
+**OWNER'S CALL (2026-09-02): harvest ONCE, build NO mechanism.** job-apps is being retired, so after
+a certain date there is no more of this content and a permanent ingestion path would be dead code.
+Process the top level plus `_eligibility_review` once and keep the eligible ones. Do **not** re-decide
+`_too_senior` or `_skipped` through boardwatch's gates — job-apps' verdict is taken at its word
+there. **Ingesting once is itself the record that stops re-processing**, because `posting_identities`
+and the disposition ledger already make a second encounter cheap; no suppression list is needed, and
+that is why none was built.
+
+### Applied this session
+
+- **Tier-A admission APPLIED** (owner-confirmed): 3 boards, watched **387 → 390**. Backed up first —
+  `companies-pretierA-*.csv` (the exact reversal artifact) and a 5.5 GB `VACUUM INTO` snapshot.
+- **Indeed cap raised 25 → 50** on the owner's call and on the 25-admitted/359-refused reading.
+  **Carrying D-417's caveat: a binding cap is not proof that relieving it helps** — LinkedIn's went
+  10 → 50 and bought ONE posting. Verify yield on runs 144/145 before raising again.
+- **jobright company-discovery probe: REFUSED on measurement, against my own proposal.** Of 501
+  employers, 373 unseen, only **44 (11.8%)** have a resolvable board (62 of 523 postings), 329
+  (88.2%) none at all — and all 44 were discovered via hiringcafe/legacy/zapply/simplify, **not one
+  via jobright**, so the reachable part needs no jobright lane.
+
+### CAN job-apps BE RETIRED? NOT YET — and the residual is LinkedIn alone (D-424)
+
+Asked directly at this session's close. **The original 80% goal was not achieved** (gate 1 never
+passed 22.7%) but it was **withdrawn** rather than failed, because it counted a population the
+owner's manual processing created. **And the backlog is the wrong axis:** D-423's one-time harvest of
+18,726 on-disk records is pure gain, but retirement asks whether boardwatch finds TOMORROW's
+postings. Processing the backlog cannot make retirement safe; skipping it cannot make it unsafe.
+
+**Cost of switching off today, two independent measures:** discovery **7,091 of 21,863 (32.4%)
+lane-only**; delivery **28 of 95 leads (29.5%)** in run 143 via the `jobapps` lane (140: 2.1%,
+141: 17.9%, 142: 2.1%). **That delivery share is inflated by the backlog** — the lane ingests records
+still unprocessed in the tree and they leave its view once the owner works them, so it tracks how
+recently he processed rather than dependency. **Steady state is not measurable until the backlog is
+cleared**, which is another reason to harvest first.
+
+| | standing |
+|---|---|
+| source coverage | **DONE — 94.4%** (99.6% ex-jobright) |
+| employer's own board | **94–100% recall — solved** |
+| **indeed** | 12.6% but **0 absent**; armed, and **fixes itself in ~7 daily runs** (D-417), no new work |
+| **hiringcafe** | **17.0% with a WORKING lane, 1,958 absent — UNEXPLAINED.** One investigation owed |
+| **linkedin** | **32.5%, 6,789 absent**; 57 of 77 sampled misses are employers with no ATS board |
+
+**The test is decidable now: retire when `lane-only` falls to a level the owner accepts losing.** It
+is measurable every run by D-421's script and is the exposure by construction. Sequence: harvest →
+let Indeed reach steady state → diagnose hiring.cafe → **re-measure ~2026-09-09**. The residual is
+then LinkedIn alone, which is a judgment about a population, not an engineering gap.
