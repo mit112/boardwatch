@@ -116,6 +116,43 @@ Read out of run 141, in this order:
 Then **Wave 2 rank #1** — the generic JSON-LD resolver lane (D-413) — and **D-414's two owed items**
 before Indeed is armed.
 
+### How to run the next session — the owner asked for ALL of the remainder, in parallel
+
+**Implementers are Claude agents; reviewers are `gpt-5.6-sol`** (owner's call 2026-09-01e; ids are
+fully qualified — a bare `sol` fails auth). Reviews cost no gate time, so they overlap gates freely,
+and they earned their keep twice this session.
+
+**START RUN 141 FIRST and let everything else proceed beside it.** It is the long pole (~45-60 min)
+and the only thing that can score the previous session. While it runs, **do not switch the primary
+tree's branch** — the daily driver uses that tree's EDITABLE venv, so a branch switch mutates a live
+run — and **do not let any other process write the live store.** All code work goes in worktrees.
+
+**DO WAVE 0 THIS TIME.** It was skipped on 2026-09-01e and the bill came due immediately: four
+rebase conflicts on exactly the shared registration surface it exists to remove, and one resolution
+shipped a syntax error (a conflict region cut across a tuple whose closing paren sat outside the
+block). At least two tracks below need settings or registration changes. One small PR first.
+
+| track | what | owns | notes |
+|---|---|---|---|
+| **T1** | **D-414(a)** — stop a converged posting overwriting the provider's `locations_json`/`remote_policy`/`department` | `scan/apply.py::_mutable_fields`, `lanes/indeed.py::raw_posting` | **BLOCKS arming Indeed.** Highest risk in the set: `apply_board` is the pipeline's single writer. Review hardest. |
+| **T2** | **Wave 2 rank #1** — generic JSON-LD resolver lane (Hireology, CareerPlug, Paylocity, JazzHR, Breezy, custom-domain iCIMS) | new `lanes/` module | Worth **7** postings; **clears the 80% bar at 82.4%**. Biggest new build. Spec: `.agent/2026-09-01e-session/tierD-recon.md`. **A LANE, not a 7th `Provider`.** |
+| **T3** | **Wave 2 rank #0** — capture Indeed's `recruit.viewJobUrl` tenant even when `parse_board_target` resolves nothing | `lanes/indeed.py` | The tier-D tenant firehose. Define the seed shape in Wave 0 so T2 and T3 do not collide. |
+| **T4** | `Vice President` is doing SENIORITY work inside the ROLE gate (D-412) | role gate | 31 of 70 cases. Outcome defensible, recorded reason FALSE. Small, self-contained. |
+| **T5** | jobright page-text bodies: lane-body ingest precondition + quarantine + drain (D-406) | lane ingest | Mit ruled this 2026-09-01; not started. **Design the drain in the same change.** |
+| **T6** | tier A — admit the companies behind the workday/workable/smartrecruiters misses | live store | A WRITE to the owner's store. Confirm before applying. |
+
+**Gate discipline: at most TWO concurrent `make check`.** A contended gate reports `Error 143` and
+reads as a false negative. The wait loop must be BSD-correct — `pgrep -fc` does not exist on macOS
+and silently no-ops:
+
+```sh
+while [ "$(pgrep -fl 'make check' | grep -c 'bin/make')" -ge 2 ]; do sleep 30; done
+```
+
+**Arm Indeed only after T1 lands**, then add its `lane_new_companies_per_run` override (D-414(b))
+— and remember any write to that dict must **restate every entry**, because a config value REPLACES
+the shipped default rather than merging.
+
 ### Owed, found earlier, not yet scheduled
 
 - **D-414 (a): a converged Indeed posting overwrites the provider's structured fields**, not gated
@@ -201,24 +238,15 @@ Whether `runner.py` should keep swallowing a funnel-write failure — D-288. Cle
 
 ## Phase status
 
-| Phase | Build | Gate |
-|---|---|---|
-| P0 Instrumentation | **COMPLETE** | **MET** (D-030) |
-| P1 Résumé artifact gate | **COMPLETE** | **MET** (D-032/033) |
-| P2 Profile + keystone | items 1–7 shipped; item 8 NOT STARTED | **MET AS RECONCILED** (D-075) |
-| P3 Unattended one command | **COMPLETE, INSTALLED, FIRING** once daily at 04:00 local (owner's call 2026-08-27; was ~3h under D-288). The agent is now a FALLBACK HEARTBEAT — Mit's ruling is to invoke a run manually as and when needed, so do not wait for the schedule | **MET** — 8 consecutive clean scheduled ticks (runs 71-78), verified from the `runs` table + funnels |
-| P4 Craft gate | **COMPLETE** (under-fill fixed D-303; objective anti-slop 0 violations, non-vacuous) | **MET** — objective half certified AND the owner's blind craft review passed cleanly 2026-08-26 (all 5 judged worse were job-apps decoys; all 3 judged better were boardwatch) |
-| P5 Eligibility decides | **COMPLETE** | **MET** — INELIGIBLE precision 16/16, 0 span violations |
-| P6 Liveness + dedup | **BUILD COMPLETE** (D-110/111/113); leakage report shipped (D-283) | **MET — 4 of 4** (2026-08-27): liveness MET (D-281), leakage measurable over a true 7-day span and reading **0.00%**; see the clause table for the `exact_quad` caveat |
-| 14-day acceptance | not started | **HELD BY THE OWNER (2026-08-27)** — the provisional pass was MET by runs 119-123, and Mit ruled to keep fixing precision first rather than start the clock. Starting it freezes eligibility, profile and the résumé gate for 14 days. **2026-08-28e: the provisional pass's remaining item — 3 clean post-fix runs — RESTARTED FROM ZERO**, because #218 bumps `rules_hash` and those runs are therefore pre-fix again. The P4 owner blind review is still PASSED (2026-08-26) and does not repeat. With runs on demand and Mit stepping back ~2026-08-31, that is 3 runs in ~3 days; **the trade (stricter eligibility now vs the pass possibly not closing before unattended operation) was raised to Mit and is his**. **2026-08-28f: #221 bumps `rules_hash` again, so the counter restarts again — and this is NOT being chased (D-351 item 2 stands: work comes first)** |
-| P7 Breadth | **lane 1 (hiring.cafe) and Part 4b (LinkedIn) are BUILT AND ARMED and ran in run 122** (hiringcafe 70 attempted/56 resolved; linkedin 71/51) — the previous "not armed" text was stale. **Part 4a GitHub-lists discovery BUILT + LANDED (#149/D-296) and NOW PARTLY ARMED**: 97 boards imported 2026-08-27, ~765 candidates still capped. Remaining lanes not started | unlock MET (D-271/272) |
-| *Gate A / Gate B* | *complete, merged* | ***MET*** — *has moved no program gate* |
+**P0–P6 are all COMPLETE and their gates all MET, and none has moved in weeks — the full table
+moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e when this file passed 250 lines again.** Read it
+there. Only these are not settled:
 
-### Gate P6 — MET, 4 of 4
-
-The clause-by-clause table moved to `STANDING-FACTS.md` on 2026-08-28f: every clause is MET and
-none has moved since 2026-08-27. Read it there before quoting the leakage figure — the `exact_quad`
-caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
+- **P2 item 8** (field-taxonomy gatherer) **NOT STARTED** — the last multi-tenancy gap, owner-gated.
+- **P7 Breadth**: hiring.cafe, LinkedIn and GitHub-lists lanes are built and armed; **`indeed` is
+  built and DISARMED** (D-414). Remaining tier-D lanes not started (D-413 ranks them).
+- **14-day acceptance: not started, HELD BY THE OWNER.** The provisional pass is **not being
+  chased** (D-351 item 2: work comes first), and every `rules_hash` bump restarts its counter.
 
 ## Live blockers and carried gaps
 
