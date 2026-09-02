@@ -230,6 +230,49 @@ def test_the_host_is_normalised_so_a_strategy_table_can_match_it(tmp_path: Path)
     assert [s.host for s in found] == ["x.test"]
 
 
+def test_a_root_dot_or_explicit_port_is_normalised_so_the_seed_stays_drainable(
+    tmp_path: Path,
+) -> None:
+    """A DNS root dot or an explicit port must not strand a seed on a host no resolver can name.
+
+    `newco.applytojob.com.` and `other.applytojob.com:443` name the SAME tenant space as
+    `*.applytojob.com`, but stored verbatim off `parsed.netloc` neither matches the resolver's
+    exact/suffix route — the trailing dot and the `:443` both break the `%.applytojob.com` LIKE —
+    so the row is never attempted and never ages out: a bucket with no drain. Routing off validated
+    `parsed.hostname` (which drops the port) and stripping one root dot fixes both. The stored
+    `url` stays the original — only the routing `host` is normalised.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            (
+                "https://newco.applytojob.com./apply/ABC",
+                "https://other.applytojob.com:443/apply/DEF",
+            ),
+            discovered_by="indeed",
+            run_id=run,
+            now=NOW,
+        )
+        drainable = unresolved_seeds(
+            conn,
+            hosts=frozenset(),
+            host_suffixes=frozenset({"applytojob.com"}),
+            max_attempts=9,
+            limit=9,
+        )
+
+    assert sorted(s.host for s in drainable) == [
+        "newco.applytojob.com",
+        "other.applytojob.com",
+    ], "the root dot and the :443 are both normalised away, so the suffix route reaches them"
+    assert {s.url for s in drainable} == {
+        "https://newco.applytojob.com./apply/ABC",
+        "https://other.applytojob.com:443/apply/DEF",
+    }, "the stored url is the original; only the routing host is normalised"
+
+
 def test_a_negative_limit_is_refused_rather_than_read_as_no_limit(tmp_path: Path) -> None:
     """SQLite spells "no bound" as `LIMIT -1`, so the one thing this argument promises would be
     silently defeated by a caller whose budget arithmetic went negative — and the failure is a

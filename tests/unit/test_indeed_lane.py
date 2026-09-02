@@ -456,6 +456,23 @@ def test_a_view_job_url_that_resolves_is_not_seeded(tmp_path):
 
 
 @respx.mock
+def test_a_control_character_view_job_url_never_reaches_the_seed_queue(tmp_path):
+    """The persistence path. `a.test` is unregistered, so pre-fix a NUL-bearing url on it would
+    ride `discovered_seeds` into `lane_seeds` and then fail every fetch as `InvalidURL`. It must
+    never enter the queue; the hit is still keyed under `indeed` (tier 2) like any other.
+    """
+    hit = replace(TENANT_SEED_HIT, key="key9900", view_job_url="https://a.test/job/\x00x")
+    _mock_one([hit])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == ()
+    assert {(s.provider, s.slug) for s in result.snapshots} == {
+        (LANE_PROVIDER, "Example-Manufacturing")
+    }
+
+
+@respx.mock
 def test_a_recognized_board_url_with_no_evidenced_reference_is_not_seeded(tmp_path):
     """THE DISTINGUISHING TRAP. `TRAILING_CHROME_HIT` names a real lever URL this repo already
     has an adapter for; only its posting reference is unreadable (`UnresolvablePostingURL`). That
@@ -570,10 +587,11 @@ def test_a_malformed_view_job_url_is_not_seeded_through_collect(tmp_path):
 
 def test_a_non_absolute_garbage_string_is_not_seeded(tmp_path):
     """`urlparse` does not raise on this at all -- once `parse_board_target` prepends a scheme,
-    it returns a literal, space-containing string as the "hostname", which reaches
-    `UnregisteredBoardHost` exactly like a real unrecognized vendor would. Only
-    `_is_addressable_url`'s own check (a scheme, a real hostname, no embedded whitespace) tells
-    the two apart.
+    it returns a literal, space-containing string as the "hostname". `parse_posting_target` then
+    raises the `UnknownBoardURL` BASE class (a space-bearing host matches no provider), NOT the
+    `UnregisteredBoardHost` subclass a real unrecognized vendor raises -- but the seed never gets
+    that far: `_is_addressable_url`'s own check (a scheme, a real hostname, no embedded whitespace
+    or control chars) rejects it first.
     """
     seed = indeed.tenant_seed_url(job_dict(GARBAGE_VIEW_JOB_URL_HIT))
 
@@ -587,22 +605,33 @@ def test_a_non_absolute_garbage_string_is_not_seeded(tmp_path):
         ("https://ex\tample.com/job/1", False),  # `urlsplit` strips the tab; the recorded url keeps it
         ("https://exa\nmple.com/job/1", False),  # a newline, stripped the same WHATWG way
         ("https://example.com/a b", False),       # a raw space in the path
-        ("https://a.test:99999/x", True),         # a port out of range is not this check's job (see below)
+        ("https://a.test/job/\x00x", False),      # NUL -- not whitespace, but HTTPX rejects it at fetch
+        ("https://a.test/job/\x7fx", False),      # DEL -- the other char `isspace()` misses
+        ("https://a.test:99999/x", False),        # a port outside 0-65535 -- `.port` raises here
     ],
 )
-def test_is_addressable_url_rejects_raw_whitespace_but_defers_the_port(value, addressable):
-    """`_is_addressable_url` guards the STRING that gets recorded, so raw whitespace anywhere fails
-    it even where `urlsplit` would parse a clean host. Port range is validated one layer down in
-    `parse_board_target`, so a bad port still LOOKS addressable here."""
+def test_is_addressable_url_rejects_whitespace_control_chars_and_a_bad_port(value, addressable):
+    """`_is_addressable_url` guards the STRING that gets recorded. Raw whitespace anywhere fails it
+    even where `urlsplit` would parse a clean host; NUL and DEL fail it too (they are not
+    `isspace()` but HTTPX rejects them as `InvalidURL` at fetch); and a port outside 0-65535 fails
+    it because `parsed.port` raises `ValueError` on it here rather than only downstream."""
     assert indeed._is_addressable_url(value) is addressable
 
 
 def test_an_out_of_range_port_is_not_seeded_though_the_bare_host_would_be(tmp_path):
     """The port is the ONLY difference: `a.test` is unregistered, so a well-formed url on it seeds,
-    but an out-of-range port parses to the `UnknownBoardURL` base rather than the seedable
-    `UnregisteredBoardHost` subclass -- the port never reaches the tier-D queue."""
+    but an out-of-range port makes `_is_addressable_url` refuse the value outright (`parsed.port`
+    raises) -- a value HTTPX would reject at fetch never reaches the tier-D queue."""
     assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test/x"}}) == "https://a.test/x"
     assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test:99999/x"}}) is None
+
+
+def test_a_control_character_in_the_view_job_url_is_not_seeded(tmp_path):
+    """NUL and DEL are not whitespace, so `isspace()` alone let them through -- but HTTPX rejects
+    such a URL as `InvalidURL` at fetch, AFTER it has persisted as a seed. `a.test` is an
+    unregistered host, so without the control-char guard the bad string would be seeded."""
+    assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test/job/\x00x"}}) is None
+    assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test/job/\x7fx"}}) is None
 
 
 def test_a_dns_root_dot_known_provider_url_is_not_seeded(tmp_path):

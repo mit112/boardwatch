@@ -302,9 +302,11 @@ MALFORMED_VIEW_JOB_URL_HIT = Hit(
 
 # HAS a scheme and a hostname, so it clears `_is_addressable_url`'s scheme and hostname checks --
 # but `urlparse` still tolerates it without raising anything, reading everything before the next
-# `/` as a literal, space-containing "hostname". That reaches `UnregisteredBoardHost` exactly like
-# a real unrecognized vendor would; only the whitespace check inside `_is_addressable_url` tells
-# the two apart. Must NOT be seeded.
+# `/` as a literal, space-containing "hostname". `parse_posting_target` then raises the
+# `UnknownBoardURL` BASE class (that space-bearing host matches no provider), NOT the
+# `UnregisteredBoardHost` subclass a real unrecognized vendor raises -- but the whitespace check
+# inside `_is_addressable_url` rejects it before that, so the string that gets RECORDED is guarded
+# regardless of the exception class. Must NOT be seeded.
 GARBAGE_VIEW_JOB_URL_HIT = Hit(
     key="key9803",
     title="Software Engineer V",

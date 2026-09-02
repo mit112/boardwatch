@@ -493,22 +493,28 @@ def _is_addressable_url(value: str) -> bool:
     string once `parse_board_target` prepends `https://` to it -- no exception anywhere -- so the
     check has to be stricter than "did this raise".
     """
+    if "://" not in value:
+        return False
     try:
         parsed = urlparse(value)
+        _ = parsed.port  # `.port` validates the 0-65535 range; `urlparse` itself does not.
     except ValueError:
-        # The same bare `ValueError` `core/board_urls.py`'s own `urlparse` call guards against
-        # (an unbalanced `[`/`]` in the authority, e.g. `https://[broken`).
+        # A bare `ValueError` from `urlsplit`: an unbalanced `[`/`]` in the authority
+        # (`https://[broken`, the trap `core/board_urls.py` guards too), or a port outside
+        # 0-65535 (`https://a.test:99999/x`). Either is malformed input, not a tenant.
         return False
     hostname = parsed.hostname
     if parsed.scheme not in ("http", "https") or not hostname:
         return False
-    # RAW whitespace anywhere in the value, not just a space in the hostname. `urlsplit` follows
-    # WHATWG and STRIPS tabs and newlines before parsing, so `https://ex<TAB>ample.com/a` yields a
-    # perfectly valid `example.com` -- and the value SEEDED is the original string, tab included.
-    # `store.seed_queries.seed_host` re-parses it and strips them again, so routing agrees; what
-    # does not agree is `lane_seeds.url`, which would carry a URL no log line or human can match
-    # against the one actually fetched.
-    if any(ch.isspace() for ch in value):
+    # C0 control chars (0x00-0x1F) and DEL (0x7F) are NOT all whitespace -- NUL and DEL slip past
+    # `isspace()` -- yet HTTPX rejects any of them as `InvalidURL` at fetch, AFTER the value has
+    # already persisted as a seed. Reject every one, alongside RAW whitespace anywhere in the value
+    # (not just a space in the hostname). `urlsplit` follows WHATWG and STRIPS tabs and newlines
+    # before parsing, so `https://ex<TAB>ample.com/a` yields a perfectly valid `example.com` -- and
+    # the value SEEDED is the original string, tab included. `store.seed_queries.seed_host`
+    # re-parses it and strips them again, so routing agrees; what does not agree is `lane_seeds.url`
+    # -- it would carry a URL no log line or human can match against the one actually fetched.
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
         return False
     return " " not in hostname
 
@@ -541,16 +547,17 @@ def tenant_seed_url(job: dict[str, Any]) -> str | None:
     own posting-shape check fails).
 
     `_is_addressable_url` runs FIRST and independently of which exception `parse_posting_target`
-    would raise, because a garbage string (`"not a url at all"`) can reach `UnregisteredBoardHost`
-    too -- `urlparse` assigns it a literal, space-containing "hostname" rather than raising, so
-    the exception class alone cannot tell a real unregistered vendor from noise.
+    would raise: a space- or control-char-bearing value `urlparse` tolerates reaches the
+    `UnknownBoardURL` BASE class, not the `UnregisteredBoardHost` subclass, and -- the real point --
+    a value `urlsplit` silently cleans up (a stripped tab) would route fine yet persist a URL no
+    fetch log can match. The recorded string, not just the exception class, decides what may seed.
 
     None also when `viewJobUrl` is blank (nothing to seed), and when it DOES resolve to a board
     (tier 1 of `hit_identity`): that hit is being applied under the real provider's identity THIS
     run, so seeding it too would hand a resolver a URL a board scan already owns.
     """
     apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
-    if not _is_addressable_url(apply_url):
+    if not apply_url or not _is_addressable_url(apply_url):
         return None
     try:
         parse_posting_target(apply_url)

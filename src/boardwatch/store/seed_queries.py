@@ -83,9 +83,12 @@ class SeedReader(Protocol):
 def seed_host(url: str) -> str:
     """The host a seed is routed by. Derived here so every writer agrees on the spelling.
 
-    Lower-cased and `www.`-stripped: a resolver's strategy table lists a vendor host once, and a
-    seed recorded as `WWW.Breezy.HR` that no `hosts` filter matches is a row that can never be
-    drained and never reports itself as stuck.
+    Derived from validated `parsed.hostname`, not `parsed.netloc`: `.hostname` drops any `user@`
+    and `:port` and lower-cases for us, so a seed on an explicit port (`newco.applytojob.com:443`)
+    routes by bare host rather than storing `newco.applytojob.com:443`, a key no `hosts`/suffix
+    filter can ever match. One trailing DNS root dot and a leading `www.` are stripped for the same
+    reason: `newco.applytojob.com.` and `WWW.Breezy.HR` name the same host a strategy table lists
+    once, and a row no filter matches can never be drained and never reports itself as stuck.
 
     Raises `UnroutableSeedURL` for a URL with no host, rather than storing one. An empty `host`
     matches no resolver's filter, so such a row would sit unresolved and unattempted forever and
@@ -97,7 +100,7 @@ def seed_host(url: str) -> str:
         # `urlsplit` raises a BARE ValueError ("Invalid IPv6 URL") for an unbalanced bracket, the
         # same trap `core/board_urls.py` records at its own `urlparse` call.
         raise UnroutableSeedURL(f"cannot parse a host from {url!r}: {exc}") from exc
-    host = parsed.netloc.lower().removeprefix("www.")
+    host = (parsed.hostname or "").removesuffix(".").removeprefix("www.")
     if not host:
         raise UnroutableSeedURL(f"no host in {url!r}")
     return host
