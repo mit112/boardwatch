@@ -28,6 +28,26 @@ from boardwatch.store.seed_queries import LaneSeed, SeedReader
 def lane_snapshot(postings: list[RawPosting], url: str) -> BoardSnapshot:
     """The only sanctioned way to build a lane's snapshot. Always `partial`.
 
+    **THE INGEST PRECONDITION: a lane body must be the EMPLOYER's own text** (D-406). Not the
+    aggregator's rendered page, not its site chrome, and above all not its own derived labels.
+    job-apps' jobright records stored jobright's PAGE — page title, `SIGN IN JOIN NOW`,
+    `Apply on Employer Site` and jobright's own `H1B Sponsor Likely` verdict — inside what
+    boardwatch then freezes as the JD. `work_auth` is a blocker family and `INELIGIBLE` must
+    carry a quoted span from the frozen JD, so an `ineligible(work_auth)` quoting that label
+    would present a third party's GUESS as the employer's stated requirement: a keystone
+    violation with a real span behind it, which is the one shape the evidence chain cannot
+    detect after the fact. Every control in `lanes/quality.py` above the precondition passes
+    such a body — it is long, structured, and its declared role family matches the listing.
+
+    The precondition is `lanes.quality.require_employer_body`, and it is ENFORCED at
+    `eligibility.preflight`, the seam where a stored body actually becomes an eligibility
+    input. Deliberately not enforced HERE, and the reason is the standing quarantine rule: a
+    body refused at ingest is never written, and a posting that was never written cannot
+    re-enter — that is a drop, not a quarantine, and a false positive would cost a real job
+    with no way back. What a lane owes this function is a body it can attribute to the
+    employer; what the store owes the lane is that a body it cannot is HELD rather than judged
+    or discarded (`store/quarantine_queries.py`).
+
     `partial` rather than `complete` is load-bearing, not conservative: `_process_missing`
     runs on `complete` only, and `BoardSnapshot` permits an EMPTY `complete`, which sets
     `effective = frozenset()` and marks every open posting of that company missing — two

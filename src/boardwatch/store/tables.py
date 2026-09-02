@@ -557,3 +557,29 @@ lane_seeds = Table(
     # one resolver's scan proportional to its own backlog rather than to the whole table.
     Index("ix_lane_seeds_resolved_at_host_attempts", "resolved_at", "host", "attempts"),
 )
+
+quarantined_bodies = Table(
+    "quarantined_bodies",
+    metadata,
+    # Keyed on the VERSION, not the posting and not the job. The defect is a property of one
+    # acquired document: `posting_versions` is immutable, so a quarantine scoped to it can
+    # never be silently invalidated by a later scan rewriting `postings.body_text` underneath
+    # it, and a posting whose employer later publishes real text re-enters through its NEW
+    # version without anything having to forget this one.
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), primary_key=True),
+    Column("posting_id", Integer, ForeignKey("postings.id"), nullable=False),
+    # The DISTINCT catalog markers that fired, as data. The reason this row exists is never
+    # re-derived by string-matching a message (`lanes.quality.ForeignBodyText` carries the same
+    # tuple at the raise site).
+    Column("markers_json", JSON, nullable=False),
+    # Which version of the closed marker catalog judged it. The drain's second re-entry path:
+    # a catalog corrected after a false positive is a different number here.
+    Column("catalog_version", Integer, nullable=False),
+    Column("quarantined_at", DateTime, nullable=False),
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    # Set by the drain instead of deleting the row — the same choice `job_dispositions` makes,
+    # for the same reason: draining a bucket must not erase the record that it ever held
+    # anything.
+    Column("reopened_at", DateTime, nullable=True),
+    Index("ix_quarantined_bodies_reopened_at", "reopened_at"),
+)

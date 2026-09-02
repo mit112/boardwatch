@@ -302,8 +302,12 @@ def test_selection_is_one_query_and_does_not_scale_with_corpus(
     # An N+1 selection would scan posting_versions once per posting; the set-oriented
     # anti-join scans it exactly once regardless of corpus size. Counting is the only
     # check that discriminates, because an N+1 also "runs eligibility".
-    assert small_scans == 1
-    assert large_scans == 1
+    #
+    # TWO such reads since the lane-body quarantine shipped (D-406): the selection anti-join,
+    # plus the drain, which joins `posting_versions` for the bodies it currently HOLDS. The
+    # drain is bounded by the bucket and not by the corpus, and the equality below is what
+    # asserts that — an N+1 in either read shows up as 20 against 200, not as 2 against 2.
+    assert small_scans == large_scans == 2
 
 
 def test_a_fact_change_re_evaluates_and_updates_the_verdict(env: Path) -> None:
