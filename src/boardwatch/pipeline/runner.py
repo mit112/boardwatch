@@ -561,11 +561,19 @@ def _run_lanes(
     # write half is `LaneResult.discovered_seeds`/`seed_attempts`, persisted below in the serial
     # apply phase, so `apply_board` stays the single writer.
     def pending_seeds(
-        *, hosts: frozenset[str], max_attempts: int, limit: int
+        *,
+        hosts: frozenset[str],
+        host_suffixes: frozenset[str] = frozenset(),
+        max_attempts: int,
+        limit: int,
     ) -> tuple[LaneSeed, ...]:
         with engine.begin() as conn:
             return unresolved_seeds(
-                conn, hosts=hosts, max_attempts=max_attempts, limit=limit
+                conn,
+                hosts=hosts,
+                host_suffixes=host_suffixes,
+                max_attempts=max_attempts,
+                limit=limit,
             )
 
     context = LaneContext(

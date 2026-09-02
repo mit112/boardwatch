@@ -110,7 +110,11 @@ class LaneResult:
 
 
 def _no_seeds(
-    *, hosts: frozenset[str], max_attempts: int, limit: int
+    *,
+    hosts: frozenset[str],
+    host_suffixes: frozenset[str] = frozenset(),
+    max_attempts: int,
+    limit: int,
 ) -> tuple[LaneSeed, ...]:
     """The default `SeedReader`: no backlog, for a lane that resolves no seeds.
 

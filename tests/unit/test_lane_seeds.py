@@ -298,3 +298,67 @@ def test_a_url_with_no_host_is_refused_rather_than_stored_with_an_empty_one(
         written = record_seeds(conn, ("",), discovered_by="indeed", run_id=run, now=NOW)
         assert conn.execute(select(lane_seeds)).all() == []
     assert written == SeedWrite(inserted=0, unroutable=("",))
+
+
+def test_a_suffix_route_reaches_a_tenant_subdomain_no_resolver_has_ever_seen(
+    tmp_path: Path,
+) -> None:
+    """The wildcard-tenant case, which exact hosts CANNOT express.
+
+    JazzHR is `<tenant>.applytojob.com` and the tenants cannot be enumerated in advance. With
+    exact hosts alone, a seed another lane discovered on a tenant this resolver has never seen is
+    invisible: nothing selects it, so nothing attempts it, so the attempt bound never ages it out
+    and no report ever names it — a bucket with no drain.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            (
+                "https://brandnew.applytojob.com/apply/AAA",
+                "https://applytojob.com/apply/BBB",
+                "https://notapplytojob.com/apply/CCC",
+                "https://other.test/1",
+            ),
+            discovered_by="indeed",
+            run_id=run,
+            now=NOW,
+        )
+        by_suffix = unresolved_seeds(
+            conn,
+            hosts=frozenset(),
+            host_suffixes=frozenset({"applytojob.com"}),
+            max_attempts=9,
+            limit=9,
+        )
+        exact_only = unresolved_seeds(
+            conn, hosts=frozenset({"applytojob.com"}), max_attempts=9, limit=9
+        )
+
+    assert sorted(s.host for s in by_suffix) == ["applytojob.com", "brandnew.applytojob.com"], (
+        "a suffix matches the bare host AND any subdomain of it"
+    )
+    assert "notapplytojob.com" not in {s.host for s in by_suffix}, (
+        "a different registrable domain that merely ENDS in the same characters is not this "
+        "vendor's tenant space"
+    )
+    assert [s.host for s in exact_only] == ["applytojob.com"], (
+        "the exact-host arm is unchanged and does not silently widen"
+    )
+
+
+def test_a_resolver_that_claims_no_route_at_all_gets_nothing(tmp_path: Path) -> None:
+    """Empty on BOTH arms returns nothing rather than everything.
+
+    The dangerous wrong implementation is an `or_()` over an empty predicate list, which SQLAlchemy
+    renders as a tautology — every unresolved seed in the table, handed to a resolver that claimed
+    none of them.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(conn, ("https://x.test/a",), discovered_by="indeed", run_id=run, now=NOW)
+        assert unresolved_seeds(
+            conn, hosts=frozenset(), host_suffixes=frozenset(), max_attempts=9, limit=9
+        ) == ()

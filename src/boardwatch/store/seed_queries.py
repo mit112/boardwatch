@@ -13,9 +13,10 @@ from datetime import datetime
 from typing import Protocol
 from urllib.parse import urlparse
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
+from sqlalchemy.sql.elements import ColumnElement
 
 from boardwatch.store.tables import lane_seeds
 
@@ -70,7 +71,12 @@ class SeedReader(Protocol):
     """
 
     def __call__(
-        self, *, hosts: frozenset[str], max_attempts: int, limit: int
+        self,
+        *,
+        hosts: frozenset[str],
+        host_suffixes: frozenset[str],
+        max_attempts: int,
+        limit: int,
     ) -> tuple[LaneSeed, ...]: ...
 
 
@@ -158,15 +164,39 @@ def record_seeds(
 
 
 def unresolved_seeds(
-    conn: Connection, *, hosts: frozenset[str], max_attempts: int, limit: int
+    conn: Connection,
+    *,
+    hosts: frozenset[str],
+    host_suffixes: frozenset[str] = frozenset(),
+    max_attempts: int,
+    limit: int,
 ) -> tuple[LaneSeed, ...]:
     """Seeds no resolver has turned into a posting yet, on hosts THIS resolver can handle.
 
-    **`hosts` is required and there is no all-hosts form.** Without it the table is one pool and
-    the `limit` picks by age alone: a resolver taking one seed a run is handed whatever is
-    oldest, so a vendor it cannot parse starves every vendor behind it forever, and charging an
-    attempt against a seed some future resolver owns spends a budget that is not this lane's.
-    Each resolver passes the exact hosts its own strategy table covers.
+    **A host set is required and there is no all-hosts form.** Without one the table is a single
+    pool and the `limit` picks by age alone: a resolver taking one seed a run is handed whatever
+    is oldest, so a vendor it cannot parse starves every vendor behind it forever, and charging
+    an attempt against a seed some future resolver owns spends a budget that is not this lane's.
+
+    **`host_suffixes` exists because most per-tenant vendors give every employer its own
+    subdomain**, and those tenants CANNOT be enumerated in advance. JazzHR is
+    `<tenant>.applytojob.com`, Breezy `<tenant>.breezy.hr`, CareerPlug
+    `<tenant>.careerplug.com`. With exact hosts alone, a seed another lane discovered on a tenant
+    this resolver has never seen is invisible: nothing selects it, so nothing attempts it, so the
+    attempt bound never ages it out and no report ever names it. That is a bucket with no drain —
+    invisible work, which is worse than a refusal. A suffix matches the bare host AND any
+    subdomain of it (`applytojob.com` and `x.applytojob.com`, never `notapplytojob.com`).
+
+    Both are offered rather than only suffixes, because they say different things: `hosts` claims
+    ONE host, `host_suffixes` claims a vendor's whole tenant space. A resolver serving a
+    single-host vendor (`recruiting.paylocity.com`) should not silently also claim
+    `anything.recruiting.paylocity.com`.
+
+    **Cost, stated because it is a real trade:** the suffix arm is a `LIKE` and cannot use
+    `ix_lane_seeds_resolved_at_host_attempts` beyond its `resolved_at` prefix, so it scans the
+    UNRESOLVED rows. That set is bounded by design — the attempt ceiling and the resolvers'
+    drains are what keep it small — and it is the only shape that does not require either a
+    public-suffix dependency or a routing key the discovering lane would have to guess.
 
     `max_attempts` and `limit` are keyword-only with NO defaults, for the same reason: a default
     ceiling would be this module quietly setting the retry policy and a default limit would be it
@@ -185,8 +215,18 @@ def unresolved_seeds(
         raise ValueError(
             f"limit and max_attempts must be non-negative; got {limit}, {max_attempts}"
         )
-    if not hosts:
+    if not hosts and not host_suffixes:
         return ()
+    routes: list[ColumnElement[bool]] = (
+        [lane_seeds.c.host.in_(sorted(hosts))] if hosts else []
+    )
+    for suffix in sorted(host_suffixes):
+        # The bare host AND any subdomain of it. `like` with an explicit `.` separator rather
+        # than `host LIKE '%' || suffix`, which would also match `notapplytojob.com` — a
+        # different vendor's registrable domain that merely ends in the same characters.
+        routes.append(
+            or_(lane_seeds.c.host == suffix, lane_seeds.c.host.like(f"%.{suffix}"))
+        )
     stmt = (
         select(
             lane_seeds.c.id,
@@ -197,7 +237,7 @@ def unresolved_seeds(
         )
         .where(
             lane_seeds.c.resolved_at.is_(None),
-            lane_seeds.c.host.in_(sorted(hosts)),
+            or_(*routes),
             lane_seeds.c.attempts < max_attempts,
         )
         .order_by(lane_seeds.c.attempts, lane_seeds.c.id)
