@@ -353,6 +353,20 @@ def apply_oracle_verdicts(
     hard_negatives: list[str] = []
     by_verdict: dict[str, int] = {}
 
+    # Pre-scan (D-406, round-4 blocker): sanitize every ALREADY-LABELED oracle row whose body the
+    # current detector rejects, BEFORE the verdict loop. `build_label_request` never re-selects an
+    # already-labeled row, so the production request supplies NO verdict for a foreign-body row a
+    # prior pass already corrupted into `ineligible` and stamped current — the verdict loop below
+    # would never name it, so the inline WRITE-boundary sanitizer never reaches it and the false
+    # answer-key row survives every run. Only this function's own writes are reverted: HAND labels
+    # (`label_provenance` absent/None) and `audited` rows are left untouched, so a sanitized row
+    # ABSTAINS (returns to unlabeled), never carries a fabricated verdict.
+    for existing in rows:
+        if existing.get("label_provenance") == "oracle" and not is_employer_body(
+            existing.get("body_text", "")
+        ):
+            _sanitize_foreign_row(existing)
+
     for v in verdicts:
         row = by_label.get(v.label)
         if row is None:

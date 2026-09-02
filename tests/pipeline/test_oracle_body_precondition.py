@@ -1,13 +1,16 @@
-"""The fourth eligibility seam: the `eligibility label` oracle handshake (D-406).
+"""The `eligibility label` oracle handshake: the answer-key seam (D-406).
 
-The other three seams (deterministic preflight, final-gate request, final-gate apply) already
-refuse an aggregator's rendered PAGE as an eligibility input. This one is the answer-key seam,
-and it is the most dangerous of the four: a foreign body accepted here does not just misjudge one
-posting, it writes a FALSE ground-truth row that every precision measurement is then scored
-against. The reproduction below is the reviewer's own: `H1B Sponsor Likely` is jobright's own
-derived label sitting inside what boardwatch froze as the JD, so the raw gate accepts
-`ineligible(work_auth)` citing a third party's guess with a real span behind it — the one
-keystone violation the evidence chain cannot detect after the fact.
+Every eligibility writer path that reads a frozen body refuses an aggregator's rendered PAGE as an
+eligibility input: the deterministic ledger (`run_eligibility` / preflight sweep), the advisory LLM
+ledger (`extract_and_record`), the final-gate ledger (`apply_gate_verdicts` request + apply), and
+this oracle answer key (`apply_oracle_verdicts`); precision measurement (`scoring.score`) is
+read-only and excludes such bodies before evaluation. This one is the answer-key seam, and it is the
+most dangerous: a foreign body accepted here does not just misjudge one posting, it writes a FALSE
+ground-truth row that every precision measurement is then scored against. The reproduction below is
+the reviewer's own: `H1B Sponsor Likely` is jobright's own derived label sitting inside what
+boardwatch froze as the JD, so the raw gate accepts `ineligible(work_auth)` citing a third party's
+guess with a real span behind it — the one keystone violation the evidence chain cannot detect
+after the fact.
 
 These tests are written to FAIL against the pre-guard code: without the precondition,
 `build_label_request` selects the foreign row and `apply_oracle_verdicts` persists the false
@@ -115,12 +118,15 @@ def test_apply_oracle_verdicts_sanitizes_a_stale_oracle_foreign_verdict() -> Non
 
 
 def test_apply_sanitizes_a_current_stamped_foreign_ineligible() -> None:
-    """WRITE boundary, the round-4 blocker: a foreign body ALREADY corrupted into an
-    `ineligible(work_auth)` answer-key row and stamped with the CURRENT oracle policy+prompt is
-    exactly what `_skip_row` treats as already-done, so before this fix it was skipped and LEFT
-    in the worksheet where scoring.py still measures it. The precondition must run BEFORE the
-    idempotency guard: a foreign body is sanitized back to unlabeled with every oracle-produced
-    field cleared, regardless of its stamps."""
+    """WRITE boundary, the round-4 blocker, exercised through the PRODUCTION flow: a foreign body
+    ALREADY corrupted into an `ineligible(work_auth)` answer-key row and stamped with the CURRENT
+    oracle policy+prompt is excluded from `build_label_request` (already labeled), so the real
+    request/apply flow supplies NO verdict naming it — the empty verdict list below is exactly what
+    production hands `apply_oracle_verdicts`. Before this fix the pre-scan did not exist and the
+    verdict loop never reached the row, so the false `ineligible` survived where scoring.py still
+    measures it. The pre-scan must run BEFORE the verdict loop: the foreign body is sanitized back
+    to unlabeled with every oracle-produced field cleared, regardless of its stamps and with no
+    incoming verdict."""
     row = _foreign_row(
         "hard_stop/jobright", verdict="ineligible", prov="oracle", current_stamps=True
     )
@@ -129,7 +135,9 @@ def test_apply_sanitizes_a_current_stamped_foreign_ineligible() -> None:
     row["spans"] = [[262, 280]]
     row["confidence"] = "high"
     row["downgraded"] = False
-    merged, res = apply_oracle_verdicts([row], [FOREIGN_INELIGIBLE], CAT)
+    # The actual empty request/apply flow: nothing names this already-labeled row.
+    assert build_label_request([dict(row)], CAT, request_id="r1")["items"] == []
+    merged, res = apply_oracle_verdicts([row], [], CAT)
     assert merged[0]["expected_verdict"] is None, "a current-stamped foreign row must be cleaned"
     assert merged[0].get("label_provenance") is None
     assert merged[0].get("reason") is None
