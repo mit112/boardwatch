@@ -20,6 +20,7 @@ second, the escape rule would pass against one that always unescaped.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -749,6 +750,55 @@ def test_discovery_seeds_only_active_catalog_matching_urls(respx_mock: respx.Rou
     result = JsonLdLane(_Reader(())).collect(_fetcher(tmp_path), _Admits())
     # Deduplicated, in first-seen order: a caller reporting discovery must not count one twice.
     assert result.discovered_seeds == (HIREOLOGY_URL,)
+
+
+def test_discovery_to_persistence_refuses_unseedable_urls_but_keeps_valid_ones(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """The blocker, closed end to end on THIS lane's own path (`_discover` -> `record_seeds`).
+
+    Every URL below is JazzHR-shaped, so `match_vendor` matches all six by host+path -- `seed_host`
+    drops the port and cleans up control chars, so routing alone cannot tell a fetchable URL from
+    one HTTPX rejects. Against HEAD the four malformed shapes became discovered seeds, were stored,
+    and were selected by `unresolved_seeds` as undrainable dead weight. The shared `is_seedable_url`
+    gate now filters them at discovery AND refuses+reports them at the write point, while a valid
+    `:443` and a valid trailing-root-dot URL still discover, persist and drain.
+    """
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+    from boardwatch.store.seed_queries import record_seeds, unresolved_seeds
+
+    valid_port = "https://other.applytojob.com:443/apply/DEF/Title"
+    valid_rootdot = "https://newco.applytojob.com./apply/GHI/Title"
+    rows = [
+        {"active": True, "url": "https://newco.applytojob.com:99999/apply/ABC/Title"},  # bad port
+        {"active": True, "url": "newco.applytojob.com/apply/ABC/Title"},                # no scheme
+        {"active": True, "url": "https://newco.applytojob.com/apply/ABC/\x00Title"},    # NUL
+        {"active": True, "url": "https://newco.applytojob.com/apply/ABC/\x7fTitle"},    # DEL
+        {"active": True, "url": valid_port},
+        {"active": True, "url": valid_rootdot},
+    ]
+    _mock_lists(respx_mock, json.dumps(rows))
+
+    result = JsonLdLane(_Reader(())).collect(_fetcher(tmp_path), _Admits())
+    # `_discover` filters the four malformed shapes BEFORE `match_vendor`, so they never become
+    # discovered seeds; the two valid ones survive, in first-seen order.
+    assert result.discovered_seeds == (valid_port, valid_rootdot)
+
+    engine = get_engine(tmp_path / "seeds.db")
+    ensure_schema(engine)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        written = record_seeds(
+            conn, result.discovered_seeds, discovered_by="jsonld", run_id=run,
+            now=datetime(2026, 9, 2, 12, 0),
+        )
+        drained = unresolved_seeds(
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=400
+        )
+    assert written.inserted == 2
+    assert written.unroutable == ()
+    assert {s.url for s in drained} == {valid_port, valid_rootdot}
 
 
 @respx.mock

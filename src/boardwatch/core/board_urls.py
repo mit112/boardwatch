@@ -122,12 +122,15 @@ def parse_board_target(value: str) -> Target:
     # distinguishes the two cases to a human reader, only the exception class does, and every
     # existing caller matching on this message keeps matching it unchanged.
     #
-    # **The subclass promises a WELL-FORMED absolute URL whose host is merely unregistered**, and
-    # a lane reads it as licence to record that host as a tier-D tenant seed. `urlsplit` is
-    # permissive: `https://` yields no host at all, and `not a url at all` yields a "hostname"
-    # containing spaces, both of which reached the subclass and would have been seeded as tenants
-    # that can never resolve. A malformed value is a parse failure, so it takes the BASE class --
-    # the same class, and the same message, those inputs produced before the subclass existed.
+    # **The subclass is a HOST-REGISTRATION classification only: "no provider registers this
+    # host". It does NOT promise the value was a well-formed absolute URL** -- a scheme was
+    # prepended above, so `parse_board_target("a.test/x")` raises it for a bare host, and a control
+    # char in the PATH leaves the host well-formed so it raises here too. Addressability is a
+    # SEPARATE property a lane must validate with `is_seedable_url` before recording a tier-D seed.
+    # The two checks below reject only the values whose HOST is unfit -- `https://` yields no host,
+    # `not a url at all` a "hostname" of spaces, an out-of-range port fails `parsed.port` -- so a
+    # host-shaped-but-unregistered value still takes the subclass, and a malformed host takes the
+    # BASE class, the same class and message those inputs produced before the subclass existed.
     if not _is_hostname(host) or not _has_usable_port(parsed):
         raise UnknownBoardURL(f"unrecognized board target {value!r}; {_SUPPORTED}")
     raise UnregisteredBoardHost(f"unrecognized board target {value!r}; {_SUPPORTED}")
@@ -162,6 +165,57 @@ def _has_usable_port(parsed: ParseResult) -> bool:
     except ValueError:
         return False
     return True
+
+
+def is_seedable_url(value: str) -> bool:
+    """Is `value` a well-formed absolute http(s) URL safe to RECORD as a `lane_seeds` row?
+
+    The ONE gate every lane's seed passes before it can be stored, so the Indeed lane's pre-filter,
+    the JSON-LD lane's discovery filter and `store.seed_queries.record_seeds` (the single write
+    point) all decide the same thing the same way and cannot drift. Deliberately stricter than
+    what `urlsplit` tolerates and than what `parse_board_target` accepts for a HUMAN paste (a bare
+    host, a `provider:slug` shorthand): a seed URL is machine-emitted by a lane, so anything short
+    of a genuine absolute URL is malformed input, not evidence of an as-yet-unregistered vendor.
+
+    **This is separate from `UnregisteredBoardHost`, and must be, because that class does NOT
+    promise addressability.** `parse_board_target` prepends a scheme to a bare host, so
+    `parse_board_target("newco.applytojob.com/x")` raises the subclass for a value that is not an
+    absolute URL at all, and a control char in the PATH leaves the host well-formed so the subclass
+    is raised there too. The subclass answers "does any provider register this host"; this answers
+    "is this string one a resolver could actually GET and a log could match". Both have to hold
+    before a URL may seed.
+
+    Rejects, in order:
+
+    * a value with no `://` scheme separator -- a bare host or `provider:slug` paste, not a URL a
+      resolver can GET;
+    * an out-of-range or non-numeric port -- `parsed.port` validates 0-65535 LAZILY and raises
+      `ValueError`, which `urlsplit` itself does not, so HTTPX would reject it only at fetch AFTER
+      the row had persisted as undrainable dead weight;
+    * a scheme other than http(s), or no hostname at all (`https://` yields neither);
+    * ANY whitespace, C0 control char (0x00-0x1F) or DEL (0x7F) anywhere in the value. NUL and DEL
+      slip past `isspace()` yet HTTPX rejects them as `InvalidURL`; and `urlsplit` follows WHATWG
+      and STRIPS tabs/newlines before parsing, so a value it silently cleans up would ROUTE fine
+      yet persist a URL string no fetch log or human could match against the one actually dialed.
+
+    A valid `:443` and a single trailing DNS-root-dot URL both PASS -- `seed_host` still normalizes
+    those to a routing host the resolver filters match, so they seed and stay drainable.
+    """
+    if "://" not in value:
+        return False
+    try:
+        parsed = urlparse(value)
+        _ = parsed.port  # validates the 0-65535 range; `urlparse` itself does not.
+    except ValueError:
+        # A bare `ValueError` from `urlsplit`: an unbalanced `[`/`]` in the authority
+        # (`https://[broken`), or a port outside 0-65535 (`https://a.test:99999/x`).
+        return False
+    hostname = parsed.hostname
+    if parsed.scheme not in ("http", "https") or not hostname:
+        return False
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        return False
+    return " " not in hostname
 
 
 def _normalize_slug(provider: str, slug: str) -> str:

@@ -124,9 +124,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import zip_longest
 from typing import Any
-from urllib.parse import urlparse
 
-from boardwatch.core.board_urls import UnknownBoardURL, UnregisteredBoardHost
+from boardwatch.core.board_urls import (
+    UnknownBoardURL,
+    UnregisteredBoardHost,
+    is_seedable_url,
+)
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import RawPosting
@@ -481,42 +484,17 @@ def board_posting_target(apply_url: str) -> PostingTarget | None:
 
 
 def _is_addressable_url(value: str) -> bool:
-    """A well-formed, absolute http(s) URL -- never a bare host, a `provider:slug` paste
-    shorthand, or a string `urlparse` tolerates without raising anything at all.
+    """A well-formed, absolute http(s) URL fit to record as a seed -- never a bare host, a
+    `provider:slug` paste shorthand, or a string `urlparse` tolerates without raising.
 
-    `core/board_urls.py` legitimately accepts all three of the excluded shapes for OTHER
-    callers -- a human pasting a bare host at `companies add`, or the `provider:slug`
-    convenience -- valid input there because a person typed it. `recruit.viewJobUrl` is an API
-    field the endpoint controls, never a human paste, so anything short of a genuine absolute URL
-    is malformed input, not evidence of an as-yet-unregistered vendor. Concretely: `urlparse`
-    happily returns a hostname of `'not a url at all'` (spaces included) for a scheme-less
-    string once `parse_board_target` prepends `https://` to it -- no exception anywhere -- so the
-    check has to be stricter than "did this raise".
+    Delegates to `core.board_urls.is_seedable_url`, the ONE shared gate `store.seed_queries.
+    record_seeds` and the JSON-LD lane's discovery filter also apply, so the two lanes and the
+    write point cannot drift on what "seedable" means. `recruit.viewJobUrl` is an API field the
+    endpoint controls, never a human paste, so anything short of a genuine absolute URL is
+    malformed input here, not evidence of an as-yet-unregistered vendor -- which is why this lane
+    holds seeds to a stricter bar than `parse_board_target` sets for a `companies add` paste.
     """
-    if "://" not in value:
-        return False
-    try:
-        parsed = urlparse(value)
-        _ = parsed.port  # `.port` validates the 0-65535 range; `urlparse` itself does not.
-    except ValueError:
-        # A bare `ValueError` from `urlsplit`: an unbalanced `[`/`]` in the authority
-        # (`https://[broken`, the trap `core/board_urls.py` guards too), or a port outside
-        # 0-65535 (`https://a.test:99999/x`). Either is malformed input, not a tenant.
-        return False
-    hostname = parsed.hostname
-    if parsed.scheme not in ("http", "https") or not hostname:
-        return False
-    # C0 control chars (0x00-0x1F) and DEL (0x7F) are NOT all whitespace -- NUL and DEL slip past
-    # `isspace()` -- yet HTTPX rejects any of them as `InvalidURL` at fetch, AFTER the value has
-    # already persisted as a seed. Reject every one, alongside RAW whitespace anywhere in the value
-    # (not just a space in the hostname). `urlsplit` follows WHATWG and STRIPS tabs and newlines
-    # before parsing, so `https://ex<TAB>ample.com/a` yields a perfectly valid `example.com` -- and
-    # the value SEEDED is the original string, tab included. `store.seed_queries.seed_host`
-    # re-parses it and strips them again, so routing agrees; what does not agree is `lane_seeds.url`
-    # -- it would carry a URL no log line or human can match against the one actually fetched.
-    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
-        return False
-    return " " not in hostname
+    return is_seedable_url(value)
 
 
 def tenant_seed_url(job: dict[str, Any]) -> str | None:
@@ -546,11 +524,14 @@ def tenant_seed_url(job: dict[str, Any]) -> str | None:
     above, just caught one level deeper (`parse_board_target` succeeds; `parse_posting_target`'s
     own posting-shape check fails).
 
-    `_is_addressable_url` runs FIRST and independently of which exception `parse_posting_target`
-    would raise: a space- or control-char-bearing value `urlparse` tolerates reaches the
-    `UnknownBoardURL` BASE class, not the `UnregisteredBoardHost` subclass, and -- the real point --
-    a value `urlsplit` silently cleans up (a stripped tab) would route fine yet persist a URL no
-    fetch log can match. The recorded string, not just the exception class, decides what may seed.
+    `_is_addressable_url` runs FIRST because the exception class alone is NOT a reliable seed
+    signal, and which one `parse_posting_target` raises does not tell malformed from unregistered.
+    A control char in the PATH leaves the host well-formed, so it reaches the
+    `UnregisteredBoardHost` subclass -- the very class this function seeds on -- exactly as a real
+    unrecognized vendor does; only whitespace that corrupts the HOST reaches the `UnknownBoardURL`
+    base class. And a value `urlsplit` silently cleans up (a stripped tab) would route fine yet
+    persist a URL string no fetch log can match. So the recorded STRING, checked by
+    `_is_addressable_url` before the dereference, decides what may seed -- not the exception class.
 
     None also when `viewJobUrl` is blank (nothing to seed), and when it DOES resolve to a board
     (tier 1 of `hit_identity`): that hit is being applied under the real provider's identity THIS

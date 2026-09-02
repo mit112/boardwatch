@@ -293,15 +293,17 @@ def test_a_negative_limit_is_refused_rather_than_read_as_no_limit(tmp_path: Path
             unresolved_seeds(conn, hosts=HOSTS, max_attempts=-1, limit=9)
 
 
-def test_a_seed_url_with_no_parseable_host_costs_that_url_and_nothing_else(
+def test_an_unseedable_url_costs_that_url_and_nothing_else(
     tmp_path: Path,
 ) -> None:
     """One malformed value from an aggregator must not roll back the batch beside it.
 
-    `urlparse` raises a BARE `ValueError` on an unbalanced bracket. Raised from inside
-    `_apply_lane`'s transaction that aborts every valid seed in the same statement AND, via
-    `_run_lanes`' broad per-lane `except`, costs the lane its entire report — so a single bad
-    string would delete a whole lane's run from the record.
+    `record_seeds` is the single write point, so it applies `is_seedable_url` to every URL and
+    refuses the ones a resolver could never GET: an unbalanced bracket (`urlparse` raises a BARE
+    `ValueError`) AND a scheme-less value (`notaurl`). Raising instead would abort every valid seed
+    in the same statement AND, via `_run_lanes`' broad per-lane `except`, cost the lane its entire
+    report — so a single bad string would delete a whole lane's run from the record. Each bad value
+    is skipped, named in `unroutable`, and the valid seeds beside it are written.
     """
     engine = _engine(tmp_path)
     run = insert_run(engine)
@@ -315,15 +317,60 @@ def test_a_seed_url_with_no_parseable_host_costs_that_url_and_nothing_else(
         )
         stored = sorted(conn.execute(select(lane_seeds.c.url)).scalars().all())
 
-    assert written.unroutable == ("https://[broken",), (
-        "only the UNPARSEABLE url is refused"
+    # TWO refused, in input order. `notaurl` is now refused too: it has no `://`, so it is not a URL
+    # a resolver could GET. An earlier version stored it as a host no filter would ever name -- a
+    # bucket with no drain -- rather than paper over it; the shared seed-URL gate closes that gap
+    # by refusing it outright and REPORTING it, which is stricter and visible rather than silent.
+    assert written.unroutable == ("https://[broken", "notaurl")
+    assert written.inserted == 2
+    assert stored == ["https://x.test/good", "https://y.test/also-good"]
+
+
+def test_the_write_point_refuses_every_unseedable_shape_from_any_lane(
+    tmp_path: Path,
+) -> None:
+    """`record_seeds` is the SINGLE write point, so it validates every lane's seeds once.
+
+    The blocker that closed the tier-D URL boundary was a lane reaching `lane_seeds` by a path
+    (`match_vendor` → persist) that did NOT validate: `seed_host` drops the port and cleans up
+    control chars, so a bad-port / scheme-less / NUL / DEL JazzHR-shaped URL routed to a valid
+    host and was stored, then HTTPX rejected it at fetch as undrainable dead weight. Enforcing the
+    shared gate HERE means any lane's bad seed is refused AND reported through `unroutable`, while
+    a valid `:443` and a valid root-dot URL still normalize to a drainable host and ARE selected.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    invalid = (
+        "https://newco.applytojob.com:99999/apply/ABC/Title",  # port outside 0-65535
+        "newco.applytojob.com/apply/ABC/Title",                # no scheme
+        "https://newco.applytojob.com/apply/ABC/\x00Title",    # NUL in the path
+        "https://newco.applytojob.com/apply/ABC/\x7fTitle",    # DEL in the path
     )
-    # THREE, not two. `notaurl` has no scheme but parses to the host `notaurl`, so it is stored
-    # and is simply a host no resolver's filter will ever name. That is a real and different
-    # gap -- a seed nothing claims is never attempted and so never ages out -- and it is
-    # recorded as owed rather than papered over here with a no-dot heuristic.
-    assert written.inserted == 3
-    assert stored == ["https://x.test/good", "https://y.test/also-good", "notaurl"]
+    valid = (
+        "https://other.applytojob.com:443/apply/DEF/Title",    # explicit :443
+        "https://newco.applytojob.com./apply/GHI/Title",       # trailing DNS root dot
+    )
+    with engine.begin() as conn:
+        written = record_seeds(
+            conn, invalid + valid, discovered_by="jsonld", run_id=run, now=NOW
+        )
+        drainable = unresolved_seeds(
+            conn,
+            hosts=frozenset(),
+            host_suffixes=frozenset({"applytojob.com"}),
+            max_attempts=9,
+            limit=9,
+        )
+
+    # Every invalid shape is refused, in input order, and REPORTED -- never a silent drop.
+    assert written.unroutable == invalid
+    assert written.inserted == 2
+    # The two valid URLs seed, normalize to a routing host the JazzHR suffix reaches, and drain.
+    assert sorted(s.host for s in drainable) == [
+        "newco.applytojob.com",
+        "other.applytojob.com",
+    ]
+    assert {s.url for s in drainable} == set(valid)
 
 
 def test_a_url_with_no_host_is_refused_rather_than_stored_with_an_empty_one(

@@ -225,7 +225,7 @@ from urllib.parse import urlparse
 
 from selectolax.parser import HTMLParser
 
-from boardwatch.core.board_urls import UnknownBoardURL
+from boardwatch.core.board_urls import UnknownBoardURL, is_seedable_url
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.models import RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure, identifying_user_agent
@@ -877,6 +877,14 @@ class JsonLdLane:
                     continue
                 url = row.get("url")
                 if not isinstance(url, str) or url.strip() in seen:
+                    continue
+                # The shared seed-URL gate, BEFORE `match_vendor`, so a bad-port / scheme-less /
+                # control-char value never becomes a discovered seed. `match_vendor` routes off
+                # `seed_host`, which drops the port and cleans up control chars, so on its own it
+                # would match `newco.applytojob.com:99999/...` as JazzHR and seed a row HTTPX
+                # rejects at fetch. `record_seeds` refuses it again at the write point; this only
+                # spares the wasted round trip of carrying it that far.
+                if not is_seedable_url(url.strip()):
                     continue
                 if match_vendor(url) is None:
                     continue

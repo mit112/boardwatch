@@ -1006,8 +1006,9 @@ def _persist_seed_work(
         append_run_error(
             engine,
             run_id,
-            f"lane {lane.name}: {len(written.unroutable)} seed url(s) had no parseable "
-            f"host and were skipped, first: {written.unroutable[0]!r}",
+            f"lane {lane.name}: {len(written.unroutable)} seed url(s) were not safely "
+            f"seedable (bad scheme/host/port or control chars) and were skipped, first: "
+            f"{written.unroutable[0]!r}",
         )
     # `result.resolver_errors` is NOT persisted here. It was, straight to `runs.errors_json` via
     # `append_run_error` — but nothing an operator reads queries that column, so a resolver crash
