@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A "Report" button in the review app, for jobs that look eligible but are not.** Until now a job
+  in the review queue could only be applied to or skipped, and skipping a job that was marked
+  eligible by mistake threw away the useful signal — that the eligibility decision itself was wrong.
+  There is now a **Report** action, on every row and in the detail pane (keyboard `r`), for exactly
+  that case: it takes the job out of the queue like a skip does, but records it **separately** so the
+  wrong eligibility call can be investigated later. Every report shows an **Undo**, and the status
+  band gained its own **reported** count beside "skipped".
+
+  A report is stored on its own `queue.reported.<job_id>` marker, kept distinct from a skip and from
+  an application, so it never inflates either count and survives the posting being re-fetched.
+  Reported jobs are hidden from the web queue, but their on-disk queue folder is not yet moved to a
+  dedicated `_reported/` drain — a deliberate deferral recorded in D-427.
+
 - **`boardwatch seeds` shows the job links that no part of boardwatch is able to follow up.** When
   one source finds a job it cannot read, boardwatch writes the link down for another source to pick
   up later. But each source only picks up links from web addresses it knows how to handle, so a link

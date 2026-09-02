@@ -156,6 +156,12 @@ export function StatusBand({
       <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={5} />
       <Metric label="skipped" value={counts.skipped.toLocaleString()} order={6} />
       <Metric
+        label="reported"
+        value={counts.reported.toLocaleString()}
+        note="Flagged as wrongly-eligible and held for investigation. Its own cell, never folded into skipped, and taken out of the queue like a skip."
+        order={7}
+      />
+      <Metric
         label="last run"
         value={
           counts.last_run_finished === null
@@ -163,7 +169,7 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
-        order={7}
+        order={8}
       />
       {/*
         * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead
