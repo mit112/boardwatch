@@ -26,7 +26,12 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
   },
   role_vetoed: {
     label: "role vetoed",
-    reason: "Held for review: the role gate classified this title as not software.",
+    // Neutral on purpose (D-412 follow-up): the veto can fire on a real software title where
+    // the matched span is a seniority/executive phrase ("Java Developer - Vice President"), not
+    // a genuine non-software determination. Naming the specific reason here would repeat
+    // whichever claim `role_verdict` made, correct or not -- the per-title detail lives in
+    // `off_target_reason`, not in this generic copy.
+    reason: "Held for review: the role gate vetoed this title.",
   },
   role_unconfirmed: {
     label: "role unconfirmed",

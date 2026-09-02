@@ -606,33 +606,44 @@ class TestGuardedPatternsGuardEveryBranch:
 
 
 class TestSeniorityRankProvenance:
-    """D-412: `Vice President` (and `Head of`) do SENIORITY work inside the ROLE gate, not role
-    determination -- "Java Developer - Vice President" is a real software req; VP is a banking
-    GRADE stapled on top of it, not a business role redefining the job. The verdict stays
-    `not_swe` on purpose (a VP-ranked req is a genuine new-grad mismatch, an owner-defensible
-    OUTCOME) but the recorded REASON must no longer claim "not software" -- that claim is false
-    for a title carrying a real engineering signal. Expected strings are pinned as LITERALS,
-    not imported from `role_gate`'s own reason-format code, so a vacuous "test the constant
-    against itself" bug cannot hide here (this repo's own stated trap).
+    """D-412: `Vice President` (and `Head of`, `Chief ... Officer`, bare `President`) do
+    EXECUTIVE/SENIORITY-PHRASE work inside the ROLE gate, not role determination -- "Java
+    Developer - Vice President" is a real software req; VP is a banking GRADE stapled on top of
+    it, not a business role redefining the job. The verdict stays `not_swe` on purpose (a
+    VP-ranked req is a genuine new-grad mismatch, an owner-defensible OUTCOME) but the recorded
+    REASON must no longer claim "not software" -- that claim is false for a title carrying a real
+    engineering signal, or for a title where the phrase is merely an ORGANIZATIONAL QUALIFIER
+    ("Java Developer, Office of the President").
+
+    Revised after review of 49c4d479 (this file's first cut): that commit split the four phrases
+    into two buckets, keeping `chief ... officer`/`president` on the old "not software" wording
+    on the theory that they "name the job itself ... no matter what follows". A real
+    counterexample ("Java Developer, Office of the President") falsified that theory, and the
+    two-loop split separately broke leftmost-match precedence between the two wordings. Both are
+    fixed here by unifying all four into one bucket with one honest reason.
+
+    Expected strings are pinned as LITERALS, not imported from `role_gate`'s own reason-format
+    code, so a vacuous "test the constant against itself" bug cannot hide here (this repo's own
+    stated trap).
     """
 
-    def test_vice_president_reason_names_a_rank_not_a_role(self) -> None:
+    def test_vice_president_reason_names_an_exec_phrase_not_a_role(self) -> None:
         verdict, reason = role_verdict("Java Developer - Vice President")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority rank in title, not a role determination '
+            'executive/seniority phrase in title, not a role determination '
             '(matched "Vice President")'
         )
 
-    def test_head_of_reason_names_a_rank_not_a_role(self) -> None:
+    def test_head_of_reason_names_an_exec_phrase_not_a_role(self) -> None:
         verdict, reason = role_verdict("Head of Sales")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority rank in title, not a role determination '
+            'executive/seniority phrase in title, not a role determination '
             '(matched "Head of")'
         )
 
-    def test_vice_president_can_beat_a_real_software_signal_and_still_says_rank(self) -> None:
+    def test_vice_president_can_beat_a_real_software_signal_and_still_says_phrase(self) -> None:
         # The exact D-412 example: a real software signal ("Machine Learning Engineer") is
         # present and the hard deny still wins the verdict (owner ruling), but the reason must
         # not assert the false claim that the title itself is non-software.
@@ -640,33 +651,71 @@ class TestSeniorityRankProvenance:
         assert verdict == "not_swe"
         assert "not software" not in reason
         assert reason == (
-            'executive/seniority rank in title, not a role determination '
+            'executive/seniority phrase in title, not a role determination '
             '(matched "Vice President")'
         )
 
-    def test_genuine_business_hard_denies_are_unaffected(self) -> None:
-        # `chief ... officer` and bare `president` were deliberately NOT moved (D-412): these
-        # name the JOB itself, not a rank suffix, so "not software" stays true and the reason
-        # format is byte-for-byte what it was before the split.
+    def test_chief_officer_and_bare_president_get_the_same_honest_wording(self) -> None:
+        # NOT "not software" (49c4d479's mistake): a bare "Chief Technology Officer" or
+        # "President" title CANNOT be distinguished, by this regex, from one where the phrase is
+        # an organisational qualifier rather than the role -- see the next test.
         assert role_verdict("Chief Technology Officer") == (
             "not_swe",
-            'not software (matched "Chief Technology Officer")',
+            'executive/seniority phrase in title, not a role determination '
+            '(matched "Chief Technology Officer")',
         )
-        assert role_verdict("President") == ("not_swe", 'not software (matched "President")')
+        assert role_verdict("President") == (
+            "not_swe",
+            'executive/seniority phrase in title, not a role determination (matched "President")',
+        )
 
-    def test_bare_president_inside_vice_president_does_not_leak_the_old_reason(self) -> None:
-        # Regression guard for the exact bug this change nearly shipped with: bare `president`
-        # is a substring of "Vice President", so a naive ordering re-catches every VP title
-        # through the leftover business-hard pattern and silently undoes the split.
+    def test_organizational_qualifier_no_longer_asserts_the_false_not_software_claim(self) -> None:
+        # The counterexample that falsified 49c4d479's "names the job itself" theory: both
+        # titles carry a real software function, and the executive phrase names an org unit,
+        # not the person's role. The verdict stays `not_swe` (unchanged, and out of scope to fix
+        # here -- the regex still cannot tell a qualifier from a role) but the reason may no
+        # longer claim the title itself is non-software.
+        for title in (
+            "Java Developer, Office of the President",
+            "Java Developer, Office of the Chief Technology Officer",
+        ):
+            verdict, reason = role_verdict(title)
+            assert verdict == "not_swe", title
+            assert "not software" not in reason, title
+            assert "not a role determination" in reason, title
+
+    def test_bare_president_inside_vice_president_does_not_leak_a_shorter_span(self) -> None:
+        # Regression guard: bare `president` is a substring of "Vice President". Both are in the
+        # SAME bucket now, so this only checks that the alternation still prefers the longer,
+        # leftmost "vice president" match over the shorter "president" substring at that same
+        # starting position -- the ordering `re` alternation already guarantees, pinned so a
+        # future edit to the pattern's alternative order cannot silently regress it.
         _, reason = role_verdict("Vice President, Enterprise Sales")
         assert 'matched "President"' not in reason
         assert 'matched "Vice President"' in reason
 
-    def test_hyphenated_vice_president_keeps_the_old_verdict_and_reason(self) -> None:
-        # `_DENY_SENIORITY_RANK`'s pattern requires whitespace ("vice\s+president"), same as the
-        # pre-D-412 combined regex did, so a hyphenated separator was ALREADY only caught by the
-        # bare `president` fallback before this change -- and must still be, unchanged, after it.
-        assert role_verdict("Vice-President of Engineering") == (
-            "not_swe",
-            'not software (matched "President")',
+    def test_hyphenated_vice_president_keeps_the_old_verdict(self) -> None:
+        # The pattern requires whitespace ("vice\s+president"), same as the pre-D-412 combined
+        # regex did, so a hyphenated separator was ALREADY only caught by the bare `president`
+        # fallback before this change -- and must still be, unchanged, after it. The reason
+        # wording is the ONE thing this change is allowed to move.
+        verdict, reason = role_verdict("Vice-President of Engineering")
+        assert verdict == "not_swe"
+        assert reason == (
+            'executive/seniority phrase in title, not a role determination (matched "President")'
         )
+
+    def test_leftmost_match_precedence_is_preserved_across_both_phrasings(self) -> None:
+        # The exact bug 49c4d479 shipped with (caught by review, not by this file, the first
+        # time): splitting the four phrases into two SEPARATELY-LOOPED patterns made the rank
+        # loop always win regardless of which phrase occurred first in the title, discarding the
+        # single combined regex's leftmost-match behaviour. A bare `president`/`chief officer`
+        # occurring BEFORE a `vice president`/`head of` elsewhere in the same title must still
+        # win, exactly as the original pre-D-412 single-pattern regex did.
+        _, reason = role_verdict("President and Vice President")
+        assert 'matched "President")' in reason
+        assert "Vice President" not in reason
+
+        _, reason = role_verdict("Chief Technology Officer / Vice President")
+        assert 'matched "Chief Technology Officer")' in reason
+        assert "Vice President" not in reason

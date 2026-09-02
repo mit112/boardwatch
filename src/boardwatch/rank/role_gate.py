@@ -198,32 +198,33 @@ _DENY_BUSINESS_HARD: tuple[str, ...] = tuple([
     r"\bteacher\b|\bprofessor\b|\btutor\b|\binstructor\b|\bcurriculum\b|\bfaculty\b",
     r"\b(ux|ui|visual|graphic|industrial|product)\s+design(er)?\b",
     # `head of`, `chief ... officer`, `vice president` and bare `president` moved OUT (D-412):
-    # see `_DENY_SENIORITY_RANK` and `_DENY_EXEC_ROLE_HARD` below.
+    # see `_DENY_EXEC_RANK_HARD` below.
 ])
 
-# Executive/seniority-RANK modifiers, split out of `_DENY_BUSINESS_HARD` (D-412). "Vice
-# President" is a GRADE in banking title ladders, not a function -- "Java Developer - Vice
-# President" is a real software req, so a hard deny here is defensible but the audit trail
-# `role_verdict` recorded for it, "not software", is false. `head of` has the identical defect:
-# the matched span names no function of its own ("Head of Engineering" and "Head of Sales" match
-# the same three characters), so it would be exactly as false for the same reason. Kept apart from
-# `_DENY_BUSINESS_HARD` so `role_verdict` can give this bucket a reason that names a RANK, not a
-# role it never determined.
-_DENY_SENIORITY_RANK: tuple[str, ...] = tuple([
-    r"\bhead\s+of\b|\bvice\s+president\b",
-])
-
-# `chief ... officer` and bare `president` also moved OUT of `_DENY_BUSINESS_HARD`, but into
-# their OWN bucket rather than `_DENY_SENIORITY_RANK`: unlike a grade suffix, "Chief Technology
-# Officer" and company "President" name the JOB itself -- running a function or a company is not
-# IC engineering work, no matter what follows -- so "not software" is the true reason here, not a
-# provenance defect this change needs to fix. Checked as a SEPARATE, LATER pattern (not folded
-# back into `_DENY_BUSINESS_HARD`) because bare `\bpresident\b` is a substring of "Vice
-# President": checking it before `_DENY_SENIORITY_RANK` would re-catch every VP title through the
-# bare-president alternative and silently undo the split above. Checking it AFTER instead mirrors
-# what the single combined regex did pre-D-412 (leftmost-match handled the same overlap for free).
-_DENY_EXEC_ROLE_HARD: tuple[str, ...] = tuple([
-    r"\bchief\b.{0,30}\bofficer\b|\bpresident\b",
+# Executive/seniority phrases, split out of `_DENY_BUSINESS_HARD` (D-412, revised after review
+# of 49c4d479). "Vice President" is a GRADE in banking title ladders, not a function -- "Java
+# Developer - Vice President" is a real software req, so a hard deny here is defensible but the
+# audit trail `role_verdict` recorded for it, "not software", was false.
+#
+# The first cut of this fix (49c4d479) split these four into TWO buckets: `head of`/`vice
+# president` got the new honest wording, while `chief ... officer`/bare `president` kept "not
+# software" on the theory that they "name the JOB itself ... no matter what follows". That theory
+# is FALSE -- "Java Developer, Office of the President" and "Java Developer, Office of the Chief
+# Technology Officer" are real software titles where the phrase names an ORGANIZATIONAL
+# QUALIFIER, not the person's role, and the regex has no context to tell the two apart. None of
+# these four patterns carries enough information to know whether it names the job or merely
+# qualifies one, so all four now share ONE honest reason: the gate matched an executive/seniority
+# phrase and did not determine whether that phrase names the role.
+#
+# Kept as ONE regex -- the pre-D-412 alternation, unchanged, only the reason text differs --
+# rather than two separately-looped patterns, on purpose: the two-loop split broke leftmost-match
+# precedence ("President and Vice President" used to report "President", matched first at
+# position 0, and instead reported "Vice President", because the whole first loop ran to
+# completion before the second loop got a turn regardless of which phrase occurred first in the
+# title). A single alternation scans by POSITION, not by which loop runs first, so unifying the
+# wording removes the two loops and the ordering bug has nothing left to happen to.
+_DENY_EXEC_RANK_HARD: tuple[str, ...] = tuple([
+    r"\bhead\s+of\b|\bchief\b.{0,30}\bofficer\b|\bvice\s+president\b|\bpresident\b",
 ])
 
 # SOFT half: skipped whenever the title carries any software signal.
@@ -470,8 +471,7 @@ _DENY_SOFT = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in _DENY_BUSINESS_SOFT + _DENY_FAMILIES_SOFT
 )
-_DENY_SENIORITY = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_SENIORITY_RANK)
-_DENY_EXEC_ROLE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_EXEC_ROLE_HARD)
+_DENY_EXEC_RANK = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_EXEC_RANK_HARD)
 
 
 def role_verdict(title: str) -> tuple[RoleVerdict, str]:
@@ -487,26 +487,23 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
         hard = pattern.search(title)
         if hard is not None:
             return "not_swe", f'not software (matched "{hard.group(0)}")'
-    # Checked immediately after `_DENY_HARD` -- the same position `_DENY_SENIORITY_RANK`'s
-    # patterns held before D-412 split them out -- so no title's verdict moves. The
-    # reason is worded differently ON PURPOSE: this bucket names a RANK the gate matched, not a
-    # role determination, so a `not_swe` here is auditable as "seniority collision", never
-    # confusable with a genuine "this is not a software role" veto.
-    for pattern in _DENY_SENIORITY:
-        rank = pattern.search(title)
-        if rank is not None:
+    # Checked immediately after `_DENY_HARD` -- the same position `_DENY_EXEC_RANK_HARD`'s
+    # patterns held before D-412 split them out -- so no title's verdict moves. The reason is
+    # worded differently ON PURPOSE: this bucket names an executive/seniority PHRASE the gate
+    # matched, not a role determination, so a `not_swe` here is never confusable with a genuine
+    # "this is not a software role" veto. One loop, one wording, for all four phrases (revised
+    # after review: an earlier cut split `chief ... officer`/`president` into a second bucket
+    # that kept the old "not software" wording, reasoning they "name the job itself" -- false,
+    # per the comment on `_DENY_EXEC_RANK_HARD` -- and the two-loop split also broke leftmost-
+    # match precedence between the two phrasings).
+    for pattern in _DENY_EXEC_RANK:
+        exec_rank = pattern.search(title)
+        if exec_rank is not None:
             return (
                 "not_swe",
-                f'executive/seniority rank in title, not a role determination '
-                f'(matched "{rank.group(0)}")',
+                f'executive/seniority phrase in title, not a role determination '
+                f'(matched "{exec_rank.group(0)}")',
             )
-    # MUST run after `_DENY_SENIORITY`, not before: bare `president` is a substring of "Vice
-    # President", so checking it first would re-catch every VP title here instead (see the
-    # comment on `_DENY_EXEC_ROLE_HARD`). This ordering is what makes the split verdict-neutral.
-    for pattern in _DENY_EXEC_ROLE:
-        exec_role = pattern.search(title)
-        if exec_role is not None:
-            return "not_swe", f'not software (matched "{exec_role.group(0)}")'
     signal = _SIGNAL.search(title)
     if signal is None:
         # Soft denies apply only to titles with no software signal at all.
