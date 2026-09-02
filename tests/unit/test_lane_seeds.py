@@ -373,6 +373,52 @@ def test_the_write_point_refuses_every_unseedable_shape_from_any_lane(
     assert {s.url for s in drainable} == set(valid)
 
 
+def test_a_multi_dot_or_malformed_host_is_refused_rather_than_stored_undrainable(
+    tmp_path: Path,
+) -> None:
+    """A host validated only for non-emptiness stores an UNDRAINABLE routing host.
+
+    `seed_host` strips exactly ONE trailing DNS-root dot, so a value whose host survives
+    `parsed.hostname` non-empty but is malformed after that strip -- extra trailing dots
+    (`tenant.applytojob.com..` -> stored `tenant.applytojob.com.`) or an empty label
+    (`tenant..applytojob.com`) -- stored a host no exact/suffix resolver predicate can ever select:
+    a bucket with no drain that no report ever named. `is_seedable_url` must validate the host AS
+    STORED (`_is_hostname` on the once-dot-stripped host), refusing these outright and REPORTING
+    them, while a valid single-root-dot / `:443` sibling still normalizes to a drainable host and
+    is selected. A non-empty-only gate let the malformed values through -- this pins the fix.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    undrainable = (
+        "https://tenant.applytojob.com../apply/Z/Title",   # extra trailing dots
+        "https://tenant..applytojob.com/apply/Z/Title",    # empty label
+    )
+    valid = (
+        "https://other.applytojob.com./apply/DEF/Title",    # single DNS root dot
+        "https://newco.applytojob.com:443/apply/GHI/Title",  # explicit :443
+    )
+    with engine.begin() as conn:
+        written = record_seeds(
+            conn, undrainable + valid, discovered_by="jsonld", run_id=run, now=NOW
+        )
+        drainable = unresolved_seeds(
+            conn,
+            hosts=frozenset(),
+            host_suffixes=frozenset({"applytojob.com"}),
+            max_attempts=9,
+            limit=9,
+        )
+
+    # Both malformed hosts are refused, in input order, and REPORTED -- never a silent undrainable row.
+    assert written.unroutable == undrainable
+    assert written.inserted == 2
+    assert sorted(s.host for s in drainable) == [
+        "newco.applytojob.com",
+        "other.applytojob.com",
+    ]
+    assert {s.url for s in drainable} == set(valid)
+
+
 def test_a_url_with_no_host_is_refused_rather_than_stored_with_an_empty_one(
     tmp_path: Path,
 ) -> None:

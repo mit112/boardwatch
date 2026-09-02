@@ -26,8 +26,11 @@ class UnknownBoardURL(ValueError):
 
 
 class UnregisteredBoardHost(UnknownBoardURL):
-    """The value names NO provider this repo registers at all -- not a malformed value, and not
-    a REGISTERED provider whose slug this particular value happens not to carry.
+    """Classifies HOST REGISTRATION ONLY: no provider this repo registers claims this host. NOT a
+    REGISTERED provider whose slug this particular value happens not to carry, and it promises
+    NOTHING about whether the value was a well-formed, addressable URL -- a scheme is prepended to a
+    bare host before parsing, so a bare host raises this, and addressability is validated SEPARATELY
+    by `is_seedable_url` before a lane may record a tier-D seed.
 
     A subclass, not a sibling: every existing `except UnknownBoardURL` in this repo (`companies
     add`, `init`, the hiring.cafe/jobapps/indeed lanes, GitHub-lists discovery) catches this one
@@ -197,6 +200,10 @@ def is_seedable_url(value: str) -> bool:
       slip past `isspace()` yet HTTPX rejects them as `InvalidURL`; and `urlsplit` follows WHATWG
       and STRIPS tabs/newlines before parsing, so a value it silently cleans up would ROUTE fine
       yet persist a URL string no fetch log or human could match against the one actually dialed.
+    * a hostname that is not a valid host once `seed_host` strips its ONE trailing DNS-root dot --
+      extra trailing dots or a malformed/empty label survive `parsed.hostname` non-empty yet store a
+      routing host (`tenant.applytojob.com.`) no exact/suffix resolver predicate ever selects, an
+      undrainable row. Validated AS STORED so this gate and `seed_host` cannot disagree.
 
     A valid `:443` and a single trailing DNS-root-dot URL both PASS -- `seed_host` still normalizes
     those to a routing host the resolver filters match, so they seed and stay drainable.
@@ -215,7 +222,14 @@ def is_seedable_url(value: str) -> bool:
         return False
     if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
         return False
-    return " " not in hostname
+    # Validate the host AS `seed_host` WILL STORE IT. `seed_host` strips exactly ONE trailing
+    # DNS-root dot, so a hostname non-empty here but malformed after that strip -- extra trailing
+    # dots (`tenant.applytojob.com..` -> stored `tenant.applytojob.com.`) or an empty label
+    # (`tenant..applytojob.com`) -- would persist a routing host no exact/suffix resolver predicate
+    # can ever select. A bare non-empty check let those through. `_is_hostname` is the same fitness
+    # test `parse_board_target` applies before taking `UnregisteredBoardHost`, so both write paths
+    # agree on what a routable host is; it also subsumes the old `" " not in hostname` guard.
+    return _is_hostname(hostname.removesuffix("."))
 
 
 def _normalize_slug(provider: str, slug: str) -> str:

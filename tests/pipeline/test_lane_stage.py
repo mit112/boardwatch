@@ -90,15 +90,18 @@ class StubLane:
         on_collect: Callable[[], object] | None = None,
         resolver_errors: tuple[str, ...] = (),
         seed_attempts: tuple[tuple[int, bool], ...] = (),
+        discovered_seeds: tuple[str, ...] = (),
     ) -> None:
         self._companies = companies
         self._outcomes = outcomes
         self._raises = raises
         # Carried onto the returned `LaneResult` so the stage can be presented a lane that crashed
-        # its resolver on a seed (`resolver_errors`) and a lane with a drainable backlog
-        # (`seed_attempts`), without a real network resolver.
+        # its resolver on a seed (`resolver_errors`), a lane with a drainable backlog
+        # (`seed_attempts`), and a lane that discovered seed URLs to persist (`discovered_seeds`),
+        # without a real network resolver.
         self._resolver_errors = resolver_errors
         self._seed_attempts = seed_attempts
+        self._discovered_seeds = discovered_seeds
         # Spent inside `collect`, so it lands on the FETCH side of the timing boundary and
         # nowhere else. This is what lets a test locate the boundary rather than merely
         # observe that two numbers were produced.
@@ -141,6 +144,7 @@ class StubLane:
             tally=tally,
             resolver_errors=self._resolver_errors,
             seed_attempts=self._seed_attempts,
+            discovered_seeds=self._discovered_seeds,
         )
 
 
@@ -1085,6 +1089,61 @@ def test_a_resolver_crash_reaches_the_RETURNED_errors_not_only_errors_json(
     finish_run(engine, run_id, errors=errors)
     assert sum("crashed the resolver" in note for note in _persisted()) == 1, (
         f"the crash must be persisted EXACTLY ONCE, and only via finish_run: {_persisted()}"
+    )
+
+
+def test_a_refused_seed_url_reaches_the_RETURNED_errors_not_only_errors_json(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER: a refused (unroutable) seed URL must be visible where an operator looks.
+
+    `_persist_seed_work` used to write the refusal straight to `runs.errors_json` -- a column the
+    CLI, the funnel and the morning digest all leave unqueried, so a lane emitting URLs nothing can
+    route looked exactly like a lane finding nothing. It has to reach `_run_lanes`' RETURNED errors,
+    which the pipeline extends onto `summary.errors` (the morning digest, the console) and
+    `stage_errors` (`runs.errors_json`, via `finish_run`) -- and reach `errors_json` ONLY that way,
+    so it is recorded exactly once. Mirrors the resolver-crash de-dup.
+
+    The lane APPLIES CLEANLY (its one company lands) and discovers two seeds: one routable, one an
+    empty-label host `is_seedable_url` refuses. The clean apply must still be reported AND the
+    refusal must surface.
+    """
+    bad, good = "https://tenant..applytojob.com/apply/Z", "https://newco.applytojob.com/apply/Y"
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], discovered_seeds=(good, bad)),
+    )
+    run_id = insert_run(engine)
+    reports, errors = _run_lanes(engine, _settings(tmp_path, lanes_enabled=["alpha"]), run_id)
+
+    assert [r.name for r in reports] == ["alpha"], "the clean apply must still be reported"
+    assert any("not safely" in e and "skipped" in e for e in errors), (
+        f"a refused seed url must reach the RETURNED errors, not only errors_json: {errors}"
+    )
+    assert any(bad in e for e in errors), "the first refused url's repr must ride along"
+
+    # Only the good seed persisted; the bad one was refused, never stored as an undrainable row.
+    with engine.connect() as conn:
+        stored = conn.execute(select(tables.lane_seeds.c.url)).scalars().all()
+    assert stored == [good], f"the refused url must not persist: {stored}"
+
+    # `finish_run` is the ONE path the refusal reaches `errors_json`: BEFORE it there are ZERO notes
+    # (the direct write that double-recorded is gone) and AFTER it there is EXACTLY ONE.
+    def _persisted() -> list[str]:
+        with engine.connect() as conn:
+            return list(
+                conn.execute(
+                    select(tables.runs.c.errors_json).where(tables.runs.c.id == run_id)
+                ).scalar_one()
+                or []
+            )
+
+    assert not any("not safely" in note for note in _persisted()), (
+        f"no direct write to errors_json (that direct write was the double-record): {_persisted()}"
+    )
+    finish_run(engine, run_id, errors=errors)
+    assert sum("not safely" in note for note in _persisted()) == 1, (
+        f"the refusal must be persisted EXACTLY ONCE, and only via finish_run: {_persisted()}"
     )
 
 
