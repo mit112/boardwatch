@@ -11035,6 +11035,26 @@ Verdicts: **84 eligible** / 1,204 uncertain / 648 ineligible over 1,936 evaluate
 **#331 fired correctly and smaller than predicted: 83 bodies withheld** as "not the employer's own
 text" (the handoff expected ~176). Not a failure — the precondition is doing exactly its job.
 
+### Delivery share via the `jobapps` lane hits 70.8% — and this is the MOST INFLATED reading yet, not evidence of dependency
+
+**68 of 96 delivered leads (70.8%)** in run 144 resolve to a posting carrying the `jobapps` lane's
+provenance, against run 143's 28 of 95 (29.5%), 142's 2.1%, 141's 17.9%, 140's 2.1%.
+
+**Do NOT read this as boardwatch becoming more dependent on job-apps. It is the opposite artifact,
+and D-424 named the mechanism before this run existed.** The lane ingests records still unprocessed
+in job-apps' tree, and they leave its view once the owner works them — so the share tracks HOW MUCH
+UNWORKED BACKLOG THE TREE HOLDS, not what boardwatch would lose. This run deliberately dumped
+**1,495 fresh, never-ranked postings** into the pool in one shot, so of course they dominate a
+recency-sensitive shortlist. **The harvest CAUSED this number.**
+
+**The retirement exposure is `lane-only` discovery (32.4% at run 143), not delivery share** — that is
+D-424's decided test, it is measured by D-421's script, and it is the exposure by construction.
+Delivery share is not a substitute for it and must not be quoted as one.
+
+**Consequence for the ~2026-09-09 re-measure: the backlog is now DRAINED, so the next few runs are
+the first ones whose delivery share means anything at all.** D-424 said steady state was not
+measurable until the backlog cleared; it has now cleared, and the clock on that starts here.
+
 ### The seed drain is CONFIRMED end to end (closes D-422's open question)
 
 Run 143 logged `lane jsonld → 0 attempted` and D-422 read it as lane ORDERING rather than a broken
