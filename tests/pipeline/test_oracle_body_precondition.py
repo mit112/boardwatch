@@ -21,6 +21,8 @@ from typing import Any
 
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.oracle import (
+    POLICY_VERSION,
+    PROMPT_VERSION,
     OracleVerdict,
     accept_oracle_verdict,
     apply_oracle_verdicts,
@@ -47,7 +49,11 @@ FOREIGN_INELIGIBLE = OracleVerdict(
 
 
 def _foreign_row(
-    label: str, *, verdict: str | None = None, prov: str | None = None
+    label: str,
+    *,
+    verdict: str | None = None,
+    prov: str | None = None,
+    current_stamps: bool = False,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "label": label,
@@ -57,8 +63,8 @@ def _foreign_row(
     }
     if prov:
         row["label_provenance"] = prov
-        row["oracle_policy_version"] = "old"
-        row["oracle_prompt_version"] = "old"
+        row["oracle_policy_version"] = POLICY_VERSION if current_stamps else "old"
+        row["oracle_prompt_version"] = PROMPT_VERSION if current_stamps else "old"
     return row
 
 
@@ -94,15 +100,45 @@ def test_apply_oracle_verdicts_refuses_to_write_a_foreign_ineligible() -> None:
     assert "ineligible" not in res.by_verdict
 
 
-def test_apply_oracle_verdicts_refuses_a_stale_hand_authored_foreign_verdict() -> None:
-    """WRITE boundary, the stale/hand-authored case: a verdicts file may name a foreign-body row
-    that `build_label_request` never selected. The write side must refuse it independently, so a
-    stale `oracle` row is not re-judged into a fresh false `ineligible`."""
+def test_apply_oracle_verdicts_sanitizes_a_stale_oracle_foreign_verdict() -> None:
+    """WRITE boundary, the stale-oracle case: a verdicts file may name a foreign-body row that
+    `build_label_request` never selected, and the worksheet may already carry a stale oracle
+    label on it. The write side refuses it independently AND cleans it — an oracle label on a
+    foreign body is itself a fabricated answer-key row, so it is sanitized back to unlabeled
+    rather than re-judged into a fresh false `ineligible`."""
     rows = [_foreign_row("hard_stop/jobright", verdict="uncertain", prov="oracle")]
     merged, res = apply_oracle_verdicts(rows, [FOREIGN_INELIGIBLE], CAT)
-    assert merged[0]["expected_verdict"] == "uncertain", "must not be overwritten to ineligible"
+    assert merged[0]["expected_verdict"] is None, "a stale oracle foreign row is sanitized clean"
+    assert merged[0].get("label_provenance") is None
     assert res.labeled == 0
     assert res.overwritten == 0
+
+
+def test_apply_sanitizes_a_current_stamped_foreign_ineligible() -> None:
+    """WRITE boundary, the round-4 blocker: a foreign body ALREADY corrupted into an
+    `ineligible(work_auth)` answer-key row and stamped with the CURRENT oracle policy+prompt is
+    exactly what `_skip_row` treats as already-done, so before this fix it was skipped and LEFT
+    in the worksheet where scoring.py still measures it. The precondition must run BEFORE the
+    idempotency guard: a foreign body is sanitized back to unlabeled with every oracle-produced
+    field cleared, regardless of its stamps."""
+    row = _foreign_row(
+        "hard_stop/jobright", verdict="ineligible", prov="oracle", current_stamps=True
+    )
+    row["reason"] = "work_auth"
+    row["evidence"] = "H1B Sponsor Likely"
+    row["spans"] = [[262, 280]]
+    row["confidence"] = "high"
+    row["downgraded"] = False
+    merged, res = apply_oracle_verdicts([row], [FOREIGN_INELIGIBLE], CAT)
+    assert merged[0]["expected_verdict"] is None, "a current-stamped foreign row must be cleaned"
+    assert merged[0].get("label_provenance") is None
+    assert merged[0].get("reason") is None
+    assert merged[0].get("evidence") is None
+    assert "spans" not in merged[0]
+    assert "oracle_policy_version" not in merged[0]
+    assert "oracle_prompt_version" not in merged[0]
+    assert res.labeled == 0
+    assert "ineligible" not in res.by_verdict
 
 
 def test_apply_oracle_verdicts_still_labels_a_clean_employer_body() -> None:

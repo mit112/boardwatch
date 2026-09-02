@@ -292,6 +292,30 @@ class ApplyResult:
     by_verdict: dict[str, int]
 
 
+# Every field `apply_oracle_verdicts` writes when it labels a row. `_sanitize_foreign_row`
+# clears exactly this set so a foreign body returns to a pristine unlabeled row.
+_ORACLE_WRITTEN_FIELDS = (
+    "reason",
+    "spans",
+    "confidence",
+    "evidence",
+    "label_provenance",
+    "oracle_policy_version",
+    "oracle_prompt_version",
+    "downgraded",
+)
+
+
+def _sanitize_foreign_row(row: dict[str, Any]) -> None:
+    """Return an oracle-authored row on a foreign body to unlabeled, clearing every
+    oracle-produced field. A current-stamped corrupt row would otherwise satisfy `_skip_row`
+    (it looks already-done) and be LEFT in the worksheet as a false `ineligible` answer key;
+    a foreign body must leave the worksheet unlabeled regardless of its stamps."""
+    row["expected_verdict"] = None
+    for field in _ORACLE_WRITTEN_FIELDS:
+        row.pop(field, None)
+
+
 def _skip_row(row: dict[str, Any]) -> bool:
     """M4: version-aware idempotency. Never overwrite a human-audited row; never
     re-label a row already stamped by this exact oracle policy+prompt version
@@ -331,16 +355,25 @@ def apply_oracle_verdicts(
 
     for v in verdicts:
         row = by_label.get(v.label)
-        if row is None or _skip_row(row):
+        if row is None:
             continue
         # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most
         # here: `accept_oracle_verdict` slices an `ineligible` span out of this very body, so a
         # foreign body reaching it writes a FALSE `ineligible(work_auth)` answer-key row — and the
-        # answer key is what every precision measurement is scored against. Refused for STALE and
-        # HAND-AUTHORED verdicts alike (a verdicts file that names a foreign-body row is stopped
-        # here even though `build_label_request` never selected it), mirroring the gate APPLY
-        # boundary's `withhold_foreign_versions`.
+        # answer key is what every precision measurement is scored against. This runs BEFORE
+        # `_skip_row`: a row a PRIOR pass already corrupted into `ineligible` and stamped with the
+        # current policy+prompt would otherwise be treated as already-done and LEFT intact, so an
+        # oracle-authored foreign row is sanitized back to unlabeled here regardless of its stamps.
+        # Bodies REJECTED BY THE CURRENT DETECTOR are the ones this refuses — the marker threshold
+        # is `is_employer_body`'s, unchanged here. Refused for STALE and HAND-AUTHORED verdicts
+        # alike (a verdicts file that names a foreign-body row is stopped even though
+        # `build_label_request` never selected it), mirroring the gate APPLY boundary's
+        # `withhold_foreign_versions`.
         if not is_employer_body(row.get("body_text", "")):
+            if row.get("label_provenance") == "oracle":
+                _sanitize_foreign_row(row)
+            continue
+        if _skip_row(row):
             continue
         was_stale_oracle = row.get("label_provenance") == "oracle"
         accepted = accept_oracle_verdict(v, row.get("body_text", ""), catalog)

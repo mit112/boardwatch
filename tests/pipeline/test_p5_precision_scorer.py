@@ -156,6 +156,27 @@ def test_score_precision_and_recall_on_ineligible(catalog) -> None:
     assert not report.span_violations
 
 
+# A foreign body — an aggregator's rendered page, not the employer's JD — carrying two catalog
+# markers ("Apply on Employer Site", "H1B Sponsor Likely"), so `is_employer_body` rejects it.
+_FOREIGN_BODY = (
+    "Software Engineer. Apply on Employer Site. H1B Sponsor Likely. "
+    "Responsibilities: build things."
+)
+
+
+def test_score_excludes_a_foreign_body_from_measurement(catalog) -> None:
+    """Defense in depth (round-4): a worksheet corrupted before the write guard existed — a
+    foreign body carrying a fabricated `ineligible` — must never reach precision measurement.
+    `score` refuses the row (abstain by omission), so `total` and `true_ineligible` count only
+    the real employer JD, not the third party's guess."""
+    real = LabeledCase("sponsor-tp", _SPONSOR_JD, _needs_sponsorship(), "ineligible")
+    foreign = LabeledCase("foreign-ineligible", _FOREIGN_BODY, _needs_sponsorship(), "ineligible")
+    report = score([real, foreign], catalog)
+    assert report.total == 1, "the foreign body must be excluded from the measured set"
+    assert report.true_ineligible == 1
+    assert [m.label for m in report.false_positives] == []
+
+
 def test_score_precision_none_when_nothing_predicted_ineligible(catalog) -> None:
     cases = [LabeledCase("auth-tn", _AUTH_JD, _citizen(), "eligible")]
     report = score(cases, catalog)
