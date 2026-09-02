@@ -49,8 +49,8 @@ describe("the requirement-hold badges", () => {
     screen.getByText("role vetoed");
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/not software/i);
-    // The per-title evidence lives in the `off target` badge's `off_target_reason`, not here —
-    // this copy stays generic on purpose (see `QueueRowItem`'s `Flags`).
+    // Rendered WITHOUT `detailReason`, so it falls back to this generic copy; on a real row the
+    // per-title evidence reaches the chip through `detailReason` (see `QueueRowItem`'s `Flags`).
     expect(text).toMatch(/vetoed this title/i);
   });
 
@@ -74,19 +74,16 @@ describe("the requirement-hold badges", () => {
   });
 });
 
-describe("the off-target badge on a role-vetoed compact row", () => {
-  // D-412 follow-up, the other half of the UI fix: the gate's per-title evidence — the exact
-  // phrase it matched — reaches the compact row ONLY through the `off target` badge's
-  // `off_target_reason`. QueueRowItem used to SUPPRESS that badge on `role_vetoed` rows (the
-  // `review_reason !== "role_vetoed"` guard on line 50), on the theory that the generic
-  // `role vetoed` badge already carried the same claim. It did not — that copy is deliberately
-  // generic (see ReviewReasonBadge) — so the suppression hid the only place the matched span
-  // appeared on the row. Restoring the line-50 guard makes this fail: the badge, and with it the
-  // audit trail, disappears.
-  it("shows the matched-phrase reason a role_vetoed row would otherwise hide", () => {
-    const offTargetReason =
-      'executive/seniority phrase in title, not distinguishing role from qualifier ' +
-      '(matched "Vice President")';
+describe("the role-vetoed compact row surfaces its evidence without a duplicate chip", () => {
+  // D-412 follow-up, the other half of the UI fix. On a `role_vetoed` row `off_target` is the SAME
+  // `role_verdict(title)` decision the `role vetoed` badge already renders, so a second `off target`
+  // chip would show one decision twice. The gate's per-title evidence — the exact phrase it matched
+  // — instead reaches the compact row through the `role vetoed` badge's tooltip (`detailReason`),
+  // and the `off target` chip is suppressed. Two failures are guarded: removing the suppression
+  // brings the duplicate chip back, and dropping the `detailReason` routing loses the evidence.
+  const offTargetReason =
+    'title matched the executive/seniority deny pattern (matched "Vice President")';
+  const renderRow = () =>
     render(
       <QueueRowItem
         row={queueRow({
@@ -103,11 +100,19 @@ describe("the off-target badge on a role-vetoed compact row", () => {
         onSkip={() => undefined}
       />,
     );
-    // The row renders its flags in both tiers, so the badge appears more than once; either proves
-    // it was not suppressed. `getAllBy*` throws on zero matches, so restoring the suppression fails
-    // the test here.
-    expect(screen.getAllByText("off target").length).toBeGreaterThan(0);
-    // The matched span travels as the badge's `title` tooltip — the compact row's whole audit trail.
+
+  it("suppresses the duplicate off-target chip", () => {
+    renderRow();
+    // `queryAllByText` returns [] rather than throwing, so this fails if the suppression is removed.
+    expect(screen.queryAllByText("off target")).toHaveLength(0);
+  });
+
+  it("carries the matched-phrase reason on the role-vetoed badge's tooltip", () => {
+    renderRow();
+    // The row renders its flags in both tiers, so the badge appears more than once. The matched
+    // span travels as the `role vetoed` badge's `title` tooltip — the compact row's whole audit
+    // trail. Dropping the `detailReason` routing (badge falls back to generic copy) fails this.
+    expect(screen.getAllByText("role vetoed").length).toBeGreaterThan(0);
     expect(screen.getAllByTitle(offTargetReason).length).toBeGreaterThan(0);
   });
 });

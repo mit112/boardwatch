@@ -615,21 +615,23 @@ class TestSeniorityRankProvenance:
     engineering signal, or for a title where the phrase is merely an ORGANIZATIONAL QUALIFIER
     ("Java Developer, Office of the President").
 
-    Revised TWICE after review, and both revisions are pinned here so neither regresses:
+    Revised THREE times after review, and every revision is pinned here so none regresses:
 
     1. 49c4d479 (this file's first cut) split the four phrases into two buckets, keeping `chief
        ... officer`/`president` on the old "not software" wording on the theory that they "name
        the job itself ... no matter what follows". A real counterexample ("Java Developer,
        Office of the President") falsified that theory, and the two-loop split separately broke
        leftmost-match precedence between the two wordings.
-    2. The fix for (1) unified all four phrases behind ONE wording, "not a role determination" --
-       which is the SAME defect pointed the other way: for a bare "Chief Technology Officer" the
-       phrase IS the whole role, so calling it "not a role determination" is its own false claim.
-       The wording now describes the INSTRUMENT's limit instead of the posting: the gate matched
-       an executive/seniority phrase and did not distinguish whether it names the role or merely
-       qualifies one. That statement is true for a bare CTO title and for an "Office of the CTO"
-       qualifier alike, because it is a claim about what the regex checked, not about what the
-       title is.
+    2. The fix for (1) unified all four phrases behind "not a role determination" -- the SAME
+       defect pointed the other way: for a bare "Chief Technology Officer" the phrase IS the whole
+       role, so calling it "not a role determination" is its own false claim.
+    3. The fix for (2), "executive/seniority phrase ... not distinguishing role from qualifier,"
+       still described the TITLE, and so was false for an INCIDENTAL match: `_DENY_EXEC_RANK`
+       matches "Head of" in "Survey Coordinator, Head of Household Study", where "Head of" names
+       the study, not a rank -- neither a role nor a qualifier. The wording now claims NOTHING
+       about the title: it names the DENY PATTERN the gate matched and the substring that matched
+       it. True for a bare CTO, an "Office of the CTO" qualifier, and an incidental "Head of"
+       alike, because the gate reads no context and the reason says only what the regex did.
 
     Expected strings are pinned as LITERALS, not imported from `role_gate`'s own reason-format
     code, so a vacuous "test the constant against itself" bug cannot hide here (this repo's own
@@ -640,7 +642,7 @@ class TestSeniorityRankProvenance:
         verdict, reason = role_verdict("Java Developer - Vice President")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            'title matched the executive/seniority deny pattern '
             '(matched "Vice President")'
         )
 
@@ -648,7 +650,7 @@ class TestSeniorityRankProvenance:
         verdict, reason = role_verdict("Head of Sales")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            'title matched the executive/seniority deny pattern '
             '(matched "Head of")'
         )
 
@@ -660,23 +662,23 @@ class TestSeniorityRankProvenance:
         assert verdict == "not_swe"
         assert "not software" not in reason
         assert reason == (
-            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            'title matched the executive/seniority deny pattern '
             '(matched "Vice President")'
         )
 
     def test_chief_officer_and_bare_president_get_the_same_honest_wording(self) -> None:
-        # NOT "not software" (49c4d479's mistake) and NOT "not a role determination" (this
-        # file's own second, also-wrong cut): a bare "Chief Technology Officer" or "President"
-        # title is genuinely a role -- the honest claim is only that the GATE did not
-        # distinguish that from a qualifier, not that the phrase fails to name one.
+        # NOT "not software" (49c4d479's mistake), NOT "not a role determination" (the second,
+        # also-wrong cut), and NOT "not distinguishing role from qualifier" (the third): a bare
+        # "Chief Technology Officer" or "President" IS a role, so the reason may not claim it is
+        # none. The wording now reports only that the deny pattern matched -- no claim to falsify.
         assert role_verdict("Chief Technology Officer") == (
             "not_swe",
-            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            'title matched the executive/seniority deny pattern '
             '(matched "Chief Technology Officer")',
         )
         assert role_verdict("President") == (
             "not_swe",
-            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            'title matched the executive/seniority deny pattern '
             '(matched "President")',
         )
 
@@ -693,16 +695,26 @@ class TestSeniorityRankProvenance:
             verdict, reason = role_verdict(title)
             assert verdict == "not_swe", title
             assert "not software" not in reason, title
-            assert "not distinguishing role from qualifier" in reason, title
+            assert "matched the executive/seniority deny pattern" in reason, title
+
+    def test_an_incidental_match_gets_the_literal_pattern_reason_not_a_title_claim(self) -> None:
+        # The round-4 counterexample that retired the "role from qualifier" wording: `_DENY_EXEC_RANK`
+        # matches "Head of" here, where it names the STUDY, not a rank -- neither a role nor a
+        # qualifier. The verdict stays `not_swe` (the gate still vetoes the match, unchanged) but
+        # the reason may not call it an executive/seniority phrase or a role/qualifier of any kind;
+        # it may report ONLY that the deny pattern matched, which is the one claim that stays true.
+        verdict, reason = role_verdict("Survey Coordinator, Head of Household Study")
+        assert verdict == "not_swe"
+        assert reason == 'title matched the executive/seniority deny pattern (matched "Head of")'
+        assert "role" not in reason and "qualifier" not in reason and "phrase" not in reason
 
     def test_the_wording_is_identical_for_a_bare_role_and_for_a_qualifier(self) -> None:
-        # The point of wording it as an INSTRUMENT limit rather than a claim about the posting:
-        # a bare "President" (where the phrase IS the whole role -- a company President with no
-        # qualifier) and the SAME phrase used only as an organisational qualifier ("Office of the
-        # President") get the EXACT same reason text -- same matched span, same claim -- because
-        # the true statement, "the gate did not distinguish which one this is," holds in both
-        # cases. A wording that differed between them would mean one of the two was being told
-        # something false.
+        # The point of a reason that reports only the matched pattern, not a claim about the
+        # posting: a bare "President" (the phrase IS the whole role) and the SAME phrase used only
+        # as an organisational qualifier ("Office of the President") get the EXACT same reason text
+        # -- same matched span, same words -- because the reason says nothing that could differ
+        # between them. A wording that differed would mean one of the two was being told something
+        # about its title that the gate never determined.
         _, bare = role_verdict("President")
         _, qualifier = role_verdict("Java Developer, Office of the President")
         assert bare == qualifier
@@ -712,10 +724,10 @@ class TestSeniorityRankProvenance:
         # alternatives are in the SAME bucket now. This does not hinge on the two alternatives
         # sharing a starting position -- they do not: "Vice President" starts at index 0 and the
         # bare "President" substring starts later, at index 5, so Python's leftmost-POSITION rule
-        # already prefers "Vice President" regardless of which alternative is listed first in the
-        # pattern. What this guards is a future edit that removes or narrows the `vice
-        # president` alternative (or reorders the pattern in a way that stops it matching at
-        # index 0) and so lets the bare `president` alternative match earlier instead.
+        # prefers "Vice President" regardless of the alternatives' order in the pattern -- reordering
+        # cannot change which matches first when they sit at different positions. What this guards
+        # is a future edit that REMOVES OR NARROWS the `vice president` alternative and so lets the
+        # bare `president` alternative match at index 5 instead.
         _, reason = role_verdict("Vice President, Enterprise Sales")
         assert 'matched "President"' not in reason
         assert 'matched "Vice President"' in reason
@@ -728,7 +740,7 @@ class TestSeniorityRankProvenance:
         verdict, reason = role_verdict("Vice-President of Engineering")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            'title matched the executive/seniority deny pattern '
             '(matched "President")'
         )
 

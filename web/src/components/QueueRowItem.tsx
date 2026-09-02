@@ -34,19 +34,24 @@ function Flags({ row }: { row: QueueRow }) {
     <>
       {/* FIRST, because it is the one flag that explains which of the page's two lists the row is
           in. It renders on review rows only — `review_reason` is `null` off the lane — and it is
-          not the same question as `off target` below, which is `not_swe` alone. */}
-      <ReviewReasonBadge reason={row.review_reason} />
+          not the same question as `off target` below, which is `not_swe` alone. On a `role_vetoed`
+          row it carries the gate's per-title reason (`off_target_reason`) as its tooltip, so the
+          `off target` chip below can stay suppressed rather than repeat one decision. */}
+      <ReviewReasonBadge
+        reason={row.review_reason}
+        detailReason={row.review_reason === "role_vetoed" ? row.off_target_reason : null}
+      />
       {row.thin_jd ? (
         <Badge label="thin JD" reason="No coverage fraction could be computed." />
       ) : null}
-      {/* NOT suppressed on `role_vetoed` rows (D-412 follow-up): that used to assume the badge
-          above already said the same thing, but `ReviewReasonBadge`'s `role_vetoed` copy is
-          deliberately GENERIC ("the role gate vetoed this title") precisely because the role
-          gate's actual reason can be a seniority/executive-phrase collision on a real software
-          title, not a genuine non-software finding — the two chips are NOT one claim rendered
-          twice, they are a lane marker and the gate's per-title evidence. Suppressing this one
-          hid the only place that evidence reached the compact row. */}
-      {row.off_target ? <Badge label="off target" reason={row.off_target_reason} /> : null}
+      {/* Suppressed on `role_vetoed` rows: there `off_target` is the SAME `role_verdict(title)`
+          decision the badge above already renders (D-412 follow-up), and that badge now carries its
+          per-title evidence in its tooltip, so an `off target` chip here would be one decision shown
+          twice. It still renders for a non-role `off_target` (there is none today — `off_target` is
+          `not_swe` alone — but the guard keeps the two claims separable if that changes). */}
+      {row.off_target && row.review_reason !== "role_vetoed" ? (
+        <Badge label="off target" reason={row.off_target_reason} />
+      ) : null}
       {row.status === "closed" ? (
         <Badge
           label="closed"

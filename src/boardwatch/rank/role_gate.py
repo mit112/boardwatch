@@ -493,23 +493,22 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
         if hard is not None:
             return "not_swe", f'not software (matched "{hard.group(0)}")'
     # Checked immediately after `_DENY_HARD` -- the same position `_DENY_EXEC_RANK_HARD`'s
-    # patterns held before D-412 split them out -- so no title's verdict moves. The reason is
-    # worded differently ON PURPOSE: it names an executive/seniority PHRASE the gate matched and
-    # says the gate did NOT distinguish whether that phrase names the role or merely qualifies
-    # one -- a claim about what the regex checked, never about what the title is, so it cannot be
-    # false in either direction (a genuine "Chief Technology Officer" role, or a "Java Developer,
-    # Office of the CTO" qualifier, both make the SAME true statement about the gate). One loop,
-    # one wording, for all four phrases (revised twice after review: the first cut kept `chief
-    # ... officer`/`president` on the old "not software" wording, reasoning they "name the job
-    # itself" -- false, per the comment on `_DENY_EXEC_RANK_HARD`; the second cut's "not a role
-    # determination" wording fixed that but asserted the inverse false claim for a bare "Chief
-    # Technology Officer", where the phrase IS the whole role).
+    # patterns held before D-412 split them out -- so no title's verdict moves. The reason names
+    # the DENY PATTERN the gate matched and the substring that matched it, and makes NO claim about
+    # what that substring means: the gate reads no context, so it cannot say whether the phrase
+    # names a role ("Chief Technology Officer"), merely qualifies one ("Java Developer, Office of
+    # the CTO"), or is incidental ("Survey Coordinator, Head of Household Study", where "Head of"
+    # names the study, not a rank). A literal statement about the INSTRUMENT is the only wording
+    # true for all three -- revised three times after review, because every wording that described
+    # the TITLE was false for one of them: "not software" (claims the title is non-technical),
+    # "not a role determination" (false for a bare CTO, where the phrase IS the whole role), and
+    # "executive/seniority phrase ... role from qualifier" (false for the incidental "Head of").
     for pattern in _DENY_EXEC_RANK:
         exec_rank = pattern.search(title)
         if exec_rank is not None:
             return (
                 "not_swe",
-                f'executive/seniority phrase in title, not distinguishing role from qualifier '
+                f'title matched the executive/seniority deny pattern '
                 f'(matched "{exec_rank.group(0)}")',
             )
     signal = _SIGNAL.search(title)
