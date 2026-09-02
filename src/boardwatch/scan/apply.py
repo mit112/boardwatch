@@ -374,14 +374,15 @@ def _inserted_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     """`_mutable_fields` with a secondhand LOCATION downgraded to no location evidence at all.
 
     D-414(a), and the reason the INSERT needs a rule of its own after all. The original split said
-    a secondhand INSERT is harmless because a later provider board scan corrects it. That holds for
-    a TIER-2 lane-first company only, and the store says why three times: `upsert_lane_company`
-    writes `watched=False` for it (D-285, load-bearing — a watched row on a provider the scanner
-    cannot parse would add an `unknown provider` line to every run forever); `get_watched_companies`
-    filters `watched.is_(True)`; and `scan.coordinator` takes its company rows from nowhere else, so
-    a tier-2 hit's INSERT is the only writer that row will ever have. A TIER-1 hit is now
-    auto-watched (`upsert_lane_company(watch=True)`), so a scan DOES correct it — next run, not this
-    one, because the lane stage runs after the scan. Either way this INSERT's location decides at
+    a secondhand INSERT is harmless because a later provider board scan corrects it. That is FALSE
+    for a lane-first company, and the store says why three times: `upsert_lane_company` writes
+    `watched=False` (D-285: a watched row on a provider the scanner cannot parse would add an
+    `unknown provider` line to every run forever); `get_watched_companies` filters
+    `watched.is_(True)`; and `scan.coordinator` takes its company rows from nowhere else. A TIER-2
+    hit stays `watched=False` (its `indeed` provider is not scannable), so its INSERT is the only
+    writer that row will ever have. A TIER-1 hit is now auto-watched (`watch=True`), so a scan DOES
+    correct it — next non-`unchanged` run, not this one, because the lane stage runs
+    after the scan. Either way this INSERT's location decides at
     least one run, and a location the aggregator assigned that classifies `non_us` would hard-veto —
     DELETE — the lead under `location_filter_mode = "hard"` on a role never placed outside the US.
     `classify_location` is a positive US allowlist that drops only a CONFIRMED non-US posting, so a

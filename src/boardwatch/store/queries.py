@@ -426,9 +426,11 @@ def upsert_lane_company(
     CAN parse. An Indeed tier-1 convergence sits on a supported board (`hit_identity` assigns a
     real provider only when `parse_posting_target` recovered one), so watching it adds no `unknown
     provider` line AND is the DRAIN for the secondhand body that hit wrote (D-414(a)): with the
-    board watched, the next scan fetches the employer's own JD, `remote_policy` and location and
+    board watched, a later scan fetches the employer's own JD, `remote_policy` and location and
     replaces JD v1, which otherwise decides forever because a lane-first company is scanned by
-    nothing. It stays a defaulted parameter rather than a second function because the default
+    nothing. (A fresh ETag/Last-Modified can make that scan read `unchanged` and defer the fetch, so
+    the drain is bounded by the validator TTL rather than guaranteed on the very next scan.)
+    It stays a defaulted parameter rather than a second function because the default
     (`False`) preserves every existing caller's behaviour exactly and the flag is MONOTONIC —
     `False`->`True` only, never the reverse — so it is safe from any lane at any frequency.
 
@@ -454,6 +456,15 @@ def upsert_lane_company(
     it resolves to is returned so the caller does not have to re-select by a slug the store may
     not hold. When `stored_slug` already found the row, a `watch=True` upgrade is an UPDATE keyed
     on the stored slug, not a re-insert, for the same reason.
+
+    `stored_slug` closes the SEQUENTIAL case-variant duplicate only, NOT a CONCURRENT one: the
+    case-insensitive read and the case-SENSITIVE insert here are not atomic, so a manual
+    `upsert_watch` of a case-variant slug that commits BETWEEN this function's `stored_slug` read
+    and its insert still leaves two rows (`ashby:Lightfield` + `ashby:lightfield`), splitting
+    postings across two `company_id`s. That race is a KNOWN, PRE-EXISTING gap that `watch=True`
+    only makes worse by making the duplicate watched; its proper fix is a `(provider, lower(slug))`
+    unique index plus reconciling existing collisions -- a live-store migration, deliberately
+    deferred (owner-gated).
     """
     target = stored_slug(conn, provider=provider, slug=slug)
     if target is None:

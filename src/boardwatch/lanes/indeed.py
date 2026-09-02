@@ -95,9 +95,11 @@ ONLY.** A hit keyed under `indeed` (the last segment of `employer.relativeCompan
 this repo cannot scan) is stored `watched=False`, `queries.get_watched_companies` filters
 `watched.is_(True)`, and `scan/coordinator.py` reads its rows from nowhere else, so nothing will
 ever scan it -- no later revision, no correction, what this lane writes is what the store holds
-until a human watches something by hand. The two halves of D-414(a) below matter for BOTH tiers:
-for tier 2 they are the permanence guard, and for a now-watched tier 1 they hold the ONE RUN
-between this lane writing the secondhand row and the next scan draining it.
+until a human watches something by hand. The D-414(a) guards below fire for TIER-1 ONLY: tier 1
+declares every field `CONVERGED_SECONDHAND`, so its fields are dropped/blanked and its body
+suppressed for the ONE RUN before the auto-watched scan drains them. Tier 2 declares NOTHING
+secondhand, so no guard fires -- it intentionally keeps Indeed's fields as its sole record, because
+the lane is that row's only observer and there is nothing better to hold.
 
 WHAT A CONVERGED HIT DOES **NOT** DO IS OVERWRITE THE PROVIDER'S OWN FIELDS ON A ROW THAT ALREADY
 EXISTS (D-414(a)). `scan/apply.py`'s D25 rule refreshes every provider-sourced column on every
@@ -122,14 +124,16 @@ so the lead leaves the apply lane on the strength of a sentence its employer nev
 declared `body_text` suppresses the whole revision, so a converged hit can never restate the
 employer's JD.
 
-THE INSERT WRITES EVERYTHING EXCEPT THE LOCATION. A location the aggregator assigned that
-classifies `non_us` would hard-veto -- DELETE -- the lead under `location_filter_mode = "hard"`,
-on a role whose employer never placed it outside the US: for the one run before the scan corrects
-a now-watched tier-1 row, and forever on a tier-2 one. That is the one direction that removes a
-real lead (`classify_location` is a positive US allowlist that drops only a CONFIRMED non-US
-posting, so a US metro like `Austin, TX` or an unresolved string is KEPT -- the veto is not the
-hazard, a false `non_us` is). `_inserted_fields` stores `[]`, which classifies `unknown` and the
-hard gate keeps -- the direction that declines to filter rather than the one that deletes.
+ON A TIER-1 INSERT THE LOCATION IS BLANKED; ON A TIER-2 INSERT IT IS KEPT. A location the
+aggregator assigned that classifies `non_us` would hard-veto -- DELETE -- the lead under
+`location_filter_mode = "hard"`, on a role whose employer never placed it outside the US
+(`classify_location` is a positive US allowlist that drops only a CONFIRMED non-US posting, so a US
+metro like `Austin, TX` or an unresolved string is KEPT -- the veto is not the hazard, a false
+`non_us` is). Tier 1 declares its location secondhand, so `_inserted_fields` stores `[]`, which
+classifies `unknown` and the hard gate keeps until the auto-watched scan drains the real location
+in. Tier 2 declares nothing, so Indeed's location is written as its sole record -- a false `non_us`
+there would veto forever, but Indeed does not render a US role as a foreign city, so the risk is
+small.
 Everything else the hit carries is still written: a row this lane creates has no prior observation
 to preserve, and blanking a column there would replace a value the lane genuinely holds with a
 schema default.
