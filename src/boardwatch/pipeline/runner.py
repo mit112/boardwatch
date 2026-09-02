@@ -59,6 +59,7 @@ from boardwatch.lanes.facets import (
 from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
+from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
@@ -268,6 +269,14 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
         search_pages=ctx.settings.indeed_search_pages,
         results_per_page=ctx.settings.indeed_results_per_page,
     ),
+    # The JSON-LD resolver is the FIRST lane to read `ctx.pending_seeds`, and it takes no facet
+    # at all — it resolves posting URLs other passes discovered rather than composing a search,
+    # so there is no query for a target title to shape. It takes no `lane_posting_budget` either:
+    # that setting is shared with two lanes whose request buys a whole company's bodies, where
+    # one request here buys exactly one body, so the same number would mean a different cost.
+    # Its three bounds are module constants sized against a measured per-posting cost, and
+    # `lanes/jsonld.py` states what each is sized against.
+    JsonLdLane.name: lambda ctx: JsonLdLane(ctx.pending_seeds),
 }
 
 # The UA the lane fetcher sends by default. Not boardwatch's identifying UA, and NOT app
