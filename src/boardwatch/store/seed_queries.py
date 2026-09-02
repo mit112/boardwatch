@@ -276,10 +276,11 @@ def record_seed_attempt(
     **`charge=False` records the turn WITHOUT moving `attempts`.** `last_attempt_run_id` and
     `last_attempt_at` still advance, and `resolved_at` is still set iff `resolved`, but the
     ceiling counter does not. Two turns are deliberately not charged, because in neither did the
-    seed's own fetch fail: a seed that resolved but could not be applied (its posting was rolled
-    back, so the FETCH ceiling must not retire it before a clean run can land it), and a redundant
-    alias closed without a GET (it cost no request at all). The default charges, preserving the
-    behaviour of every existing caller.
+    seed's own fetch fail: a seed that resolved but whose batch apply did not prove its snapshot
+    landed (applies are PER-COMPANY transactions, so a later company aborting leaves this one
+    unproven -- the FETCH ceiling must not retire it before a clean run can land it), and a
+    redundant alias closed without a GET (it cost no request at all). The default charges,
+    preserving the behaviour of every existing caller.
 
     A resolved seed keeps its row with `resolved_at` set rather than being deleted, matching
     `job_dispositions.reopened_at`: draining a bucket must not erase the evidence it held

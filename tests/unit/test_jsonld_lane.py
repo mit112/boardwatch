@@ -1011,6 +1011,47 @@ def test_a_page_that_crashes_the_parser_does_not_discard_the_runs_charges(
 
 
 @respx.mock
+def test_a_fetcher_crash_is_isolated_like_a_read_crash_and_preserves_other_attempts(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """BLOCKER: a non-`FetchFailure` raised by `fetcher.get` must not abort the whole run.
+
+    Only `FetchFailure` was caught around `fetcher.get`; a `RuntimeError` from the client -- a bug,
+    a transport edge case -- escaped `_resolve`, propagated out of `collect`, and discarded EVERY
+    attempt already charged this run, leaving the crashing seed at `attempts=0`. It must be isolated
+    exactly like a `_read` crash: recorded into `resolver_errors`, the seed still charged
+    unresolved, and the run's other seeds untouched. One seed resolves FIRST so the test proves the
+    earlier attempt survives the later crash -- the same boundary the parser-crash test pins, but on
+    the FETCH side of it.
+    """
+    _mock_lists(respx_mock)
+    good, bad = HIREOLOGY_URL, JAZZHR_URL
+    respx_mock.get(good).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
+    respx_mock.get(bad).mock(return_value=httpx.Response(200, text=JAZZHR_PAGE))
+
+    fetcher = _fetcher(tmp_path)
+    real_get = fetcher.get
+
+    def _crashing_get(url: str, *args: object, **kwargs: object) -> object:
+        if url == bad:
+            raise RuntimeError("the http client fell over")
+        return real_get(url, *args, **kwargs)  # type: ignore[arg-type]
+
+    fetcher.get = _crashing_get  # type: ignore[method-assign]
+    result = JsonLdLane(_Reader((_seed(good, 1), _seed(bad, 2)))).collect(fetcher, _Admits())
+
+    assert dict(result.seed_attempts) == {1: True, 2: False}, (
+        "the crashing seed is still charged, and the earlier good seed's attempt survives"
+    )
+    assert result.tally.counts["extracted_empty"] == 0, (
+        "a fetcher crash must not be disguised as an empty extraction"
+    )
+    assert len(result.resolver_errors) == 1
+    assert bad in result.resolver_errors[0] and "RuntimeError" in result.resolver_errors[0]
+    assert len(result.snapshots) == 1, "the good seed's posting still lands"
+
+
+@respx.mock
 def test_a_declared_crawl_delay_reaches_the_fetcher_for_every_physical_attempt(
     respx_mock: respx.Router, tmp_path: Path
 ) -> None:
@@ -1215,7 +1256,7 @@ def test_a_failed_apply_requeues_a_resolved_seed_uncharged_but_charges_an_unreso
     class _Lane:
         name = "jsonld"
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(runner_mod._LaneApplyFailed):
         runner_mod._apply_lane(
             engine,
             _Lane(),  # type: ignore[arg-type]
@@ -1302,7 +1343,7 @@ def test_a_resolved_seed_at_the_attempt_ceiling_survives_a_failed_apply(
     class _Lane:
         name = "jsonld"
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(runner_mod._LaneApplyFailed):
         runner_mod._apply_lane(
             engine,
             _Lane(),  # type: ignore[arg-type]
@@ -1330,7 +1371,8 @@ def test_a_failed_apply_stays_the_primary_cause_when_seed_persistence_also_fails
     persistence failure's repr, mislabelled, and the broken apply would be invisible. This
     underpins BLOCKER 1's "loud" guarantee: a resolved-but-unapplied seed is re-queued uncharged
     ONLY because the apply failure is reported every run. Here BOTH halves fail; the apply
-    exception must win, with the persistence failure attached as its cause rather than substituted.
+    exception must win -- carried as `_LaneApplyFailed.cause`, the primary the runner reports --
+    with the persistence failure attached as `__cause__` rather than substituted.
     """
     from boardwatch.lanes.admission import CompanyBudget
     from boardwatch.pipeline import runner as runner_mod
@@ -1369,13 +1411,15 @@ def test_a_failed_apply_stays_the_primary_cause_when_seed_persistence_also_fails
     class _Lane:
         name = "jsonld"
 
-    with pytest.raises(RuntimeError, match="APPLY failed") as excinfo:
+    with pytest.raises(runner_mod._LaneApplyFailed) as excinfo:
         runner_mod._apply_lane(
             engine,
             _Lane(),  # type: ignore[arg-type]
             runner_mod._FetchedLane(result=result, budget=CompanyBudget(10), fetch_seconds=0.0),
             run,
         )
+    assert isinstance(excinfo.value.cause, RuntimeError)
+    assert "APPLY failed" in str(excinfo.value.cause), "the apply failure must stay the primary cause"
     assert isinstance(excinfo.value.__cause__, RuntimeError)
     assert "PERSIST failed" in str(excinfo.value.__cause__), "the persist failure must be attached"
 

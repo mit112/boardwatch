@@ -904,29 +904,35 @@ class JsonLdLane:
         503 from a host asking for five seconds got its retries half a second apart, and the lane
         that believed it was pacing had no idea.
 
-        **THIS FUNCTION DOES NOT RAISE.** Everything after the response is wrapped: a vendor page
-        that breaks the parser is one seed's problem, and the alternative is losing every attempt
-        already charged this run. Fetch failures stay typed and are classified above it, and an
-        UNEXPECTED exception is recorded into `resolver_errors` for the runner to report -- NOT
-        folded into a content outcome, which would disguise a code defect as an empty page.
+        **THIS FUNCTION DOES NOT RAISE.** The whole fetch-and-read body is wrapped: a vendor page
+        that breaks the parser -- or a non-`FetchFailure` crash inside `fetcher.get` itself -- is
+        one seed's problem, and the alternative is aborting `collect` and losing every attempt
+        already charged this run. A typed `FetchFailure` stays typed and is classified as a fetch
+        outcome; every OTHER exception, from the fetch or the read, is recorded into
+        `resolver_errors` for the runner to report -- NOT folded into a content outcome, which
+        would disguise a code defect as an empty page.
         """
         try:
-            result = fetcher.get(
-                seed.url,
-                headers={"User-Agent": identifying_user_agent()},
-                min_host_delay=seed.vendor.crawl_delay_seconds,
-            )
-        except FetchFailure as exc:
-            tally.record(_failure_outcome(exc))
-            return None, ""
-        try:
+            try:
+                result = fetcher.get(
+                    seed.url,
+                    headers={"User-Agent": identifying_user_agent()},
+                    min_host_delay=seed.vendor.crawl_delay_seconds,
+                )
+            except FetchFailure as exc:
+                tally.record(_failure_outcome(exc))
+                return None, ""
             return self._read(result.content, seed, tally)
-        except Exception as exc:  # noqa: BLE001 - one unreadable page must not discard the charges
-            # An UNEXPECTED exception, so a real code defect: `_read` returns explicitly for every
-            # EXPECTED content failure (`NoJobPosting`, a body rejection, an empty title, residual
-            # markup), so nothing that merely produced an empty extraction reaches here. Recording
-            # `extracted_empty` would disguise the defect as "a response arrived and extraction
-            # found nothing" and age a real seed out on a false claim. Carried out as a typed,
+        except Exception as exc:  # noqa: BLE001 - one crashing seed must not discard the charges
+            # An UNEXPECTED exception from EITHER the fetch or the read, so a real code defect --
+            # NOT a typed `FetchFailure` (classified just above) and NOT an expected content
+            # failure (`_read` returns explicitly for `NoJobPosting`, a body rejection, an empty
+            # title or residual markup, so nothing that merely produced an empty extraction reaches
+            # here). A non-`FetchFailure` raised by `fetcher.get` -- a client `RuntimeError`, a
+            # request-build failure -- lands here too and is isolated exactly like a `_read` crash,
+            # rather than aborting `collect` and discarding every attempt already charged this run.
+            # Recording `extracted_empty` would disguise the defect as "a response arrived and
+            # extraction found nothing" and age a real seed out on a false claim. Carried out as a
             # visible lane error instead; the seed is still charged unresolved (`posting is None`).
             resolver_errors.append(f"{seed.url}: {exc!r}")
             return None, ""

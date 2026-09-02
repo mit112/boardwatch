@@ -100,8 +100,10 @@ class LaneResult:
     # Empty — never absent — for a lane that discovers no seeds, which is most of them.
     discovered_seeds: tuple[str, ...] = ()
     # `(seed id, resolved)` for every seed this lane TRIED, for the same reason and by the same
-    # route. Charged whether or not the resolve succeeded: the counter answers "how much work has
-    # this seed cost", which is the question its cost bound is about.
+    # route. Whether each entry MOVES the retirement ceiling is the runner's call, not a property
+    # of this list: a resolved-but-unapplied seed and a redundant alias (`uncharged_resolved`) are
+    # recorded here yet NOT charged. When it is charged, the counter answers "how much work has this
+    # seed cost", which is the question its cost bound is about.
     #
     # A resolver that returns seeds it consumed but forgets to list them here retries them
     # forever at one request each, so this is the drain, and it is not optional for a lane that
