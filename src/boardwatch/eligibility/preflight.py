@@ -28,7 +28,6 @@ import os
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -47,8 +46,7 @@ from boardwatch.eligibility.engine import (
 from boardwatch.eligibility.facts import Facts, Policy, parse_facts, parse_policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
-from boardwatch.lanes.quality import ForeignBodyText, require_employer_body
-from boardwatch.store.quarantine_queries import drain_quarantine, record_quarantine
+from boardwatch.store.quarantine_queries import drain_quarantine, sweep_bodies
 from boardwatch.store.queries import ensure_run, finish_run, get_profile
 from boardwatch.store.tables import (
     eligibility_evaluations,
@@ -141,65 +139,6 @@ def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[i
             (int(row.id), int(row.posting_id), str(row.body_text))
             for row in conn.execute(stmt).all()
         ]
-
-
-def _withhold_foreign_bodies(
-    engine: Engine,
-    pending: list[tuple[int, int, str]],
-    *,
-    now: datetime,
-    run_id: int | None,
-) -> tuple[list[tuple[int, int, str]], int]:
-    """Split pending work into bodies the rules may read, and bodies they may not.
-
-    The precondition is `lanes.quality.require_employer_body`; the markers it returns are
-    carried into the store AS DATA, so nothing downstream re-derives what happened by
-    string-matching a message. A withheld body is never evaluated, so it can never contribute a
-    quoted span — which is the point: `INELIGIBLE` must quote the frozen JD, and jobright's
-    `H1B Sponsor Likely` sits inside what boardwatch froze as one.
-
-    Fail-safe direction for THIS gate: closed for the VERDICT (no judgement is better than a
-    judgement quoting the wrong author), open for the POSTING (nothing is deleted, closed or
-    dispositioned — see `store/quarantine_queries`). The two directions are opposite on purpose
-    and both are wrong in the other's place.
-
-    **What this does NOT do, measured rather than assumed.** It sees only PENDING work, so a
-    body already evaluated under the CURRENT identity is not re-judged and therefore not held.
-    On 2026-09-01 that was all nine of the live foreign bodies: 0 of 9 were pending, so the
-    bucket reads 0 until the next profile, rules or engine change makes them pending again —
-    at which point they are held before they can be re-judged. The HARM is closed either way,
-    because the risk D-406 names is a FUTURE `ineligible(work_auth)` quoting jobright's label
-    and no such verdict can be written without an evaluation. What lags is the REPORT, not the
-    protection. The alternative — sweeping every open posting's current body every run — was
-    rejected: it is a corpus-wide `body_text` read on a path `top` triggers interactively, and
-    `test_selection_is_one_query_and_does_not_scale_with_corpus` is a standing contract that it
-    does not scale with the corpus.
-    """
-    keep: list[tuple[int, int, str]] = []
-    refused: list[tuple[int, int, tuple[str, ...]]] = []
-    for posting_version_id, posting_id, body_text in pending:
-        try:
-            require_employer_body(body_text)
-        except ForeignBodyText as violation:
-            # The TYPED violation is the mechanism, not a convenience: the threshold and the
-            # catalog stay in `lanes.quality`, and what crosses this seam is the markers, as
-            # data. Re-deriving the classification here — by counting markers, or worse by
-            # reading the message — is how a rule stops being one thing.
-            refused.append((posting_version_id, posting_id, violation.markers))
-        else:
-            keep.append((posting_version_id, posting_id, body_text))
-    if refused:
-        with engine.begin() as conn:
-            for posting_version_id, posting_id, markers in refused:
-                record_quarantine(
-                    conn,
-                    posting_version_id=posting_version_id,
-                    posting_id=posting_id,
-                    markers=markers,
-                    now=now,
-                    run_id=run_id,
-                )
-    return keep, len(refused)
 
 
 def _identity_hashes(
@@ -319,10 +258,35 @@ def run_eligibility(
     four registration sites for a number only this function reads.
     """
     console = console or Console()
+
+    # THE DRAIN AND THE SWEEP, both BEFORE the profile check, because neither depends on a
+    # profile: an install with no profile still acquires bodies, and a body that is not the
+    # employer's own text is not the employer's own text whoever is running.
+    #
+    # The drain runs FIRST so a body it releases is swept and judged by this same pass — that is
+    # what makes it a drain running on both sides of the gate. The sweep then judges every
+    # CURRENT body that the current detector has not seen, which is deliberately wider than
+    # `_pending`: a body already evaluated under the live identity is invisible to `_pending`
+    # forever, so a precondition scoped to pending work could never reach the nine live foreign
+    # bodies (measured: 0 of 9 pending) nor apply an edited catalog to anything already judged.
+    #
+    # CADENCE, stated narrowly because the wider claim was false. This is every invocation that
+    # reaches `run_eligibility`: `eligibility run`, `top`, `export`, `stats`, and a pipeline run
+    # that gets as far as the ranker. A pipeline run does NOT always get there — `pipeline/
+    # runner.py` returns early on a systemic scan outage and again on a projection refusal, both
+    # above the ranker call — so "every pipeline run" would be wrong. What is true is that no
+    # eligibility verdict is produced by any path that has not first run this.
+    now = utcnow()
+    with engine.begin() as conn:
+        released = drain_quarantine(conn, now=now)
+        withheld = sweep_bodies(conn, now=now, run_id=run_id)
+
     with engine.connect() as conn:
         profile_row = get_profile(conn)
     if profile_row is None:
-        return EligibilityStats(evaluated=0, skipped_no_profile=True)
+        return EligibilityStats(
+            evaluated=0, skipped_no_profile=True, quarantined=withheld, released=released
+        )
 
     # The identity of the current profile+rules is needed before the pending scan, because a
     # posting is pending unless it already has an evaluation FOR THIS identity (not merely at
@@ -334,18 +298,7 @@ def run_eligibility(
     fields = declared_fields()
     profile_hash, rules_hash = _identity_hashes(facts, policy, catalog, fields)
 
-    # THE DRAIN, before the pending scan and in the same call, so a body the drain releases is
-    # judged by this very pass. Running it here is what makes the quarantine a bucket with a
-    # scheduled re-entry path rather than a leak: see `store/quarantine_queries.drain_quarantine`
-    # for WHAT re-opens a row (a newer version, or a corrected catalog), WHO runs it (this
-    # function) and on what CADENCE (every run, and every `top`/`export`/`stats` that triggers
-    # the preflight).
-    now = utcnow()
-    with engine.begin() as conn:
-        released = drain_quarantine(conn, now=now)
-
     pending = _pending(engine, profile_hash, rules_hash)
-    pending, withheld = _withhold_foreign_bodies(engine, pending, now=now, run_id=run_id)
     stats = EligibilityStats(
         profile_hash=profile_hash,
         rules_hash=rules_hash,

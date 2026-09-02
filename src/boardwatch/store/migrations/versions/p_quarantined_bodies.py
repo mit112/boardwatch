@@ -10,10 +10,15 @@ One row per QUARANTINED posting version. Nothing sweeps this table and nothing d
 including the drain, which sets `reopened_at` — the same shape `p6_job_dispositions` chose, for
 the same reason: draining a bucket must not erase the record that it ever held anything.
 
-Creates the table only. It deliberately does not backfill: the detector is Python, a migration
-is a historical record that must not import a live catalog, and the bucket fills itself on the
-first `run_eligibility` after this ships — which is the same pass that would otherwise have fed
-those bodies to the rules.
+Creates the table only. It deliberately does not backfill: the detector is Python and a
+migration is a historical record that must not import a live catalog.
+
+**How the bucket fills, stated correctly.** An earlier draft of this docstring claimed the first
+`run_eligibility` would fill it. That was false for the nine live rows and measurably so — all
+nine already carry a current-identity evaluation, so `_pending` excludes them and a
+pending-scoped check would have filled the bucket with ZERO. The filling is done instead by the
+sweep over every current version of an open posting that has no `body_precondition_checks` row
+at the detector's current fingerprint (`p_body_precondition_checks`), which does reach them.
 """
 
 import sqlalchemy as sa

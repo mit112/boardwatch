@@ -583,3 +583,23 @@ quarantined_bodies = Table(
     Column("reopened_at", DateTime, nullable=True),
     Index("ix_quarantined_bodies_reopened_at", "reopened_at"),
 )
+
+body_precondition_checks = Table(
+    "body_precondition_checks",
+    metadata,
+    # One row per posting version that has been judged by the lane-body precondition, PASS or
+    # FAIL. The failures also get a `quarantined_bodies` row; this table exists for the PASSES,
+    # and that is the whole point of it: without a durable record of a successful check, a
+    # catalog edit could never re-reach a body that had already been evaluated, because
+    # `_pending` excludes anything carrying a current-identity evaluation. The catalog version
+    # would then be decorative — a one-line marker edit leaving stored bodies governed
+    # indefinitely by the semantics of whatever catalog happened to run first.
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), primary_key=True),
+    # The EXECUTABLE identity of the detector (`lanes.quality.catalog_fingerprint`), not the
+    # hand-maintained `FOREIGN_BODY_CATALOG_VERSION`. A digest of the markers and the threshold,
+    # so adding, removing or editing a marker invalidates every check whether or not anybody
+    # remembered to bump the version. Forgetting the bump is the failure this column removes.
+    Column("catalog_fingerprint", Text, nullable=False),
+    Column("checked_at", DateTime, nullable=False),
+    Index("ix_body_precondition_checks_fingerprint", "catalog_fingerprint"),
+)

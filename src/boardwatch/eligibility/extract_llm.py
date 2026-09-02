@@ -21,11 +21,13 @@ import re
 
 from sqlalchemy import Connection
 
+from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.ground import GroundedSpan, ground
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.lanes.quality import ForeignBodyText, require_employer_body
 from boardwatch.llm.cache import ResponseCache
 from boardwatch.llm.client import LLMLaneDeadError, ModelClient
 from boardwatch.llm.payload import build_payload
@@ -37,6 +39,7 @@ from boardwatch.store.eligibility import (
     SupportItem,
     record_evaluation,
 )
+from boardwatch.store.quarantine_queries import posting_id_of_version, record_quarantine
 
 LANE_VERSION = f"llm:{PROMPT_VERSION}"
 
@@ -117,6 +120,23 @@ def extract_and_record(
     duck-typing that off the client silently lost the vendor on every real run.
     """
     if client is None:
+        return None
+    # The lane-body precondition, at the third eligibility seam (D-406). `eligibility extract`
+    # walks EVERY current open body, so without this it ships a third party's rendered page to a
+    # provider and records grounded spans cut out of it. Recorded, then skipped by returning the
+    # value this function already means by "the lane did not run for this posting", so a refused
+    # body costs one posting rather than the whole loop.
+    try:
+        require_employer_body(jd_text)
+    except ForeignBodyText as violation:
+        record_quarantine(
+            conn,
+            posting_version_id=posting_version_id,
+            posting_id=posting_id_of_version(conn, posting_version_id),
+            markers=violation.markers,
+            now=utcnow(),
+            run_id=run_id,
+        )
         return None
 
     payload = build_payload(jd_text)

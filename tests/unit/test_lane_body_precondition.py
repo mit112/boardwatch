@@ -1,11 +1,16 @@
 """The lane-body ingest precondition: a body must be the EMPLOYER's own text (D-406).
 
-Every fixture below is an excerpt of a REAL live body, and the two-sided design is what these
-tests actually defend. The naive one-marker forms were measured against the live corpus on
-2026-09-01 and both are wrong: the bare token `Jobright` appears in 50 bodies, 41 of them
-LinkedIn-lane postings for the employer *Jobright.ai itself*, and `| LinkedIn` appears in 13
-BlackRock Workday bodies that merely link their own social accounts. Those two are the
-NEGATIVE fixtures here, and they are the reason the guard cannot be simplified to one marker.
+Every fixture below is an excerpt of a REAL live body. What they defend is the CATALOG's
+membership, and that distinction is worth stating because the first version of this docstring
+got it wrong. Measured against the live corpus on 2026-09-01: the bare token `Jobright` appears
+in 50 bodies, 41 of them postings for the employer *Jobright.ai itself*, and `| LinkedIn` in 13
+BlackRock Workday bodies that merely link their own social accounts. Neither string is in the
+catalog, and those two negative fixtures are why — they justify EXCLUDING those tokens, not
+requiring two of the eight members that ARE catalogued.
+
+The threshold itself is not decided by any live body. The corpus-wide marker-count histogram is
+`{0: 139713, 5: 1, 6: 8}` — **nothing anywhere matches exactly one** — so the one-marker guard
+below necessarily uses a SYNTHETIC fixture, and says so.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from boardwatch.lanes.quality import (
     MIN_FOREIGN_MARKERS,
     ForeignBodyText,
     assess_body,
+    catalog_fingerprint,
     foreign_body_markers,
     is_employer_body,
     require_employer_body,
@@ -73,10 +79,33 @@ Competitive compensation and equity in Jobright.
 """
 
 
-def test_the_catalog_is_closed_and_versioned() -> None:
-    """Pinned as LITERALS. An assertion against the shared constant would be vacuous."""
+def test_the_catalog_is_closed_and_fingerprinted() -> None:
+    """Pinned as LITERALS, INCLUDING the membership. An assertion against the shared constant
+    would be vacuous, and a version-only pin is nearly as weak: adding or removing a marker no
+    test exercises would survive `version == 1` untouched.
+
+    The fingerprint is the executable half — `body_precondition_checks` stores it, so any change
+    here re-checks every stored body. Bumping this literal is the acknowledgement that a catalog
+    edit invalidates the whole corpus's checks, which is a real cost and must not be silent.
+    """
     assert MIN_FOREIGN_MARKERS == 2
     assert FOREIGN_BODY_CATALOG_VERSION == 1
+    assert catalog_fingerprint() == "b3d8225fcbd0ea81"
+    assert foreign_body_markers(" ".join(_EXPECTED_MARKERS)) == tuple(_EXPECTED_MARKERS)
+
+
+# The catalog spelled out where a diff shows it, so a member added or removed without an
+# explicit decision fails the pin above rather than passing unnoticed.
+_EXPECTED_MARKERS = (
+    "apply on employer site",
+    "sign in join now",
+    "apply with autofill",
+    "improve resume match score",
+    "boost your interview chances",
+    "h1b sponsor likely",
+    "join or sign in to find your next job",
+    "agree & join linkedin",
+)
 
 
 def test_jobright_page_text_fails_the_precondition() -> None:
@@ -113,7 +142,16 @@ def test_a_posting_whose_employer_is_the_aggregator_passes() -> None:
 
 
 def test_one_marker_alone_does_not_condemn_a_body() -> None:
-    """Two-sided, for the same reason `is_login_wall` is: a one-sided test eats the corpus."""
+    """The two-marker threshold, pinned — and SYNTHETIC, deliberately and unavoidably.
+
+    No live body sits at exactly one marker (histogram `{0: 139713, 5: 1, 6: 8}`), so this
+    appends one catalogued phrase to a real employer body. That makes the threshold a
+    conservative policy with a guard, NOT a measured discriminator, and nobody reading this
+    later should mistake the fixture for a case the corpus actually contains. Lowering the
+    threshold to 1 would change no verdict today; the guard exists so that the day a marker
+    does show up once inside a long employer JD, the change is a decision rather than an
+    accident.
+    """
     one_marker = WORKDAY_WITH_SOCIAL_FOOTER + "\nApply on Employer Site\n"
     assert len(foreign_body_markers(one_marker)) == 1
     assert is_employer_body(one_marker)

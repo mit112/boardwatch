@@ -303,11 +303,12 @@ def test_selection_is_one_query_and_does_not_scale_with_corpus(
     # anti-join scans it exactly once regardless of corpus size. Counting is the only
     # check that discriminates, because an N+1 also "runs eligibility".
     #
-    # TWO such reads since the lane-body quarantine shipped (D-406): the selection anti-join,
-    # plus the drain, which joins `posting_versions` for the bodies it currently HOLDS. The
-    # drain is bounded by the bucket and not by the corpus, and the equality below is what
-    # asserts that — an N+1 in either read shows up as 20 against 200, not as 2 against 2.
-    assert small_scans == large_scans == 2
+    # THREE such reads since the lane-body precondition shipped (D-406), and the count is the
+    # point: the selection anti-join, the quarantine drain (bounded by the BUCKET), and the
+    # body sweep (bounded by the versions the current detector has not judged yet, which is the
+    # whole corpus once and nothing thereafter). None is per-posting, which is exactly what the
+    # equality asserts — an N+1 in any of the three shows up as 20 against 200, never 3 against 3.
+    assert small_scans == large_scans == 3
 
 
 def test_a_fact_change_re_evaluates_and_updates_the_verdict(env: Path) -> None:

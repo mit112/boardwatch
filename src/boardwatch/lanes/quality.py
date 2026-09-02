@@ -19,6 +19,7 @@ matches unbounded.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -256,12 +257,24 @@ _FOREIGN_BODY_MARKERS: tuple[str, ...] = (
     "agree & join linkedin",
 )
 
-# TWO-SIDED, for the same reason `is_login_wall` is: a one-marker test sizes the rule off what
-# it can MATCH rather than what it would FIX. Measured on the live corpus, the bare token
-# `Jobright` appears in 50 bodies, 41 of them LinkedIn-lane postings for the employer
-# *Jobright.ai itself*, and `| LinkedIn` appears in 13 BlackRock Workday bodies that merely
-# link their own social accounts. Requiring two DISTINCT markers is what separates an
-# aggregator's page from an employer's JD that happens to name an aggregator.
+# A CONSERVATIVE POLICY, and — stated plainly because the first version of this comment got it
+# wrong — NOT a measured discriminator. Over the live corpus on 2026-09-01 the distribution is
+# bimodal with nothing in between: 139,713 bodies match ZERO markers, nine match five or six,
+# and **not one body anywhere in the corpus matches exactly one**. So no live posting is
+# currently decided by this threshold, and lowering it to 1 would change no verdict today.
+#
+# What the earlier comment claimed as justification was a different fact about a different
+# question. The bare token `Jobright` appears in 50 bodies, 41 of them postings for the
+# employer *Jobright.ai itself*, and `| LinkedIn` in 13 BlackRock Workday bodies that link
+# their own social accounts — which is why NEITHER token is in the catalog above. It argues for
+# EXCLUDING those two strings, not for requiring two of the eight that ARE catalogued.
+#
+# The threshold is kept anyway, as headroom rather than as evidence: every catalogued phrase is
+# an aggregator's UI string today, but a future marker could plausibly appear once inside a long
+# employer JD, and a second independent marker is cheap insurance against that. Because no real
+# body sits at exactly one marker, the guard for this threshold necessarily uses a SYNTHETIC
+# fixture (a real employer body with one marker appended) — recorded so nobody later mistakes
+# that fixture for a measured case.
 MIN_FOREIGN_MARKERS = 2
 
 
@@ -290,6 +303,19 @@ def foreign_body_markers(text: str) -> tuple[str, ...]:
     """
     folded = " ".join(_normalized(text).casefold().split())
     return tuple(marker for marker in _FOREIGN_BODY_MARKERS if marker in folded)
+
+
+def catalog_fingerprint() -> str:
+    """A digest of the catalog AND the threshold — the EXECUTABLE identity of this detector.
+
+    `FOREIGN_BODY_CATALOG_VERSION` is a human-facing label and a human can forget to bump it.
+    This cannot be forgotten: it is computed from the markers themselves, so adding, removing or
+    editing one changes it whether or not anybody touched the version. `body_precondition_checks`
+    stores THIS, which is what makes a catalog edit re-check every stored body instead of leaving
+    them governed by the semantics of whatever catalog happened to run first.
+    """
+    material = "\u0000".join((str(MIN_FOREIGN_MARKERS), *sorted(_FOREIGN_BODY_MARKERS)))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
 def is_employer_body(text: str) -> bool:

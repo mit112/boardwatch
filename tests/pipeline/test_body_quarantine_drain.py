@@ -209,36 +209,94 @@ def test_the_drain_releases_a_false_positive_when_the_catalog_is_corrected(
     assert _evaluated_versions(engine) == {foreign_version}
 
 
-def test_a_released_row_is_re_held_if_the_catalog_refuses_it_again(
+def test_a_released_row_is_re_held_on_the_SAME_version_without_a_new_one(
     engine: Engine, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The drain is not a one-way door, and releasing never DELETES the row.
 
-    `record_quarantine` upserts and clears `reopened_at`, so the audit trail of a body having
-    been held survives a release-and-re-hold cycle.
+    Driven entirely through the CATALOG, with no new posting version, which is the correction
+    this test needed: appending a version made `record_quarantine` INSERT a second row, so the
+    conflict branch — the one that must clear `reopened_at` on the row it already has — was
+    never executed, and an upsert that preserved the old `reopened_at` passed.
+
+    The sweep is keyed on the detector's fingerprint, so restoring the catalog is by itself
+    enough to make the SAME version unchecked again and re-judge it.
     """
     _, foreign_version = _seed(engine, "foreign", JOBRIGHT_PAGE)
     run_eligibility(engine, settings)
+
     monkeypatch.setattr(quality, "_FOREIGN_BODY_MARKERS", ())
     run_eligibility(engine, settings)
-    assert _quarantine_rows(engine)[foreign_version][1] is not None
+    rows = _quarantine_rows(engine)
+    assert len(rows) == 1
+    assert rows[foreign_version][1] is not None, "the drain never released it"
 
-    monkeypatch.undo()
-    # A fresh version, so the body is pending again under the restored catalog.
-    _append_version(engine, _posting_of(engine, foreign_version), JOBRIGHT_PAGE)
+    monkeypatch.undo()  # the marker is restored; the fingerprint returns to its old value
     stats = run_eligibility(engine, settings)
 
-    assert stats.quarantined == 1
+    assert stats.quarantined == 1, "the restored catalog must re-judge the SAME version"
     rows = _quarantine_rows(engine)
-    assert len(rows) == 2, "a release must not delete the row it released"
+    assert len(rows) == 1, "a re-hold must update the released row, never insert a second"
+    assert rows[foreign_version][1] is None, (
+        "re-holding must CLEAR reopened_at: a row left reopened is a body the drain thinks it "
+        "released while the precondition is refusing it"
+    )
 
 
-def _posting_of(engine: Engine, version_id: int) -> int:
+def test_an_edited_catalog_re_reaches_a_body_that_is_already_evaluated(
+    engine: Engine, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER: the marker catalog has to be EXECUTABLE, not decorative.
+
+    `_pending` keys on profile, rules and engine version — none of which move when a marker is
+    added — so a body that has already been evaluated is invisible to it forever. A precondition
+    scoped to pending work therefore cannot apply an edited catalog to anything already judged,
+    and a one-line marker edit would leave stored bodies governed indefinitely by the semantics
+    of whatever catalog happened to run first.
+
+    This body is EVALUATED first, under a catalog that passes it. Only then does the catalog
+    change. Nothing about the eligibility identity moves.
+    """
+    _, version_id = _seed(engine, "clean", CLEAN_BODY)
+    first = run_eligibility(engine, settings)
+    assert first.quarantined == 0
+    assert _evaluated_versions(engine) == {version_id}, "must be evaluated BEFORE the edit"
+
+    # Catalog v2: two phrases this employer body genuinely contains. Nothing else changes —
+    # same profile, same rules, same engine version, same posting version.
+    monkeypatch.setattr(
+        quality,
+        "_FOREIGN_BODY_MARKERS",
+        ("we are hiring a backend engineer", "design and ship apis"),
+    )
+    second = run_eligibility(engine, settings)
+
+    assert second.quarantined == 1, (
+        "an edited catalog must re-judge a body that already carries an evaluation; if this "
+        "fails the catalog fingerprint is decorative"
+    )
+    markers, reopened_at = _quarantine_rows(engine)[version_id]
+    assert reopened_at is None
+    assert set(markers) == {"we are hiring a backend engineer", "design and ship apis"}
+
+
+def test_a_body_is_not_re_swept_when_the_catalog_has_not_moved(
+    engine: Engine, settings: Settings
+) -> None:
+    """The other half of the fingerprint contract: a PASS is durable.
+
+    Without a persisted successful check the sweep would re-read every current body on every
+    `top` invocation. The check row is what makes the corpus-wide pass a one-time cost.
+    """
+    _seed(engine, "clean", CLEAN_BODY)
+    run_eligibility(engine, settings)
     with engine.connect() as conn:
-        return int(
-            conn.execute(
-                select(tables.posting_versions.c.posting_id).where(
-                    tables.posting_versions.c.id == version_id
-                )
-            ).scalar_one()
-        )
+        checked = conn.execute(select(tables.body_precondition_checks)).all()
+    assert len(checked) == 1
+    stamp = checked[0].checked_at
+
+    run_eligibility(engine, settings)
+    with engine.connect() as conn:
+        again = conn.execute(select(tables.body_precondition_checks)).all()
+    assert len(again) == 1
+    assert again[0].checked_at == stamp, "an unchanged catalog must not re-check a passed body"
