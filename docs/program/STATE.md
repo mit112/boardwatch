@@ -69,10 +69,21 @@ is ~25 min on every future run, forever).
 
 **1. FOLLOW `grnh.se` REDIRECTS INTO THE EXISTING GREENHOUSE HANDLER.** **122 seeds** now (was 109),
 Greenhouse's own shortener, and `parse_board_target` already accepts both
-`boards.greenhouse.io/<slug>` and `job-boards.greenhouse.io/<slug>` — so a resolved redirect lands in
-a handler that exists. **No new ATS adapter and no vendor-posture question.** Still the cheapest real
-win on the board. Note it needs a resolver that follows redirects, which is new code with network
-I/O, so it is a PR rather than a config change.
+`boards.greenhouse.io/<slug>` and `job-boards.greenhouse.io/<slug>`, so a resolved redirect lands in
+a handler that exists. **No new ATS adapter and no vendor-posture question.**
+
+**The premise is MEASURED, not assumed — 2026-09-02, 12 seeds sampled live:** **12 of 12 followed
+their redirect to a URL `parse_board_target` accepts** (0 misses, 0 errors), yielding **9 distinct
+greenhouse boards from 12 seeds** (~1.3 seeds per board, so 122 seeds is roughly 90 boards).
+**0 of the 9 are already watched and 6 are not in `companies` at all**, so this is board-fleet
+growth rather than re-discovery. Sample boards: `speechify` (4 seeds), `raft`, `rackner`, `grvty`,
+`twosixtechnologies`, `rfsmart`, `sharkninjaoperatingllc`, `fanaticscollectibles`,
+`skyepointdecisionsinc`.
+
+**What it still needs, and why it was NOT built this session:** a resolver that performs the redirect
+GET, which is new network-touching code plus lane registration and mocked-fetcher tests — a PR, not
+a config change. **Price it against D-417's caveat before arming**: ~90 new boards at run 143's
+measured **3.2s per board** is ~5 minutes added to every future run, forever.
 
 **2. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424), once Indeed has reached steady state. Three of
 the four inputs have now moved: the harvest is in, Indeed is armed and uncapped at 50, hiring.cafe is
