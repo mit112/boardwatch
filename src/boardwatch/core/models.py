@@ -68,6 +68,19 @@ class BoardRequest(BaseModel):
 # what it saw, not what `scan.apply` writes. `title` therefore carries `normalized_title` with it
 # and `salary` carries all four salary columns, so a declaration can never half-refuse a derived
 # column and leave a row internally inconsistent.
+#
+# `body_text` IS THE ONE THAT MATTERS MOST, and it is declarable for a reason the structured
+# fields do not share. The others move a score or a filter; the body moves a VERDICT. Eligibility
+# reads the CURRENT `posting_versions` row, and `scan.apply` makes an observation with a different
+# content hash the current version, so an aggregator body silently becomes the document every
+# eligibility rule quotes. Measured against the shipped `rules.yaml`: an employer body of
+# `Visa sponsorship is available.` evaluates `eligible` on `work_auth:sponsorship_available`, and
+# a 31-character aggregator rendering of the SAME posting reading `Applicants must be US citizens.`
+# evaluates `ineligible` on `work_auth:us_citizen_required`, quoting the span `must be US citizens`.
+# The keystone invariant demands that an `INELIGIBLE` carry a quoted span from the frozen JD; that
+# verdict HAS one, and the span is real, but it was cut from the wrong document — so the invariant
+# passes syntactically while failing in substance, which is worse than no span at all. Declaring
+# `body_text` secondhand is what keeps the evidence chain pointing at the employer's own text.
 SecondhandField = Literal[
     "title",
     "url",
@@ -76,6 +89,7 @@ SecondhandField = Literal[
     "department",
     "posted_at",
     "updated_at",
+    "body_text",
     "salary",
     "raw_json",
 ]
@@ -98,10 +112,18 @@ class RawPosting(BaseModel):
     salary_max: float | None = None
     salary_currency: str | None = None
     salary_period: str | None = None
-    # Structured fields this observation is not the record of truth for (see `SecondhandField`).
-    # EMPTY by default, and that default is what keeps every provider scan byte-identical: a
-    # provider reads the employer's own board, so a `None` it reports is an OBSERVED absence, not
-    # a gap in what it looked at.
+    # Fields this observation is not the record of truth for (see `SecondhandField`). EMPTY by
+    # default, and that default is what keeps every provider scan byte-identical: an undeclared
+    # observation writes exactly the columns D25 has always had it write, so the six-provider
+    # contract is preserved rather than reasoned about again.
+    #
+    # It is NOT a claim that every provider `None` is an observed absence — it is not one.
+    # `workable.py` writes `updated_at=None` because Workable exposes no update timestamp at all,
+    # and `workday.py` writes `department=None` and `updated_at=None` for the same reason on both
+    # CXS endpoints. Those `None`s are gaps in the FEED, not readings of an empty field. They are
+    # left undeclared anyway because declaring them would change six providers' behaviour to fix
+    # nothing: a provider is still the only observer its own board will ever have, so freezing a
+    # column it cannot report just pins whatever happened to land there first.
     secondhand: frozenset[SecondhandField] = frozenset()
 
 

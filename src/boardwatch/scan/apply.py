@@ -11,7 +11,9 @@ Rules folded in:
   provider-sourced mutable fields and raw_json regardless of content_hash;
   only a body-hash change emits `revised` (extraction is hash-keyed, so it
   stays current through metadata-only updates). Its ONE exception is a field
-  the observation itself declared `secondhand` (D-414(a), `_refreshed_fields`).
+  the observation itself declared `secondhand` (D-414(a), `_refreshed_fields`),
+  and a declared `body_text` additionally suppresses the revision itself, so an
+  aggregator's rendering never becomes the version eligibility quotes.
 - D22: http_cache is upserted from observed_validators inside this same
   transaction, for `complete` snapshots only; `unchanged`/`partial`/`failed`
   never touch it. `unchanged` writes exactly one board_scans row (D15).
@@ -137,6 +139,7 @@ def _apply_listed(
         row = existing.get(raw.provider_posting_id)
         if row is None:
             job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])  # type: ignore[index]
+            fields = _inserted_fields(raw, now)
             inserted = conn.execute(
                 insert(postings).values(
                     company_id=company_id,
@@ -147,7 +150,7 @@ def _apply_listed(
                     consecutive_missing=0,
                     content_hash=new_hash,
                     body_text=raw.body_text,
-                    **_mutable_fields(raw, now),
+                    **fields,
                 )
             )
             posting_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
@@ -159,7 +162,8 @@ def _apply_listed(
             append_event(conn, posting_id, "new", run_id)
             _write_posting_identity(
                 conn, raw, posting_id=posting_id, company_id=company_id,
-                company_name=company_name, title=raw.title, locations=raw.locations, url=raw.url,
+                company_name=company_name, title=fields["title"],
+                locations=fields["locations_json"],
                 content_hash=new_hash, first_seen_at=now, now=now,
             )
             result.new += 1
@@ -178,7 +182,12 @@ def _apply_listed(
             values["closed_at"] = None
             append_event(conn, row.id, "reopened", run_id)
             result.reopened += 1
-        if row.content_hash != new_hash:
+        # The whole REVISION is skipped for a secondhand body, not merely the two columns.
+        # Eligibility reads the CURRENT `posting_versions` row, so leaving `_insert_version` armed
+        # while withholding `postings.content_hash` would put an aggregator's text at the head of
+        # the version chain — the exact substitution — AND leave the posting's own hash naming a
+        # version that is no longer current. One condition, both halves (D-414(a)).
+        if row.content_hash != new_hash and "body_text" not in raw.secondhand:
             values["content_hash"] = new_hash
             values["body_text"] = raw.body_text
             vid = _insert_version(conn, row.id, new_hash, raw.body_text, now, run_id, "revised")
@@ -194,15 +203,14 @@ def _apply_listed(
         # rule above refreshes them regardless of content_hash), which moves an identity key.
         # Every identity-bearing value is read the same way `content_hash` already was — out of
         # `values` when this observation wrote it, off the row when it did not. A secondhand
-        # declaration (D-414(a)) leaves title / locations / url on the row, so reading them from
-        # `raw` would key the posting on a value NO row holds, and dedup would suppress against
-        # evidence that exists nowhere.
+        # declaration (D-414(a)) leaves title and locations on the row, so reading them from `raw`
+        # would key the posting on a value NO row holds, and dedup would suppress against evidence
+        # that exists nowhere.
         _write_posting_identity(
             conn, raw, posting_id=int(row.id), company_id=company_id,
             company_name=company_name,
             title=values.get("title", row.title),
             locations=values.get("locations_json", row.locations_json),
-            url=values.get("url", row.url),
             content_hash=values.get("content_hash", row.content_hash),
             first_seen_at=row.first_seen_at, now=now,
         )
@@ -218,7 +226,6 @@ def _write_posting_identity(
     company_name: str,
     title: str,
     locations: Any,
-    url: str | None,
     content_hash: str,
     first_seen_at: datetime,
     now: datetime,
@@ -236,10 +243,15 @@ def _write_posting_identity(
     needs is already in hand at this point, so the cost is O(postings this board listed) and no
     body is loaded that was not already in memory.
 
-    `title`, `locations` and `url` are PASSED rather than read off `raw`, for the same reason
+    `title` and `locations` are PASSED rather than read off `raw`, for the same reason
     `content_hash` and `first_seen_at` already were: what the identity must name is what the row
-    now holds, and after a secondhand declaration (D-414(a)) those three can come off the row
-    instead of off this observation.
+    now holds, and after a secondhand declaration (D-414(a)) both can come off the row instead of
+    off this observation. `url` is deliberately NOT among them, and that is measured rather than
+    assumed: `compute_identities` reads company / provider_posting_id / title / locations /
+    content_hash / body_text / company_name and never touches `IdentityInputs.url`, so passing the
+    row's URL instead of the observation's produces byte-identical stored identities. URL only
+    ranks survivors in `core.dedup`, off a separate loader that reads the COLUMN back. A parameter
+    that cannot change an output is not a safeguard, it is a claim nobody can test.
 
     Deliberately NOT wrapped in a try/except. A failure fails the board's transaction, so the
     posting and its identity commit or vanish together — the D16 property this module is built
@@ -267,7 +279,7 @@ def _write_posting_identity(
                 ),
                 content_hash=content_hash,
                 body_text=raw.body_text,
-                url=url,
+                url=raw.url,
                 first_seen_at=first_seen_at,
             )
         ),
@@ -301,6 +313,15 @@ _SECONDHAND_COLUMNS: dict[SecondhandField, tuple[str, ...]] = {
     "department": ("department",),
     "posted_at": ("posted_at",),
     "updated_at": ("updated_at",),
+    # DELIBERATELY EMPTY, and the only entry that is. `content_hash` and `body_text` are not
+    # `_mutable_fields` columns: `_apply_listed` writes them inside the revision branch, together
+    # with the immutable `posting_versions` row and the `revised` event, and all four have to be
+    # withheld or none of them. So the declaration is honoured at that branch's own condition and
+    # there is nothing left for this map to drop. The emptiness is asserted rather than assumed by
+    # test_body_text_is_declarable_but_owns_no_mutable_column, and the exhaustiveness assertion in
+    # test_every_column_the_writer_refreshes_is_classified_exactly_once still forces any FUTURE
+    # declarable field into this map.
+    "body_text": (),
     "salary": ("salary_min", "salary_max", "salary_currency", "salary_period"),
     "raw_json": ("raw_json",),
 }
@@ -319,13 +340,18 @@ def _refreshed_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     the pipeline already held is dropped in the same run, because the lane stage runs after the
     scan and before the ranker.
 
-    UPDATE PATH ONLY, and that is the whole point of the split. On INSERT there is no prior
-    observation to lose, so the row is written from everything the observation carries; dropping a
-    column there would replace a value the lane genuinely holds with a schema default, which is a
-    loss rather than a preservation. `last_seen_at`, the miss counters and the `content_hash` /
-    `body_text` pair are untouched by this on purpose: liveness and the JD body are exactly what a
-    secondhand observation IS first-hand evidence of, and the body path is append-only anyway
-    (a changed hash adds an immutable version, it destroys nothing).
+    UPDATE PATH ONLY. `_inserted_fields` is the INSERT half and they differ on purpose, because
+    the two paths lose different things: on UPDATE a prior observation exists and withholding
+    preserves it, while on INSERT withholding replaces a value the lane genuinely holds with a
+    schema default. The one INSERT exception is stated there.
+
+    `last_seen_at` and the miss counters are untouched by this and no declaration may withhold
+    them. A listing is positive evidence that the posting is ALIVE regardless of whose text
+    arrived, so `consecutive_missing` and `death_strikes` still reset — otherwise a stale strike
+    survives to meet a second one and closes a posting the lane just watched being served.
+
+    The `content_hash` / `body_text` pair is NOT here because it is not a `_mutable_fields` column;
+    it is written in `_apply_listed`'s revision branch, which reads the declaration itself.
 
     `del` rather than `pop(name, None)`: a rename that leaves `_SECONDHAND_COLUMNS` pointing at a
     column `_mutable_fields` no longer writes must fail loudly, not silently stop protecting it.
@@ -334,6 +360,46 @@ def _refreshed_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     for name in raw.secondhand:
         for column in _SECONDHAND_COLUMNS[name]:
             del fields[column]
+    return fields
+
+
+def _inserted_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
+    """`_mutable_fields` with a secondhand LOCATION downgraded to no location evidence at all.
+
+    D-414(a), and the reason the INSERT needs a rule of its own after all. The original split said
+    a secondhand INSERT is harmless because a later provider board scan corrects it. THAT IS FALSE
+    FOR A LANE-FIRST COMPANY, and the store says so three times: `queries.upsert_lane_company`
+    writes `watched=False` (D-285, and load-bearing — a watched `hiringcafe` row would add an
+    `unknown provider` line to every run forever); `queries.get_watched_companies` filters
+    `watched.is_(True)`; and `scan.coordinator` takes its company rows from nowhere else. So when a
+    lane converges onto a provider the user does not already watch, NOTHING will ever scan that
+    board, and the row this INSERT writes is the only one there will ever be. An aggregator's
+    `Austin, TX` on a genuinely remote role then stands indefinitely and hard-vetoes the lead under
+    `location_filter_mode = "hard"`.
+
+    FAIL-SAFE DIRECTION, chosen for THIS gate and different from the one next door. The location
+    gate's failure modes are not symmetric: a false `non_us` DELETES a real lead permanently and
+    invisibly, while a false `unknown` merely declines to filter one. `classify_location` builds a
+    per-segment verdict list and returns `unknown` when it is empty, so `[]` classifies `unknown` —
+    which the hard gate KEEPS (Mit's fail-open ruling, D-251). Recording no location is therefore
+    the direction that cannot delete. It costs the location-bearing identity kinds: with `[]`,
+    `normalized_locations` returns None and `compute_identities` emits no `company_title_location`,
+    `cross_host` or `exact_quad`, so this row can neither suppress nor be suppressed on a place the
+    aggregator assigned. That is the same direction — no evidence is not evidence of sameness.
+
+    ONLY `locations`, and the rest of the declaration is deliberately still written. `title` and
+    `url` cannot be withheld and leave a usable row, and `title` is the field the lane's own search
+    facet matched on, which is the closest to first-hand anything it carries. `department`,
+    `salary_*`, `posted_at`, `updated_at` and `raw_json` move a score or a display line; none of
+    them can veto. `remote_policy` arrives `unknown` from the lane anyway. Location is singled out
+    because it is the one declared field that BOTH hard-vetoes and can be withheld without making
+    the row unusable. The residual exposure is recorded rather than widened: an exclude-title
+    filter reads Indeed's title, so a lane-first row whose title the aggregator re-worded can still
+    be filtered on a string the employer never wrote.
+    """
+    fields = _mutable_fields(raw, now)
+    if "locations" in raw.secondhand:
+        fields["locations_json"] = []
     return fields
 
 

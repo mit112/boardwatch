@@ -320,7 +320,7 @@ def test_the_dereference_is_load_bearing_not_incidental(tmp_path, monkeypatch):
 
 
 @respx.mock
-def test_a_converged_hit_declares_every_structured_field_secondhand(tmp_path):
+def test_a_converged_hit_declares_every_declarable_field_secondhand(tmp_path):
     """D-414(a). Convergence claims WHICH posting this is -- never to own the provider's columns.
 
     A tier-1 hit is filed under a real provider's `(company_id, provider_posting_id)`, and
@@ -329,6 +329,10 @@ def test_a_converged_hit_declares_every_structured_field_secondhand(tmp_path):
     `remote_policy`, `department` or `salary_*`, and the location it did read is Indeed's index
     of the posting; with `location_filter_mode = "hard"` writing that over the provider's row
     hard-vetoes a lead the pipeline already held, in the same run.
+
+    `body_text` IS IN THE SET AND IS THE MOST CONSEQUENTIAL MEMBER. The other fields move a score
+    or a filter; the body decides a VERDICT, because `scan/apply.py` makes a differing content
+    hash the current `posting_versions` row and that row is what every eligibility rule quotes.
 
     The expected set is spelled out as a LITERAL rather than compared against
     `indeed.CONVERGED_SECONDHAND`, which is derived from `SecondhandField` and would agree with
@@ -344,7 +348,7 @@ def test_a_converged_hit_declares_every_structured_field_secondhand(tmp_path):
         frozenset(
             {
                 "title", "url", "locations", "remote_policy", "department",
-                "posted_at", "updated_at", "salary", "raw_json",
+                "posted_at", "updated_at", "body_text", "salary", "raw_json",
             }
         )
     }

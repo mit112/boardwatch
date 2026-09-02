@@ -81,10 +81,19 @@ and for dedup than filing every employer under an aggregator name no board scan 
 recovered a provider identity, re-fetches the employer's own board and hands on the PROVIDER's
 `RawPosting` verbatim, so its convergence is byte-exact. This lane cannot: its body is already in
 hand, and a board GET per company to replace a JD it already holds would spend the advantage that
-justifies the lane. So a converged posting is FIRST written with Indeed's url, locations and body
-under the provider's `(company_id, provider_posting_id)`, and a later board scan of the same
-company rewrites it as a revision. That churn is bounded by the 24-hour search window -- the Indeed
-listing stops being returned within a day, and the board scan's version is then the only writer.
+justifies the lane. So a converged posting is written with Indeed's url, title and body under the
+provider's `(company_id, provider_posting_id)`.
+
+**"A LATER BOARD SCAN CORRECTS IT" WAS RECORDED HERE AND IT IS FALSE.** It holds only where the
+user ALREADY WATCHES the provider board this hit converged onto. When the lane is the one that
+discovered the company, `queries.upsert_lane_company` stores it `watched=False` (D-285, and
+load-bearing: a watched row for a provider the scan registry does not know appends an
+`unknown provider` line to every run forever), `queries.get_watched_companies` filters
+`watched.is_(True)`, and `scan/coordinator.py` reads its company rows from nowhere else. Nothing
+will EVER scan that board. For a lane-first company there is no later scan, no revision and no
+correction -- what this lane writes is what the store holds until a human watches the board by
+hand. The two halves of D-414(a) below are what make that permanence safe rather than a slow
+deletion path.
 
 WHAT A CONVERGED HIT DOES **NOT** DO IS OVERWRITE THE PROVIDER'S OWN FIELDS ON A ROW THAT ALREADY
 EXISTS (D-414(a)). `scan/apply.py`'s D25 rule refreshes every provider-sourced column on every
@@ -94,8 +103,27 @@ of the posting, not the employer's field. With `location_filter_mode = "hard"` t
 deletion path: a posting the provider recorded as remote, re-rendered as one metro, is hard-vetoed
 in the SAME run, because the lane stage runs after the scan and before the ranker. So every tier-1
 identity carries `CONVERGED_SECONDHAND` and `_refreshed_fields` drops those columns from the
-UPDATE. The INSERT is untouched -- a row this lane creates is written from everything the hit
-carries, because there is no prior observation there to lose.
+UPDATE.
+
+THE BODY IS DECLARED WITH THEM, and it is the one that reaches a VERDICT rather than a score.
+`scan/apply.py` makes any observation with a different content hash the current
+`posting_versions` row, and that row is the document every eligibility rule quotes. Measured
+against the shipped rules: an employer body of `Visa sponsorship is available.` reads `eligible`,
+and a 31-character Indeed rendering of the same posting reading `Applicants must be US citizens.`
+reads `ineligible` with the span `must be US citizens`. The span is real and the invariant passes
+on its face -- but it was cut from Indeed's text, not the employer's, so the provenance is a lie.
+`delivery_queries.placeable_by_run` then excludes the posting outright and `ineligible_job_ids`
+routes an already-delivered lead into the ineligible drain, so the lead leaves the apply lane on
+the strength of a sentence its employer never wrote. A declared `body_text` suppresses the whole
+revision, so a converged hit can never restate the employer's JD.
+
+THE INSERT WRITES EVERYTHING EXCEPT THE LOCATION, because a lane-first row has no later scan to
+correct it (above). Indeed's `Austin, TX` on a genuinely remote role would otherwise stand forever
+and hard-veto the lead under `location_filter_mode = "hard"`. `_inserted_fields` stores `[]`, which
+`classify_location` reads as `unknown` and the hard gate keeps -- the direction that declines to
+filter rather than the one that deletes. Everything else the hit carries is still written: a row
+this lane creates has no prior observation to preserve, and blanking a column there would replace
+a value the lane genuinely holds with a schema default.
 
 ONLY `parse_posting_target` IS USED, AND `parse_board_target` IS DELIBERATELY NOT A SECOND TIER.
 Falling back to a company-only resolution would file an INDEED-keyed posting under a real ATS
@@ -319,11 +347,11 @@ class UnidentifiableHit(ValueError):
     """
 
 
-# EVERY structured field this lane carries is Indeed's rendering of the employer's listing, not
-# the employer's own record, so a hit that CONVERGES onto a real provider's key declares the lot
-# secondhand. Derived from `SecondhandField` rather than spelled out: a structured field added
-# later must default to "Indeed does not own this on a converged row", and a hand-written list
-# would silently default it the other way -- the direction that deletes a lead.
+# EVERY declarable field this lane carries -- the JD body included -- is Indeed's rendering of the
+# employer's listing, not the employer's own record, so a hit that CONVERGES onto a real provider's
+# key declares the lot secondhand. Derived from `SecondhandField` rather than spelled out: a field
+# added later must default to "Indeed does not own this on a converged row", and a hand-written
+# list would silently default it the other way -- the direction that deletes a lead.
 CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
 
 
@@ -334,11 +362,11 @@ class HitIdentity:
     `secondhand` rides WITH the identity because the two are decided by the same fact and only
     `hit_identity` knows it: a tier-1 hit is filed under a real provider's
     `(company_id, provider_posting_id)`, where a board scan is the record of truth for every
-    structured field, while a tier-2 hit is filed under `indeed`'s own key, where this lane is the
-    ONLY observer there will ever be and must keep refreshing all of them (D-414(a)). Carried as
-    a typed set decided at the construction site rather than re-derived downstream from
-    `provider == LANE_PROVIDER`, which is a string comparison against a lane name -- exactly the
-    classification this repo refuses.
+    structured field and for the JD, while a tier-2 hit is filed under `indeed`'s own key, where
+    this lane is the ONLY observer there will ever be and must keep refreshing all of them
+    (D-414(a)). Carried as a typed set decided at the construction site rather than re-derived
+    downstream from `provider == LANE_PROVIDER`, which is a string comparison against a lane name
+    -- exactly the classification this repo refuses.
     """
 
     provider: str
@@ -472,9 +500,10 @@ def hit_identity(job: dict[str, Any]) -> HitIdentity:
     dereference failures are ordinary rather than errors -- most employers sit on an ATS this
     repo has no adapter for, which is the reach the lane was built for.
 
-    Tier 1 also declares every structured field `CONVERGED_SECONDHAND` (D-414(a)): converging on
+    Tier 1 also declares every declarable field `CONVERGED_SECONDHAND` (D-414(a)): converging on
     the identity is a claim about WHICH posting this is, never a claim to be the record of truth
-    for the provider's own columns, and `scan.apply` would otherwise refresh them all.
+    for the provider's own columns or for the employer's own JD text, and `scan.apply` would
+    otherwise refresh them all and restate the body as the current version.
 
     Tier 2 keys the company under `indeed` and Indeed's OWN employer key, the last segment of
     `employer.relativeCompanyPageUrl`, and declares NOTHING secondhand -- this lane is the only
@@ -665,7 +694,10 @@ def raw_posting(job: dict[str, Any], identity: HitIdentity) -> RawPosting | None
     `remote_policy` stays `unknown`. The response carries an `attributes` list from which a remote
     flag could be inferred, and inferring one is a separate decision with its own evidence bar;
     `unknown` is the honest default until that measurement exists -- and on a converged row that
-    `unknown` is now declared secondhand rather than written over the provider's reading.
+    `unknown` is declared secondhand rather than written over the provider's reading. `locations`
+    is carried in full here and blanked by `scan.apply._inserted_fields` on the INSERT rather than
+    dropped at this construction site, so the tier-2 rows that need it keep it and the two halves
+    of one rule stay in one place.
     """
     body_text = html_to_text(_text(_nested(job, "description", "html")))
     if not body_text.strip():
