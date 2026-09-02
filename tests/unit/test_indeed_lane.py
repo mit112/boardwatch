@@ -523,10 +523,11 @@ def test_two_hits_naming_the_same_unresolved_tenant_url_seed_it_once(tmp_path):
 
 def test_a_known_providers_url_with_no_extractable_slug_is_not_seeded(tmp_path):
     """THE BLOCKER TRAP. `apply.workable.com/j/ABC123` is Workable's own bare shortlink -- a
-    REGISTERED provider -- and `parse_posting_target` refuses it with `UnknownBoardURL` because
-    it carries no org, the same `UnknownBoardURL` BASE class an unregistered host raises. A client keying its
-    seed decision on that exception alone would file a known provider's posting into the tier-D
-    queue; only `UnregisteredBoardHost` -- a distinct, narrower exception -- may seed.
+    REGISTERED provider -- and `parse_posting_target` refuses it with the `UnknownBoardURL` BASE
+    class because it carries no org. An unregistered host raises the `UnregisteredBoardHost`
+    subclass, so both share the same `except UnknownBoardURL` catcher; a client keying its seed
+    decision on that catcher alone would file a known provider's posting into the tier-D queue.
+    Only `UnregisteredBoardHost` -- a distinct, narrower exception -- may seed.
     """
     seed = indeed.tenant_seed_url(job_dict(KNOWN_PROVIDER_UNROUTABLE_SEED_HIT))
 
@@ -544,8 +545,9 @@ def test_a_known_providers_unroutable_hit_is_not_seeded_through_collect(tmp_path
 
 def test_a_malformed_view_job_url_is_not_seeded(tmp_path):
     """THE BLOCKER TRAP, second half. `https://[broken` makes `urlparse` raise a bare
-    `ValueError` inside `core/board_urls.py`, converted there to `UnknownBoardURL` -- again the
-    same class an unregistered host raises. Not a URL in any usable sense, let alone a tenant.
+    `ValueError` inside `core/board_urls.py`, converted there to the `UnknownBoardURL` BASE class --
+    the same catcher, but NOT the `UnregisteredBoardHost` subclass an unregistered host raises. Not
+    a URL in any usable sense, let alone a tenant.
     """
     seed = indeed.tenant_seed_url(job_dict(MALFORMED_VIEW_JOB_URL_HIT))
 
@@ -575,6 +577,47 @@ def test_a_non_absolute_garbage_string_is_not_seeded(tmp_path):
     """
     seed = indeed.tenant_seed_url(job_dict(GARBAGE_VIEW_JOB_URL_HIT))
 
+    assert seed is None
+
+
+@pytest.mark.parametrize(
+    ("value", "addressable"),
+    [
+        ("https://example.com/job/1", True),
+        ("https://ex\tample.com/job/1", False),  # `urlsplit` strips the tab; the recorded url keeps it
+        ("https://exa\nmple.com/job/1", False),  # a newline, stripped the same WHATWG way
+        ("https://example.com/a b", False),       # a raw space in the path
+        ("https://a.test:99999/x", True),         # a port out of range is not this check's job (see below)
+    ],
+)
+def test_is_addressable_url_rejects_raw_whitespace_but_defers_the_port(value, addressable):
+    """`_is_addressable_url` guards the STRING that gets recorded, so raw whitespace anywhere fails
+    it even where `urlsplit` would parse a clean host. Port range is validated one layer down in
+    `parse_board_target`, so a bad port still LOOKS addressable here."""
+    assert indeed._is_addressable_url(value) is addressable
+
+
+def test_an_out_of_range_port_is_not_seeded_though_the_bare_host_would_be(tmp_path):
+    """The port is the ONLY difference: `a.test` is unregistered, so a well-formed url on it seeds,
+    but an out-of-range port parses to the `UnknownBoardURL` base rather than the seedable
+    `UnregisteredBoardHost` subclass -- the port never reaches the tier-D queue."""
+    assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test/x"}}) == "https://a.test/x"
+    assert indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://a.test:99999/x"}}) is None
+
+
+def test_a_dns_root_dot_known_provider_url_is_not_seeded(tmp_path):
+    """`boards.greenhouse.io.` names the SAME registered host as `boards.greenhouse.io`; the DNS
+    root dot must not let a known provider's board fall through to the tier-D queue."""
+    seed = indeed.tenant_seed_url(
+        {"recruit": {"viewJobUrl": "https://boards.greenhouse.io./acme/jobs/123"}}
+    )
+    assert seed is None
+
+
+def test_a_view_job_url_with_an_embedded_tab_is_not_seeded(tmp_path):
+    """`urlsplit` strips the tab and routes as `example.com`, but `lane_seeds.url` would record the
+    original tab-bearing string -- a url no fetch log could match. Not seeded."""
+    seed = indeed.tenant_seed_url({"recruit": {"viewJobUrl": "https://ex\tample.com/job/1"}})
     assert seed is None
 
 

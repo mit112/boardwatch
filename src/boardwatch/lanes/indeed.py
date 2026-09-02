@@ -493,8 +493,6 @@ def _is_addressable_url(value: str) -> bool:
     string once `parse_board_target` prepends `https://` to it -- no exception anywhere -- so the
     check has to be stricter than "did this raise".
     """
-    if "://" not in value:
-        return False
     try:
         parsed = urlparse(value)
     except ValueError:
@@ -552,7 +550,7 @@ def tenant_seed_url(job: dict[str, Any]) -> str | None:
     run, so seeding it too would hand a resolver a URL a board scan already owns.
     """
     apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
-    if not apply_url or not _is_addressable_url(apply_url):
+    if not _is_addressable_url(apply_url):
         return None
     try:
         parse_posting_target(apply_url)

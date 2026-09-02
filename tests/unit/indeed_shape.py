@@ -275,9 +275,10 @@ UNIDENTIFIABLE_TENANT_SEED_HIT = Hit(
 )
 
 # A REGISTERED provider's own bare shortlink, which carries no org and so no extractable slug
-# (`WorkableProvider.slug_from_path` returns None for it). `parse_posting_target` raises
-# `UnknownBoardURL`, the same `UnknownBoardURL` BASE class an unregistered host raises -- this is the trap a
-# review caught: a client that seeded on any `UnknownBoardURL` would file a KNOWN provider's
+# (`WorkableProvider.slug_from_path` returns None for it). `parse_posting_target` raises the
+# `UnknownBoardURL` BASE class -- which an unregistered host's `UnregisteredBoardHost` SUBCLASSES,
+# so both reach the same `except UnknownBoardURL` catcher, but only the subclass may seed. This is
+# the trap a review caught: a client seeding on any `UnknownBoardURL` would file a KNOWN provider's
 # posting into the tier-D queue. Must NOT be seeded.
 KNOWN_PROVIDER_UNROUTABLE_SEED_HIT = Hit(
     key="key9801",
@@ -288,8 +289,9 @@ KNOWN_PROVIDER_UNROUTABLE_SEED_HIT = Hit(
 )
 
 # An unbalanced IPv6 bracket. `urlparse` raises a BARE `ValueError` on this ("Invalid IPv6 URL"),
-# which `core/board_urls.py` converts to `UnknownBoardURL` -- again the SAME class an unregistered
-# host raises. Must NOT be seeded: it is not a URL in any usable sense, let alone a tenant.
+# which `core/board_urls.py` converts to the `UnknownBoardURL` BASE class -- the same catcher, but
+# NOT the `UnregisteredBoardHost` subclass an unregistered host raises. Must NOT be seeded: it is
+# not a URL in any usable sense, let alone a tenant.
 MALFORMED_VIEW_JOB_URL_HIT = Hit(
     key="key9802",
     title="Software Engineer IV",
@@ -298,11 +300,11 @@ MALFORMED_VIEW_JOB_URL_HIT = Hit(
     view_job_url="https://[broken",
 )
 
-# HAS a scheme separator, so it clears `_is_addressable_url`'s first check -- but `urlparse`
-# still tolerates it without raising anything, reading everything before the next `/` as a
-# literal, space-containing "hostname". That reaches `UnregisteredBoardHost` exactly like a real
-# unrecognized vendor would; only the whitespace check inside `_is_addressable_url` tells the two
-# apart. Must NOT be seeded.
+# HAS a scheme and a hostname, so it clears `_is_addressable_url`'s scheme and hostname checks --
+# but `urlparse` still tolerates it without raising anything, reading everything before the next
+# `/` as a literal, space-containing "hostname". That reaches `UnregisteredBoardHost` exactly like
+# a real unrecognized vendor would; only the whitespace check inside `_is_addressable_url` tells
+# the two apart. Must NOT be seeded.
 GARBAGE_VIEW_JOB_URL_HIT = Hit(
     key="key9803",
     title="Software Engineer V",
