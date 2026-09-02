@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from boardwatch.lanes import jsonld
-from boardwatch.store.seed_queries import UnclaimedHost
+from boardwatch.store.seed_queries import ResolverCatalog, UnclaimedHost
 
 # Every resolver's seed catalog, by lane name. **Imported, never re-spelled** -- a second copy of
 # a host set is how a vendor joins the resolver and never the report, and that error is silent in
@@ -32,21 +32,30 @@ from boardwatch.store.seed_queries import UnclaimedHost
 # someone to build a resolver that already exists.
 #
 # A lane that declares `SEED_HOSTS` and is missing here would make its whole backlog read as
-# unclaimed, so `tests/reports/test_seed_claims.py` scans `boardwatch.lanes` for the declaration
+# unclaimed, so `tests/unit/test_seed_claims.py` scans `boardwatch.lanes` for the declaration
 # and fails on any module absent from this map. Registration is not something to remember.
-SEED_RESOLVERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    jsonld.JsonLdLane.name: (jsonld.SEED_HOSTS, jsonld.SEED_HOST_SUFFIXES),
+SEED_RESOLVERS: dict[str, ResolverCatalog] = {
+    jsonld.JsonLdLane.name: ResolverCatalog(
+        hosts=jsonld.SEED_HOSTS,
+        host_suffixes=jsonld.SEED_HOST_SUFFIXES,
+        max_attempts=jsonld.SEED_MAX_ATTEMPTS,
+    ),
 }
 
 
-def claimed_hosts() -> tuple[frozenset[str], frozenset[str]]:
-    """The union of every registered resolver's catalog, as `unresolved_seeds` spells it."""
-    hosts: set[str] = set()
-    suffixes: set[str] = set()
-    for lane_hosts, lane_suffixes in SEED_RESOLVERS.values():
-        hosts |= lane_hosts
-        suffixes |= lane_suffixes
-    return frozenset(hosts), frozenset(suffixes)
+def enabled_catalogs(lanes_enabled: tuple[str, ...]) -> tuple[ResolverCatalog, ...]:
+    """The catalogs of the resolvers that will actually RUN, in `lanes_enabled` order.
+
+    **Registered is not enabled, and for this report the difference is the whole point.**
+    `settings.lanes_enabled` is empty by default and `pipeline.runner` builds only the lanes it
+    names, so a resolver present in `SEED_RESOLVERS` but absent from the config drains nothing.
+    Counting its hosts as claimable would take the leak's worst case — seeds nothing will ever
+    select — and report it as the healthy half, which is the exact inversion this command exists to
+    prevent.
+    """
+    return tuple(
+        SEED_RESOLVERS[name] for name in lanes_enabled if name in SEED_RESOLVERS
+    )
 
 
 @dataclass(frozen=True)

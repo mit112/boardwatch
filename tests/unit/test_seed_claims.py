@@ -16,7 +16,7 @@ import boardwatch.lanes
 from boardwatch.reports.seed_claims import (
     SEED_RESOLVERS,
     build_seed_claim_report,
-    claimed_hosts,
+    enabled_catalogs,
 )
 from boardwatch.store.seed_queries import UnclaimedHost
 
@@ -49,22 +49,35 @@ def test_every_lane_that_declares_a_seed_catalog_is_in_the_registry() -> None:
     Matched on the catalog VALUES rather than on the lane name, so renaming a lane cannot quietly
     satisfy this while the registry still points at nothing.
     """
-    registered = set(SEED_RESOLVERS.values())
+    registered = {(c.hosts, c.host_suffixes) for c in SEED_RESOLVERS.values()}
     declaring = _modules_declaring_seed_hosts()
     assert declaring, "no lane declares SEED_HOSTS — this guard would be vacuous"
     for name in declaring:
         module = importlib.import_module(f"boardwatch.lanes.{name}")
-        catalog = (module.SEED_HOSTS, module.SEED_HOST_SUFFIXES)
+        # `SEED_HOST_SUFFIXES` is read with a default, never unconditionally: `unresolved_seeds`
+        # gives `host_suffixes` a `frozenset()` default precisely because an exact-hosts-only
+        # resolver is a legitimate shape, and such a lane must fail with the message below rather
+        # than with a bare AttributeError from the guard meant to protect it.
+        catalog = (module.SEED_HOSTS, getattr(module, "SEED_HOST_SUFFIXES", frozenset()))
         assert catalog in registered, (
             f"lane {name!r} declares a seed catalog that `SEED_RESOLVERS` does not carry, so "
             f"every seed it can drain would be reported as claimable by nothing"
         )
 
 
-def test_claimed_hosts_unions_every_registered_resolver() -> None:
-    hosts, suffixes = claimed_hosts()
-    for lane_hosts, lane_suffixes in SEED_RESOLVERS.values():
-        assert lane_hosts <= hosts and lane_suffixes <= suffixes
+def test_only_ENABLED_resolvers_count_as_claiming_anything() -> None:
+    """Registered is not enabled, and conflating them reports the leak's worst case as healthy.
+
+    `lanes_enabled` is empty by default and the runner builds only the lanes it names, so a
+    resolver switched off drains nothing. Counting its hosts as claimable would hide exactly the
+    seeds this command exists to surface.
+    """
+    assert enabled_catalogs(()) == (), "no lane enabled ⇒ nothing is claimed"
+    assert enabled_catalogs(("hiringcafe", "linkedin")) == (), (
+        "lanes that resolve no seeds must not claim any host"
+    )
+    assert enabled_catalogs(("jsonld",)) == (SEED_RESOLVERS["jsonld"],)
+    assert enabled_catalogs(("nonexistent",)) == ()
 
 
 def test_the_split_is_summed_from_the_breakdown_rather_than_taken_on_trust() -> None:
@@ -72,8 +85,8 @@ def test_the_split_is_summed_from_the_breakdown_rather_than_taken_on_trust() -> 
     report = build_seed_claim_report(
         unresolved=100,
         hosts=(
-            UnclaimedHost("grnh.se", 60, ("indeed",), 143),
-            UnclaimedHost("click.appcast.io", 21, ("indeed", "jsonld"), 143),
+            UnclaimedHost("grnh.se", 60, ("indeed",), 143, 0),
+            UnclaimedHost("click.appcast.io", 21, ("indeed", "jsonld"), 143, 0),
         ),
     )
     assert (report.unclaimed, report.claimed) == (81, 19)

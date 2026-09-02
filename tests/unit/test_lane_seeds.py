@@ -17,6 +17,7 @@ from sqlalchemy import Engine, select
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run
 from boardwatch.store.seed_queries import (
+    ResolverCatalog,
     SeedWrite,
     UnroutableSeedURL,
     count_unresolved_seeds,
@@ -563,7 +564,14 @@ def test_a_seed_no_catalog_claims_is_reported_rather_than_silently_unattempted(
             now=NOW,
         )
         rows = unclaimed_seed_hosts(
-            conn, hosts=frozenset({"x.test"}), host_suffixes=frozenset({"suffix.test"})
+            conn,
+            catalogs=(
+                ResolverCatalog(
+                    hosts=frozenset({"x.test"}),
+                    host_suffixes=frozenset({"suffix.test"}),
+                    max_attempts=3,
+                ),
+            ),
         )
         total = count_unresolved_seeds(conn)
 
@@ -586,7 +594,12 @@ def test_a_resolved_seed_is_not_reported_as_unclaimed(tmp_path: Path) -> None:
         record_seeds(conn, ("https://grnh.se/a",), discovered_by="indeed", run_id=run, now=NOW)
         seed_id = conn.execute(select(lane_seeds.c.id)).scalar_one()
         record_seed_attempt(conn, seed_id, run_id=run, now=LATER, resolved=True)
-        rows = unclaimed_seed_hosts(conn, hosts=HOSTS, host_suffixes=frozenset())
+        rows = unclaimed_seed_hosts(
+            conn,
+            catalogs=(
+                ResolverCatalog(hosts=HOSTS, host_suffixes=frozenset(), max_attempts=3),
+            ),
+        )
         assert count_unresolved_seeds(conn) == 0
     assert rows == ()
 
@@ -604,5 +617,61 @@ def test_with_no_resolver_registered_every_seed_is_unclaimed(tmp_path: Path) -> 
             conn, ("https://x.test/a", "https://y.test/b"), discovered_by="jsonld",
             run_id=run, now=NOW,
         )
-        rows = unclaimed_seed_hosts(conn, hosts=frozenset(), host_suffixes=frozenset())
+        rows = unclaimed_seed_hosts(conn, catalogs=())
     assert {r.host for r in rows} == {"x.test", "y.test"}
+
+
+def test_a_seed_that_exhausted_every_claiming_resolvers_ceiling_becomes_unclaimed(
+    tmp_path: Path,
+) -> None:
+    """It is on a claimed host, but no resolver will ever select it again — so it IS a leak.
+
+    `unresolved_seeds` filters on `attempts < max_attempts` as well as on host, so splitting the
+    report on host alone counts a permanently-undrainable row as `claimable`. The retired pile only
+    grows, so that error makes the unclaimed share drift toward "drained" exactly as the leak gets
+    worse. Reproduced before the ceiling was part of the predicate.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    catalog = ResolverCatalog(
+        hosts=frozenset({"x.test"}), host_suffixes=frozenset(), max_attempts=3
+    )
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            ("https://x.test/spent", "https://x.test/fresh"),
+            discovered_by="indeed",
+            run_id=run,
+            now=NOW,
+        )
+        spent = conn.execute(
+            select(lane_seeds.c.id).where(lane_seeds.c.url == "https://x.test/spent")
+        ).scalar_one()
+        for _ in range(3):
+            record_seed_attempt(conn, spent, run_id=run, now=LATER, resolved=False)
+
+        assert [s.url for s in unresolved_seeds(
+            conn, hosts=catalog.hosts, host_suffixes=frozenset(), max_attempts=3, limit=10
+        )] == ["https://x.test/fresh"], "the resolver itself will never select the spent seed again"
+
+        rows = unclaimed_seed_hosts(conn, catalogs=(catalog,))
+
+    assert [(r.host, r.seeds, r.max_attempts_spent) for r in rows] == [("x.test", 1, 3)], (
+        "the exhausted seed is reported as unclaimed and carries the attempts that retired it; "
+        "the fresh one on the same host is still claimable and must not be counted"
+    )
+
+
+def test_a_resolver_that_is_registered_but_not_passed_claims_nothing(tmp_path: Path) -> None:
+    """The report is handed ENABLED catalogs; an empty tuple must mean a total leak, not silence."""
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(conn, ("https://x.test/a",), discovered_by="jsonld", run_id=run, now=NOW)
+        assert unclaimed_seed_hosts(conn, catalogs=()) != ()
+        assert unclaimed_seed_hosts(
+            conn,
+            catalogs=(
+                ResolverCatalog(hosts=HOSTS, host_suffixes=frozenset(), max_attempts=3),
+            ),
+        ) == ()

@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format follows
   completely unseen. `boardwatch seeds` now counts them and groups them by website, largest first,
   so it is obvious which one would be worth teaching boardwatch to read next. `--json` for scripts.
 
+  It counts a link as followable only if the source that could follow it is actually **switched
+  on**, and only while that source has retries left for it. Both matter: a source you have not
+  enabled follows nothing, and a link that has already used up its retries will never be tried
+  again — counting either as "handled" would report the worst part of the pile as the healthy part.
+
   This is a piling-up queue, not wasted work — the links are waiting for a reader that does not
   exist yet. The point is that the pile is now visible instead of silent.
 

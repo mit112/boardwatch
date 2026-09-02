@@ -20,3 +20,11 @@ reasonix.toml
 .DS_Store
 scratchpad/
 web/node_modules/
+
+# SQLite stores. A stray one reached a commit on 2026-09-02: a shell with an unset variable
+# created a literal `$BW/` directory in the repo root and `git add -A` swept the database in.
+# CLAUDE.md forbids committing live-store artifacts, and an untracked store is one `add -A`
+# away from becoming a tracked one that a later run writes real postings into.
+*.db
+*.db-shm
+*.db-wal

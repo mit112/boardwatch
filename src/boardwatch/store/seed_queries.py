@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Protocol
 from urllib.parse import urlparse
 
-from sqlalchemy import func, not_, or_, select, true, update
+from sqlalchemy import and_, case, func, literal, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import ColumnElement
@@ -339,6 +339,41 @@ def record_seed_attempt(
 
 
 @dataclass(frozen=True)
+class ResolverCatalog:
+    """One resolver's seed routing, as `unresolved_seeds` actually selects by it.
+
+    Carries `max_attempts` alongside the host sets because `unresolved_seeds` filters on BOTH — a
+    seed on a claimed host that has exhausted the ceiling is never selected again. Splitting the
+    report on host alone would count that permanently-undrainable row as `claimable`, and since the
+    retired pile only grows, the unclaimed share would drift toward "drained" precisely as the leak
+    got worse.
+    """
+
+    hosts: frozenset[str]
+    host_suffixes: frozenset[str]
+    max_attempts: int
+
+
+def _claimable(catalogs: tuple[ResolverCatalog, ...]) -> ColumnElement[bool] | None:
+    """"Some registered resolver would SELECT this seed", or `None` if none ever could.
+
+    Per catalog rather than over a merged host set, because the ceiling is per resolver: a seed can
+    be past one resolver's limit and inside another's, and merging would answer neither question.
+    `None` (not a false literal) when nothing is registered, so the caller can distinguish "no
+    resolver claims anything" from "this predicate excludes everything".
+    """
+    clauses = []
+    for catalog in catalogs:
+        routes = _seed_routes(catalog.hosts, catalog.host_suffixes)
+        if not routes:
+            continue
+        clauses.append(
+            and_(or_(*routes), lane_seeds.c.attempts < catalog.max_attempts)
+        )
+    return or_(*clauses) if clauses else None
+
+
+@dataclass(frozen=True)
 class UnclaimedHost:
     """One host holding unresolved seeds that no registered resolver's catalog claims."""
 
@@ -346,10 +381,17 @@ class UnclaimedHost:
     seeds: int
     discovered_by: tuple[str, ...]
     first_seen_run_id: int
+    # The largest `attempts` on this host. 0 means no catalog ever covered it; a value at some
+    # resolver's ceiling means one did and gave up. Different problems, different fixes.
+    max_attempts_spent: int
 
 
 def count_unresolved_seeds(conn: Connection) -> int:
-    """The whole unresolved queue, claimed and unclaimed alike — the report's denominator."""
+    """The whole unresolved queue, claimed and unclaimed alike.
+
+    Kept for callers that want only the total. **`read_seed_claims` does NOT use it** — see that
+    function for why the two numbers must come from one statement rather than two.
+    """
     return int(
         conn.execute(
             select(func.count()).select_from(lane_seeds).where(lane_seeds.c.resolved_at.is_(None))
@@ -357,46 +399,77 @@ def count_unresolved_seeds(conn: Connection) -> int:
     )
 
 
-def unclaimed_seed_hosts(
-    conn: Connection, *, hosts: frozenset[str], host_suffixes: frozenset[str]
-) -> tuple[UnclaimedHost, ...]:
-    """Unresolved seeds NO resolver can ever select, grouped by host, largest first.
+@dataclass(frozen=True)
+class SeedClaimReading:
+    """One reading of the seed queue: its size, and the hosts nothing can drain."""
 
-    The negation of `unresolved_seeds`' routing predicate over the same table, and that sharing is
-    the point. `unresolved_seeds` requires a host set and offers no all-hosts form, so a seed on a
-    host outside every catalog is never selected, never attempted, and therefore never aged out by
-    the `attempts` ceiling — a bound on work only bounds work that happens. Such a row is invisible
-    rather than merely slow, and this is the only thing that can see it.
+    unresolved: int
+    unclaimed_hosts: tuple[UnclaimedHost, ...]
 
-    **`attempts` is deliberately not reported, and its absence is the finding.** Every row this
-    returns has `attempts = 0` by construction, so a column for it would be zero forever and read
-    as "young" rather than "unreachable".
 
-    Empty catalogs claim nothing, so every unresolved seed is returned. That is the honest answer
-    for a deployment with no resolver registered, and it makes a registry that failed to load read
-    as a total leak instead of as a drained queue — the one condition this exists to detect.
+def read_seed_claims(
+    conn: Connection, *, catalogs: tuple[ResolverCatalog, ...]
+) -> SeedClaimReading:
+    """The unresolved queue split by whether any ENABLED resolver would ever select the row.
+
+    **ONE statement, deliberately, and a transaction would not have been enough.** The obvious
+    shape — count the queue, then group the unclaimed part — is two statements, and on SQLite that
+    is two SNAPSHOTS: pysqlite does not begin a transaction for a `SELECT`, so even inside
+    `conn.begin()` each read sees the database as of its own execution. A concurrent run inserting
+    seeds between them makes the breakdown larger than the total, and since the report publishes
+    `claimed = unresolved - unclaimed`, it prints a NEGATIVE count and a share above 100%.
+    Reproduced at `unresolved: 9, unclaimed: 12, claimable -3 (133.3%)` before this was one query.
+    Grouping on the claim predicate itself removes the hazard by construction rather than relying
+    on driver transaction semantics.
+
+    The unclaimed test is the exact negation of `unresolved_seeds`' selection — host routing AND the
+    attempt ceiling, per resolver — because a bound on work only bounds work that happens: a seed no
+    catalog covers is never attempted, so `attempts` never retires it, and it sits invisible rather
+    than merely slow.
+
+    **`catalogs` should be the ENABLED resolvers, not merely the registered ones.**
+    `settings.lanes_enabled` is empty by default and the runner builds only the lanes it names, so a
+    resolver that exists but is switched off drains nothing; counting its hosts as claimable would
+    report the leak's worst case as its healthy half. No catalogs therefore means every unresolved
+    seed is unclaimed — the honest answer, and it makes a registry that failed to load read as a
+    total leak rather than as a drained queue.
     """
-    routes = _seed_routes(hosts, host_suffixes)
+    claimable = _claimable(catalogs)
+    claimed_flag = (
+        case((claimable, literal(1)), else_=literal(0)) if claimable is not None else literal(0)
+    ).label("claimed")
     stmt = (
         select(
+            claimed_flag,
             lane_seeds.c.host,
             func.count().label("seeds"),
             func.group_concat(lane_seeds.c.discovered_by.distinct()).label("discovered_by"),
             func.min(lane_seeds.c.first_seen_run_id).label("first_seen_run_id"),
+            func.max(lane_seeds.c.attempts).label("max_attempts_spent"),
         )
-        .where(
-            lane_seeds.c.resolved_at.is_(None),
-            not_(or_(*routes)) if routes else true(),
-        )
-        .group_by(lane_seeds.c.host)
+        .where(lane_seeds.c.resolved_at.is_(None))
+        .group_by(claimed_flag, lane_seeds.c.host)
         .order_by(func.count().desc(), lane_seeds.c.host)
     )
-    return tuple(
-        UnclaimedHost(
-            host=row.host,
-            seeds=row.seeds,
-            discovered_by=tuple(sorted((row.discovered_by or "").split(","))),
-            first_seen_run_id=row.first_seen_run_id,
-        )
-        for row in conn.execute(stmt)
+    rows = conn.execute(stmt).all()
+    return SeedClaimReading(
+        unresolved=sum(row.seeds for row in rows),
+        unclaimed_hosts=tuple(
+            UnclaimedHost(
+                host=row.host,
+                seeds=row.seeds,
+                discovered_by=tuple(sorted((row.discovered_by or "").split(","))),
+                first_seen_run_id=row.first_seen_run_id,
+                max_attempts_spent=row.max_attempts_spent,
+            )
+            for row in rows
+            if not row.claimed
+        ),
     )
+
+
+def unclaimed_seed_hosts(
+    conn: Connection, *, catalogs: tuple[ResolverCatalog, ...]
+) -> tuple[UnclaimedHost, ...]:
+    """Just the unclaimed half of `read_seed_claims`, for callers that do not need the total."""
+    return read_seed_claims(conn, catalogs=catalogs).unclaimed_hosts
