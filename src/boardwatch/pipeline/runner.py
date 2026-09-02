@@ -855,8 +855,9 @@ def _apply_lane(
     lanes applying concurrently would put two writers on one SQLite store.
 
     Returns the lane's report AND the seed-refusal note from `_persist_seed_work` (or `None`), so
-    `_run_lanes` can put the refusal in its RETURNED errors. The note surfaces only on a clean
-    apply; a failed apply raises below and is itself the reported fault.
+    `_run_lanes` can put the refusal in its RETURNED errors. The note is RETURNED on a clean apply
+    and carried on `_LaneApplyFailed` when the apply raises below, so the refusal survives and is
+    surfaced either way.
     """
     result = fetched.result
     budget = fetched.budget

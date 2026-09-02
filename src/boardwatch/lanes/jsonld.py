@@ -888,7 +888,9 @@ class JsonLdLane:
                 # seed a row HTTPX rejects at fetch. A MALFORMED value is carried out in `refused`
                 # for the runner to surface -- and added to `seen` so a repeat is not reported
                 # twice -- rather than dropped silently past the visibility path. `record_seeds`
-                # refuses it again at the write point; this only spares the round trip to carry it.
+                # WOULD refuse it at the write point, but this branch never passes it there --
+                # carrying it in `refused` spares the round trip AND is what makes the producer
+                # refusal visible.
                 if not is_seedable_url(url.strip()):
                     seen.add(url.strip())
                     refused.append(url.strip())
