@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from boardwatch.eligibility.catalog import RulesCatalog
+from boardwatch.lanes.quality import is_employer_body
 
 # Verdict-cache invalidation knobs, ported from job-apps judge.py:14-15. Bump either to
 # force a clean re-judge of every JD once later tasks wire the cache key.
@@ -258,6 +259,15 @@ def build_label_request(
         }
         for r in rows
         if r.get("expected_verdict") is None
+        # The SEND boundary of the lane-body precondition (D-406) at the fourth eligibility seam.
+        # A worksheet body that is an aggregator's rendered PAGE — jobright's own `H1B Sponsor
+        # Likely` label and CTAs, not the employer's JD — must never reach the judge: reading that
+        # label it returns `ineligible(work_auth)` citing a third party's guess, which the CLI then
+        # writes to the answer key as ground truth. Mirrors `build_gate_request`'s SEND filter.
+        # This function is pure and cannot record the refusal; `apply_oracle_verdicts` enforces the
+        # same precondition on the write side, so a hand-authored verdicts file that never came
+        # through here is refused there too.
+        and is_employer_body(r.get("body_text", ""))
     ]
     return {
         "request_id": request_id,
@@ -280,6 +290,30 @@ class ApplyResult:
     overwritten: int
     hard_negative_ineligible: tuple[str, ...]
     by_verdict: dict[str, int]
+
+
+# Every field `apply_oracle_verdicts` writes when it labels a row. `_sanitize_foreign_row`
+# clears exactly this set so a foreign body returns to a pristine unlabeled row.
+_ORACLE_WRITTEN_FIELDS = (
+    "reason",
+    "spans",
+    "confidence",
+    "evidence",
+    "label_provenance",
+    "oracle_policy_version",
+    "oracle_prompt_version",
+    "downgraded",
+)
+
+
+def _sanitize_foreign_row(row: dict[str, Any]) -> None:
+    """Return an oracle-authored row on a foreign body to unlabeled, clearing every
+    oracle-produced field. A current-stamped corrupt row would otherwise satisfy `_skip_row`
+    (it looks already-done) and be LEFT in the worksheet as a false `ineligible` answer key;
+    a foreign body must leave the worksheet unlabeled regardless of its stamps."""
+    row["expected_verdict"] = None
+    for field in _ORACLE_WRITTEN_FIELDS:
+        row.pop(field, None)
 
 
 def _skip_row(row: dict[str, Any]) -> bool:
@@ -319,9 +353,41 @@ def apply_oracle_verdicts(
     hard_negatives: list[str] = []
     by_verdict: dict[str, int] = {}
 
+    # Pre-scan (D-406, round-4 blocker): sanitize every ALREADY-LABELED oracle row whose body the
+    # current detector rejects, BEFORE the verdict loop. `build_label_request` never re-selects an
+    # already-labeled row, so the production request supplies NO verdict for a foreign-body row a
+    # prior pass already corrupted into `ineligible` and stamped current — the verdict loop below
+    # would never name it, so the inline WRITE-boundary sanitizer never reaches it and the false
+    # answer-key row survives every run. Only this function's own writes are reverted: HAND labels
+    # (`label_provenance` absent/None) and `audited` rows are left untouched, so a sanitized row
+    # ABSTAINS (returns to unlabeled), never carries a fabricated verdict.
+    for existing in rows:
+        if existing.get("label_provenance") == "oracle" and not is_employer_body(
+            existing.get("body_text", "")
+        ):
+            _sanitize_foreign_row(existing)
+
     for v in verdicts:
         row = by_label.get(v.label)
-        if row is None or _skip_row(row):
+        if row is None:
+            continue
+        # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most
+        # here: `accept_oracle_verdict` slices an `ineligible` span out of this very body, so a
+        # foreign body reaching it writes a FALSE `ineligible(work_auth)` answer-key row — and the
+        # answer key is what every precision measurement is scored against. This runs BEFORE
+        # `_skip_row`: a row a PRIOR pass already corrupted into `ineligible` and stamped with the
+        # current policy+prompt would otherwise be treated as already-done and LEFT intact, so an
+        # oracle-authored foreign row is sanitized back to unlabeled here regardless of its stamps.
+        # Bodies REJECTED BY THE CURRENT DETECTOR are the ones this refuses — the marker threshold
+        # is `is_employer_body`'s, unchanged here. Refused for STALE and HAND-AUTHORED verdicts
+        # alike (a verdicts file that names a foreign-body row is stopped even though
+        # `build_label_request` never selected it), mirroring the gate APPLY boundary's
+        # `withhold_foreign_versions`.
+        if not is_employer_body(row.get("body_text", "")):
+            if row.get("label_provenance") == "oracle":
+                _sanitize_foreign_row(row)
+            continue
+        if _skip_row(row):
             continue
         was_stale_oracle = row.get("label_provenance") == "oracle"
         accepted = accept_oracle_verdict(v, row.get("body_text", ""), catalog)

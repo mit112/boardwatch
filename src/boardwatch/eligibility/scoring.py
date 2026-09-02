@@ -39,6 +39,7 @@ from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.engine import EvaluationResult, evaluate
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.resolve import UNKNOWN
+from boardwatch.lanes.quality import is_employer_body
 from boardwatch.store.eligibility import RequirementItem
 
 LABELED_VERDICTS = frozenset({"eligible", "ineligible", "uncertain"})
@@ -169,7 +170,15 @@ def score(
     policy: Policy | None = None,
 ) -> PrecisionReport:
     """Run the engine over the labeled set under the reference all-blocker policy and
-    report INELIGIBLE precision/recall, per-rule abstain rate, and span violations."""
+    report INELIGIBLE precision/recall, per-rule abstain rate, and span violations.
+
+    Defense in depth for the lane-body precondition (D-406): a case whose `body_text` is not
+    the employer's own text (an aggregator's rendered page — `is_employer_body` is False) is
+    EXCLUDED from measurement, not scored. `apply_oracle_verdicts` sanitizes such rows on the
+    write side, but a worksheet corrupted before that guard existed could still carry a
+    fabricated `ineligible` here; refusing it (abstain by omission) keeps a third party's guess
+    out of every precision number. `total` reflects the measured set, so the exclusion is
+    visible rather than silently folded into a verdict."""
     effective = policy if policy is not None else reference_all_blocker_policy(catalog)
     severity = catalog.materialised_policy(effective)
 
@@ -182,7 +191,9 @@ def score(
     fired: dict[str, int] = {}
     abstained: dict[str, int] = {}
 
-    for case in cases:
+    measured = [case for case in cases if is_employer_body(case.body_text)]
+
+    for case in measured:
         result = evaluate(case.body_text, case.facts, effective, catalog)
         expected = case.expected_verdict
         predicted = result.verdict
@@ -214,11 +225,11 @@ def score(
     abstain_rate_by_rule = {
         rule_id: abstained.get(rule_id, 0) / count for rule_id, count in fired.items()
     }
-    audited = sum(1 for case in cases if case.label_provenance == "audited")
-    audited_coverage = audited / len(cases) if cases else 0.0
+    audited = sum(1 for case in measured if case.label_provenance == "audited")
+    audited_coverage = audited / len(measured) if measured else 0.0
 
     return PrecisionReport(
-        total=len(cases),
+        total=len(measured),
         predicted_ineligible=predicted_ineligible,
         true_ineligible=true_ineligible,
         ineligible_true_positives=true_positives,

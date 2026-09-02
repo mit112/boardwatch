@@ -20,10 +20,11 @@ the assertion.
 
 import re
 import sqlite3
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.posting_identity import PostingIdentity
@@ -49,9 +50,16 @@ from boardwatch.store.identity_queries import (
 )
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
+from boardwatch.store.quarantine_queries import drain_quarantine, live_quarantine
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.regroup import apply_merges, job_anchors
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import (
+    companies,
+    jobs,
+    posting_versions,
+    postings,
+    quarantined_bodies,
+)
 
 BLOCK_ALL = Policy(families={
     "work_auth": "blocker", "experience_years": "blocker",
@@ -552,3 +560,66 @@ def test_a_repeated_id_spanning_two_chunks_is_not_returned_twice(
         identities = load_identities(conn, [*spanning, posting_a])
     assert [row.posting_id for row in inputs] == [posting_a, posting_b]
     assert set(identities) <= {posting_a, posting_b}
+
+
+@needs_a_real_cap
+def test_the_body_quarantine_drain_sums_rowcount_across_more_held_bodies_than_the_cap(
+    db: Engine, seeded: tuple[int, int]
+) -> None:
+    """The lane-body quarantine's ONLY exit (D-406), and the second scalar-`rowcount` site.
+
+    Unlike `reopen_jobs`, this list is not passed in by a caller — it is built inside the drain
+    from the rows it holds — so the id count is bounded by the BUCKET, and the bucket is bounded
+    by the corpus. A lane that started serving an aggregator's page text at scale is precisely
+    the failure the precondition exists to catch, and at that scale this drain is the only way
+    any of those postings is ever judged again. An unchunked `IN` raises `too many SQL
+    variables` there; a last-chunk-only sum reports a drain that under-counts what it drained.
+
+    Every held body here carries the EMPLOYER's own text, which is the corrected-catalog
+    re-entry condition: the rows were held under a catalog that has since had the marker that
+    misjudged them withdrawn, so all of them are releasable in one pass.
+    """
+    posting_id, _ = seeded
+    held = VAR_LIMIT + 1
+    now = utcnow()
+    with db.begin() as conn:
+        conn.execute(
+            insert(posting_versions),
+            [
+                {
+                    "posting_id": posting_id, "content_hash": f"qh-{n}",
+                    "body_text": "About the role\nWe are hiring a backend engineer.",
+                    # DISTINCT and ascending, so the `newer` EXISTS each held row runs is an
+                    # index seek on (posting_id, captured_at, id) rather than a scan of every
+                    # sibling version. Identical timestamps make this fixture quadratic.
+                    "captured_at": now + timedelta(seconds=n), "capture_reason": "revised",
+                }
+                for n in range(held)
+            ],
+        )
+        version_ids = list(
+            conn.execute(
+                select(posting_versions.c.id).where(
+                    posting_versions.c.content_hash.like("qh-%")
+                )
+            ).scalars()
+        )
+        assert len(version_ids) == held
+        conn.execute(
+            insert(quarantined_bodies),
+            [
+                {
+                    "posting_version_id": vid, "posting_id": posting_id,
+                    "markers_json": ["apply on employer site", "sign in join now"],
+                    "catalog_version": 1, "quarantined_at": now, "reopened_at": None,
+                }
+                for vid in version_ids
+            ],
+        )
+
+    with db.begin() as conn:
+        released = drain_quarantine(conn, now=now)
+
+    assert released == held, "per-chunk rowcounts must be summed, not overwritten"
+    with db.connect() as conn:
+        assert live_quarantine(conn) == {}

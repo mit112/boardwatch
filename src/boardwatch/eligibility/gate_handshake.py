@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import Connection
 
+from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.facts import Facts, Policy, facts_payload
 from boardwatch.eligibility.final_gate import record_gate_verdict
@@ -30,6 +31,8 @@ from boardwatch.eligibility.oracle import (
     accept_oracle_verdict,
     build_label_request,
 )
+from boardwatch.lanes.quality import is_employer_body
+from boardwatch.store.quarantine_queries import withhold_foreign_versions
 from boardwatch.store.queries import CurrentVersion
 
 
@@ -68,6 +71,13 @@ def build_gate_request(
         }
         for posting in ranked_visible
         if posting.posting_id in versions
+        # The SEND boundary of the lane-body precondition (D-406). A quarantined posting stays
+        # VISIBLE by design — the quarantine withholds a verdict, it does not hide a job — so
+        # without this the ranker hands its foreign body straight to the judge, and a judge
+        # reading jobright's own `H1B Sponsor Likely` returns `ineligible(work_auth)` citing it.
+        # This function is pure and cannot record the refusal; `apply_gate_verdicts` and the
+        # preflight sweep both do, so the bucket is never short.
+        and is_employer_body(versions[posting.posting_id].body_text)
     ]
     return build_label_request(rows, catalog, request_id=request_id)
 
@@ -116,6 +126,14 @@ def apply_gate_verdicts(
     under the wrong policy computes a different identity and the ranker's read
     silently no-ops.
     """
+    # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most:
+    # `record_gate_verdict` persists an ineligible-capable verdict with a span sliced out of
+    # this very body, so a foreign body reaching it produces exactly the third-party-attributed
+    # `ineligible(work_auth)` the keystone forbids. Filtering the MAP rather than each verdict
+    # is deliberate — every verdict resolves through `versions.get(posting_id)` and a miss is
+    # already skipped below, so a stale or hand-authored verdicts file that names a quarantined
+    # posting is refused here without `gate request` ever having been run.
+    versions = withhold_foreign_versions(conn, versions, now=utcnow(), run_id=run_id)
     judged = 0
     ineligible = 0
     downgraded = 0

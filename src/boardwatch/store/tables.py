@@ -557,3 +557,50 @@ lane_seeds = Table(
     # one resolver's scan proportional to its own backlog rather than to the whole table.
     Index("ix_lane_seeds_resolved_at_host_attempts", "resolved_at", "host", "attempts"),
 )
+
+quarantined_bodies = Table(
+    "quarantined_bodies",
+    metadata,
+    # Keyed on the VERSION, not the posting and not the job. The defect is a property of one
+    # acquired document: `posting_versions` is immutable, so a quarantine scoped to it can
+    # never be silently invalidated by a later scan rewriting `postings.body_text` underneath
+    # it, and a posting whose employer later publishes real text re-enters through its NEW
+    # version without anything having to forget this one.
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), primary_key=True),
+    Column("posting_id", Integer, ForeignKey("postings.id"), nullable=False),
+    # The DISTINCT catalog markers that fired, as data. The reason this row exists is never
+    # re-derived by string-matching a message (`lanes.quality.ForeignBodyText` carries the same
+    # tuple at the raise site).
+    Column("markers_json", JSON, nullable=False),
+    # Which version of the closed marker catalog judged it — audit metadata only, not a re-entry
+    # path. The drain re-runs the current detector against each held body, and the corpus re-sweep
+    # keys on `body_precondition_checks.catalog_fingerprint` — never on this integer.
+    Column("catalog_version", Integer, nullable=False),
+    Column("quarantined_at", DateTime, nullable=False),
+    Column("run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    # Set by the drain instead of deleting the row — the same choice `job_dispositions` makes,
+    # for the same reason: draining a bucket must not erase the record that it ever held
+    # anything.
+    Column("reopened_at", DateTime, nullable=True),
+    Index("ix_quarantined_bodies_reopened_at", "reopened_at"),
+)
+
+body_precondition_checks = Table(
+    "body_precondition_checks",
+    metadata,
+    # One row per posting version that has been judged by the lane-body precondition, PASS or
+    # FAIL. The failures also get a `quarantined_bodies` row; this table exists for the PASSES,
+    # and that is the whole point of it: without a durable record of a successful check, a
+    # catalog edit could never re-reach a body that had already been evaluated, because
+    # `_pending` excludes anything carrying a current-identity evaluation. The catalog version
+    # would then be decorative — a one-line marker edit leaving stored bodies governed
+    # indefinitely by the semantics of whatever catalog happened to run first.
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), primary_key=True),
+    # The EXECUTABLE identity of the detector (`lanes.quality.catalog_fingerprint`), not the
+    # hand-maintained `FOREIGN_BODY_CATALOG_VERSION`. A digest of the markers and the threshold,
+    # so adding, removing or editing a marker invalidates every check whether or not anybody
+    # remembered to bump the version. Forgetting the bump is the failure this column removes.
+    Column("catalog_fingerprint", Text, nullable=False),
+    Column("checked_at", DateTime, nullable=False),
+    Index("ix_body_precondition_checks_fingerprint", "catalog_fingerprint"),
+)

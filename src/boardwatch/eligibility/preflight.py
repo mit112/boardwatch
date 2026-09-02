@@ -10,6 +10,16 @@ check, so preflight cannot be the thing that raises there.
 No module-level string collection lives here (R9 scopes this module): the engine kind and
 status literals sit inside the query builders, and the digested-module names come from the
 engine helper, not a constant.
+
+This is also where the lane-body precondition BITES (D-406). `lanes/base.py::lane_snapshot`
+states the contract — a lane body must be the employer's own text — and this module is the seam
+that enforces it, because this is the exact moment a stored body BECOMES an eligibility input.
+Enforcing at `scan/apply.py` instead was rejected for two reasons: it would not cover the nine
+bodies already in the store without a corpus-wide backfill, and refusing at ingest has no drain
+at all — a posting that was never written cannot re-enter.
+
+Nothing in this module is digested (`engine.digested_modules()` is catalog/detect/resolve/
+engine), so the quarantine does NOT move `engine_version()` and owes no ledger drain.
 """
 
 from __future__ import annotations
@@ -23,6 +33,7 @@ from pathlib import Path
 from rich.console import Console
 from sqlalchemy import Connection, Engine, select, tuple_
 
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.engine import (
@@ -35,12 +46,14 @@ from boardwatch.eligibility.engine import (
 from boardwatch.eligibility.facts import Facts, Policy, parse_facts, parse_policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.store.quarantine_queries import drain_quarantine, sweep_bodies
 from boardwatch.store.queries import ensure_run, finish_run, get_profile
 from boardwatch.store.tables import (
     eligibility_evaluations,
     eligibility_inputs,
     posting_versions,
     postings,
+    quarantined_bodies,
 )
 
 BATCH_SIZE = 200
@@ -62,9 +75,14 @@ class EligibilityStats:
     # The run these evaluations were attributed to. None when nothing was evaluated, because
     # a stage that judged nothing mints no run.
     run_id: int | None = None
+    # Bodies withheld from the rules this call because they are an aggregator's page text
+    # rather than the employer's (D-406), and bodies the drain let back in. Counted, never
+    # dropped in silence: a suppression that cannot be listed is a leak, not a filter.
+    quarantined: int = 0
+    released: int = 0
 
 
-def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[int, str]]:
+def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[int, int, str]]:
     """Current versions of OPEN postings with no evaluation for the CURRENT input identity.
 
     ONE query, an anti-join, mirroring extract/preflight.py:63-81. The `newer` correlated
@@ -99,14 +117,28 @@ def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[i
         )
         .exists()
     )
+    # A body already held by the lane-body quarantine is not pending: it is withheld from the
+    # rules until the drain releases it (D-406). A THIRD anti-join rather than a Python filter,
+    # so the withheld rows never enter the batch that the process pool is sized from.
+    quarantined = (
+        select(quarantined_bodies.c.posting_version_id)
+        .where(
+            quarantined_bodies.c.posting_version_id == posting_versions.c.id,
+            quarantined_bodies.c.reopened_at.is_(None),
+        )
+        .exists()
+    )
     stmt = (
-        select(posting_versions.c.id, posting_versions.c.body_text)
+        select(posting_versions.c.id, posting_versions.c.posting_id, posting_versions.c.body_text)
         .join(postings, posting_versions.c.posting_id == postings.c.id)
-        .where(postings.c.status == "open", ~newer, ~evaluated)
+        .where(postings.c.status == "open", ~newer, ~evaluated, ~quarantined)
         .order_by(posting_versions.c.id)
     )
     with engine.connect() as conn:
-        return [(int(row.id), str(row.body_text)) for row in conn.execute(stmt).all()]
+        return [
+            (int(row.id), int(row.posting_id), str(row.body_text))
+            for row in conn.execute(stmt).all()
+        ]
 
 
 def _identity_hashes(
@@ -226,10 +258,35 @@ def run_eligibility(
     four registration sites for a number only this function reads.
     """
     console = console or Console()
+
+    # THE DRAIN AND THE SWEEP, both BEFORE the profile check, because neither depends on a
+    # profile: an install with no profile still acquires bodies, and a body that is not the
+    # employer's own text is not the employer's own text whoever is running.
+    #
+    # The drain runs FIRST so a body it releases is swept and judged by this same pass — that is
+    # what makes it a drain running on both sides of the gate. The sweep then judges every
+    # CURRENT body that the current detector has not seen, which is deliberately wider than
+    # `_pending`: a body already evaluated under the live identity is invisible to `_pending`
+    # forever, so a precondition scoped to pending work could never reach the nine live foreign
+    # bodies (measured: 0 of 9 pending) nor apply an edited catalog to anything already judged.
+    #
+    # CADENCE, stated narrowly because the wider claim was false. This is every invocation that
+    # reaches `run_eligibility`: `eligibility run`, `top`, `export`, `stats`, and a pipeline run
+    # that gets as far as the ranker. A pipeline run does NOT always get there — `pipeline/
+    # runner.py` returns early on a systemic scan outage and again on a projection refusal, both
+    # above the ranker call — so "every pipeline run" would be wrong. What is true is that no
+    # eligibility verdict is produced by any path that has not first run this.
+    now = utcnow()
+    with engine.begin() as conn:
+        released = drain_quarantine(conn, now=now)
+        withheld = sweep_bodies(conn, now=now, run_id=run_id)
+
     with engine.connect() as conn:
         profile_row = get_profile(conn)
     if profile_row is None:
-        return EligibilityStats(evaluated=0, skipped_no_profile=True)
+        return EligibilityStats(
+            evaluated=0, skipped_no_profile=True, quarantined=withheld, released=released
+        )
 
     # The identity of the current profile+rules is needed before the pending scan, because a
     # posting is pending unless it already has an evaluation FOR THIS identity (not merely at
@@ -242,7 +299,16 @@ def run_eligibility(
     profile_hash, rules_hash = _identity_hashes(facts, policy, catalog, fields)
 
     pending = _pending(engine, profile_hash, rules_hash)
-    stats = EligibilityStats(profile_hash=profile_hash, rules_hash=rules_hash)
+    stats = EligibilityStats(
+        profile_hash=profile_hash,
+        rules_hash=rules_hash,
+        quarantined=withheld,
+        released=released,
+    )
+    if withheld:
+        console.print(
+            f"withheld {withheld} body(ies) from the rules: not the employer's own text"
+        )
     if not pending:
         return stats
 
@@ -273,7 +339,7 @@ def run_eligibility(
     try:
         for chunk_start in range(0, len(pending), BATCH_SIZE):
             chunk = pending[chunk_start : chunk_start + BATCH_SIZE]
-            bodies = [body_text for _id, body_text in chunk]
+            bodies = [body_text for _id, _posting_id, body_text in chunk]
             # `map`, not `submit`+`as_completed`: the writes below must stay in the chunk's
             # own order, and `map` is the ordered one.
             results = (
@@ -284,7 +350,9 @@ def run_eligibility(
             # The write stays SERIAL and in the parent: one commit per batch, so a crash
             # between batches leaves a consistent, resumable state exactly as before.
             with engine.begin() as conn:
-                for (posting_version_id, _body), result in zip(chunk, results, strict=True):
+                for (posting_version_id, _posting, _body), result in zip(
+                    chunk, results, strict=True
+                ):
                     identity = build_identity(
                         posting_version_id=posting_version_id,
                         facts=facts,
