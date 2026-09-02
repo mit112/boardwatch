@@ -49,6 +49,7 @@ from indeed_shape import (
     search_hits,
     search_response,
 )
+from sqlalchemy import select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -63,7 +64,10 @@ from boardwatch.lanes.indeed import (
     IndeedLane,
     SearchPageError,
 )
-from boardwatch.pipeline.runner import _refused_seed_note
+from boardwatch.pipeline.runner import _collect_lane, _refused_seed_note
+from boardwatch.store import tables
+from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import get_watched_companies, insert_run
 
 runner = CliRunner()
 
@@ -317,6 +321,130 @@ def test_the_dereference_is_load_bearing_not_incidental(tmp_path, monkeypatch):
     assert {s.slug for s in result.snapshots} == {
         "Vertex-Systems", "Beacon-Labs", "Halcyon-Works"
     }
+
+
+@respx.mock
+def test_a_converged_hit_declares_every_declarable_field_secondhand(tmp_path):
+    """D-414(a). Convergence claims WHICH posting this is -- never to own the provider's columns.
+
+    A tier-1 hit is filed under a real provider's `(company_id, provider_posting_id)`, and
+    `scan/apply.py`'s D25 rule refreshes every provider-sourced column on any positive
+    observation regardless of `content_hash`. This lane never read the provider's
+    `remote_policy`, `department` or `salary_*`, and the location it did read is Indeed's index
+    of the posting; with `location_filter_mode = "hard"` writing that over the provider's row
+    hard-vetoes a lead the pipeline already held, in the same run.
+
+    `body_text` IS IN THE SET AND IS THE MOST CONSEQUENTIAL MEMBER. The other fields move a score
+    or a filter; the body decides a VERDICT, because `scan/apply.py` makes a differing content
+    hash the current `posting_versions` row and that row is what every eligibility rule quotes.
+
+    The expected set is spelled out as a LITERAL rather than compared against
+    `indeed.CONVERGED_SECONDHAND`, which is derived from `SecondhandField` and would agree with
+    itself however either one changes. A new declarable field therefore reddens this test on
+    purpose: somebody has to decide whether a converged Indeed hit owns it.
+    """
+    _mock_one(DEREFERENCE_HITS)
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    declared = {frozenset(s.snapshot.postings[0].secondhand) for s in result.snapshots}
+    assert declared == {
+        frozenset(
+            {
+                "title", "url", "locations", "remote_policy", "department",
+                "posted_at", "updated_at", "body_text", "salary", "raw_json",
+            }
+        )
+    }
+
+
+@respx.mock
+def test_an_indeed_keyed_hit_declares_nothing_secondhand(tmp_path):
+    """Tier 2, and the reason the declaration rides on the IDENTITY rather than on the lane.
+
+    A hit keyed under `indeed`'s own employer key lands on a row this lane is the only observer
+    of and will ever be -- no board scan reaches it (D-314). A rank attached to the lane as a
+    whole would freeze these rows; the tier decides, so they keep refreshing normally.
+    """
+    _mock_one(search_hits(2, companies=2))
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.snapshots
+    assert all(s.snapshot.postings[0].secondhand == frozenset() for s in result.snapshots)
+
+
+@respx.mock
+def test_a_tier1_convergence_asks_for_its_board_to_be_watched(tmp_path):
+    """Blockers 1 & 2 (D-414(a)). A tier-1 hit sits on a provider the scanner CAN parse, so the
+    lane sets `watch=True` on its snapshot -- the drain that lets the next scan replace the
+    secondhand body this hit wrote with the employer's own JD. `watch=provider != LANE_PROVIDER`,
+    asserted as the tier, so a lane that stopped setting it reddens rather than silently leaving a
+    lane-first tier-1 board scanned by nothing.
+    """
+    _mock_one(DEREFERENCE_HITS)
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert {s.provider for s in result.snapshots} == {"greenhouse", "lever", "ashby"}
+    assert all(s.watch is True for s in result.snapshots)
+
+
+@respx.mock
+def test_a_tier2_indeed_keyed_hit_does_not_ask_for_watching(tmp_path):
+    """Tier 2 is keyed under `indeed`, a board no scan can reach, so it stays unwatched: a watched
+    row on a provider the scanner cannot parse would add an `unknown provider` line to every run
+    forever (D-285). The pair with the test above pins the flag to the TIER, not to the lane.
+    """
+    _mock_one(search_hits(2, companies=2))
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.snapshots
+    assert all(s.provider == LANE_PROVIDER and s.watch is False for s in result.snapshots)
+
+
+@respx.mock
+def test_a_tier1_convergence_is_watched_after_the_lane_applies_end_to_end(tmp_path):
+    """The whole chain, read back off the store. The lane sets `watch`, `_apply_lane` threads it
+    into `upsert_lane_company`, and the company lands `watched=True` -- so the next scan drains
+    the secondhand JD. Verified through `get_watched_companies`, the ONLY source of the scan's
+    companies, so a broken link anywhere from the snapshot flag to the stored column reddens.
+    """
+    engine = get_engine(tmp_path / "store")
+    ensure_schema(engine)
+    settings = Settings(data_dir=tmp_path / "store", config_dir=tmp_path / "cfg")
+    _mock_one(DEREFERENCE_HITS)
+
+    _collect_lane(engine, settings, IndeedLane(), _fetcher(tmp_path), insert_run(engine))
+
+    with engine.connect() as conn:
+        watched = {(r.provider, r.slug) for r in get_watched_companies(conn)}
+    assert watched == {
+        ("greenhouse", "vertexsystems"),
+        ("lever", "beaconlabs"),
+        ("ashby", "halcyonworks"),
+    }
+
+
+@respx.mock
+def test_a_tier2_hit_lands_unwatched_after_the_lane_applies_end_to_end(tmp_path):
+    """The tier-2 arm of the chain. The two indeed-keyed companies DO land -- the lane's postings
+    still reach the shortlist -- but `watched=False`, so no scan is ever asked to reach a board
+    that does not exist. The company count is the CONTROL that they landed at all.
+    """
+    engine = get_engine(tmp_path / "store")
+    ensure_schema(engine)
+    settings = Settings(data_dir=tmp_path / "store", config_dir=tmp_path / "cfg")
+    _mock_one(search_hits(2, companies=2))
+
+    _collect_lane(engine, settings, IndeedLane(), _fetcher(tmp_path), insert_run(engine))
+
+    with engine.connect() as conn:
+        watched = [r.slug for r in get_watched_companies(conn)]
+        total = len(conn.execute(select(tables.companies)).all())
+    assert watched == []
+    assert total == 2
 
 
 @respx.mock

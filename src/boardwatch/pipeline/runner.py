@@ -948,6 +948,11 @@ def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int) -> None:
                 # `cross_host` posting identity, so rewriting it would silently re-key that
                 # company's identities.
                 name=company.name,
+                # A tier-1 secondhand convergence (Indeed) asks for the board to be watched so the
+                # next scan drains its stale JD (D-414(a)); every other lane leaves this False and
+                # `upsert_lane_company` behaves exactly as before. The flag only ever turns watching
+                # on, so passing it unconditionally cannot unwatch anything.
+                watch=company.watch,
             )
         # `scan_kind="lane"`, and the default is not good enough here: `apply_board` writes a
         # `board_scans` row every time, and board coverage outer-joins that table on

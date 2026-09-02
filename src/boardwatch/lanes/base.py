@@ -73,6 +73,14 @@ class LaneCompanySnapshot:
     slug: str
     name: str
     snapshot: BoardSnapshot
+    # Turn watching ON for this company when the lane applies it. Default OFF, which is what
+    # every lane but a secondhand one wants: `queries.upsert_lane_company` stores a lane company
+    # `watched=False` (D-285) because `scan/coordinator` appends `unknown provider` for a watched
+    # row whose provider it cannot scan. A lane sets this True ONLY for a company on a provider the
+    # scanner DOES know — an Indeed tier-1 convergence onto a supported board — so the scan then
+    # fetches the employer's real JD and drains the secondhand body this lane wrote (D-414(a)).
+    # A True here can only turn watching on; `upsert_lane_company` never unwatches on this flag.
+    watch: bool = False
 
 
 @dataclass(frozen=True)

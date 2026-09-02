@@ -81,10 +81,62 @@ and for dedup than filing every employer under an aggregator name no board scan 
 recovered a provider identity, re-fetches the employer's own board and hands on the PROVIDER's
 `RawPosting` verbatim, so its convergence is byte-exact. This lane cannot: its body is already in
 hand, and a board GET per company to replace a JD it already holds would spend the advantage that
-justifies the lane. So a converged posting is written with Indeed's url, locations and body under
-the provider's `(company_id, provider_posting_id)`, and a later board scan of the same company
-rewrites it as a revision. That churn is bounded by the 24-hour search window -- the Indeed listing
-stops being returned within a day, and the board scan's version is then the only writer.
+justifies the lane. So a converged posting is written with Indeed's url, title and body under the
+provider's `(company_id, provider_posting_id)`.
+
+**"A LATER BOARD SCAN CORRECTS IT" HOLDS FOR A TIER-1 CONVERGENCE, and this lane now makes it
+hold on purpose.** It is true where the user ALREADY watches the provider board the hit converged
+onto; and for a tier-1 hit onto a supported board the user does NOT yet watch, this lane turns
+watching ON (`LaneCompanySnapshot.watch` -> `queries.upsert_lane_company`'s monotonic upgrade),
+because the provider is one `scan/coordinator.py` can parse, so a watched row for it adds no
+`unknown provider` line. The next scan then fetches the employer's own JD, `remote_policy` and
+location and drains the secondhand row this hit wrote. **The permanence below is therefore TIER-2
+ONLY.** A hit keyed under `indeed` (the last segment of `employer.relativeCompanyPageUrl`, a board
+this repo cannot scan) is stored `watched=False`, `queries.get_watched_companies` filters
+`watched.is_(True)`, and `scan/coordinator.py` reads its rows from nowhere else, so nothing will
+ever scan it -- no later revision, no correction, what this lane writes is what the store holds
+until a human watches something by hand. The D-414(a) guards below fire for TIER-1 ONLY: tier 1
+declares every field `CONVERGED_SECONDHAND`, so its fields are dropped/blanked and its body
+suppressed for the ONE RUN before the auto-watched scan drains them. Tier 2 declares NOTHING
+secondhand, so no guard fires -- it intentionally keeps Indeed's fields as its sole record, because
+the lane is that row's only observer and there is nothing better to hold.
+
+WHAT A CONVERGED HIT DOES **NOT** DO IS OVERWRITE THE PROVIDER'S OWN FIELDS ON A ROW THAT ALREADY
+EXISTS (D-414(a)). `scan/apply.py`'s D25 rule refreshes every provider-sourced column on every
+positive observation regardless of `content_hash`, and this lane never looked at the provider's
+`remote_policy`, `department` or `salary_*` at all while the location it did read is Indeed's index
+of the posting, not the employer's field. With `location_filter_mode = "hard"` that overwrite is a
+deletion path: a posting the provider recorded as remote, re-rendered as one metro, is hard-vetoed
+in the SAME run, because the lane stage runs after the scan and before the ranker. So every tier-1
+identity carries `CONVERGED_SECONDHAND` and `_refreshed_fields` drops those columns from the
+UPDATE.
+
+THE BODY IS DECLARED WITH THEM, and it is the one that reaches a VERDICT rather than a score.
+`scan/apply.py` makes any observation with a different content hash the current
+`posting_versions` row, and that row is the document every eligibility rule quotes. Measured
+against the shipped rules: an employer body of `Visa sponsorship is available.` reads `eligible`,
+and a 31-character Indeed rendering of the same posting reading `Applicants must be US citizens.`
+reads `ineligible` with the span `must be US citizens`. The span is real and the invariant passes
+on its face -- but it was cut from Indeed's text, not the employer's, so the provenance is a lie.
+An `ineligible` verdict then drops the posting from the placeable set and
+`delivery_queries.ineligible_job_ids` routes an already-delivered lead into the ineligible drain,
+so the lead leaves the apply lane on the strength of a sentence its employer never wrote. A
+declared `body_text` suppresses the whole revision, so a converged hit can never restate the
+employer's JD.
+
+ON A TIER-1 INSERT THE LOCATION IS BLANKED; ON A TIER-2 INSERT IT IS KEPT. A location the
+aggregator assigned that classifies `non_us` would hard-veto -- DELETE -- the lead under
+`location_filter_mode = "hard"`, on a role whose employer never placed it outside the US
+(`classify_location` is a positive US allowlist that drops only a CONFIRMED non-US posting, so a US
+metro like `Austin, TX` or an unresolved string is KEPT -- the veto is not the hazard, a false
+`non_us` is). Tier 1 declares its location secondhand, so `_inserted_fields` stores `[]`, which
+classifies `unknown` and the hard gate keeps until the auto-watched scan drains the real location
+in. Tier 2 declares nothing, so Indeed's location is written as its sole record -- a false `non_us`
+there would veto forever, but Indeed does not render a US role as a foreign city, so the risk is
+small.
+Everything else the hit carries is still written: a row this lane creates has no prior observation
+to preserve, and blanking a column there would replace a value the lane genuinely holds with a
+schema default.
 
 ONLY `parse_posting_target` IS USED, AND `parse_board_target` IS DELIBERATELY NOT A SECOND TIER.
 Falling back to a company-only resolution would file an INDEED-keyed posting under a real ATS
@@ -123,7 +175,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import zip_longest
-from typing import Any
+from typing import Any, get_args
 
 from boardwatch.core.board_urls import (
     UnknownBoardURL,
@@ -132,7 +184,7 @@ from boardwatch.core.board_urls import (
 )
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
-from boardwatch.core.models import RawPosting
+from boardwatch.core.models import RawPosting, SecondhandField
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.dereference import (
@@ -308,13 +360,32 @@ class UnidentifiableHit(ValueError):
     """
 
 
+# EVERY declarable field this lane carries -- the JD body included -- is Indeed's rendering of the
+# employer's listing, not the employer's own record, so a hit that CONVERGES onto a real provider's
+# key declares the lot secondhand. Derived from `SecondhandField` rather than spelled out: a field
+# added later must default to "Indeed does not own this on a converged row", and a hand-written
+# list would silently default it the other way -- the direction that deletes a lead.
+CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
+
+
 @dataclass(frozen=True)
 class HitIdentity:
-    """The store identity one search hit resolves to."""
+    """The store identity one search hit resolves to, and how much of the row it can speak for.
+
+    `secondhand` rides WITH the identity because the two are decided by the same fact and only
+    `hit_identity` knows it: a tier-1 hit is filed under a real provider's
+    `(company_id, provider_posting_id)`, where a board scan is the record of truth for every
+    structured field and for the JD, while a tier-2 hit is filed under `indeed`'s own key, where
+    this lane is the ONLY observer there will ever be and must keep refreshing all of them
+    (D-414(a)). Carried as a typed set decided at the construction site rather than re-derived
+    downstream from `provider == LANE_PROVIDER`, which is a string comparison against a lane name
+    -- exactly the classification this repo refuses.
+    """
 
     provider: str
     slug: str
     posting_id: str
+    secondhand: frozenset[SecondhandField] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -442,8 +513,14 @@ def hit_identity(job: dict[str, Any]) -> HitIdentity:
     dereference failures are ordinary rather than errors -- most employers sit on an ATS this
     repo has no adapter for, which is the reach the lane was built for.
 
+    Tier 1 also declares every declarable field `CONVERGED_SECONDHAND` (D-414(a)): converging on
+    the identity is a claim about WHICH posting this is, never a claim to be the record of truth
+    for the provider's own columns or for the employer's own JD text, and `scan.apply` would
+    otherwise refresh them all and restate the body as the current version.
+
     Tier 2 keys the company under `indeed` and Indeed's OWN employer key, the last segment of
-    `employer.relativeCompanyPageUrl`. A hit with neither that nor a posting `key` REFUSES rather
+    `employer.relativeCompanyPageUrl`, and declares NOTHING secondhand -- this lane is the only
+    observer that row will ever have. A hit with neither that nor a posting `key` REFUSES rather
     than falling back to a slugified display name: `LaneCompanySnapshot` says in its own docstring
     why a name is the wrong granularity twice over, and a refusal here is counted
     `not_attemptable` by the grouping pass, so its cost is visible instead of silent.
@@ -451,7 +528,9 @@ def hit_identity(job: dict[str, Any]) -> HitIdentity:
     apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
     target = board_posting_target(apply_url)
     if target is not None:
-        return HitIdentity(target.provider, target.slug, target.posting_ref)
+        return HitIdentity(
+            target.provider, target.slug, target.posting_ref, CONVERGED_SECONDHAND
+        )
     key = _text(job.get("key"))
     slug = employer_slug(job)
     if not (key and slug):
@@ -627,7 +706,11 @@ def raw_posting(job: dict[str, Any], identity: HitIdentity) -> RawPosting | None
 
     `remote_policy` stays `unknown`. The response carries an `attributes` list from which a remote
     flag could be inferred, and inferring one is a separate decision with its own evidence bar;
-    `unknown` is the honest default until that measurement exists.
+    `unknown` is the honest default until that measurement exists -- and on a converged row that
+    `unknown` is declared secondhand rather than written over the provider's reading. `locations`
+    is carried in full here and blanked by `scan.apply._inserted_fields` on the INSERT rather than
+    dropped at this construction site, so the tier-2 rows that need it keep it and the two halves
+    of one rule stay in one place.
     """
     body_text = html_to_text(_text(_nested(job, "description", "html")))
     if not body_text.strip():
@@ -643,6 +726,9 @@ def raw_posting(job: dict[str, Any], identity: HitIdentity) -> RawPosting | None
         # The hit MINUS its description. The body is already stored in `body_text` and this column
         # is JSON in the store, so carrying the JD twice would double the row for no reader.
         raw_json={"job": {name: value for name, value in job.items() if name != "description"}},
+        # Decided by `hit_identity`, carried here unchanged: only the tier the hit resolved to
+        # can say whether this observation owns the row's structured fields (D-414(a)).
+        secondhand=identity.secondhand,
     )
 
 
@@ -709,6 +795,14 @@ class IndeedLane:
                         slug=slug,
                         name=company_name(company.hits[0][1]),
                         snapshot=lane_snapshot(postings, company.url),
+                        # A tier-1 convergence (`provider != LANE_PROVIDER`) sits on a board the
+                        # scanner can parse -- `hit_identity` only assigns a real provider when
+                        # `parse_posting_target` recovered one -- so watching it is safe (no
+                        # `unknown provider` line) and is the DRAIN for the secondhand body this
+                        # hit wrote: the next scan replaces JD v1 with the employer's own text and
+                        # its real `remote_policy`/location (D-414(a)). Tier 2 is keyed under
+                        # `indeed`, has no board to scan, and stays unwatched.
+                        watch=provider != LANE_PROVIDER,
                     )
                 )
         return LaneResult(

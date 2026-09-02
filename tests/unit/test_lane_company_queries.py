@@ -244,3 +244,92 @@ def test_unwatch_still_reports_nothing_for_a_slug_the_store_does_not_hold(
     with engine.begin() as conn:
         upsert_watch(conn, provider="ashby", slug="kayak", name="Kayak", source="user")
         assert unwatch(conn, provider="ashby", slug="kayaks") == 0
+
+
+# --------------------------------------------------------------------------------------
+# `watch=True` — the tier-1 auto-watch drain (blockers 1 & 2, D-414(a))
+# --------------------------------------------------------------------------------------
+#
+# A tier-1 Indeed convergence lands on a provider the scanner CAN parse, so the lane asks for
+# the board to be watched: the next scan then fetches the employer's own JD and drains the
+# secondhand body the lane wrote. The flag is MONOTONIC — `False`->`True` only — so it can turn
+# watching on for a lane-first company but can never unwatch a board or relabel one.
+
+
+def test_watch_true_stores_watched_and_a_later_watch_false_never_downgrades(
+    engine: Engine,
+) -> None:
+    """A NEW company inserted with `watch=True` is stored watched, and a subsequent default
+    (`watch=False`) find of the SAME company must not turn it back off — the drain is still owed
+    until a scan actually runs."""
+    with engine.begin() as conn:
+        first = upsert_lane_company(
+            conn, provider="greenhouse", slug="acme", name="Acme", watch=True
+        )
+    row = _row(engine, provider="greenhouse", slug="acme")
+    assert row.watched is True
+    assert row.source == "lane"
+    with engine.begin() as conn:
+        again = upsert_lane_company(conn, provider="greenhouse", slug="acme", name="Acme")
+    assert again == first
+    assert _row(engine, provider="greenhouse", slug="acme").watched is True
+
+
+def test_watch_true_upgrades_an_existing_unwatched_row_including_a_case_variant(
+    engine: Engine,
+) -> None:
+    """A tier-2 (unwatched) lane row that later converges tier-1 UPGRADES in place.
+
+    The upgrade touches `watched` only — `name` and `source` are left alone — and it finds the row
+    even when the stored slug differs from the argument only in CASE (`stored_slug`), so a
+    convergence never mints a second row for a board the store already holds."""
+    with engine.begin() as conn:
+        first = upsert_lane_company(conn, provider="ashby", slug="lightfield", name="Lightfield")
+    assert _row(engine, provider="ashby", slug="lightfield").watched is False
+    with engine.begin() as conn:
+        landed = upsert_lane_company(
+            conn, provider="ashby", slug="Lightfield", name="Lightfield Inc.", watch=True
+        )
+    assert landed == first, "the case variant did not converge onto the stored row"
+    row = _row(engine, provider="ashby", slug="lightfield")
+    assert row.watched is True
+    assert row.name == "Lightfield", "the watch upgrade overwrote the stored name"
+    assert row.source == "lane"
+    with engine.connect() as conn:
+        assert len(conn.execute(select(companies)).all()) == 1, "a second row was inserted"
+
+
+def test_watch_false_default_stores_unwatched_and_touches_nothing_on_conflict(
+    engine: Engine,
+) -> None:
+    """The default every other lane uses is the pre-fix behaviour, unchanged: a new row lands
+    `watched=False` and a second unwatched find touches nothing, `watched` and `name` included.
+    The null control for blockers 1 & 2 — the `watch` parameter must move nothing unless a caller
+    asks. Reddens if the insert default is ever flipped to watched."""
+    with engine.begin() as conn:
+        upsert_lane_company(conn, provider="hiringcafe", slug="lever:beta", name="Beta")
+    assert _row(engine, provider="hiringcafe", slug="lever:beta").watched is False
+    with engine.begin() as conn:
+        upsert_lane_company(conn, provider="hiringcafe", slug="lever:beta", name="Beta Renamed")
+    row = _row(engine, provider="hiringcafe", slug="lever:beta")
+    assert row.watched is False
+    assert row.name == "Beta"
+
+
+def test_watch_true_never_downgrades_an_already_watched_registry_board(engine: Engine) -> None:
+    """MONOTONIC. A tier-1 convergence onto a board the user ALREADY watches leaves it exactly as
+    it was — watched, with its curated `source` and `name` intact. The `watched.is_(False)` guard
+    in the upgrade branch is what pins this: turning watching ON for a board already on is a no-op,
+    never a relabel and never a toggle back off."""
+    with engine.begin() as conn:
+        upsert_watch(
+            conn, provider="greenhouse", slug="acme", name="Acme Corporation", source="registry"
+        )
+    with engine.begin() as conn:
+        upsert_lane_company(
+            conn, provider="greenhouse", slug="acme", name="acme rendering", watch=True
+        )
+    row = _row(engine, provider="greenhouse", slug="acme")
+    assert row.watched is True, "a lane convergence unwatched a board the user watches"
+    assert row.source == "registry", "a watch upgrade relabelled a registry company"
+    assert row.name == "Acme Corporation", "a watch upgrade overwrote a curated name"

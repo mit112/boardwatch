@@ -39,6 +39,62 @@ class BoardRequest(BaseModel):
     detail_budget: int = 50
 
 
+# The structured fields an observation can declare it is NOT the record of truth for (D-414(a)).
+#
+# MECHANISM CHOSEN: the observation declares them, and `scan.apply._refreshed_fields` drops
+# exactly those columns from the UPDATE. The alternative considered and REJECTED was a precedence
+# rule keyed on observation ORIGIN — rank a lane below a provider scan and refuse the lower-ranked
+# write. Three reasons, the first decisive:
+#
+#   1. Fidelity varies WITHIN one lane's single `collect()`. The Indeed lane files a hit under a
+#      real provider's `(company_id, provider_posting_id)` when the employer's apply URL
+#      dereferences (tier 1) and under its own key when it does not (tier 2). For a tier-2 row
+#      that lane is the only observer there will ever be and must keep refreshing every field;
+#      for a tier-1 row it is reading someone else's posting through an aggregator's index. A
+#      rank attached to the lane cannot tell those apart, so it would either freeze tier-2 rows
+#      nothing else will ever refresh or keep clobbering tier-1 rows. hiring.cafe makes the same
+#      point from the other side: it re-fetches the employer's own board and hands on the
+#      PROVIDER's `RawPosting` verbatim, so ranking it below a board scan would demote data that
+#      is not secondhand at all.
+#   2. Precedence has to know what wrote the row LAST, and no column carries that. It needs a
+#      migration plus a backfill, and every pre-existing row starts at an unknown origin — which
+#      must fail open to avoid freezing the corpus, reproducing the defect for exactly the rows
+#      that already have it.
+#   3. It puts the knowledge in the writer rather than at the construction site. `apply_board`
+#      would have to classify by lane name, and a name is a string nobody can typecheck — the
+#      thing this repo refuses everywhere else.
+#
+# Named for `RawPosting`'s OWN fields, never for the columns they land in: an observation knows
+# what it saw, not what `scan.apply` writes. `title` therefore carries `normalized_title` with it
+# and `salary` carries all four salary columns, so a declaration can never half-refuse a derived
+# column and leave a row internally inconsistent.
+#
+# `body_text` IS THE ONE THAT MATTERS MOST, and it is declarable for a reason the structured
+# fields do not share. The others move a score or a filter; the body moves a VERDICT. Eligibility
+# reads the CURRENT `posting_versions` row, and `scan.apply` makes an observation with a different
+# content hash the current version, so an aggregator body silently becomes the document every
+# eligibility rule quotes. Measured against the shipped `rules.yaml`: an employer body of
+# `Visa sponsorship is available.` evaluates `eligible` on `work_auth:sponsorship_available`, and
+# a 31-character aggregator rendering of the SAME posting reading `Applicants must be US citizens.`
+# evaluates `ineligible` on `work_auth:us_citizen_required`, quoting the span `must be US citizens`.
+# The keystone invariant demands that an `INELIGIBLE` carry a quoted span from the frozen JD; that
+# verdict HAS one, and the span is real, but it was cut from the wrong document — so the invariant
+# passes syntactically while failing in substance, which is worse than no span at all. Declaring
+# `body_text` secondhand is what keeps the evidence chain pointing at the employer's own text.
+SecondhandField = Literal[
+    "title",
+    "url",
+    "locations",
+    "remote_policy",
+    "department",
+    "posted_at",
+    "updated_at",
+    "body_text",
+    "salary",
+    "raw_json",
+]
+
+
 class RawPosting(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -56,6 +112,19 @@ class RawPosting(BaseModel):
     salary_max: float | None = None
     salary_currency: str | None = None
     salary_period: str | None = None
+    # Fields this observation is not the record of truth for (see `SecondhandField`). EMPTY by
+    # default, and that default is what keeps every provider scan byte-identical: an undeclared
+    # observation writes exactly the columns D25 has always had it write, so the six-provider
+    # contract is preserved rather than reasoned about again.
+    #
+    # It is NOT a claim that every provider `None` is an observed absence — it is not one.
+    # `workable.py` writes `updated_at=None` because Workable exposes no update timestamp at all,
+    # and `workday.py` writes `department=None` and `updated_at=None` for the same reason on both
+    # CXS endpoints. Those `None`s are gaps in the FEED, not readings of an empty field. They are
+    # left undeclared anyway because declaring them would change six providers' behaviour to fix
+    # nothing: a provider is still the only observer its own board will ever have, so freezing a
+    # column it cannot report just pins whatever happened to land there first.
+    secondhand: frozenset[SecondhandField] = frozenset()
 
 
 class BoardSnapshot(BaseModel):
