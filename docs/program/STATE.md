@@ -21,131 +21,167 @@
 
 ## Current standing
 
-### Did session 2026-09-01f reach its goal? PARTLY — the number moved by ONE POSTING, and the session's real product is that the goal itself is now priced
+### Session 2026-09-02: the five branches merged, Indeed is ARMED and has RUN, and gate 1 was replaced by a different instrument
 
-**The goal, in the owner's words: "ensure that we are finding all the jobs that Job Apps is
-finding, so we can retire Job Apps."** That is gate 1 (D-399): independent coverage of job-apps'
-eligible set **>= 80%**.
+**GATE 1 IS NO LONGER A COVERAGE PERCENTAGE.** The owner withdrew both the 80% bar (D-399) and the
+"cover most of what job-apps does daily" wording that briefly replaced it. **It is now PER-SOURCE
+RECALL, a rate** (D-421). Do not re-derive either retired bar.
 
-| | |
+**Why**, in the owner's words: *"what I want you to compare is the same methodology or the sources
+that job apps have"* — job-apps' output grows daily so no two readings share a denominator, and he
+had already processed past discovery into the apply queue. **The old gate was worse than unstable:**
+it counted `eligibility` outcomes `eligible` (1,229) + `protected_applied` (45) and **excluded
+`moved` (3,963 — the apply-queue set, three times larger)** and `review` (2,484). `eligible` and
+`moved` only exist once he works a cohort, so 08-31, 09-01 and 09-02 carry zero of both. **Three of
+the seven days contributed nothing.** The "216" tracked his activity, not boardwatch's coverage.
+
+**First reading of the new gate — run 143, 14d window, 21,863 job-apps postings:**
+
+| | value |
 |---|---|
-| gate 1 at session start | 22.2% (independent 48 of 216) |
-| **gate 1 at session end** | **22.7% (independent 49 of 216)** |
-| postings gained | **+1** |
-| gate 3 anti-degradation | 49 vs baseline 44 — HELD (record 49) |
+| **recall, drawn-from sources** | **4,913 of 20,653 = 23.8%** |
+| employer's own board (lever/ashby/greenhouse/workday) | **94–100%** |
+| aggregator + search (linkedin 32.5%, hiringcafe 17.0%, indeed 12.6%) | **12–33%** |
+| **lane-only — dies the day job-apps stops** | **7,091 (32.4%)** |
+| never held at all | 9,715 (44.4%) |
+| **independent if job-apps stopped today** | **5,057 = 23.1%** |
+| source coverage | **94.4%**, or 99.6% excluding the deliberate jobright refusal |
 
-**RUN 141 HAPPENED and was read out in full** (D-417) — unlike last session, which shipped
-capability and could score none of it.
+**The split is binary and falls on MECHANISM, not effort.** Reading the employer's own board gives
+~100% recall; reading an aggregator gives 12–33%. **Source coverage is essentially solved** — only 15
+of job-apps' 33 registered sources produce anything, and boardwatch draws from sources covering
+94.4% of its volume. Gate 3 HELD at 49 (baseline 44). **No numeric threshold is set, deliberately:**
+one number averages a solved mechanism against an unsolved one, which is how 80% hid that the
+direct-ATS half was already done. Setting it per source is the owner's call.
 
-### THE MOST IMPORTANT THING THIS SESSION PRODUCED IS AN ARITHMETIC, NOT A FEATURE
+### Run 143 — the first armed run
 
-Priced end to end for the first time, against a bar of **173 of 216**:
+379 boards / 290 complete / 54 unchanged / 33 partial / 2 failed, 41m59s. **31,350 postings seen**
+(142: 21,944), **2,894 new** (1,292), corpus 122,917. Verdicts **139 eligible** / 2,126 uncertain /
+1,566 ineligible. 95 leads delivered. Board stage 379 boards in 20m11s = **3.2s per board**, which
+is what auto-watch growth costs on every future run.
 
-| lever | postings | state |
+| lane | attempted | resolved | new companies | refused by cap |
+|---|---:|---:|---:|---:|
+| linkedin | 1,564 | 273 | 50 (cap) | 463 |
+| **indeed** | **513** | **83** | **25 (CAP)** | **359** |
+| jobapps | 432 | 237 | 46 | 0 |
+| hiringcafe | 127 | 45 | 8 | 0 |
+| jsonld | 0 | 0 | 0 | 0 |
+
+**#331's body precondition fired in production:** 12 bodies withheld as "not the employer's own
+text" — all 12 from `jobright.ai`, all ingested by the `jobapps` lane, `h1b sponsor likely` in 9 of
+them, against 122,917 checks (0.01%, so precise rather than over-firing). **The contamination route
+was job-apps, not a jobright lane** — refusing that lane never kept jobright's judgments out;
+ingesting job-apps put them in. That is the sharpest argument for retirement the program has.
+
+### `lane_seeds` fills to 773, and 85.9% of it is unreachable (D-422)
+
+Zero → **773 rows in one run** (indeed 683, jsonld 90), **0 resolved, 0 attempts**. The
+`jsonld → 0 attempted` is lane ORDERING, not a defect: the resolver runs before the producer and the
+table was empty. **Run 144 must confirm the drain** — the handoff is unproven end to end until one
+does. **The real defect: only 109 of 773 (14.1%) are claimable by any resolver's host catalog; 664
+(85.9%) across 197 hosts are selected by nothing**, and `attempts` cannot bound them because an
+unselected seed is never attempted. `grnh.se` (109) is the cheapest win — Greenhouse's own shortener,
+and boardwatch already handles greenhouse. `eeho.fa.us2.oraclecloud.com` (Oracle HCM) and
+`lockheedmartin.eightfold.ai` (Eightfold) are D-417's unbuilt levers whose seeds are already
+arriving.
+
+### The job-apps discovery tree is only a QUARTER ingested — measured 2026-09-02
+
+The `jobapps` lane walks **exactly two levels** (`resumes/<date>/<posting>/`) and is deliberately
+non-recursive so it cannot reach `_skipped/<reason>/`, whose directory names are job-apps' own
+verdicts. **That intent is right** — reading them would inherit job-apps' judgments, the coupling
+D-421 measured. But the depth limit excludes two further buckets as collateral. Confirmed through a
+second path, not from reading the code: the tree holds exactly **432** `discovery_record.json` files
+at the lane's depth and run 143 logged `lane jobapps → 432 attempted`.
+
+| bucket | records | status |
 |---|---:|---|
-| Indeed armed (steady state, ~7 daily runs) | +35 | built, DISARMED, blocked |
-| tier-A company admission | +3 | measured, owner-gated, NOT applied |
-| JSON-LD resolver lane | +2 | built; **measured to deliver 1 by run 2, both by ~run 6** |
-| Oracle HCM search lane | +6 | not built |
-| Amazon / Rippling / Eightfold / BambooHR | +4 | not built |
-| `gh_jid` resolver | +2 | built, PARKED (D-415) |
-| **everything above, all of it** | **+52 → 101 of 216 = 46.8%** | |
+| lane's depth (top level per date) | **432** | read; **239** pass `is_direct_apply` |
+| **`_eligibility_review`** | **1,374** (1,357 parse) | **MISSED — unintended.** 669 pass the filter |
+| `_skipped` | 16,918 over 174 reasons | skipped by design |
+| `_too_senior` | **0 records** (49,662 folders, each with `job_description.txt` + an apply URL) | unreachable by this lane |
 
-**Every identified, buildable lever outside LinkedIn lands at 46.8%.** The whole remaining path to
-80% runs through linkedin.com's 77 misses (35.6 points) — and **57 of those 77 are employers
-boardwatch has never seen at all**, dominated by staffing agencies, consultancies and board
-reposts that plausibly have no ATS board to admit. Reaching them means acquiring LinkedIn postings
-at volume, from the worst-quality measured source (13.4 eligible per 1,000 open, against 33.4 for
-curated boards and 45.9 for hiring.cafe).
+`_eligibility_review` records are `schema_version: 2` with keys identical to what the lane reads —
+fully readable, out of reach only by depth. **Root cause is a shape mismatch:** the lane's docstring
+describes the tree as `<queue>/<ATS>/<posting>/`, so it was written expecting an ATS name at the
+middle level; `resumes/` puts a DATE there and job-apps files its triage buckets at that same level,
+one deeper than the walk goes.
 
-**So gate 1 >= 80% is NOT REACHABLE by the levers currently identified.** That is an owner
-question, not an engineering one, and it is question 1 below.
+**`_skipped`'s 174 reasons are NOT uniform in risk, which bounds any future decision to mine it:**
+~45% is job-apps' own ROLE TAXONOMY (`non_swe_*`, 7,640 — and #330 corrected boardwatch's own role
+gate this morning for the same class of error), ~28% is PROFILE-DEPENDENT eligibility
+(`min_N_years_experience` ~3,100, `clearance_required` 589, `no_sponsorship`/visa ~330,
+`international_location` 327, `senior_title`/`senior_level` 420), and only ~17% is objective posting
+fact (`stub_jd` 1,922, `discovery_blocked_header` 606, `junk_folder_*` 373, `posting_closed`).
+**Only that last class is safe to take on job-apps' word.**
 
-### The cap theory: direction confirmed, sizing refuted
+**OWNER'S CALL (2026-09-02): harvest ONCE, build NO mechanism.** job-apps is being retired, so after
+a certain date there is no more of this content and a permanent ingestion path would be dead code.
+Process the top level plus `_eligibility_review` once and keep the eligible ones. Do **not** re-decide
+`_too_senior` or `_skipped` through boardwatch's gates — job-apps' verdict is taken at its word
+there. **Ingesting once is itself the record that stops re-processing**, because `posting_identities`
+and the disposition ledger already make a second encounter cheap; no suppression list is needed, and
+that is why none was built.
 
-The LinkedIn company cap went 10 -> 50 and geo nets shipped. Refusals **ROSE 344 -> 617** while the
-lane admitted exactly the new cap. Admission still binds — D-411 was right about that — and
-relieving it fivefold bought **+1 posting**. **Do not raise that cap again on this evidence**
-(D-417). Fourth time this program has sized work off what a rule can MATCH rather than what it
-would FIX, after D-415, D-413 and D-412.
+### Applied this session
 
-The rotation contract HOLDS, verified against live config and profile rather than a fixture: 98
-cells at 33/run, `2c <= m` holds, consecutive overlap 0, **union of three consecutive runs 98 of
-98, no repeats.**
-
-### What shipped, and what did not
-
-**MERGED: #329 only** — Wave 0 (D-416): `LaneContext` plus `lane_seeds`, the durable
-discoverer→resolver handoff. Reviewed, DO-NOT-SHIP'd on two structural blockers, fixed, green.
-
-**FIVE BRANCHES BUILT AND NONE MERGED** (D-418). Each gated green with mutation-pinned guards, was
-reviewed, had a fix round, and was **re-reviewed** — and all five failed the second pass on NEW
-findings the fix rounds exposed:
-
-| PR | branch | where it stands |
-|---|---|---|
-| **#334** | T1 `fix/lane-observation-fidelity` | D-414(a)'s two blockers CLOSED. **3 new blockers**: freezing the body leaves JD v1 deciding forever on an unwatched lane-first company; `remote_policy` has the same permanent false-drop path; a secondhand UPDATE can record a false `exact_quad` |
-| **#333** | T2 `feat/jsonld-resolver-lane` | 4 of 6 blockers FIXED. **2 new**: a seed that RESOLVED at attempt two is written back unresolved at three and excluded forever; every exception becomes `extracted_empty` |
-| **#332** | T3 `feat/indeed-tenant-seed` | blocker fixed, recurred through a DNS-root dot, fixed again by hand. Awaiting a third gate |
-| **#331** | T5 `feat/lane-body-ingest-precondition` | 4 of 5 FIXED. **1 new blocker: a FOURTH eligibility seam** — the `eligibility label` oracle handshake, where a Jobright page was reproduced becoming an `ineligible` ANSWER-KEY row |
-| **#330** | T4 `fix/vice-president-provenance` | verdict-neutral over 93,236 titles, precedence FIXED. The **web UI suppression is still present**, so the corrected reason does not reach the user |
-
-**The structural lesson (D-418): in three of five, the FIX CREATED THE NEXT FINDING**, each by
-removing a bad behaviour without supplying what it stood in for. When a fix withdraws something
-downstream depended on — a refresh, a retry, a re-check — **name what now supplies it, in the same
-change.**
-
-**And the method finding (D-419): six branches, six first-round DO-NOT-SHIPs, and every one turned
-on a CLAIM the code did not honour.** Not one finding was a failing test. A green gate cannot see a
-false recorded claim, and three of the six had already been ACTED ON. Reviews cost no gate time.
+- **Tier-A admission APPLIED** (owner-confirmed): 3 boards, watched **387 → 390**. Backed up first —
+  `companies-pretierA-*.csv` (the exact reversal artifact) and a 5.5 GB `VACUUM INTO` snapshot.
+- **Indeed cap raised 25 → 50** on the owner's call and on the 25-admitted/359-refused reading.
+  **Carrying D-417's caveat: a binding cap is not proof that relieving it helps** — LinkedIn's went
+  10 → 50 and bought ONE posting. Verify yield on runs 144/145 before raising again.
+- **jobright company-discovery probe: REFUSED on measurement, against my own proposal.** Of 501
+  employers, 373 unseen, only **44 (11.8%)** have a resolvable board (62 of 523 postings), 329
+  (88.2%) none at all — and all 44 were discovered via hiringcafe/legacy/zapply/simplify, **not one
+  via jobright**, so the reachable part needs no jobright lane.
 
 ## Next action
 
-**1. FINISH THE FIVE OPEN PRs.** Each needs ONE more round, not a rewrite; every finding is
-recorded in `.agent/2026-09-01f-session/reviews/` with file:line and a minimal fix. Order matters:
+**1. RUN THE ONE-TIME job-apps HARVEST, AND TAKE THE SEED-DRAIN CONFIRMATION WITH IT.** Both need
+the lane stage, so one `--no-scan` run serves both (~22 min; `--no-scan` skips only the 20-minute
+board stage, lanes still run). Vehicle, all of it reverted afterwards so nothing persists:
+`jobapps_queue_dir` → a staging directory of 79 symlinks to each date's `_eligibility_review`
+(verified against the lane's own reader: 1,357 records), plus a TEMPORARY working-tree addition of
+`linkedin` to `_DIRECT_APPLY_SOURCES` (no test pins that set) which newly ingests **877** LinkedIn
+records — 686 from `_eligibility_review` and 191 from the top level — that the closed set drops
+because boardwatch runs its own LinkedIn lane, a lane D-421 measures at only 32.5% recall. Expect
+#331 to withhold the ~176 jobright-sourced bodies, correctly. **Revert both, then re-run the gate.**
 
-- **#333 (T2) merges BEFORE #332 (T3).** T3 produces `lane_seeds` rows and T2 is the only consumer;
-  landing the producer first is a bucket with no drain. Indeed is disarmed so nothing can produce
-  today, but do not arm it until the resolver is merged AND armed.
-- **#334 (T1) gates arming Indeed** together with D-414(b).
+**2. READ OUT RUN 144 AND CONFIRM THE SEED DRAIN.** `lane jsonld` must attempt the 109 claimable
+seeds. If it attempts 0 again, the handoff is broken and not merely ordered.
 
-**2. THEN ARM INDEED — the cheapest 16.2 points on the board, and no new discovery work.** Needs
-D-414(a) (#334) closed, D-414(b) (an `indeed` row in `lane_new_companies_per_run_overrides`), and
-T2's resolver merged. **Expect a FRACTION on the first armed run**: the lane's window is 24h and
-the 35 misses spread 3/6/17/3/6 by cohort day, so the full figure takes ~7 daily runs. Reading the
-first run as failure would be wrong.
+**3. BUILD THE "SEEDS NO RESOLVER CLAIMS" REPORT** (D-422). It is the one thing standing between a
+durable handoff and a silent 664-row leak, and it now has a first reading to build against.
 
-**3. PUT QUESTION 1 BELOW TO THE OWNER WITH THE 46.8% ARITHMETIC.** Do not build more first — three
-of four sizings in this program have counted the wrong thing, and this is the first one that prices
-the whole remaining gap.
+**4. FOLLOW `grnh.se` REDIRECTS INTO THE EXISTING GREENHOUSE HANDLER.** 109 seeds, no new adapter,
+no new vendor posture question.
+
+**5. SET PER-SOURCE THRESHOLDS** (owner). The instrument exists and has a reading; the bar does not.
 
 ### Owed, and specifically NOT done
 
-- **The primary tree is on `8069007a`, one merge behind `origin/main` (`f7b5b56d`).** It was NOT
-  pulled because **run 142 (the 04:00 tick) was in flight off its editable venv** and a pull swaps
-  code and `rules.yaml` under a live run. **Pull it once run 142 finishes.**
-- **Run 142 has not been read out.** It ran on `8069007a`, i.e. pre-Wave-0 code, so it measures the
-  same configuration as run 141.
-- **Tier-A admission is NOT applied.** 3 admissible boards (Motorola Solutions, Keenfinity, Bosch
-  Group), worth at most 1.4 points. Candidate file ready at
-  `.agent/2026-09-01f-session/staging/t6/tierA-candidates.yaml`. `companies import` is a live-store
-  write and the owner has not confirmed it.
-- **`lane_seeds` has no "seeds no resolver claims" report.** `attempts` bounds a seed something has
-  TRIED; a seed nothing ever selects is never attempted, never aged out, and invisible.
-- Everything in the previous session's owed list that this one did not touch.
+- **Per-source thresholds are not set** — that is item 4 and it is the owner's.
+- **The recurring delivery `QueueConflictError` on posting 131368** has been in every run since 140
+  and is still unfixed.
+- **hiring.cafe has one unexplained post-fix failure** (run 142). #304 worked; 130–137's failures all
+  predate it. Not a regression and not chronic flakiness — see the blocker table.
+- **T1's concurrent case-variant duplicate race** — deferred, pre-existing, worst case a dead-weight
+  row. Fix is a `(provider, lower(slug))` unique index plus a reconcile.
+- **T3's exotic hostnames** — unicode-dot/fullwidth IDN and legacy IPv4 can still store an
+  undrainable row. Dead weight only.
+- A few T4/T5 test docstrings still carry round-3 framing. SHIP-approved; no assertion depends on
+  them.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-0. **NEW, AND IT IS NOW THE PROGRAM'S BIGGEST OPEN QUESTION: gate 1 >= 80% is not reachable by any
-   lever currently identified.** Priced end to end (D-417, METRICS 2026-09-01f), everything
-   buildable outside LinkedIn lands at **46.8%**. The remaining path runs entirely through
-   linkedin.com's 77 misses, and **57 of them are employers with no ATS board to admit** —
-   staffing agencies, consultancies and board reposts. Three options, and only the owner can pick:
-   **(a)** a much larger LinkedIn acquisition, accepting a measured 2.5-3.4x worse
-   eligible-per-posting rate and the corpus growth behind it; **(b)** accept that those 57 are a
-   class boardwatch will not serve and **move the bar** — D-399 set 80% before any of this was
-   measured; **(c)** a different discovery source for that population. **Do not build more toward
-   80% before this is answered.**
+0. ~~gate 1 >= 80%~~ / ~~"cover most of what job-apps does daily"~~ **BOTH RETIRED. Gate 1 is now
+   PER-SOURCE RECALL (D-421), and the only thing still owed from the owner is the THRESHOLD, per
+   source.** The instrument is built and has a first reading (see Current standing). Set a bar per
+   source rather than one number — the direct-ATS mechanism is already at 94–100% while the
+   aggregator mechanism is at 12–33%, and any single average hides that. **Do not re-litigate 80%,
+   and do not re-derive "most".**
 
 1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED — it keeps running until gate 1 is
    met.** Both schedulers armed: boardwatch 04:00, job-apps 08:30. **The retirement work is now a
@@ -182,8 +218,9 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e when this file passed 250 li
 there. Only these are not settled:
 
 - **P2 item 8** (field-taxonomy gatherer) **NOT STARTED** — the last multi-tenancy gap, owner-gated.
-- **P7 Breadth**: hiring.cafe, LinkedIn and GitHub-lists lanes are built and armed; **`indeed` is
-  built and DISARMED** (D-414). Remaining tier-D lanes not started (D-413 ranks them).
+- **P7 Breadth**: LinkedIn, GitHub-lists, jobapps, **`jsonld` and `indeed` are all built and
+  ARMED** (D-420; `indeed` capped at 25 new companies/run). **hiring.cafe is armed but currently
+  FAILING** — see the blocker table. Remaining tier-D lanes not started (D-413 ranks them).
 - **14-day acceptance: not started, HELD BY THE OWNER.** The provisional pass is **not being
   chased** (D-351 item 2: work comes first), and every `rules_hash` bump restarts its counter.
 
@@ -202,4 +239,4 @@ there. Only these are not settled:
 | **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
-| ~~**hiring.cafe lane is DOWN**~~ **CLOSED — run 138 reports NO hiring.cafe error**, the first clean run since 129, ending a 14-of-14 refusal. The lane was re-pointed at the SSR surface (#304, D-397) and resolves bodies through the EMPLOYER's own board, so its postings land under greenhouse/lever/ashby/workable and NOT under a `hiringcafe` provider — do not read that absence as failure. Historical detail follows | **History, kept only so the dead ends are not retried.** The header lever FAILED (D-369/#245, run 133 reproduced the refusal byte for byte) and headers are ELIMINATED — do not repeat that experiment. The UA and volume premises were both false. The cause was the ENDPOINT: our `/jobs/` calls were refused 14 of 14 while job-apps succeeded on `/`. **D-393 decision 1 reversed the do-not-probe hold on Mit's explicit call**, and #304 re-pointed the lane at the SSR surface, which is what run 138 proves works | **CLOSED** |
+| **hiring.cafe: ONE unexplained POST-FIX failure (run 142) — and D-420 recorded two wrong framings before this one.** #304 (`11a1ae95`) merged **2026-09-01T07:56:34Z**. Against that boundary: **130, 131, 133, 134, 135, 136, 137 all FAILED and all seven PREDATE the fix** (132 ok, a single unexplained point); post-fix **138, 139, 140, 141, 143 ok** and **142 is the only failure**. **So #304 WORKED** — this is neither a regression nor chronic flakiness. Not time-of-day: 138 also started 09:00Z and passed. **METHOD LESSON, which cost two wrong entries in one session: date a behaviour claim against the COMMIT that changed the behaviour, not against a run streak — a streak has no denominator until you know when the code changed.** Do NOT retry the eliminated dead ends: the header lever failed twice (D-369; run 133 reproduced the refusal byte for byte) and the UA and volume premises were both false. | **watch** |

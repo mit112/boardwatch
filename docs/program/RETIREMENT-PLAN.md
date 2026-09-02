@@ -14,23 +14,49 @@ met ~9.6x; this is not.
 
 ## 1. The bar, and where we stand
 
-**Gate 1 (D-399): independent coverage of job-apps' eligible set >= 80%.**
-"Independent" means boardwatch holds the posting from an origin that is NOT the `jobapps` lane.
+**GATE 1 IS NO LONGER A COVERAGE PERCENTAGE. It is PER-SOURCE RECALL, a rate (D-421, owner's call
+2026-09-02).** D-399's ">= 80% of job-apps' eligible set" is **RETIRED**, and so is the "cover most
+of what job-apps does daily" wording that briefly replaced it. Do not re-derive either.
 
-| | value | source |
-|---|---|---|
-| population (job-apps eligible, trailing 7 cohorts) | **216** | MEASURED, run 140 |
-| independent today | **48 = 22.2%** | MEASURED, run 140 |
-| needed for 80% | **172** | DERIVED |
-| **shortfall** | **+124 postings** | DERIVED |
+**Why the old bar was withdrawn.** It counted `disposition_events` at `stage='eligibility'` with
+`outcome IN ('eligible','protected_applied')` — a population that (a) changes and grows every day,
+so no two readings share a denominator, and (b) **only exists once the owner manually works a
+cohort.** It excluded `moved` (3,963 postings → the apply queue, three times larger than `eligible`)
+and `review` (2,484), and 2026-08-31/09-01/09-02 carry zero `eligible` and zero `moved` at all. The
+"216" tracked the owner's processing, not boardwatch's coverage.
 
-Gate 3 (anti-degradation, independent count must not fall) **HELD at 48**, baseline was 44.
-`jobapps` lane share of delivered leads: **2.1%** (2 of 96) in run 140, down from 49.0% in run 139
-— the 49.0% was a one-off spike from the lane's first armed run admitting 102 new companies.
+**The instrument now:** for each source job-apps draws from, the fraction of its finds that
+boardwatch holds INDEPENDENTLY — "independent" still meaning an origin that is not the `jobapps`
+lane, keyed on the lane's own provenance stamp in `postings.raw_json` (D-399's discriminator, which
+remains the only sound one). Script:
+`.agent/2026-09-02-session/per_source_recall.py`, read-only.
+
+**Where we stand — first reading, run 143, 14d window 2026-08-20..09-02, 21,863 postings:**
+
+| | value |
+|---|---|
+| **recall, drawn-from sources** | **4,913 of 20,653 = 23.8%** |
+| employer's own board (lever/ashby/greenhouse/workday) | **94–100%** |
+| aggregator + search (linkedin/hiringcafe/indeed) | **12–33%** |
+| **lane-only — what dies at switch-off** | **7,091 (32.4%)** |
+| never held at all | 9,715 (44.4%) |
+| **independent if job-apps stopped today** | **5,057 of 21,863 = 23.1%** |
+| source coverage (sources boardwatch draws from) | **94.4%**; 99.6% excluding the jobright refusal |
+
+**No numeric threshold is set, deliberately.** A single number averages a solved mechanism against
+an unsolved one, which is precisely how the 80% bar concealed that the direct-ATS half was already
+at ~100%. The threshold is the owner's to set **per source**.
+
+Gate 3 (anti-degradation, independent count must not fall) **HELD at 49**, baseline 44.
 
 ---
 
 ## 2. The gap, decomposed — do not re-derive this
+
+> **The "80%" figures below are the RETIRED bar (§1, D-421).** The tier decomposition, the per-tier
+> ceilings and the "no path that skips both C and D" conclusion all still stand — they are statements
+> about where job-apps' postings live, which did not change. **Only the threshold they are measured
+> against was withdrawn.** Read them as sizing, not as a gate.
 
 Of the **168** misses (131 held nowhere, 37 held only via the `jobapps` lane), grouped by the host
 of job-apps' `canonical_direct_url`:
@@ -63,8 +89,16 @@ This is why page-depth knobs cannot close it — `lane_search_pages` reaches at 
 
 ## 3. job-apps' sources — the full list, and what boardwatch has
 
-From `SOURCE_REGISTRY` in job-apps' `discovery_attribution.py`. **33 sources.** The number in
-parentheses is job-apps' own attribution ordinal (lower wins a tie).
+From `SOURCE_REGISTRY` in job-apps' `discovery_attribution.py`. **33 registered sources — but only
+15 of them PRODUCE ANYTHING, measured 2026-09-02 (D-421).** Over the 14 days 2026-08-20..09-02
+job-apps discovered 21,863 distinct postings, and the other 18 sources contributed **zero**: google,
+themuse, remotive, remoteok, jobicy, himalayas, adzuna, higheredjobs, handshake, indeed_mcp, zapply,
+amazon_api, eightfold_api, oracle_hcm_api, radancy_api (1 posting), smartrecruiters_api,
+workable_api and hn's newsletter siblings. **So the replacement target is 15 sources, not 33** — the
+"5 untried public APIs, no posture question" row below and the three `first_party` rows are NOT work
+items until they produce something. Live volume is concentrated: **linkedin 46.3%, indeed 35.4%,
+hiringcafe 11.4% = 93.1%**, and the sources are nearly disjoint (0.3% of postings found by more than
+one). The number in parentheses is job-apps' own attribution ordinal (lower wins a tie).
 
 | job-apps source | class | boardwatch |
 |---|---|---|
@@ -97,6 +131,15 @@ Direct ATS 8,149 unique -> 13 built (0.16%). Aggregators/lists 16,913 -> 272 (1.
 Read this as: the six providers boardwatch is built on are its *lowest*-yield sources, and the
 high-yield ones are curated lists and aggregators. Caveat job-apps states itself: `built` is
 downstream of ITS prefilter, so measure our own version before acting.
+
+**MEASURED 2026-09-02, and it corrects the inference above (D-421).** Low *yield* is not low
+*recall*, and the two point opposite ways. Per-source recall — the fraction of job-apps' finds from
+a source that boardwatch holds INDEPENDENTLY — splits **binarily on mechanism**: where boardwatch
+reads the employer's own board it is **94–100%** (lever 100%, ashby 98.2%, greenhouse 97.6%, workday
+94.1%); where it reads an aggregator or a search surface it is **12–33%** (linkedin 32.5%,
+hiringcafe 17.0%, indeed 12.6%). **The six ATS providers are the only part that fully works.** They
+are a small share of job-apps' volume, so they cannot close the gap alone — but they are not the
+weakness this table reads as.
 
 ---
 
