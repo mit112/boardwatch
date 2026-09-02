@@ -17,8 +17,11 @@ from sqlalchemy import Engine, select
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run
 from boardwatch.store.seed_queries import (
+    SeedWrite,
+    UnroutableSeedURL,
     record_seed_attempt,
     record_seeds,
+    seed_host,
     unresolved_seeds,
 )
 from boardwatch.store.tables import lane_seeds
@@ -53,7 +56,9 @@ def test_a_seed_is_stored_once_and_the_first_discoverer_keeps_the_row(tmp_path: 
         )
         row = conn.execute(select(lane_seeds)).one()
 
-    assert (first, second) == (1, 0), "the return is rows INSERTED, never len(urls)"
+    assert (first.inserted, second.inserted) == (1, 0), (
+        "the return is rows INSERTED, never len(urls)"
+    )
     assert row.discovered_by == "github_lists"
     assert row.host == "x.test", "the host is DERIVED here, never supplied by the caller"
     assert row.first_seen_at.replace(tzinfo=UTC) == NOW
@@ -78,7 +83,9 @@ def test_an_empty_batch_and_an_in_batch_duplicate_both_fall_out_of_the_conflict_
     engine = _engine(tmp_path)
     run = insert_run(engine)
     with engine.begin() as conn:
-        assert record_seeds(conn, (), discovered_by="indeed", run_id=run, now=NOW) == 0
+        assert record_seeds(
+            conn, (), discovered_by="indeed", run_id=run, now=NOW
+        ) == SeedWrite(inserted=0, unroutable=())
         assert conn.execute(select(lane_seeds)).all() == []
         assert record_seeds(
             conn,
@@ -86,7 +93,7 @@ def test_an_empty_batch_and_an_in_batch_duplicate_both_fall_out_of_the_conflict_
             discovered_by="indeed",
             run_id=run,
             now=NOW,
-        ) == 2
+        ).inserted == 2
         assert sorted(conn.execute(select(lane_seeds.c.url)).scalars().all()) == [
             "https://x.test/a",
             "https://x.test/b",
@@ -160,7 +167,7 @@ def test_a_resolved_seed_leaves_the_candidate_set_but_keeps_its_row(tmp_path: Pa
         # Re-seeding a resolved URL must not resurrect it.
         assert record_seeds(
             conn, ("https://x.test/a",), discovered_by="indeed", run_id=run, now=LATER
-        ) == 0
+        ).inserted == 0
         assert unresolved_seeds(conn, hosts=HOSTS, max_attempts=99, limit=99) == ()
 
 
@@ -241,3 +248,53 @@ def test_a_negative_limit_is_refused_rather_than_read_as_no_limit(tmp_path: Path
             unresolved_seeds(conn, hosts=HOSTS, max_attempts=9, limit=-1)
         with pytest.raises(ValueError, match="non-negative"):
             unresolved_seeds(conn, hosts=HOSTS, max_attempts=-1, limit=9)
+
+
+def test_a_seed_url_with_no_parseable_host_costs_that_url_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    """One malformed value from an aggregator must not roll back the batch beside it.
+
+    `urlparse` raises a BARE `ValueError` on an unbalanced bracket. Raised from inside
+    `_apply_lane`'s transaction that aborts every valid seed in the same statement AND, via
+    `_run_lanes`' broad per-lane `except`, costs the lane its entire report — so a single bad
+    string would delete a whole lane's run from the record.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        written = record_seeds(
+            conn,
+            ("https://x.test/good", "https://[broken", "notaurl", "https://y.test/also-good"),
+            discovered_by="indeed",
+            run_id=run,
+            now=NOW,
+        )
+        stored = sorted(conn.execute(select(lane_seeds.c.url)).scalars().all())
+
+    assert written.unroutable == ("https://[broken",), (
+        "only the UNPARSEABLE url is refused"
+    )
+    # THREE, not two. `notaurl` has no scheme but parses to the host `notaurl`, so it is stored
+    # and is simply a host no resolver's filter will ever name. That is a real and different
+    # gap -- a seed nothing claims is never attempted and so never ages out -- and it is
+    # recorded as owed rather than papered over here with a no-dot heuristic.
+    assert written.inserted == 3
+    assert stored == ["https://x.test/good", "https://y.test/also-good", "notaurl"]
+
+
+def test_a_url_with_no_host_is_refused_rather_than_stored_with_an_empty_one(
+    tmp_path: Path,
+) -> None:
+    """An empty `host` matches no resolver's filter, so the row would sit unresolved and
+    unattempted forever and report itself as nothing at all — invisible work, which is worse
+    than a refusal."""
+    with pytest.raises(UnroutableSeedURL, match="no host"):
+        seed_host("")
+
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        written = record_seeds(conn, ("",), discovered_by="indeed", run_id=run, now=NOW)
+        assert conn.execute(select(lane_seeds)).all() == []
+    assert written == SeedWrite(inserted=0, unroutable=("",))

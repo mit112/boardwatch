@@ -819,12 +819,24 @@ def _apply_lane(
         with engine.begin() as conn:
             for seed_id, resolved in result.seed_attempts:
                 record_seed_attempt(conn, seed_id, run_id=run_id, now=now, resolved=resolved)
-            record_seeds(
+            written = record_seeds(
                 conn,
                 result.discovered_seeds,
                 discovered_by=lane.name,
                 run_id=run_id,
                 now=now,
+            )
+        # Durable, not a print, and OUTSIDE the transaction above so the report cannot itself
+        # fail the write it is reporting on. A lane emitting URLs nothing can route is a real
+        # defect in that lane, and swallowing it would make the lane look like one that simply
+        # found nothing — the absent-versus-zero confusion the acquisition tally exists to
+        # prevent. It is not fatal: the seeds beside it were written.
+        if written.unroutable:
+            append_run_error(
+                engine,
+                run_id,
+                f"lane {lane.name}: {len(written.unroutable)} seed url(s) had no parseable "
+                f"host and were skipped, first: {written.unroutable[0]!r}",
             )
 
     tally = result.tally

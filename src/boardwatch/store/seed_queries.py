@@ -20,6 +20,32 @@ from sqlalchemy.engine import Connection
 from boardwatch.store.tables import lane_seeds
 
 
+class UnroutableSeedURL(ValueError):
+    """A seed URL that cannot be routed to any resolver, raised where it is detected.
+
+    Typed rather than a bare `ValueError` because the caller has to tell "this one row is
+    unusable" from "the statement failed": the first must cost that seed alone, and the second
+    must fail the transaction. `urlparse` raises a BARE `ValueError` ("Invalid IPv6 URL") for an
+    unbalanced bracket, which is indistinguishable from any other `ValueError` a caller might be
+    catching for another reason.
+    """
+
+
+@dataclass(frozen=True)
+class SeedWrite:
+    """What `record_seeds` did: rows INSERTED, and the URLs it could not route.
+
+    `unroutable` is returned rather than logged or swallowed. Swallowed, a lane emitting
+    malformed URLs looks exactly like a lane finding nothing, which is the absent-versus-zero
+    confusion the acquisition tally exists to prevent; raised, one bad row would roll back every
+    good seed in the same batch AND cost the lane its whole report, because `_apply_lane` runs
+    inside `_run_lanes`' broad per-lane `except`.
+    """
+
+    inserted: int
+    unroutable: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class LaneSeed:
     """One unresolved seed, as a resolver reads it."""
@@ -54,9 +80,21 @@ def seed_host(url: str) -> str:
     Lower-cased and `www.`-stripped: a resolver's strategy table lists a vendor host once, and a
     seed recorded as `WWW.Breezy.HR` that no `hosts` filter matches is a row that can never be
     drained and never reports itself as stuck.
+
+    Raises `UnroutableSeedURL` for a URL with no host, rather than storing one. An empty `host`
+    matches no resolver's filter, so such a row would sit unresolved and unattempted forever and
+    report itself as nothing at all — invisible work, which is worse than a refusal.
     """
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    return parsed.netloc.lower().removeprefix("www.")
+    try:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+    except ValueError as exc:
+        # `urlsplit` raises a BARE ValueError ("Invalid IPv6 URL") for an unbalanced bracket, the
+        # same trap `core/board_urls.py` records at its own `urlparse` call.
+        raise UnroutableSeedURL(f"cannot parse a host from {url!r}: {exc}") from exc
+    host = parsed.netloc.lower().removeprefix("www.")
+    if not host:
+        raise UnroutableSeedURL(f"no host in {url!r}")
+    return host
 
 
 def record_seeds(
@@ -66,8 +104,8 @@ def record_seeds(
     discovered_by: str,
     run_id: int,
     now: datetime,
-) -> int:
-    """Record every URL this lane found and cannot resolve itself. Returns the number INSERTED.
+) -> SeedWrite:
+    """Record every URL this lane found and cannot resolve itself.
 
     On conflict this touches NOTHING, `discovered_by` included, the same rule
     `upsert_lane_company` states and for the same reason: the second lane to see a URL did not
@@ -77,33 +115,46 @@ def record_seeds(
     otherwise never age out of the candidate set, which is the cost leak the counter exists to
     bound.
 
-    The return is the count actually inserted, not `len(urls)`, so a caller reporting "seeds
+    The return carries the count actually INSERTED, not `len(urls)`, so a caller reporting "seeds
     discovered" reports NEW ones and a re-listed backlog can never read as fresh reach.
+
+    **A URL with no parseable host costs that URL and nothing else.** It is skipped, named in
+    `SeedWrite.unroutable`, and the rest of the batch is written. Letting it raise would abort the
+    whole statement inside `_apply_lane`'s transaction — losing every valid seed beside it AND, via
+    `_run_lanes`' broad per-lane `except`, the lane's entire report. One malformed value from an
+    aggregator must not be able to do that.
 
     Takes a tuple rather than one URL per call because the caller has the whole batch in hand and
     this runs inside the lane stage's single-writer transaction. An empty batch and an in-batch
     duplicate both fall out of the conflict clause and need no separate handling — an earlier
     version guarded each explicitly and a vacuity check showed neither guard could ever fire.
     """
-    rows = [
-        {
-            "url": url,
+    rows = []
+    unroutable = []
+    for url in urls:
+        try:
             # Derived, never passed in: a discovering lane knows nothing about which resolver
             # will claim a URL, and a caller-supplied host is a caller-supplied routing bug.
-            "host": seed_host(url),
-            "discovered_by": discovered_by,
-            "first_seen_run_id": run_id,
-            "first_seen_at": now,
-        }
-        for url in urls
-    ]
+            host = seed_host(url)
+        except UnroutableSeedURL:
+            unroutable.append(url)
+            continue
+        rows.append(
+            {
+                "url": url,
+                "host": host,
+                "discovered_by": discovered_by,
+                "first_seen_run_id": run_id,
+                "first_seen_at": now,
+            }
+        )
     inserted = 0
     for row in rows:
         result = conn.execute(
             sqlite_insert(lane_seeds).values(**row).on_conflict_do_nothing(index_elements=["url"])
         )
         inserted += result.rowcount
-    return inserted
+    return SeedWrite(inserted=inserted, unroutable=tuple(unroutable))
 
 
 def unresolved_seeds(
