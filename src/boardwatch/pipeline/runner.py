@@ -57,6 +57,7 @@ from boardwatch.lanes.facets import (
     surviving_mined_facets,
 )
 from boardwatch.lanes.hiringcafe import HiringCafeLane
+from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
 from boardwatch.notify.alert_escalation import escalate_alerts
@@ -251,13 +252,30 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
         source_dir=settings.jobapps_discovery_dir,
         queue_dir=settings.jobapps_queue_dir,
     ),
+    # Indeed takes NEITHER `lane_posting_budget` nor `lane_search_pages`, and both omissions are
+    # deliberate. The budget bounds "JD-body requests one lane may make in a run", and this lane
+    # makes zero — every body arrives inline with the search — so wiring it here would attach a
+    # knob to a number that is always 0. `lane_search_pages` is shared with two lanes whose page
+    # buys ~10 and ~150 listings against Indeed's 100, so this lane pages on its own ceiling
+    # instead: an operator raising LinkedIn's depth must not silently multiply requests against
+    # the one host whose approval rests on the volume staying small.
+    IndeedLane.name: lambda settings, facets: IndeedLane(
+        search_facets=facets.profile,
+        search_pages=settings.indeed_search_pages,
+        results_per_page=settings.indeed_results_per_page,
+    ),
 }
 
-# The UA the lane fetcher sends. Not boardwatch's identifying UA, and NOT app impersonation:
-# no lifted API key, no vendor app headers, no `verify=False`. That pattern is why the Indeed
-# lane is parked, and reusing it here would park this one too. What this is instead is an
-# ordinary browser UA against an ordinary public web page, which is the same request a person
-# opening that page makes.
+# The UA the lane fetcher sends by default. Not boardwatch's identifying UA, and NOT app
+# impersonation: no lifted API key, no vendor app headers, no `verify=False`. What this is
+# instead is an ordinary browser UA against an ordinary public web page, which is the same
+# request a person opening that page makes.
+#
+# **The Indeed lane is the one exception, and it does NOT reach this constant.** That endpoint
+# answers only to Indeed's own app credentials, which the owner approved on 2026-09-01
+# (RETIREMENT-PLAN.md §6) and which `lanes/indeed.py` states plainly in its own docstring. It
+# sends them PER REQUEST through `Fetcher.post_json(headers=...)`, so they reach that host and
+# no other — this default stands unchanged for every other lane sharing the client.
 _LANE_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"

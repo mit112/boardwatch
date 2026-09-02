@@ -99,6 +99,14 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lane_search_hubs",
         "lane_hub_combos_per_run",
         "lane_hub_distance_miles",
+        # The Indeed lane's own two page knobs, OUT for exactly the reason the four above are.
+        # They are acquisition — how much corpus arrives — and `policy_version` is derived from
+        # `config_hash`, so classifying them IN would mark every permanent `built`/`skipped`
+        # disposition stale the moment an operator changed a page ceiling: a corpus-wide drain
+        # from a knob that judged nothing. The funnel's `lanes` section reports what the lane
+        # actually read either way.
+        "indeed_search_pages",
+        "indeed_results_per_page",
         # D-385. WHERE a lane reads from, not how a posting is judged: the same record ingested
         # from a moved directory must not re-key every permanent disposition.
         "jobapps_discovery_dir",

@@ -10,8 +10,10 @@ shapes, and no others -- the search takes an optional keyword facet or geo-pinne
     GET .../jobs-guest/jobs/api/jobPosting/{id}                      -- one body, one request
 
 No key, no cookie, no TLS bypass, no app impersonation -- the search answers 200 with no User-Agent
-at all, so there is nothing to spoof (D-290). That is why this lane can exist where Indeed could
-not: Indeed's free body needed an iOS-app key with certificate verification off; this needs none.
+at all, so there is nothing to spoof (D-290). That is why this lane could ship while Indeed was
+still an open question: Indeed's free body needs an iOS-app key, and this needs none. The Indeed
+question has since been answered -- the owner approved that route on 2026-09-01 and
+`lanes/indeed.py` exists -- which changes nothing about this lane's own request shape.
 
 **Permission is a separate axis and it is refused.** `robots.txt` disallows `/jobs-guest/` in all
 77 agent groups and names `ClaudeBot` / `anthropic-ai` / `Claude-User` by name; User Agreement §8.2

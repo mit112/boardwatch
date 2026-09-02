@@ -10,8 +10,10 @@ retired `GET /api/job-description?id=` is gone, having been refused on every att
 run 129.
 
 No key, no cookie, no TLS bypass, no app impersonation. That last clause is why this lane
-exists at all: Indeed's free body is reachable only behind a key lifted from its iOS app with
-certificate verification switched off, so Indeed is parked and hiring.cafe took lane 1.
+took lane 1: Indeed's free body is reachable only behind a key lifted from its iOS app, and at
+the time this was written that had not been ruled on. It has been since -- the owner approved
+that route on 2026-09-01 (RETIREMENT-PLAN.md §6) and `lanes/indeed.py` now exists and says so
+in its own docstring. Nothing about THIS lane changed: it still sends none of those things.
 
 WHY THE SURFACE MOVED. The lane shipped against the PATH form (`/jobs/{role}`) because
 `robots.txt` disallows `/*?searchState=*` and `/*?page=*`. From run 129 the path form was

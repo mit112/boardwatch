@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A new Indeed source, off unless you switch it on.** boardwatch can now read Indeed's own
+  search and take in the jobs it finds. Unlike every other source, the full job description
+  arrives with the search results, so a page of 100 jobs costs **one request instead of 101** —
+  measured at 0.57 seconds for 100 jobs, every one of them carrying a real description. Where a
+  listing points at the employer's own job board, that employer is recorded under their real
+  board rather than under Indeed, so the job lines up with the same job found any other way
+  instead of being listed twice. **Stated plainly, because it is not the same as the other
+  sources:** this one reaches an interface Indeed publishes for its own phone app and presents
+  that app's credentials to do so, which is why it is switched off by default and does nothing at
+  all unless you name `indeed` in `lanes_enabled`. Two settings control what it asks for:
+  `indeed_search_pages` (default 1) and `indeed_results_per_page` (default 100, which is also the
+  maximum). What it searches for comes from your own target job titles, exactly as the other
+  searches do — no job title, and no city, is written into the code. Certificate checking is
+  **not** switched off. Two limits worth knowing: the search is scoped to the United States, and
+  an employer Indeed lists without a company page of its own is counted and skipped rather than
+  guessed at.
+
 - **Jobs you are already working on in job-apps no longer disappear from boardwatch.** job-apps
   moves a job's folder out of its discovery area the moment it promotes it into the queue you
   actually work from — so boardwatch stopped being able to see a job at exactly the point it became

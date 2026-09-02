@@ -211,6 +211,22 @@ class Settings(BaseModel):
     lane_search_hubs: tuple[str, ...] = ()
     lane_hub_combos_per_run: int = Field(default=12, ge=0)
     lane_hub_distance_miles: int = Field(default=25, ge=0)
+    # The Indeed lane's own page ceiling and page size, kept OFF `lane_search_pages` on purpose.
+    # That knob is shared, and the two lanes it already serves buy ~10 (LinkedIn) and ~150
+    # (hiring.cafe) listings a page against Indeed's 100 — so one number cannot mean the same
+    # thing in all three, and an operator raising depth for LinkedIn would silently multiply
+    # requests against a host whose whole approval rests on the volume staying small.
+    #
+    # Default 1 x 100 is the shape that was measured (one request, 0.57 s, 100 hits, every body
+    # inline). Floor of 1 on both, for the reason `lane_search_pages` states: 0 fetches nothing
+    # and reports a lane that found nothing rather than one that was told not to look —
+    # disarming a lane is what `lanes_enabled` is for.
+    indeed_search_pages: int = Field(default=1, ge=1)
+    # Ceiling of 100 as well as a floor, which the other page knobs do not have. 100 is the only
+    # page size ever measured against this endpoint and is the value the reference implementation
+    # hardcodes; above it the response is unmeasured. An out-of-catalog request against a host
+    # nobody here operates is a guess, so this refuses rather than sending one.
+    indeed_results_per_page: int = Field(default=100, ge=1, le=100)
     # Where job-apps writes its discovery output (its `APPLY_QUEUE`), for the `jobapps` lane.
     #
     # A machine-local PATH, so there is no neutral default and None is the honest one: the lane

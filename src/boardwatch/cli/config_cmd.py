@@ -145,6 +145,16 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "lane_hub_distance_miles": (
         int, "next run", "LinkedIn hub search radius in miles, ≥0"
     ),
+    "indeed_search_pages": (
+        int,
+        "next run",
+        "search pages the indeed lane requests per facet, ≥1 (1 = the measured single page)",
+    ),
+    "indeed_results_per_page": (
+        int,
+        "next run",
+        "hits the indeed lane asks for per search page, 1–100 (100 is the measured maximum)",
+    ),
     # `str` and not `Path`: the value is written straight into `config.toml`, and a `Path` is not
     # TOML-serializable. `Settings` coerces it back to a `Path` on load.
     "jobapps_discovery_dir": (
