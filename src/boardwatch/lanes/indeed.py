@@ -81,10 +81,21 @@ and for dedup than filing every employer under an aggregator name no board scan 
 recovered a provider identity, re-fetches the employer's own board and hands on the PROVIDER's
 `RawPosting` verbatim, so its convergence is byte-exact. This lane cannot: its body is already in
 hand, and a board GET per company to replace a JD it already holds would spend the advantage that
-justifies the lane. So a converged posting is written with Indeed's url, locations and body under
-the provider's `(company_id, provider_posting_id)`, and a later board scan of the same company
-rewrites it as a revision. That churn is bounded by the 24-hour search window -- the Indeed listing
-stops being returned within a day, and the board scan's version is then the only writer.
+justifies the lane. So a converged posting is FIRST written with Indeed's url, locations and body
+under the provider's `(company_id, provider_posting_id)`, and a later board scan of the same
+company rewrites it as a revision. That churn is bounded by the 24-hour search window -- the Indeed
+listing stops being returned within a day, and the board scan's version is then the only writer.
+
+WHAT A CONVERGED HIT DOES **NOT** DO IS OVERWRITE THE PROVIDER'S OWN FIELDS ON A ROW THAT ALREADY
+EXISTS (D-414(a)). `scan/apply.py`'s D25 rule refreshes every provider-sourced column on every
+positive observation regardless of `content_hash`, and this lane never looked at the provider's
+`remote_policy`, `department` or `salary_*` at all while the location it did read is Indeed's index
+of the posting, not the employer's field. With `location_filter_mode = "hard"` that overwrite is a
+deletion path: a posting the provider recorded as remote, re-rendered as one metro, is hard-vetoed
+in the SAME run, because the lane stage runs after the scan and before the ranker. So every tier-1
+identity carries `CONVERGED_SECONDHAND` and `_refreshed_fields` drops those columns from the
+UPDATE. The INSERT is untouched -- a row this lane creates is written from everything the hit
+carries, because there is no prior observation there to lose.
 
 ONLY `parse_posting_target` IS USED, AND `parse_board_target` IS DELIBERATELY NOT A SECOND TIER.
 Falling back to a company-only resolution would file an INDEED-keyed posting under a real ATS
@@ -123,7 +134,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import zip_longest
-from typing import Any
+from typing import Any, get_args
 
 from boardwatch.core.board_urls import (
     UnknownBoardURL,
@@ -132,7 +143,7 @@ from boardwatch.core.board_urls import (
 )
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
-from boardwatch.core.models import RawPosting
+from boardwatch.core.models import RawPosting, SecondhandField
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.dereference import (
@@ -308,13 +319,32 @@ class UnidentifiableHit(ValueError):
     """
 
 
+# EVERY structured field this lane carries is Indeed's rendering of the employer's listing, not
+# the employer's own record, so a hit that CONVERGES onto a real provider's key declares the lot
+# secondhand. Derived from `SecondhandField` rather than spelled out: a structured field added
+# later must default to "Indeed does not own this on a converged row", and a hand-written list
+# would silently default it the other way -- the direction that deletes a lead.
+CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
+
+
 @dataclass(frozen=True)
 class HitIdentity:
-    """The store identity one search hit resolves to."""
+    """The store identity one search hit resolves to, and how much of the row it can speak for.
+
+    `secondhand` rides WITH the identity because the two are decided by the same fact and only
+    `hit_identity` knows it: a tier-1 hit is filed under a real provider's
+    `(company_id, provider_posting_id)`, where a board scan is the record of truth for every
+    structured field, while a tier-2 hit is filed under `indeed`'s own key, where this lane is the
+    ONLY observer there will ever be and must keep refreshing all of them (D-414(a)). Carried as
+    a typed set decided at the construction site rather than re-derived downstream from
+    `provider == LANE_PROVIDER`, which is a string comparison against a lane name -- exactly the
+    classification this repo refuses.
+    """
 
     provider: str
     slug: str
     posting_id: str
+    secondhand: frozenset[SecondhandField] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -442,8 +472,13 @@ def hit_identity(job: dict[str, Any]) -> HitIdentity:
     dereference failures are ordinary rather than errors -- most employers sit on an ATS this
     repo has no adapter for, which is the reach the lane was built for.
 
+    Tier 1 also declares every structured field `CONVERGED_SECONDHAND` (D-414(a)): converging on
+    the identity is a claim about WHICH posting this is, never a claim to be the record of truth
+    for the provider's own columns, and `scan.apply` would otherwise refresh them all.
+
     Tier 2 keys the company under `indeed` and Indeed's OWN employer key, the last segment of
-    `employer.relativeCompanyPageUrl`. A hit with neither that nor a posting `key` REFUSES rather
+    `employer.relativeCompanyPageUrl`, and declares NOTHING secondhand -- this lane is the only
+    observer that row will ever have. A hit with neither that nor a posting `key` REFUSES rather
     than falling back to a slugified display name: `LaneCompanySnapshot` says in its own docstring
     why a name is the wrong granularity twice over, and a refusal here is counted
     `not_attemptable` by the grouping pass, so its cost is visible instead of silent.
@@ -451,7 +486,9 @@ def hit_identity(job: dict[str, Any]) -> HitIdentity:
     apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
     target = board_posting_target(apply_url)
     if target is not None:
-        return HitIdentity(target.provider, target.slug, target.posting_ref)
+        return HitIdentity(
+            target.provider, target.slug, target.posting_ref, CONVERGED_SECONDHAND
+        )
     key = _text(job.get("key"))
     slug = employer_slug(job)
     if not (key and slug):
@@ -627,7 +664,8 @@ def raw_posting(job: dict[str, Any], identity: HitIdentity) -> RawPosting | None
 
     `remote_policy` stays `unknown`. The response carries an `attributes` list from which a remote
     flag could be inferred, and inferring one is a separate decision with its own evidence bar;
-    `unknown` is the honest default until that measurement exists.
+    `unknown` is the honest default until that measurement exists -- and on a converged row that
+    `unknown` is now declared secondhand rather than written over the provider's reading.
     """
     body_text = html_to_text(_text(_nested(job, "description", "html")))
     if not body_text.strip():
@@ -643,6 +681,9 @@ def raw_posting(job: dict[str, Any], identity: HitIdentity) -> RawPosting | None
         # The hit MINUS its description. The body is already stored in `body_text` and this column
         # is JSON in the store, so carrying the JD twice would double the row for no reader.
         raw_json={"job": {name: value for name, value in job.items() if name != "description"}},
+        # Decided by `hit_identity`, carried here unchanged: only the tier the hit resolved to
+        # can say whether this observation owns the row's structured fields (D-414(a)).
+        secondhand=identity.secondhand,
     )
 
 

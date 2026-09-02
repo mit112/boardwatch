@@ -10,7 +10,8 @@ Rules folded in:
 - D25 persistence rule: every positive observation refreshes ALL
   provider-sourced mutable fields and raw_json regardless of content_hash;
   only a body-hash change emits `revised` (extraction is hash-keyed, so it
-  stays current through metadata-only updates).
+  stays current through metadata-only updates). Its ONE exception is a field
+  the observation itself declared `secondhand` (D-414(a), `_refreshed_fields`).
 - D22: http_cache is upserted from observed_validators inside this same
   transaction, for `complete` snapshots only; `unchanged`/`partial`/`failed`
   never touch it. `unchanged` writes exactly one board_scans row (D15).
@@ -28,7 +29,7 @@ from sqlalchemy import Connection, Engine, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
-from boardwatch.core.models import BoardSnapshot, RawPosting
+from boardwatch.core.models import BoardSnapshot, RawPosting, SecondhandField
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.store.events import append_event
@@ -158,11 +159,13 @@ def _apply_listed(
             append_event(conn, posting_id, "new", run_id)
             _write_posting_identity(
                 conn, raw, posting_id=posting_id, company_id=company_id,
-                company_name=company_name, content_hash=new_hash, first_seen_at=now, now=now,
+                company_name=company_name, title=raw.title, locations=raw.locations, url=raw.url,
+                content_hash=new_hash, first_seen_at=now, now=now,
             )
             result.new += 1
             continue
-        values: dict[str, Any] = _mutable_fields(raw, now)  # D25: regardless of content_hash
+        # D25: regardless of content_hash — minus whatever this observation declared secondhand.
+        values: dict[str, Any] = _refreshed_fields(raw, now)
         values["consecutive_missing"] = 0  # D23: reset on every positive observation
         # D-325, the same rule applied to the death probe's counter. A listing is stronger
         # evidence than any number of failed probes: the posting is on a board right now. This
@@ -189,9 +192,17 @@ def _apply_listed(
         # AFTER the update, so the identity is computed from what was just persisted. The
         # observation may have moved title or locations without producing a revision (the D25
         # rule above refreshes them regardless of content_hash), which moves an identity key.
+        # Every identity-bearing value is read the same way `content_hash` already was — out of
+        # `values` when this observation wrote it, off the row when it did not. A secondhand
+        # declaration (D-414(a)) leaves title / locations / url on the row, so reading them from
+        # `raw` would key the posting on a value NO row holds, and dedup would suppress against
+        # evidence that exists nowhere.
         _write_posting_identity(
             conn, raw, posting_id=int(row.id), company_id=company_id,
             company_name=company_name,
+            title=values.get("title", row.title),
+            locations=values.get("locations_json", row.locations_json),
+            url=values.get("url", row.url),
             content_hash=values.get("content_hash", row.content_hash),
             first_seen_at=row.first_seen_at, now=now,
         )
@@ -205,6 +216,9 @@ def _write_posting_identity(
     posting_id: int,
     company_id: int,
     company_name: str,
+    title: str,
+    locations: Any,
+    url: str | None,
     content_hash: str,
     first_seen_at: datetime,
     now: datetime,
@@ -222,6 +236,11 @@ def _write_posting_identity(
     needs is already in hand at this point, so the cost is O(postings this board listed) and no
     body is loaded that was not already in memory.
 
+    `title`, `locations` and `url` are PASSED rather than read off `raw`, for the same reason
+    `content_hash` and `first_seen_at` already were: what the identity must name is what the row
+    now holds, and after a secondhand declaration (D-414(a)) those three can come off the row
+    instead of off this observation.
+
     Deliberately NOT wrapped in a try/except. A failure fails the board's transaction, so the
     posting and its identity commit or vanish together — the D16 property this module is built
     on. A posting stored without its identity is exactly the state that disables suppression.
@@ -235,19 +254,20 @@ def _write_posting_identity(
                 company_id=company_id,
                 company_name=company_name,
                 provider_posting_id=raw.provider_posting_id,
-                title=raw.title,
+                title=title,
                 # Mirrors identity_queries.load_identity_inputs' coercion: non-string elements
                 # are dropped, not stringified, so a JSON `[null]` cannot become the truthy
                 # location component `["none"]` and let two postings suppress on evidence
-                # neither one has.
+                # neither one has. The guard also earns its keep on the `locations_json` column,
+                # which is JSON and hands back whatever was stored.
                 locations=(
-                    [x for x in raw.locations if isinstance(x, str)]
-                    if isinstance(raw.locations, list)
+                    [x for x in locations if isinstance(x, str)]
+                    if isinstance(locations, list)
                     else None
                 ),
                 content_hash=content_hash,
                 body_text=raw.body_text,
-                url=raw.url,
+                url=url,
                 first_seen_at=first_seen_at,
             )
         ),
@@ -268,6 +288,53 @@ def _insert_version(
             )
         ).inserted_primary_key[0]  # type: ignore[index]
     )
+
+
+# Which columns each declarable field owns. The `title` -> normalized_title and `salary` -> four
+# columns fan-outs live HERE and not in the declaration, so a lane declares what it observed and
+# can never leave a derived column refreshed from a value the row no longer holds.
+_SECONDHAND_COLUMNS: dict[SecondhandField, tuple[str, ...]] = {
+    "title": ("title", "normalized_title"),
+    "url": ("url",),
+    "locations": ("locations_json",),
+    "remote_policy": ("remote_policy",),
+    "department": ("department",),
+    "posted_at": ("posted_at",),
+    "updated_at": ("updated_at",),
+    "salary": ("salary_min", "salary_max", "salary_currency", "salary_period"),
+    "raw_json": ("raw_json",),
+}
+
+
+def _refreshed_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
+    """`_mutable_fields` minus the columns this observation is not the record of truth for.
+
+    D-414(a). D25 refreshes every provider-sourced field regardless of `content_hash`, which is
+    right for a provider reading the employer's own board and wrong for an aggregator lane whose
+    hit converged onto that provider's `(company_id, provider_posting_id)`: the lane never looked
+    at the provider's `remote_policy`, `department` or `salary_*` at all, and the location it did
+    read is its own index of the posting, not the employer's field. Writing either over a
+    provider's row is a live deletion path — with `location_filter_mode = "hard"` a posting the
+    provider recorded as remote and the aggregator renders as one metro is hard-vetoed, and a lead
+    the pipeline already held is dropped in the same run, because the lane stage runs after the
+    scan and before the ranker.
+
+    UPDATE PATH ONLY, and that is the whole point of the split. On INSERT there is no prior
+    observation to lose, so the row is written from everything the observation carries; dropping a
+    column there would replace a value the lane genuinely holds with a schema default, which is a
+    loss rather than a preservation. `last_seen_at`, the miss counters and the `content_hash` /
+    `body_text` pair are untouched by this on purpose: liveness and the JD body are exactly what a
+    secondhand observation IS first-hand evidence of, and the body path is append-only anyway
+    (a changed hash adds an immutable version, it destroys nothing).
+
+    `del` rather than `pop(name, None)`: a rename that leaves `_SECONDHAND_COLUMNS` pointing at a
+    column `_mutable_fields` no longer writes must fail loudly, not silently stop protecting it.
+    """
+    fields = _mutable_fields(raw, now)
+    for name in raw.secondhand:
+        for column in _SECONDHAND_COLUMNS[name]:
+            del fields[column]
+    return fields
 
 
 def _mutable_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:

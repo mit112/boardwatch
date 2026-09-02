@@ -320,6 +320,53 @@ def test_the_dereference_is_load_bearing_not_incidental(tmp_path, monkeypatch):
 
 
 @respx.mock
+def test_a_converged_hit_declares_every_structured_field_secondhand(tmp_path):
+    """D-414(a). Convergence claims WHICH posting this is -- never to own the provider's columns.
+
+    A tier-1 hit is filed under a real provider's `(company_id, provider_posting_id)`, and
+    `scan/apply.py`'s D25 rule refreshes every provider-sourced column on any positive
+    observation regardless of `content_hash`. This lane never read the provider's
+    `remote_policy`, `department` or `salary_*`, and the location it did read is Indeed's index
+    of the posting; with `location_filter_mode = "hard"` writing that over the provider's row
+    hard-vetoes a lead the pipeline already held, in the same run.
+
+    The expected set is spelled out as a LITERAL rather than compared against
+    `indeed.CONVERGED_SECONDHAND`, which is derived from `SecondhandField` and would agree with
+    itself however either one changes. A new declarable field therefore reddens this test on
+    purpose: somebody has to decide whether a converged Indeed hit owns it.
+    """
+    _mock_one(DEREFERENCE_HITS)
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    declared = {frozenset(s.snapshot.postings[0].secondhand) for s in result.snapshots}
+    assert declared == {
+        frozenset(
+            {
+                "title", "url", "locations", "remote_policy", "department",
+                "posted_at", "updated_at", "salary", "raw_json",
+            }
+        )
+    }
+
+
+@respx.mock
+def test_an_indeed_keyed_hit_declares_nothing_secondhand(tmp_path):
+    """Tier 2, and the reason the declaration rides on the IDENTITY rather than on the lane.
+
+    A hit keyed under `indeed`'s own employer key lands on a row this lane is the only observer
+    of and will ever be -- no board scan reaches it (D-314). A rank attached to the lane as a
+    whole would freeze these rows; the tier decides, so they keep refreshing normally.
+    """
+    _mock_one(search_hits(2, companies=2))
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.snapshots
+    assert all(s.snapshot.postings[0].secondhand == frozenset() for s in result.snapshots)
+
+
+@respx.mock
 def test_a_trailing_apply_segment_falls_back_to_indeed_rather_than_keying_on_apply(tmp_path):
     """`apply` is CONSTANT per provider, so reading it as a posting reference collides two real
     postings at one employer on UNIQUE(company_id, provider_posting_id) -- the second is applied
