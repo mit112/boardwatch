@@ -14,12 +14,15 @@ restating them.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
+from boardwatch.core.settings import Settings
+from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.outcomes import AcquisitionTally
+from boardwatch.store.seed_queries import LaneSeed, SeedReader
 
 
 def lane_snapshot(postings: list[RawPosting], url: str) -> BoardSnapshot:
@@ -87,6 +90,38 @@ class LaneResult:
     snapshots: tuple[LaneCompanySnapshot, ...]
     tally: AcquisitionTally
     search_pages: tuple[tuple[str, int], ...] = ()
+    # Posting URLs this lane FOUND and cannot resolve itself, for `lane_seeds`. RETURNED rather
+    # than written, and that is the whole point: `collect` runs in a fetch worker while
+    # `apply_board` is the pipeline's single writer, so a lane that wrote its own seeds would be
+    # a second writer on one SQLite store — the exact thing the fetch/apply split exists to
+    # prevent. The runner persists these in the serial apply phase, where the `run_id` they are
+    # attributed to is already in hand.
+    #
+    # Empty — never absent — for a lane that discovers no seeds, which is most of them.
+    discovered_seeds: tuple[str, ...] = ()
+    # `(seed id, resolved)` for every seed this lane TRIED, for the same reason and by the same
+    # route. Charged whether or not the resolve succeeded: the counter answers "how much work has
+    # this seed cost", which is the question its cost bound is about.
+    #
+    # A resolver that returns seeds it consumed but forgets to list them here retries them
+    # forever at one request each, so this is the drain, and it is not optional for a lane that
+    # reads `LaneContext.pending_seeds`.
+    seed_attempts: tuple[tuple[int, bool], ...] = ()
+
+
+def _no_seeds(
+    *,
+    hosts: frozenset[str],
+    host_suffixes: frozenset[str] = frozenset(),
+    max_attempts: int,
+    limit: int,
+) -> tuple[LaneSeed, ...]:
+    """The default `SeedReader`: no backlog, for a lane that resolves no seeds.
+
+    A module-level function rather than a lambda so the default is importable and a test can
+    assert a lane got THE default rather than something that merely behaved like it.
+    """
+    return ()
 
 
 # (provider, slug) -> may this lane spend requests on that company. The runner supplies it:
@@ -112,3 +147,56 @@ class Lane(Protocol):
         is about to discard.
         """
         ...
+
+
+@dataclass(frozen=True)
+class LaneContext:
+    """Everything one run can hand a lane factory, so the registry stays one row per lane.
+
+    This exists to remove a named wart. Before it, `LaneFactory` was `Callable[..., Lane]` —
+    `...`, so mypy checked no call site at all — and `_run_lanes` carried
+    `if name == LinkedInLane.name:` to pass that one factory a `rotation_index` keyword nothing
+    else took. Every lane that needed a value the previous ones did not would widen the signature
+    again and add a branch beside it, which is a shared registration surface that every
+    concurrent lane build has to edit and therefore conflict on.
+
+    A frozen dataclass instead: a new lane that needs a new per-run value adds a FIELD here and
+    reads it, and no existing FACTORY moves. `LaneFactory` becomes `Callable[[LaneContext],
+    Lane]`, which mypy can actually check.
+
+    **Not "nothing moves".** `_run_lanes` constructs the context and must supply any field
+    without a default, so it is edited once per such field — one line in one place, against a
+    keyword added to one factory signature plus an `if name == ...` branch beside it, which is
+    what the registry had before and what every concurrent lane build had to conflict on.
+
+    `rotation_index` is required and has NO DEFAULT, carried over verbatim from
+    `_linkedin_lane`'s own reasoning: a default of 0 is a silent-zero path — every caller that
+    forgot to pass one would draw the same cells of the hub matrix forever, the rotation would
+    never advance, and no test would go red, because the lane would still fetch, still report and
+    still look correct. Required means the one caller with a run row to derive it from has to
+    produce it.
+
+    **`run_id` is deliberately NOT here.** Every store write a lane causes happens in the serial
+    apply phase, which already holds it; carrying a second copy into the fetch workers would
+    invite a lane to write directly, which is what `discovered_seeds` and `seed_attempts` exist
+    to make unnecessary.
+
+    Frozen only against REBINDING — `Settings` is a pydantic model with mutable container fields,
+    so this is not a defence against a factory that reaches into `settings` and mutates a dict.
+    Nothing does, and the honest statement of what freezing buys is: registry ORDER cannot change
+    which context object a later factory receives.
+    """
+
+    settings: Settings
+    facets: LaneFacets
+    rotation_index: int
+    # How a lane READS `lane_seeds`, without ever holding a `Connection`. The runner owns the
+    # connection and supplies this closure, exactly as it supplies `CompanyAdmission` — and for
+    # the same recorded reason: the decision needs store access, and a lane opening its own
+    # engine would be a second writer's worth of risk taken for a read.
+    #
+    # Defaulted to a reader that returns nothing, so the three lanes that resolve no seeds are
+    # unaffected and no test of them had to move. The default is EMPTY rather than raising:
+    # a lane is additive breadth, and a resolver handed no backlog must report that it found
+    # nothing, not fail the run.
+    pending_seeds: SeedReader = field(default=_no_seeds)

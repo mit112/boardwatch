@@ -47,7 +47,7 @@ from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
-from boardwatch.lanes.base import Lane, LaneResult
+from boardwatch.lanes.base import Lane, LaneContext, LaneResult
 from boardwatch.lanes.facets import (
     MINED_FACET_WINDOW_DAYS,
     LaneFacets,
@@ -126,6 +126,12 @@ from boardwatch.store.queries import (
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import lead_provenance
+from boardwatch.store.seed_queries import (
+    LaneSeed,
+    record_seed_attempt,
+    record_seeds,
+    unresolved_seeds,
+)
 from boardwatch.store.tables import postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
@@ -173,19 +179,16 @@ DEFAULT_TOP_N = 10
 # asked for. `mined` is this repo's inference from her delivered leads, and it goes only to the
 # lane whose own conversion record is the evidence for it, so mining cannot quietly spend another
 # lane's request budget.
-LaneFactory = Callable[..., Lane]
+LaneFactory = Callable[[LaneContext], Lane]
 
 
-def _linkedin_lane(
-    settings: Settings, facets: LaneFacets, *, rotation_index: int
-) -> LinkedInLane:
-    """The LinkedIn lane for one run. `rotation_index` selects this run's slice of the hub matrix.
+def _linkedin_lane(ctx: LaneContext) -> LinkedInLane:
+    """The LinkedIn lane for one run. `ctx.rotation_index` selects this run's slice of the matrix.
 
-    **`rotation_index` HAS NO DEFAULT ON PURPOSE.** A default of 0 is a silent-zero path: every
-    caller that forgot to pass one would draw the same cells of the matrix forever, the rotation
-    would never advance, and no test would go red — the lane would still fetch, still report, and
-    still look correct. Making it required means the one caller that has a run row to read it
-    from must produce it.
+    **`rotation_index` HAS NO DEFAULT ON PURPOSE**, which is now enforced on `LaneContext`
+    itself: a default of 0 is a silent-zero path — every caller that forgot to pass one would
+    draw the same cells of the matrix forever, the rotation would never advance, and no test
+    would go red, because the lane would still fetch, still report, and still look correct.
 
     **The nets cross the hubs with `facets.profile` ONLY, never `facets.mined`, and that
     boundary lives here.** `search_facets` gets both halves because a USA-wide search is one
@@ -197,26 +200,27 @@ def _linkedin_lane(
     delivered leads, not an ask, and they do not get to slow down the ask.
     """
     return LinkedInLane(
-        posting_budget=settings.lane_posting_budget,
-        search_facets=facets.profile + facets.mined,
-        search_pages=settings.lane_search_pages,
+        posting_budget=ctx.settings.lane_posting_budget,
+        search_facets=ctx.facets.profile + ctx.facets.mined,
+        search_pages=ctx.settings.lane_search_pages,
         search_nets=hub_nets(
-            facets.profile,
-            settings.lane_search_hubs,
-            rotation_index=rotation_index,
-            combos_per_run=settings.lane_hub_combos_per_run,
+            ctx.facets.profile,
+            ctx.settings.lane_search_hubs,
+            rotation_index=ctx.rotation_index,
+            combos_per_run=ctx.settings.lane_hub_combos_per_run,
         ),
-        hub_distance_miles=settings.lane_hub_distance_miles,
+        hub_distance_miles=ctx.settings.lane_hub_distance_miles,
     )
 
 
 # The lane registry: the name a user writes in `settings.lanes_enabled` -> a factory for it. A
-# MAPPING, so a second lane is one row here. It is no longer branch-FREE: `_run_lanes` special-
-# cases `linkedin` to hand it a rotation index, which is the one thing a factory cannot derive
-# from `Settings` and `LaneFacets` alone. That branch is a known wart -- it is the shared
-# registration surface Wave 0 existed to remove -- and the fix is to hand every factory a small
-# run context instead of widening the signature per lane. Deferred so it does not collide with
-# a lane being built concurrently against this same file.
+# MAPPING, so a second lane is one row here, and it is branch-FREE again: every factory takes
+# exactly one `LaneContext`, so a lane needing a per-run value no other lane takes adds a FIELD
+# to that dataclass rather than a keyword to one signature and an `if name == ...` beside it.
+# That branch is what made this a shared registration surface every concurrent lane build had to
+# edit; `LaneFactory` is now a checkable `Callable[[LaneContext], Lane]` rather than
+# `Callable[..., Lane]`, so a factory whose signature does not match fails `mypy --strict`
+# instead of failing at the call.
 #
 # A name in `lanes_enabled` with no row here is reported into `summary.errors` and skipped —
 # never silently ignored, because a typo in config would then be indistinguishable from a lane
@@ -229,10 +233,10 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # `lane_search_pages` reaches hiring.cafe as of the SSR re-point (D-393): `&page=N` was
     # measured on 2026-08-31 to return a disjoint hit set, so the setting now buys real depth
     # here rather than promising depth the lane cannot deliver.
-    HiringCafeLane.name: lambda settings, facets: HiringCafeLane(
-        posting_budget=settings.lane_posting_budget,
-        search_facets=facets.profile,
-        search_pages=settings.lane_search_pages,
+    HiringCafeLane.name: lambda ctx: HiringCafeLane(
+        posting_budget=ctx.settings.lane_posting_budget,
+        search_facets=ctx.facets.profile,
+        search_pages=ctx.settings.lane_search_pages,
     ),
     # BOTH lanes now read `lane_search_pages`, through different URL builders: LinkedIn's
     # `start=` is a probed, working ITEM offset, while hiring.cafe's `&page=` is a page number
@@ -248,9 +252,9 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # budget nor the facets: there are no requests to bound, and the source is already a
     # filtered set rather than a search this lane composes. `facets` is still accepted by the
     # factory signature, which is what keeps every registration site uniform.
-    JobAppsLane.name: lambda settings, facets: JobAppsLane(
-        source_dir=settings.jobapps_discovery_dir,
-        queue_dir=settings.jobapps_queue_dir,
+    JobAppsLane.name: lambda ctx: JobAppsLane(
+        source_dir=ctx.settings.jobapps_discovery_dir,
+        queue_dir=ctx.settings.jobapps_queue_dir,
     ),
     # Indeed takes NEITHER `lane_posting_budget` nor `lane_search_pages`, and both omissions are
     # deliberate. The budget bounds "JD-body requests one lane may make in a run", and this lane
@@ -259,10 +263,10 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # buys ~10 and ~150 listings against Indeed's 100, so this lane pages on its own ceiling
     # instead: an operator raising LinkedIn's depth must not silently multiply requests against
     # the one host whose approval rests on the volume staying small.
-    IndeedLane.name: lambda settings, facets: IndeedLane(
-        search_facets=facets.profile,
-        search_pages=settings.indeed_search_pages,
-        results_per_page=settings.indeed_results_per_page,
+    IndeedLane.name: lambda ctx: IndeedLane(
+        search_facets=ctx.facets.profile,
+        search_pages=ctx.settings.indeed_search_pages,
+        results_per_page=ctx.settings.indeed_results_per_page,
     ),
 }
 
@@ -548,6 +552,36 @@ def _run_lanes(
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
+    # Built ONCE for the stage, from values that are already fixed for the run. Every factory
+    # takes this and nothing else, which is what keeps the registry a mapping with no branch.
+    #
+    # `pending_seeds` is a closure over `engine`, not a connection: a lane's `collect` runs in a
+    # fetch worker, and this read has to open and close its own short transaction there rather
+    # than hold one across a lane's whole network phase. It is READ-ONLY by construction — the
+    # write half is `LaneResult.discovered_seeds`/`seed_attempts`, persisted below in the serial
+    # apply phase, so `apply_board` stays the single writer.
+    def pending_seeds(
+        *,
+        hosts: frozenset[str],
+        host_suffixes: frozenset[str] = frozenset(),
+        max_attempts: int,
+        limit: int,
+    ) -> tuple[LaneSeed, ...]:
+        with engine.begin() as conn:
+            return unresolved_seeds(
+                conn,
+                hosts=hosts,
+                host_suffixes=host_suffixes,
+                max_attempts=max_attempts,
+                limit=limit,
+            )
+
+    context = LaneContext(
+        settings=settings,
+        facets=facets,
+        rotation_index=_rotation_index(run_id),
+        pending_seeds=pending_seeds,
+    )
 
     # Lanes are RESOLVED before anything is submitted, so an unregistered name is reported
     # without a worker ever being started for it, and the resolved order is the one
@@ -560,12 +594,7 @@ def _run_lanes(
             errors.append(f"lane {name}: not a registered lane (registered: {registered})")
             continue
         try:
-            if name == LinkedInLane.name:
-                resolved.append(
-                    (name, factory(settings, facets, rotation_index=_rotation_index(run_id)))
-                )
-            else:
-                resolved.append((name, factory(settings, facets)))
+            resolved.append((name, factory(context)))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {exc!r}")
     if not resolved:
@@ -784,6 +813,39 @@ def _apply_lane(
         # emit a SECOND row for that pair, so the company appears twice — once measured, once
         # enumerated-only — inflating `corpus_boards` and every bucket count.
         apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane")
+
+    # The seed half of the single-writer rule. Both statements run HERE — on the main thread,
+    # after the lane's own fetch worker has finished — so a lane never holds a write connection.
+    #
+    # The attempts are charged BEFORE the discoveries are recorded, and the order is deliberate:
+    # a resolver that succeeded on a seed whose URL its own run also re-discovered must close the
+    # existing row rather than have the re-discovery read as an untouched new one. Recording
+    # first cannot actually reopen it — `record_seeds` touches nothing on conflict — but the
+    # order states the intent where the next reader of this loop will see it.
+    if result.seed_attempts or result.discovered_seeds:
+        now = utcnow()
+        with engine.begin() as conn:
+            for seed_id, resolved in result.seed_attempts:
+                record_seed_attempt(conn, seed_id, run_id=run_id, now=now, resolved=resolved)
+            written = record_seeds(
+                conn,
+                result.discovered_seeds,
+                discovered_by=lane.name,
+                run_id=run_id,
+                now=now,
+            )
+        # Durable, not a print, and OUTSIDE the transaction above so the report cannot itself
+        # fail the write it is reporting on. A lane emitting URLs nothing can route is a real
+        # defect in that lane, and swallowing it would make the lane look like one that simply
+        # found nothing — the absent-versus-zero confusion the acquisition tally exists to
+        # prevent. It is not fatal: the seeds beside it were written.
+        if written.unroutable:
+            append_run_error(
+                engine,
+                run_id,
+                f"lane {lane.name}: {len(written.unroutable)} seed url(s) had no parseable "
+                f"host and were skipped, first: {written.unroutable[0]!r}",
+            )
 
     tally = result.tally
     return LaneReport(

@@ -499,3 +499,61 @@ job_dispositions = Table(
     ),
     Index("ix_job_dispositions_expires_at", "expires_at"),
 )
+
+
+# A posting URL one lane discovered and CANNOT resolve itself, kept so a resolver lane can read
+# it in a later run.
+#
+# It exists because tier-D vendors (Hireology, CareerPlug, Paylocity, JazzHR, Breezy, iCIMS on a
+# custom domain, Oracle HCM) are per-tenant with NO cross-tenant search, so an adapter is only
+# half a lane — the other half is where the tenant identifier comes from (D-413). The binding
+# constraint measured there is the SEED, not the adapter: of 39 tier-D misses only 6 have a
+# seeded posting URL and 18 have no seed at all. A discovering lane and a resolving lane
+# therefore cannot be the same lane and generally do not run in the same stage pass, which is
+# why this is a table and not a value passed between them.
+#
+# `url` is UNIQUE and the first discoverer keeps the row, the same rule and the same reason as
+# `upsert_lane_company`: rewriting `discovered_by` would make the store's own account of where
+# something came from a lie, and the prior value is unrecoverable once overwritten.
+#
+# `host` is the seed's ROUTE, derived from the URL at record time and never supplied by the
+# caller. Without it the table is one undifferentiated pool, and a resolver asking for a bounded
+# number of seeds draws whatever is oldest: a JSON-LD resolver taking one seed a run can be
+# handed an Oracle HCM URL every run while Hireology starves forever, or can charge an attempt
+# against a seed that belongs to a resolver nobody has written yet. `discovered_by` cannot route
+# it, because the same discovering lane produces seeds for every vendor.
+#
+# The HOST rather than a vendor enum, and that choice is load-bearing: a host is a FACT about the
+# URL, so the discovering lane needs to know nothing about which resolver will claim it, and a new
+# resolver is a new host set on the reader rather than a migration and a catalog bump. It also
+# handles the custom-domain case that a vendor enum handles badly — `careers.garmin.com` is iCIMS
+# and `k2j-marketing-partners-llc.careerplug.com` is CareerPlug, and each resolver lists the exact
+# hosts its own strategy table covers.
+#
+# `attempts` is the seed's own bound. A seed that no resolver can ever turn into a posting — an
+# expired requisition, a vendor that changed its markup — would otherwise cost one GET every run
+# forever, which is a cost leak with no drain. The RESOLVER owns the ceiling, not this table:
+# what belongs here is only the counter it reads.
+#
+# `resolved_at` is set rather than the row being deleted, matching `job_dispositions.reopened_at`
+# — draining a bucket must not erase the evidence that it held something.
+lane_seeds = Table(
+    "lane_seeds",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("url", Text, nullable=False),
+    Column("host", Text, nullable=False),
+    Column("discovered_by", Text, nullable=False),
+    Column("first_seen_run_id", Integer, ForeignKey("runs.id"), nullable=False),
+    Column("first_seen_at", DateTime, nullable=False),
+    Column("attempts", Integer, nullable=False, server_default=text("0")),
+    Column("last_attempt_run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    Column("last_attempt_at", DateTime, nullable=True),
+    Column("resolved_at", DateTime, nullable=True),
+    UniqueConstraint("url"),
+    # The resolver's read is "unresolved, on one of MY hosts, under the attempt ceiling", and the
+    # index is in that order. `resolved_at` leads because it is the selective half — every seed a
+    # resolver succeeds on leaves the candidate set permanently — then `host`, which is what makes
+    # one resolver's scan proportional to its own backlog rather than to the whole table.
+    Index("ix_lane_seeds_resolved_at_host_attempts", "resolved_at", "host", "attempts"),
+)
