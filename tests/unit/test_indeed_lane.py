@@ -37,9 +37,12 @@ from indeed_shape import (
     NO_BODY_HIT,
     NO_EMPLOYER_PAGE_HIT,
     REVIEW_BY,
+    TENANT_SEED_HIT,
     TRAILING_CHROME_HIT,
+    UNIDENTIFIABLE_TENANT_SEED_HIT,
     Hit,
     error_response,
+    job_dict,
     search_hits,
     search_response,
 )
@@ -403,6 +406,113 @@ def test_a_second_hit_for_one_posting_is_dropped_before_it_reaches_apply_board(t
     assert result.tally.counts["body_inline"] == 1
     # Seen on the second facet and not taken again. Counted, never dropped in silence.
     assert result.tally.counts["not_attemptable"] == 1
+
+
+# ---------------------------------------------------------------------------------------
+# Tenant seeds: the tier-D handoff to `lane_seeds` (D-413).
+# ---------------------------------------------------------------------------------------
+
+
+def test_a_view_job_url_naming_no_recognized_board_is_seeded(tmp_path):
+    """The tier-D case. No host in `core/board_urls.py` matches, so `UnknownBoardURL` is the
+    signal that a real employer board exists and this repo has no adapter for it at all.
+    """
+    seed = indeed.tenant_seed_url(job_dict(TENANT_SEED_HIT))
+    assert seed == TENANT_SEED_HIT.view_job_url
+
+
+@respx.mock
+def test_a_hit_whose_view_job_url_is_unrecognized_is_seeded_through_collect(tmp_path):
+    """End to end through `collect`: the seed rides in `LaneResult.discovered_seeds`, and the hit is
+    STILL keyed under `indeed` (tier 2) the same way any other apply-url-less hit would be --
+    seeding is additive, not a substitute for the existing fallback.
+    """
+    _mock_one([TENANT_SEED_HIT])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == (TENANT_SEED_HIT.view_job_url,)
+    assert {(s.provider, s.slug) for s in result.snapshots} == {
+        (LANE_PROVIDER, "Example-Manufacturing")
+    }
+
+
+@respx.mock
+def test_a_view_job_url_that_resolves_is_not_seeded(tmp_path):
+    """Tier 1 already applies this hit under the real provider THIS run. Seeding it too would
+    hand a resolver a URL a board scan already owns.
+    """
+    _mock_one(DEREFERENCE_HITS)
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == ()
+
+
+@respx.mock
+def test_a_recognized_board_url_with_no_evidenced_reference_is_not_seeded(tmp_path):
+    """THE DISTINGUISHING TRAP. `TRAILING_CHROME_HIT` names a real lever URL this repo already
+    has an adapter for; only its posting reference is unreadable (`UnresolvablePostingURL`). That
+    is a URL-shape defect, not a missing tenant, and a client that seeded every
+    `board_posting_target`-failure indiscriminately would seed this too.
+    """
+    _mock_one([TRAILING_CHROME_HIT])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == ()
+
+
+@respx.mock
+def test_a_hit_with_no_apply_url_is_not_seeded(tmp_path):
+    """Nothing to hand a resolver: an absent `viewJobUrl` is not a URL of any kind."""
+    _mock_one(search_hits(1))
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == ()
+
+
+@respx.mock
+def test_an_unidentifiable_hit_is_still_seeded(tmp_path):
+    """Seeding is read off the raw search entries, not off `_group_by_company`'s output: a hit
+    `hit_identity` refuses entirely (no employer page, so `UnidentifiableHit`) still carries a
+    real, unrecognized board URL, and gating the seed on grouping would silently drop exactly the
+    hits with the least other trace of themselves.
+    """
+    _mock_one([UNIDENTIFIABLE_TENANT_SEED_HIT])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == (UNIDENTIFIABLE_TENANT_SEED_HIT.view_job_url,)
+    assert result.tally.counts["not_attemptable"] == 1
+    assert result.snapshots == ()
+
+
+@respx.mock
+def test_a_refused_companys_hit_is_still_seeded(tmp_path):
+    """A seed is not a write against this run's company cap -- it is a URL for a LATER resolver
+    lane to spend its own budget on -- so refusing the company must not cost the seed.
+    """
+    _mock_one([TENANT_SEED_HIT])
+
+    result = _collect(IndeedLane(), tmp_path, admits=False)
+
+    assert result.discovered_seeds == (TENANT_SEED_HIT.view_job_url,)
+    assert result.snapshots == ()
+
+
+@respx.mock
+def test_two_hits_naming_the_same_unresolved_tenant_url_seed_it_once(tmp_path):
+    """Deduplicated in the lane, in first-seen order, rather than left for the store's conflict
+    clause to absorb one row at a time.
+    """
+    second = replace(TENANT_SEED_HIT, key="key9602", title="Software Engineer II")
+    _mock_one([TENANT_SEED_HIT, second])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == (TENANT_SEED_HIT.view_job_url,)
 
 
 # ---------------------------------------------------------------------------------------

@@ -249,3 +249,27 @@ LOCAL_MIDNIGHT_HIT = Hit(
     employer_page="/cmp/Acme-00",
     published_ms=1_788_138_000_000,
 )
+
+# The tier-D case (D-413): a real employer board `core/board_urls.py` has never registered a
+# host for. "careers.example-hcm.com" matches none of the six providers' host lists, so
+# `parse_posting_target` raises `UnknownBoardURL` -- distinct from `TRAILING_CHROME_HIT` above,
+# whose host IS a registered provider and raises `UnresolvablePostingURL` instead. This is the
+# URL `lane_seeds` exists to carry to a later resolver lane.
+TENANT_SEED_HIT = Hit(
+    key="key9601",
+    title="Software Engineer I",
+    employer_name="Example Manufacturing",
+    employer_page="/cmp/Example-Manufacturing",
+    view_job_url="https://careers.example-hcm.com/en/sites/CX_1/job/9601",
+)
+
+# Same unrecognized host, but with NO `/cmp/` page either -- `hit_identity` REFUSES this hit
+# entirely (`UnidentifiableHit`), and the seed must still be captured. Proves seeding is read off
+# the raw search entries, not off `_group_by_company`'s output.
+UNIDENTIFIABLE_TENANT_SEED_HIT = Hit(
+    key="key9701",
+    title="Software Engineer II",
+    employer_name="Unnamed HCM Tenant",
+    employer_page=None,
+    view_job_url="https://careers.example-hcm.com/en/sites/CX_1/job/9701",
+)

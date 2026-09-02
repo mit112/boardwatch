@@ -92,6 +92,15 @@ company, and `_process_missing` closes a posting no `complete` board scan enumer
 misses (D-278 §4.2) -- so at any company the user actually watches, those rows would be acquired
 and then silently killed. Two tiers only, the same two hiring.cafe uses.
 
+A THIRD DEREFERENCE TIER IS STILL NOT ADDED (D-414 choice 2) -- the URL a failed tier 1
+recovers is instead handed to `lane_seeds` (T3, D-413), not resolved here. `tenant_seed_url`
+runs the SAME `parse_posting_target` call `hit_identity` already makes and keeps only the
+`UnknownBoardURL` failures -- a real employer board this repo has no adapter for at all -- so a
+later resolver lane can spend its own request budget against a vendor this lane never touches.
+`UnresolvablePostingURL` (a recognized provider whose posting reference this URL does not
+evidence, e.g. lever's `/apply` chrome) is dropped rather than seeded: that employer already has
+a working adapter, and the defect is the URL's shape, not a missing tenant.
+
 THE BODY IS TAKEN WITHOUT THE `lanes.quality` FLOOR, AND THAT IS A DECISION. `MIN_SECTION_MARKERS`
 is calibrated for the LinkedIn lane's HTML shell and does not generalize: measured across the live
 store it false-positives on 2,571 of workday's 2,795 and 1,687 of lever's 1,972 below-floor
@@ -465,6 +474,59 @@ def board_posting_target(apply_url: str) -> PostingTarget | None:
         return None
 
 
+def tenant_seed_url(job: dict[str, Any]) -> str | None:
+    """`recruit.viewJobUrl` when it names NO recognized board at all -- the tier-D case (D-413).
+
+    This is the ONE new signal this lane hands `lane_seeds` (`store/tables.py`), and it is
+    narrower than "`board_posting_target` returned None" on purpose. `parse_posting_target`
+    raises two different exceptions and only one of them is a missing TENANT:
+
+    * `UnknownBoardURL` -- the host is not one of this repo's six providers at all. That is the
+      tier-D vendor recon measured (Oracle HCM, iCIMS, UKG, ...): a real employer board this
+      repo has never heard of, which is exactly what a later resolver lane needs a URL for.
+    * `UnresolvablePostingURL` -- the host IS a recognized provider, but this particular URL's
+      posting reference cannot be evidenced (`TRAILING_CHROME_HIT`'s lever `/apply` is the
+      pinned example). That employer already has a working adapter; the defect is the URL's
+      shape, not a missing tenant, and handing it to a resolver built for unrecognized vendors
+      would not advance anything. Filtering this out here, rather than in the resolver, is what
+      keeps `lane_seeds` a queue of vendors this repo cannot reach yet, not a junk drawer for
+      every malformed URL any lane happens to see.
+
+    None also when `viewJobUrl` is blank (nothing to seed), and when it DOES resolve to a
+    board (tier 1 of `hit_identity`): that hit is being applied under the real provider's
+    identity THIS run, so seeding it too would hand a resolver a URL a board scan already owns.
+    """
+    apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
+    if not apply_url:
+        return None
+    try:
+        parse_posting_target(apply_url)
+    except UnresolvablePostingURL:
+        return None
+    except UnknownBoardURL:
+        return apply_url
+    return None
+
+
+def _discovered_seeds(entries: list[_SearchEntry]) -> tuple[str, ...]:
+    """Every DISTINCT tier-D `viewJobUrl` this page saw, in first-seen order.
+
+    Computed from every entry rather than from `_group_by_company`'s grouped output: a hit
+    `hit_identity` cannot key AT ALL (`UnidentifiableHit`, no employer page and no posting key)
+    still carries a real, unrecognized board URL worth seeding -- gating this on grouping would
+    silently drop exactly the hits with the least other trace of themselves. A `dict` rather than
+    a `set` keeps the tuple in first-seen order for a reader diffing two runs; `record_seeds`'
+    own conflict clause already absorbs an in-batch duplicate, so the dedup here is a courtesy to
+    the caller, not a correctness requirement.
+    """
+    seeds: dict[str, None] = {}
+    for _url, job in entries:
+        seed = tenant_seed_url(job)
+        if seed is not None:
+            seeds[seed] = None
+    return tuple(seeds)
+
+
 def employer_slug(job: dict[str, Any]) -> str:
     """Indeed's own employer key: the last segment of `/cmp/{slug}`, or "" when absent.
 
@@ -554,6 +616,14 @@ class IndeedLane:
         never built.
         """
         entries, search_pages = self._search(fetcher)
+        # Computed off the raw entries, before grouping or admission touch them: a seed costs
+        # nothing extra to collect (`viewJobUrl` already rode in with the search response this
+        # lane paid for regardless), and it is not gated on company admission either -- a seed is
+        # a URL for a LATER resolver lane to spend its own budget on, not a write against this
+        # run's company cap. RETURNED on `LaneResult.discovered_seeds` rather than written: this
+        # runs in `_fetch_lane`'s worker thread, and `apply_board` is the pipeline's single
+        # writer, so the runner persists it in the serial apply phase instead (D-413/D-414).
+        discovered_seeds = _discovered_seeds(entries)
 
         tally = AcquisitionTally()
         by_company = _group_by_company(entries, tally)
@@ -585,7 +655,10 @@ class IndeedLane:
                         snapshot=lane_snapshot(postings, company.url),
                     )
                 )
-        return LaneResult(snapshots=tuple(snapshots), tally=tally, search_pages=search_pages)
+        return LaneResult(
+            snapshots=tuple(snapshots), tally=tally, search_pages=search_pages,
+            discovered_seeds=discovered_seeds,
+        )
 
     def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:
         """Every configured search page, its hits paired with the URL they came from.
