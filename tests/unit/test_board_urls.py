@@ -1,7 +1,7 @@
 import pytest
 
 from boardwatch.core import board_urls
-from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.core.board_urls import UnknownBoardURL, UnregisteredBoardHost, parse_board_target
 from boardwatch.providers import registry
 
 
@@ -164,6 +164,28 @@ def test_bare_suffix_host_surfaces_slug_help(monkeypatch: pytest.MonkeyPatch) ->
         parse_board_target("https://acme.suffixy.example.com")
 
 
+def test_a_genuinely_unmatched_host_raises_the_narrower_subclass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`UnregisteredBoardHost` exists so a caller deciding whether a URL names a MISSING tenant
+    (`lanes/indeed.py::tenant_seed_url`, D-413) can tell this apart from a REGISTERED provider
+    whose slug this value just does not carry -- see the next test for that half. A subclass, so
+    every existing `except UnknownBoardURL` elsewhere keeps catching it unchanged."""
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnregisteredBoardHost):
+        parse_board_target("https://notsuffixy.example.com/Careers")
+
+
+def test_a_matched_host_with_no_extractable_slug_stays_the_base_class() -> None:
+    """THE OTHER HALF of the same distinction, against the REAL registry. Greenhouse is a
+    REGISTERED provider with no `slug_help`, so a bare root URL falls through with an empty path
+    and no help text -- this must NOT raise `UnregisteredBoardHost`, or a caller keying a
+    tier-D decision on that subclass would misfile a known provider's URL as an unknown vendor."""
+    with pytest.raises(UnknownBoardURL) as exc_info:
+        parse_board_target("https://boards.greenhouse.io")
+    assert not isinstance(exc_info.value, UnregisteredBoardHost)
+
+
 def test_normalizer_value_error_becomes_unknown_board_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -226,3 +248,63 @@ def test_host_port_form_still_reaches_the_url_branch() -> None:
 
 def test_colon_in_slug_still_splits_on_the_first_colon() -> None:
     assert parse_board_target("greenhouse:a:b") == ("greenhouse", "a:b")
+
+
+# --------------------------------------------------------------------------------------
+# `UnregisteredBoardHost` promises a WELL-FORMED url whose host is merely unregistered.
+# A lane reads that promise as licence to record the host as a tier-D tenant seed, so
+# anything else reaching the subclass becomes an unresolvable row nothing can drain.
+# --------------------------------------------------------------------------------------
+
+def test_a_trailing_dns_root_dot_still_matches_the_registered_provider() -> None:
+    """`boards.greenhouse.io.` resolves to exactly the same host as `boards.greenhouse.io`.
+
+    Without normalisation the registered provider fails to match and the value falls all the way
+    through to `UnregisteredBoardHost` — which is a lane's signal to file it as a tier-D tenant.
+    ONE character would put a greenhouse board into the tier-D seed queue.
+    """
+    assert parse_board_target("https://boards.greenhouse.io./acme/jobs/123") == (
+        "greenhouse",
+        "acme",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://",                      # no host at all
+        "not a url at all",              # urlsplit assigns a space-containing "hostname"
+        "https://a.test:99999/x",        # port out of range; `.port` raises only when touched
+        "https://-leading-hyphen.test/x",
+        "https://127.0.0.1/x",           # a bare IPv4 literal: no host filter is an address
+        "https://[::1]/x",               # a bare IPv6 literal, same reason
+    ],
+)
+def test_a_malformed_value_takes_the_BASE_class_and_is_never_seedable(value: str) -> None:
+    """Malformed is a parse failure, not an as-yet-unregistered vendor.
+
+    Asserted as `not isinstance(..., UnregisteredBoardHost)` rather than `== UnknownBoardURL`,
+    because the subclass IS an `UnknownBoardURL` — a bare `pytest.raises(UnknownBoardURL)` passes
+    for the subclass too and would be vacuous here.
+    """
+    with pytest.raises(UnknownBoardURL) as caught:
+        parse_board_target(value)
+    assert not isinstance(caught.value, UnregisteredBoardHost)
+
+
+def test_a_well_formed_unregistered_host_still_reaches_the_subclass() -> None:
+    """The other direction: narrowing must not swallow the case the subclass exists for."""
+    with pytest.raises(UnregisteredBoardHost):
+        parse_board_target("https://careers.hireology.com/hireology2/2855936/description")
+
+
+def test_an_idn_unregistered_host_reaches_the_subclass_and_is_seedable() -> None:
+    """An internationalized-domain host `_is_hostname` used to reject on its raw `[a-z0-9_]` regex.
+
+    HTTPX dials its IDNA/punycode form and `seed_host` stores the unicode host, which a suffix
+    filter still selects -- so a real, drainable tenant board must reach `UnregisteredBoardHost`
+    (the lane's signal to file a tier-D seed), NOT the base class that means "malformed, never
+    seed". The host is unregistered, so this exercises the `_is_hostname` accept path directly.
+    """
+    with pytest.raises(UnregisteredBoardHost):
+        parse_board_target("https://tést.example-hcm.com/en/sites/CX_1/job/9601")

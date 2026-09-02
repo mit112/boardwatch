@@ -249,3 +249,68 @@ LOCAL_MIDNIGHT_HIT = Hit(
     employer_page="/cmp/Acme-00",
     published_ms=1_788_138_000_000,
 )
+
+# The tier-D case (D-413): a real employer board `core/board_urls.py` has never registered a
+# host for. "careers.example-hcm.com" matches none of the six providers' host lists, so
+# `parse_posting_target` raises `UnknownBoardURL` -- distinct from `TRAILING_CHROME_HIT` above,
+# whose host IS a registered provider and raises `UnresolvablePostingURL` instead. This is the
+# URL `lane_seeds` exists to carry to a later resolver lane.
+TENANT_SEED_HIT = Hit(
+    key="key9601",
+    title="Software Engineer I",
+    employer_name="Example Manufacturing",
+    employer_page="/cmp/Example-Manufacturing",
+    view_job_url="https://careers.example-hcm.com/en/sites/CX_1/job/9601",
+)
+
+# Same unrecognized host, but with NO `/cmp/` page either -- `hit_identity` REFUSES this hit
+# entirely (`UnidentifiableHit`), and the seed must still be captured. Proves seeding is read off
+# the raw search entries, not off `_group_by_company`'s output.
+UNIDENTIFIABLE_TENANT_SEED_HIT = Hit(
+    key="key9701",
+    title="Software Engineer II",
+    employer_name="Unnamed HCM Tenant",
+    employer_page=None,
+    view_job_url="https://careers.example-hcm.com/en/sites/CX_1/job/9701",
+)
+
+# A REGISTERED provider's own bare shortlink, which carries no org and so no extractable slug
+# (`WorkableProvider.slug_from_path` returns None for it). `parse_posting_target` raises the
+# `UnknownBoardURL` BASE class -- which an unregistered host's `UnregisteredBoardHost` SUBCLASSES,
+# so both reach the same `except UnknownBoardURL` catcher, but only the subclass may seed. This is
+# the trap a review caught: a client seeding on any `UnknownBoardURL` would file a KNOWN provider's
+# posting into the tier-D queue. Must NOT be seeded.
+KNOWN_PROVIDER_UNROUTABLE_SEED_HIT = Hit(
+    key="key9801",
+    title="Software Engineer III",
+    employer_name="Beacon Labs",
+    employer_page="/cmp/Beacon-Labs",
+    view_job_url="https://apply.workable.com/j/ABC123",
+)
+
+# An unbalanced IPv6 bracket. `urlparse` raises a BARE `ValueError` on this ("Invalid IPv6 URL"),
+# which `core/board_urls.py` converts to the `UnknownBoardURL` BASE class -- the same catcher, but
+# NOT the `UnregisteredBoardHost` subclass an unregistered host raises. Must NOT be seeded: it is
+# not a URL in any usable sense, let alone a tenant.
+MALFORMED_VIEW_JOB_URL_HIT = Hit(
+    key="key9802",
+    title="Software Engineer IV",
+    employer_name="Halcyon Works",
+    employer_page="/cmp/Halcyon-Works",
+    view_job_url="https://[broken",
+)
+
+# HAS a scheme and a hostname, so it clears `_is_addressable_url`'s scheme and hostname checks --
+# but `urlparse` still tolerates it without raising anything, reading everything before the next
+# `/` as a literal, space-containing "hostname". `parse_posting_target` then raises the
+# `UnknownBoardURL` BASE class (that space-bearing host matches no provider), NOT the
+# `UnregisteredBoardHost` subclass a real unrecognized vendor raises -- but the whitespace check
+# inside `_is_addressable_url` rejects it before that, so the string that gets RECORDED is guarded
+# regardless of the exception class. Must NOT be seeded.
+GARBAGE_VIEW_JOB_URL_HIT = Hit(
+    key="key9803",
+    title="Software Engineer V",
+    employer_name="Vertex Systems",
+    employer_page="/cmp/Vertex-Systems",
+    view_job_url="https://not a real host/job/1",
+)

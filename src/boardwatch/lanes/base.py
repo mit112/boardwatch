@@ -124,6 +124,16 @@ class LaneResult:
     # such a crash as `extracted_empty` would disguise the defect and age a real seed out on a
     # false claim. Empty -- never absent -- for a run in which nothing crashed the resolver.
     resolver_errors: tuple[str, ...] = ()
+    # Seed URLs a PRODUCER dropped as MALFORMED before they could become a `discovered_seeds` entry:
+    # a value that failed `is_seedable_url` (bad scheme/host/port, a control char, an IP literal, a
+    # multi-dot host). Distinct from `resolver_errors` (a resolver CRASH) and from the write point's
+    # `unroutable` refusal (a malformed URL that DID reach `record_seeds`): a producer that silently
+    # `continue`s past a malformed candidate makes that defect invisible past the write path -- the
+    # absent-versus-zero confusion the acquisition tally exists to prevent -- so it is carried out
+    # for the runner to surface. The ORDINARY "resolves to a known board / names no vendor this lane
+    # resolves" case is NOT carried here -- only a malformed URL -- so this never turns a quiet
+    # no-vendor day into noise. Empty -- never absent -- for a run whose producers emitted none.
+    refused_seeds: tuple[str, ...] = ()
 
 
 def _no_seeds(

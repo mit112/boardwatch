@@ -225,7 +225,7 @@ from urllib.parse import urlparse
 
 from selectolax.parser import HTMLParser
 
-from boardwatch.core.board_urls import UnknownBoardURL
+from boardwatch.core.board_urls import UnknownBoardURL, is_seedable_url
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.models import RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure, identifying_user_agent
@@ -699,7 +699,7 @@ class JsonLdLane:
         a whole run's seeds at the same attempt count, to be re-fetched at one GET each, every run,
         forever. That is the drain failing silently, which is the one failure this queue prevents.
         """
-        discovered = self._discover(fetcher)
+        discovered, refused = self._discover(fetcher)
 
         seeds = self._seeds(
             hosts=SEED_HOSTS,
@@ -805,6 +805,7 @@ class JsonLdLane:
             snapshots=tuple(snapshots),
             tally=tally,
             discovered_seeds=discovered,
+            refused_seeds=refused,
             seed_attempts=tuple(attempts),
             uncharged_resolved=tuple(uncharged),
             resolver_errors=tuple(resolver_errors),
@@ -856,8 +857,9 @@ class JsonLdLane:
                 return posting, employer, spent
         return None, employer, spent
 
-    def _discover(self, fetcher: Fetcher) -> tuple[str, ...]:
-        """Catalog-matching ACTIVE posting URLs from the two public new-grad lists.
+    def _discover(self, fetcher: Fetcher) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Catalog-matching ACTIVE posting URLs from the two public new-grad lists, and every
+        MALFORMED candidate dropped along the way.
 
         `active is not True` rather than falsiness, matching `github_lists.discover` exactly: the
         field is a real bool on 100% of records, so a truthy string would be the contract moving
@@ -870,6 +872,7 @@ class JsonLdLane:
         twice.
         """
         found: list[str] = []
+        refused: list[str] = []
         seen: set[str] = set()
         for rows in fetch_listings(fetcher).values():
             for row in rows:
@@ -878,11 +881,28 @@ class JsonLdLane:
                 url = row.get("url")
                 if not isinstance(url, str) or url.strip() in seen:
                     continue
+                # The shared seed-URL gate, BEFORE `match_vendor`, so a bad-port / scheme-less /
+                # control-char / IP-literal / multi-dot value never becomes a discovered seed.
+                # `match_vendor` routes off `seed_host`, which drops the port and cleans up control
+                # chars, so on its own it would match `newco.applytojob.com:99999/...` as JazzHR and
+                # seed a row HTTPX rejects at fetch. A MALFORMED value is carried out in `refused`
+                # for the runner to surface -- and added to `seen` so a repeat is not reported
+                # twice -- rather than dropped silently past the visibility path. `record_seeds`
+                # WOULD refuse it at the write point, but this branch never passes it there --
+                # carrying it in `refused` spares the round trip AND is what makes the producer
+                # refusal visible.
+                if not is_seedable_url(url.strip()):
+                    seen.add(url.strip())
+                    refused.append(url.strip())
+                    continue
+                # A well-formed URL naming NO vendor this lane resolves -- the ordinary catalog miss
+                # (an owner-declined `*.icims.com`, a greenhouse board a scan already owns). Not a
+                # defect: NOT carried as a refusal, just not this lane's seed.
                 if match_vendor(url) is None:
                     continue
                 seen.add(url.strip())
                 found.append(url.strip())
-        return tuple(found)
+        return tuple(found), tuple(refused)
 
     def _resolve(
         self,

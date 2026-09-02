@@ -92,6 +92,20 @@ company, and `_process_missing` closes a posting no `complete` board scan enumer
 misses (D-278 §4.2) -- so at any company the user actually watches, those rows would be acquired
 and then silently killed. Two tiers only, the same two hiring.cafe uses.
 
+A THIRD DEREFERENCE TIER IS STILL NOT ADDED (D-414 choice 2) -- the URL a failed tier 1
+recovers is instead handed to `lane_seeds` (T3, D-413), not resolved here. `tenant_seed_url`
+runs the SAME `parse_posting_target` call `hit_identity` already makes and keeps only
+`core.board_urls.UnregisteredBoardHost` failures -- a real, well-formed URL naming NO provider
+this repo registers at all -- so a later resolver lane can spend its own request budget against a
+vendor this lane never touches. Three other failure shapes are dropped rather than seeded, and a
+review caught that an earlier version of this lane conflated them with the one above:
+`UnresolvablePostingURL` (a recognized provider whose posting reference this URL does not
+evidence, e.g. lever's `/apply` chrome), a REGISTERED provider's URL that itself carries no
+extractable slug (e.g. Workable's bare shortlink `apply.workable.com/j/{code}`), and a malformed
+or non-absolute value (`https://[broken`, or a bare string with no scheme at all). The first two
+already have a working adapter; the defect is the value's shape, not a missing tenant. The third
+is not a URL in any usable sense.
+
 THE BODY IS TAKEN WITHOUT THE `lanes.quality` FLOOR, AND THAT IS A DECISION. `MIN_SECTION_MARKERS`
 is calibrated for the LinkedIn lane's HTML shell and does not generalize: measured across the live
 store it false-positives on 2,571 of workday's 2,795 and 1,687 of lever's 1,972 below-floor
@@ -111,7 +125,11 @@ from datetime import UTC, datetime
 from itertools import zip_longest
 from typing import Any
 
-from boardwatch.core.board_urls import UnknownBoardURL
+from boardwatch.core.board_urls import (
+    UnknownBoardURL,
+    UnregisteredBoardHost,
+    is_seedable_url,
+)
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import RawPosting
@@ -465,6 +483,106 @@ def board_posting_target(apply_url: str) -> PostingTarget | None:
         return None
 
 
+def _is_addressable_url(value: str) -> bool:
+    """A well-formed, absolute http(s) URL fit to record as a seed -- never a bare host, a
+    `provider:slug` paste shorthand, or a string `urlparse` tolerates without raising.
+
+    Delegates to `core.board_urls.is_seedable_url`, the ONE shared gate `store.seed_queries.
+    record_seeds` and the JSON-LD lane's discovery filter also apply, so the two lanes and the
+    write point cannot drift on what "seedable" means. `recruit.viewJobUrl` is an API field the
+    endpoint controls, never a human paste, so anything short of a genuine absolute URL is
+    malformed input here, not evidence of an as-yet-unregistered vendor -- which is why this lane
+    holds seeds to a stricter bar than `parse_board_target` sets for a `companies add` paste.
+    """
+    return is_seedable_url(value)
+
+
+def tenant_seed_url(job: dict[str, Any]) -> str | None:
+    """`recruit.viewJobUrl` when it is a real, addressable URL naming NO provider this repo
+    registers at all -- the tier-D case (D-413).
+
+    **`UnknownBoardURL` alone is NOT that signal, and treating it as one was the bug a review
+    caught.** `parse_posting_target` raises it from THREE different places, and only one is a
+    missing tenant:
+
+    * A REGISTERED provider whose slug this value does not carry (`UnknownBoardURL`, e.g.
+      Workable's bare shortlink `apply.workable.com/j/{code}`, which omits the org). That
+      employer already has a working adapter; the defect is the URL's shape, not a missing
+      tenant, and seeding it would file a KNOWN provider's posting into a queue built for
+      vendors this repo has never heard of.
+    * A malformed value (`UnknownBoardURL` from `urlparse`'s own bare `ValueError` on an
+      unbalanced bracket, e.g. `https://[broken`). Not a URL at all in any usable sense.
+    * NO provider registers the host at all (`UnregisteredBoardHost`, a `core/board_urls.py`
+      subclass carved out for exactly this). That is the tier-D vendor recon measured (Oracle
+      HCM, iCIMS, UKG, ...): a real employer board this repo has never heard of, which is
+      exactly what a later resolver lane needs a URL for.
+
+    Only the third is caught here. `UnresolvablePostingURL` -- the host IS registered, but this
+    URL's POSTING reference cannot be evidenced (`TRAILING_CHROME_HIT`'s lever `/apply` is the
+    pinned example) -- is the fourth failure mode and was already excluded before this fix; it
+    is a narrower version of the same "known vendor, unusable value" story as the Workable case
+    above, just caught one level deeper (`parse_board_target` succeeds; `parse_posting_target`'s
+    own posting-shape check fails).
+
+    `_is_addressable_url` runs FIRST because the exception class alone is NOT a reliable seed
+    signal, and which one `parse_posting_target` raises does not tell malformed from unregistered.
+    A control char in the PATH leaves the host well-formed, so it reaches the
+    `UnregisteredBoardHost` subclass -- the very class this function seeds on -- exactly as a real
+    unrecognized vendor does; only whitespace that corrupts the HOST reaches the `UnknownBoardURL`
+    base class. And a value `urlsplit` silently cleans up (a stripped tab) would route fine yet
+    persist a URL string no fetch log can match. So the recorded STRING, checked by
+    `_is_addressable_url` before the dereference, decides what may seed -- not the exception class.
+
+    None also when `viewJobUrl` is blank (nothing to seed), and when it DOES resolve to a board
+    (tier 1 of `hit_identity`): that hit is being applied under the real provider's identity THIS
+    run, so seeding it too would hand a resolver a URL a board scan already owns.
+    """
+    apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
+    if not apply_url or not _is_addressable_url(apply_url):
+        return None
+    try:
+        parse_posting_target(apply_url)
+    except UnresolvablePostingURL:
+        return None
+    except UnregisteredBoardHost:
+        return apply_url
+    except UnknownBoardURL:
+        return None
+    return None
+
+
+def _discovered_seeds(entries: list[_SearchEntry]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Every DISTINCT tier-D `viewJobUrl` this page saw, and every MALFORMED one it dropped.
+
+    Computed from every entry rather than from `_group_by_company`'s grouped output: a hit
+    `hit_identity` cannot key AT ALL (`UnidentifiableHit`, no employer page and no posting key)
+    still carries a real, unrecognized board URL worth seeding -- gating this on grouping would
+    silently drop exactly the hits with the least other trace of themselves. A `dict` rather than
+    a `set` keeps each tuple in first-seen order for a reader diffing two runs; `record_seeds`'
+    own conflict clause already absorbs an in-batch duplicate, so the dedup here is a courtesy to
+    the caller, not a correctness requirement.
+
+    A `viewJobUrl` that is PRESENT but not safely seedable (`_is_addressable_url` -- bad
+    scheme/host/port, a control char, an IP literal, a multi-dot host) is a MALFORMED value the
+    search endpoint handed us. It is carried out in the SECOND tuple for the runner to surface,
+    rather than dropped silently, so the defect is visible past `record_seeds`' write path. That is
+    distinct from the ordinary cases `tenant_seed_url` returns None for -- a URL that resolves to a
+    known board, or names a registered provider whose slug it lacks -- which are correctly silent
+    and are NOT carried here.
+    """
+    seeds: dict[str, None] = {}
+    refused: dict[str, None] = {}
+    for _url, job in entries:
+        apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
+        if apply_url and not _is_addressable_url(apply_url):
+            refused[apply_url] = None
+            continue
+        seed = tenant_seed_url(job)
+        if seed is not None:
+            seeds[seed] = None
+    return tuple(seeds), tuple(refused)
+
+
 def employer_slug(job: dict[str, Any]) -> str:
     """Indeed's own employer key: the last segment of `/cmp/{slug}`, or "" when absent.
 
@@ -554,6 +672,14 @@ class IndeedLane:
         never built.
         """
         entries, search_pages = self._search(fetcher)
+        # Computed off the raw entries, before grouping or admission touch them: a seed costs
+        # nothing extra to collect (`viewJobUrl` already rode in with the search response this
+        # lane paid for regardless), and it is not gated on company admission either -- a seed is
+        # a URL for a LATER resolver lane to spend its own budget on, not a write against this
+        # run's company cap. RETURNED on `LaneResult.discovered_seeds` rather than written: this
+        # runs in `_fetch_lane`'s worker thread, and `apply_board` is the pipeline's single
+        # writer, so the runner persists it in the serial apply phase instead (D-413/D-414).
+        discovered_seeds, refused_seeds = _discovered_seeds(entries)
 
         tally = AcquisitionTally()
         by_company = _group_by_company(entries, tally)
@@ -585,7 +711,10 @@ class IndeedLane:
                         snapshot=lane_snapshot(postings, company.url),
                     )
                 )
-        return LaneResult(snapshots=tuple(snapshots), tally=tally, search_pages=search_pages)
+        return LaneResult(
+            snapshots=tuple(snapshots), tally=tally, search_pages=search_pages,
+            discovered_seeds=discovered_seeds, refused_seeds=refused_seeds,
+        )
 
     def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:
         """Every configured search page, its hits paired with the URL they came from.

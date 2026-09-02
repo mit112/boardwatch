@@ -18,6 +18,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import ColumnElement
 
+from boardwatch.core.board_urls import is_seedable_url
 from boardwatch.store.tables import lane_seeds
 
 
@@ -34,13 +35,19 @@ class UnroutableSeedURL(ValueError):
 
 @dataclass(frozen=True)
 class SeedWrite:
-    """What `record_seeds` did: rows INSERTED, and the URLs it could not route.
+    """What `record_seeds` did: rows INSERTED, and the URLs it REFUSED to seed.
 
-    `unroutable` is returned rather than logged or swallowed. Swallowed, a lane emitting
-    malformed URLs looks exactly like a lane finding nothing, which is the absent-versus-zero
-    confusion the acquisition tally exists to prevent; raised, one bad row would roll back every
-    good seed in the same batch AND cost the lane its whole report, because `_apply_lane` runs
-    inside `_run_lanes`' broad per-lane `except`.
+    `unroutable` carries every URL the single write point would not store -- one with no parseable
+    host, and (since the tier-D URL boundary closed) one that is not a safely seedable URL at all:
+    no scheme, a bad port, or a control char HTTPX would reject at fetch. Both are the same kind of
+    defect from a reader's seat -- a lane emitted a value nothing can ever resolve -- so they share
+    one channel.
+
+    It is returned rather than logged or swallowed. Swallowed, a lane emitting malformed URLs looks
+    exactly like a lane finding nothing, which is the absent-versus-zero confusion the acquisition
+    tally exists to prevent; raised, one bad row would roll back every good seed in the same batch
+    AND cost the lane its whole report, because `_apply_lane` runs inside `_run_lanes`' broad
+    per-lane `except`.
     """
 
     inserted: int
@@ -83,9 +90,12 @@ class SeedReader(Protocol):
 def seed_host(url: str) -> str:
     """The host a seed is routed by. Derived here so every writer agrees on the spelling.
 
-    Lower-cased and `www.`-stripped: a resolver's strategy table lists a vendor host once, and a
-    seed recorded as `WWW.Breezy.HR` that no `hosts` filter matches is a row that can never be
-    drained and never reports itself as stuck.
+    Derived from validated `parsed.hostname`, not `parsed.netloc`: `.hostname` drops any `user@`
+    and `:port` and lower-cases for us, so a seed on an explicit port (`newco.applytojob.com:443`)
+    routes by bare host rather than storing `newco.applytojob.com:443`, a key no `hosts`/suffix
+    filter can ever match. One trailing DNS root dot and a leading `www.` are stripped for the same
+    reason: `newco.applytojob.com.` and `WWW.Breezy.HR` name the same host a strategy table lists
+    once, and a row no filter matches can never be drained and never reports itself as stuck.
 
     Raises `UnroutableSeedURL` for a URL with no host, rather than storing one. An empty `host`
     matches no resolver's filter, so such a row would sit unresolved and unattempted forever and
@@ -97,7 +107,7 @@ def seed_host(url: str) -> str:
         # `urlsplit` raises a BARE ValueError ("Invalid IPv6 URL") for an unbalanced bracket, the
         # same trap `core/board_urls.py` records at its own `urlparse` call.
         raise UnroutableSeedURL(f"cannot parse a host from {url!r}: {exc}") from exc
-    host = parsed.netloc.lower().removeprefix("www.")
+    host = (parsed.hostname or "").removesuffix(".").removeprefix("www.")
     if not host:
         raise UnroutableSeedURL(f"no host in {url!r}")
     return host
@@ -124,11 +134,16 @@ def record_seeds(
     The return carries the count actually INSERTED, not `len(urls)`, so a caller reporting "seeds
     discovered" reports NEW ones and a re-listed backlog can never read as fresh reach.
 
-    **A URL with no parseable host costs that URL and nothing else.** It is skipped, named in
-    `SeedWrite.unroutable`, and the rest of the batch is written. Letting it raise would abort the
-    whole statement inside `_apply_lane`'s transaction — losing every valid seed beside it AND, via
-    `_run_lanes`' broad per-lane `except`, the lane's entire report. One malformed value from an
-    aggregator must not be able to do that.
+    **This is the ONE place a seed URL is validated, so ANY lane's seeds are checked once.** A URL
+    that is not safely seedable -- no `://` scheme, a bad port, a control char HTTPX rejects at
+    fetch, or no parseable host -- is skipped, named in `SeedWrite.unroutable`, and the rest of the
+    batch is written. `is_seedable_url` is the same gate the Indeed and JSON-LD lanes apply before
+    seeding, enforced here so a lane that skipped it (or a future one that forgets) still cannot
+    persist a row nothing can ever resolve: the blocker that closed the tier-D boundary was exactly
+    a lane reaching `lane_seeds` by a path that did not validate. Letting a bad value raise would
+    abort the whole statement inside `_apply_lane`'s transaction — losing every valid seed beside it
+    AND, via `_run_lanes`' broad per-lane `except`, the lane's entire report. One malformed value
+    from an aggregator must not be able to do that.
 
     Takes a tuple rather than one URL per call because the caller has the whole batch in hand and
     this runs inside the lane stage's single-writer transaction. An empty batch and an in-batch
@@ -138,6 +153,12 @@ def record_seeds(
     rows = []
     unroutable = []
     for url in urls:
+        if not is_seedable_url(url):
+            # Not a URL a resolver could GET (no scheme, a bad port, a control char, no host).
+            # Refused here at the single write point, before `seed_host` -- a value HTTPX would
+            # reject at fetch must never persist as an undrainable row.
+            unroutable.append(url)
+            continue
         try:
             # Derived, never passed in: a discovering lane knows nothing about which resolver
             # will claim a URL, and a caller-supplied host is a caller-supplied routing bug.
