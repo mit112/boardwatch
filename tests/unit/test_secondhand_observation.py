@@ -38,6 +38,7 @@ from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.engine import evaluate
 from boardwatch.eligibility.facts import ClearanceFact, Facts, Policy, WorkAuthFact
+from boardwatch.rank.heuristic import ProfileView, hard_filter_verdict
 from boardwatch.rank.location_gate import classify_location
 from boardwatch.scan.apply import (
     _SECONDHAND_COLUMNS,
@@ -362,26 +363,58 @@ def test_the_insert_path_writes_everything_a_secondhand_observation_carries_but_
     assert row.locations_json == []
 
 
-def test_a_secondhand_insert_records_a_location_the_hard_gate_keeps(
+def test_a_secondhand_insert_blanks_a_false_non_us_location_the_hard_gate_would_delete(
     engine: Engine, company_id: int
 ) -> None:
-    """FAIL-SAFE DIRECTION, chosen for THIS gate, and asserted through the gate itself.
+    """FAIL-SAFE DIRECTION, chosen for THIS gate, and asserted through the REAL hard gate.
 
-    The location gate's two failure modes are not symmetric: a false `non_us` deletes a real lead
-    permanently and invisibly, a false `unknown` merely declines to filter one. So the direction
-    that cannot delete is the one that records no location. `classify_location` accumulates a
-    per-segment verdict list and returns `unknown` when it is empty, and Mit's hard-mode ruling
-    keeps `unknown` -- asserted here rather than assumed, because the whole fix rests on it.
+    The location gate's two failure modes are not symmetric. `hard_filter_verdict` under
+    `location_filter_mode = "hard"` DELETES a lead on a CONFIRMED `non_us` location and merely
+    declines to filter an `unknown` one, so the INSERT records no location rather than the
+    aggregator's -- the direction that cannot delete a real lead.
 
-    The cost is asserted too: with no location evidence `compute_identities` emits neither
-    `company_title_location`, `cross_host` nor `exact_quad`, so this row can neither suppress nor
-    be suppressed on a place the aggregator assigned. Same direction -- absence of evidence is not
+    Stated honestly, because the earlier version of this test was not: a US metro like `Austin, TX`
+    does NOT veto (it classifies `us`, which the gate keeps), and the `remote_only` veto is a
+    SEPARATE clause on `remote_policy`. Neither is the hazard. The hazard this blanking removes is a
+    FALSE `non_us` -- so the aggregator here indexes a genuinely-remote role as
+    `London, United Kingdom`, which classifies `non_us` and WOULD hard-veto.
+
+    Both arms run through the actual gate. WITHOUT the blanking the false location vetoes (deletes)
+    the lead; WITH it (`_inserted_fields` stores `[]`, classified `unknown`) the gate keeps it.
+
+    The identity cost is asserted too: with no location evidence `compute_identities` emits neither
+    `company_title_location`, `cross_host` nor `exact_quad`, so this row can neither suppress nor be
+    suppressed on a place the aggregator assigned. Same direction -- absence of evidence is not
     evidence of sameness.
     """
-    _apply(engine, company_id, RawPosting(**AGGREGATOR, secondhand=ALL_SECONDHAND))  # type: ignore[arg-type]
+    _apply(  # a genuinely-remote role the aggregator indexed under a foreign metro
+        engine, company_id,
+        RawPosting(
+            **{**AGGREGATOR, "locations": ["London, United Kingdom"]},
+            secondhand=ALL_SECONDHAND,  # type: ignore[arg-type]
+        ),
+    )
 
-    assert classify_location(["Austin, TX"]) == "us"  # CONTROL: the value withheld was decidable
-    assert classify_location(_posting(engine).locations_json) == "unknown"
+    row = _posting(engine)
+    profile = ProfileView(
+        skills=frozenset(), target_titles=(), exclude_titles=(), locations=(), remote_only=False
+    )
+    # CONTROL: the value the aggregator assigned really is a deletion -- a confirmed `non_us` that
+    # the REAL hard gate vetoes. Without the blanking below, this is what would decide the lead.
+    assert classify_location(["London, United Kingdom"]) == "non_us"
+    unblanked = hard_filter_verdict(
+        str(row.title), ["London, United Kingdom"], str(row.remote_policy), profile, "hard"
+    )
+    assert unblanked is not None and unblanked.clause == "non_us_location"
+    # WITH the blanking the row carries no location, classifies `unknown`, and the gate KEEPS it.
+    assert row.locations_json == []
+    assert classify_location(row.locations_json) == "unknown"
+    assert (
+        hard_filter_verdict(
+            str(row.title), row.locations_json, str(row.remote_policy), profile, "hard"
+        )
+        is None
+    )
     with engine.connect() as conn:
         kinds = set(conn.execute(select(tables.posting_identities.c.kind)).scalars().all())
     assert kinds == {"exact_provider", "content_hash_only"}
@@ -458,6 +491,67 @@ def test_a_secondhand_update_keys_the_identity_on_what_the_row_holds(
     observed = expect("Backend Engineer II", ["Austin, TX"])
     assert persisted["company_title_location"] != observed["company_title_location"]
     assert stored == persisted
+
+
+def test_a_secondhand_update_never_records_an_exact_quad_the_persisted_body_cannot_reproduce(
+    engine: Engine, company_id: int
+) -> None:
+    """Blocker 3 (D-414(a)). The identity BODY comes off the row, not off the observation.
+
+    `exact_quad` is the only SUPPRESSING identity kind, and it folds the body. `_write_posting_identity`
+    used to read `raw.body_text`; on a secondhand UPDATE that lets the aggregator's text decide a
+    suppression key the persisted row cannot reproduce.
+
+    The provider's own INSERT here carries a real location but an EMPTY body — a stub the board
+    listed without a description, which `content_hash` folds to the SHA-256 of the empty string.
+    The converged aggregator hit then arrives with a NON-empty body it does not own. Because
+    `body_evidence("")` is None, the persisted row emits no `exact_quad`; reading the aggregator's
+    body instead would emit one keyed on the empty-body hash, a claim `identities verify` would
+    read as stale and no recomputation from the row could confirm.
+
+    Asserted as the recorded kinds being EXACTLY what recomputation from the persisted row yields,
+    with `exact_quad`'s absence pinned on its own so the guard names the member it protects.
+    """
+    _apply(engine, company_id, RawPosting(**{**PROVIDER, "body_text": ""}))  # type: ignore[arg-type]
+    _apply(  # the converged aggregator hit carrying a body the provider row never held
+        engine, company_id,
+        RawPosting(
+            **{**AGGREGATOR, "body_text": "Real aggregator text the provider row never held."},
+            secondhand=ALL_SECONDHAND,  # type: ignore[arg-type]
+        ),
+    )
+
+    row = _posting(engine)
+    assert row.body_text == ""  # the empty provider body survived the secondhand update
+    assert row.locations_json == ["Remote - US"]  # provider location survived => location-bearing
+    with engine.connect() as conn:
+        stored = {
+            r.kind: r.identity_key
+            for r in conn.execute(select(tables.posting_identities)).all()
+        }
+    expected = {
+        i.kind: i.identity_key
+        for i in compute_identities(
+            IdentityInputs(
+                posting_id=int(row.id),
+                company_id=company_id,
+                company_name="Acme",
+                provider_posting_id="p1",
+                title=str(row.title),
+                locations=list(row.locations_json),
+                content_hash=str(row.content_hash),
+                body_text=str(row.body_text),
+                url=str(row.url),
+                first_seen_at=row.first_seen_at,
+            )
+        )
+    }
+    # The row itself yields no `exact_quad`: an empty body is the absence of evidence, not evidence
+    # of sameness. The CONTROL that this is not vacuous is `company_title_location`/`cross_host`
+    # still being present — the location-bearing kinds prove identities were written at all.
+    assert "exact_quad" not in expected
+    assert "company_title_location" in stored
+    assert stored == expected  # no body-bearing identity the persisted row cannot reproduce
 
 
 def test_an_undeclared_observation_inserts_exactly_what_it_always_did(
