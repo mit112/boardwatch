@@ -489,6 +489,21 @@ Only what `CLAUDE.md` does not already say.
 - **A scheduled job is a standing claim about the repo, and it decays** (D-123, D-135). A prompt naming a
   starting sha must self-check or be deleted after it runs.
 
+### "Breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
+
+*Moved WHOLE from `STATE.md` on 2026-09-01e, unedited, when that file passed 250 lines again. Settled since 2026-08-31; kept because meeting the retired phrase in an old decision entry is exactly the moment a session needs this paragraph.*
+
+The `CLAUDE.md` section is **deleted** and the live pointers in `PROGRAM.md` and `STANDING-FACTS.md`
+are gone. It reasoned about an ASSUMED downstream; that downstream is instrumented now, so the
+question is answerable with numbers per change instead of settled in advance by an ordering rule.
+**Nothing replaces it** — input work is sequenced on measured evidence like anything else.
+
+**The decision logs are append-only and were deliberately left alone**, so D-280, D-296, D-345 and
+others still argue from the principle. **Meeting the phrase in an old entry does not make it
+current** — D-391 is the reason. Still live, and stated where they belong: every quarantine needs a
+drain designed in the same change; a cap never observed firing is unverified; the keystone invariant
+is untouched.
+
 ## Discovery, coverage and the board backlog
 
 > Moved WHOLE from `STATE.md` on 2026-08-23d (Mit's ruling). Nothing was reworded; these are the

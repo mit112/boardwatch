@@ -21,8 +21,48 @@
 
 ## Current standing
 
-**NO RUN SINCE 140. GATE 1 IS UNCHANGED AT 22.2% (independent 48 of 216), and nothing this session
-moved it — everything landed is CAPABILITY.** Run 141 is the measurement, and it is the next action.
+### Did session 2026-09-01e reach its goal? NO — and the reason is that no run happened
+
+**The goal, in the owner's words: "ensure that we are finding all the jobs that Job Apps is finding,
+so we can retire Job Apps."** That is gate 1 (D-399): independent coverage of job-apps' eligible set
+**>= 80%**.
+
+| | |
+|---|---|
+| gate 1 at session start | **22.2%** (independent 48 of 216) |
+| gate 1 at session end | **22.2% — UNCHANGED** |
+| postings actually gained | **0** |
+
+**Nothing this session moved the number, and nothing could have**: gate 1 is only re-read from a
+pipeline run, and no run took place. Everything that landed is CAPABILITY plus three refutations.
+**Run 141 is the first moment any of it can be scored.**
+
+What the plan (`RETIREMENT-PLAN.md` §5) asked for, against what happened:
+
+| step | outcome |
+|---|---|
+| Track D — drop audit, first | **DONE.** Refuted its own premise (D-412): 0 of 216, so filters are not a lever at all. |
+| Wave 0 — shared settings PR | **SKIPPED deliberately.** Track A already carried the registration sites. Cost: 4 rebase conflicts on exactly the surface Wave 0 existed to remove, and one of my resolutions shipped a syntax error the gate caught. The wall-clock call was probably still right; it was not free. |
+| Track A — LinkedIn geo nets | **MERGED (#326, D-411)**, and the owner's config armed afterwards. |
+| Track B — native Indeed lane | **MERGED (#327, D-414) but DISARMED**, and must stay so until D-414's two owed items close. Contributes **0** until armed. |
+| Track C — `gh_jid` resolver | **PARKED unmerged (D-415).** Built and green; measured to fix **2** rows, not 7,406. |
+| Review each track | **DONE.** #326 came back DO-NOT-SHIP on two false claims, one already in `DECISIONS.md`. |
+| Re-read gate 1 after one run | **NOT DONE — no run.** |
+| Wave 2 — tier-D adapters | **RECON ONLY (D-413).** No adapter built. |
+
+**Where the 168 misses stand, honestly:**
+
+| tier | size | status |
+|---|---:|---|
+| A — providers already held | 11 | `gh_jid` half parked (worth 2, not 7,406); company-admission half not started |
+| B — linkedin.com | 77 | mechanism shipped + admission cap raised 10 -> 50. **Yield unknown until run 141** |
+| C — indeed.com | 35 | lane built, **disarmed**. Realised 0 |
+| D — ~30 other vendors | 45 | recon only. One generic JSON-LD lane would be worth 7 and clear the bar |
+
+**So the honest summary: the session bought three things — a mechanism that should unlock tier B, a
+lane that is ready but not switched on, and the removal of three wrong beliefs about where the gap
+was. It bought zero postings.**
+
 
 **THE DROP AUDIT IS DONE AND IT REFUTED ITS OWN HYPOTHESIS (D-412).** Of job-apps' 216 eligible
 postings boardwatch drops **ZERO** at the hard filter and the non-SWE gate, on both join paths.
@@ -128,19 +168,6 @@ shape — *a count of things a rule can MATCH is not a count of things it would 
 (real answer 2), tier D's vendor ranking (the seed, not the adapter, binds), and the drop audit's
 whole premise (zero). None was a bad measurement; each answered a question next to the one that
 mattered.
-
-## Doctrine change — "breadth is last" is RETIRED (D-391, owner's call 2026-08-31)
-
-The `CLAUDE.md` section is **deleted** and the live pointers in `PROGRAM.md` and `STANDING-FACTS.md`
-are gone. It reasoned about an ASSUMED downstream; that downstream is instrumented now, so the
-question is answerable with numbers per change instead of settled in advance by an ordering rule.
-**Nothing replaces it** — input work is sequenced on measured evidence like anything else.
-
-**The decision logs are append-only and were deliberately left alone**, so D-280, D-296, D-345 and
-others still argue from the principle. **Meeting the phrase in an old entry does not make it
-current** — D-391 is the reason. Still live, and stated where they belong: every quarantine needs a
-drain designed in the same change; a cap never observed firing is unverified; the keystone invariant
-is untouched.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
