@@ -615,31 +615,40 @@ class TestSeniorityRankProvenance:
     engineering signal, or for a title where the phrase is merely an ORGANIZATIONAL QUALIFIER
     ("Java Developer, Office of the President").
 
-    Revised after review of 49c4d479 (this file's first cut): that commit split the four phrases
-    into two buckets, keeping `chief ... officer`/`president` on the old "not software" wording
-    on the theory that they "name the job itself ... no matter what follows". A real
-    counterexample ("Java Developer, Office of the President") falsified that theory, and the
-    two-loop split separately broke leftmost-match precedence between the two wordings. Both are
-    fixed here by unifying all four into one bucket with one honest reason.
+    Revised TWICE after review, and both revisions are pinned here so neither regresses:
+
+    1. 49c4d479 (this file's first cut) split the four phrases into two buckets, keeping `chief
+       ... officer`/`president` on the old "not software" wording on the theory that they "name
+       the job itself ... no matter what follows". A real counterexample ("Java Developer,
+       Office of the President") falsified that theory, and the two-loop split separately broke
+       leftmost-match precedence between the two wordings.
+    2. The fix for (1) unified all four phrases behind ONE wording, "not a role determination" --
+       which is the SAME defect pointed the other way: for a bare "Chief Technology Officer" the
+       phrase IS the whole role, so calling it "not a role determination" is its own false claim.
+       The wording now describes the INSTRUMENT's limit instead of the posting: the gate matched
+       an executive/seniority phrase and did not distinguish whether it names the role or merely
+       qualifies one. That statement is true for a bare CTO title and for an "Office of the CTO"
+       qualifier alike, because it is a claim about what the regex checked, not about what the
+       title is.
 
     Expected strings are pinned as LITERALS, not imported from `role_gate`'s own reason-format
     code, so a vacuous "test the constant against itself" bug cannot hide here (this repo's own
     stated trap).
     """
 
-    def test_vice_president_reason_names_an_exec_phrase_not_a_role(self) -> None:
+    def test_vice_president_reason_names_an_exec_phrase_without_distinguishing_role(self) -> None:
         verdict, reason = role_verdict("Java Developer - Vice President")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority phrase in title, not a role determination '
+            'executive/seniority phrase in title, not distinguishing role from qualifier '
             '(matched "Vice President")'
         )
 
-    def test_head_of_reason_names_an_exec_phrase_not_a_role(self) -> None:
+    def test_head_of_reason_names_an_exec_phrase_without_distinguishing_role(self) -> None:
         verdict, reason = role_verdict("Head of Sales")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority phrase in title, not a role determination '
+            'executive/seniority phrase in title, not distinguishing role from qualifier '
             '(matched "Head of")'
         )
 
@@ -651,22 +660,24 @@ class TestSeniorityRankProvenance:
         assert verdict == "not_swe"
         assert "not software" not in reason
         assert reason == (
-            'executive/seniority phrase in title, not a role determination '
+            'executive/seniority phrase in title, not distinguishing role from qualifier '
             '(matched "Vice President")'
         )
 
     def test_chief_officer_and_bare_president_get_the_same_honest_wording(self) -> None:
-        # NOT "not software" (49c4d479's mistake): a bare "Chief Technology Officer" or
-        # "President" title CANNOT be distinguished, by this regex, from one where the phrase is
-        # an organisational qualifier rather than the role -- see the next test.
+        # NOT "not software" (49c4d479's mistake) and NOT "not a role determination" (this
+        # file's own second, also-wrong cut): a bare "Chief Technology Officer" or "President"
+        # title is genuinely a role -- the honest claim is only that the GATE did not
+        # distinguish that from a qualifier, not that the phrase fails to name one.
         assert role_verdict("Chief Technology Officer") == (
             "not_swe",
-            'executive/seniority phrase in title, not a role determination '
+            'executive/seniority phrase in title, not distinguishing role from qualifier '
             '(matched "Chief Technology Officer")',
         )
         assert role_verdict("President") == (
             "not_swe",
-            'executive/seniority phrase in title, not a role determination (matched "President")',
+            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            '(matched "President")',
         )
 
     def test_organizational_qualifier_no_longer_asserts_the_false_not_software_claim(self) -> None:
@@ -682,14 +693,29 @@ class TestSeniorityRankProvenance:
             verdict, reason = role_verdict(title)
             assert verdict == "not_swe", title
             assert "not software" not in reason, title
-            assert "not a role determination" in reason, title
+            assert "not distinguishing role from qualifier" in reason, title
+
+    def test_the_wording_is_identical_for_a_bare_role_and_for_a_qualifier(self) -> None:
+        # The point of wording it as an INSTRUMENT limit rather than a claim about the posting:
+        # a bare "President" (where the phrase IS the whole role -- a company President with no
+        # qualifier) and the SAME phrase used only as an organisational qualifier ("Office of the
+        # President") get the EXACT same reason text -- same matched span, same claim -- because
+        # the true statement, "the gate did not distinguish which one this is," holds in both
+        # cases. A wording that differed between them would mean one of the two was being told
+        # something false.
+        _, bare = role_verdict("President")
+        _, qualifier = role_verdict("Java Developer, Office of the President")
+        assert bare == qualifier
 
     def test_bare_president_inside_vice_president_does_not_leak_a_shorter_span(self) -> None:
-        # Regression guard: bare `president` is a substring of "Vice President". Both are in the
-        # SAME bucket now, so this only checks that the alternation still prefers the longer,
-        # leftmost "vice president" match over the shorter "president" substring at that same
-        # starting position -- the ordering `re` alternation already guarantees, pinned so a
-        # future edit to the pattern's alternative order cannot silently regress it.
+        # Regression guard: bare `president` is a substring of "Vice President", and both
+        # alternatives are in the SAME bucket now. This does not hinge on the two alternatives
+        # sharing a starting position -- they do not: "Vice President" starts at index 0 and the
+        # bare "President" substring starts later, at index 5, so Python's leftmost-POSITION rule
+        # already prefers "Vice President" regardless of which alternative is listed first in the
+        # pattern. What this guards is a future edit that removes or narrows the `vice
+        # president` alternative (or reorders the pattern in a way that stops it matching at
+        # index 0) and so lets the bare `president` alternative match earlier instead.
         _, reason = role_verdict("Vice President, Enterprise Sales")
         assert 'matched "President"' not in reason
         assert 'matched "Vice President"' in reason
@@ -702,7 +728,8 @@ class TestSeniorityRankProvenance:
         verdict, reason = role_verdict("Vice-President of Engineering")
         assert verdict == "not_swe"
         assert reason == (
-            'executive/seniority phrase in title, not a role determination (matched "President")'
+            'executive/seniority phrase in title, not distinguishing role from qualifier '
+            '(matched "President")'
         )
 
     def test_leftmost_match_precedence_is_preserved_across_both_phrasings(self) -> None:

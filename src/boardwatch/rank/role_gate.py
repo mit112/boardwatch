@@ -213,8 +213,13 @@ _DENY_BUSINESS_HARD: tuple[str, ...] = tuple([
 # Technology Officer" are real software titles where the phrase names an ORGANIZATIONAL
 # QUALIFIER, not the person's role, and the regex has no context to tell the two apart. None of
 # these four patterns carries enough information to know whether it names the job or merely
-# qualifies one, so all four now share ONE honest reason: the gate matched an executive/seniority
-# phrase and did not determine whether that phrase names the role.
+# qualifies one, so all four now share ONE honest reason describing the INSTRUMENT's limit, not
+# a claim about the posting: the gate matched an executive/seniority phrase and did not
+# distinguish whether that phrase names the role or merely qualifies one. ("Not a role
+# determination" -- this fix's own first wording -- was the SAME defect pointed the other way:
+# for a bare "Chief Technology Officer" the phrase IS the whole role, so asserting it is "not a
+# role determination" is its own false claim. Saying the gate did not distinguish is true either
+# way, because it is a statement about what the regex checked, not about what the title is.)
 #
 # Kept as ONE regex -- the pre-D-412 alternation, unchanged, only the reason text differs --
 # rather than two separately-looped patterns, on purpose: the two-loop split broke leftmost-match
@@ -489,19 +494,22 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
             return "not_swe", f'not software (matched "{hard.group(0)}")'
     # Checked immediately after `_DENY_HARD` -- the same position `_DENY_EXEC_RANK_HARD`'s
     # patterns held before D-412 split them out -- so no title's verdict moves. The reason is
-    # worded differently ON PURPOSE: this bucket names an executive/seniority PHRASE the gate
-    # matched, not a role determination, so a `not_swe` here is never confusable with a genuine
-    # "this is not a software role" veto. One loop, one wording, for all four phrases (revised
-    # after review: an earlier cut split `chief ... officer`/`president` into a second bucket
-    # that kept the old "not software" wording, reasoning they "name the job itself" -- false,
-    # per the comment on `_DENY_EXEC_RANK_HARD` -- and the two-loop split also broke leftmost-
-    # match precedence between the two phrasings).
+    # worded differently ON PURPOSE: it names an executive/seniority PHRASE the gate matched and
+    # says the gate did NOT distinguish whether that phrase names the role or merely qualifies
+    # one -- a claim about what the regex checked, never about what the title is, so it cannot be
+    # false in either direction (a genuine "Chief Technology Officer" role, or a "Java Developer,
+    # Office of the CTO" qualifier, both make the SAME true statement about the gate). One loop,
+    # one wording, for all four phrases (revised twice after review: the first cut kept `chief
+    # ... officer`/`president` on the old "not software" wording, reasoning they "name the job
+    # itself" -- false, per the comment on `_DENY_EXEC_RANK_HARD`; the second cut's "not a role
+    # determination" wording fixed that but asserted the inverse false claim for a bare "Chief
+    # Technology Officer", where the phrase IS the whole role).
     for pattern in _DENY_EXEC_RANK:
         exec_rank = pattern.search(title)
         if exec_rank is not None:
             return (
                 "not_swe",
-                f'executive/seniority phrase in title, not a role determination '
+                f'executive/seniority phrase in title, not distinguishing role from qualifier '
                 f'(matched "{exec_rank.group(0)}")',
             )
     signal = _SIGNAL.search(title)
