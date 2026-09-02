@@ -57,7 +57,12 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
-from boardwatch.store.queries import insert_run, save_profile, upsert_lane_company
+from boardwatch.store.queries import (
+    finish_run,
+    insert_run,
+    save_profile,
+    upsert_lane_company,
+)
 from boardwatch.store.seed_queries import SeedReader, record_seeds, unresolved_seeds
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
@@ -83,10 +88,17 @@ class StubLane:
         raises: Exception | None = None,
         delay: float = 0.0,
         on_collect: Callable[[], object] | None = None,
+        resolver_errors: tuple[str, ...] = (),
+        seed_attempts: tuple[tuple[int, bool], ...] = (),
     ) -> None:
         self._companies = companies
         self._outcomes = outcomes
         self._raises = raises
+        # Carried onto the returned `LaneResult` so the stage can be presented a lane that crashed
+        # its resolver on a seed (`resolver_errors`) and a lane with a drainable backlog
+        # (`seed_attempts`), without a real network resolver.
+        self._resolver_errors = resolver_errors
+        self._seed_attempts = seed_attempts
         # Spent inside `collect`, so it lands on the FETCH side of the timing boundary and
         # nowhere else. This is what lets a test locate the boundary rather than merely
         # observe that two numbers were produced.
@@ -124,7 +136,12 @@ class StubLane:
         tally = AcquisitionTally()
         for outcome in self._outcomes:
             tally.record(outcome)
-        return LaneResult(snapshots=tuple(snapshots), tally=tally)
+        return LaneResult(
+            snapshots=tuple(snapshots),
+            tally=tally,
+            resolver_errors=self._resolver_errors,
+            seed_attempts=self._seed_attempts,
+        )
 
 
 def _raw(posting_id: str) -> RawPosting:
@@ -1014,6 +1031,95 @@ def test_one_lanes_fetch_failing_costs_only_that_lane(
     assert "aggregator down" in errors[0]
 
 
+def test_a_resolver_crash_reaches_the_RETURNED_errors_not_only_errors_json(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER: a resolver crash must be visible where an operator looks, not only in errors_json.
+
+    `_persist_seed_work` used to write the crash straight to `runs.errors_json` -- a column the CLI,
+    the funnel and the morning digest all leave unqueried, so the crash was durable and INVISIBLE at
+    once. It has to reach `_run_lanes`' RETURNED errors, which the pipeline extends onto
+    `summary.errors` (the morning digest, the console) and `stage_errors` (`runs.errors_json`, via
+    `finish_run`). And it must reach `errors_json` ONLY that way -- a direct write here as well would
+    double-record it.
+
+    The lane APPLIES CLEANLY (its one company lands), so this is the apply-success path: the crash
+    still has to surface. `seed_attempts` rides along because a real crash always leaves the seed's
+    attempt beside it -- `_resolve` appends the attempt whether or not it produced a posting.
+    """
+    crash = "https://careers.hireology.com/x/1/description: RuntimeError('selectolax fell over')"
+    _register(
+        monkeypatch,
+        alpha=StubLane(
+            [("hiringcafe", "src:a")],
+            resolver_errors=(crash,),
+            seed_attempts=((1, False),),
+        ),
+    )
+    run_id = insert_run(engine)
+    reports, errors = _run_lanes(engine, _settings(tmp_path, lanes_enabled=["alpha"]), run_id)
+
+    assert [r.name for r in reports] == ["alpha"], "the clean apply must still be reported"
+    assert any("crashed the resolver" in e for e in errors), (
+        f"a resolver crash must reach the RETURNED errors, not only errors_json: {errors}"
+    )
+    assert any("selectolax fell over" in e for e in errors), "the first crash's repr must ride along"
+
+    # `finish_run` (the pipeline's own persistence of the returned errors) is the ONE path the
+    # crash reaches `errors_json`. Before the fix it was written twice -- directly here AND via
+    # `finish_run`; the direct write is gone, so BEFORE `finish_run` there are ZERO notes and AFTER
+    # it there is EXACTLY ONE. Asserting only "zero direct writes" would miss a regression that
+    # dropped the crash from the returned errors too.
+    def _persisted() -> list[str]:
+        with engine.connect() as conn:
+            return list(
+                conn.execute(
+                    select(tables.runs.c.errors_json).where(tables.runs.c.id == run_id)
+                ).scalar_one()
+                or []
+            )
+
+    assert not any("crashed the resolver" in note for note in _persisted()), (
+        f"no direct write to errors_json (that direct write was the double-record): {_persisted()}"
+    )
+    finish_run(engine, run_id, errors=errors)
+    assert sum("crashed the resolver" in note for note in _persisted()) == 1, (
+        f"the crash must be persisted EXACTLY ONCE, and only via finish_run: {_persisted()}"
+    )
+
+
+def test_a_clean_apply_with_a_broken_seed_drain_is_labelled_persistence_not_apply(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SHOULD-FIX: a persistence-only failure must not be reported as `apply failed`.
+
+    `_apply_lane` runs the seed drain even when the apply SUCCEEDED, and a drain that raises there
+    is a different fault from a broken apply -- it wants a different fix. Labelling both `apply
+    failed` sends an operator to the wrong phase. The apply here LANDS (its company applies
+    cleanly); only `record_seed_attempt` raises.
+    """
+    _register(
+        monkeypatch,
+        alpha=StubLane([("hiringcafe", "src:a")], seed_attempts=((1, False),)),
+    )
+
+    def _drain_broken(*_a: object, **_k: object) -> None:
+        raise RuntimeError("the seed drain is broken")
+
+    monkeypatch.setattr(runner_mod, "record_seed_attempt", _drain_broken)
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha"]), insert_run(engine)
+    )
+
+    assert reports == [], "a lane whose drain raised produces no report"
+    assert len(errors) == 1
+    assert "seed persistence failed" in errors[0], errors
+    assert "the seed drain is broken" in errors[0]
+    assert "apply failed" not in errors[0], (
+        "a clean apply with a broken drain must not be mislabelled the apply phase"
+    )
+
+
 # --------------------------------------------------------------------------------------
 # The jobapps lane through the REAL registry (D-386). Its whole health design rests on the
 # claim that a structural source failure becomes a `summary.errors` line rather than a clean
@@ -1310,10 +1416,12 @@ class SeedLane:
         *,
         discovered: tuple[str, ...] = (),
         attempts: tuple[tuple[int, bool], ...] = (),
+        uncharged_resolved: tuple[int, ...] = (),
         reads: tuple[frozenset[str], int, int] | None = None,
     ) -> None:
         self._discovered = discovered
         self._attempts = attempts
+        self._uncharged_resolved = uncharged_resolved
         self._reads = reads
         self.read_back: tuple[str, ...] = ()
 
@@ -1329,6 +1437,7 @@ class SeedLane:
             tally=AcquisitionTally(),
             discovered_seeds=self._discovered,
             seed_attempts=self._attempts,
+            uncharged_resolved=self._uncharged_resolved,
         )
 
 
@@ -1392,6 +1501,41 @@ def test_a_lanes_seed_attempts_are_charged_by_the_runner(
     assert _seed_rows(engine) == [
         ("https://a.test/1", "a.test", "seeder", 1, True),
         ("https://b.test/2", "b.test", "seeder", 1, False),
+    ]
+
+
+def test_a_redundant_aliass_resolution_is_closed_without_charging_the_ceiling(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A redundant alias resolves WITHOUT a GET, so the runner must close it (`resolved_at`) without
+    moving `attempts`. The counter means fetch cost; a row that cost no request must not spend the
+    retirement ceiling for it. The seed the lane actually fetched IS charged, so the two rows come
+    out with different attempt counts though both are resolved."""
+    run_id = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            ("https://a.test/1", "https://a.test/1-alias"),
+            discovered_by="seeder",
+            run_id=run_id,
+            now=utcnow(),
+        )
+        ids = [
+            s.id
+            for s in unresolved_seeds(
+                conn, hosts=frozenset({"a.test"}), max_attempts=9, limit=9
+            )
+        ]
+
+    fetched, alias = ids
+    # Both resolved; the alias resolved without a GET, so the lane lists it as uncharged.
+    lane = SeedLane(attempts=((fetched, True), (alias, True)), uncharged_resolved=(alias,))
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
+
+    assert _seed_rows(engine) == [
+        ("https://a.test/1", "a.test", "seeder", 1, True),
+        ("https://a.test/1-alias", "a.test", "seeder", 0, True),
     ]
 
 

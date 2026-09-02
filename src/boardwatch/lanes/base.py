@@ -100,13 +100,30 @@ class LaneResult:
     # Empty — never absent — for a lane that discovers no seeds, which is most of them.
     discovered_seeds: tuple[str, ...] = ()
     # `(seed id, resolved)` for every seed this lane TRIED, for the same reason and by the same
-    # route. Charged whether or not the resolve succeeded: the counter answers "how much work has
-    # this seed cost", which is the question its cost bound is about.
+    # route. Whether each entry MOVES the retirement ceiling is the runner's call, not a property
+    # of this list: a resolved-but-unapplied seed and a redundant alias (`uncharged_resolved`) are
+    # recorded here yet NOT charged. When it is charged, the counter answers "how much work has this
+    # seed cost", which is the question its cost bound is about.
     #
     # A resolver that returns seeds it consumed but forgets to list them here retries them
     # forever at one request each, so this is the drain, and it is not optional for a lane that
     # reads `LaneContext.pending_seeds`.
     seed_attempts: tuple[tuple[int, bool], ...] = ()
+    # Seed ids in `seed_attempts` that RESOLVED WITHOUT A PHYSICAL GET, so the runner must close
+    # them (`resolved_at`) WITHOUT charging the retirement ceiling. The one producer today is a
+    # redundant alias: two seed URLs naming one posting, where the first resolved and the rest name
+    # a posting this run already produced. Separate from `seed_attempts` because "did it resolve"
+    # and "did it cost a request" are two independent facts about one seed; folding a redundant
+    # alias's free closure into a charged attempt is the leak this field exists to stop. Empty --
+    # never absent -- for a lane that spends a request on everything it resolves.
+    uncharged_resolved: tuple[int, ...] = ()
+    # Seed url + short repr for every seed whose resolver raised an UNEXPECTED exception -- a real
+    # code defect (KeyError/TypeError/`RawPosting` validation/...), NOT a content outcome and NOT a
+    # typed fetch failure, both of which are already classified into the acquisition tally. Carried
+    # out rather than swallowed so the runner can report them as a VISIBLE lane error: recording
+    # such a crash as `extracted_empty` would disguise the defect and age a real seed out on a
+    # false claim. Empty -- never absent -- for a run in which nothing crashed the resolver.
+    resolver_errors: tuple[str, ...] = ()
 
 
 def _no_seeds(
