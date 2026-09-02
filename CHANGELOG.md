@@ -177,6 +177,30 @@ All notable changes to this project are documented here. The format follows
   so turning hubs on without also raising that number buys extra requests and almost no new
   employers.
 
+- **Jobs on employers' own hiring pages can now be read, not just found.** Some employers publish
+  through vendors that offer no way to search across companies — you can only look at one employer
+  at a time — so boardwatch could learn a job existed without being able to read it. It now takes a
+  job link another source wrote down, fetches that page, and reads the job description out of the
+  structured data the page already publishes for search engines. Six vendors are covered. The job
+  description that gets stored is the employer's own text from the employer's own page, not an
+  aggregator's summary of it. Two costs are charged separately and honestly: fetching one of these
+  pages counts against the same request budget as anything else, and a page that fails to parse is
+  reported as a visible error rather than silently recorded as an empty job.
+
+- **A job link found through Indeed for an employer boardwatch has never seen is now written down
+  instead of thrown away.** Previously, if Indeed pointed at an employer whose board boardwatch did
+  not already know, there was nowhere to put that information and it was lost. Those links are now
+  saved for the reader above to pick up on a later run. Every link is checked once, at the single
+  point where it is written, so a malformed address is refused there rather than being stored and
+  failing quietly forever afterwards — seven were refused on the first real run.
+
+- **Finding one job on an employer's board can now start watching that board.** When a job found
+  secondhand turns out to sit on a board boardwatch can read directly, that board is added to the
+  set checked every run, so future jobs from that employer are found first-hand instead of waiting
+  for someone else to mention them. This grows the list of boards permanently, so it is capped per
+  run and the cap is yours to set; any board added this way can be dropped again with
+  `companies unwatch`.
+
 ### Changed
 
 - **The hiring.cafe search no longer takes 30 runs to work through the employers it already
@@ -530,688 +554,23 @@ All notable changes to this project are documented here. The format follows
   `Accept-Encoding`, because this client cannot decode the `br`/`zstd` a real Chrome advertises and
   advertising an encoding it cannot read would trade a header mismatch for a corrupted body.
 
-### Added
+- **An aggregator's own web page can no longer be mistaken for the employer's job description.**
+  Some sites wrap a job in their own writing — sign-in prompts, "apply on employer site", their own
+  guesses about whether an employer sponsors visas — and that whole page was being stored and read
+  as though the employer had written it. Because a decision about your eligibility must quote the
+  employer's actual words, this risked presenting a third party's guess as an employer's stated
+  requirement. Every place a job description enters a decision now checks first that the text is
+  the employer's own, and text that is not is held back and set aside rather than used. Held-back
+  text is re-checked later rather than being discarded, so nothing is lost if the real description
+  turns up. Measured on the first run after this shipped: **12 of 122,917 job descriptions were held
+  back** — all 12 the same aggregator's page, 9 of them carrying that site's own visa guess.
 
-- **Soft alerts can now reach an owner who is away from the machine.** The six run alerts render
-  into the morning digest, which is a file under `~/boardwatch-applications/<date>/` on local disk —
-  in no synced folder. The heartbeat gate is satisfied by a merely non-fatal run, so a run that
-  raised every one of those alerts still pinged the monitor, and pinged green. A crash or a machine
-  asleep was always covered (the ping simply stops and the monitor alerts); what nothing reported was
-  the run that **succeeded while degraded** — intake death against a dead fleet, a scan outage, a
-  collapsed corpus — which over a fortnight of unattended running reads exactly like a fortnight of
-  healthy ones. `notify/alert_escalation.py` POSTs the run's alerts to a URL read from
-  `BOARDWATCH_ALERT_URL`; point it at a healthchecks.io `/fail` URL and the check already watching
-  for silence also reports degradation. Presence-gated and **unset by default**, so it is a no-op
-  until configured, and read from the environment rather than `config.toml` because the URL embeds a
-  token. It is deliberately the last thing the finalize block does: it reports the alerts every
-  handler above raised rather than raising one, so it runs after all of them — and after the
-  heartbeat, so a refused ping travels in the report too. What travels is the finalize-block
-  slice, not every error the run recorded: a stage error — one dead board slug, a lane that could
-  not collect — is routine on a 379-board fleet, and escalating it would drive a monitor DOWN on
-  ordinary runs until the owner stopped believing it (D-376).
-
-- **A collapse that makes the whole corpus ineligible is no longer the one failure nothing watches.**
-  The delivery-drought alert abstains on it by design — its honest guard is "did this run judge a
-  candidate?", and a corpus that has gone entirely ineligible judged none — and the intake alert stays
-  quiet because postings keep arriving. So a rules edit or a profile fact that stops resolving could
-  empty the standing eligible corpus and every signal would still read green. The three numbers that
-  would have shown it existed only inside each run's funnel artifact on disk, where no cross-run query
-  could reach them, so they now also land on the run row: the open corpus, how much of it was
-  evaluated, and how much of that cleared. A new detector compares the run's candidate **rate** against
-  the median of the last five comparable runs and raises a soft alert when it has halved. A rate rather
-  than a count, and that choice is load-bearing: the eligibility identity re-keys often enough that a
-  perfectly healthy run can evaluate 5% of its own corpus, which any count-based threshold reads as a
-  96% collapse and pages on at four in the morning. Runs that judged less than half their corpus are
-  skipped for the same reason. Checked against the recorded history before shipping — across 66 clean
-  runs the rate never moved by more than the trigger allows, and an injected collapse fires on the first
-  run it touches. Like the other detectors it never fails the run, and the alert is written to the run
-  row as well as printed, because an unattended machine prints to a log nobody reads.
-
-- **The morning digest now carries the run's alerts, and the heartbeat waits for it.** Every soft
-  alert this program raises — a collapsed lane, a stalled intake, an unsynced delivery queue, a
-  degraded tailor — did the same two things: appended to the run's error list and wrote the note
-  onto the run row. Neither had a reader. The list is reprinted to a console that, unattended, is a
-  log file nobody opens; `runs.errors_json` is queried by nothing; and the funnel renders them under
-  `## Errors` at the very bottom, which on run 131 put a real hiring.cafe failure at line 1388 of a
-  116 KB file. The one artifact the owner actually reads each morning rendered no error at all. It
-  now opens with an `## Alerts` section, above `## Discovery reach`, because reach is a measurement
-  and an alert is very often the reason that measurement is wrong. A healthy run says so in one line
-  rather than omitting the section: a block that disappears when it has nothing to say is
-  indistinguishable from a block that stopped working, which is exactly the state this file was in.
-  The run's fatal message is carried separately and never folded into the alert count, because three
-  guards — zero-output, cohort completeness, filesystem-truth — set it without appending anything to
-  the error list, and a digest reading only that list would have printed "no alerts" on a run that
-  failed outright. The markdown stops after eight alert lines and names how many it withheld and
-  where they live; the JSON sibling carries the full list, so the cap costs a reader nothing. The
-  digest is also emitted last in the run's finalize block, after the queue sync and the intake-death
-  check, so the notes those append reach it rather than landing after it was written.
-
-  The heartbeat is gated on that write. It was already gated on the funnel, on the grounds that a
-  run whose authoritative record is missing must not ping green; the digest now earns the same
-  treatment for a stronger reason, because it is the only channel by which any of this reaches an
-  absent owner. A run whose digest failed to write delivered its leads and delivered none of its
-  warnings, and looked identical to a run with nothing to warn about. Withholding the ping never
-  fails the run, never changes its status and never discards a lead — the leads still ship — it only
-  makes the external monitor say something.
-
-- **A liveness prober that cannot reach anything no longer passes as a clean corpus.** The liveness
-  stage is fail-open by design: any transport fault returns `unknown`, and `unknown` is served, so
-  that a timeout costs a wasted résumé rather than a missed job. The cost of that direction is that
-  a prober whose egress has broken — DNS, a proxy in front of it, the machine's IP blocked — returns
-  `unknown` for the entire shortlist, drops the gone count to zero, and ships every lead unverified
-  while the run line reads exactly as it does on a good night; unattended, the owner would be handed
-  dead requisitions presented as live for as long as the break lasted. A new detector raises a soft
-  alert on the conjunction, which is what neither half says alone: a high `unknown` share is a normal
-  bad afternoon on one provider, and a gone count of zero is the ordinary state — it has been zero on
-  every instrumented run on record — but together they say the prober asked about the whole shortlist
-  and got not one definitive answer. The threshold is a rate rather than a count, because the
-  shortlist size is `--top` and that has moved 8 → 40 → 10 → 40 inside a fortnight; it is set at 75%
-  of a shortlist of at least ten, against a recorded worst clean run of 3 unknown of 8 (37.5%), and
-  of 2 of 10 and 3 of 40 at the sizes the pipeline actually runs at. A run that was never probed
-  abstains rather than reporting a clean result it never took. Like the rest of this family the alert
-  reaches `summary.errors` and the `runs` row through `append_run_error` and never sets the run's
-  fatal outcome, so the heartbeat still fires — a blind prober tickets, it does not trip the
-  dead-man's switch. It judges one run rather than a window, and that is a limitation rather than a
-  preference: the three liveness counts live only on the in-memory summary and in the per-run funnel
-  JSON, so there is no persisted per-run column to read a window off the way the intake detector reads
-  `runs.new_count`.
-
-- **A run that scans fine but finds nothing new no longer passes silently.** The heartbeat fires on
-  any clean outcome, so a dead board fleet or a silent fetch regression — the pipeline running
-  perfectly and returning zero new postings every night — looked identical to a healthy run. A new
-  detector reads the per-run net-new count the scan already records (`runs.new_count`) and raises a
-  soft alert when three scanning runs in a row all find zero. It is a slow-burn signal by design: the
-  alert is appended to the run's error list (reprinted by the CLI and persisted to the run row via
-  `append_run_error`) and never sets the run's fatal outcome, so the heartbeat still fires — a stalled
-  intake tickets, it does not trip the dead-man's switch. Runs whose scan never recorded a count — a
-  `top --no-record` phantom — are skipped rather than read as zero, and fewer than three scanning runs
-  of history abstains rather than firing on a fresh store.
-
-- **A majority-of-the-fleet scan outage is no longer silent.** A run is only made fatal when *every*
-  board fails; a provider block — Workday is the bulk of the 379-board fleet — or an IP-reputation
-  problem can dark most of the boards while a handful of other providers still complete. That is not
-  systemic, so the run stays clean and the heartbeat fires green while intake collapses, and the
-  intake-death detector cannot see it because the survivors still emit some new postings. A run whose
-  failed-board fraction crosses half now raises a soft, non-fatal alert recorded on the run — a partial
-  outage tickets rather than paging, because it is not a systemic one and a false page on a transient
-  timeout burst is worse than a note read on the next review.
-
-- **A pipeline that finds leads but ships none no longer passes silently.** Intake can be healthy —
-  boards up, new postings arriving — while the tailor, rank, or delivery path drops every candidate:
-  an over-suppression bug, a ranker that hides everything, a broken résumé render. The run reaches a
-  clean outcome, so the heartbeat fires green, and the intake-death detector stays quiet because
-  net-new is not zero. A detector now raises a soft, non-fatal alert when the last three clean runs
-  each judged at least one new eligible/uncertain candidate yet delivered zero leads. The candidate
-  guard keeps it honest: a quiet steady-state run that had nothing new to judge, and a full
-  eligibility collapse where nothing was judged eligible, both judge zero candidates and abstain — it
-  fires only when the pipeline is finding deliverable postings and dropping all of them.
-
-- **Twenty more Workday boards are watched; the fleet is 379.** Breadth batch 2 had been deferred
-  because its boards had never been timed cold. One was: a cold Workday board scanned in 604 s,
-  enumerated 420 of 420 postings, and stopped at exactly 400 — the detail-fetch budget — deferring the
-  remaining 20. A cold Workday board is therefore bounded by that budget rather than by how big the
-  board is, which puts the whole batch at roughly +34 minutes of scanning on its first run and about
-  +5 minutes thereafter. The four SmartRecruiters boards in the same batch are deliberately left out,
-  and the reason inverts the intuition: every SmartRecruiters board is served from one host, which the
-  fetcher serializes and extra scan workers cannot help, so those four would cost more wall clock than
-  all twenty Workday boards combined. Each Workday board was re-verified as watched by querying the
-  store back against the source list rather than trusting the importer's own count.
-
-- **`Fetcher.get` accepts per-request headers.** One caller needs them — the lane above — and they
-  are merged *under* the conditional-GET validators, so a caller cannot clear an `If-None-Match` and
-  silently turn every conditional GET on a board into an unconditional refetch.
-
-- **The React viewer has a test suite, and the gate runs it.** Until now the frontend's only checks
-  were `tsc --noEmit` and eslint, so `make check` could not see a render regression at all — the
-  error boundaries added for the queue page, and the loose `== null` guards that absorb the viewer's
-  structural disk-bundle-vs-memory-API skew, were both behaviour no test covered. vitest and jsdom
-  now run as a `web-test` prerequisite of `check`, and as a step in CI's web job, because nothing in
-  CI runs `make check` on a pull request. The target is deliberately **not** conditional on node
-  being installed: a check that skips itself where the toolchain is missing reports green while
-  verifying nothing. Eight tests cover the four boundary scopes and the skew guards, and each was
-  confirmed to fail against the broken implementation before being counted — removing any one
-  boundary, or tightening any `== null` to `=== null`, turns the suite red. Two guards were left
-  unasserted on purpose and say so in the file: `new Date(undefined)` and `new URL(undefined)`
-  behave identically under both comparisons, so a test on them would pass against the tightened
-  version and prove nothing.
-
-### Changed
-
-- **A lead the delivery queue could not copy is now recorded, not just printed.** `sync_queue` and
-  `reconcile_queue` both isolate their per-lead failures inside their own report rather than raising,
-  which is what keeps a queue copy from ever failing a run — and the run hook counted those failures
-  into its log line and did nothing else with them. That was a deliberate contract, and it was the
-  right one while somebody was watching the run: the queue holds copies, and the dated tree and the
-  funnel are the real output. It stops being the right one unattended. The log line goes to a file
-  nobody opens, so a queue that had quietly stopped copying leads was byte-identical in the store to
-  one that copied every single one, and the owner would go on trusting a queue that had gone empty.
-  The hook now returns the combined failed count and a non-zero one is escalated the same way every
-  other reporting failure in the run's finalize block is — onto `summary.errors`, which the CLI
-  reprints, and onto the run row through `append_run_error`, because the hook runs after
-  `finish_run` and nothing appended to the summary alone survives the process. Still non-fatal: the
-  run's outcome, its status and its leads are all untouched, and all three are asserted so. The test
-  that pinned the old console-only contract was inverted to the new one and confirmed to fail
-  against the old implementation first, and a second test covers the drain half of the count, which
-  had no provocation of its own and would otherwise have let a version that reported only sync
-  failures ship green.
-
-- **A degree requirement's boilerplate no longer reads as a field of study.** The `education` field
-  surface matched the mass noun wherever a posting talked *about* education rather than naming it as
-  a subject — "or educational equivalent", "an equivalent combination of education and experience",
-  "Accreditation Commission for Education" — so a posting asking for a degree in Engineering was
-  read as demanding a degree **in education** and decided `unmet` against a candidate it had named
-  no field for at all. Counted over the open corpus, those frames outnumber the genuine field sense
-  by roughly twenty to one. The surface now rejects them on the word immediately preceding the noun,
-  which the field sense never takes, and no longer matches `educational` at all. Separately, the
-  relatedness escape could not read **"or another related field"** or "or other related field" — the
-  alternation admitted only "a" and "an" — so a posting that had plainly opened its requirement was
-  still treated as naming a closed set. 483 open postings carry that phrasing. Both defects could
-  only ever produce a wrong rejection, never a wrong clearance.
-
-- **Every held-back lead now says which reason held it.** The queue splits leads into an apply lane
-  and a review lane, but a review row carried a marker only when the role gate had positively
-  classified its title as *not* software. A lead held because its location was confirmed outside the
-  US, or because the gate simply would not vouch for the title either way, rendered exactly like a
-  clean one. The lane decision now returns its reason alongside the lane from the same branch, so
-  the page and the `_review` folder cannot start disagreeing about a lead, and each review row is
-  labelled `outside the US`, `role vetoed`, `role unconfirmed` or `ineligible verdict`. The two role
-  cases stay separate on purpose: the gate's `uncertain` is an abstain, and reporting it as "not
-  software" would assert a decision the gate declined to make.
-
-- **A held-back lead no longer carries the same reason twice.** Once every review row began naming
-  the reason it was held, a lead held because the role gate vetoed its title showed both "role
-  vetoed" and "off target" side by side — two chips derived from the same check, saying the same
-  thing. The second is now suppressed on exactly that case. It is kept everywhere else it still
-  means something: on a lead held for a location or an ineligible verdict, where it reports a
-  separate finding such as a seniority band, and on the apply queue, where a lead that is otherwise
-  ready to send but carries an off-target title has nothing else to warn the reader with. Opening a
-  lead still shows both, with each reason spelled out.
-
-- **The review app has a new visual language.** One type size appeared in 47 places, one corner
-  radius in 42, and a border was drawn around every container, so a dense instrument read as a
-  spreadsheet. Depth now comes from elevation rather than outlines, the corner radius is a language
-  of three deliberate steps instead of a default, and the monospace face carries headings, metric
-  numerals and labels while the sans face keeps prose. The two figures the page is opened to read
-  are set at display scale. No web font is downloaded or bundled: the app ships inside the wheel and
-  is served from localhost, often offline. Every foreground and background pair was re-checked
-  against the lightest surface it can land on and clears WCAG 2.2 AA, and the keyboard model, focus
-  containment and reduced-motion behaviour are unchanged.
-
-- **The per-host request delay can be measured from the start of a request.** It was measured from
-  the end of the previous one, so a host saw one request every delay *plus* however long each took —
-  about 0.6 requests per second where the setting read 1.0. `pace_from_request_start` makes the
-  delay the whole interval. It is **off by default and stays off unless you turn it on**: raising it
-  is a real increase in the load every job board sees, and that is not a default this project sets
-  on anyone's behalf.
-
-- **The delivery slate is capped at one lead per company, title and byte-identical JD.** Run 129
-  delivered ten leads and nine were a single requisition — one CGS Federal `ServiceNow Developer`
-  posted to nine cities, with one `company_id`, one normalized title and one byte-identical
-  `content_hash`. Nothing suppressed it and nothing could: `exact_quad`, the only suppressing
-  identity kind, includes `locations`, so one requisition split across nine cities is nine groups
-  of one. The ranker now allows **one lead per `(company_id, normalized_title, content_hash)` per
-  run**. It is a delivery cap, not a claim that two postings are the same job: nothing is suppressed
-  permanently, a capped lead is never recorded `seen` so it ranks again on the very next run, and no
-  identity, ledger or `IDENTITY_ALGORITHM_VERSION` change is implied. Because the cap sits inside the
-  rank cutoff, the freed slot is **refilled** from further down the ranking — the same run now
-  delivers three distinct employers where it delivered three copies of one. Sized over delivered
-  leads rather than the corpus: across runs 119-129's 110 delivered leads it frees nine slots and
-  fires on two runs, with no collateral. The hash is part of the key because one run's two
-  same-company, same-title leads carried **different** hashes and were two genuinely distinct
-  requisitions. **A body-less posting is never capped** — `content_hash` is never null or empty, so
-  its presence proves nothing, and every body-less posting hashes the empty string: all 245 in the
-  corpus share one digest and six `(company, title, hash)` groups are already collisions of that
-  kind, one of them a `software engineer frontend` pair. `hidden_slate_cap` is its own never-folded
-  bucket, equal to the number of slots freed, listable with `top --include-slate-cap`, and each
-  drained row names the lead that displaced it.
-
-- **Each JD-acquisition lane now reports its cost split into paced fetching and serial applying.**
-  The lane stage cost 6.5 minutes on run 129 and swung fourfold run to run for *more* work, and a
-  stage total could not say why: upstream throttling and contention on the single writer produce the
-  same number. The funnel now carries `fetch_seconds` and `apply_seconds` per lane, and the `Lanes`
-  markdown names the fetch **share**, because the ratio is what tells you whether parallelism would
-  help. `null` means not measured and is never rendered as `0.0s`, so a lane that failed before it
-  was timed can never read as a lane that cost nothing.
-
-- **The lane fetches now overlap, while `apply_board` remains the single writer.** Lanes ran strictly
-  one after another, so hiring.cafe waited for LinkedIn even though they are different hosts and
-  politeness never required it. Each lane is now split into a paced fetch, which runs off the main
-  thread, and an apply, which does not — two lanes applying at once would put two writers on one
-  SQLite store. Per-host pacing is unchanged and unchangeable by this: the fetcher holds a lock per
-  host for a request's full duration and paces inside it, so requests to one host still serialize and
-  no third party sees a higher rate. The gain is bounded by the slowest lane rather than divided by
-  the lane count — about two minutes, after which the stage is tail-bound on LinkedIn alone.
-
-- **The queue UI's WCAG 2.2 AA failures are fixed and the triage list is keyboard-first.** The
-  review page is worked top-down every morning against a few hundred leads, and measurement of the
-  shipped bundle found it neither accessible nor fast to work. Each failure was measured in a
-  browser rather than argued: `--color-fg-3` and `--color-control` were verified against
-  `--color-bg` and then painted on `--color-surface-2`, where they compute **4.32:1** (needs 4.5)
-  on every selected row and **2.90:1** (needs 3.0) for the border of every chip and badge inside
-  the detail pane — both are now derived against the lightest surface they ever land on.
-  `role="row"` and eight `role="columnheader"` were emitted with **no grid or rowgroup above them
-  and no role on any data row**, so every `aria-sort` the table set was announced to nothing; the
-  list is a real `role="grid"` now. Four focusable controls per row measured **1,399 tab stops** on
-  one page and nothing below the list was reachable in practice — the tab stop is the row now
-  (roving `tabIndex`), which measures **14**, and every row control keeps a single-key equivalent.
-  Neither route had an `h1`. `scroll-margin-top` was 0 under a 61px sticky header (SC 2.4.11). The
-  undo toast — the only route back from a mark-applied or a skip — expired on a timer the reader
-  could not stop (SC 2.2.1); hover or focus holds it now. Rows are 37px rather than 53px (18 on
-  screen, not 12) and no longer lose their actions when the detail pane opens, with `j`/`k`,
-  `Enter`, `o`, `a`, `s` on the focused row and `/` for the filter — all handled on the grid, never
-  on `window`, so a keystroke aimed at the filter box can never mark a lead applied. **The skip
-  link is a `<button>`, not `<a href="#view">`**: the URL fragment is both this app's router and the
-  channel the CLI passes the bearer token over, and `api/token.ts` reads any fragment not starting
-  with `/` back as a token. Which leads render, in what order, and their counts are unchanged.
-  The row shortcuts refuse **held modifiers and auto-repeat on the acting keys**: `Cmd+A` on a
-  focused row is `event.key === "a"`, and a held `a` marks each successive lead applied as focus
-  follows the collapsing rows down the list — every repeat lands on a different posting, so API
-  idempotency is no defence. Navigation keys still repeat, because holding `j` is the point.
-
-- **The run funnel times its own stages, because a fifth of a run was attributable to nothing.**
-  Run 128 took 132.4 minutes and `scan.fetch_cost` could only price the SCAN, per provider; every
-  stage after it was timed nowhere. Reconstructing the shape meant joining `board_scans`,
-  `extractions`, `eligibility_evaluations` and `artifacts` on their side-effect timestamps, and even
-  then **26.8 minutes — 20% of the run — landed in one block spanning two stages** with no way to
-  split it. A `_StageClock` now marks eight boundaries (`scan`, `projection`, `lanes`, `death_probe`,
-  `eligibility`, `liveness`, `tailor`, `finalize`) and each mark closes the stage behind it, so
-  consecutive rows leave no gap and a stage that returned early or raised is charged to the mark that
-  follows it rather than dropped — both the projection preflight's refusal and the `NoProfileError`
-  path do exactly that, which is why a per-stage wrapper was rejected. The last mark is inside the
-  `finally`, so a crashed run — the one whose breakdown is worth most — still reports where its time
-  went. New `stage_durations` JSON key and `## Wall clock` markdown section. **The total is the run
-  up to the artifact, and the section says so**: the funnel, the morning file and the queue sync are
-  all written after the last mark, because the funnel cannot contain its own duration. `None` means
-  the run was not timed (a stored artifact predating this), which is not `()`, "timed and no boundary
-  reached". **`artifact_version` stays 7** — additive key, the `scan.fetch_cost` precedent.
-
-- **The scan dispatches boards by HOST, so a wider worker pool actually pays.** `Fetcher` holds a
-  per-host lock for a request's full duration and paces requests apart, so a worker that picks up a
-  board whose host is already busy does no work at all. Five of the six providers serve every board
-  from ONE API host; only Workday has a host per tenant (105 hosts, 114 boards, 92% of the fetch
-  cost). Boards were dispatched in company-rowid order — the order they were added, in per-provider
-  batches — so **the first sixteen boards of the live 345-board fleet were all `api.ashbyhq.com`**,
-  leaving three of four workers idle at the start of every run and seven of eight.
-  `coordinator.host_diverse` now round-robins boards across hosts before submission, keyed on the
-  newly exported `politeness.host_key` — the exact key the lock uses, never the provider name, which
-  would bucket Workday's 105 independent hosts as one. **No host sees a different request rate**;
-  only the number of distinct hosts in flight changes, and a completed run persists exactly what it
-  persisted before (`exact_quad`, the only suppressing identity, keys on `company_id`, so no
-  cross-host pair can collide). Modelled against run 128's own numbers — the model reproduces its
-  measured 92.8-minute board scan at 93.0 — this is 87.8 min at 4 workers and 47.4 min at 8.
-
-- **The run funnel publishes the scan's full four-way board split, so its numbers reconcile.**
-  `ScanSummary` sorts every attempted board into exactly one of `complete | partial | failed |
-  unchanged`, and the artifact published three of them. Live run 126 read "346 boards attempted ·
-  166 complete · 1 failed", which reads as **179 boards that silently did nothing**; they were 39
-  `partial` (a detail budget truncated them) and 140 `unchanged` (HTTP 304). Run 127 hid 200 the same
-  way (145 / 35 / 165 / 1). The `scan` block now carries `boards_partial` and `boards_unchanged`
-  beside the two it had, plus `boards_reconciled` — `true` when the four sum to `boards_attempted`,
-  and **`null`, never `true`, on a `--no-scan` run**, because `0 == 0` is not a passed check. An empty
-  bucket emits a measured `0` rather than dropping its key. The Markdown line and the JSON both move.
-  The four-way partition was verified against the live store (`board_scans`, `scan_kind='board'`) for
-  both runs: 166+39+140+1 and 145+35+165+1, each exactly 346. **`artifact_version` stays 7** — these
-  are additive keys in a block that has existed since v1, on the `scan.fetch_cost` precedent, and no
-  existing value changes meaning.
-
-- **The four-way board split now reaches the store, `/api/runs` and the web run list (D-341's other half).**
-  D-341 published `complete | partial | unchanged | failed` in the funnel artifact, but the `runs` table
-  kept only `boards_attempted` and `boards_complete`, so run 127 read "346 attempted / 145 complete" from
-  the row with the other 200 boards unaccounted — the same fold, one layer down, inherited by `/api/runs`
-  and the run list that read it. A migration (`p_runs_board_split`) adds `boards_partial`,
-  `boards_unchanged` and `boards_failed` to `runs` as **nullable** columns: NULL means a run predating the
-  column or one whose scan never ran, kept distinct from a measured 0 — a zero default would read every
-  historic run as a scan that found zero partial boards. `finalize_run` writes the three buckets from
-  `ScanSummary`, `/api/runs` serializes them, and the run list shows `partial`/`unchanged`/`failed` tiles
-  beside `boards` (an em-dash for a run that never measured them). The end-to-end scan test now asserts the
-  split reaches the row, not only the artifact — the wiring is where D-341's bug lived. No manifest change:
-  board counts are observations about a scan, not inputs to a verdict.
-
-- **Two spellings of one city are now one location (`IDENTITY_ALGORITHM_VERSION` p6.2 -> p6.3).**
-  `normalized_locations` is a component of every location-bearing identity key, so a requisition
-  published as `["Austin, TX"]` on one board and `["Austin, Texas, United States"]` on another held two
-  keys and no identity kind could ever group it. Measured on the live queue tree, **47 of 70 redundant
-  folders differ only in the location string**. `core.normalize.canonical_location` now folds each
-  comma-separated segment against a closed, versioned catalog (`rank/location_data`, which is also now
-  the single source for both state sets): a US state name becomes its USPS abbreviation but **never in
-  the first segment**, so `New York, NY` does not become `ny, ny`; a trailing `United States` is dropped
-  only beside a US state, so `Remote, US` keeps its country; a trailing office segment is dropped; a
-  parenthetical site code is dropped only from a state segment, so `Remote (IND)` — the D-264 country
-  signal — survives; and `X County, ST` becomes `X, ST` only with a US state after it.
-  `canonical_locations` then de-duplicates the list and drops an office alias whose city the list
-  already names. Out-of-catalog segments are left alone: `London, United Kingdom`, `Toronto, ON, Canada`
-  and `Bengaluru, Karnataka, India` pass through unchanged, so a non-US tenant's locations are not
-  mangled. **Nothing merges two different places.** Cross-city (PayPal's San Jose / Austin / Scottsdale
-  / New York), subset/superset (Twitch's Seattle+SF against SF alone) and US-against-Canada (Affirm) are
-  owner policy calls, are untouched, and each has a test asserting it does not fold; five more tests
-  pin the guards by mutation. On the live corpus of 84,821 open postings the suppressing `exact_quad`
-  kind gains 31 groups and 48 suppressions (2.43% -> 2.49% of open), `company_title_location` goes
-  3,451 -> 3,535 groups and `cross_host` 3,899 -> 3,987; every newly merged suppressing group is one
-  requisition published per office by Brex or Anduril. **A version bump degrades to "no identities yet"
-  — suppression off, `unique` None — until `boardwatch identities backfill` re-runs.** Measured against
-  a copy of the live store: **83 s, 423,706 rows written, 1.3 GB peak RSS**, and `identities verify`
-  clean afterwards. The dead p6.2 generation (476,277 rows) is not reaped; the table has no reaper.
-
-- **CI shards the test suite across jobs, and one aggregate check replaces six required contexts
-  (D-334).** A pull request took 30-42 minutes, and per-step timings showed the whole of it is a single
-  step: gitleaks, generalization, perf and web bundle total about twenty seconds between them, while
-  `pytest -n auto` ran 1764s / 2480s / 1903s on 3.11 / 3.12 / 3.13. A GitHub standard runner has four
-  vCPU; the same suite takes 6m24s on a ten-core Mac. There is no hot spot to remove — the slowest
-  single test is 1.5% of total CPU and the top 25 are 9% — so the suite is now split N ways per Python
-  version by SHA-256 of the node id, chosen over a durations file because a flat profile balances
-  without one (8 shards measured 996-1094 tests, a 9.5% spread). Every shard emits a manifest and
-  `tools/shard_audit.py` proves the shards are a genuine partition: exactly N manifests per version,
-  identical collection digests, pairwise disjoint, union equal to the whole. Coverage is combined per
-  Python version and the 85% threshold applied three times, preserving what the pre-shard matrix
-  guaranteed rather than collapsing it into one easier union number. Branch protection now names the
-  single `ci` job, which derives what should have run from the event rather than from job results,
-  because GitHub counts a skipped required check as a passing one. macOS and Windows stay unsharded and
-  keep their own type-checking, so this change targets pull-request latency specifically; pushes and
-  the nightly are still bounded by those full-suite jobs. Measured on the first sharded run: 30-42 minutes becomes 10.6, a 3.3x improvement, and the shard count settled at 4 rather than 8 because wall clock turns out to be bounded by the concurrent-job ceiling rather than by how finely the suite is sliced — so 8 shards paid double the per-job setup for the same ten minutes.
-
-
-### Fixed
-
-- **A component that fails to draw now costs a card, not the whole page.** The queue viewer had no
-  error boundary anywhere, so any error thrown while rendering unmounted the entire React tree and
-  left a blank page — which is how one undefined field blanked the queue. Boundaries now sit at four
-  scopes, each keeping a different thing usable: the app root, the route switch (so the tabs still
-  work and the other view is one click away), the review lane (so a failure there cannot cost the
-  apply queue above it), and the detail pane (so a failure there cannot cost the queue beside it).
-  Each card says what failed, what still works, and offers one named recovery action; the technical
-  detail is there but folded, and focus moves to the recovery button only when the failure destroyed
-  the element that had it. The detail pane's action closes the lead rather than redrawing it, because
-  below the side-by-side breakpoint a lead that stays selected holds the queue behind it inert.
-
-- **The viewer no longer breaks when it is newer than the server it is talking to.** The page's
-  JavaScript is served from disk while the data comes from the copy the server loaded at startup, so
-  a long-running viewer can read a field its own API never learned to send. An absent field arrived
-  as `undefined`, the guards tested only for `null`, and the read threw. The queue's own lane list
-  is the worst case and the one no error boundary can catch — it is read inside a promise, so the
-  page showed a load failure blaming the connection and advising a reload that would not have
-  helped, and on the background refresh it failed silently and stopped reporting new leads
-  altogether for as long as the page stayed open. The lane list is now normalised once where the
-  response arrives, the shared display helpers and the verdict chip accept an absent value the same
-  way the review badge already did, and the runs page tolerates funnel files written before the
-  fields it reads existed.
-
-- **The experience-years floor patterns now read possessive and qualified phrasings.** The floor
-  patterns anchored on the literal word `experience` immediately after an optional whitelisted
-  adjective, so three common phrasings never registered as floors at all: the possessive
-  `5 years' experience`, where the word-boundary after `years` fell before the apostrophe; a
-  qualifier the whitelist did not carry, such as `demonstrated` or `proven`; and such a qualifier
-  ahead of a multi-word scope. Across the open corpus, 11,379 postings carried a four-year-or-more
-  mention that no pattern matched, of which roughly 4,571 were real floors — and roughly 4,599 were
-  ages rather than experience, which is why the obvious widening had been held back. An age guard now
-  makes `N years of age` structurally incapable of reading as an experience floor. The published
-  default for this family is unchanged, so on a stock configuration this changes what is *detected*
-  and no verdicts; it tightens verdicts only where the family has been configured to block.
-
-- **Focus is now contained in the queue detail sheet at the tier where it is a modal.** Below 64rem
-  the detail pane is a full-screen sheet, and focus could leave it: `Shift+Tab` reached a row of the
-  triage grid *behind* the opaque sheet, after which the single-key mark-applied shortcut acted on a
-  row the reader could not see. The subtrees the sheet covers are now `inert` at that tier only — at
-  or above 64rem the pane is a column beside a list that must stay reachable, so nothing is inerted
-  there. The undo toast is deliberately excluded: it draws above the sheet and holds the only route
-  back from a mark-applied.
-
-- **A board slug differing only in case no longer becomes a second company row (D-339).**
-  `companies` enforces `UNIQUE(provider, slug)` and SQLite compares that case-sensitively, so
-  `ashby:Lightfield` and `ashby:lightfield` were two watched rows for one board — identical open
-  postings, identical provider posting ids, URLs differing only in the slug's case. It was fetched
-  twice every run and contributed redundant postings that no identity kind can suppress, because
-  every suppressing key is scoped by `company_id`. Two comparisons had to be wrong for the row to
-  appear: the lane's is-new check read the variant as new, which spent one of the run's
-  new-company slots as well as letting it through, and the insert's conflict target then failed to
-  converge. Both now resolve through one helper that returns the slug the store already holds, so
-  no existing slug is rewritten and no live URL moves; the fold is done in SQL on both sides,
-  because a Python-side `.lower()` disagrees above ASCII and would fail toward two rows.
-  `companies add` and `companies import` report the resolution instead of silently doing nothing.
-  Workday site slugs stay case-significant (`NVIDIAExternalCareerSite` and `external_experienced`
-  are both real) and are unaffected, since the guard never rewrites a slug.
-
-- **`companies remove` and the `--company` filter now case-resolve the way `add` does (D-339 loose ends).**
-  D-339 folded slug case for the store calls behind `add`/`import`/`remove` but left two edges. The
-  `--company` scan filter (`get_watched_companies`) still compared the slug case-sensitively, so
-  `--company KAYAK` skipped a board stored as `kayak`; the comparison now folds case in SQL the way
-  `stored_slug` does, and needs no `--provider` to do it. And `companies remove` unwatched the correct
-  row yet echoed the slug the operator typed, so `remove ashby:KAYAK` printed `Unwatched ashby:KAYAK.`;
-  it now reports the stored spelling (`ashby:kayak`), matching what `add` and `import` already do. The
-  fold is SQL-side on both, because a Python `.lower()` disagrees above ASCII.
-
-- **A degree requirement naming several fields produced no row at all (D-328).** The three
-  `*_in_field_required` patterns bounded the span between "in" and the requirement marker at 60
-  characters. That was assumed to truncate the captured field; it does not — the pattern fails to
-  match, so *"A Bachelor's degree in Computer Science, Computer Engineering, Mathematics, or a related
-  discipline is required."* yielded **zero rows** and the posting read as though it named no degree
-  requirement. The bound is now 160, chosen by measuring the live corpus (25 in-field rows at 60, 29
-  at 160, 29 at 240, 30 at 400, none lost at any width), and it stays **closed** rather than becoming
-  unbounded, because `[^.;:]` and sentence scope are the outer fence and the count is the inner one.
-  About **248** open postings gain a degree row they never had; none loses one. This buys no
-  additional `ineligible` verdicts — it is an honesty fix, so that a stated requirement produces an
-  abstain instead of silence.
-
-### Added
-
-- **The LinkedIn lane paginates its search, behind `lane_search_pages` (default `1`).** The lane
-  converts better per posting than any whole-board scan — 19 leads from 213 open postings — because it
-  is facet-filtered at the source against the user's target titles, but it surfaced only ~63-69
-  candidates a run. The body budget was not the constraint and the funnel says so: `body_fetched` was
-  49 and 53 against a `lane_posting_budget` of 60 on runs 126 and 127, under budget every time. One
-  search page per facet was. `start` had been probed as a working ITEM offset (10 cards to a page) and
-  deliberately left unimplemented on the reasoning that a facet already lists more cards than the body
-  budget can fetch; those two runs falsify it, and the module's comment now says so rather than
-  narrating a rationale the code no longer follows. **The ceiling is a setting defaulting to 1, which
-  is byte-for-byte the single-page behaviour that shipped** — page 0 is the URL unchanged, never
-  `&start=0` — so no existing user's request volume or request shape moves and the owner opts in
-  locally. **The correctness trap is that under paging an empty page becomes a legitimate outcome:**
-  `card_nodes` raises `SearchPageError` on a page with no cards *by design*, so paging naively would
-  make every facet shorter than the ceiling look like a structural outage. Page 1 empty still raises,
-  unweakened; page N>1 empty is the end of that facet's results and ends it cleanly. A full page adding
-  no new posting id ends it too — the offset-wrap tail `providers/workday.py` guards for the same
-  reason. Per-facet page counts are reported in the funnel's `lanes` block (additive key, no
-  `artifact_version` bump), because a facet that ran out at page 2 and one truncated at a 5-page
-  ceiling produce the same posting count and only the second is lost reach. `location=` and `f_WT=2`
-  are still never sent, at any offset. hiring.cafe is untouched: it has no recorded paging parameter
-  and its `?page=` form is disallowed by `robots.txt`, so its one-page ceiling is structural.
-
-- **`boardwatch track import` fills the funnel from a history kept in another tool.** The ranker has
-  always suppressed a job carrying a submitted application — `applied_job_ids` feeds `hidden_applied`
-  in `top`, and `delivered_unapplied` keeps the same job out of the delivery queue — but on a store
-  whose user applied through something else that machinery is starved: `applications` sits at **0
-  rows**, so a role applied to months ago re-surfaces and is re-tailored on every run. Measured on a
-  real 64-row history against a 95,897-posting store, **21 of the 64 (32.8%) were still open there**
-  and would have re-surfaced. The importer takes a deliberately generic file, CSV or JSONL with the
-  columns `company`, `title`, `url`, `applied_at`, `status`, so it is not tied to any particular
-  source tool. Rows match on **url** first, folded through the same `normalize_url` the duplicate
-  suppressor uses, and on **(company, title)** only behind `--allow-title-match`, because one title
-  at a large employer can cover several requisitions; the key that matched is recorded per row.
-  **No row is dropped silently** — each lands in exactly one of `matched`, `already_present`,
-  `unmatched` or `malformed`, all four counts are printed even at zero, and `--report` writes a
-  per-row JSONL audit. Importing the same file twice writes nothing, bumps no `attempt_no` and
-  appends no event, and a job that was **withdrawn** is left withdrawn rather than silently
-  re-applied. A role boardwatch never saw cannot be recorded at all, since `applications.job_id` is
-  a foreign key to `jobs`; that is why `unmatched` is a reported bucket rather than an error.
-- **The funnel's `dedup` stage is instrumented.** It reported `entered: null, advanced: null` and
-  the note *"this stage counts nothing"* for the whole of P0-P6, so no run could show from its own
-  artifact whether dedup was working; the only dedup numbers a run emitted were the ranker's
-  `hidden_duplicate` and the per-source `unique` column. The stage now carries the corpus that
-  entered grouping, what survived, and a named `suppressed_duplicate` drop, plus a `dedup_detail`
-  block beside the drop — `suppressing_groups`/`suppressing_redundant`, and one
-  `candidate_redundant_*` per audit-only kind. Those bounds are never summed into the drop
-  (D-327): `company_title_location` spans genuinely different jobs. Not-measured stays
-  distinguishable from zero, and the two reasons for it — the sweep did not run, or the backfill is
-  incomplete — stay distinguishable from each other. On the live corpus the stage reads 84,821 in,
-  82,757 out, 2,064 suppressed across 1,472 groups, with bounds of 5,268 / 5,775 / 12,571.
-  `exact_provider` is absent rather than reported as 0, because a UNIQUE constraint makes its
-  collision count structurally zero. **`artifact_version` stays 7**: no new top-level section, and
-  no existing value changes meaning — a nullable stage field going from `null` to a number is the
-  transition it exists to make, and `SourceOutcome.unique` set that precedent when P6 landed.
-
-- **The funnel's corpus-wide duplicate sweep stops materialising every posting body.** The sweep
-  called `load_identity_inputs(conn)` with no id list and pulled 503 MB of `body_text` for a
-  1.33 GB peak RSS. `resolve_duplicates` drops every identity group with fewer than two members, so
-  it now loads bodies only for the postings that share a suppressing key with another open posting
-  — 3,536 of 84,821 (4.2%) on the live corpus. Measured on a scratch copy: peak RSS **1356 MiB ->
-  109 MiB**, CPU 3.64 s -> 1.28 s, and the suppression set is byte-identical (2,064 suppressions,
-  same survivors). The candidate set is driven by `SUPPRESSING_KINDS`, never by a literal
-  `exact_quad`, so enabling a second suppressing kind cannot silently narrow it.
-
-- **`boardwatch identities reap` removes the identity rows a version bump leaves behind.**
-  `write_identities` only rewrites a posting's rows at the CURRENT
-  `IDENTITY_ALGORITHM_VERSION`, so a bump writes a whole new generation beside the old one and
-  nothing ever removed the old one. `posting_identities` held **476,277 rows** on 2026-08-28,
-  about five per posting, and every reader filters to the current version. The `p6.2 → p6.3`
-  bump in this same release retires every one of them, and without a reaper the next backfill
-  would take the table past 950k rows with half of it permanently unread. Reaping the p6.2
-  generation on a
-  scratch copy of the live store deleted **476,277 rows across 95,336 postings in 4.5 s** and
-  returned **121 MiB** to SQLite's free list (the file itself shrinks only under a separate
-  `VACUUM`, which the command deliberately does not run). It reports by default and deletes only
-  under `--apply`, and nothing else in the CLI reaps as a side effect. **Only retired generations
-  are in scope.** 11.0% of the table sits on closed postings and reaping that looks like the
-  bigger win, but postings reopen — run 127 alone reopened 18 — and `identities_complete()` gates
-  suppression over all open postings, so a reopened posting with no identity rows would silently
-  disarm dedup store-wide until the next backfill.
-
-- **The delivery queue splits into an APPLY lane and a REVIEW lane (D-332).** The queue root is a
-  *blind-apply* surface — you open a folder, read the rendered PDF and apply — but 82% of it was
-  `uncertain` (314 of 383 leads, only 27 `eligible`), and a lead is `uncertain` precisely *because* a
-  ranker gate failed open on it: the hard US gate passes an unplaceable location by the visa ruling,
-  and the role gate passes an unrecognised title. Live examples that reached the queue: an Allstate
-  "Field Auto Appraiser", a Humana care-support role, an ITW "Recycle Operator", a Hyatt "Front Office
-  Agent". A fourth drain `_review` now sits beside `_ineligible`, and
-  `delivery/review_gate.lane(verdict, locations, title)` is the single definition of the split, called
-  by both writers. `eligible` promotes; `uncertain` (and an unevaluated `None`) reaches the apply lane
-  only when it is **confirmed US and confirmed software**. Location fails *open* on `unknown` — a bare
-  `"Remote"` stays appliable, and only a confirmed non-US lead is demoted — while a title carrying no
-  positive software signal is held. `_review` is a managed second location, not an exclusion: leads are
-  created there and drawn back up if their class changes. Measured on the live store, roughly one lead
-  in three was in the blind-apply surface without a software title. No engine change.
-
-- **The queue page follows the same split, with its own Review section.** `GET /api/queue` returns
-  `rows` (the apply lane, exactly the queue root) and `review` (exactly `_review`), split by calling
-  the same `review_gate.lane` rather than re-deriving it, so the page and the folder tree cannot
-  disagree about a lead. The Review section is collapsed by default with its count always visible, and
-  each lane ranks and sorts independently. This matters more than "the page was unfiltered": the
-  `off_target` badge is `not_swe` **only, never `uncertain`** — deliberately, since badging an abstain
-  would assert a decision the gate declined to make — so most review leads previously rendered with
-  **no marker at all** and were indistinguishable from blindly-appliable ones. A review lead is listed,
-  never hidden; only `ineligible` is excluded-and-counted. The status band gains a `review` cell, so
-  `in queue`, `review` and `ineligible` account for every delivered lead.
-
-- **A near-miss experience-years bar abstains instead of rejecting (D-333).** `experience_years` drove
-  about 89% of the reject pile against a profile declaring **one** year, and 8,745 postings were
-  rejected for needing three years or fewer. That population is invisible by construction: the reject
-  pile is never inspected and boardwatch never applies, so a wrong `unmet` there has no outcome loop
-  that could contradict it — and internships, co-ops and course projects routinely clear an
-  early-career bar that a single declared integer cannot represent. A `required` bar at or under the
-  new `experience_years.near_miss_years_ceiling` (3) now resolves `unknown` rather than `unmet`, so the
-  lead becomes `uncertain` and reaches the review lane instead of being dropped. It **cannot** produce
-  a new `eligible`: `unknown` is caught by the blocking roll-up before the `eligible` fall-through, so
-  the worst it can do is move `ineligible` to `uncertain`. Measured on a full re-evaluation of 83,718
-  rows: 5,980 of 36,141 `ineligible` leads move (16.5%), every one of them a two- or three-year bar,
-  and none becomes `eligible`. A stated *preference* is untouched — the band applies only to rows that
-  can actually block. **Moves `engine_version`**, so the next run re-evaluates the corpus once.
-
-- **The run funnel records FETCH wall clock per provider (D-330).** Run cost could not be attributed
-  from the record, because every existing signal was wrong in a different way:
-  `board_scans.started_at → finished_at` times the *apply* (26.5 s of a 3,286 s run),
-  `wall_clock / boards` averages a population where one provider is 20× the others (it mispredicted a
-  346-board run by 24 minutes), and the gap between scan completions sums to wall clock by construction
-  because the scan fetches through a `scan_workers`-wide pool. The fetch is now timed at the single seam
-  all six providers pass through, accumulated per provider, and reported in the funnel's `scan` block
-  costliest-first. A failed fetch is charged for the seconds it burned; an untimed board is never folded
-  in as zero; and "not measured" stays distinct from "measured, nothing timed". No `artifact_version`
-  bump, no schema change, no migration.
-
-- **The run funnel now says where each lead is, and how the hard US gate read it — artifact v7 (D-323).**
-  The US-only location gate is the one gate whose failure is a lead you cannot legally take, and until now a
-  `leads[]` row in `funnel-<id>.json` carried no location at all, so the gate left no trace in the record it
-  produces: every "all leads US-located" claim came from a by-hand database read and could not be reproduced
-  from the artifact afterwards. Each lead now carries `locations` (what the posting itself named — `null`,
-  never `[]`, when it named no place) and `location_class` (`us` / `non_us` / `unknown`, computed by the same
-  classifier the ranker vetoes with, never stored separately from the locations it describes). The manifest
-  carries `location_filter_mode` in plain text, because the verdicts are unreadable without it: the mode is
-  `soft` by default, and in `soft` the hard gate never ran. The Markdown half names the classifier and the
-  number of leads it was evaluated over, so the claim stays quotable later. **`artifact_version` moves 6 → 7**;
-  no consumer validates the number, and `boardwatch verify` reads named keys out of the file as before.
-
-- **Two eligibility rules that could never fire now decide.** Both abstained unconditionally because the
-  fact they needed did not exist, which the keystone treats as a monitoring failure rather than
-  conservatism.
-  - **Obtain-after-hire clearance eligibility.** `clearable_required` ("must be able to obtain a Secret
-    clearance") fired on ~118 rows per run and returned `unknown` every time. `security_clearance` gains an
-    `obtainable` bool, declared in the catalog so `boardwatch eligibility facts set
-    security_clearance.obtainable no` and the `init` wizard both reach it with no new call site. The bit is
-    orthogonal to what you hold: an F-1 holder holds nothing and can obtain nothing, and a Secret holder may
-    still be barred from an upgrade, so inferring either direction from the held clearance inverts the
-    verdict both ways. Undeclared still abstains.
-  - **Field of study.** `degree_required_with_field` ("a Bachelor's degree in Computer Science") is the
-    commonest degree sentence there is and abstained on every satisfied rank — ~405 rows per run. `Facts`
-    gains `field_of_study`; set it with `boardwatch eligibility facts set field_of_study computer_science`.
-    The vocabulary, the reviewed relatedness partition and the phrasings by which a posting opens its list
-    are versioned catalog data in `rules.yaml`, overridable per user; a value outside the catalog, on either
-    side, abstains rather than becoming a new bucket. `met` needs an exact match, or **both** a reviewed
-    relation and the posting's own escape ("or a related field") — "must have a Computer Science degree"
-    means Computer Science. `unmet` is reached only when the posting names a closed set of catalogued fields
-    and offers no escape.
-
-  **Both change `engine_version`, so stored eligibility evaluations re-evaluate on the next run.**
-
-### Fixed
-
-- **A posting no board scan enumerates can now be closed — but only by a measured death (D-325).** A posting
-  under an unwatched company was open for ever: the only thing that closes a posting is absence from two
-  complete board fetches, and nothing ever fetches those boards. A search-based source re-finds a posting by
-  searching, so a posting that stops appearing has not been proved gone. Each run now re-fetches a bounded
-  slice of those postings and closes one only when its own URL answers 404 or 410 — twice, on different runs,
-  with no redirect in between. A timeout, a 403, a 5xx, or a 404 that arrived after a redirect all count for
-  nothing. Any sighting of the posting on a board, or any successful re-fetch, wipes the slate.
-
-  **Read the numbers before trusting it.** Against 60 postings already proved closed, this finds 4 — **6.7%**
-  (95% CI 2.6%–15.9%). None of the 37 closed Workday requisitions in that set were caught, because a closed
-  Workday requisition still answers normally. It produced no false deaths across 90 live postings. So it
-  rarely fires and it rarely lies, and **a run reporting zero closed is the expected result, not evidence the
-  backlog is healthy**. The run funnel gains a `death_probe` section that reports what was due, what was
-  probed, what the budget refused, and what had no URL to ask, so a check that quietly stops working shows up
-  as a number rather than as silence. Tune with `boardwatch config set death_probe_budget` (default 50 probes
-  per run; `0` turns it off) and `death_probe_ttl_hours` (default 24).
-
-### Fixed
-
-- **A lead the eligibility gate rejects no longer sits in the review queue (D-321).** `delivered_unapplied`
-  attached each lead's current verdict but never filtered on it, and the status band reported `eligible` and
-  `uncertain` with no cell for `ineligible` — so a rejected lead was an unexplained remainder between
-  `in queue` and the two counted buckets. Rejected leads now drain to a third directory, `_ineligible`,
-  alongside `_applied` and `_skipped`, and the count is reported. Nothing is deleted; a folder returns to the
-  queue if its verdict stops governing. An application or a skip still wins, because each is a statement you
-  made and a rule tightening later must not sweep that record away.
-
-### Fixed
-
-- **A years-of-experience requirement can now make a posting ineligible (D-319).** Two independent reasons it
-  could not before. `experience_years` ships with `default_policy: preference`, and only a `blocker` family
-  can yield `ineligible`, so a correctly-detected and correctly-resolved "Minimum of 12 years of experience"
-  was written into the evidence chain and then discarded — set it with
-  `boardwatch eligibility policy set experience_years blocker`. And `scoped_years_minimum`, the family's
-  highest-volume pattern, abstained unconditionally on the grounds that no per-skill durations are stored.
-  One direction of a scoped requirement needs no per-skill data: **a duration scoped to a single skill cannot
-  exceed the career it sits inside**, so `total < need` now resolves `unmet`. The other direction still
-  abstains — `total >= need` says nothing about that skill, and a wrong `met` is the worst verdict this design
-  can produce. Measured over a 588-posting delivered set, 142 of which state a minimum of five or more years:
-  101 of those 142 are now blocked. **Changes `engine_version`, so stored eligibility evaluations
-  re-evaluate on the next run.**
-
-- **An activity gerund is read as a years floor (D-320).** `5+ years building and deploying web applications`
-  names no "experience" and was invisible to every pattern in the family; 37 of the 142 postings above
-  produced no requirement row at all. Added as `scoped_years_activity`, with its own `activity_years_minimum`
-  vocabulary value so it cannot collide with the total/range/scoped exclusive group. Aggregator summaries
-  phrase floors this way, so this mostly affects lane-sourced postings.
-
-- **The company's own tenure is no longer read as a requirement (D-320).** `We bring 30 years of experience
-  to every engagement.` resolved `unmet` against a one-year profile: the company-side subject suppressor
-  required a noun (`our team has`), which a bare `we` subject escapes.
+- **A job whose title mentions a seniority level is no longer described as "not a software role".**
+  The reason shown for setting a job aside said it was not software work, when in fact the title had
+  been read as too senior — two different things, and the wrong one was displayed. The reason now
+  says what actually happened, and the same job no longer shows two different explanations in the
+  list and in its details. Checked across 93,732 real job titles: no job's outcome changes, only the
+  reason given for it.
 
 ## [0.5.0] - 2026-08-24
 
@@ -2653,3 +2012,686 @@ First public release.
 [0.3.0]: https://github.com/mit112/boardwatch/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mit112/boardwatch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mit112/boardwatch/releases/tag/v0.1.0
+
+### Added
+
+- **Soft alerts can now reach an owner who is away from the machine.** The six run alerts render
+  into the morning digest, which is a file under `~/boardwatch-applications/<date>/` on local disk —
+  in no synced folder. The heartbeat gate is satisfied by a merely non-fatal run, so a run that
+  raised every one of those alerts still pinged the monitor, and pinged green. A crash or a machine
+  asleep was always covered (the ping simply stops and the monitor alerts); what nothing reported was
+  the run that **succeeded while degraded** — intake death against a dead fleet, a scan outage, a
+  collapsed corpus — which over a fortnight of unattended running reads exactly like a fortnight of
+  healthy ones. `notify/alert_escalation.py` POSTs the run's alerts to a URL read from
+  `BOARDWATCH_ALERT_URL`; point it at a healthchecks.io `/fail` URL and the check already watching
+  for silence also reports degradation. Presence-gated and **unset by default**, so it is a no-op
+  until configured, and read from the environment rather than `config.toml` because the URL embeds a
+  token. It is deliberately the last thing the finalize block does: it reports the alerts every
+  handler above raised rather than raising one, so it runs after all of them — and after the
+  heartbeat, so a refused ping travels in the report too. What travels is the finalize-block
+  slice, not every error the run recorded: a stage error — one dead board slug, a lane that could
+  not collect — is routine on a 379-board fleet, and escalating it would drive a monitor DOWN on
+  ordinary runs until the owner stopped believing it (D-376).
+
+- **A collapse that makes the whole corpus ineligible is no longer the one failure nothing watches.**
+  The delivery-drought alert abstains on it by design — its honest guard is "did this run judge a
+  candidate?", and a corpus that has gone entirely ineligible judged none — and the intake alert stays
+  quiet because postings keep arriving. So a rules edit or a profile fact that stops resolving could
+  empty the standing eligible corpus and every signal would still read green. The three numbers that
+  would have shown it existed only inside each run's funnel artifact on disk, where no cross-run query
+  could reach them, so they now also land on the run row: the open corpus, how much of it was
+  evaluated, and how much of that cleared. A new detector compares the run's candidate **rate** against
+  the median of the last five comparable runs and raises a soft alert when it has halved. A rate rather
+  than a count, and that choice is load-bearing: the eligibility identity re-keys often enough that a
+  perfectly healthy run can evaluate 5% of its own corpus, which any count-based threshold reads as a
+  96% collapse and pages on at four in the morning. Runs that judged less than half their corpus are
+  skipped for the same reason. Checked against the recorded history before shipping — across 66 clean
+  runs the rate never moved by more than the trigger allows, and an injected collapse fires on the first
+  run it touches. Like the other detectors it never fails the run, and the alert is written to the run
+  row as well as printed, because an unattended machine prints to a log nobody reads.
+
+- **The morning digest now carries the run's alerts, and the heartbeat waits for it.** Every soft
+  alert this program raises — a collapsed lane, a stalled intake, an unsynced delivery queue, a
+  degraded tailor — did the same two things: appended to the run's error list and wrote the note
+  onto the run row. Neither had a reader. The list is reprinted to a console that, unattended, is a
+  log file nobody opens; `runs.errors_json` is queried by nothing; and the funnel renders them under
+  `## Errors` at the very bottom, which on run 131 put a real hiring.cafe failure at line 1388 of a
+  116 KB file. The one artifact the owner actually reads each morning rendered no error at all. It
+  now opens with an `## Alerts` section, above `## Discovery reach`, because reach is a measurement
+  and an alert is very often the reason that measurement is wrong. A healthy run says so in one line
+  rather than omitting the section: a block that disappears when it has nothing to say is
+  indistinguishable from a block that stopped working, which is exactly the state this file was in.
+  The run's fatal message is carried separately and never folded into the alert count, because three
+  guards — zero-output, cohort completeness, filesystem-truth — set it without appending anything to
+  the error list, and a digest reading only that list would have printed "no alerts" on a run that
+  failed outright. The markdown stops after eight alert lines and names how many it withheld and
+  where they live; the JSON sibling carries the full list, so the cap costs a reader nothing. The
+  digest is also emitted last in the run's finalize block, after the queue sync and the intake-death
+  check, so the notes those append reach it rather than landing after it was written.
+
+  The heartbeat is gated on that write. It was already gated on the funnel, on the grounds that a
+  run whose authoritative record is missing must not ping green; the digest now earns the same
+  treatment for a stronger reason, because it is the only channel by which any of this reaches an
+  absent owner. A run whose digest failed to write delivered its leads and delivered none of its
+  warnings, and looked identical to a run with nothing to warn about. Withholding the ping never
+  fails the run, never changes its status and never discards a lead — the leads still ship — it only
+  makes the external monitor say something.
+
+- **A liveness prober that cannot reach anything no longer passes as a clean corpus.** The liveness
+  stage is fail-open by design: any transport fault returns `unknown`, and `unknown` is served, so
+  that a timeout costs a wasted résumé rather than a missed job. The cost of that direction is that
+  a prober whose egress has broken — DNS, a proxy in front of it, the machine's IP blocked — returns
+  `unknown` for the entire shortlist, drops the gone count to zero, and ships every lead unverified
+  while the run line reads exactly as it does on a good night; unattended, the owner would be handed
+  dead requisitions presented as live for as long as the break lasted. A new detector raises a soft
+  alert on the conjunction, which is what neither half says alone: a high `unknown` share is a normal
+  bad afternoon on one provider, and a gone count of zero is the ordinary state — it has been zero on
+  every instrumented run on record — but together they say the prober asked about the whole shortlist
+  and got not one definitive answer. The threshold is a rate rather than a count, because the
+  shortlist size is `--top` and that has moved 8 → 40 → 10 → 40 inside a fortnight; it is set at 75%
+  of a shortlist of at least ten, against a recorded worst clean run of 3 unknown of 8 (37.5%), and
+  of 2 of 10 and 3 of 40 at the sizes the pipeline actually runs at. A run that was never probed
+  abstains rather than reporting a clean result it never took. Like the rest of this family the alert
+  reaches `summary.errors` and the `runs` row through `append_run_error` and never sets the run's
+  fatal outcome, so the heartbeat still fires — a blind prober tickets, it does not trip the
+  dead-man's switch. It judges one run rather than a window, and that is a limitation rather than a
+  preference: the three liveness counts live only on the in-memory summary and in the per-run funnel
+  JSON, so there is no persisted per-run column to read a window off the way the intake detector reads
+  `runs.new_count`.
+
+- **A run that scans fine but finds nothing new no longer passes silently.** The heartbeat fires on
+  any clean outcome, so a dead board fleet or a silent fetch regression — the pipeline running
+  perfectly and returning zero new postings every night — looked identical to a healthy run. A new
+  detector reads the per-run net-new count the scan already records (`runs.new_count`) and raises a
+  soft alert when three scanning runs in a row all find zero. It is a slow-burn signal by design: the
+  alert is appended to the run's error list (reprinted by the CLI and persisted to the run row via
+  `append_run_error`) and never sets the run's fatal outcome, so the heartbeat still fires — a stalled
+  intake tickets, it does not trip the dead-man's switch. Runs whose scan never recorded a count — a
+  `top --no-record` phantom — are skipped rather than read as zero, and fewer than three scanning runs
+  of history abstains rather than firing on a fresh store.
+
+- **A majority-of-the-fleet scan outage is no longer silent.** A run is only made fatal when *every*
+  board fails; a provider block — Workday is the bulk of the 379-board fleet — or an IP-reputation
+  problem can dark most of the boards while a handful of other providers still complete. That is not
+  systemic, so the run stays clean and the heartbeat fires green while intake collapses, and the
+  intake-death detector cannot see it because the survivors still emit some new postings. A run whose
+  failed-board fraction crosses half now raises a soft, non-fatal alert recorded on the run — a partial
+  outage tickets rather than paging, because it is not a systemic one and a false page on a transient
+  timeout burst is worse than a note read on the next review.
+
+- **A pipeline that finds leads but ships none no longer passes silently.** Intake can be healthy —
+  boards up, new postings arriving — while the tailor, rank, or delivery path drops every candidate:
+  an over-suppression bug, a ranker that hides everything, a broken résumé render. The run reaches a
+  clean outcome, so the heartbeat fires green, and the intake-death detector stays quiet because
+  net-new is not zero. A detector now raises a soft, non-fatal alert when the last three clean runs
+  each judged at least one new eligible/uncertain candidate yet delivered zero leads. The candidate
+  guard keeps it honest: a quiet steady-state run that had nothing new to judge, and a full
+  eligibility collapse where nothing was judged eligible, both judge zero candidates and abstain — it
+  fires only when the pipeline is finding deliverable postings and dropping all of them.
+
+- **Twenty more Workday boards are watched; the fleet is 379.** Breadth batch 2 had been deferred
+  because its boards had never been timed cold. One was: a cold Workday board scanned in 604 s,
+  enumerated 420 of 420 postings, and stopped at exactly 400 — the detail-fetch budget — deferring the
+  remaining 20. A cold Workday board is therefore bounded by that budget rather than by how big the
+  board is, which puts the whole batch at roughly +34 minutes of scanning on its first run and about
+  +5 minutes thereafter. The four SmartRecruiters boards in the same batch are deliberately left out,
+  and the reason inverts the intuition: every SmartRecruiters board is served from one host, which the
+  fetcher serializes and extra scan workers cannot help, so those four would cost more wall clock than
+  all twenty Workday boards combined. Each Workday board was re-verified as watched by querying the
+  store back against the source list rather than trusting the importer's own count.
+
+- **`Fetcher.get` accepts per-request headers.** One caller needs them — the lane above — and they
+  are merged *under* the conditional-GET validators, so a caller cannot clear an `If-None-Match` and
+  silently turn every conditional GET on a board into an unconditional refetch.
+
+- **The React viewer has a test suite, and the gate runs it.** Until now the frontend's only checks
+  were `tsc --noEmit` and eslint, so `make check` could not see a render regression at all — the
+  error boundaries added for the queue page, and the loose `== null` guards that absorb the viewer's
+  structural disk-bundle-vs-memory-API skew, were both behaviour no test covered. vitest and jsdom
+  now run as a `web-test` prerequisite of `check`, and as a step in CI's web job, because nothing in
+  CI runs `make check` on a pull request. The target is deliberately **not** conditional on node
+  being installed: a check that skips itself where the toolchain is missing reports green while
+  verifying nothing. Eight tests cover the four boundary scopes and the skew guards, and each was
+  confirmed to fail against the broken implementation before being counted — removing any one
+  boundary, or tightening any `== null` to `=== null`, turns the suite red. Two guards were left
+  unasserted on purpose and say so in the file: `new Date(undefined)` and `new URL(undefined)`
+  behave identically under both comparisons, so a test on them would pass against the tightened
+  version and prove nothing.
+
+### Changed
+
+- **A lead the delivery queue could not copy is now recorded, not just printed.** `sync_queue` and
+  `reconcile_queue` both isolate their per-lead failures inside their own report rather than raising,
+  which is what keeps a queue copy from ever failing a run — and the run hook counted those failures
+  into its log line and did nothing else with them. That was a deliberate contract, and it was the
+  right one while somebody was watching the run: the queue holds copies, and the dated tree and the
+  funnel are the real output. It stops being the right one unattended. The log line goes to a file
+  nobody opens, so a queue that had quietly stopped copying leads was byte-identical in the store to
+  one that copied every single one, and the owner would go on trusting a queue that had gone empty.
+  The hook now returns the combined failed count and a non-zero one is escalated the same way every
+  other reporting failure in the run's finalize block is — onto `summary.errors`, which the CLI
+  reprints, and onto the run row through `append_run_error`, because the hook runs after
+  `finish_run` and nothing appended to the summary alone survives the process. Still non-fatal: the
+  run's outcome, its status and its leads are all untouched, and all three are asserted so. The test
+  that pinned the old console-only contract was inverted to the new one and confirmed to fail
+  against the old implementation first, and a second test covers the drain half of the count, which
+  had no provocation of its own and would otherwise have let a version that reported only sync
+  failures ship green.
+
+- **A degree requirement's boilerplate no longer reads as a field of study.** The `education` field
+  surface matched the mass noun wherever a posting talked *about* education rather than naming it as
+  a subject — "or educational equivalent", "an equivalent combination of education and experience",
+  "Accreditation Commission for Education" — so a posting asking for a degree in Engineering was
+  read as demanding a degree **in education** and decided `unmet` against a candidate it had named
+  no field for at all. Counted over the open corpus, those frames outnumber the genuine field sense
+  by roughly twenty to one. The surface now rejects them on the word immediately preceding the noun,
+  which the field sense never takes, and no longer matches `educational` at all. Separately, the
+  relatedness escape could not read **"or another related field"** or "or other related field" — the
+  alternation admitted only "a" and "an" — so a posting that had plainly opened its requirement was
+  still treated as naming a closed set. 483 open postings carry that phrasing. Both defects could
+  only ever produce a wrong rejection, never a wrong clearance.
+
+- **Every held-back lead now says which reason held it.** The queue splits leads into an apply lane
+  and a review lane, but a review row carried a marker only when the role gate had positively
+  classified its title as *not* software. A lead held because its location was confirmed outside the
+  US, or because the gate simply would not vouch for the title either way, rendered exactly like a
+  clean one. The lane decision now returns its reason alongside the lane from the same branch, so
+  the page and the `_review` folder cannot start disagreeing about a lead, and each review row is
+  labelled `outside the US`, `role vetoed`, `role unconfirmed` or `ineligible verdict`. The two role
+  cases stay separate on purpose: the gate's `uncertain` is an abstain, and reporting it as "not
+  software" would assert a decision the gate declined to make.
+
+- **A held-back lead no longer carries the same reason twice.** Once every review row began naming
+  the reason it was held, a lead held because the role gate vetoed its title showed both "role
+  vetoed" and "off target" side by side — two chips derived from the same check, saying the same
+  thing. The second is now suppressed on exactly that case. It is kept everywhere else it still
+  means something: on a lead held for a location or an ineligible verdict, where it reports a
+  separate finding such as a seniority band, and on the apply queue, where a lead that is otherwise
+  ready to send but carries an off-target title has nothing else to warn the reader with. Opening a
+  lead still shows both, with each reason spelled out.
+
+- **The review app has a new visual language.** One type size appeared in 47 places, one corner
+  radius in 42, and a border was drawn around every container, so a dense instrument read as a
+  spreadsheet. Depth now comes from elevation rather than outlines, the corner radius is a language
+  of three deliberate steps instead of a default, and the monospace face carries headings, metric
+  numerals and labels while the sans face keeps prose. The two figures the page is opened to read
+  are set at display scale. No web font is downloaded or bundled: the app ships inside the wheel and
+  is served from localhost, often offline. Every foreground and background pair was re-checked
+  against the lightest surface it can land on and clears WCAG 2.2 AA, and the keyboard model, focus
+  containment and reduced-motion behaviour are unchanged.
+
+- **The per-host request delay can be measured from the start of a request.** It was measured from
+  the end of the previous one, so a host saw one request every delay *plus* however long each took —
+  about 0.6 requests per second where the setting read 1.0. `pace_from_request_start` makes the
+  delay the whole interval. It is **off by default and stays off unless you turn it on**: raising it
+  is a real increase in the load every job board sees, and that is not a default this project sets
+  on anyone's behalf.
+
+- **The delivery slate is capped at one lead per company, title and byte-identical JD.** Run 129
+  delivered ten leads and nine were a single requisition — one CGS Federal `ServiceNow Developer`
+  posted to nine cities, with one `company_id`, one normalized title and one byte-identical
+  `content_hash`. Nothing suppressed it and nothing could: `exact_quad`, the only suppressing
+  identity kind, includes `locations`, so one requisition split across nine cities is nine groups
+  of one. The ranker now allows **one lead per `(company_id, normalized_title, content_hash)` per
+  run**. It is a delivery cap, not a claim that two postings are the same job: nothing is suppressed
+  permanently, a capped lead is never recorded `seen` so it ranks again on the very next run, and no
+  identity, ledger or `IDENTITY_ALGORITHM_VERSION` change is implied. Because the cap sits inside the
+  rank cutoff, the freed slot is **refilled** from further down the ranking — the same run now
+  delivers three distinct employers where it delivered three copies of one. Sized over delivered
+  leads rather than the corpus: across runs 119-129's 110 delivered leads it frees nine slots and
+  fires on two runs, with no collateral. The hash is part of the key because one run's two
+  same-company, same-title leads carried **different** hashes and were two genuinely distinct
+  requisitions. **A body-less posting is never capped** — `content_hash` is never null or empty, so
+  its presence proves nothing, and every body-less posting hashes the empty string: all 245 in the
+  corpus share one digest and six `(company, title, hash)` groups are already collisions of that
+  kind, one of them a `software engineer frontend` pair. `hidden_slate_cap` is its own never-folded
+  bucket, equal to the number of slots freed, listable with `top --include-slate-cap`, and each
+  drained row names the lead that displaced it.
+
+- **Each JD-acquisition lane now reports its cost split into paced fetching and serial applying.**
+  The lane stage cost 6.5 minutes on run 129 and swung fourfold run to run for *more* work, and a
+  stage total could not say why: upstream throttling and contention on the single writer produce the
+  same number. The funnel now carries `fetch_seconds` and `apply_seconds` per lane, and the `Lanes`
+  markdown names the fetch **share**, because the ratio is what tells you whether parallelism would
+  help. `null` means not measured and is never rendered as `0.0s`, so a lane that failed before it
+  was timed can never read as a lane that cost nothing.
+
+- **The lane fetches now overlap, while `apply_board` remains the single writer.** Lanes ran strictly
+  one after another, so hiring.cafe waited for LinkedIn even though they are different hosts and
+  politeness never required it. Each lane is now split into a paced fetch, which runs off the main
+  thread, and an apply, which does not — two lanes applying at once would put two writers on one
+  SQLite store. Per-host pacing is unchanged and unchangeable by this: the fetcher holds a lock per
+  host for a request's full duration and paces inside it, so requests to one host still serialize and
+  no third party sees a higher rate. The gain is bounded by the slowest lane rather than divided by
+  the lane count — about two minutes, after which the stage is tail-bound on LinkedIn alone.
+
+- **The queue UI's WCAG 2.2 AA failures are fixed and the triage list is keyboard-first.** The
+  review page is worked top-down every morning against a few hundred leads, and measurement of the
+  shipped bundle found it neither accessible nor fast to work. Each failure was measured in a
+  browser rather than argued: `--color-fg-3` and `--color-control` were verified against
+  `--color-bg` and then painted on `--color-surface-2`, where they compute **4.32:1** (needs 4.5)
+  on every selected row and **2.90:1** (needs 3.0) for the border of every chip and badge inside
+  the detail pane — both are now derived against the lightest surface they ever land on.
+  `role="row"` and eight `role="columnheader"` were emitted with **no grid or rowgroup above them
+  and no role on any data row**, so every `aria-sort` the table set was announced to nothing; the
+  list is a real `role="grid"` now. Four focusable controls per row measured **1,399 tab stops** on
+  one page and nothing below the list was reachable in practice — the tab stop is the row now
+  (roving `tabIndex`), which measures **14**, and every row control keeps a single-key equivalent.
+  Neither route had an `h1`. `scroll-margin-top` was 0 under a 61px sticky header (SC 2.4.11). The
+  undo toast — the only route back from a mark-applied or a skip — expired on a timer the reader
+  could not stop (SC 2.2.1); hover or focus holds it now. Rows are 37px rather than 53px (18 on
+  screen, not 12) and no longer lose their actions when the detail pane opens, with `j`/`k`,
+  `Enter`, `o`, `a`, `s` on the focused row and `/` for the filter — all handled on the grid, never
+  on `window`, so a keystroke aimed at the filter box can never mark a lead applied. **The skip
+  link is a `<button>`, not `<a href="#view">`**: the URL fragment is both this app's router and the
+  channel the CLI passes the bearer token over, and `api/token.ts` reads any fragment not starting
+  with `/` back as a token. Which leads render, in what order, and their counts are unchanged.
+  The row shortcuts refuse **held modifiers and auto-repeat on the acting keys**: `Cmd+A` on a
+  focused row is `event.key === "a"`, and a held `a` marks each successive lead applied as focus
+  follows the collapsing rows down the list — every repeat lands on a different posting, so API
+  idempotency is no defence. Navigation keys still repeat, because holding `j` is the point.
+
+- **The run funnel times its own stages, because a fifth of a run was attributable to nothing.**
+  Run 128 took 132.4 minutes and `scan.fetch_cost` could only price the SCAN, per provider; every
+  stage after it was timed nowhere. Reconstructing the shape meant joining `board_scans`,
+  `extractions`, `eligibility_evaluations` and `artifacts` on their side-effect timestamps, and even
+  then **26.8 minutes — 20% of the run — landed in one block spanning two stages** with no way to
+  split it. A `_StageClock` now marks eight boundaries (`scan`, `projection`, `lanes`, `death_probe`,
+  `eligibility`, `liveness`, `tailor`, `finalize`) and each mark closes the stage behind it, so
+  consecutive rows leave no gap and a stage that returned early or raised is charged to the mark that
+  follows it rather than dropped — both the projection preflight's refusal and the `NoProfileError`
+  path do exactly that, which is why a per-stage wrapper was rejected. The last mark is inside the
+  `finally`, so a crashed run — the one whose breakdown is worth most — still reports where its time
+  went. New `stage_durations` JSON key and `## Wall clock` markdown section. **The total is the run
+  up to the artifact, and the section says so**: the funnel, the morning file and the queue sync are
+  all written after the last mark, because the funnel cannot contain its own duration. `None` means
+  the run was not timed (a stored artifact predating this), which is not `()`, "timed and no boundary
+  reached". **`artifact_version` stays 7** — additive key, the `scan.fetch_cost` precedent.
+
+- **The scan dispatches boards by HOST, so a wider worker pool actually pays.** `Fetcher` holds a
+  per-host lock for a request's full duration and paces requests apart, so a worker that picks up a
+  board whose host is already busy does no work at all. Five of the six providers serve every board
+  from ONE API host; only Workday has a host per tenant (105 hosts, 114 boards, 92% of the fetch
+  cost). Boards were dispatched in company-rowid order — the order they were added, in per-provider
+  batches — so **the first sixteen boards of the live 345-board fleet were all `api.ashbyhq.com`**,
+  leaving three of four workers idle at the start of every run and seven of eight.
+  `coordinator.host_diverse` now round-robins boards across hosts before submission, keyed on the
+  newly exported `politeness.host_key` — the exact key the lock uses, never the provider name, which
+  would bucket Workday's 105 independent hosts as one. **No host sees a different request rate**;
+  only the number of distinct hosts in flight changes, and a completed run persists exactly what it
+  persisted before (`exact_quad`, the only suppressing identity, keys on `company_id`, so no
+  cross-host pair can collide). Modelled against run 128's own numbers — the model reproduces its
+  measured 92.8-minute board scan at 93.0 — this is 87.8 min at 4 workers and 47.4 min at 8.
+
+- **The run funnel publishes the scan's full four-way board split, so its numbers reconcile.**
+  `ScanSummary` sorts every attempted board into exactly one of `complete | partial | failed |
+  unchanged`, and the artifact published three of them. Live run 126 read "346 boards attempted ·
+  166 complete · 1 failed", which reads as **179 boards that silently did nothing**; they were 39
+  `partial` (a detail budget truncated them) and 140 `unchanged` (HTTP 304). Run 127 hid 200 the same
+  way (145 / 35 / 165 / 1). The `scan` block now carries `boards_partial` and `boards_unchanged`
+  beside the two it had, plus `boards_reconciled` — `true` when the four sum to `boards_attempted`,
+  and **`null`, never `true`, on a `--no-scan` run**, because `0 == 0` is not a passed check. An empty
+  bucket emits a measured `0` rather than dropping its key. The Markdown line and the JSON both move.
+  The four-way partition was verified against the live store (`board_scans`, `scan_kind='board'`) for
+  both runs: 166+39+140+1 and 145+35+165+1, each exactly 346. **`artifact_version` stays 7** — these
+  are additive keys in a block that has existed since v1, on the `scan.fetch_cost` precedent, and no
+  existing value changes meaning.
+
+- **The four-way board split now reaches the store, `/api/runs` and the web run list (D-341's other half).**
+  D-341 published `complete | partial | unchanged | failed` in the funnel artifact, but the `runs` table
+  kept only `boards_attempted` and `boards_complete`, so run 127 read "346 attempted / 145 complete" from
+  the row with the other 200 boards unaccounted — the same fold, one layer down, inherited by `/api/runs`
+  and the run list that read it. A migration (`p_runs_board_split`) adds `boards_partial`,
+  `boards_unchanged` and `boards_failed` to `runs` as **nullable** columns: NULL means a run predating the
+  column or one whose scan never ran, kept distinct from a measured 0 — a zero default would read every
+  historic run as a scan that found zero partial boards. `finalize_run` writes the three buckets from
+  `ScanSummary`, `/api/runs` serializes them, and the run list shows `partial`/`unchanged`/`failed` tiles
+  beside `boards` (an em-dash for a run that never measured them). The end-to-end scan test now asserts the
+  split reaches the row, not only the artifact — the wiring is where D-341's bug lived. No manifest change:
+  board counts are observations about a scan, not inputs to a verdict.
+
+- **Two spellings of one city are now one location (`IDENTITY_ALGORITHM_VERSION` p6.2 -> p6.3).**
+  `normalized_locations` is a component of every location-bearing identity key, so a requisition
+  published as `["Austin, TX"]` on one board and `["Austin, Texas, United States"]` on another held two
+  keys and no identity kind could ever group it. Measured on the live queue tree, **47 of 70 redundant
+  folders differ only in the location string**. `core.normalize.canonical_location` now folds each
+  comma-separated segment against a closed, versioned catalog (`rank/location_data`, which is also now
+  the single source for both state sets): a US state name becomes its USPS abbreviation but **never in
+  the first segment**, so `New York, NY` does not become `ny, ny`; a trailing `United States` is dropped
+  only beside a US state, so `Remote, US` keeps its country; a trailing office segment is dropped; a
+  parenthetical site code is dropped only from a state segment, so `Remote (IND)` — the D-264 country
+  signal — survives; and `X County, ST` becomes `X, ST` only with a US state after it.
+  `canonical_locations` then de-duplicates the list and drops an office alias whose city the list
+  already names. Out-of-catalog segments are left alone: `London, United Kingdom`, `Toronto, ON, Canada`
+  and `Bengaluru, Karnataka, India` pass through unchanged, so a non-US tenant's locations are not
+  mangled. **Nothing merges two different places.** Cross-city (PayPal's San Jose / Austin / Scottsdale
+  / New York), subset/superset (Twitch's Seattle+SF against SF alone) and US-against-Canada (Affirm) are
+  owner policy calls, are untouched, and each has a test asserting it does not fold; five more tests
+  pin the guards by mutation. On the live corpus of 84,821 open postings the suppressing `exact_quad`
+  kind gains 31 groups and 48 suppressions (2.43% -> 2.49% of open), `company_title_location` goes
+  3,451 -> 3,535 groups and `cross_host` 3,899 -> 3,987; every newly merged suppressing group is one
+  requisition published per office by Brex or Anduril. **A version bump degrades to "no identities yet"
+  — suppression off, `unique` None — until `boardwatch identities backfill` re-runs.** Measured against
+  a copy of the live store: **83 s, 423,706 rows written, 1.3 GB peak RSS**, and `identities verify`
+  clean afterwards. The dead p6.2 generation (476,277 rows) is not reaped; the table has no reaper.
+
+- **CI shards the test suite across jobs, and one aggregate check replaces six required contexts
+  (D-334).** A pull request took 30-42 minutes, and per-step timings showed the whole of it is a single
+  step: gitleaks, generalization, perf and web bundle total about twenty seconds between them, while
+  `pytest -n auto` ran 1764s / 2480s / 1903s on 3.11 / 3.12 / 3.13. A GitHub standard runner has four
+  vCPU; the same suite takes 6m24s on a ten-core Mac. There is no hot spot to remove — the slowest
+  single test is 1.5% of total CPU and the top 25 are 9% — so the suite is now split N ways per Python
+  version by SHA-256 of the node id, chosen over a durations file because a flat profile balances
+  without one (8 shards measured 996-1094 tests, a 9.5% spread). Every shard emits a manifest and
+  `tools/shard_audit.py` proves the shards are a genuine partition: exactly N manifests per version,
+  identical collection digests, pairwise disjoint, union equal to the whole. Coverage is combined per
+  Python version and the 85% threshold applied three times, preserving what the pre-shard matrix
+  guaranteed rather than collapsing it into one easier union number. Branch protection now names the
+  single `ci` job, which derives what should have run from the event rather than from job results,
+  because GitHub counts a skipped required check as a passing one. macOS and Windows stay unsharded and
+  keep their own type-checking, so this change targets pull-request latency specifically; pushes and
+  the nightly are still bounded by those full-suite jobs. Measured on the first sharded run: 30-42 minutes becomes 10.6, a 3.3x improvement, and the shard count settled at 4 rather than 8 because wall clock turns out to be bounded by the concurrent-job ceiling rather than by how finely the suite is sliced — so 8 shards paid double the per-job setup for the same ten minutes.
+
+
+### Fixed
+
+- **A component that fails to draw now costs a card, not the whole page.** The queue viewer had no
+  error boundary anywhere, so any error thrown while rendering unmounted the entire React tree and
+  left a blank page — which is how one undefined field blanked the queue. Boundaries now sit at four
+  scopes, each keeping a different thing usable: the app root, the route switch (so the tabs still
+  work and the other view is one click away), the review lane (so a failure there cannot cost the
+  apply queue above it), and the detail pane (so a failure there cannot cost the queue beside it).
+  Each card says what failed, what still works, and offers one named recovery action; the technical
+  detail is there but folded, and focus moves to the recovery button only when the failure destroyed
+  the element that had it. The detail pane's action closes the lead rather than redrawing it, because
+  below the side-by-side breakpoint a lead that stays selected holds the queue behind it inert.
+
+- **The viewer no longer breaks when it is newer than the server it is talking to.** The page's
+  JavaScript is served from disk while the data comes from the copy the server loaded at startup, so
+  a long-running viewer can read a field its own API never learned to send. An absent field arrived
+  as `undefined`, the guards tested only for `null`, and the read threw. The queue's own lane list
+  is the worst case and the one no error boundary can catch — it is read inside a promise, so the
+  page showed a load failure blaming the connection and advising a reload that would not have
+  helped, and on the background refresh it failed silently and stopped reporting new leads
+  altogether for as long as the page stayed open. The lane list is now normalised once where the
+  response arrives, the shared display helpers and the verdict chip accept an absent value the same
+  way the review badge already did, and the runs page tolerates funnel files written before the
+  fields it reads existed.
+
+- **The experience-years floor patterns now read possessive and qualified phrasings.** The floor
+  patterns anchored on the literal word `experience` immediately after an optional whitelisted
+  adjective, so three common phrasings never registered as floors at all: the possessive
+  `5 years' experience`, where the word-boundary after `years` fell before the apostrophe; a
+  qualifier the whitelist did not carry, such as `demonstrated` or `proven`; and such a qualifier
+  ahead of a multi-word scope. Across the open corpus, 11,379 postings carried a four-year-or-more
+  mention that no pattern matched, of which roughly 4,571 were real floors — and roughly 4,599 were
+  ages rather than experience, which is why the obvious widening had been held back. An age guard now
+  makes `N years of age` structurally incapable of reading as an experience floor. The published
+  default for this family is unchanged, so on a stock configuration this changes what is *detected*
+  and no verdicts; it tightens verdicts only where the family has been configured to block.
+
+- **Focus is now contained in the queue detail sheet at the tier where it is a modal.** Below 64rem
+  the detail pane is a full-screen sheet, and focus could leave it: `Shift+Tab` reached a row of the
+  triage grid *behind* the opaque sheet, after which the single-key mark-applied shortcut acted on a
+  row the reader could not see. The subtrees the sheet covers are now `inert` at that tier only — at
+  or above 64rem the pane is a column beside a list that must stay reachable, so nothing is inerted
+  there. The undo toast is deliberately excluded: it draws above the sheet and holds the only route
+  back from a mark-applied.
+
+- **A board slug differing only in case no longer becomes a second company row (D-339).**
+  `companies` enforces `UNIQUE(provider, slug)` and SQLite compares that case-sensitively, so
+  `ashby:Lightfield` and `ashby:lightfield` were two watched rows for one board — identical open
+  postings, identical provider posting ids, URLs differing only in the slug's case. It was fetched
+  twice every run and contributed redundant postings that no identity kind can suppress, because
+  every suppressing key is scoped by `company_id`. Two comparisons had to be wrong for the row to
+  appear: the lane's is-new check read the variant as new, which spent one of the run's
+  new-company slots as well as letting it through, and the insert's conflict target then failed to
+  converge. Both now resolve through one helper that returns the slug the store already holds, so
+  no existing slug is rewritten and no live URL moves; the fold is done in SQL on both sides,
+  because a Python-side `.lower()` disagrees above ASCII and would fail toward two rows.
+  `companies add` and `companies import` report the resolution instead of silently doing nothing.
+  Workday site slugs stay case-significant (`NVIDIAExternalCareerSite` and `external_experienced`
+  are both real) and are unaffected, since the guard never rewrites a slug.
+
+- **`companies remove` and the `--company` filter now case-resolve the way `add` does (D-339 loose ends).**
+  D-339 folded slug case for the store calls behind `add`/`import`/`remove` but left two edges. The
+  `--company` scan filter (`get_watched_companies`) still compared the slug case-sensitively, so
+  `--company KAYAK` skipped a board stored as `kayak`; the comparison now folds case in SQL the way
+  `stored_slug` does, and needs no `--provider` to do it. And `companies remove` unwatched the correct
+  row yet echoed the slug the operator typed, so `remove ashby:KAYAK` printed `Unwatched ashby:KAYAK.`;
+  it now reports the stored spelling (`ashby:kayak`), matching what `add` and `import` already do. The
+  fold is SQL-side on both, because a Python `.lower()` disagrees above ASCII.
+
+- **A degree requirement naming several fields produced no row at all (D-328).** The three
+  `*_in_field_required` patterns bounded the span between "in" and the requirement marker at 60
+  characters. That was assumed to truncate the captured field; it does not — the pattern fails to
+  match, so *"A Bachelor's degree in Computer Science, Computer Engineering, Mathematics, or a related
+  discipline is required."* yielded **zero rows** and the posting read as though it named no degree
+  requirement. The bound is now 160, chosen by measuring the live corpus (25 in-field rows at 60, 29
+  at 160, 29 at 240, 30 at 400, none lost at any width), and it stays **closed** rather than becoming
+  unbounded, because `[^.;:]` and sentence scope are the outer fence and the count is the inner one.
+  About **248** open postings gain a degree row they never had; none loses one. This buys no
+  additional `ineligible` verdicts — it is an honesty fix, so that a stated requirement produces an
+  abstain instead of silence.
+
+### Added
+
+- **The LinkedIn lane paginates its search, behind `lane_search_pages` (default `1`).** The lane
+  converts better per posting than any whole-board scan — 19 leads from 213 open postings — because it
+  is facet-filtered at the source against the user's target titles, but it surfaced only ~63-69
+  candidates a run. The body budget was not the constraint and the funnel says so: `body_fetched` was
+  49 and 53 against a `lane_posting_budget` of 60 on runs 126 and 127, under budget every time. One
+  search page per facet was. `start` had been probed as a working ITEM offset (10 cards to a page) and
+  deliberately left unimplemented on the reasoning that a facet already lists more cards than the body
+  budget can fetch; those two runs falsify it, and the module's comment now says so rather than
+  narrating a rationale the code no longer follows. **The ceiling is a setting defaulting to 1, which
+  is byte-for-byte the single-page behaviour that shipped** — page 0 is the URL unchanged, never
+  `&start=0` — so no existing user's request volume or request shape moves and the owner opts in
+  locally. **The correctness trap is that under paging an empty page becomes a legitimate outcome:**
+  `card_nodes` raises `SearchPageError` on a page with no cards *by design*, so paging naively would
+  make every facet shorter than the ceiling look like a structural outage. Page 1 empty still raises,
+  unweakened; page N>1 empty is the end of that facet's results and ends it cleanly. A full page adding
+  no new posting id ends it too — the offset-wrap tail `providers/workday.py` guards for the same
+  reason. Per-facet page counts are reported in the funnel's `lanes` block (additive key, no
+  `artifact_version` bump), because a facet that ran out at page 2 and one truncated at a 5-page
+  ceiling produce the same posting count and only the second is lost reach. `location=` and `f_WT=2`
+  are still never sent, at any offset. hiring.cafe is untouched: it has no recorded paging parameter
+  and its `?page=` form is disallowed by `robots.txt`, so its one-page ceiling is structural.
+
+- **`boardwatch track import` fills the funnel from a history kept in another tool.** The ranker has
+  always suppressed a job carrying a submitted application — `applied_job_ids` feeds `hidden_applied`
+  in `top`, and `delivered_unapplied` keeps the same job out of the delivery queue — but on a store
+  whose user applied through something else that machinery is starved: `applications` sits at **0
+  rows**, so a role applied to months ago re-surfaces and is re-tailored on every run. Measured on a
+  real 64-row history against a 95,897-posting store, **21 of the 64 (32.8%) were still open there**
+  and would have re-surfaced. The importer takes a deliberately generic file, CSV or JSONL with the
+  columns `company`, `title`, `url`, `applied_at`, `status`, so it is not tied to any particular
+  source tool. Rows match on **url** first, folded through the same `normalize_url` the duplicate
+  suppressor uses, and on **(company, title)** only behind `--allow-title-match`, because one title
+  at a large employer can cover several requisitions; the key that matched is recorded per row.
+  **No row is dropped silently** — each lands in exactly one of `matched`, `already_present`,
+  `unmatched` or `malformed`, all four counts are printed even at zero, and `--report` writes a
+  per-row JSONL audit. Importing the same file twice writes nothing, bumps no `attempt_no` and
+  appends no event, and a job that was **withdrawn** is left withdrawn rather than silently
+  re-applied. A role boardwatch never saw cannot be recorded at all, since `applications.job_id` is
+  a foreign key to `jobs`; that is why `unmatched` is a reported bucket rather than an error.
+- **The funnel's `dedup` stage is instrumented.** It reported `entered: null, advanced: null` and
+  the note *"this stage counts nothing"* for the whole of P0-P6, so no run could show from its own
+  artifact whether dedup was working; the only dedup numbers a run emitted were the ranker's
+  `hidden_duplicate` and the per-source `unique` column. The stage now carries the corpus that
+  entered grouping, what survived, and a named `suppressed_duplicate` drop, plus a `dedup_detail`
+  block beside the drop — `suppressing_groups`/`suppressing_redundant`, and one
+  `candidate_redundant_*` per audit-only kind. Those bounds are never summed into the drop
+  (D-327): `company_title_location` spans genuinely different jobs. Not-measured stays
+  distinguishable from zero, and the two reasons for it — the sweep did not run, or the backfill is
+  incomplete — stay distinguishable from each other. On the live corpus the stage reads 84,821 in,
+  82,757 out, 2,064 suppressed across 1,472 groups, with bounds of 5,268 / 5,775 / 12,571.
+  `exact_provider` is absent rather than reported as 0, because a UNIQUE constraint makes its
+  collision count structurally zero. **`artifact_version` stays 7**: no new top-level section, and
+  no existing value changes meaning — a nullable stage field going from `null` to a number is the
+  transition it exists to make, and `SourceOutcome.unique` set that precedent when P6 landed.
+
+- **The funnel's corpus-wide duplicate sweep stops materialising every posting body.** The sweep
+  called `load_identity_inputs(conn)` with no id list and pulled 503 MB of `body_text` for a
+  1.33 GB peak RSS. `resolve_duplicates` drops every identity group with fewer than two members, so
+  it now loads bodies only for the postings that share a suppressing key with another open posting
+  — 3,536 of 84,821 (4.2%) on the live corpus. Measured on a scratch copy: peak RSS **1356 MiB ->
+  109 MiB**, CPU 3.64 s -> 1.28 s, and the suppression set is byte-identical (2,064 suppressions,
+  same survivors). The candidate set is driven by `SUPPRESSING_KINDS`, never by a literal
+  `exact_quad`, so enabling a second suppressing kind cannot silently narrow it.
+
+- **`boardwatch identities reap` removes the identity rows a version bump leaves behind.**
+  `write_identities` only rewrites a posting's rows at the CURRENT
+  `IDENTITY_ALGORITHM_VERSION`, so a bump writes a whole new generation beside the old one and
+  nothing ever removed the old one. `posting_identities` held **476,277 rows** on 2026-08-28,
+  about five per posting, and every reader filters to the current version. The `p6.2 → p6.3`
+  bump in this same release retires every one of them, and without a reaper the next backfill
+  would take the table past 950k rows with half of it permanently unread. Reaping the p6.2
+  generation on a
+  scratch copy of the live store deleted **476,277 rows across 95,336 postings in 4.5 s** and
+  returned **121 MiB** to SQLite's free list (the file itself shrinks only under a separate
+  `VACUUM`, which the command deliberately does not run). It reports by default and deletes only
+  under `--apply`, and nothing else in the CLI reaps as a side effect. **Only retired generations
+  are in scope.** 11.0% of the table sits on closed postings and reaping that looks like the
+  bigger win, but postings reopen — run 127 alone reopened 18 — and `identities_complete()` gates
+  suppression over all open postings, so a reopened posting with no identity rows would silently
+  disarm dedup store-wide until the next backfill.
+
+- **The delivery queue splits into an APPLY lane and a REVIEW lane (D-332).** The queue root is a
+  *blind-apply* surface — you open a folder, read the rendered PDF and apply — but 82% of it was
+  `uncertain` (314 of 383 leads, only 27 `eligible`), and a lead is `uncertain` precisely *because* a
+  ranker gate failed open on it: the hard US gate passes an unplaceable location by the visa ruling,
+  and the role gate passes an unrecognised title. Live examples that reached the queue: an Allstate
+  "Field Auto Appraiser", a Humana care-support role, an ITW "Recycle Operator", a Hyatt "Front Office
+  Agent". A fourth drain `_review` now sits beside `_ineligible`, and
+  `delivery/review_gate.lane(verdict, locations, title)` is the single definition of the split, called
+  by both writers. `eligible` promotes; `uncertain` (and an unevaluated `None`) reaches the apply lane
+  only when it is **confirmed US and confirmed software**. Location fails *open* on `unknown` — a bare
+  `"Remote"` stays appliable, and only a confirmed non-US lead is demoted — while a title carrying no
+  positive software signal is held. `_review` is a managed second location, not an exclusion: leads are
+  created there and drawn back up if their class changes. Measured on the live store, roughly one lead
+  in three was in the blind-apply surface without a software title. No engine change.
+
+- **The queue page follows the same split, with its own Review section.** `GET /api/queue` returns
+  `rows` (the apply lane, exactly the queue root) and `review` (exactly `_review`), split by calling
+  the same `review_gate.lane` rather than re-deriving it, so the page and the folder tree cannot
+  disagree about a lead. The Review section is collapsed by default with its count always visible, and
+  each lane ranks and sorts independently. This matters more than "the page was unfiltered": the
+  `off_target` badge is `not_swe` **only, never `uncertain`** — deliberately, since badging an abstain
+  would assert a decision the gate declined to make — so most review leads previously rendered with
+  **no marker at all** and were indistinguishable from blindly-appliable ones. A review lead is listed,
+  never hidden; only `ineligible` is excluded-and-counted. The status band gains a `review` cell, so
+  `in queue`, `review` and `ineligible` account for every delivered lead.
+
+- **A near-miss experience-years bar abstains instead of rejecting (D-333).** `experience_years` drove
+  about 89% of the reject pile against a profile declaring **one** year, and 8,745 postings were
+  rejected for needing three years or fewer. That population is invisible by construction: the reject
+  pile is never inspected and boardwatch never applies, so a wrong `unmet` there has no outcome loop
+  that could contradict it — and internships, co-ops and course projects routinely clear an
+  early-career bar that a single declared integer cannot represent. A `required` bar at or under the
+  new `experience_years.near_miss_years_ceiling` (3) now resolves `unknown` rather than `unmet`, so the
+  lead becomes `uncertain` and reaches the review lane instead of being dropped. It **cannot** produce
+  a new `eligible`: `unknown` is caught by the blocking roll-up before the `eligible` fall-through, so
+  the worst it can do is move `ineligible` to `uncertain`. Measured on a full re-evaluation of 83,718
+  rows: 5,980 of 36,141 `ineligible` leads move (16.5%), every one of them a two- or three-year bar,
+  and none becomes `eligible`. A stated *preference* is untouched — the band applies only to rows that
+  can actually block. **Moves `engine_version`**, so the next run re-evaluates the corpus once.
+
+- **The run funnel records FETCH wall clock per provider (D-330).** Run cost could not be attributed
+  from the record, because every existing signal was wrong in a different way:
+  `board_scans.started_at → finished_at` times the *apply* (26.5 s of a 3,286 s run),
+  `wall_clock / boards` averages a population where one provider is 20× the others (it mispredicted a
+  346-board run by 24 minutes), and the gap between scan completions sums to wall clock by construction
+  because the scan fetches through a `scan_workers`-wide pool. The fetch is now timed at the single seam
+  all six providers pass through, accumulated per provider, and reported in the funnel's `scan` block
+  costliest-first. A failed fetch is charged for the seconds it burned; an untimed board is never folded
+  in as zero; and "not measured" stays distinct from "measured, nothing timed". No `artifact_version`
+  bump, no schema change, no migration.
+
+- **The run funnel now says where each lead is, and how the hard US gate read it — artifact v7 (D-323).**
+  The US-only location gate is the one gate whose failure is a lead you cannot legally take, and until now a
+  `leads[]` row in `funnel-<id>.json` carried no location at all, so the gate left no trace in the record it
+  produces: every "all leads US-located" claim came from a by-hand database read and could not be reproduced
+  from the artifact afterwards. Each lead now carries `locations` (what the posting itself named — `null`,
+  never `[]`, when it named no place) and `location_class` (`us` / `non_us` / `unknown`, computed by the same
+  classifier the ranker vetoes with, never stored separately from the locations it describes). The manifest
+  carries `location_filter_mode` in plain text, because the verdicts are unreadable without it: the mode is
+  `soft` by default, and in `soft` the hard gate never ran. The Markdown half names the classifier and the
+  number of leads it was evaluated over, so the claim stays quotable later. **`artifact_version` moves 6 → 7**;
+  no consumer validates the number, and `boardwatch verify` reads named keys out of the file as before.
+
+- **Two eligibility rules that could never fire now decide.** Both abstained unconditionally because the
+  fact they needed did not exist, which the keystone treats as a monitoring failure rather than
+  conservatism.
+  - **Obtain-after-hire clearance eligibility.** `clearable_required` ("must be able to obtain a Secret
+    clearance") fired on ~118 rows per run and returned `unknown` every time. `security_clearance` gains an
+    `obtainable` bool, declared in the catalog so `boardwatch eligibility facts set
+    security_clearance.obtainable no` and the `init` wizard both reach it with no new call site. The bit is
+    orthogonal to what you hold: an F-1 holder holds nothing and can obtain nothing, and a Secret holder may
+    still be barred from an upgrade, so inferring either direction from the held clearance inverts the
+    verdict both ways. Undeclared still abstains.
+  - **Field of study.** `degree_required_with_field` ("a Bachelor's degree in Computer Science") is the
+    commonest degree sentence there is and abstained on every satisfied rank — ~405 rows per run. `Facts`
+    gains `field_of_study`; set it with `boardwatch eligibility facts set field_of_study computer_science`.
+    The vocabulary, the reviewed relatedness partition and the phrasings by which a posting opens its list
+    are versioned catalog data in `rules.yaml`, overridable per user; a value outside the catalog, on either
+    side, abstains rather than becoming a new bucket. `met` needs an exact match, or **both** a reviewed
+    relation and the posting's own escape ("or a related field") — "must have a Computer Science degree"
+    means Computer Science. `unmet` is reached only when the posting names a closed set of catalogued fields
+    and offers no escape.
+
+  **Both change `engine_version`, so stored eligibility evaluations re-evaluate on the next run.**
+
+### Fixed
+
+- **A posting no board scan enumerates can now be closed — but only by a measured death (D-325).** A posting
+  under an unwatched company was open for ever: the only thing that closes a posting is absence from two
+  complete board fetches, and nothing ever fetches those boards. A search-based source re-finds a posting by
+  searching, so a posting that stops appearing has not been proved gone. Each run now re-fetches a bounded
+  slice of those postings and closes one only when its own URL answers 404 or 410 — twice, on different runs,
+  with no redirect in between. A timeout, a 403, a 5xx, or a 404 that arrived after a redirect all count for
+  nothing. Any sighting of the posting on a board, or any successful re-fetch, wipes the slate.
+
+  **Read the numbers before trusting it.** Against 60 postings already proved closed, this finds 4 — **6.7%**
+  (95% CI 2.6%–15.9%). None of the 37 closed Workday requisitions in that set were caught, because a closed
+  Workday requisition still answers normally. It produced no false deaths across 90 live postings. So it
+  rarely fires and it rarely lies, and **a run reporting zero closed is the expected result, not evidence the
+  backlog is healthy**. The run funnel gains a `death_probe` section that reports what was due, what was
+  probed, what the budget refused, and what had no URL to ask, so a check that quietly stops working shows up
+  as a number rather than as silence. Tune with `boardwatch config set death_probe_budget` (default 50 probes
+  per run; `0` turns it off) and `death_probe_ttl_hours` (default 24).
+
+### Fixed
+
+- **A lead the eligibility gate rejects no longer sits in the review queue (D-321).** `delivered_unapplied`
+  attached each lead's current verdict but never filtered on it, and the status band reported `eligible` and
+  `uncertain` with no cell for `ineligible` — so a rejected lead was an unexplained remainder between
+  `in queue` and the two counted buckets. Rejected leads now drain to a third directory, `_ineligible`,
+  alongside `_applied` and `_skipped`, and the count is reported. Nothing is deleted; a folder returns to the
+  queue if its verdict stops governing. An application or a skip still wins, because each is a statement you
+  made and a rule tightening later must not sweep that record away.
+
+### Fixed
+
+- **A years-of-experience requirement can now make a posting ineligible (D-319).** Two independent reasons it
+  could not before. `experience_years` ships with `default_policy: preference`, and only a `blocker` family
+  can yield `ineligible`, so a correctly-detected and correctly-resolved "Minimum of 12 years of experience"
+  was written into the evidence chain and then discarded — set it with
+  `boardwatch eligibility policy set experience_years blocker`. And `scoped_years_minimum`, the family's
+  highest-volume pattern, abstained unconditionally on the grounds that no per-skill durations are stored.
+  One direction of a scoped requirement needs no per-skill data: **a duration scoped to a single skill cannot
+  exceed the career it sits inside**, so `total < need` now resolves `unmet`. The other direction still
+  abstains — `total >= need` says nothing about that skill, and a wrong `met` is the worst verdict this design
+  can produce. Measured over a 588-posting delivered set, 142 of which state a minimum of five or more years:
+  101 of those 142 are now blocked. **Changes `engine_version`, so stored eligibility evaluations
+  re-evaluate on the next run.**
+
+- **An activity gerund is read as a years floor (D-320).** `5+ years building and deploying web applications`
+  names no "experience" and was invisible to every pattern in the family; 37 of the 142 postings above
+  produced no requirement row at all. Added as `scoped_years_activity`, with its own `activity_years_minimum`
+  vocabulary value so it cannot collide with the total/range/scoped exclusive group. Aggregator summaries
+  phrase floors this way, so this mostly affects lane-sourced postings.
+
+- **The company's own tenure is no longer read as a requirement (D-320).** `We bring 30 years of experience
+  to every engagement.` resolved `unmet` against a one-year profile: the company-side subject suppressor
+  required a noun (`our team has`), which a bare `we` subject escapes.
