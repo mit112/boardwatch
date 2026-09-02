@@ -29,6 +29,7 @@ def upgrade() -> None:
         CREATE TABLE lane_seeds (
             id INTEGER NOT NULL,
             url TEXT NOT NULL,
+            host TEXT NOT NULL,
             discovered_by TEXT NOT NULL,
             first_seen_run_id INTEGER NOT NULL,
             first_seen_at DATETIME NOT NULL,
@@ -46,11 +47,11 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX ix_lane_seeds_resolved_at_attempts"
-        " ON lane_seeds (resolved_at, attempts)"
+        "CREATE INDEX ix_lane_seeds_resolved_at_host_attempts"
+        " ON lane_seeds (resolved_at, host, attempts)"
     )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX ix_lane_seeds_resolved_at_attempts")
+    op.execute("DROP INDEX ix_lane_seeds_resolved_at_host_attempts")
     op.execute("DROP TABLE lane_seeds")

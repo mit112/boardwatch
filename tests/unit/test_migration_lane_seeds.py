@@ -69,6 +69,7 @@ def test_the_table_does_not_exist_before_the_revision_and_does_after(tmp_path: P
     assert _columns(engine) == [
         ("id", "INTEGER", 1),
         ("url", "TEXT", 1),
+        ("host", "TEXT", 1),
         ("discovered_by", "TEXT", 1),
         ("first_seen_run_id", "INTEGER", 1),
         ("first_seen_at", "DATETIME", 1),
@@ -112,8 +113,8 @@ def test_the_unique_on_url_is_real(tmp_path: Path) -> None:
     run_id = _seed_run(engine, started_at="2026-09-02 00:00:00")
 
     insert = text(
-        "INSERT INTO lane_seeds (url, discovered_by, first_seen_run_id, first_seen_at) "
-        "VALUES ('https://x.test/a', :who, :run, '2026-09-02 00:00:00')"
+        "INSERT INTO lane_seeds (url, host, discovered_by, first_seen_run_id, first_seen_at) "
+        "VALUES ('https://x.test/a', 'x.test', :who, :run, '2026-09-02 00:00:00')"
     )
     with engine.begin() as conn:
         conn.execute(insert, {"who": "github_lists", "run": run_id})
@@ -132,8 +133,9 @@ def test_the_downgrade_drops_the_table_and_keeps_the_run(tmp_path: Path) -> None
     with engine.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO lane_seeds (url, discovered_by, first_seen_run_id, first_seen_at) "
-                "VALUES ('https://x.test/a', 'indeed', :run, '2026-09-02 00:00:00')"
+                "INSERT INTO lane_seeds (url, host, discovered_by, first_seen_run_id, "
+                "first_seen_at) VALUES ('https://x.test/a', 'x.test', 'indeed', :run, "
+                "'2026-09-02 00:00:00')"
             ),
             {"run": run_id},
         )

@@ -126,6 +126,12 @@ from boardwatch.store.queries import (
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import lead_provenance
+from boardwatch.store.seed_queries import (
+    LaneSeed,
+    record_seed_attempt,
+    record_seeds,
+    unresolved_seeds,
+)
 from boardwatch.store.tables import postings
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
@@ -548,8 +554,25 @@ def _run_lanes(
     fetcher = _lane_fetcher(settings)
     # Built ONCE for the stage, from values that are already fixed for the run. Every factory
     # takes this and nothing else, which is what keeps the registry a mapping with no branch.
+    #
+    # `pending_seeds` is a closure over `engine`, not a connection: a lane's `collect` runs in a
+    # fetch worker, and this read has to open and close its own short transaction there rather
+    # than hold one across a lane's whole network phase. It is READ-ONLY by construction — the
+    # write half is `LaneResult.discovered_seeds`/`seed_attempts`, persisted below in the serial
+    # apply phase, so `apply_board` stays the single writer.
+    def pending_seeds(
+        *, hosts: frozenset[str], max_attempts: int, limit: int
+    ) -> tuple[LaneSeed, ...]:
+        with engine.begin() as conn:
+            return unresolved_seeds(
+                conn, hosts=hosts, max_attempts=max_attempts, limit=limit
+            )
+
     context = LaneContext(
-        settings=settings, facets=facets, rotation_index=_rotation_index(run_id)
+        settings=settings,
+        facets=facets,
+        rotation_index=_rotation_index(run_id),
+        pending_seeds=pending_seeds,
     )
 
     # Lanes are RESOLVED before anything is submitted, so an unregistered name is reported
@@ -782,6 +805,27 @@ def _apply_lane(
         # emit a SECOND row for that pair, so the company appears twice — once measured, once
         # enumerated-only — inflating `corpus_boards` and every bucket count.
         apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane")
+
+    # The seed half of the single-writer rule. Both statements run HERE — on the main thread,
+    # after the lane's own fetch worker has finished — so a lane never holds a write connection.
+    #
+    # The attempts are charged BEFORE the discoveries are recorded, and the order is deliberate:
+    # a resolver that succeeded on a seed whose URL its own run also re-discovered must close the
+    # existing row rather than have the re-discovery read as an untouched new one. Recording
+    # first cannot actually reopen it — `record_seeds` touches nothing on conflict — but the
+    # order states the intent where the next reader of this loop will see it.
+    if result.seed_attempts or result.discovered_seeds:
+        now = utcnow()
+        with engine.begin() as conn:
+            for seed_id, resolved in result.seed_attempts:
+                record_seed_attempt(conn, seed_id, run_id=run_id, now=now, resolved=resolved)
+            record_seeds(
+                conn,
+                result.discovered_seeds,
+                discovered_by=lane.name,
+                run_id=run_id,
+                now=now,
+            )
 
     tally = result.tally
     return LaneReport(

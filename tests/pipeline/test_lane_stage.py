@@ -58,6 +58,7 @@ from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import insert_run, save_profile, upsert_lane_company
+from boardwatch.store.seed_queries import SeedReader, record_seeds, unresolved_seeds
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
 LANE_URL = "https://aggregator.test/search"
@@ -338,9 +339,9 @@ def test_a_lane_with_an_override_gets_its_own_cap_and_a_lane_without_falls_back(
         runner_mod,
         "LANE_FACTORIES",
         {
-            "overridden": lambda _s, _f: overridden,
-            "unlimited": lambda _s, _f: unlimited,
-            "shared": lambda _s, _f: shared,
+            "overridden": lambda _ctx: overridden,
+            "unlimited": lambda _ctx: unlimited,
+            "shared": lambda _ctx: shared,
         },
     )
 
@@ -455,7 +456,7 @@ def test_a_lane_that_raises_is_recorded_and_the_other_lanes_still_run(
     good = StubLane([("hiringcafe", "src:a")])
     boom.name, good.name = "boom", "good"
     monkeypatch.setattr(
-        runner_mod, "LANE_FACTORIES", {"boom": lambda _s, _f: boom, "good": lambda _s, _f: good}
+        runner_mod, "LANE_FACTORIES", {"boom": lambda _ctx: boom, "good": lambda _ctx: good}
     )
 
     reports, errors = _run_lanes(
@@ -496,7 +497,7 @@ def test_the_lane_fetcher_is_a_second_instance_with_a_browser_user_agent(
     one, and it must come from a SEPARATE `Fetcher` so per-host pacing is not shared with a
     provider host."""
     lane = StubLane([])
-    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: lane})
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
 
     _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
 
@@ -616,7 +617,7 @@ def test_a_lane_failure_leaves_the_run_otherwise_unchanged(
     monkeypatch.setattr(
         runner_mod,
         "LANE_FACTORIES",
-        {"boom": lambda _s, _f: StubLane([], raises=RuntimeError("aggregator moved"))},
+        {"boom": lambda _ctx: StubLane([], raises=RuntimeError("aggregator moved"))},
     )
     with_lane = _pipeline(lane_dir, tmp_path / "lane-out", lanes_enabled=("boom",))
 
@@ -646,7 +647,7 @@ def test_the_funnel_carries_the_lane_section_without_bumping_the_artifact_versio
     locations took it to 7) cannot be misread as one `lanes` earned."""
     _ready(env)
     lane = StubLane([("hiringcafe", "src:acme")], outcomes=("body_inline", "fetch_gone"))
-    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: lane})
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
 
     summary = _pipeline(env, tmp_path / "apps", lanes_enabled=("stub",))
 
@@ -674,7 +675,7 @@ def test_a_lane_company_reaches_the_funnels_per_source_table_as_a_lane(
     `LaneReport` the stage built."""
     _ready(env)
     monkeypatch.setattr(
-        runner_mod, "LANE_FACTORIES", {"stub": lambda _s, _f: StubLane([("hiringcafe", "src:acme")])}
+        runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([("hiringcafe", "src:acme")])}
     )
 
     _pipeline(env, tmp_path / "apps", lanes_enabled=("stub",))
@@ -716,8 +717,8 @@ def _facets_handed_to_the_lane(
     handed: list[tuple[str, ...]] = []
     lane = StubLane([("hiringcafe", "src:acme")])
 
-    def _factory(_settings: Settings, facets: LaneFacets) -> StubLane:
-        handed.append(facets.profile)
+    def _factory(ctx: LaneContext) -> StubLane:
+        handed.append(ctx.facets.profile)
         return lane
 
     monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": _factory})
@@ -892,7 +893,7 @@ def _register(
     for name, lane in lanes.items():
         lane.name = name  # type: ignore[attr-defined]
         monkeypatch.setitem(
-            runner_mod.LANE_FACTORIES, name, lambda _s, _f, _lane=lane: _lane
+            runner_mod.LANE_FACTORIES, name, lambda _ctx, _lane=lane: _lane
         )
 
 
@@ -1288,3 +1289,143 @@ def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
 
     assert lane._search_facets == ("software engineer", "platform engineer")
     assert lane._search_nets == (("software engineer", "Austin, TX"),)
+
+
+# --------------------------------------------------------------------------------------
+# The seed channel: a lane never writes `lane_seeds` itself
+# --------------------------------------------------------------------------------------
+
+class SeedLane:
+    """A lane that returns seed effects instead of performing them.
+
+    Deliberately holds no engine and no connection. That is the property under test: if a lane
+    could write its own seeds it would be a second writer on one SQLite store, running in a
+    fetch worker while `apply_board` — the pipeline's single writer — runs on the main thread.
+    """
+
+    name = "stub"
+
+    def __init__(
+        self,
+        *,
+        discovered: tuple[str, ...] = (),
+        attempts: tuple[tuple[int, bool], ...] = (),
+        reads: tuple[frozenset[str], int, int] | None = None,
+    ) -> None:
+        self._discovered = discovered
+        self._attempts = attempts
+        self._reads = reads
+        self.read_back: tuple[str, ...] = ()
+
+    def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
+        if self._reads is not None:
+            hosts, max_attempts, limit = self._reads
+            self.read_back = tuple(
+                seed.url
+                for seed in self._pending(hosts=hosts, max_attempts=max_attempts, limit=limit)
+            )
+        return LaneResult(
+            snapshots=(),
+            tally=AcquisitionTally(),
+            discovered_seeds=self._discovered,
+            seed_attempts=self._attempts,
+        )
+
+
+def _seed_rows(engine: Engine) -> list[tuple]:
+    with engine.begin() as conn:
+        return [
+            (r.url, r.host, r.discovered_by, r.attempts, r.resolved_at is not None)
+            for r in conn.execute(
+                select(tables.lane_seeds).order_by(tables.lane_seeds.c.id)
+            )
+        ]
+
+
+def test_a_lanes_discovered_seeds_are_persisted_by_the_runner_not_the_lane(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The write half of the seed channel, attributed to the run that applied it.
+
+    The lane returns URLs; the runner records them in the SERIAL apply phase. `discovered_by` is
+    the LANE's name and not a value the lane passed, so a lane cannot misattribute its own
+    discoveries.
+    """
+    lane = SeedLane(discovered=("https://WWW.Breezy.HR/p/abc", "https://k2j.careerplug.com/j/1"))
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
+    run_id = insert_run(engine)
+
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), run_id)
+
+    assert _seed_rows(engine) == [
+        ("https://WWW.Breezy.HR/p/abc", "breezy.hr", "stub", 0, False),
+        ("https://k2j.careerplug.com/j/1", "k2j.careerplug.com", "stub", 0, False),
+    ]
+
+
+def test_a_lanes_seed_attempts_are_charged_by_the_runner(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drain. A resolver that consumed seeds but whose attempts were never charged retries
+    them forever at one request each -- a cost leak with no bound, which is exactly what the
+    counter exists to stop."""
+    run_id = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            ("https://a.test/1", "https://b.test/2"),
+            discovered_by="seeder",
+            run_id=run_id,
+            now=utcnow(),
+        )
+        ids = [
+            s.id
+            for s in unresolved_seeds(
+                conn, hosts=frozenset({"a.test", "b.test"}), max_attempts=9, limit=9
+            )
+        ]
+
+    lane = SeedLane(attempts=((ids[0], True), (ids[1], False)))
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
+
+    assert _seed_rows(engine) == [
+        ("https://a.test/1", "a.test", "seeder", 1, True),
+        ("https://b.test/2", "b.test", "seeder", 1, False),
+    ]
+
+
+def test_the_runner_hands_a_lane_a_reader_that_only_returns_its_own_hosts(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The read half, exercised through the real stage rather than by calling the query.
+
+    Calling `unresolved_seeds` directly would say nothing about whether the runner actually
+    builds a reader and puts it on the context -- a stage that forgot to would leave every
+    resolver reporting an empty backlog forever, which reads exactly like a drained one.
+    """
+    run_id = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            ("https://a.test/1", "https://b.test/2"),
+            discovered_by="seeder",
+            run_id=run_id,
+            now=utcnow(),
+        )
+
+    lane = SeedLane(reads=(frozenset({"b.test"}), 3, 9))
+    monkeypatch.setattr(
+        runner_mod,
+        "LANE_FACTORIES",
+        {"stub": lambda ctx: _bind(lane, ctx.pending_seeds)},
+    )
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
+
+    assert lane.read_back == ("https://b.test/2",)
+
+
+def _bind(lane: SeedLane, reader: SeedReader) -> SeedLane:
+    """What a real lane's factory does with `ctx.pending_seeds`: capture it."""
+    lane._pending = reader  # type: ignore[attr-defined]
+    return lane

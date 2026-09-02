@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from boardwatch.core.settings import Settings
-from boardwatch.lanes.base import LaneContext
+from boardwatch.lanes.base import LaneContext, _no_seeds
 from boardwatch.lanes.facets import LaneFacets
 from boardwatch.pipeline.runner import LANE_FACTORIES
 
@@ -53,17 +53,38 @@ def test_every_registered_lane_is_built_from_one_context_and_nothing_else(
         assert lane.name == name, "a factory must build the lane its registry key names"
 
 
-def test_the_context_is_frozen_so_one_lane_cannot_retune_the_next(tmp_path: Path) -> None:
-    """One context is built per STAGE and handed to every factory.
+def test_the_context_refuses_field_rebinding(tmp_path: Path) -> None:
+    """One context is built per STAGE and handed to every factory, so a factory that rebound a
+    field would configure the lanes after it by registry ORDER.
 
-    Mutable, a lane's factory could rewrite the settings the lanes after it are built from, and
-    the resulting run would be configured by registry ORDER — reproducible, plausible, and
-    impossible to read off any artifact.
+    **This is a claim about REBINDING and nothing more, and the narrower wording is deliberate.**
+    An earlier version of this test was titled "one lane cannot retune the next" and that claim
+    is FALSE: `Settings` is a pydantic model whose container fields are mutable, so a factory can
+    still reach into `ctx.settings.lane_new_companies_per_run_overrides` and insert a value a
+    later lane's `_lane_company_cap` reads. Nothing does, and closing it means handing out a
+    deep-frozen settings snapshot — a real change with its own cost. What must not stand is a
+    green test asserting a protection that is not there.
     """
     ctx = _ctx(tmp_path)
 
     with pytest.raises((AttributeError, TypeError)):
         ctx.rotation_index = 99  # type: ignore[misc]
+
+
+def test_a_lane_that_resolves_no_seeds_is_handed_the_empty_reader(tmp_path: Path) -> None:
+    """Three of the four registered lanes read no seeds, so the default has to be inert.
+
+    EMPTY rather than raising: a lane is additive breadth, and a resolver handed no backlog must
+    report that it found nothing rather than fail the run.
+    """
+    ctx = LaneContext(
+        settings=Settings(data_dir=tmp_path, config_dir=tmp_path),
+        facets=LaneFacets(),
+        rotation_index=0,
+    )
+
+    assert ctx.pending_seeds is _no_seeds
+    assert ctx.pending_seeds(hosts=frozenset({"x.test"}), max_attempts=9, limit=9) == ()
 
 
 def test_the_rotation_index_reaches_the_linkedin_factory_through_the_context(

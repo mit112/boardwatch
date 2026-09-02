@@ -516,6 +516,20 @@ job_dispositions = Table(
 # `upsert_lane_company`: rewriting `discovered_by` would make the store's own account of where
 # something came from a lie, and the prior value is unrecoverable once overwritten.
 #
+# `host` is the seed's ROUTE, derived from the URL at record time and never supplied by the
+# caller. Without it the table is one undifferentiated pool, and a resolver asking for a bounded
+# number of seeds draws whatever is oldest: a JSON-LD resolver taking one seed a run can be
+# handed an Oracle HCM URL every run while Hireology starves forever, or can charge an attempt
+# against a seed that belongs to a resolver nobody has written yet. `discovered_by` cannot route
+# it, because the same discovering lane produces seeds for every vendor.
+#
+# The HOST rather than a vendor enum, and that choice is load-bearing: a host is a FACT about the
+# URL, so the discovering lane needs to know nothing about which resolver will claim it, and a new
+# resolver is a new host set on the reader rather than a migration and a catalog bump. It also
+# handles the custom-domain case that a vendor enum handles badly — `careers.garmin.com` is iCIMS
+# and `k2j-marketing-partners-llc.careerplug.com` is CareerPlug, and each resolver lists the exact
+# hosts its own strategy table covers.
+#
 # `attempts` is the seed's own bound. A seed that no resolver can ever turn into a posting — an
 # expired requisition, a vendor that changed its markup — would otherwise cost one GET every run
 # forever, which is a cost leak with no drain. The RESOLVER owns the ceiling, not this table:
@@ -528,6 +542,7 @@ lane_seeds = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("url", Text, nullable=False),
+    Column("host", Text, nullable=False),
     Column("discovered_by", Text, nullable=False),
     Column("first_seen_run_id", Integer, ForeignKey("runs.id"), nullable=False),
     Column("first_seen_at", DateTime, nullable=False),
@@ -536,8 +551,9 @@ lane_seeds = Table(
     Column("last_attempt_at", DateTime, nullable=True),
     Column("resolved_at", DateTime, nullable=True),
     UniqueConstraint("url"),
-    # The resolver's read is "unresolved, under the attempt ceiling", so both columns are in the
-    # index and `resolved_at` leads: it is the selective half (every seed a resolver ever
-    # succeeds on leaves the candidate set permanently).
-    Index("ix_lane_seeds_resolved_at_attempts", "resolved_at", "attempts"),
+    # The resolver's read is "unresolved, on one of MY hosts, under the attempt ceiling", and the
+    # index is in that order. `resolved_at` leads because it is the selective half — every seed a
+    # resolver succeeds on leaves the candidate set permanently — then `host`, which is what makes
+    # one resolver's scan proportional to its own backlog rather than to the whole table.
+    Index("ix_lane_seeds_resolved_at_host_attempts", "resolved_at", "host", "attempts"),
 )
