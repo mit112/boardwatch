@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch seeds` shows the job links that no part of boardwatch is able to follow up.** When
+  one source finds a job it cannot read, boardwatch writes the link down for another source to pick
+  up later. But each source only picks up links from web addresses it knows how to handle, so a link
+  from anywhere else is never picked up by anybody — and because nothing ever tries it, the usual
+  "stop retrying after N attempts" rule never applies to it either. Those links used to pile up
+  completely unseen. `boardwatch seeds` now counts them and groups them by website, largest first,
+  so it is obvious which one would be worth teaching boardwatch to read next. `--json` for scripts.
+
+  This is a piling-up queue, not wasted work — the links are waiting for a reader that does not
+  exist yet. The point is that the pile is now visible instead of silent.
+
 - **Two job sources can now hand work to each other, so a job found in one place can be fetched
   from another.** Some employers' job boards can only be read one company at a time — there is no
   way to search across them — so the place that *finds* a job and the place that can *read* it are

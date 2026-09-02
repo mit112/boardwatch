@@ -19,9 +19,11 @@ from boardwatch.store.queries import insert_run
 from boardwatch.store.seed_queries import (
     SeedWrite,
     UnroutableSeedURL,
+    count_unresolved_seeds,
     record_seed_attempt,
     record_seeds,
     seed_host,
+    unclaimed_seed_hosts,
     unresolved_seeds,
 )
 from boardwatch.store.tables import lane_seeds
@@ -533,3 +535,74 @@ def test_a_resolver_that_claims_no_route_at_all_gets_nothing(tmp_path: Path) -> 
         assert unresolved_seeds(
             conn, hosts=frozenset(), host_suffixes=frozenset(), max_attempts=9, limit=9
         ) == ()
+
+def test_a_seed_no_catalog_claims_is_reported_rather_than_silently_unattempted(
+    tmp_path: Path,
+) -> None:
+    """The D-422 leak: routing is by catalog, so an unclaimed host is invisible, not slow.
+
+    `attempts` cannot bound this population -- a seed nothing selects is never attempted, so the
+    ceiling never retires it. Every assertion here fails on the plausible wrong implementation
+    (reporting the whole unresolved queue, or reusing a second spelling of the routing rule).
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            (
+                "https://x.test/claimed",            # exact host in the catalog
+                "https://acme.suffix.test/tenant",   # a tenant of a claimed suffix
+                "https://suffix.test/bare",          # the bare suffix host itself
+                "https://notsuffix.test/lookalike",  # a DIFFERENT registrable domain
+                "https://grnh.se/abc123",            # claimed by nothing
+                "https://grnh.se/def456",
+            ),
+            discovered_by="indeed",
+            run_id=run,
+            now=NOW,
+        )
+        rows = unclaimed_seed_hosts(
+            conn, hosts=frozenset({"x.test"}), host_suffixes=frozenset({"suffix.test"})
+        )
+        total = count_unresolved_seeds(conn)
+
+    assert total == 6
+    by_host = {row.host: row.seeds for row in rows}
+    assert by_host == {"grnh.se": 2, "notsuffix.test": 1}, (
+        "a lookalike domain that merely ENDS in the suffix is unclaimed and must be reported; "
+        "the bare suffix host and its tenant are claimed and must not be"
+    )
+    assert rows[0].host == "grnh.se", "largest host first, so the cheapest win reads off the top"
+    assert rows[0].discovered_by == ("indeed",)
+    assert rows[0].first_seen_run_id == run
+
+
+def test_a_resolved_seed_is_not_reported_as_unclaimed(tmp_path: Path) -> None:
+    """Otherwise a drained backlog reads as a permanent leak and the report can never go quiet."""
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(conn, ("https://grnh.se/a",), discovered_by="indeed", run_id=run, now=NOW)
+        seed_id = conn.execute(select(lane_seeds.c.id)).scalar_one()
+        record_seed_attempt(conn, seed_id, run_id=run, now=LATER, resolved=True)
+        rows = unclaimed_seed_hosts(conn, hosts=HOSTS, host_suffixes=frozenset())
+        assert count_unresolved_seeds(conn) == 0
+    assert rows == ()
+
+
+def test_with_no_resolver_registered_every_seed_is_unclaimed(tmp_path: Path) -> None:
+    """A registry that failed to load must read as a total leak, never as a drained queue.
+
+    The opposite convention (empty catalog claims everything) would make the one condition this
+    report exists to detect indistinguishable from success.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn, ("https://x.test/a", "https://y.test/b"), discovered_by="jsonld",
+            run_id=run, now=NOW,
+        )
+        rows = unclaimed_seed_hosts(conn, hosts=frozenset(), host_suffixes=frozenset())
+    assert {r.host for r in rows} == {"x.test", "y.test"}

@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Protocol
 from urllib.parse import urlparse
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, not_, or_, select, true, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import ColumnElement
@@ -184,6 +184,31 @@ def record_seeds(
     return SeedWrite(inserted=inserted, unroutable=tuple(unroutable))
 
 
+def _seed_routes(
+    hosts: frozenset[str], host_suffixes: frozenset[str]
+) -> list[ColumnElement[bool]]:
+    """The predicate "this seed's host is claimed by a catalog spelling `hosts`/`host_suffixes`".
+
+    Shared, so `unresolved_seeds` (what a resolver SELECTS) and `unclaimed_seed_hosts` (what NO
+    resolver can select) can never disagree about what "claimed" means. Two spellings of one
+    routing rule is how a vendor joins the catalog and never the report — the same failure
+    `jsonld.SEED_HOSTS` warns about one layer up — and here it is silent in the worse direction:
+    a host the report calls unclaimed while a resolver quietly drains it sends someone to build a
+    resolver that already exists.
+    """
+    routes: list[ColumnElement[bool]] = (
+        [lane_seeds.c.host.in_(sorted(hosts))] if hosts else []
+    )
+    for suffix in sorted(host_suffixes):
+        # The bare host AND any subdomain of it. `like` with an explicit `.` separator rather
+        # than `host LIKE '%' || suffix`, which would also match `notapplytojob.com` — a
+        # different vendor's registrable domain that merely ends in the same characters.
+        routes.append(
+            or_(lane_seeds.c.host == suffix, lane_seeds.c.host.like(f"%.{suffix}"))
+        )
+    return routes
+
+
 def unresolved_seeds(
     conn: Connection,
     *,
@@ -238,16 +263,7 @@ def unresolved_seeds(
         )
     if not hosts and not host_suffixes:
         return ()
-    routes: list[ColumnElement[bool]] = (
-        [lane_seeds.c.host.in_(sorted(hosts))] if hosts else []
-    )
-    for suffix in sorted(host_suffixes):
-        # The bare host AND any subdomain of it. `like` with an explicit `.` separator rather
-        # than `host LIKE '%' || suffix`, which would also match `notapplytojob.com` — a
-        # different vendor's registrable domain that merely ends in the same characters.
-        routes.append(
-            or_(lane_seeds.c.host == suffix, lane_seeds.c.host.like(f"%.{suffix}"))
-        )
+    routes = _seed_routes(hosts, host_suffixes)
     stmt = (
         select(
             lane_seeds.c.id,
@@ -319,4 +335,68 @@ def record_seed_attempt(
             last_attempt_at=now,
             **({"resolved_at": now} if resolved else {}),
         )
+    )
+
+
+@dataclass(frozen=True)
+class UnclaimedHost:
+    """One host holding unresolved seeds that no registered resolver's catalog claims."""
+
+    host: str
+    seeds: int
+    discovered_by: tuple[str, ...]
+    first_seen_run_id: int
+
+
+def count_unresolved_seeds(conn: Connection) -> int:
+    """The whole unresolved queue, claimed and unclaimed alike — the report's denominator."""
+    return int(
+        conn.execute(
+            select(func.count()).select_from(lane_seeds).where(lane_seeds.c.resolved_at.is_(None))
+        ).scalar_one()
+    )
+
+
+def unclaimed_seed_hosts(
+    conn: Connection, *, hosts: frozenset[str], host_suffixes: frozenset[str]
+) -> tuple[UnclaimedHost, ...]:
+    """Unresolved seeds NO resolver can ever select, grouped by host, largest first.
+
+    The negation of `unresolved_seeds`' routing predicate over the same table, and that sharing is
+    the point. `unresolved_seeds` requires a host set and offers no all-hosts form, so a seed on a
+    host outside every catalog is never selected, never attempted, and therefore never aged out by
+    the `attempts` ceiling — a bound on work only bounds work that happens. Such a row is invisible
+    rather than merely slow, and this is the only thing that can see it.
+
+    **`attempts` is deliberately not reported, and its absence is the finding.** Every row this
+    returns has `attempts = 0` by construction, so a column for it would be zero forever and read
+    as "young" rather than "unreachable".
+
+    Empty catalogs claim nothing, so every unresolved seed is returned. That is the honest answer
+    for a deployment with no resolver registered, and it makes a registry that failed to load read
+    as a total leak instead of as a drained queue — the one condition this exists to detect.
+    """
+    routes = _seed_routes(hosts, host_suffixes)
+    stmt = (
+        select(
+            lane_seeds.c.host,
+            func.count().label("seeds"),
+            func.group_concat(lane_seeds.c.discovered_by.distinct()).label("discovered_by"),
+            func.min(lane_seeds.c.first_seen_run_id).label("first_seen_run_id"),
+        )
+        .where(
+            lane_seeds.c.resolved_at.is_(None),
+            not_(or_(*routes)) if routes else true(),
+        )
+        .group_by(lane_seeds.c.host)
+        .order_by(func.count().desc(), lane_seeds.c.host)
+    )
+    return tuple(
+        UnclaimedHost(
+            host=row.host,
+            seeds=row.seeds,
+            discovered_by=tuple(sorted((row.discovered_by or "").split(","))),
+            first_seen_run_id=row.first_seen_run_id,
+        )
+        for row in conn.execute(stmt)
     )

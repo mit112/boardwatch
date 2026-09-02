@@ -24,6 +24,7 @@ from boardwatch.cli.profile_cmd import profile_app
 from boardwatch.cli.projection_cmd import resume_app
 from boardwatch.cli.run_cmd import run as _run
 from boardwatch.cli.scan_cmd import scan as _scan
+from boardwatch.cli.seeds_cmd import seeds as _seeds
 from boardwatch.cli.settings_cmd import settings_app
 from boardwatch.cli.show_cmd import show as _show
 from boardwatch.cli.stats_cmd import stats as _stats
@@ -67,6 +68,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(settings_app, name="settings")
 app.command("doctor")(_doctor)
 app.command("coverage")(_coverage)
+app.command("seeds")(_seeds)
 app.command("digest")(_digest)
 app.command("notify")(_notify)
 app.add_typer(eligibility_app, name="eligibility")
