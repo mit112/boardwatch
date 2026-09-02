@@ -783,6 +783,32 @@ def _apply_lane(
     result = fetched.result
     budget = fetched.budget
     apply_started = perf_counter()
+    # Whether every snapshot landed. A lane's seed attempts are persisted in EITHER case (see
+    # below), and this is what decides with which `resolved` value.
+    applied_cleanly = False
+    try:
+        _apply_snapshots(engine, result, run_id)
+        applied_cleanly = True
+    finally:
+        _persist_seed_work(engine, lane, result, run_id, applied_cleanly=applied_cleanly)
+
+    tally = result.tally
+    return LaneReport(
+        name=lane.name,
+        counts=tally.counts,
+        attempted=tally.attempted,
+        resolved=tally.resolved,
+        is_silent_outage=tally.is_silent_outage,
+        admitted=budget.admitted,
+        refused=budget.refused,
+        search_pages=result.search_pages,
+        fetch_seconds=fetched.fetch_seconds,
+        apply_seconds=perf_counter() - apply_started,
+    )
+
+
+def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int) -> None:
+    """Land every company a lane collected. Raises on the first company that cannot be applied."""
     for company in result.snapshots:
         # `upsert_lane_company` is called for EVERY snapshot, including a company the store
         # already holds — the convergence case a lane exists to produce. It is conflict-safe by
@@ -823,61 +849,63 @@ def _apply_lane(
         # enumerated-only — inflating `corpus_boards` and every bucket count.
         apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane")
 
-    # The seed half of the single-writer rule. Both statements run HERE — on the main thread,
-    # after the lane's own fetch worker has finished — so a lane never holds a write connection.
-    #
-    # The attempts are charged BEFORE the discoveries are recorded, and the order is deliberate:
-    # a resolver that succeeded on a seed whose URL its own run also re-discovered must close the
-    # existing row rather than have the re-discovery read as an untouched new one. Recording
-    # first cannot actually reopen it — `record_seeds` touches nothing on conflict — but the
-    # order states the intent where the next reader of this loop will see it.
-    if result.seed_attempts or result.discovered_seeds:
-        now = utcnow()
-        with engine.begin() as conn:
-            for seed_id, resolved in result.seed_attempts:
-                record_seed_attempt(conn, seed_id, run_id=run_id, now=now, resolved=resolved)
-            written = record_seeds(
-                conn,
-                result.discovered_seeds,
-                discovered_by=lane.name,
-                run_id=run_id,
-                now=now,
-            )
-        # Durable, not a print, and OUTSIDE the transaction above so the report cannot itself
-        # fail the write it is reporting on. A lane emitting URLs nothing can route is a real
-        # defect in that lane, and swallowing it would make the lane look like one that simply
-        # found nothing — the absent-versus-zero confusion the acquisition tally exists to
-        # prevent. It is not fatal: the seeds beside it were written.
-        if written.unroutable:
-            append_run_error(
-                engine,
-                run_id,
-                f"lane {lane.name}: {len(written.unroutable)} seed url(s) had no parseable "
-                f"host and were skipped, first: {written.unroutable[0]!r}",
-            )
 
-    tally = result.tally
-    return LaneReport(
-        name=lane.name,
-        counts=tally.counts,
-        attempted=tally.attempted,
-        resolved=tally.resolved,
-        is_silent_outage=tally.is_silent_outage,
-        # Only companies the store did NOT already hold reach the budget, so `admitted` is the
-        # reach this run ADDED rather than the companies the lane touched.
-        admitted=budget.admitted,
-        refused=budget.refused,
-        # How deep each search actually read. Carried from the lane rather than recomputed from
-        # `lane_search_pages`, which is the CEILING and not what was fetched — a facet that ran
-        # out of results after two pages is exactly the case the setting cannot report.
-        search_pages=result.search_pages,
-        # Paced network work, and the half upstream throttling shows up in. Carried from the
-        # fetch phase, which may have run on another thread.
-        fetch_seconds=fetched.fetch_seconds,
-        # The `apply_board` loop — the single writer, and the half no amount of lane
-        # parallelism can shorten.
-        apply_seconds=perf_counter() - apply_started,
-    )
+def _persist_seed_work(
+    engine: Engine,
+    lane: Lane,
+    result: LaneResult,
+    run_id: int,
+    *,
+    applied_cleanly: bool,
+) -> None:
+    """The seed half of the single-writer rule. Runs on the main thread, in a `finally`.
+
+    **IT RUNS EVEN WHEN THE APPLY FAILED, AND THAT IS THE WHOLE POINT.** Before this, the
+    attempts were charged after the last `apply_board`, so one company that could not be applied
+    skipped the seed write entirely: the runner reported the lane error, every seed stayed at the
+    same attempt count, and each was re-fetched at one GET **every run forever**. A drain that
+    stops draining the moment anything goes wrong is not a drain.
+
+    **ON A FAILED APPLY EVERY ATTEMPT IS CHARGED UNRESOLVED, whatever the lane reported.** The
+    fail-safe direction here is not symmetric and is chosen deliberately. `resolved_at` is never
+    cleared, so marking a seed resolved whose posting was rolled back loses that posting for good;
+    marking one unresolved whose posting DID land costs a single redundant GET next run, which
+    then converges on the row already stored through `UNIQUE(company_id, provider_posting_id)`.
+    One error is permanent and silent, the other is one request.
+
+    The attempts are charged BEFORE the discoveries are recorded, and the order is deliberate:
+    a resolver that succeeded on a seed whose URL its own run also re-discovered must close the
+    existing row rather than have the re-discovery read as an untouched new one. Recording
+    first cannot actually reopen it — `record_seeds` touches nothing on conflict — but the
+    order states the intent where the next reader of this loop will see it.
+    """
+    if not (result.seed_attempts or result.discovered_seeds):
+        return
+    now = utcnow()
+    with engine.begin() as conn:
+        for seed_id, resolved in result.seed_attempts:
+            record_seed_attempt(
+                conn, seed_id, run_id=run_id, now=now, resolved=resolved and applied_cleanly
+            )
+        written = record_seeds(
+            conn,
+            result.discovered_seeds,
+            discovered_by=lane.name,
+            run_id=run_id,
+            now=now,
+        )
+    # Durable, not a print, and OUTSIDE the transaction above so the report cannot itself
+    # fail the write it is reporting on. A lane emitting URLs nothing can route is a real
+    # defect in that lane, and swallowing it would make the lane look like one that simply
+    # found nothing — the absent-versus-zero confusion the acquisition tally exists to
+    # prevent. It is not fatal: the seeds beside it were written.
+    if written.unroutable:
+        append_run_error(
+            engine,
+            run_id,
+            f"lane {lane.name}: {len(written.unroutable)} seed url(s) had no parseable "
+            f"host and were skipped, first: {written.unroutable[0]!r}",
+        )
 
 
 def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:

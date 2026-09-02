@@ -44,6 +44,63 @@ REVIEW_BY = date(2026, 12, 15)
 # by before. Editing this line is the reviewer step for admitting a host.
 CATALOG_DIGEST = "cba1969b33f55b761b07f5f5d272b6d7022f3e2381cc3d5909af12b6e8c317ac"
 
+# THE MEASURED KEY SETS, one per shipped vendor, taken from the JSON-LD block of the REAL page
+# each probe fetched on 2026-09-01. This is the provenance the authored pages below are checked
+# against, and it is what makes them source-DERIVED rather than invented.
+#
+# Only the key NAMES are recorded, never a value: the values are an employer's own copy and do
+# not belong in this repository. Names are enough for what the fixtures have to be faithful about,
+# because every trap the lane defends is a PRESENCE-OR-ABSENCE fact -- `identifier` absent on
+# three vendors, `qualifications` and `responsibilities` present only on iCIMS, `url` present and
+# disagreeing with the page on two.
+#
+# WHAT THIS DOES AND DOES NOT BUY, stated so nobody reads more into it. It fails when a FIXTURE
+# drifts away from the last measurement, which is the failure a contributor can actually cause.
+# It CANNOT fail when a VENDOR drifts: no offline fixture can, and a suite that reached the live
+# vendors to find out would be a test that fetches employer pages on every run. That is what
+# `REVIEW_BY` is for, and it is a human deadline rather than a check.
+#
+# REFRESH PATH, so this is re-derivable rather than folklore:
+#   .venv/bin/python .agent/2026-09-01e-session/p_jsonld_sweep.py    # re-probes every vendor
+# then re-read the key sets out of the saved `raw/ld-*.bin` bodies, update the tuples below and
+# roll REVIEW_BY with the reason beside it.
+MEASURED_JSONLD_KEYS: dict[str, tuple[str, ...]] = {
+    "hireology": (
+        "@context", "@type", "datePosted", "description", "directApply", "employmentType",
+        "hiringOrganization", "identifier", "jobLocation", "title", "validThrough",
+    ),
+    "careerplug": (
+        "@context", "@type", "datePosted", "description", "directApply", "employmentType",
+        "hiringOrganization", "identifier", "jobLocation", "title",
+    ),
+    "jazzhr": (
+        "@context", "@type", "datePosted", "description", "employmentType",
+        "experienceRequirements", "hiringOrganization", "jobLocation", "title", "uniqueJobCode",
+        "url", "validThrough",
+    ),
+    "breezy": (
+        "@context", "@type", "baseSalary", "datePosted", "description", "employmentType",
+        "hiringOrganization", "jobLocation", "title", "url",
+    ),
+    "icims": (
+        "@context", "@type", "baseSalary", "datePosted", "description", "directApply",
+        "educationRequirements", "employmentType", "hiringOrganization", "industry",
+        "jobBenefits", "jobLocation", "qualifications", "responsibilities", "salaryCurrency",
+        "skills", "title", "url", "validThrough", "workHours",
+    ),
+}
+
+# The probe artifact each key set above was read from, so a reader can retrace it rather than
+# take it on trust.
+MEASURED_FROM: dict[str, str] = {
+    "hireology": "raw/ld-hireology.bin",
+    "careerplug": "raw/ld-careerplug.bin",
+    "jazzhr": "raw/ld-applytojob-miss.bin",
+    "breezy": "raw/ld-breezy-miss.bin",
+    "icims": "raw/ld-garmin.bin",
+}
+
+
 # A real JD needs to clear `lanes.quality`'s floor: >=500 chars, >=1 section marker, >=8 lines.
 # Authored once and reused, so a fixture that fails the floor fails for the reason under test
 # rather than for being short.
@@ -330,6 +387,40 @@ LOGIN_WALL_PAGE = page(
             "<p>Please sign in to continue.</p>"
             "<p>You must be logged in to view this posting.</p>"
             "<p>Forgot your password? Create an account to apply.</p>"
+        ),
+    }
+)
+
+
+# REAL `<br>` separators around ESCAPED block content. The shape that defeats the escape rule:
+# the value carries a real tag, so `_description_html` correctly declines to unescape it, and
+# `html_to_text` then emits the escaped tags as literal text. MEASURED at 905 chars over 14 lines
+# with a Responsibilities marker -- comfortably past `assess_body`, which is why the lane needs a
+# fail-safe on residual markup and not only the escape rule.
+MIXED_MARKUP_PAGE = page(
+    {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Software Engineer",
+        "datePosted": "2026-08-26",
+        "hiringOrganization": {"@type": "Organization", "name": "Example Tooling Co"},
+        "description": "<br>".join(
+            [
+                "&lt;h2&gt;About the role&lt;/h2&gt;",
+                "&lt;p&gt;We are hiring an engineer to build and maintain internal tooling.&lt;/p&gt;",
+                "&lt;h2&gt;Responsibilities&lt;/h2&gt;",
+                "&lt;li&gt;Design, build and ship services used by the whole company.&lt;/li&gt;",
+                "&lt;li&gt;Review code and raise the quality bar for the team around you.&lt;/li&gt;",
+                "&lt;li&gt;Instrument what you build so that its failures are visible.&lt;/li&gt;",
+                "&lt;li&gt;Write the documentation somebody joining next quarter needs.&lt;/li&gt;",
+                "&lt;h2&gt;Requirements&lt;/h2&gt;",
+                "&lt;li&gt;Comfortable in at least one general purpose language today.&lt;/li&gt;",
+                "&lt;li&gt;Able to reason about correctness before reaching for a debugger.&lt;/li&gt;",
+                "&lt;li&gt;Willing to work in an existing codebase rather than around it.&lt;/li&gt;",
+                "&lt;h2&gt;Benefits&lt;/h2&gt;",
+                "&lt;p&gt;Health cover, paid time off and a yearly hardware budget too.&lt;/p&gt;",
+                "&lt;p&gt;We review compensation annually against the market every year.&lt;/p&gt;",
+            ]
         ),
     }
 )

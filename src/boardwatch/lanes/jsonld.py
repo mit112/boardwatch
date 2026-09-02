@@ -1,4 +1,4 @@
-"""Lane 5: the `schema.org/JobPosting` resolver -- one lane in place of six vendor adapters.
+"""Lane 5: the `schema.org/JobPosting` resolver -- one lane in place of FIVE vendor adapters.
 
 One request shape, and no others:
 
@@ -8,14 +8,18 @@ Plus the two GitHub new-grad list GETs this lane's discovery half already shares
 `lanes/github_lists.py`. **No key, no cookie, no TLS bypass, no app impersonation**, and the
 `identifying_user_agent()` every board that answers us honestly is owed under D22.
 
-WHY A RESOLVER AND NOT SIX ADAPTERS. Six unrelated vendors -- Hireology, CareerPlug, JazzHR
-(`applytojob`), Breezy, Paylocity and iCIMS on a CUSTOM domain -- were measured on 2026-09-01
+WHY A RESOLVER AND NOT A SET OF ADAPTERS. SIX unrelated vendors were measured on 2026-09-01
 serving a complete `JobPosting` with a full `description` on the posting page itself, from one
-unauthenticated GET (recon §3.2: 9,718 / 8,109 / 5,410 / 4,971 / 7,103 / 2,665 chars). Every one
-of them is per-tenant with no cross-tenant search, so an adapter for each would be six search
-surfaces that cannot be searched. What they share is the OUTPUT format, so the lane takes a
-posting URL from any origin and reads the vendor-neutral half, with a closed per-vendor catalog
-for the two facts JSON-LD does not carry: which employer this is, and which posting.
+unauthenticated GET (recon §3.2: Hireology 9,718 / CareerPlug 8,109 / JazzHR 5,410 / Breezy 4,971
+/ Paylocity 7,103 / iCIMS-custom 2,665 chars). Every one is per-tenant with no cross-tenant
+search, so an adapter for each would be search surfaces that cannot be searched. What they share
+is the OUTPUT format, so the lane takes a posting URL from any origin and reads the vendor-neutral
+half, with a closed per-vendor catalog for the two facts JSON-LD does not carry: which employer
+this is, and which posting.
+
+**FIVE OF THOSE SIX SHIP. `VENDORS` HAS FIVE ROWS AND PAYLOCITY IS NOT ONE OF THEM** -- see the
+refusals below for why, and do not read "six vendors were measured" as "six vendors resolve".
+The measurement is the recon's; the catalog is what this lane will actually request.
 
 **THE BODY ARRIVES IN THE SAME REQUEST, BUT IT IS TALLIED `body_fetched`, NOT `body_inline`.**
 `body_inline` means "at no extra request" -- hiring.cafe earns it because ONE board GET buys
@@ -44,12 +48,19 @@ two seed sources and owns neither:
   lane records a URL it cannot resolve; this lane drains it. Today the Indeed lane's
   `recruit.viewJobUrl` is the intended filler, and it is a different lane in a different stage
   pass, which is why the handoff has to survive the run. **The read is filtered to this lane's
-  own hosts** because the queue is shared and its ordering is global: an unfiltered draw of forty
-  takes the forty oldest rows in the table whoever can resolve them, so a vendor with few seeds
-  starves behind a vendor with many, and an attempt gets charged against a seed belonging to a
-  resolver that does not exist yet. Neither failure is visible in a report; both look like a full
-  budget and a clean tally. `seed_hosts()` builds that set and records, at its own site, the one
-  thing an exact-hostname filter cannot express for a wildcard-subdomain vendor.
+  own catalog** -- `SEED_HOSTS` for the two single-host vendors, `SEED_HOST_SUFFIXES` for the
+  three that give every employer a subdomain -- because the queue is shared and its ordering is
+  global: an unfiltered draw of forty takes the forty oldest rows in the table whoever can
+  resolve them, so a vendor with few seeds starves behind a vendor with many, and an attempt gets
+  charged against a seed belonging to a resolver that does not exist yet. Neither failure is
+  visible in a report; both look like a full budget and a clean tally.
+
+  The suffix arm is what makes a tenant NOBODY HAS SEEN reachable. An earlier version of this
+  lane could only ask for tenants its own discovery pass had just named, and claimed that covered
+  everything it discovered itself. **That claim was false in both directions** -- it reached
+  nothing another lane found on an unseen tenant, and it silently dropped a seed of its own once
+  the listing that named that tenant went inactive, leaving a row that was never selected, never
+  charged and never aged out. The workaround is gone rather than documented.
 
 **DISCOVERY WRITES; THE DRAIN RESOLVES. A URL FOUND THIS RUN IS RESOLVED NEXT RUN.** One run of
 latency, taken deliberately in exchange for one resolve path instead of two. The alternative --
@@ -84,9 +95,23 @@ a daily lane needs to cross a weekend outage.
 
 `SEED_REQUEST_BUDGET = 40`. Forty GETs at ~1.0-1.6 s is ~40-64 s of paced network work per run --
 the same order as the hiring.cafe lane's 60-request ceiling, and small beside the ~166 requests
-run 139 measured for the LinkedIn lane. MEASURED seed supply from the two lists today is 88
-catalog-matching ACTIVE URLs (JazzHR 70, iCIMS-custom 17, Breezy 1), so 40 drains the standing
-backlog in three runs and thereafter tracks the daily delta, which is far smaller.
+run 139 measured for the LinkedIn lane.
+
+**THE REQUEST BUDGET IS NOT THE BINDING CONSTRAINT ON THE FIRST RUNS, AND AN EARLIER VERSION OF
+THIS PARAGRAPH GOT THAT WRONG.** It claimed 40 requests drain the standing backlog in three runs.
+Re-measured against the two lists: the 88 catalog-matching ACTIVE URLs are only **50 DISTINCT
+TENANTS** (JazzHR 48, iCIMS-custom 1, Breezy 1), and postings are concentrated -- one tenant holds
+17 of them, another 13. `lane_new_companies_per_run` defaults to **10** and this lane takes no
+override, so a first run admits at most ten NEW companies however much budget is left. Fifty
+tenants therefore need roughly **five runs to be admitted**, not three; the 40-request budget only
+starts to bind once most tenants are already stored, because an already-known company is admitted
+free. Both bounds are real and the smaller one is the cap.
+
+An `lane_new_companies_per_run_overrides` entry would lift it -- `jobapps` and `hiringcafe` both
+carry `unlimited` -- and there is a real argument for one, since a "new company" here costs no
+board scan at all: this lane fetches exactly the seeds it holds, already bounded by the request
+budget, so the company cap is a second and redundant bound. That is an owner decision about a
+shipped default and is NOT taken here. The lane ships disarmed; the first armed run measures it.
 
 `SEED_SCAN_LIMIT = 400`, ten times the request budget, and it is not a second budget. Reading a
 seed row is a cheap indexed SELECT; REQUESTING one is the cost. Scanning wide is what lets an
@@ -192,7 +217,6 @@ from __future__ import annotations
 import html
 import json
 import re
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -317,40 +341,27 @@ VENDORS: tuple[Vendor, ...] = (
     ),
 )
 
-# The half of this lane's host filter that is knowable ahead of time, DERIVED from the catalog
-# rather than written out a second time -- two spellings of one set is how a vendor joins the
-# catalog and never the query, and that failure is silent in the worst direction: a seed this
-# lane can resolve, sitting in the queue, never selected.
+# THE TWO ARMS OF THIS LANE'S SEED ROUTING, both DERIVED from the catalog rather than written out
+# a second time. Two spellings of one set is how a vendor joins the catalog and never the query,
+# and that failure is silent in the worst direction: a seed this lane can resolve, sitting in the
+# queue, never selected, never charged, forever.
 #
-# **ONLY THE FIXED-HOST VENDORS CAN BE LISTED HERE, AND THAT IS A REAL LIMIT, NOT A TIDY-UP.**
-# `unresolved_seeds` matches `lane_seeds.host` with `IN (...)` over FULL hostnames, and three of
-# the five vendors give every employer its own subdomain -- `{tenant}.careerplug.com`,
-# `{tenant}.applytojob.com`, `{tenant}.breezy.hr`. There is no finite set to enumerate for those,
-# so their hosts are contributed per run by `seed_hosts()` below, from the tenants this lane's
-# own discovery pass just saw. See that function for what the arrangement cannot reach.
-FIXED_SEED_HOSTS: frozenset[str] = frozenset(
+# The split is not cosmetic and the two arms are NOT interchangeable. `SEED_HOSTS` claims exactly
+# one hostname each. `SEED_HOST_SUFFIXES` claims a vendor's whole TENANT SPACE -- `applytojob.com`
+# matches `applytojob.com` and `brandnew.applytojob.com`, and does NOT match `notapplytojob.com`,
+# which is a different registrable domain that merely ends in the same characters.
+#
+# A wildcard vendor gives every employer its own subdomain, so no finite host set can enumerate
+# one, and a suffix is the only thing that reaches a tenant nobody has seen yet -- which is
+# exactly the Indeed-discovered seed this lane exists to drain. Conversely a single-host vendor
+# must NOT go in the suffix arm: a suffix would also claim every subdomain of it, and for a
+# shared vendor host that is claiming other resolvers' tenants.
+SEED_HOSTS: frozenset[str] = frozenset(
     vendor.host for vendor in VENDORS if not vendor.host.startswith(".")
 )
-
-
-def seed_hosts(discovered: tuple[str, ...]) -> frozenset[str]:
-    """The host set this lane hands `pending_seeds`: its fixed hosts plus this run's tenants.
-
-    **THE GAP THIS LEAVES IS STATED RATHER THAN HIDDEN.** A wildcard vendor's tenant host is
-    knowable only from a URL that names it, so this lane can ask for exactly the tenants its own
-    discovery pass found. That covers 100% of what it discovers itself -- the two public lists are
-    re-read every run, so a tenant seeded in one run is still named in the next -- and it covers
-    NOTHING that another lane discovers on a tenant this lane has never seen. When the Indeed
-    lane's `recruit.viewJobUrl` starts filling `lane_seeds`, its JazzHR, CareerPlug and Breezy
-    tenants will be invisible here until the same employer also appears in the public lists.
-
-    The fix is a contract change, not a workaround in this module: either `lane_seeds` carries the
-    registrable domain beside the host, or the filter matches by suffix. Faking it here -- reading
-    a wider host set and discarding what does not match -- would charge attempts against seeds
-    belonging to resolvers that do not exist yet, which is the exact failure `hosts` was added to
-    prevent.
-    """
-    return FIXED_SEED_HOSTS | {seed_host(url) for url in discovered}
+SEED_HOST_SUFFIXES: frozenset[str] = frozenset(
+    vendor.host.removeprefix(".") for vendor in VENDORS if vendor.host.startswith(".")
+)
 
 # The JD, in the order a reader would meet it on the page. CLOSED: schema.org defines a dozen
 # further text properties and the measured pages fill them with sentinels, page chrome or
@@ -367,6 +378,19 @@ _UNAVAILABLE = "UNAVAILABLE"
 # A tag, for the double-escape test. `<` followed by a letter or a slash: bare `<` in prose ("<5
 # years") must not read as markup, or an ordinary JD would be unescaped a second time.
 _TAG_RE = re.compile(r"<[A-Za-z/]")
+
+# A CLOSING tag with a name, matched against text that has ALREADY been through `html_to_text`.
+# Nothing an employer writes in prose produces `</p>` or `</div>`; markup that survived
+# extraction does. Deliberately narrower than `_TAG_RE`: an opening-tag shape alone matches
+# ordinary prose such as "<script> tags are banned", where a CLOSING tag does not.
+_RESIDUAL_MARKUP_RE = re.compile(r"</[A-Za-z][A-Za-z0-9]*\s*>")
+
+# How many residual closing tags are tolerated in an extracted body. ZERO. This is a fail-safe
+# gate, and the direction is chosen the way `CLAUDE.md` says to choose one -- per gate. What is
+# at stake is the FROZEN JD: `INELIGIBLE` must carry a quoted span from it, so a body that is
+# really markup produces evidence that quotes a tag at an employer. Dropping a real posting costs
+# one lead; storing markup as a JD corrupts the evidence chain for every verdict drawn from it.
+MAX_RESIDUAL_MARKUP = 0
 
 
 class NoJobPosting(ValueError):
@@ -399,8 +423,17 @@ class SeedPosting:
 
 
 def _host_and_path(url: str) -> tuple[str, str]:
+    """The host EXACTLY as `lane_seeds` records it, plus the path.
+
+    The host comes from `store.seed_queries.seed_host` rather than from a second spelling here,
+    and that is a correctness rule and not a tidy-up. Routing and IDENTITY both key on this: a
+    URL spelled `https://WWW.Example.careerplug.com/jobs/1` is routed under the stripped host the
+    store recorded, and if identity used the unstripped one the same employer would be stored a
+    second time under slug `www.example` -- two company rows, neither of which can ever converge
+    on the other. One function, so the two can never disagree.
+    """
     parsed = urlparse(url.strip() if "://" in url else f"https://{url.strip()}")
-    return (parsed.hostname or "").lower(), parsed.path.strip("/")
+    return seed_host(url.strip()), parsed.path.strip("/")
 
 
 def match_vendor(url: str) -> Vendor | None:
@@ -640,7 +673,6 @@ class JsonLdLane:
         self._request_budget = max(1, request_budget)
         self._max_attempts = max(1, max_attempts)
         self._scan_limit = max(1, scan_limit)
-        self._last_request_at: dict[str, float] = {}
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
         """Discover seeds from the public lists, then drain the durable queue under the budget.
@@ -654,29 +686,40 @@ class JsonLdLane:
         body is fetched. That ordering is free for this lane and it is the reason the catalog is
         keyed on the URL: every identity is recoverable without a request, so the cap rations
         requests that have not been paid for yet rather than discarding ones that have.
+
+        **EVERY SEED THAT HAS ITS TURN IS CHARGED, INCLUDING ONE THAT CRASHES THE RESOLVER.** The
+        per-seed body below cannot raise: an unexpected failure is isolated, counted and charged
+        like any other non-resolution. Letting it escape would discard not just that seed but
+        EVERY attempt already recorded this run, because the runner only ever charges what a
+        returned `LaneResult` carries -- so a single malformed page would leave a whole run's
+        seeds at the same attempt count, to be re-fetched at one GET each, every run, forever.
+        That is the drain failing silently, which is the one failure this queue exists to prevent.
         """
         discovered = self._discover(fetcher)
 
         seeds = self._seeds(
-            hosts=seed_hosts(discovered),
+            hosts=SEED_HOSTS,
+            host_suffixes=SEED_HOST_SUFFIXES,
             max_attempts=self._max_attempts,
             limit=self._scan_limit,
         )
         tally = AcquisitionTally()
         attempts: list[tuple[int, bool]] = []
-        by_company: dict[tuple[str, str], list[SeedPosting]] = {}
-        # TWO SEED URLS CAN NAME ONE POSTING, and without this the run does not merely waste a
-        # request -- it ABORTS. `lane_seeds` is unique on URL, not on identity, and three vendors
-        # here serve one posting at two path shapes: `/jobs/{id}` and `/careers-home/jobs/{id}`,
-        # `/apply/{code}/{title}` and `/{code}/{title}`, `/p/{id}-{title}` and `/p/{id}/apply`.
-        # Both shapes occur in the public lists. `scan/apply.py` snapshots `existing` once before
-        # its loop and never re-reads it, so two postings sharing a `provider_posting_id` both
-        # take the INSERT branch and the second violates UNIQUE(company_id, provider_posting_id) --
-        # inside `apply_board`'s single transaction, so the whole company rolls back and the
-        # exception escapes to the lane stage. `lanes/hiringcafe.py` records the same failure for
-        # the same reason; an ATS provider enumerating its own board may assume distinct ids, and
-        # a resolver reading a queue of URLs may not.
-        seen: set[tuple[str, str, str]] = set()
+        # `(provider, slug) -> posting id -> the seeds naming that posting`. TWO LEVELS, because
+        # two seed URLs can name ONE posting: `lane_seeds` is unique on URL, not on identity, and
+        # three vendors here serve one posting at two path shapes -- `/jobs/{id}` and
+        # `/careers-home/jobs/{id}`, `/apply/{code}/{title}` and `/{code}/{title}`,
+        # `/p/{id}-{title}` and `/p/{id}/apply`. Both shapes occur in the public lists.
+        #
+        # An earlier version suppressed the second URL at THIS point, before either was fetched,
+        # and recorded that `apply_board` would otherwise abort the company. **That rationale was
+        # false and is corrected rather than quietly dropped**: `scan/apply.py::_apply_listed`
+        # has collapsed duplicate `provider_posting_id`s to the first occurrence since before this
+        # lane existed, so the store was never at risk. What the suppression actually did was
+        # lose postings -- if the first URL is dead and its alias is live, the live one was
+        # discarded unfetched and both seeds aged out. Aliases are therefore tried IN ORDER until
+        # one resolves.
+        by_company: dict[tuple[str, str], dict[str, list[SeedPosting]]] = {}
         for seed in seeds:
             try:
                 resolved = seed_identity(seed.url, seed.id)
@@ -684,29 +727,17 @@ class JsonLdLane:
                 # Seen, and deliberately NOT requested -- the catalog refused it, or a real
                 # provider owns it. CHARGED anyway: the seed took one of this run's scanned slots
                 # and nothing about it will change, so the attempt ceiling is what retires it.
-                # The host filter should have excluded most of these before they were read; the
-                # ones that survive it are a host this lane serves at a path shape it does not.
                 tally.record("not_attemptable")
                 attempts.append((seed.id, False))
                 continue
-            identity = (resolved.vendor.provider, resolved.slug, resolved.posting_id)
-            if identity in seen:
-                # A SECOND URL for a posting this run already holds. Charged, because it can never
-                # become anything else: whichever URL resolves first closes the posting, and this
-                # row would otherwise sit in the queue being skipped forever.
-                tally.record("not_attemptable")
-                attempts.append((seed.id, False))
-                continue
-            seen.add(identity)
-            by_company.setdefault((resolved.vendor.provider, resolved.slug), []).append(resolved)
+            company = by_company.setdefault((resolved.vendor.provider, resolved.slug), {})
+            company.setdefault(resolved.posting_id, []).append(resolved)
 
         # EVERY admission is settled before ANY body is fetched, in one pass of its own. That is
         # the protocol's literal wording, and this lane is the first that can honour it without
         # giving anything up: an identity here is recoverable from the URL, so deciding a company
         # costs no request, where `lanes/hiringcafe.py` can only decide each company immediately
-        # before its own board GET. Settling them together also means the per-run cap is spent
-        # against the whole run's companies rather than against however many happened to be
-        # reached before the budget ran out.
+        # before its own board GET.
         #
         # Nothing is tallied and NOTHING IS CHARGED for a refusal. No request was attempted, so an
         # outcome here would inflate `attempted` with a non-attempt -- and charging the seed would
@@ -717,22 +748,38 @@ class JsonLdLane:
         snapshots: list[LaneCompanySnapshot] = []
         remaining = self._request_budget
         for provider, slug in admitted:
-            group = by_company[(provider, slug)]
             postings: list[RawPosting] = []
             name = slug
-            for seed_posting in group:
+            source_url = ""
+            for aliases in by_company[(provider, slug)].values():
                 if remaining <= 0:
                     # Seen, not requested: the per-run request budget is spent. Uncharged, for the
-                    # same reason a capped company is -- this seed never had its turn.
-                    tally.record("not_attemptable")
+                    # same reason a capped company is -- these seeds never had their turn.
+                    for _ in aliases:
+                        tally.record("not_attemptable")
                     continue
-                remaining -= 1
-                posting, employer = self._resolve(fetcher, seed_posting, tally)
-                attempts.append((seed_posting.seed_id, posting is not None))
+                posting, employer, spent = self._resolve_aliases(
+                    fetcher, aliases, tally, attempts, budget=remaining
+                )
+                remaining -= spent
                 if posting is None:
                     continue
                 postings.append(posting)
                 name = employer or name
+                # THE SNAPSHOT URL IS ONE THAT ACTUALLY RESOLVED. `BoardSnapshot.url` is what
+                # `apply_board` hands `record_version_source` as the source of every version in
+                # it, so naming the group's FIRST seed would attribute a posting to a URL that
+                # may have 404'd moments earlier -- provenance pointing at a request that
+                # produced nothing. The first resolving URL is a request this run really made and
+                # really got this body from.
+                #
+                # It is still ONE url for the whole company, and that is a limit of
+                # `BoardSnapshot`, not a choice made here: `_apply_listed` takes a single
+                # `source_url` for the batch, so genuine per-posting provenance would need either
+                # a change to a signature all six providers share or one snapshot per posting --
+                # and the second writes a `board_scans` row per posting, which double-counts the
+                # company in every coverage bucket.
+                source_url = source_url or posting.url
             if postings:
                 # A company whose every body was refused yields NO snapshot: an empty one would
                 # still write a `board_scans` row and oblige a company row for zero postings, and
@@ -742,7 +789,7 @@ class JsonLdLane:
                         provider=provider,
                         slug=slug,
                         name=name,
-                        snapshot=lane_snapshot(postings, group[0].url),
+                        snapshot=lane_snapshot(postings, source_url),
                     )
                 )
         return LaneResult(
@@ -751,6 +798,46 @@ class JsonLdLane:
             discovered_seeds=discovered,
             seed_attempts=tuple(attempts),
         )
+
+    def _resolve_aliases(
+        self,
+        fetcher: Fetcher,
+        aliases: list[SeedPosting],
+        tally: AcquisitionTally,
+        attempts: list[tuple[int, bool]],
+        *,
+        budget: int,
+    ) -> tuple[RawPosting | None, str, int]:
+        """Try each URL naming one posting until one resolves. Returns it, the employer, the GETs.
+
+        Sequential rather than first-only, because these URLs are not interchangeable in practice:
+        one shape may 404 while its alias serves the same live posting. Trying only the first
+        discards a real posting AND ages both seeds out over three runs, which is the defect that
+        replaced a pre-fetch duplicate suppression here.
+
+        A seed whose alias already resolved is charged RESOLVED WITHOUT A REQUEST. That is not a
+        convenience: `resolved_at` is what retires a row permanently, and the posting this seed
+        names demonstrably was produced this run, so closing it is true. Charging it unresolved
+        instead would leave it to be fetched again next run for a posting the store already holds.
+        """
+        employer = ""
+        spent = 0
+        for index, seed in enumerate(aliases):
+            if spent >= budget:
+                # Out of budget mid-alias-set. The rest had no turn, so they are uncharged.
+                for _ in aliases[index:]:
+                    tally.record("not_attemptable")
+                return None, employer, spent
+            spent += 1
+            posting, found = self._resolve(fetcher, seed, tally)
+            employer = employer or found
+            attempts.append((seed.seed_id, posting is not None))
+            if posting is not None:
+                # Every remaining alias names a posting this run just produced. Closed, unfetched.
+                for redundant in aliases[index + 1 :]:
+                    attempts.append((redundant.seed_id, True))
+                return posting, employer, spent
+        return None, employer, spent
 
     def _discover(self, fetcher: Fetcher) -> tuple[str, ...]:
         """Catalog-matching ACTIVE posting URLs from the two public new-grad lists.
@@ -785,21 +872,52 @@ class JsonLdLane:
     ) -> tuple[RawPosting | None, str]:
         """One GET, one JSON-LD read, one quality verdict. Returns the posting and the employer.
 
-        The UA is the IDENTIFYING one, not the browser string the recon probed with. These are the
-        employer's own ATS pages -- the same category `lanes/hiringcafe.py` restores it for when
-        it leaves the aggregator and touches a provider's own host -- and D22 is owed to a board
-        that answers us honestly. It is stated because it is a real risk taken deliberately: the
-        200s in the recon were measured under a Chrome UA, so a host that refuses this one will
-        show up as `fetch_refused`, counted and named, rather than as a quiet zero.
+        The UA is the IDENTIFYING one, not a browser string. These are the employer's own ATS
+        pages -- the same category `lanes/hiringcafe.py` restores it for when it leaves the
+        aggregator and touches a provider's own host -- and D22 is owed to a board that answers us
+        honestly. Both live target hosts were probed with it and answered HTTP 200 with a full
+        `JobPosting`, so this is measured rather than hoped for; a host that later refuses it
+        shows up as `fetch_refused`, counted and named, rather than as a quiet zero.
+
+        `min_host_delay` carries the vendor's DECLARED crawl-delay into the fetcher, which applies
+        it before every physical attempt. It is not applied here, and that is the fix for a real
+        defect: a lane-local sleep runs once per call, while `Fetcher` makes up to
+        `retry_attempts` real requests inside one call with a backoff starting at 0.5s -- so a
+        503 from a host asking for five seconds got its retries half a second apart, and the lane
+        that believed it was pacing had no idea.
+
+        **THIS FUNCTION DOES NOT RAISE.** Everything after the response is wrapped: a vendor page
+        that breaks the parser is one seed's problem, and the alternative is losing every attempt
+        already charged this run. Fetch failures stay typed and are classified above it.
         """
-        self._pace(seed.vendor, seed.url)
         try:
-            result = fetcher.get(seed.url, headers={"User-Agent": identifying_user_agent()})
+            result = fetcher.get(
+                seed.url,
+                headers={"User-Agent": identifying_user_agent()},
+                min_host_delay=seed.vendor.crawl_delay_seconds,
+            )
         except FetchFailure as exc:
             tally.record(_failure_outcome(exc))
             return None, ""
         try:
-            posting = job_posting(result.content.decode("utf-8", "replace"))
+            return self._read(result.content, seed, tally)
+        except Exception:  # noqa: BLE001 - one unreadable page must not discard the run's charges
+            # `extracted_empty` is the catalog's name for "a response arrived and extraction
+            # produced nothing substantive", which is exactly what a crashed parse produced. The
+            # taxonomy stays honest because the fetch half above is typed separately: nothing
+            # that failed to ARRIVE can land here.
+            tally.record("extracted_empty")
+            return None, ""
+
+    def _read(
+        self, content: bytes, seed: SeedPosting, tally: AcquisitionTally
+    ) -> tuple[RawPosting | None, str]:
+        """The post-response half: block, body, quality, posting.
+
+        Split out so `_resolve` can isolate every failure in it behind one boundary.
+        """
+        try:
+            posting = job_posting(content.decode("utf-8", "replace"))
         except NoJobPosting:
             tally.record("extracted_empty")
             return None, ""
@@ -815,27 +933,25 @@ class JsonLdLane:
             # on -- `smartrecruiters.parse_posting` refuses the same thing for the same reason.
             tally.record("extracted_empty")
             return None, employer
+        residual = len(_RESIDUAL_MARKUP_RE.findall(body_text))
+        if residual > MAX_RESIDUAL_MARKUP:
+            # THE FAIL-SAFE, and it exists because the escape rule alone is not sufficient.
+            # `_description_html` only unescapes a value that is escaped WHOLE. A description
+            # that mixes REAL separators with ESCAPED block content -- `<br>` between
+            # `&lt;h2&gt;...&lt;/h2&gt;` -- carries a real tag, so the rule correctly declines to
+            # unescape it, and `html_to_text` then emits the escaped tags as literal text.
+            # MEASURED on exactly that shape: 905 characters over 14 lines with a Responsibilities
+            # marker, which `assess_body` accepts without a murmur.
+            #
+            # What that stores is markup as the FROZEN JD -- the document every `INELIGIBLE` span
+            # is quoted from -- so a verdict would cite `</li>` at an employer. Rejected rather
+            # than repaired: a second unescape pass here would be guessing at a shape nobody has
+            # measured, and this gate is one where dropping a real posting is the cheaper error.
+            tally.record("rejected_quality_gate")
+            return None, employer
         # `body_fetched`, not `body_inline`: one request bought one body. See the module docstring.
         tally.record("body_fetched")
         return raw_posting(posting, seed, body_text), employer
-
-    def _pace(self, vendor: Vendor, url: str) -> None:
-        """Top the shared per-host pace up to a stricter delay THIS HOST declares.
-
-        Only ever ADDS delay, and only for a vendor carrying a measured directive. The fetcher
-        paces every host at >=1.0 s inside the lock it holds for a request's full duration, so
-        for every other vendor here this does nothing at all and correctly so -- a second, weaker
-        pacing rule is the thing `lanes/hiringcafe.py` refuses.
-        """
-        if vendor.crawl_delay_seconds is None:
-            return
-        host, _ = _host_and_path(url)
-        last = self._last_request_at.get(host)
-        if last is not None:
-            remaining = vendor.crawl_delay_seconds - (time.monotonic() - last)
-            if remaining > 0:
-                time.sleep(remaining)
-        self._last_request_at[host] = time.monotonic()
 
 
 def _failure_outcome(exc: FetchFailure) -> AcquisitionOutcome:

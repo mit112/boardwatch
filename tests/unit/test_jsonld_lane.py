@@ -30,6 +30,7 @@ import respx
 from jsonld_shape import (
     BREEZY_APPLY_URL,
     BREEZY_PAGE,
+    BREEZY_POSTING,
     BREEZY_URL,
     BROKEN_BLOCK,
     CAREERPLUG_POSTING,
@@ -41,13 +42,18 @@ from jsonld_shape import (
     HIREOLOGY_URL,
     ICIMS_HOME_URL,
     ICIMS_PAGE,
+    ICIMS_POSTING,
     ICIMS_URL,
     JAZZHR_PAGE,
+    JAZZHR_POSTING,
     JAZZHR_SHORT_URL,
     JAZZHR_URL,
     LIST_TYPE_PAGE,
     LOGIN_WALL_PAGE,
     MEASURED_DATE_FORMATS,
+    MEASURED_FROM,
+    MEASURED_JSONLD_KEYS,
+    MIXED_MARKUP_PAGE,
     NO_LD_PAGE,
     NO_ORG_PAGE,
     REVIEW_BY,
@@ -60,8 +66,10 @@ from jsonld_shape import (
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.lanes import jsonld
+from boardwatch.lanes.base import LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.jsonld import (
-    FIXED_SEED_HOSTS,
+    SEED_HOST_SUFFIXES,
+    SEED_HOSTS,
     VENDORS,
     JsonLdLane,
     NoJobPosting,
@@ -73,9 +81,9 @@ from boardwatch.lanes.jsonld import (
     match_vendor,
     posted_at,
     raw_posting,
-    seed_hosts,
     seed_identity,
 )
+from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.store.seed_queries import LaneSeed, seed_host
 
 # --------------------------------------------------------------------------------------------
@@ -113,9 +121,21 @@ class _Reader:
         self.calls: list[dict[str, object]] = []
 
     def __call__(
-        self, *, hosts: frozenset[str], max_attempts: int, limit: int
+        self,
+        *,
+        hosts: frozenset[str],
+        host_suffixes: frozenset[str] = frozenset(),
+        max_attempts: int,
+        limit: int,
     ) -> tuple[LaneSeed, ...]:
-        self.calls.append({"hosts": hosts, "max_attempts": max_attempts, "limit": limit})
+        self.calls.append(
+            {
+                "hosts": hosts,
+                "host_suffixes": host_suffixes,
+                "max_attempts": max_attempts,
+                "limit": limit,
+            }
+        )
         return self._seeds
 
 
@@ -298,39 +318,17 @@ def test_a_wildcard_vendor_at_its_bare_apex_has_no_tenant() -> None:
         seed_identity("https://careerplug.com/jobs/1", 1)
 
 
-def test_the_fixed_host_filter_is_derived_from_the_catalog_not_written_twice() -> None:
+def test_the_two_routing_arms_are_derived_from_the_catalog_not_written_twice() -> None:
     """Two spellings of one set is how a vendor joins the catalog and never the query.
 
-    The expectation is a LITERAL, so this fails both when a fixed-host vendor is added without
-    the filter following it AND if the derivation ever starts emitting a wildcard vendor's
-    `.suffix`, which `lane_seeds.host` would never equal -- an `IN (...)` against `.breezy.hr`
-    matches no row ever recorded, and the lane would report a drained backlog forever.
+    Both expectations are LITERALS, so this fails when a vendor is added without the routing
+    following it AND if a vendor ever lands in the WRONG arm. The arms are not interchangeable:
+    a single-host vendor in the suffix arm would claim every subdomain of a host it shares, and a
+    wildcard vendor in the exact arm matches no tenant at all -- which reads as a drained backlog.
     """
-    assert FIXED_SEED_HOSTS == frozenset({"careers.hireology.com", "careers.garmin.com"})
-
-
-def test_a_wildcard_vendors_tenant_host_is_asked_for_only_once_discovery_names_it() -> None:
-    """The limit of an exact-hostname filter, pinned so it cannot be forgotten.
-
-    Three of the five vendors give every employer its own subdomain, so there is no finite set to
-    enumerate; the tenants come from this run's own discovery pass. Both halves are asserted --
-    that a discovered tenant DOES reach the filter, and that the fixed hosts are there without
-    one -- because an implementation that returned only the fixed set would still pass a test
-    that checked membership alone.
-    """
-    assert seed_hosts(()) == FIXED_SEED_HOSTS
-    widened = seed_hosts((CAREERPLUG_URL, JAZZHR_URL))
-    assert "example-partners-llc.careerplug.com" in widened
-    assert "exampletenant.applytojob.com" in widened
-    assert widened > FIXED_SEED_HOSTS
-
-
-def test_the_host_spelling_matches_the_one_the_store_records() -> None:
-    """`seed_host` lower-cases and strips `www.`. A filter spelled any other way matches nothing,
-    and a row that no filter matches can never be drained and never reports itself as stuck."""
-    assert seed_hosts(("https://WWW.Example-Partners-LLC.CareerPlug.com/jobs/1",)) == (
-        FIXED_SEED_HOSTS | {"example-partners-llc.careerplug.com"}
-    )
+    assert SEED_HOSTS == frozenset({"careers.hireology.com", "careers.garmin.com"})
+    assert SEED_HOST_SUFFIXES == frozenset({"applytojob.com", "breezy.hr", "careerplug.com"})
+    assert not (SEED_HOSTS & SEED_HOST_SUFFIXES), "a vendor may not be claimed by both arms"
 
 
 # --------------------------------------------------------------------------------------------
@@ -699,7 +697,12 @@ def test_the_seed_read_is_filtered_to_this_lanes_own_hosts(respx_mock: respx.Rou
     reader = _Reader(())
     JsonLdLane(reader).collect(_fetcher(tmp_path), _Admits())
     assert reader.calls == [
-        {"hosts": FIXED_SEED_HOSTS, "max_attempts": 3, "limit": 400},
+        {
+            "hosts": frozenset({"careers.hireology.com", "careers.garmin.com"}),
+            "host_suffixes": frozenset({"applytojob.com", "breezy.hr", "careerplug.com"}),
+            "max_attempts": 3,
+            "limit": 400,
+        }
     ]
 
 
@@ -861,28 +864,448 @@ def test_the_lane_is_registered_but_not_enabled() -> None:
 
 
 @respx.mock
-def test_two_seed_urls_for_one_posting_do_not_abort_the_company(
+def test_an_alias_is_closed_without_a_request_when_its_twin_resolves(
     respx_mock: respx.Router, tmp_path: Path
 ) -> None:
-    """`lane_seeds` is unique on URL, not on identity, and three vendors serve one posting at two
+    """`lane_seeds` is unique on URL, not identity, and three vendors serve one posting at two
     path shapes -- both of which occur in the public lists.
 
-    This is not a wasted-request guard. `scan/apply.py` snapshots `existing` once before its loop,
-    so two postings sharing a `provider_posting_id` both take the INSERT branch and the second
-    violates UNIQUE(company_id, provider_posting_id) inside `apply_board`'s single transaction:
-    the whole company rolls back and the exception escapes to the lane stage. So the assertion is
-    that ONE posting is emitted, and that the redundant seed is CHARGED rather than left to be
-    skipped forever.
+    The redundant alias is charged RESOLVED and never requested. `resolved_at` is what retires a
+    row permanently, and the posting this seed names demonstrably was produced this run, so
+    closing it is true; charging it unresolved would have it fetched again next run for a posting
+    the store already holds.
+
+    NOTE what this does NOT claim. An earlier version asserted this prevented `apply_board` from
+    rolling the company back. That rationale was FALSE -- `scan/apply.py::_apply_listed` has
+    collapsed duplicate `provider_posting_id`s since before this lane existed -- so what is
+    asserted here is the request saved and the seed retired, which is what the code actually does.
     """
     _mock_lists(respx_mock)
-    respx_mock.get(ICIMS_URL).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
-    same_posting = "https://careers.garmin.com/careers-home/jobs/19732"
-    respx_mock.get(same_posting).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
+    first = respx_mock.get(ICIMS_URL).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
+    alias = "https://careers.garmin.com/careers-home/jobs/19732"
+    second = respx_mock.get(alias).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
 
-    result = JsonLdLane(_Reader((_seed(ICIMS_URL, 1), _seed(same_posting, 2)))).collect(
+    result = JsonLdLane(_Reader((_seed(ICIMS_URL, 1), _seed(alias, 2)))).collect(
         _fetcher(tmp_path), _Admits()
     )
     ids = [p.provider_posting_id for s in result.snapshots for p in s.snapshot.postings]
-    assert ids == ["19732"], "one posting, or apply_board rolls the company back"
+    assert ids == ["19732"]
+    assert first.called and not second.called, "the alias must cost no request"
+    assert dict(result.seed_attempts) == {1: True, 2: True}
+
+
+@respx.mock
+def test_a_dead_alias_does_not_discard_its_live_twin(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """THE DEFECT A PRE-FETCH DUPLICATE SUPPRESSION CAUSED, pinned so it cannot come back.
+
+    Suppressing the second URL before either was fetched meant that when the FIRST shape was dead
+    and its alias was live, the live posting was discarded unfetched, both seeds took failed
+    attempts, and after three runs both aged out -- a real posting lost to a rule that was
+    defending against a store failure the store already handles itself.
+    """
+    _mock_lists(respx_mock)
+    dead = "https://careers.garmin.com/jobs/19732"
+    live = "https://careers.garmin.com/careers-home/jobs/19732"
+    respx_mock.get(dead).mock(return_value=httpx.Response(404))
+    respx_mock.get(live).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
+
+    result = JsonLdLane(_Reader((_seed(dead, 1), _seed(live, 2)))).collect(
+        _fetcher(tmp_path), _Admits()
+    )
+    ids = [p.provider_posting_id for s in result.snapshots for p in s.snapshot.postings]
+    assert ids == ["19732"], "the live alias must still be fetched and kept"
+    assert dict(result.seed_attempts) == {1: False, 2: True}
+    assert result.tally.counts["fetch_gone"] == 1
+    assert result.tally.counts["body_fetched"] == 1
+
+
+@respx.mock
+def test_the_snapshot_url_is_one_that_actually_resolved(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """`BoardSnapshot.url` is what `apply_board` hands `record_version_source` for every version
+    in the batch, so naming a seed that 404'd would record provenance pointing at a request that
+    produced nothing."""
+    _mock_lists(respx_mock)
+    dead = "https://careers.hireology.com/exampletenant/2855901/description"
+    live = HIREOLOGY_URL
+    respx_mock.get(dead).mock(return_value=httpx.Response(404))
+    respx_mock.get(live).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
+    result = JsonLdLane(_Reader((_seed(dead, 1), _seed(live, 2)))).collect(
+        _fetcher(tmp_path), _Admits()
+    )
+    assert [s.snapshot.url for s in result.snapshots] == [live]
+
+
+@respx.mock
+def test_mixed_real_and_escaped_markup_is_never_stored_as_a_jd(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """THE HOLE THE ESCAPE RULE ALONE DOES NOT CLOSE, end to end.
+
+    `_description_html` only unescapes a value escaped WHOLE. A description mixing REAL `<br>`
+    separators with ESCAPED block content carries a real tag, so the rule correctly declines, and
+    `html_to_text` then emits the escaped tags as literal text. MEASURED at 905 chars over 14
+    lines with a Responsibilities marker -- which `assess_body` accepts.
+
+    Asserted at the LANE boundary, not on a helper: what matters is that no snapshot is emitted,
+    because a snapshot is what becomes the frozen JD every `INELIGIBLE` span is quoted from.
+    """
+    _mock_lists(respx_mock)
+    respx_mock.get(HIREOLOGY_URL).mock(
+        return_value=httpx.Response(200, text=MIXED_MARKUP_PAGE)
+    )
+    result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL, 9),))).collect(
+        _fetcher(tmp_path), _Admits()
+    )
+    assert result.snapshots == (), "markup reached the store as a job description"
+    assert result.tally.counts["rejected_quality_gate"] == 1
+    assert dict(result.seed_attempts) == {9: False}
+
+
+@respx.mock
+def test_a_page_that_crashes_the_parser_does_not_discard_the_runs_charges(
+    respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drain failing silently, pinned.
+
+    The runner only charges what a returned `LaneResult` carries, so an exception escaping
+    `collect` discards not just the offending seed but EVERY attempt already made this run --
+    leaving them all at the same attempt count, to be re-fetched at one GET each, every run,
+    forever. One seed resolves first here precisely so the test can prove the EARLIER charge
+    survives the later crash.
+    """
+    _mock_lists(respx_mock)
+    good, bad = HIREOLOGY_URL, JAZZHR_URL
+    respx_mock.get(good).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
+    respx_mock.get(bad).mock(return_value=httpx.Response(200, text=JAZZHR_PAGE))
+
+    real = jsonld.job_posting
+
+    def _explode(page_html: str) -> dict[str, object]:
+        if "Junior Product Engineer" in page_html:
+            raise RuntimeError("selectolax fell over on this vendor's markup")
+        return real(page_html)
+
+    monkeypatch.setattr(jsonld, "job_posting", _explode)
+    result = JsonLdLane(_Reader((_seed(good, 1), _seed(bad, 2)))).collect(
+        _fetcher(tmp_path), _Admits()
+    )
     assert dict(result.seed_attempts) == {1: True, 2: False}
-    assert result.tally.counts["not_attemptable"] == 1
+    assert result.tally.counts["extracted_empty"] == 1
+    assert len(result.snapshots) == 1
+
+
+@respx.mock
+def test_a_declared_crawl_delay_reaches_the_fetcher_for_every_physical_attempt(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """The pacing guard that the catalog assertion could not make.
+
+    `Fetcher` makes up to `retry_attempts` REAL requests inside one `get()` with a backoff
+    starting at 0.5s, so a lane that slept once per call paced the first request of a run and no
+    retry of it -- against the one host that asks for five seconds. The delay is therefore passed
+    INTO the fetcher, which applies it per attempt.
+
+    Asserted by capturing what the lane hands `Fetcher.get`, with the value pinned as a LITERAL:
+    an assertion reading `vendor.crawl_delay_seconds` back out of the catalog would pass against
+    a lane that never passed it at all.
+    """
+    _mock_lists(respx_mock)
+    respx_mock.get(ICIMS_URL).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
+    respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
+    fetcher = _fetcher(tmp_path)
+    seen: list[tuple[str, float | None]] = []
+    real_get = fetcher.get
+
+    def _record(url: str, *args: object, **kwargs: object) -> object:
+        if "githubusercontent" not in url:
+            seen.append((url, kwargs.get("min_host_delay")))  # type: ignore[arg-type]
+        return real_get(url, *args, **kwargs)  # type: ignore[arg-type]
+
+    fetcher.get = _record  # type: ignore[method-assign]
+    JsonLdLane(_Reader((_seed(ICIMS_URL, 1), _seed(HIREOLOGY_URL, 2)))).collect(fetcher, _Admits())
+    assert (ICIMS_URL, 5.0) in seen, "the declared crawl-delay must reach the fetcher"
+    assert (HIREOLOGY_URL, None) in seen, "a host declaring nothing must not be slowed"
+
+
+def test_a_www_prefixed_url_routes_and_stores_under_one_identity() -> None:
+    """Routing and IDENTITY must share one host normalisation.
+
+    `seed_host` strips `www.`, so the seed is ROUTED under the stripped host. If identity used
+    the unstripped one, the same employer would be stored a second time under slug `www.…` --
+    two company rows that can never converge.
+    """
+    plain = seed_identity("https://exampletenant.applytojob.com/apply/AbC1/Title", 1)
+    prefixed = seed_identity("https://WWW.ExampleTenant.applytojob.com/apply/AbC1/Title", 2)
+    assert prefixed.slug == plain.slug == "exampletenant"
+
+
+# --------------------------------------------------------------------------------------------
+# Against the real store, not the reader stub
+# --------------------------------------------------------------------------------------------
+
+
+def test_this_lanes_routing_actually_selects_its_seeds_from_the_store(tmp_path: Path) -> None:
+    """The `_Reader` stub hands back whatever it was given, so it can never catch a routing set
+    that the SQL does not match. This drives the real `record_seeds` -> `unresolved_seeds` pair.
+
+    Three claims, and each has a silent wrong implementation:
+
+    * The two arms together select every seed this lane can resolve, INCLUDING a wildcard tenant
+      no discovery pass ever named -- which is the whole reason the suffix arm exists and is
+      exactly the Indeed-discovered seed this lane is meant to drain.
+    * A suffix does NOT match a different registrable domain that merely ends in the same
+      characters. `notapplytojob.com` is somebody else's domain.
+    * A host this lane does not serve is NOT selected, so the filter is doing work rather than
+      matching everything.
+    """
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+    from boardwatch.store.seed_queries import record_seeds, unresolved_seeds
+
+    engine = get_engine(tmp_path / "seeds.db")
+    ensure_schema(engine)
+    run = insert_run(engine)
+
+    mine = (
+        HIREOLOGY_URL,                                              # exact host
+        ICIMS_URL,                                                  # exact host
+        JAZZHR_URL,                                                 # suffix, seen tenant
+        "https://brandnew.applytojob.com/apply/ZZ9/Some-Title",     # suffix, NEVER seen
+        CAREERPLUG_URL,                                             # suffix
+        BREEZY_URL,                                                 # suffix
+    )
+    theirs = (
+        "https://career-schwab.icims.com/jobs/1/job",               # owner-declined vendor
+        "https://recruiting.paylocity.com/Recruiting/Jobs/Details/1",  # refused vendor
+        "https://notapplytojob.com/apply/AA1/Title",                # look-alike domain
+    )
+    with engine.begin() as conn:
+        written = record_seeds(
+            conn, mine + theirs, discovered_by="indeed", run_id=run, now=datetime(2026, 9, 2, 12, 0)
+        )
+    assert written.inserted == len(mine) + len(theirs)
+    assert written.unroutable == ()
+
+    with engine.connect() as conn:
+        found = unresolved_seeds(
+            conn,
+            hosts=SEED_HOSTS,
+            host_suffixes=SEED_HOST_SUFFIXES,
+            max_attempts=3,
+            limit=400,
+        )
+    assert {seed.url for seed in found} == set(mine), (
+        "this lane's routing does not select exactly the seeds it can resolve"
+    )
+
+
+def test_claiming_no_hosts_selects_nothing_rather_than_everything(tmp_path: Path) -> None:
+    """The dangerous wrong implementation, pinned from this lane's side too.
+
+    An `or_()` over an empty predicate list renders as a TAUTOLOGY, so a resolver that claimed no
+    hosts at all would be handed every unresolved seed in the table -- and would then charge
+    attempts against seeds belonging to resolvers that do not exist yet, spending a budget that
+    is not its own. The store guards this; this asserts the guard from the caller's side, because
+    it is this lane that would silently consume the queue.
+    """
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+    from boardwatch.store.seed_queries import record_seeds, unresolved_seeds
+
+    engine = get_engine(tmp_path / "seeds.db")
+    ensure_schema(engine)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn, (HIREOLOGY_URL, JAZZHR_URL), discovered_by="indeed", run_id=run,
+            now=datetime(2026, 9, 2, 12, 0),
+        )
+    with engine.connect() as conn:
+        assert unresolved_seeds(
+            conn, hosts=frozenset(), host_suffixes=frozenset(), max_attempts=3, limit=400
+        ) == ()
+
+
+def test_a_failed_apply_still_charges_every_attempt_and_marks_none_resolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drain must not stop draining the moment anything else goes wrong.
+
+    Before this, attempts were charged after the last `apply_board`, so ONE company that could
+    not be applied skipped the seed write entirely: the runner reported the lane error, every
+    seed stayed at the same attempt count, and each was re-fetched at one GET every run forever.
+
+    The `resolved` half is the fail-safe direction and it is asymmetric on purpose. `resolved_at`
+    is never cleared, so marking a seed resolved whose posting was rolled back loses that posting
+    permanently; marking one unresolved whose posting DID land costs one redundant GET next run,
+    which converges on the stored row. This asserts BOTH: the rows are charged, and none is
+    closed.
+    """
+    from boardwatch.lanes.admission import CompanyBudget
+    from boardwatch.pipeline import runner as runner_mod
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+    from boardwatch.store.seed_queries import record_seeds, unresolved_seeds
+
+    engine = get_engine(tmp_path / "apply.db")
+    ensure_schema(engine)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn, (HIREOLOGY_URL,), discovered_by="jsonld", run_id=run,
+            now=datetime(2026, 9, 2, 12, 0),
+        )
+    with engine.connect() as conn:
+        seed_id = unresolved_seeds(
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+        )[0].id
+
+    posting = raw_posting(
+        job_posting(HIREOLOGY_PAGE), seed_identity(HIREOLOGY_URL, seed_id), "body text"
+    )
+    result = LaneResult(
+        snapshots=(
+            LaneCompanySnapshot(
+                provider="hireology",
+                slug="exampletenant",
+                name="Example Tooling Co",
+                snapshot=lane_snapshot([posting], HIREOLOGY_URL),
+            ),
+        ),
+        tally=AcquisitionTally(),
+        # The lane succeeded on this seed. The APPLY is what fails.
+        seed_attempts=((seed_id, True),),
+    )
+
+    def _explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("the board could not be applied")
+
+    monkeypatch.setattr(runner_mod, "apply_board", _explode)
+
+    class _Lane:
+        name = "jsonld"
+
+    with pytest.raises(RuntimeError):
+        runner_mod._apply_lane(
+            engine,
+            _Lane(),  # type: ignore[arg-type]
+            runner_mod._FetchedLane(result=result, budget=CompanyBudget(10), fetch_seconds=0.0),
+            run,
+        )
+
+    with engine.connect() as conn:
+        still_open = unresolved_seeds(
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+        )
+    assert [s.id for s in still_open] == [seed_id], "the seed must not be closed by a failed apply"
+    assert still_open[0].attempts == 1, "the attempt must still be charged"
+
+
+@pytest.mark.parametrize(
+    ("vendor", "posting"),
+    [
+        ("hireology", HIREOLOGY_POSTING),
+        ("careerplug", CAREERPLUG_POSTING),
+        ("jazzhr", JAZZHR_POSTING),
+        ("breezy", BREEZY_POSTING),
+        ("icims", ICIMS_POSTING),
+    ],
+)
+def test_no_authored_fixture_invents_a_field_no_vendor_sends(
+    vendor: str, posting: dict[str, object]
+) -> None:
+    """The fixtures must be SOURCE-DERIVED, not invented, and this is what makes that checkable.
+
+    A fixture key that no vendor was ever measured sending is a fiction, and the danger is not
+    that it is untidy -- it is that the lane can come to depend on it and pass a suite forever
+    while the field does not exist in production. Checked against key names read off the real
+    probed pages; see `MEASURED_JSONLD_KEYS` for the provenance and the refresh path.
+    """
+    invented = set(posting) - set(MEASURED_JSONLD_KEYS[vendor])
+    assert not invented, (
+        f"{vendor} fixture carries {sorted(invented)}, which no measured page sent "
+        f"({MEASURED_FROM[vendor]})"
+    )
+
+
+@pytest.mark.parametrize(
+    ("vendor", "posting"),
+    [
+        ("hireology", HIREOLOGY_POSTING),
+        ("careerplug", CAREERPLUG_POSTING),
+        ("jazzhr", JAZZHR_POSTING),
+        ("breezy", BREEZY_POSTING),
+        ("icims", ICIMS_POSTING),
+    ],
+)
+def test_every_field_this_lane_reads_is_present_exactly_where_it_was_measured(
+    vendor: str, posting: dict[str, object]
+) -> None:
+    """The other half, and the one the traps actually turn on.
+
+    Every trap this lane defends is a PRESENCE-OR-ABSENCE fact: `identifier` absent on three
+    vendors, `qualifications`/`responsibilities` present only on iCIMS, `url` present and
+    disagreeing with its own page on two. A fixture that quietly gained an `identifier` where the
+    vendor sends none would make the URL-parsing guard pass for the wrong reason.
+    """
+    measured = set(MEASURED_JSONLD_KEYS[vendor])
+    for field in ("identifier", "url", "qualifications", "responsibilities", "description"):
+        assert (field in posting) == (field in measured), (
+            f"{vendor}: fixture has {field!r}={field in posting}, "
+            f"measurement says {field in measured} ({MEASURED_FROM[vendor]})"
+        )
+
+
+@respx.mock
+def test_a_declared_host_delay_spaces_every_physical_attempt(
+    respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Fetcher` honours a declared crawl-delay before EVERY physical attempt, not once per call.
+
+    This is the half a lane cannot enforce for itself and the reason the delay moved into the
+    client. `_send_with_retries` makes up to `retry_attempts` REAL requests inside one `get()`,
+    with a tenacity backoff starting at 0.5s -- so a 503 from a host asking for five seconds got
+    its retries half a second apart, and the caller that slept once had no way to know.
+
+    Asserted on the SLEEP the client asks for rather than on wall-clock, so it is deterministic
+    and costs no real time: every `time.sleep` is captured, and the 503 forces two attempts. The
+    expectation is a LITERAL 5.0 -- reading it back off the catalog would pass against a client
+    that never applied it.
+    """
+    from boardwatch.core import politeness as politeness_mod
+
+    slept: list[float] = []
+    monkeypatch.setattr(politeness_mod.time, "sleep", slept.append)
+
+    url = "https://slow.test/jobs/1"
+    respx_mock.get(url).mock(
+        side_effect=[httpx.Response(503), httpx.Response(200, text="ok")]
+    )
+    fetcher = Fetcher(
+        Settings(
+            data_dir=tmp_path, config_dir=tmp_path, retry_attempts=2,
+            per_host_delay_seconds=0.25,
+        ),
+        client=httpx.Client(timeout=5.0),
+    )
+    fetcher.get(url, min_host_delay=5.0)
+
+    assert slept, "the client never paced at all"
+    assert max(slept) >= 5.0, (
+        f"a retry was spaced {max(slept)}s against a host that declared 5s: {slept}"
+    )
+
+    # AND the initial pace of the NEXT call to the same host. This is a separate code path from
+    # the retry wait above -- `_pace` versus the tenacity backoff -- and a mutation campaign
+    # showed the retry assertion alone stays green when the override is dropped from `_pace`,
+    # because the retry term still supplies a five-second sleep. Two paths, two assertions.
+    slept.clear()
+    respx_mock.get("https://slow.test/jobs/2").mock(return_value=httpx.Response(200, text="ok"))
+    fetcher.get("https://slow.test/jobs/2", min_host_delay=5.0)
+    assert slept and max(slept) >= 4.0, (
+        f"the second call to a host declaring 5s was paced {slept}"
+    )

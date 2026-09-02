@@ -114,8 +114,19 @@ class Fetcher:
         validators: ResponseValidators | None = None,
         *,
         headers: Mapping[str, str] | None = None,
+        min_host_delay: float | None = None,
     ) -> FetchResult:
         """One GET, optionally carrying caller-supplied request headers.
+
+        `min_host_delay` RAISES this host's pace for this call and can never lower it: the
+        effective delay is `max(settings.per_host_delay_seconds, min_host_delay)`. It exists for
+        a host that DECLARES a `crawl-delay` stricter than the client's own floor, and it is
+        honoured before EVERY PHYSICAL ATTEMPT rather than once per call. That distinction is the
+        whole point -- `_send_with_retries` makes up to `retry_attempts` real requests with a
+        backoff starting at 0.5s, so a caller that paced once and then hit a 503 would issue its
+        retries half a second apart against a host that asked for five seconds, and the pacing
+        the caller believed it had applied would be silently absent exactly when the host was
+        under stress.
 
         `headers` exists for TWO callers, both in the hiring.cafe lane, and each is documented
         here so a third has to justify itself. Its SEARCH route needs the header set a browser
@@ -130,7 +141,7 @@ class Fetcher:
         `If-None-Match` by passing one of its own — the validator half is this client's
         contract with the coordinator, not the caller's to override.
         """
-        return self._dispatch("GET", url, validators, None, headers)
+        return self._dispatch("GET", url, validators, None, headers, min_host_delay)
 
     def post_json(
         self,
@@ -150,7 +161,7 @@ class Fetcher:
         client-level header set for the reason `get()`'s own note gives — one `Fetcher` serves
         every lane, and those headers must not leak onto a request to any other host. Merged
         UNDER the conditional-GET validators, exactly as `get()` merges them."""
-        return self._dispatch("POST", url, validators, body, headers)
+        return self._dispatch("POST", url, validators, body, headers, None)
 
     def _dispatch(
         self,
@@ -159,10 +170,11 @@ class Fetcher:
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
         headers: Mapping[str, str] | None,
+        min_host_delay: float | None = None,
     ) -> FetchResult:
         host = host_key(url)
         with self._host_lock(host):  # same-host requests serialize for their full duration
-            self._pace(host)
+            self._pace(host, min_host_delay)
             # Stamping BEFORE the send makes the delay an interval between request STARTS;
             # stamping in the `finally` makes it a gap between the previous END and the next
             # start, which is the shipped default. The stamp is written in both arms and the
@@ -172,7 +184,9 @@ class Fetcher:
             if self._pace_from_start:
                 self._last_request_at[host] = time.monotonic()
             try:
-                return self._send_with_retries(method, url, validators, json_body, headers)
+                return self._send_with_retries(
+                    method, url, validators, json_body, headers, min_host_delay
+                )
             finally:
                 if not self._pace_from_start:
                     self._last_request_at[host] = time.monotonic()
@@ -181,10 +195,13 @@ class Fetcher:
         with self._guard:
             return self._host_locks.setdefault(host, threading.Lock())
 
-    def _pace(self, host: str) -> None:
+    def _pace(self, host: str, min_host_delay: float | None = None) -> None:
+        # `max`, never a replacement: an override may only make this client MORE polite. A caller
+        # passing a smaller number than the configured floor gets the floor.
+        delay = max(self._delay, min_host_delay or 0.0)
         last = self._last_request_at.get(host)
         if last is not None:
-            remaining = self._delay - (time.monotonic() - last)
+            remaining = delay - (time.monotonic() - last)
             if remaining > 0:
                 time.sleep(remaining)
 
@@ -195,13 +212,19 @@ class Fetcher:
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
         headers: Mapping[str, str] | None,
+        min_host_delay: float | None = None,
     ) -> FetchResult:
+        floor = max(min_host_delay or 0.0, 0.0)
+
         def _wait(retry_state: RetryCallState) -> float:
             base = wait_exponential_jitter(initial=0.5, max=8.0)(retry_state)
             exc = retry_state.outcome.exception() if retry_state.outcome else None
             if isinstance(exc, _RetryableStatus) and exc.retry_after is not None:
-                return max(base, exc.retry_after)
-            return base
+                return max(base, exc.retry_after, floor)
+            # A host that declares a crawl-delay is owed it between PHYSICAL attempts too, not
+            # only between calls. Without this term the backoff starts at 0.5s and a declared
+            # five-second delay is honoured on the first request of a run and on no retry of it.
+            return max(base, floor)
 
         try:
             for attempt in Retrying(
