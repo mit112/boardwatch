@@ -256,17 +256,30 @@ def unresolved_seeds(
 
 
 def record_seed_attempt(
-    conn: Connection, seed_id: int, *, run_id: int, now: datetime, resolved: bool
+    conn: Connection,
+    seed_id: int,
+    *,
+    run_id: int,
+    now: datetime,
+    resolved: bool,
+    charge: bool = True,
 ) -> None:
-    """Charge one attempt against a seed, and close it if the resolver succeeded.
+    """Record one turn against a seed, and close it if the resolver succeeded.
 
-    **The counter moves on success too, so `attempts` is "times tried", not "times failed".**
-    That is an AUDIT-SEMANTICS contract, not a retry-safety requirement, and the earlier note
-    here claiming otherwise was false: this function already receives `resolved` and could
-    increment conditionally, and doing so could not make retries unbounded because every row that
-    re-enters the candidate set is necessarily one that failed. What the contract buys is that
-    `attempts` answers "how much work has this seed cost" — the question a cost bound is actually
-    about — rather than "how many times has it disappointed us".
+    **`attempts` counts the fetch attempts CHARGED TOWARD THE RETIREMENT CEILING, not turns.**
+    It moves on a charged success too, so it is "how much work has this seed cost" rather than
+    "how many times has it failed" — the question a cost bound is actually about, and the reason
+    `unresolved_seeds` retires a row at `attempts >= max_attempts`. `resolved` and `charge` are
+    independent because a turn has two independent facts: did it produce a posting, and did it
+    spend a request that the ceiling should count.
+
+    **`charge=False` records the turn WITHOUT moving `attempts`.** `last_attempt_run_id` and
+    `last_attempt_at` still advance, and `resolved_at` is still set iff `resolved`, but the
+    ceiling counter does not. Two turns are deliberately not charged, because in neither did the
+    seed's own fetch fail: a seed that resolved but could not be applied (its posting was rolled
+    back, so the FETCH ceiling must not retire it before a clean run can land it), and a redundant
+    alias closed without a GET (it cost no request at all). The default charges, preserving the
+    behaviour of every existing caller.
 
     A resolved seed keeps its row with `resolved_at` set rather than being deleted, matching
     `job_dispositions.reopened_at`: draining a bucket must not erase the evidence it held
@@ -277,7 +290,7 @@ def record_seed_attempt(
         update(lane_seeds)
         .where(lane_seeds.c.id == seed_id)
         .values(
-            attempts=lane_seeds.c.attempts + 1,
+            **({"attempts": lane_seeds.c.attempts + 1} if charge else {}),
             last_attempt_run_id=run_id,
             last_attempt_at=now,
             **({"resolved_at": now} if resolved else {}),

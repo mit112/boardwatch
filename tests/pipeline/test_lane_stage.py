@@ -1310,10 +1310,12 @@ class SeedLane:
         *,
         discovered: tuple[str, ...] = (),
         attempts: tuple[tuple[int, bool], ...] = (),
+        uncharged_resolved: tuple[int, ...] = (),
         reads: tuple[frozenset[str], int, int] | None = None,
     ) -> None:
         self._discovered = discovered
         self._attempts = attempts
+        self._uncharged_resolved = uncharged_resolved
         self._reads = reads
         self.read_back: tuple[str, ...] = ()
 
@@ -1329,6 +1331,7 @@ class SeedLane:
             tally=AcquisitionTally(),
             discovered_seeds=self._discovered,
             seed_attempts=self._attempts,
+            uncharged_resolved=self._uncharged_resolved,
         )
 
 
@@ -1392,6 +1395,41 @@ def test_a_lanes_seed_attempts_are_charged_by_the_runner(
     assert _seed_rows(engine) == [
         ("https://a.test/1", "a.test", "seeder", 1, True),
         ("https://b.test/2", "b.test", "seeder", 1, False),
+    ]
+
+
+def test_a_redundant_aliass_resolution_is_closed_without_charging_the_ceiling(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A redundant alias resolves WITHOUT a GET, so the runner must close it (`resolved_at`) without
+    moving `attempts`. The counter means fetch cost; a row that cost no request must not spend the
+    retirement ceiling for it. The seed the lane actually fetched IS charged, so the two rows come
+    out with different attempt counts though both are resolved."""
+    run_id = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            ("https://a.test/1", "https://a.test/1-alias"),
+            discovered_by="seeder",
+            run_id=run_id,
+            now=utcnow(),
+        )
+        ids = [
+            s.id
+            for s in unresolved_seeds(
+                conn, hosts=frozenset({"a.test"}), max_attempts=9, limit=9
+            )
+        ]
+
+    fetched, alias = ids
+    # Both resolved; the alias resolved without a GET, so the lane lists it as uncharged.
+    lane = SeedLane(attempts=((fetched, True), (alias, True)), uncharged_resolved=(alias,))
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("stub",)), insert_run(engine))
+
+    assert _seed_rows(engine) == [
+        ("https://a.test/1", "a.test", "seeder", 1, True),
+        ("https://a.test/1-alias", "a.test", "seeder", 0, True),
     ]
 
 

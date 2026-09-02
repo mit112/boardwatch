@@ -642,7 +642,10 @@ def _run_lanes(
             try:
                 by_name[name] = _apply_lane(engine, lane, fetched, run_id)
             except Exception as exc:  # noqa: BLE001 - one lane's apply must not take another's
-                errors.append(f"lane {name}: collection failed: {exc!r}")
+                # The apply PHASE, not collection: `_apply_lane` re-raises the apply failure as the
+                # primary cause even when the seed persistence beside it also failed, so this repr
+                # names the phase that actually broke rather than a masking persistence error.
+                errors.append(f"lane {name}: apply failed: {exc!r}")
 
     # Back into `lanes_enabled` order. `as_completed` yields by completion, which would make the
     # funnel's lane list order depend on which aggregator answered first — a diff in every
@@ -786,11 +789,25 @@ def _apply_lane(
     # Whether every snapshot landed. A lane's seed attempts are persisted in EITHER case (see
     # below), and this is what decides with which `resolved` value.
     applied_cleanly = False
+    apply_error: Exception | None = None
     try:
         _apply_snapshots(engine, result, run_id)
         applied_cleanly = True
-    finally:
+    except Exception as exc:  # noqa: BLE001 - captured to re-raise as the primary cause below
+        apply_error = exc
+    # The seed write runs in EITHER case -- a drain that stops the moment an apply fails is not a
+    # drain. It is NOT a `finally`, because a `finally` that itself raises REPLACES the apply
+    # exception: the runner would then report the persistence failure's repr, mislabelled, and the
+    # broken apply would be invisible. So the apply exception is captured and stays the primary
+    # cause, with any persistence failure attached to it rather than substituted for it.
+    try:
         _persist_seed_work(engine, lane, result, run_id, applied_cleanly=applied_cleanly)
+    except Exception as persist_exc:  # noqa: BLE001 - must not mask an apply failure
+        if apply_error is None:
+            raise
+        raise apply_error from persist_exc
+    if apply_error is not None:
+        raise apply_error
 
     tally = result.tally
     return LaneReport(
@@ -858,7 +875,7 @@ def _persist_seed_work(
     *,
     applied_cleanly: bool,
 ) -> None:
-    """The seed half of the single-writer rule. Runs on the main thread, in a `finally`.
+    """The seed half of the single-writer rule. Runs on the main thread after the apply attempt.
 
     **IT RUNS EVEN WHEN THE APPLY FAILED, AND THAT IS THE WHOLE POINT.** Before this, the
     attempts were charged after the last `apply_board`, so one company that could not be applied
@@ -866,12 +883,30 @@ def _persist_seed_work(
     same attempt count, and each was re-fetched at one GET **every run forever**. A drain that
     stops draining the moment anything goes wrong is not a drain.
 
-    **ON A FAILED APPLY EVERY ATTEMPT IS CHARGED UNRESOLVED, whatever the lane reported.** The
-    fail-safe direction here is not symmetric and is chosen deliberately. `resolved_at` is never
-    cleared, so marking a seed resolved whose posting was rolled back loses that posting for good;
-    marking one unresolved whose posting DID land costs a single redundant GET next run, which
-    then converges on the row already stored through `UNIQUE(company_id, provider_posting_id)`.
-    One error is permanent and silent, the other is one request.
+    **A SEED'S FETCH-COST AND ITS APPLY-OUTCOME ARE CHARGED SEPARATELY,** because a seed can
+    resolve and still fail to land when the batch apply aborts on a DIFFERENT company. Three cases,
+    from `(seed_id, resolved)` and the batch's `applied_cleanly`:
+
+    * resolved AND applied_cleanly -> mark resolved, charge as today.
+    * resolved AND NOT applied_cleanly -> re-queue: `resolved=False`, `charge=False`. The seed's
+      own FETCH succeeded, so the fetch ceiling must not retire it; `resolved_at` stays NULL so a
+      clean run can land the posting. Charging it here is the bug this splits out: at
+      `attempts == max_attempts - 1` the increment retires it and `unresolved_seeds` never selects
+      it again -- a real posting lost forever, which the old "costs one redundant GET next run"
+      note was blind to because at the ceiling there is no next run for it.
+    * NOT resolved -> charge as today (`resolved=False`, charged). The fetch failed; the ceiling
+      is what retires it.
+
+    A seed in `result.uncharged_resolved` (a redundant alias closed without a GET) is marked
+    resolved WITHOUT a charge on a clean apply, and re-queued uncharged on a failed one -- it never
+    spent a request, so the ceiling has nothing to count against it.
+
+    **D-418 -- the replacement for the old blanket charge is NAMED, not a silent leak.** Not
+    charging a resolved-but-unapplied seed means a DETERMINISTIC per-company apply failure would
+    re-fetch that company's seeds every run. That is acceptable ONLY because it is LOUD: the apply
+    exception propagates from `_apply_lane` (which re-raises it as the primary cause) to
+    `_run_lanes`, which reports it every such run. This is a VISIBLE retry chosen over silently
+    aging a real posting out of the queue. If that report ever stops firing, this trade is a leak.
 
     The attempts are charged BEFORE the discoveries are recorded, and the order is deliberate:
     a resolver that succeeded on a seed whose URL its own run also re-discovered must close the
@@ -879,14 +914,29 @@ def _persist_seed_work(
     first cannot actually reopen it — `record_seeds` touches nothing on conflict — but the
     order states the intent where the next reader of this loop will see it.
     """
-    if not (result.seed_attempts or result.discovered_seeds):
+    if not (result.seed_attempts or result.discovered_seeds or result.resolver_errors):
         return
     now = utcnow()
+    uncharged = set(result.uncharged_resolved)
     with engine.begin() as conn:
         for seed_id, resolved in result.seed_attempts:
-            record_seed_attempt(
-                conn, seed_id, run_id=run_id, now=now, resolved=resolved and applied_cleanly
-            )
+            if resolved and not applied_cleanly:
+                # Fetch succeeded, apply rolled it back. Re-queue UNCHARGED and unclosed so a clean
+                # run can still land it, rather than retire a real posting at the fetch ceiling.
+                record_seed_attempt(
+                    conn, seed_id, run_id=run_id, now=now, resolved=False, charge=False
+                )
+            else:
+                # A clean apply closes a resolved seed; an unresolved one is charged so its fetch
+                # ceiling retires it. A redundant alias resolved without a GET, so it closes free.
+                record_seed_attempt(
+                    conn,
+                    seed_id,
+                    run_id=run_id,
+                    now=now,
+                    resolved=resolved and applied_cleanly,
+                    charge=seed_id not in uncharged,
+                )
         written = record_seeds(
             conn,
             result.discovered_seeds,
@@ -905,6 +955,16 @@ def _persist_seed_work(
             run_id,
             f"lane {lane.name}: {len(written.unroutable)} seed url(s) had no parseable "
             f"host and were skipped, first: {written.unroutable[0]!r}",
+        )
+    # Reported the same way and for the same reason: an unexpected exception inside a resolver is a
+    # real code defect, and recording it as an empty extraction would disguise it as the lane
+    # finding nothing. Non-fatal — the other seeds' attempts were charged above.
+    if result.resolver_errors:
+        append_run_error(
+            engine,
+            run_id,
+            f"lane {lane.name}: {len(result.resolver_errors)} seed(s) crashed the resolver, "
+            f"first: {result.resolver_errors[0]}",
         )
 
 

@@ -49,10 +49,14 @@ CATALOG_DIGEST = "cba1969b33f55b761b07f5f5d272b6d7022f3e2381cc3d5909af12b6e8c317
 # against, and it is what makes them source-DERIVED rather than invented.
 #
 # Only the key NAMES are recorded, never a value: the values are an employer's own copy and do
-# not belong in this repository. Names are enough for what the fixtures have to be faithful about,
-# because every trap the lane defends is a PRESENCE-OR-ABSENCE fact -- `identifier` absent on
-# three vendors, `qualifications` and `responsibilities` present only on iCIMS, `url` present and
-# disagreeing with the page on two.
+# not belong in this repository. Names are enough for what THIS structure guards -- the
+# PRESENCE-OR-ABSENCE traps: `identifier` absent on three vendors, `qualifications` and
+# `responsibilities` present only on iCIMS, `url` present on two. They are NOT every trap. The lane
+# also defends VALUE and SHAPE traps this key set cannot see -- an `identifier.value` off by one
+# from its own URL, a `description` of HTML-ESCAPED HTML, a BARE-STRING `hiringOrganization`, a
+# `url` that DISAGREES with the page it was served on -- and those are pinned by the authored
+# fixtures above (each documents the shape it reproduces) and the behavioural tests, not by these
+# names. A key set can only ever check that a field is or is not present.
 #
 # WHAT THIS DOES AND DOES NOT BUY, stated so nobody reads more into it. It fails when a FIXTURE
 # drifts away from the last measurement, which is the failure a contributor can actually cause.

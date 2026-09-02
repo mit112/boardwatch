@@ -128,14 +128,15 @@ class Fetcher:
         the caller believed it had applied would be silently absent exactly when the host was
         under stress.
 
-        `headers` exists for TWO callers, both in the hiring.cafe lane, and each is documented
-        here so a third has to justify itself. Its SEARCH route needs the header set a browser
+        `headers` exists for THREE callers, and each is documented here so a fourth has to justify
+        itself. TWO are in the hiring.cafe lane. Its SEARCH route needs the header set a browser
         sends for a top-level navigation, and that set must not leak onto the other lane sharing
         this client (D-369). Its BOARD route is the opposite direction: the lane client carries
         a browser UA for the aggregator, and a request this lane makes to an ATS provider's own
         host has to restore `identifying_user_agent()` — D22 is owed to a board that answers us
-        honestly, whatever the aggregator's edge behaviour made necessary elsewhere.
-        Client-level headers could express neither.
+        honestly, whatever the aggregator's edge behaviour made necessary elsewhere. The THIRD is
+        the JSON-LD resolver lane, which restores `identifying_user_agent()` for the same reason on
+        the ATS posting pages it fetches. Client-level headers could express none of them.
 
         They are merged UNDER the conditional-GET validators, so a caller cannot suppress an
         `If-None-Match` by passing one of its own — the validator half is this client's

@@ -892,6 +892,9 @@ def test_an_alias_is_closed_without_a_request_when_its_twin_resolves(
     assert ids == ["19732"]
     assert first.called and not second.called, "the alias must cost no request"
     assert dict(result.seed_attempts) == {1: True, 2: True}
+    # The alias resolved, so it is closed -- but it cost no GET, so it must NOT be charged. The
+    # runner reads `uncharged_resolved` to close it without moving its attempt counter.
+    assert result.uncharged_resolved == (2,), "the redundant alias must be closed but uncharged"
 
 
 @respx.mock
@@ -969,13 +972,18 @@ def test_mixed_real_and_escaped_markup_is_never_stored_as_a_jd(
 def test_a_page_that_crashes_the_parser_does_not_discard_the_runs_charges(
     respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The drain failing silently, pinned.
+    """The drain failing silently, pinned -- and the crash surfaced HONESTLY, not as an empty page.
 
     The runner only charges what a returned `LaneResult` carries, so an exception escaping
     `collect` discards not just the offending seed but EVERY attempt already made this run --
     leaving them all at the same attempt count, to be re-fetched at one GET each, every run,
     forever. One seed resolves first here precisely so the test can prove the EARLIER charge
     survives the later crash.
+
+    The crash is an UNEXPECTED exception (`RuntimeError` from inside `_read`, not a
+    `NoJobPosting`), so it must reach `resolver_errors` as a visible lane error and must NOT be
+    tallied `extracted_empty`: recording an empty extraction would disguise a real code defect as
+    the page simply having nothing in it, and age a real seed out on a false claim.
     """
     _mock_lists(respx_mock)
     good, bad = HIREOLOGY_URL, JAZZHR_URL
@@ -994,7 +1002,11 @@ def test_a_page_that_crashes_the_parser_does_not_discard_the_runs_charges(
         _fetcher(tmp_path), _Admits()
     )
     assert dict(result.seed_attempts) == {1: True, 2: False}
-    assert result.tally.counts["extracted_empty"] == 1
+    assert result.tally.counts["extracted_empty"] == 0, (
+        "an unexpected crash must not be disguised as an empty extraction"
+    )
+    assert len(result.resolver_errors) == 1
+    assert bad in result.resolver_errors[0] and "RuntimeError" in result.resolver_errors[0]
     assert len(result.snapshots) == 1
 
 
@@ -1130,20 +1142,38 @@ def test_claiming_no_hosts_selects_nothing_rather_than_everything(tmp_path: Path
         ) == ()
 
 
-def test_a_failed_apply_still_charges_every_attempt_and_marks_none_resolved(
+def _hireology_snapshot(seed_id: int) -> LaneCompanySnapshot:
+    """One landable Hireology company, so `_apply_snapshots` reaches `apply_board` (the monkeypatch
+    that explodes) rather than short-circuiting on an empty snapshot list."""
+    posting = raw_posting(
+        job_posting(HIREOLOGY_PAGE), seed_identity(HIREOLOGY_URL, seed_id), "body text"
+    )
+    return LaneCompanySnapshot(
+        provider="hireology",
+        slug="exampletenant",
+        name="Example Tooling Co",
+        snapshot=lane_snapshot([posting], HIREOLOGY_URL),
+    )
+
+
+def test_a_failed_apply_requeues_a_resolved_seed_uncharged_but_charges_an_unresolved_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The drain must not stop draining the moment anything else goes wrong.
+    """The drain must not stop draining -- but a failed apply charges the two seed kinds DIFFERENTLY.
 
     Before this, attempts were charged after the last `apply_board`, so ONE company that could
-    not be applied skipped the seed write entirely: the runner reported the lane error, every
-    seed stayed at the same attempt count, and each was re-fetched at one GET every run forever.
+    not be applied skipped the seed write entirely: the runner reported the lane error, every seed
+    stayed at the same attempt count, and each was re-fetched at one GET every run forever. That is
+    fixed by persisting in either case; this pins the asymmetry the persist must then observe.
 
-    The `resolved` half is the fail-safe direction and it is asymmetric on purpose. `resolved_at`
-    is never cleared, so marking a seed resolved whose posting was rolled back loses that posting
-    permanently; marking one unresolved whose posting DID land costs one redundant GET next run,
-    which converges on the stored row. This asserts BOTH: the rows are charged, and none is
-    closed.
+    `resolved_at` is never cleared, so the fail-safe direction is asymmetric on purpose:
+
+    * A seed whose FETCH succeeded but whose posting was rolled back by the batch apply is
+      RE-QUEUED UNCHARGED and left open -- its fetch worked, so the fetch ceiling must not retire
+      it, and a clean run must be free to land the posting it already produced.
+    * A seed whose fetch FAILED is charged unresolved, because the ceiling is what retires it.
+
+    Both stay selectable; neither is closed by a failed apply.
     """
     from boardwatch.lanes.admission import CompanyBudget
     from boardwatch.pipeline import runner as runner_mod
@@ -1154,6 +1184,87 @@ def test_a_failed_apply_still_charges_every_attempt_and_marks_none_resolved(
     engine = get_engine(tmp_path / "apply.db")
     ensure_schema(engine)
     run = insert_run(engine)
+    resolved_url = HIREOLOGY_URL
+    unresolved_url = "https://careers.hireology.com/exampletenant/2855777/description"
+    with engine.begin() as conn:
+        record_seeds(
+            conn, (resolved_url, unresolved_url), discovered_by="jsonld", run_id=run,
+            now=datetime(2026, 9, 2, 12, 0),
+        )
+    with engine.connect() as conn:
+        by_url = {
+            s.url: s.id
+            for s in unresolved_seeds(
+                conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+            )
+        }
+    resolved_id, unresolved_id = by_url[resolved_url], by_url[unresolved_url]
+
+    result = LaneResult(
+        snapshots=(_hireology_snapshot(resolved_id),),
+        tally=AcquisitionTally(),
+        # One seed resolved (its posting is in the snapshot); one seed's fetch failed.
+        seed_attempts=((resolved_id, True), (unresolved_id, False)),
+    )
+
+    def _explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("the board could not be applied")
+
+    monkeypatch.setattr(runner_mod, "apply_board", _explode)
+
+    class _Lane:
+        name = "jsonld"
+
+    with pytest.raises(RuntimeError):
+        runner_mod._apply_lane(
+            engine,
+            _Lane(),  # type: ignore[arg-type]
+            runner_mod._FetchedLane(result=result, budget=CompanyBudget(10), fetch_seconds=0.0),
+            run,
+        )
+
+    with engine.connect() as conn:
+        still_open = {
+            s.id: s.attempts
+            for s in unresolved_seeds(
+                conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+            )
+        }
+    assert set(still_open) == {resolved_id, unresolved_id}, "a failed apply must close no seed"
+    assert still_open[resolved_id] == 0, "a resolved-but-unapplied seed must be re-queued UNCHARGED"
+    assert still_open[unresolved_id] == 1, "an unresolved seed is still charged on a failed apply"
+
+
+def test_a_resolved_seed_at_the_attempt_ceiling_survives_a_failed_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLOCKER: a resolved seed at the ceiling must not be aged out forever by a failed apply.
+
+    This is the boundary the old blanket "charge every attempt unresolved on a failed apply" got
+    wrong. A seed at `attempts == max_attempts - 1` that resolves and is then rolled back by a
+    batch apply failure was charged to `max_attempts` and written unresolved, so `unresolved_seeds`
+    (`attempts < max_attempts`) never selected it again -- a real posting lost for good, with no
+    next run to pay the "one redundant GET" the old note promised. It must be re-queued UNCHARGED
+    so it stays selectable.
+
+    Starts AT THE CEILING (attempts = max_attempts - 1 = 2) on purpose: at zero attempts the old
+    bug is invisible, because `attempts + 1` is still below the ceiling and the seed stays
+    selectable regardless of the charge.
+    """
+    from boardwatch.lanes.admission import CompanyBudget
+    from boardwatch.pipeline import runner as runner_mod
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+    from boardwatch.store.seed_queries import (
+        record_seed_attempt,
+        record_seeds,
+        unresolved_seeds,
+    )
+
+    max_attempts = 3
+    engine = get_engine(tmp_path / "ceiling.db")
+    ensure_schema(engine)
+    run = insert_run(engine)
     with engine.begin() as conn:
         record_seeds(
             conn, (HIREOLOGY_URL,), discovered_by="jsonld", run_id=run,
@@ -1161,23 +1272,25 @@ def test_a_failed_apply_still_charges_every_attempt_and_marks_none_resolved(
         )
     with engine.connect() as conn:
         seed_id = unresolved_seeds(
-            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES,
+            max_attempts=max_attempts, limit=10,
         )[0].id
+    # Two prior failed fetches drive it to one below the ceiling.
+    with engine.begin() as conn:
+        for _ in range(max_attempts - 1):
+            record_seed_attempt(
+                conn, seed_id, run_id=run, now=datetime(2026, 9, 2, 12, 0), resolved=False
+            )
+    with engine.connect() as conn:
+        at_ceiling = unresolved_seeds(
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES,
+            max_attempts=max_attempts, limit=10,
+        )
+    assert [s.attempts for s in at_ceiling] == [max_attempts - 1], "precondition: one below ceiling"
 
-    posting = raw_posting(
-        job_posting(HIREOLOGY_PAGE), seed_identity(HIREOLOGY_URL, seed_id), "body text"
-    )
     result = LaneResult(
-        snapshots=(
-            LaneCompanySnapshot(
-                provider="hireology",
-                slug="exampletenant",
-                name="Example Tooling Co",
-                snapshot=lane_snapshot([posting], HIREOLOGY_URL),
-            ),
-        ),
+        snapshots=(_hireology_snapshot(seed_id),),
         tally=AcquisitionTally(),
-        # The lane succeeded on this seed. The APPLY is what fails.
         seed_attempts=((seed_id, True),),
     )
 
@@ -1199,10 +1312,72 @@ def test_a_failed_apply_still_charges_every_attempt_and_marks_none_resolved(
 
     with engine.connect() as conn:
         still_open = unresolved_seeds(
-            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES,
+            max_attempts=max_attempts, limit=10,
         )
-    assert [s.id for s in still_open] == [seed_id], "the seed must not be closed by a failed apply"
-    assert still_open[0].attempts == 1, "the attempt must still be charged"
+    assert [s.id for s in still_open] == [seed_id], (
+        "a resolved seed rolled back at the ceiling must stay selectable, not age out forever"
+    )
+    assert still_open[0].attempts == max_attempts - 1, "it must not have been charged"
+
+
+def test_a_failed_apply_stays_the_primary_cause_when_seed_persistence_also_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The apply failure must not be masked by a persistence failure beside it.
+
+    A `finally` that itself raises REPLACES the apply exception, so the runner would report the
+    persistence failure's repr, mislabelled, and the broken apply would be invisible. This
+    underpins BLOCKER 1's "loud" guarantee: a resolved-but-unapplied seed is re-queued uncharged
+    ONLY because the apply failure is reported every run. Here BOTH halves fail; the apply
+    exception must win, with the persistence failure attached as its cause rather than substituted.
+    """
+    from boardwatch.lanes.admission import CompanyBudget
+    from boardwatch.pipeline import runner as runner_mod
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+    from boardwatch.store.seed_queries import record_seeds, unresolved_seeds
+
+    engine = get_engine(tmp_path / "both.db")
+    ensure_schema(engine)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn, (HIREOLOGY_URL,), discovered_by="jsonld", run_id=run,
+            now=datetime(2026, 9, 2, 12, 0),
+        )
+    with engine.connect() as conn:
+        seed_id = unresolved_seeds(
+            conn, hosts=SEED_HOSTS, host_suffixes=SEED_HOST_SUFFIXES, max_attempts=3, limit=10
+        )[0].id
+
+    result = LaneResult(
+        snapshots=(_hireology_snapshot(seed_id),),
+        tally=AcquisitionTally(),
+        seed_attempts=((seed_id, True),),
+    )
+
+    def _apply_explode(*_a: object, **_k: object) -> None:
+        raise RuntimeError("APPLY failed")
+
+    def _persist_explode(*_a: object, **_k: object) -> None:
+        raise RuntimeError("PERSIST failed")
+
+    monkeypatch.setattr(runner_mod, "apply_board", _apply_explode)
+    monkeypatch.setattr(runner_mod, "record_seed_attempt", _persist_explode)
+
+    class _Lane:
+        name = "jsonld"
+
+    with pytest.raises(RuntimeError, match="APPLY failed") as excinfo:
+        runner_mod._apply_lane(
+            engine,
+            _Lane(),  # type: ignore[arg-type]
+            runner_mod._FetchedLane(result=result, budget=CompanyBudget(10), fetch_seconds=0.0),
+            run,
+        )
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert "PERSIST failed" in str(excinfo.value.__cause__), "the persist failure must be attached"
 
 
 @pytest.mark.parametrize(
@@ -1245,12 +1420,15 @@ def test_no_authored_fixture_invents_a_field_no_vendor_sends(
 def test_every_field_this_lane_reads_is_present_exactly_where_it_was_measured(
     vendor: str, posting: dict[str, object]
 ) -> None:
-    """The other half, and the one the traps actually turn on.
+    """The presence/absence half, and the one THIS test turns on.
 
-    Every trap this lane defends is a PRESENCE-OR-ABSENCE fact: `identifier` absent on three
-    vendors, `qualifications`/`responsibilities` present only on iCIMS, `url` present and
-    disagreeing with its own page on two. A fixture that quietly gained an `identifier` where the
-    vendor sends none would make the URL-parsing guard pass for the wrong reason.
+    This test pins the PRESENCE-OR-ABSENCE traps: `identifier` absent on three vendors,
+    `qualifications`/`responsibilities` present only on iCIMS, `url` present on two. A fixture that
+    quietly gained an `identifier` where the vendor sends none would make the URL-parsing guard
+    pass for the wrong reason. The VALUE and SHAPE traps -- an off-by-one `identifier.value`,
+    escaped-HTML descriptions, a bare-string `hiringOrganization`, a `url` disagreeing with its own
+    page -- are pinned by the authored fixtures and the behavioural tests above; a key-name check
+    cannot see them.
     """
     measured = set(MEASURED_JSONLD_KEYS[vendor])
     for field in ("identifier", "url", "qualifications", "responsibilities", "description"):

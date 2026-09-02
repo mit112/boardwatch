@@ -160,10 +160,10 @@ somewhere.
   knowable only from `hiringOrganization.name` in the body, which is to say only AFTER the
   request. `Lane.collect` requires `admits` to be asked once per `(provider, slug)` BEFORE any
   body is fetched, and there is no identity to ask about. The measured cost of the exclusion is
-  ZERO gate-1 postings: the one Paylocity posting in the miss set (Bectran) is `active: false` in
-  the lists AND its URL was measured redirecting to `JobNotFound`. Ten live list URLs are given up
-  with it. Re-admit it when a tenant is recoverable from the URL, not by keying a company on a
-  display name.
+  ZERO gate-1 postings: the TWO Paylocity miss URLs the recon re-probed (4452707, 4461465) had
+  both closed to `JobNotFound` since job-apps' cohort (tierD-recon note 1), so neither is a live
+  posting this exclusion forgoes. Ten live list URLs are given up with it. Re-admit it when a
+  tenant is recoverable from the URL, not by keying a company on a display name.
 * **Jobvite.** Its `description` was measured at **87,545 chars -- the whole rendered page,
   base64 images and all, not a JD**. Its two miss URLs 404. A catalog entry would ship a lane
   whose body for that vendor is a page dump into the frozen JD that every `INELIGIBLE` span is
@@ -688,12 +688,13 @@ class JsonLdLane:
         requests that have not been paid for yet rather than discarding ones that have.
 
         **EVERY SEED THAT HAS ITS TURN IS CHARGED, INCLUDING ONE THAT CRASHES THE RESOLVER.** The
-        per-seed body below cannot raise: an unexpected failure is isolated, counted and charged
-        like any other non-resolution. Letting it escape would discard not just that seed but
-        EVERY attempt already recorded this run, because the runner only ever charges what a
-        returned `LaneResult` carries -- so a single malformed page would leave a whole run's
-        seeds at the same attempt count, to be re-fetched at one GET each, every run, forever.
-        That is the drain failing silently, which is the one failure this queue exists to prevent.
+        per-seed body below cannot raise: an unexpected failure is isolated and charged like any
+        other non-resolution, and reported to the runner through `resolver_errors` as a visible
+        lane error rather than disguised as an empty extraction. Letting it escape would discard
+        not just that seed but EVERY attempt already recorded this run, because the runner only
+        ever charges what a returned `LaneResult` carries -- so a single malformed page would leave
+        a whole run's seeds at the same attempt count, to be re-fetched at one GET each, every run,
+        forever. That is the drain failing silently, which is the one failure this queue prevents.
         """
         discovered = self._discover(fetcher)
 
@@ -705,6 +706,11 @@ class JsonLdLane:
         )
         tally = AcquisitionTally()
         attempts: list[tuple[int, bool]] = []
+        # Seed ids the runner must close WITHOUT charging (redundant aliases resolved without a
+        # GET), and unexpected-crash reports it must surface as a visible lane error. Both are
+        # carried out rather than acted on here: the store write is the serial apply phase's.
+        uncharged: list[int] = []
+        resolver_errors: list[str] = []
         # `(provider, slug) -> posting id -> the seeds naming that posting`. TWO LEVELS, because
         # two seed URLs can name ONE posting: `lane_seeds` is unique on URL, not on identity, and
         # three vendors here serve one posting at two path shapes -- `/jobs/{id}` and
@@ -759,7 +765,7 @@ class JsonLdLane:
                         tally.record("not_attemptable")
                     continue
                 posting, employer, spent = self._resolve_aliases(
-                    fetcher, aliases, tally, attempts, budget=remaining
+                    fetcher, aliases, tally, attempts, uncharged, resolver_errors, budget=remaining
                 )
                 remaining -= spent
                 if posting is None:
@@ -797,6 +803,8 @@ class JsonLdLane:
             tally=tally,
             discovered_seeds=discovered,
             seed_attempts=tuple(attempts),
+            uncharged_resolved=tuple(uncharged),
+            resolver_errors=tuple(resolver_errors),
         )
 
     def _resolve_aliases(
@@ -805,6 +813,8 @@ class JsonLdLane:
         aliases: list[SeedPosting],
         tally: AcquisitionTally,
         attempts: list[tuple[int, bool]],
+        uncharged: list[int],
+        resolver_errors: list[str],
         *,
         budget: int,
     ) -> tuple[RawPosting | None, str, int]:
@@ -815,9 +825,11 @@ class JsonLdLane:
         discards a real posting AND ages both seeds out over three runs, which is the defect that
         replaced a pre-fetch duplicate suppression here.
 
-        A seed whose alias already resolved is charged RESOLVED WITHOUT A REQUEST. That is not a
-        convenience: `resolved_at` is what retires a row permanently, and the posting this seed
-        names demonstrably was produced this run, so closing it is true. Charging it unresolved
+        A seed whose alias already resolved is closed RESOLVED WITHOUT A REQUEST, and it is added to
+        `uncharged` so the runner does NOT move its attempt counter. That is not a convenience:
+        `resolved_at` is what retires a row permanently, and the posting this seed names
+        demonstrably was produced this run, so closing it is true; but it cost no GET, so charging
+        the fetch ceiling for it would be counting work that never happened. Charging it unresolved
         instead would leave it to be fetched again next run for a posting the store already holds.
         """
         employer = ""
@@ -829,13 +841,15 @@ class JsonLdLane:
                     tally.record("not_attemptable")
                 return None, employer, spent
             spent += 1
-            posting, found = self._resolve(fetcher, seed, tally)
+            posting, found = self._resolve(fetcher, seed, tally, resolver_errors)
             employer = employer or found
             attempts.append((seed.seed_id, posting is not None))
             if posting is not None:
-                # Every remaining alias names a posting this run just produced. Closed, unfetched.
+                # Every remaining alias names a posting this run just produced. Closed, unfetched,
+                # and NOT charged: it never spent a request.
                 for redundant in aliases[index + 1 :]:
                     attempts.append((redundant.seed_id, True))
+                    uncharged.append(redundant.seed_id)
                 return posting, employer, spent
         return None, employer, spent
 
@@ -844,8 +858,8 @@ class JsonLdLane:
 
         `active is not True` rather than falsiness, matching `github_lists.discover` exactly: the
         field is a real bool on 100% of records, so a truthy string would be the contract moving
-        rather than an open posting. It is not a nicety -- the one Paylocity posting in the gate-1
-        miss set is `active: false` here, and its URL was separately measured serving
+        rather than an open posting. It is not a nicety -- a Paylocity miss posting is
+        `active: false` in the lists here, and its URL was separately measured serving
         `JobNotFound`.
 
         Deduplicated in first-seen order. `record_seeds` is conflict-safe and would absorb a
@@ -868,7 +882,11 @@ class JsonLdLane:
         return tuple(found)
 
     def _resolve(
-        self, fetcher: Fetcher, seed: SeedPosting, tally: AcquisitionTally
+        self,
+        fetcher: Fetcher,
+        seed: SeedPosting,
+        tally: AcquisitionTally,
+        resolver_errors: list[str],
     ) -> tuple[RawPosting | None, str]:
         """One GET, one JSON-LD read, one quality verdict. Returns the posting and the employer.
 
@@ -888,7 +906,9 @@ class JsonLdLane:
 
         **THIS FUNCTION DOES NOT RAISE.** Everything after the response is wrapped: a vendor page
         that breaks the parser is one seed's problem, and the alternative is losing every attempt
-        already charged this run. Fetch failures stay typed and are classified above it.
+        already charged this run. Fetch failures stay typed and are classified above it, and an
+        UNEXPECTED exception is recorded into `resolver_errors` for the runner to report -- NOT
+        folded into a content outcome, which would disguise a code defect as an empty page.
         """
         try:
             result = fetcher.get(
@@ -901,12 +921,14 @@ class JsonLdLane:
             return None, ""
         try:
             return self._read(result.content, seed, tally)
-        except Exception:  # noqa: BLE001 - one unreadable page must not discard the run's charges
-            # `extracted_empty` is the catalog's name for "a response arrived and extraction
-            # produced nothing substantive", which is exactly what a crashed parse produced. The
-            # taxonomy stays honest because the fetch half above is typed separately: nothing
-            # that failed to ARRIVE can land here.
-            tally.record("extracted_empty")
+        except Exception as exc:  # noqa: BLE001 - one unreadable page must not discard the charges
+            # An UNEXPECTED exception, so a real code defect: `_read` returns explicitly for every
+            # EXPECTED content failure (`NoJobPosting`, a body rejection, an empty title, residual
+            # markup), so nothing that merely produced an empty extraction reaches here. Recording
+            # `extracted_empty` would disguise the defect as "a response arrived and extraction
+            # found nothing" and age a real seed out on a false claim. Carried out as a typed,
+            # visible lane error instead; the seed is still charged unresolved (`posting is None`).
+            resolver_errors.append(f"{seed.url}: {exc!r}")
             return None, ""
 
     def _read(
