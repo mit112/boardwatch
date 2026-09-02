@@ -248,3 +248,49 @@ def test_host_port_form_still_reaches_the_url_branch() -> None:
 
 def test_colon_in_slug_still_splits_on_the_first_colon() -> None:
     assert parse_board_target("greenhouse:a:b") == ("greenhouse", "a:b")
+
+
+# --------------------------------------------------------------------------------------
+# `UnregisteredBoardHost` promises a WELL-FORMED url whose host is merely unregistered.
+# A lane reads that promise as licence to record the host as a tier-D tenant seed, so
+# anything else reaching the subclass becomes an unresolvable row nothing can drain.
+# --------------------------------------------------------------------------------------
+
+def test_a_trailing_dns_root_dot_still_matches_the_registered_provider() -> None:
+    """`boards.greenhouse.io.` resolves to exactly the same host as `boards.greenhouse.io`.
+
+    Without normalisation the registered provider fails to match and the value falls all the way
+    through to `UnregisteredBoardHost` — which is a lane's signal to file it as a tier-D tenant.
+    ONE character would put a greenhouse board into the tier-D seed queue.
+    """
+    assert parse_board_target("https://boards.greenhouse.io./acme/jobs/123") == (
+        "greenhouse",
+        "acme",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://",                      # no host at all
+        "not a url at all",              # urlsplit assigns a space-containing "hostname"
+        "https://a.test:99999/x",        # port out of range; `.port` raises only when touched
+        "https://-leading-hyphen.test/x",
+    ],
+)
+def test_a_malformed_value_takes_the_BASE_class_and_is_never_seedable(value: str) -> None:
+    """Malformed is a parse failure, not an as-yet-unregistered vendor.
+
+    Asserted as `not isinstance(..., UnregisteredBoardHost)` rather than `== UnknownBoardURL`,
+    because the subclass IS an `UnknownBoardURL` — a bare `pytest.raises(UnknownBoardURL)` passes
+    for the subclass too and would be vacuous here.
+    """
+    with pytest.raises(UnknownBoardURL) as caught:
+        parse_board_target(value)
+    assert not isinstance(caught.value, UnregisteredBoardHost)
+
+
+def test_a_well_formed_unregistered_host_still_reaches_the_subclass() -> None:
+    """The other direction: narrowing must not swallow the case the subclass exists for."""
+    with pytest.raises(UnregisteredBoardHost):
+        parse_board_target("https://careers.hireology.com/hireology2/2855936/description")

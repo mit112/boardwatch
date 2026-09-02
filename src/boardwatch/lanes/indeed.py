@@ -504,6 +504,14 @@ def _is_addressable_url(value: str) -> bool:
     hostname = parsed.hostname
     if parsed.scheme not in ("http", "https") or not hostname:
         return False
+    # RAW whitespace anywhere in the value, not just a space in the hostname. `urlsplit` follows
+    # WHATWG and STRIPS tabs and newlines before parsing, so `https://ex<TAB>ample.com/a` yields a
+    # perfectly valid `example.com` -- and the value SEEDED is the original string, tab included.
+    # `store.seed_queries.seed_host` re-parses it and strips them again, so routing agrees; what
+    # does not agree is `lane_seeds.url`, which would carry a URL no log line or human can match
+    # against the one actually fetched.
+    if any(ch.isspace() for ch in value):
+        return False
     return " " not in hostname
 
 

@@ -276,7 +276,7 @@ UNIDENTIFIABLE_TENANT_SEED_HIT = Hit(
 
 # A REGISTERED provider's own bare shortlink, which carries no org and so no extractable slug
 # (`WorkableProvider.slug_from_path` returns None for it). `parse_posting_target` raises
-# `UnknownBoardURL`, the SAME exception class an unregistered host raises -- this is the trap a
+# `UnknownBoardURL`, the same `UnknownBoardURL` BASE class an unregistered host raises -- this is the trap a
 # review caught: a client that seeded on any `UnknownBoardURL` would file a KNOWN provider's
 # posting into the tier-D queue. Must NOT be seeded.
 KNOWN_PROVIDER_UNROUTABLE_SEED_HIT = Hit(

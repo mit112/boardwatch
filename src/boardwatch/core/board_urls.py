@@ -5,7 +5,8 @@ change here."""
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
+import re
+from urllib.parse import ParseResult, urlparse
 
 from boardwatch.providers.registry import (
     PROVIDER_NAMES,
@@ -94,7 +95,12 @@ def parse_board_target(value: str) -> Target:
         # lane and the GitHub-lists discovery, and in the last case it aborts a whole 20,000-record
         # run. `UnknownBoardURL` already subclasses ValueError, so no caller's except widens.
         raise UnknownBoardURL(f"unparseable board target {value!r}: {exc}; {_SUPPORTED}") from exc
-    host = (parsed.hostname or "").lower()
+    # ONE trailing dot is the DNS ROOT and `boards.greenhouse.io.` resolves to exactly the same
+    # host as `boards.greenhouse.io`. Stripped BEFORE `_match_host`, because otherwise a
+    # registered provider fails to match and falls all the way through to `UnregisteredBoardHost`
+    # -- which is a lane's signal to file the URL as a tier-D tenant seed. A single character
+    # would put a greenhouse board into the tier-D queue.
+    host = (parsed.hostname or "").lower().removesuffix(".")
     parts = [p for p in parsed.path.split("/") if p]
     matched = _match_host(host)
     if matched is not None:
@@ -115,7 +121,47 @@ def parse_board_target(value: str) -> Target:
     # exists to name. Same message as the branch above on purpose -- nothing about the TEXT
     # distinguishes the two cases to a human reader, only the exception class does, and every
     # existing caller matching on this message keeps matching it unchanged.
+    #
+    # **The subclass promises a WELL-FORMED absolute URL whose host is merely unregistered**, and
+    # a lane reads it as licence to record that host as a tier-D tenant seed. `urlsplit` is
+    # permissive: `https://` yields no host at all, and `not a url at all` yields a "hostname"
+    # containing spaces, both of which reached the subclass and would have been seeded as tenants
+    # that can never resolve. A malformed value is a parse failure, so it takes the BASE class --
+    # the same class, and the same message, those inputs produced before the subclass existed.
+    if not _is_hostname(host) or not _has_usable_port(parsed):
+        raise UnknownBoardURL(f"unrecognized board target {value!r}; {_SUPPORTED}")
     raise UnregisteredBoardHost(f"unrecognized board target {value!r}; {_SUPPORTED}")
+
+
+# A conservative DNS name: labels of alphanumerics, hyphen and underscore, 253 characters at most.
+# Deliberately narrower than what `urlsplit` accepts -- it exists to decide whether a host is
+# fit to be RECORDED as a seed, not whether some client could dial it. Rejecting a legitimate
+# oddity costs the base exception class instead of the subclass, which every existing caller
+# already handles identically; accepting a malformed one puts an unresolvable row in `lane_seeds`
+# that nothing can ever drain.
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?"
+    r"(\.[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?)*$"
+)
+
+
+def _is_hostname(host: str) -> bool:
+    """Is this fit to be recorded as a seed's routing host?"""
+    return bool(host) and _HOSTNAME_RE.match(host) is not None
+
+
+def _has_usable_port(parsed: ParseResult) -> bool:
+    """`ParseResult.port` validates LAZILY and raises on an out-of-range or non-numeric port.
+
+    Reached only on the failure path, so the cost is nil -- but unreached, an invalid port
+    tracebacks out of whichever caller later touches it rather than raising the `UnknownBoardURL`
+    every caller here is written to catch.
+    """
+    try:
+        _ = parsed.port
+    except ValueError:
+        return False
+    return True
 
 
 def _normalize_slug(provider: str, slug: str) -> str:

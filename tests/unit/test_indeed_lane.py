@@ -524,7 +524,7 @@ def test_two_hits_naming_the_same_unresolved_tenant_url_seed_it_once(tmp_path):
 def test_a_known_providers_url_with_no_extractable_slug_is_not_seeded(tmp_path):
     """THE BLOCKER TRAP. `apply.workable.com/j/ABC123` is Workable's own bare shortlink -- a
     REGISTERED provider -- and `parse_posting_target` refuses it with `UnknownBoardURL` because
-    it carries no org, the SAME exception class an unregistered host raises. A client keying its
+    it carries no org, the same `UnknownBoardURL` BASE class an unregistered host raises. A client keying its
     seed decision on that exception alone would file a known provider's posting into the tier-D
     queue; only `UnregisteredBoardHost` -- a distinct, narrower exception -- may seed.
     """
