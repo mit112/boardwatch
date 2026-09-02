@@ -21,116 +21,99 @@
 
 ## Current standing
 
-### Session 2026-09-02b: the one-time harvest RAN, the seed drain is CONFIRMED, and hiring.cafe is no longer unexplained
+### Session 2026-09-02c: the board sample is ADMITTED, `click.appcast.io` is REFUSED, and a figure the docs carried was wrong
 
-Three things closed this session and **none of them needs re-deriving**. Numbers: `METRICS.md`
-(run 144). Reasoning: **D-425** (hiring.cafe), **D-426** (the seed report).
+Reasoning: **D-428**. Numbers: `METRICS.md` (Session 2026-09-02c). **No run** — the 04:00 tick
+produces run 145, the first run that reads any of this.
 
-**1. D-423's ONE-TIME HARVEST IS DONE.** `jobapps` went **432 → 1,789 attempted** and
-**237 → 1,778 resolved** (99.4%), against 1,785 predicted from the lane's own `_records_under`.
-**The honest yield is new postings, not records attempted: 1,973 first seen in run 144, 1,495 of
-them jobapps-provenance**, so 283 were already held and deduped. Companies **1,364 → 2,122**,
-watched 390 → **403**. Run took **21m54s** (`--no-scan` skips only the board stage).
+**1. THE OWNER'S BOARD-ADMISSION CALL IS TAKEN AND APPLIED.** Asked with all three options priced;
+the owner chose **a 50-board sample**, rejecting `grnh.se`-first, both-levers, and hold-until-09-09.
+Applied via `companies import --verify` (D-291 decision 2): **watched 403 → 453**, rows
+2,122 → 2,166, `0 skipped / 0 empty / 0 recased`. **Verified by counting the store, not by the CLI's
+"Imported 50 watches"** — the +44/+6 split reconciles exactly against 44 addable / 6 known-unwatched.
+Sample is **RANDOM on pinned seed 20260902, deliberately not top-by-yield**, carrying 79 in-window
+postings at **+2.7 min/run**. Reversal: `companies-prehcsample-20260902-183019.csv`.
+**READ THE YIELD OVER RUNS 145-147**, then decide the remaining 282 boards.
 
-**Both temporary levers are reverted, verified two ways:** `git status` clean, and `config.toml`
-**byte-identical** to its pre-harvest backup — 133 lines with all 96 comment lines intact.
-`jobapps_queue_dir` reads `None` and `linkedin` is out of `_DIRECT_APPLY_SOURCES`. **Nothing about
-the harvest persists**, which is what D-423 decided: no mechanism, ingesting once IS the record.
+**2. D-425's "471 BOARDS" WAS POSTINGS. It is 471 postings across 332 DISTINCT BOARDS** (293
+never-seen employers / 377 postings; 39 known-unwatched / 94). Budget is charged per BOARD, so full
+admission is **~17.7 min/run, not the ~25 min this file and the handoff both carried**, and yield is
+**1.42 in-window postings per board**. The lever is cheaper AND weaker than recorded; neither
+correction was visible while the unit was a posting.
 
-**2. THE SEED DRAIN WORKS — D-422's open question is CLOSED.** Run 144: **37 seeds attempted, 22
-resolved**, all `last_attempt_run_id = 144`, against a table that held 773 rows and zero attempts.
-Run 143's `jsonld → 0 attempted` **was** lane ordering, exactly as D-422 read it. **And the
-CROSS-LANE handoff is proven, which is what D-416 was actually for: 10 of the 37 were discovered by
-`indeed` and drained by `jsonld`.** Do not re-investigate the drain.
+**3. `click.appcast.io` IS REFUSED AS A RESOLVER TARGET, ON MEASUREMENT.** It was the largest
+unclaimed seed host (144) and a candidate to outrank `grnh.se`. It does not. **It redirects in
+JAVASCRIPT**, so an HTTP redirect-follower reads `200 hops=0` — the first pass's "0 of 12 resolve"
+measured THE PROBE, not the host. Extracting the JS target: **40 of 40, 0 errors**, but only
+**1 of 40 (2.5%)** parses to a supported board; the 144 seeds collapse onto ~6 employers
+(CVS 26, Cox 9) on the **same unsupported-adapter tail D-422 and D-425 already named** — a third
+instrument naming one missing adapter class. **Do not build an appcast resolver.**
 
-**3. HIRING.CAFE'S 17% IS A BOARD-FLEET GAP, NOT A LANE DEFECT (D-425).** This was the one
-**UNEXPLAINED** row in D-424's retirement table and it is now answered. Of 1,634 absent postings:
+**4. DISK RECLAIMED: 5.2 GB free at 98% → 11 GB at 95%.** The 5.52 GB
+`boardwatch.db.bak-pretierA-*` was deleted on the owner's call. It was frozen at **run 143**, so
+restoring it would have discarded run 144's harvest — it was never a usable rollback target. The
+CSVs are the artifacts that actually reverse an admission.
 
-| why absent | n | share |
-|---|---:|---:|
-| **host with NO adapter** | **1,123** | **68.7%** |
-| **parses to a SUPPORTED provider, employer never seen** | **377** | **23.1%** |
-| known employer, unwatched board | 94 | 5.8% |
-| **already on a WATCHED board** | **39** | **2.4%** |
+**5. THE PEER'S WORK LANDED.** `boardwatch-d3` shipped the review app's Report action and D-427 in
+`08d7b957` (its gate green, 9,188 passed, 95.52%). CI on the combined main `27a23a6a` came back
+GREEN. The two sessions serialised their DECISIONS/index writes by message rather than colliding.
 
-**Only 2.4% is a coverage miss on a board we already watch.** 471 (28.8%) are one admission away;
-the rest need an adapter that does not exist. Only 35 of the 1,123 are a URL-form gap on a vendor we
-do support. **The unsupported tail — paylocity, dayforce, eightfold, Oracle HCM, ADP — is the SAME
-list D-422 found sitting unclaimed in `lane_seeds`**, so two independent instruments name one
-missing adapter class. **Nothing is proposed**; D-417's caveat stands (471 admissions at 3.2s/board
-is ~25 min on every future run, forever).
+### Session 2026-09-02b (condensed — full detail in D-423/425/426 and METRICS run 144)
 
-**4. `boardwatch seeds` SHIPPED (D-426)** — the report STATE carried as owed. First reading:
-**909 of 1,001 unresolved seeds (90.8%) across 249 hosts are claimed by nothing**, up from D-422's
-664/773 because `indeed` produces and only `jsonld` consumes. Largest: `click.appcast.io` 144,
-**`grnh.se` 122**, `indeed.com` 68 (circular), `ttigroup.com` 50.
+**All four items are CLOSED and none needs re-deriving.**
 
-**5. SHIPPED AND PUSHED: `cb7497ca..f1e06f0e`, 6 commits, CI GREEN.** `make check` exit 0 — 9,181
-passed, 4 xfailed, 95.53% coverage. CI on the two previously-unverified commits also came back green,
-so nothing is outstanding there.
+1. **D-423's ONE-TIME HARVEST RAN** (run 144, 21m54s, exit 0): `jobapps` 432 → **1,789 attempted**,
+   237 → **1,778 resolved**; honest yield **1,495 new postings**; companies 1,364 → 2,122.
+   **Both temporary levers reverted and verified two ways** (clean tree; `config.toml` byte-identical
+   to its pre-harvest backup). **The backlog is drained — do not harvest again.**
+2. **THE SEED DRAIN IS CONFIRMED end to end** — 37 attempted / 22 resolved, and **10 of the 37 were
+   discovered by `indeed` and drained by `jsonld`**, the first production evidence of D-416's
+   cross-lane handoff. D-422's open question is CLOSED. Do not re-investigate.
+3. **HIRING.CAFE'S 17% IS A BOARD-FLEET GAP, NOT A LANE DEFECT (D-425).** Of 1,634 absent: 1,123
+   (68.7%) hosts with no adapter, 377 (23.1%) supported provider / employer never seen, 94
+   known-unwatched, **only 39 (2.4%) on a watched board**. Do not re-derive the decomposition.
+4. **`boardwatch seeds` SHIPPED (D-426).** 909 of 1,001 unresolved seeds (90.8%) across 249 hosts
+   are claimed by nothing. Largest: `click.appcast.io` 144 (**now refused, see above**),
+   `grnh.se` 122, `indeed.com` 68 (circular).
 
-**THE GATE WAS GREEN ON A BROKEN CUT, FOR THE SECOND TIME (D-426).** Two `/code-review` rounds found
-**eleven** findings the gate passed — including a metric that printed **`claimable -3 (133.3%)`** under
-a concurrent write, a report that counted REGISTERED rather than ENABLED resolvers (inverting its own
-purpose on a default install), a leak metric that drifted toward "healthy" exactly as the leak grew,
-and a **tracked `$BW/boardwatch.db`** no gate can see. The new code was ALREADY mutation-pinned when
-all four shipped. **Mutation-pinning proves the tests catch the bugs you imagined; it says nothing
-about one needing a second connection, a non-default config, or `git ls-files` to see.** Three of the
-first round's six findings lived exactly where a test file was MISSING — and coverage still read 95%.
-**Route consequential changes through a review as well as the gate.**
+**THE GATE WAS GREEN ON A BROKEN CUT, TWICE (D-426).** Two `/code-review` rounds found **eleven**
+findings a green gate passed, on code that was ALREADY mutation-pinned — a metric printing
+`claimable -3 (133.3%)` under a concurrent write, a report counting REGISTERED rather than ENABLED
+resolvers, a leak metric drifting toward "healthy" as the leak grew, and a tracked stray database no
+gate can see. Three of the first round's six sat where a test file was MISSING while coverage read
+95%. **Mutation-pinning proves the tests catch the bugs you imagined, and nothing more. Route
+consequential changes through a review as well as the gate.**
 
 ## Next action
 
-**0. DECIDE THE BOARD-ADMISSION SAMPLE FIRST — it is larger than the engineering below and needs NO
-code.** D-425 measured **471** hiring.cafe boards that are one admission away (377 employers never
-seen, 94 known-unwatched). That is ~5x `grnh.se`'s yield for zero new code, but D-417's caveat is
-unrefuted — LinkedIn's cap went 10 → 50 and bought ONE posting — and 471 boards at run 143's measured
-**3.2s/board** is ~25 min added to EVERY future run, forever. **Neither "all 471" nor "none" is the
-right move: admit a SAMPLE of ~50 and read the yield over runs 145-147.** That settles D-417's caveat
-with data instead of argument, costs ~3 min/run to find out, and is reversible by the same
-`companies-pretierA-*.csv` artifact the tier-A admission already used. **Owner's call** — it reverses
-nothing, but it spends run budget permanently. Both levers below compete for that same budget, so
-building the smaller one first is backwards.
+**1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** The
+sample is ADMITTED and armed (D-428; watched 403 → 453). **This is the only thing runs 145-147 are
+for, and it is spoiled by arming a second board lever in the same window** — that is why the owner
+rejected "both". Population: 332 boards / 471 postings, **1.42 in-window postings per board**;
+the remaining 282 cost ~15 min/run. Reversal: `companies-prehcsample-20260902-183019.csv`.
 
-**1. FOLLOW `grnh.se` REDIRECTS INTO THE EXISTING GREENHOUSE HANDLER.** **122 seeds** now (was 109),
-Greenhouse's own shortener, and `parse_board_target` already accepts both
-`boards.greenhouse.io/<slug>` and `job-boards.greenhouse.io/<slug>`, so a resolved redirect lands in
-a handler that exists. **No new ATS adapter and no vendor-posture question.**
+**2. `grnh.se` RESOLVER — APPROVED TO BUILD, AND ARMING IS A SEPARATE CALL.** The premise is MEASURED: 12 of 12 seeds followed their
+redirect to a URL `parse_board_target` accepts, 0 misses / 0 errors, yielding **9 distinct greenhouse
+boards from 12 seeds** (~1.3 seeds/board, so 122 seeds ≈ 90 boards); **0 of the 9 already watched,
+6 absent from `companies` entirely** — board-fleet growth, not re-discovery. `parse_board_target`
+already accepts `boards.greenhouse.io/<slug>` and `job-boards.greenhouse.io/<slug>`, so no new ATS
+adapter is needed. **ARMING IS THE OWNER'S CALL AND SHOULD WAIT FOR RUN 147** — ~90 boards is ~5
+min/run forever, and arming before the sample is read makes the two yields inseparable.
 
-**The premise is MEASURED, not assumed — 2026-09-02, 12 seeds sampled live:** **12 of 12 followed
-their redirect to a URL `parse_board_target` accepts** (0 misses, 0 errors), yielding **9 distinct
-greenhouse boards from 12 seeds** (~1.3 seeds per board, so 122 seeds is roughly 90 boards).
-**0 of the 9 are already watched and 6 are not in `companies` at all**, so this is board-fleet
-growth rather than re-discovery. Sample boards: `speechify` (4 seeds), `raft`, `rackner`, `grvty`,
-`twosixtechnologies`, `rfsmart`, `sharkninjaoperatingllc`, `fanaticscollectibles`,
-`skyepointdecisionsinc`.
-
-**What it still needs, and why it was NOT built this session:** a resolver that performs the redirect
-GET, which is new network-touching code plus lane registration and mocked-fetcher tests — a PR, not
-a config change. **Price it against D-417's caveat before arming**: ~90 new boards at run 143's
-measured **3.2s per board** is ~5 minutes added to every future run, forever.
-
-**2. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424), once Indeed has reached steady state. Three of
-the four inputs have now moved: the harvest is in, Indeed is armed and uncapped at 50, hiring.cafe is
+**3. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424), once Indeed has reached steady state. Three of
+the four inputs have moved: the harvest is in, Indeed is armed and uncapped at 50, hiring.cafe is
 diagnosed. **The residual is LinkedIn alone**, and that is a judgment about a population.
 
-**3. SET PER-SOURCE THRESHOLDS** (owner). The instrument exists and has two readings; the bar does
-not.
+**4. SET PER-SOURCE THRESHOLDS** (owner). The instrument exists and has two readings; the bar does not.
 
-**4. PROBE `click.appcast.io` BEFORE BUILDING ANY RESOLVER — at 144 seeds it is now LARGER than `grnh.se`** and nothing is known about it —
-an ad-click redirector, so one redirect-follow would reveal whether a board sits behind it. Cheap to
-answer, not yet answered.
+*(Closed since the last close: the board-admission call — TAKEN and applied, D-428.
+`click.appcast.io` — PROBED and REFUSED at 1 of 40; **do not build an appcast resolver**.)*
 
 ### Owed, and specifically NOT done
 
-- **A PEER SESSION (`boardwatch-d3`) HELD 20 UNCOMMITTED FILES IN THE SHARED TREE AT THIS CLOSE** —
-  `delivery/api.py`, `delivery/server.py`, `store/queue_state.py`, `web/*` and a regenerated bundle.
-  **The 04:00 tick runs this tree's EDITABLE venv, so uncommitted peer work IS the unattended run's
-  code.** Raised with them and with the owner; not this session's to land or revert. Their half-rebuilt
-  bundle also fails `generalization` in the shared tree (a tracked asset deleted on disk), which is why
-  this session's final gate ran in a throwaway worktree — that failure is theirs, not the code's.
-
-- **`grnh.se` redirect-following is NOT built.** Diagnosed and sized only.
+- **`grnh.se` redirect-following: BUILDING APPROVED by the owner 2026-09-02, ARMING IS NOT.**
+  Arming must wait for run 147 or it contaminates the board sample's reading — the two board
+  levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
 - **The recurring delivery `QueueConflictError` on posting 131368** fired again in run 144. In every
   run since 140 and still unfixed.
