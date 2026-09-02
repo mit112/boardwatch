@@ -603,3 +603,70 @@ class TestGuardedPatternsGuardEveryBranch:
         assert detect(role_gate._NOENG + r"\bfoo\(x\|y\)bar\b") is False
         assert detect(role_gate._NOENG + r"\b(?:foo|bar)\b") is False
         assert detect(r"\bunguarded\b|\banything\b") is False  # no prefix guard at all
+
+
+class TestSeniorityRankProvenance:
+    """D-412: `Vice President` (and `Head of`) do SENIORITY work inside the ROLE gate, not role
+    determination -- "Java Developer - Vice President" is a real software req; VP is a banking
+    GRADE stapled on top of it, not a business role redefining the job. The verdict stays
+    `not_swe` on purpose (a VP-ranked req is a genuine new-grad mismatch, an owner-defensible
+    OUTCOME) but the recorded REASON must no longer claim "not software" -- that claim is false
+    for a title carrying a real engineering signal. Expected strings are pinned as LITERALS,
+    not imported from `role_gate`'s own reason-format code, so a vacuous "test the constant
+    against itself" bug cannot hide here (this repo's own stated trap).
+    """
+
+    def test_vice_president_reason_names_a_rank_not_a_role(self) -> None:
+        verdict, reason = role_verdict("Java Developer - Vice President")
+        assert verdict == "not_swe"
+        assert reason == (
+            'executive/seniority rank in title, not a role determination '
+            '(matched "Vice President")'
+        )
+
+    def test_head_of_reason_names_a_rank_not_a_role(self) -> None:
+        verdict, reason = role_verdict("Head of Sales")
+        assert verdict == "not_swe"
+        assert reason == (
+            'executive/seniority rank in title, not a role determination '
+            '(matched "Head of")'
+        )
+
+    def test_vice_president_can_beat_a_real_software_signal_and_still_says_rank(self) -> None:
+        # The exact D-412 example: a real software signal ("Machine Learning Engineer") is
+        # present and the hard deny still wins the verdict (owner ruling), but the reason must
+        # not assert the false claim that the title itself is non-software.
+        verdict, reason = role_verdict("Machine Learning Engineer Vice President")
+        assert verdict == "not_swe"
+        assert "not software" not in reason
+        assert reason == (
+            'executive/seniority rank in title, not a role determination '
+            '(matched "Vice President")'
+        )
+
+    def test_genuine_business_hard_denies_are_unaffected(self) -> None:
+        # `chief ... officer` and bare `president` were deliberately NOT moved (D-412): these
+        # name the JOB itself, not a rank suffix, so "not software" stays true and the reason
+        # format is byte-for-byte what it was before the split.
+        assert role_verdict("Chief Technology Officer") == (
+            "not_swe",
+            'not software (matched "Chief Technology Officer")',
+        )
+        assert role_verdict("President") == ("not_swe", 'not software (matched "President")')
+
+    def test_bare_president_inside_vice_president_does_not_leak_the_old_reason(self) -> None:
+        # Regression guard for the exact bug this change nearly shipped with: bare `president`
+        # is a substring of "Vice President", so a naive ordering re-catches every VP title
+        # through the leftover business-hard pattern and silently undoes the split.
+        _, reason = role_verdict("Vice President, Enterprise Sales")
+        assert 'matched "President"' not in reason
+        assert 'matched "Vice President"' in reason
+
+    def test_hyphenated_vice_president_keeps_the_old_verdict_and_reason(self) -> None:
+        # `_DENY_SENIORITY_RANK`'s pattern requires whitespace ("vice\s+president"), same as the
+        # pre-D-412 combined regex did, so a hyphenated separator was ALREADY only caught by the
+        # bare `president` fallback before this change -- and must still be, unchanged, after it.
+        assert role_verdict("Vice-President of Engineering") == (
+            "not_swe",
+            'not software (matched "President")',
+        )

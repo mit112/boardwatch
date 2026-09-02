@@ -197,7 +197,33 @@ _DENY_BUSINESS_HARD: tuple[str, ...] = tuple([
     r"\b(office|facilities|operations)\s+(manager|coordinator|administrator)\b",
     r"\bteacher\b|\bprofessor\b|\btutor\b|\binstructor\b|\bcurriculum\b|\bfaculty\b",
     r"\b(ux|ui|visual|graphic|industrial|product)\s+design(er)?\b",
-    r"\bhead\s+of\b|\bchief\b.{0,30}\bofficer\b|\bvice\s+president\b|\bpresident\b",
+    # `head of`, `chief ... officer`, `vice president` and bare `president` moved OUT (D-412):
+    # see `_DENY_SENIORITY_RANK` and `_DENY_EXEC_ROLE_HARD` below.
+])
+
+# Executive/seniority-RANK modifiers, split out of `_DENY_BUSINESS_HARD` (D-412). "Vice
+# President" is a GRADE in banking title ladders, not a function -- "Java Developer - Vice
+# President" is a real software req, so a hard deny here is defensible but the audit trail
+# `role_verdict` recorded for it, "not software", is false. `head of` has the identical defect:
+# the matched span names no function of its own ("Head of Engineering" and "Head of Sales" match
+# the same three characters), so it would be exactly as false for the same reason. Kept apart from
+# `_DENY_BUSINESS_HARD` so `role_verdict` can give this bucket a reason that names a RANK, not a
+# role it never determined.
+_DENY_SENIORITY_RANK: tuple[str, ...] = tuple([
+    r"\bhead\s+of\b|\bvice\s+president\b",
+])
+
+# `chief ... officer` and bare `president` also moved OUT of `_DENY_BUSINESS_HARD`, but into
+# their OWN bucket rather than `_DENY_SENIORITY_RANK`: unlike a grade suffix, "Chief Technology
+# Officer" and company "President" name the JOB itself -- running a function or a company is not
+# IC engineering work, no matter what follows -- so "not software" is the true reason here, not a
+# provenance defect this change needs to fix. Checked as a SEPARATE, LATER pattern (not folded
+# back into `_DENY_BUSINESS_HARD`) because bare `\bpresident\b` is a substring of "Vice
+# President": checking it before `_DENY_SENIORITY_RANK` would re-catch every VP title through the
+# bare-president alternative and silently undo the split above. Checking it AFTER instead mirrors
+# what the single combined regex did pre-D-412 (leftmost-match handled the same overlap for free).
+_DENY_EXEC_ROLE_HARD: tuple[str, ...] = tuple([
+    r"\bchief\b.{0,30}\bofficer\b|\bpresident\b",
 ])
 
 # SOFT half: skipped whenever the title carries any software signal.
@@ -444,6 +470,8 @@ _DENY_SOFT = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in _DENY_BUSINESS_SOFT + _DENY_FAMILIES_SOFT
 )
+_DENY_SENIORITY = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_SENIORITY_RANK)
+_DENY_EXEC_ROLE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_EXEC_ROLE_HARD)
 
 
 def role_verdict(title: str) -> tuple[RoleVerdict, str]:
@@ -459,6 +487,26 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
         hard = pattern.search(title)
         if hard is not None:
             return "not_swe", f'not software (matched "{hard.group(0)}")'
+    # Checked immediately after `_DENY_HARD` -- the same position `_DENY_SENIORITY_RANK`'s
+    # patterns held before D-412 split them out -- so no title's verdict moves. The
+    # reason is worded differently ON PURPOSE: this bucket names a RANK the gate matched, not a
+    # role determination, so a `not_swe` here is auditable as "seniority collision", never
+    # confusable with a genuine "this is not a software role" veto.
+    for pattern in _DENY_SENIORITY:
+        rank = pattern.search(title)
+        if rank is not None:
+            return (
+                "not_swe",
+                f'executive/seniority rank in title, not a role determination '
+                f'(matched "{rank.group(0)}")',
+            )
+    # MUST run after `_DENY_SENIORITY`, not before: bare `president` is a substring of "Vice
+    # President", so checking it first would re-catch every VP title here instead (see the
+    # comment on `_DENY_EXEC_ROLE_HARD`). This ordering is what makes the split verdict-neutral.
+    for pattern in _DENY_EXEC_ROLE:
+        exec_role = pattern.search(title)
+        if exec_role is not None:
+            return "not_swe", f'not software (matched "{exec_role.group(0)}")'
     signal = _SIGNAL.search(title)
     if signal is None:
         # Soft denies apply only to titles with no software signal at all.
