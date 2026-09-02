@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { QueueRowItem } from "../components/QueueRowItem";
 import { ReviewReasonBadge } from "../components/ReviewReasonBadge";
 import type { ReviewReason } from "../api/types";
+import { queueRow } from "../test/rows";
 
 /*
  * The two requirement holds added with the delivery router's new gates. Both reach the page as
@@ -37,6 +39,21 @@ describe("the requirement-hold badges", () => {
     expect(container.textContent ?? "").toMatch(/states an experience requirement/i);
   });
 
+  // D-412 follow-up: `role_vetoed` used to hard-code "the role gate classified this title as
+  // not software", which is false whenever the veto actually fired on a seniority/executive
+  // phrase in a real software title ("Java Developer - Vice President"). Reinstating that copy
+  // would pass every OTHER assertion in this file (the label is still unique, still non-empty),
+  // so this guard exists specifically to catch that regression.
+  it("does not claim a role-vetoed lead is not software", () => {
+    const { container } = render(<ReviewReasonBadge reason="role_vetoed" showReason />);
+    screen.getByText("role vetoed");
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/not software/i);
+    // Rendered WITHOUT `detailReason`, so it falls back to this generic copy; on a real row the
+    // per-title evidence reaches the chip through `detailReason` (see `QueueRowItem`'s `Flags`).
+    expect(text).toMatch(/vetoed this title/i);
+  });
+
   it("gives every reason its OWN label, so no two holds read alike", () => {
     const reasons: ReviewReason[] = [
       "ineligible_verdict",
@@ -54,5 +71,48 @@ describe("the requirement-hold badges", () => {
     });
     expect(new Set(labels).size).toBe(reasons.length);
     expect(labels.every((label) => label.length > 0)).toBe(true);
+  });
+});
+
+describe("the role-vetoed compact row surfaces its evidence without a duplicate chip", () => {
+  // D-412 follow-up, the other half of the UI fix. On a `role_vetoed` row `off_target` is the SAME
+  // `role_verdict(title)` decision the `role vetoed` badge already renders, so a second `off target`
+  // chip would show one decision twice. The gate's per-title evidence — the exact phrase it matched
+  // — instead reaches the compact row through the `role vetoed` badge's tooltip (`detailReason`),
+  // and the `off target` chip is suppressed. Two failures are guarded: removing the suppression
+  // brings the duplicate chip back, and dropping the `detailReason` routing loses the evidence.
+  const offTargetReason =
+    'title matched the executive/seniority deny pattern (matched "Vice President")';
+  const renderRow = () =>
+    render(
+      <QueueRowItem
+        row={queueRow({
+          review_reason: "role_vetoed",
+          off_target: true,
+          off_target_reason: offTargetReason,
+        })}
+        rank={1}
+        selected={false}
+        active={false}
+        collapsing={false}
+        onSelect={() => undefined}
+        onApplied={() => undefined}
+        onSkip={() => undefined}
+      />,
+    );
+
+  it("suppresses the duplicate off-target chip", () => {
+    renderRow();
+    // `queryAllByText` returns [] rather than throwing, so this fails if the suppression is removed.
+    expect(screen.queryAllByText("off target")).toHaveLength(0);
+  });
+
+  it("carries the matched-phrase reason on the role-vetoed badge's tooltip", () => {
+    renderRow();
+    // The row renders its flags in both tiers, so the badge appears more than once. The matched
+    // span travels as the `role vetoed` badge's `title` tooltip — the compact row's whole audit
+    // trail. Dropping the `detailReason` routing (badge falls back to generic copy) fails this.
+    expect(screen.getAllByText("role vetoed").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle(offTargetReason).length).toBeGreaterThan(0);
   });
 });

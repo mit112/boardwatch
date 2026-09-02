@@ -26,7 +26,12 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
   },
   role_vetoed: {
     label: "role vetoed",
-    reason: "Held for review: the role gate classified this title as not software.",
+    // Neutral on purpose (D-412 follow-up): the veto can fire on a real software title where
+    // the matched span is a seniority/executive phrase ("Java Developer - Vice President"), not
+    // a genuine non-software determination. Naming the specific reason here would repeat
+    // whichever claim `role_verdict` made, correct or not -- the per-title detail lives in
+    // `off_target_reason`, not in this generic copy.
+    reason: "Held for review: the role gate vetoed this title.",
   },
   role_unconfirmed: {
     label: "role unconfirmed",
@@ -68,12 +73,25 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
  */
 export function ReviewReasonBadge({
   reason,
+  detailReason = null,
   showReason = false,
 }: {
   reason: ReviewReason | null;
+  detailReason?: string | null;
   showReason?: boolean;
 }) {
   if (reason == null) return null;
   const words = REASONS[reason];
-  return <Badge label={words.label} reason={words.reason} showReason={showReason} />;
+  // `detailReason` is the gate's per-title evidence (`off_target_reason`) for a `role_vetoed`
+  // row. Surfacing it HERE lets the single `role vetoed` chip carry that evidence, so the `off
+  // target` chip below can stay suppressed instead of rendering the same decision twice (D-412
+  // follow-up). It is safe to show directly now that `role_verdict` states only what the regex
+  // matched, never a false claim about the title; the generic copy is the fallback when absent.
+  return (
+    <Badge
+      label={words.label}
+      reason={detailReason ?? words.reason}
+      showReason={showReason}
+    />
+  );
 }

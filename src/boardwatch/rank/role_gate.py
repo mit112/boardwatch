@@ -197,6 +197,38 @@ _DENY_BUSINESS_HARD: tuple[str, ...] = tuple([
     r"\b(office|facilities|operations)\s+(manager|coordinator|administrator)\b",
     r"\bteacher\b|\bprofessor\b|\btutor\b|\binstructor\b|\bcurriculum\b|\bfaculty\b",
     r"\b(ux|ui|visual|graphic|industrial|product)\s+design(er)?\b",
+    # `head of`, `chief ... officer`, `vice president` and bare `president` moved OUT (D-412):
+    # see `_DENY_EXEC_RANK_HARD` below.
+])
+
+# Executive/seniority phrases, split out of `_DENY_BUSINESS_HARD` (D-412, revised after review
+# of 49c4d479). "Vice President" is a GRADE in banking title ladders, not a function -- "Java
+# Developer - Vice President" is a real software req, so a hard deny here is defensible but the
+# audit trail `role_verdict` recorded for it, "not software", was false.
+#
+# The first cut of this fix (49c4d479) split these four into TWO buckets: `head of`/`vice
+# president` got the new honest wording, while `chief ... officer`/bare `president` kept "not
+# software" on the theory that they "name the JOB itself ... no matter what follows". That theory
+# is FALSE -- "Java Developer, Office of the President" and "Java Developer, Office of the Chief
+# Technology Officer" are real software titles where the phrase names an ORGANIZATIONAL
+# QUALIFIER, not the person's role, and the regex has no context to tell the two apart. None of
+# these four patterns carries enough information to know whether it names the job or merely
+# qualifies one, so all four now share ONE honest reason describing the INSTRUMENT's limit, not
+# a claim about the posting: the gate matched an executive/seniority phrase and did not
+# distinguish whether that phrase names the role or merely qualifies one. ("Not a role
+# determination" -- this fix's own first wording -- was the SAME defect pointed the other way:
+# for a bare "Chief Technology Officer" the phrase IS the whole role, so asserting it is "not a
+# role determination" is its own false claim. Saying the gate did not distinguish is true either
+# way, because it is a statement about what the regex checked, not about what the title is.)
+#
+# Kept as ONE regex -- the pre-D-412 alternation, unchanged, only the reason text differs --
+# rather than two separately-looped patterns, on purpose: the two-loop split broke leftmost-match
+# precedence ("President and Vice President" used to report "President", matched first at
+# position 0, and instead reported "Vice President", because the whole first loop ran to
+# completion before the second loop got a turn regardless of which phrase occurred first in the
+# title). A single alternation scans by POSITION, not by which loop runs first, so unifying the
+# wording removes the two loops and the ordering bug has nothing left to happen to.
+_DENY_EXEC_RANK_HARD: tuple[str, ...] = tuple([
     r"\bhead\s+of\b|\bchief\b.{0,30}\bofficer\b|\bvice\s+president\b|\bpresident\b",
 ])
 
@@ -444,6 +476,7 @@ _DENY_SOFT = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in _DENY_BUSINESS_SOFT + _DENY_FAMILIES_SOFT
 )
+_DENY_EXEC_RANK = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DENY_EXEC_RANK_HARD)
 
 
 def role_verdict(title: str) -> tuple[RoleVerdict, str]:
@@ -459,6 +492,25 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
         hard = pattern.search(title)
         if hard is not None:
             return "not_swe", f'not software (matched "{hard.group(0)}")'
+    # Checked immediately after `_DENY_HARD` -- the same position `_DENY_EXEC_RANK_HARD`'s
+    # patterns held before D-412 split them out -- so no title's verdict moves. The reason names
+    # the DENY PATTERN the gate matched and the substring that matched it, and makes NO claim about
+    # what that substring means: the gate reads no context, so it cannot say whether the phrase
+    # names a role ("Chief Technology Officer"), merely qualifies one ("Java Developer, Office of
+    # the CTO"), or is incidental ("Survey Coordinator, Head of Household Study", where "Head of"
+    # names the study, not a rank). A literal statement about the INSTRUMENT is the only wording
+    # true for all three -- revised three times after review, because every wording that described
+    # the TITLE was false for one of them: "not software" (claims the title is non-technical),
+    # "not a role determination" (false for a bare CTO, where the phrase IS the whole role), and
+    # "executive/seniority phrase ... role from qualifier" (false for the incidental "Head of").
+    for pattern in _DENY_EXEC_RANK:
+        exec_rank = pattern.search(title)
+        if exec_rank is not None:
+            return (
+                "not_swe",
+                f'title matched the executive/seniority deny pattern '
+                f'(matched "{exec_rank.group(0)}")',
+            )
     signal = _SIGNAL.search(title)
     if signal is None:
         # Soft denies apply only to titles with no software signal at all.
