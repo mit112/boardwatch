@@ -499,3 +499,45 @@ job_dispositions = Table(
     ),
     Index("ix_job_dispositions_expires_at", "expires_at"),
 )
+
+
+# A posting URL one lane discovered and CANNOT resolve itself, kept so a resolver lane can read
+# it in a later run.
+#
+# It exists because tier-D vendors (Hireology, CareerPlug, Paylocity, JazzHR, Breezy, iCIMS on a
+# custom domain, Oracle HCM) are per-tenant with NO cross-tenant search, so an adapter is only
+# half a lane — the other half is where the tenant identifier comes from (D-413). The binding
+# constraint measured there is the SEED, not the adapter: of 39 tier-D misses only 6 have a
+# seeded posting URL and 18 have no seed at all. A discovering lane and a resolving lane
+# therefore cannot be the same lane and generally do not run in the same stage pass, which is
+# why this is a table and not a value passed between them.
+#
+# `url` is UNIQUE and the first discoverer keeps the row, the same rule and the same reason as
+# `upsert_lane_company`: rewriting `discovered_by` would make the store's own account of where
+# something came from a lie, and the prior value is unrecoverable once overwritten.
+#
+# `attempts` is the seed's own bound. A seed that no resolver can ever turn into a posting — an
+# expired requisition, a vendor that changed its markup — would otherwise cost one GET every run
+# forever, which is a cost leak with no drain. The RESOLVER owns the ceiling, not this table:
+# what belongs here is only the counter it reads.
+#
+# `resolved_at` is set rather than the row being deleted, matching `job_dispositions.reopened_at`
+# — draining a bucket must not erase the evidence that it held something.
+lane_seeds = Table(
+    "lane_seeds",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("url", Text, nullable=False),
+    Column("discovered_by", Text, nullable=False),
+    Column("first_seen_run_id", Integer, ForeignKey("runs.id"), nullable=False),
+    Column("first_seen_at", DateTime, nullable=False),
+    Column("attempts", Integer, nullable=False, server_default=text("0")),
+    Column("last_attempt_run_id", Integer, ForeignKey("runs.id"), nullable=True),
+    Column("last_attempt_at", DateTime, nullable=True),
+    Column("resolved_at", DateTime, nullable=True),
+    UniqueConstraint("url"),
+    # The resolver's read is "unresolved, under the attempt ceiling", so both columns are in the
+    # index and `resolved_at` leads: it is the selective half (every seed a resolver ever
+    # succeeds on leaves the candidate set permanently).
+    Index("ix_lane_seeds_resolved_at_attempts", "resolved_at", "attempts"),
+)

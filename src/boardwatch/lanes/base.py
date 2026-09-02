@@ -19,6 +19,8 @@ from typing import Protocol
 
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
+from boardwatch.core.settings import Settings
+from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.outcomes import AcquisitionTally
 
 
@@ -112,3 +114,31 @@ class Lane(Protocol):
         is about to discard.
         """
         ...
+
+
+@dataclass(frozen=True)
+class LaneContext:
+    """Everything one run can hand a lane factory, so the registry stays one row per lane.
+
+    This exists to remove a named wart. Before it, `LaneFactory` was `Callable[..., Lane]` —
+    `...`, so mypy checked no call site at all — and `_run_lanes` carried
+    `if name == LinkedInLane.name:` to pass that one factory a `rotation_index` keyword nothing
+    else took. Every lane that needed a value the previous ones did not would widen the signature
+    again and add a branch beside it, which is a shared registration surface that every
+    concurrent lane build has to edit and therefore conflict on.
+
+    A frozen dataclass instead: a new lane that needs a new per-run value adds a FIELD here and
+    reads it, and no existing factory, call site or signature moves. `LaneFactory` becomes
+    `Callable[[LaneContext], Lane]`, which mypy can actually check.
+
+    `rotation_index` is required and has NO DEFAULT, carried over verbatim from
+    `_linkedin_lane`'s own reasoning: a default of 0 is a silent-zero path — every caller that
+    forgot to pass one would draw the same cells of the hub matrix forever, the rotation would
+    never advance, and no test would go red, because the lane would still fetch, still report and
+    still look correct. Required means the one caller with a run row to derive it from has to
+    produce it.
+    """
+
+    settings: Settings
+    facets: LaneFacets
+    rotation_index: int

@@ -34,7 +34,13 @@ from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes import hiringcafe
-from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
+from boardwatch.lanes.base import (
+    CompanyAdmission,
+    LaneCompanySnapshot,
+    LaneContext,
+    LaneResult,
+    lane_snapshot,
+)
 from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.linkedin import search_urls
 from boardwatch.lanes.outcomes import AcquisitionTally
@@ -1210,8 +1216,9 @@ def test_only_the_lane_whose_provenance_can_retire_a_mined_facet_receives_one(
     facets = LaneFacets(profile=("registered nurse",), mined=("perioperative nurse",))
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
 
-    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](settings, facets, rotation_index=0)
-    hiringcafe_lane = runner_mod.LANE_FACTORIES["hiringcafe"](settings, facets)
+    ctx = LaneContext(settings=settings, facets=facets, rotation_index=0)
+    linkedin_lane = runner_mod.LANE_FACTORIES["linkedin"](ctx)
+    hiringcafe_lane = runner_mod.LANE_FACTORIES["hiringcafe"](ctx)
 
     assert linkedin_lane._search_facets == ("registered nurse", "perioperative nurse")
     assert hiringcafe_lane._search_facets == ("registered nurse",)
@@ -1238,8 +1245,8 @@ def test_the_hub_rotation_advances_PER_RUN_and_is_never_a_fixed_constant(
     """
     recorded: list[int] = []
 
-    def _factory(_settings: Settings, _facets: LaneFacets, *, rotation_index: int) -> StubLane:
-        recorded.append(rotation_index)
+    def _factory(ctx: LaneContext) -> StubLane:
+        recorded.append(ctx.rotation_index)
         return StubLane([])
 
     monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"linkedin": _factory})
@@ -1267,14 +1274,16 @@ def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
     too, and a test that only checked the nets would not see it.
     """
     lane = _linkedin_lane(
-        Settings(
-            data_dir=tmp_path,
-            config_dir=tmp_path,
-            lane_search_hubs=("Austin, TX",),
-            lane_hub_combos_per_run=99,
-        ),
-        LaneFacets(profile=("software engineer",), mined=("platform engineer",)),
-        rotation_index=0,
+        LaneContext(
+            settings=Settings(
+                data_dir=tmp_path,
+                config_dir=tmp_path,
+                lane_search_hubs=("Austin, TX",),
+                lane_hub_combos_per_run=99,
+            ),
+            facets=LaneFacets(profile=("software engineer",), mined=("platform engineer",)),
+            rotation_index=0,
+        )
     )
 
     assert lane._search_facets == ("software engineer", "platform engineer")

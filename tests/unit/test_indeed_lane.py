@@ -49,7 +49,7 @@ from boardwatch.cli.app import app
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes import indeed
-from boardwatch.lanes.base import Lane
+from boardwatch.lanes.base import Lane, LaneContext
 from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.indeed import (
     LANE_PROVIDER,
@@ -824,7 +824,13 @@ def test_the_lane_is_registered_but_off_by_default(tmp_path):
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
     assert "indeed" in LANE_FACTORIES
-    built = LANE_FACTORIES["indeed"](settings, LaneFacets(profile=("software engineer",)))
+    built = LANE_FACTORIES["indeed"](
+        LaneContext(
+            settings=settings,
+            facets=LaneFacets(profile=("software engineer",)),
+            rotation_index=0,
+        )
+    )
     assert isinstance(built, IndeedLane)
     # The factory's facets argument is asserted through the registry, not only on the
     # constructor: a registry row that dropped it would leave every test above green while the
@@ -843,7 +849,9 @@ def test_the_registry_hands_the_lane_its_configured_page_knobs(tmp_path):
         data_dir=tmp_path, config_dir=tmp_path,
         indeed_search_pages=4, indeed_results_per_page=25,
     )
-    built = LANE_FACTORIES["indeed"](settings, LaneFacets())
+    built = LANE_FACTORIES["indeed"](
+        LaneContext(settings=settings, facets=LaneFacets(), rotation_index=0)
+    )
 
     assert (built._search_pages, built._results_per_page) == (4, 25)
     # The defaults are the measured shape, so registering the lane moves nobody's request volume.
@@ -860,7 +868,11 @@ def test_the_lane_is_not_handed_the_mined_facets(tmp_path):
 
     settings = Settings(data_dir=tmp_path, config_dir=tmp_path)
     built = LANE_FACTORIES["indeed"](
-        settings, LaneFacets(profile=("software engineer",), mined=("staff engineer",))
+        LaneContext(
+            settings=settings,
+            facets=LaneFacets(profile=("software engineer",), mined=("staff engineer",)),
+            rotation_index=0,
+        )
     )
 
     assert built._search_facets == ("software engineer",)
