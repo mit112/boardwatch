@@ -24,6 +24,19 @@ class UnknownBoardURL(ValueError):
     """A value that is neither provider:slug nor a recognized board URL."""
 
 
+class UnregisteredBoardHost(UnknownBoardURL):
+    """The value names NO provider this repo registers at all -- not a malformed value, and not
+    a REGISTERED provider whose slug this particular value happens not to carry.
+
+    A subclass, not a sibling: every existing `except UnknownBoardURL` in this repo (`companies
+    add`, `init`, the hiring.cafe/jobapps/indeed lanes, GitHub-lists discovery) catches this one
+    unchanged, with the same message text at every OTHER raise site in `parse_board_target` --
+    only the "matched no provider at all" branch below raises it, so a caller that cares about
+    that distinction specifically (a lane deciding what to hand `lane_seeds`, D-413) can catch it
+    on its own, and every caller that does not care sees no behaviour change at all.
+    """
+
+
 _HOST_PROVIDER = host_provider_map()
 _HOST_SUFFIX_PROVIDER = host_suffix_provider_map()
 _SLUG_EXTRACTORS = slug_extractor_map()
@@ -94,7 +107,15 @@ def parse_board_target(value: str) -> Target:
         help_text = _SLUG_HELP.get(map_key)
         if help_text:
             raise UnknownBoardURL(f"cannot extract a board slug from {value!r}: {help_text}")
-    raise UnknownBoardURL(f"unrecognized board target {value!r}; {_SUPPORTED}")
+        # A REGISTERED provider, just not extractable from this value -- the same category as
+        # the help_text case above, one provider short of a courtesy message. Deliberately the
+        # base class: this value names a vendor this repo already has an adapter for.
+        raise UnknownBoardURL(f"unrecognized board target {value!r}; {_SUPPORTED}")
+    # No provider registers this host AT ALL, which is the one case `UnregisteredBoardHost`
+    # exists to name. Same message as the branch above on purpose -- nothing about the TEXT
+    # distinguishes the two cases to a human reader, only the exception class does, and every
+    # existing caller matching on this message keeps matching it unchanged.
+    raise UnregisteredBoardHost(f"unrecognized board target {value!r}; {_SUPPORTED}")
 
 
 def _normalize_slug(provider: str, slug: str) -> str:

@@ -94,12 +94,17 @@ and then silently killed. Two tiers only, the same two hiring.cafe uses.
 
 A THIRD DEREFERENCE TIER IS STILL NOT ADDED (D-414 choice 2) -- the URL a failed tier 1
 recovers is instead handed to `lane_seeds` (T3, D-413), not resolved here. `tenant_seed_url`
-runs the SAME `parse_posting_target` call `hit_identity` already makes and keeps only the
-`UnknownBoardURL` failures -- a real employer board this repo has no adapter for at all -- so a
-later resolver lane can spend its own request budget against a vendor this lane never touches.
+runs the SAME `parse_posting_target` call `hit_identity` already makes and keeps only
+`core.board_urls.UnregisteredBoardHost` failures -- a real, well-formed URL naming NO provider
+this repo registers at all -- so a later resolver lane can spend its own request budget against a
+vendor this lane never touches. Three other failure shapes are dropped rather than seeded, and a
+review caught that an earlier version of this lane conflated them with the one above:
 `UnresolvablePostingURL` (a recognized provider whose posting reference this URL does not
-evidence, e.g. lever's `/apply` chrome) is dropped rather than seeded: that employer already has
-a working adapter, and the defect is the URL's shape, not a missing tenant.
+evidence, e.g. lever's `/apply` chrome), a REGISTERED provider's URL that itself carries no
+extractable slug (e.g. Workable's bare shortlink `apply.workable.com/j/{code}`), and a malformed
+or non-absolute value (`https://[broken`, or a bare string with no scheme at all). The first two
+already have a working adapter; the defect is the value's shape, not a missing tenant. The third
+is not a URL in any usable sense.
 
 THE BODY IS TAKEN WITHOUT THE `lanes.quality` FLOOR, AND THAT IS A DECISION. `MIN_SECTION_MARKERS`
 is calibrated for the LinkedIn lane's HTML shell and does not generalize: measured across the live
@@ -119,8 +124,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import zip_longest
 from typing import Any
+from urllib.parse import urlparse
 
-from boardwatch.core.board_urls import UnknownBoardURL
+from boardwatch.core.board_urls import UnknownBoardURL, UnregisteredBoardHost
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import RawPosting
@@ -474,37 +480,80 @@ def board_posting_target(apply_url: str) -> PostingTarget | None:
         return None
 
 
+def _is_addressable_url(value: str) -> bool:
+    """A well-formed, absolute http(s) URL -- never a bare host, a `provider:slug` paste
+    shorthand, or a string `urlparse` tolerates without raising anything at all.
+
+    `core/board_urls.py` legitimately accepts all three of the excluded shapes for OTHER
+    callers -- a human pasting a bare host at `companies add`, or the `provider:slug`
+    convenience -- valid input there because a person typed it. `recruit.viewJobUrl` is an API
+    field the endpoint controls, never a human paste, so anything short of a genuine absolute URL
+    is malformed input, not evidence of an as-yet-unregistered vendor. Concretely: `urlparse`
+    happily returns a hostname of `'not a url at all'` (spaces included) for a scheme-less
+    string once `parse_board_target` prepends `https://` to it -- no exception anywhere -- so the
+    check has to be stricter than "did this raise".
+    """
+    if "://" not in value:
+        return False
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        # The same bare `ValueError` `core/board_urls.py`'s own `urlparse` call guards against
+        # (an unbalanced `[`/`]` in the authority, e.g. `https://[broken`).
+        return False
+    hostname = parsed.hostname
+    if parsed.scheme not in ("http", "https") or not hostname:
+        return False
+    return " " not in hostname
+
+
 def tenant_seed_url(job: dict[str, Any]) -> str | None:
-    """`recruit.viewJobUrl` when it names NO recognized board at all -- the tier-D case (D-413).
+    """`recruit.viewJobUrl` when it is a real, addressable URL naming NO provider this repo
+    registers at all -- the tier-D case (D-413).
 
-    This is the ONE new signal this lane hands `lane_seeds` (`store/tables.py`), and it is
-    narrower than "`board_posting_target` returned None" on purpose. `parse_posting_target`
-    raises two different exceptions and only one of them is a missing TENANT:
+    **`UnknownBoardURL` alone is NOT that signal, and treating it as one was the bug a review
+    caught.** `parse_posting_target` raises it from THREE different places, and only one is a
+    missing tenant:
 
-    * `UnknownBoardURL` -- the host is not one of this repo's six providers at all. That is the
-      tier-D vendor recon measured (Oracle HCM, iCIMS, UKG, ...): a real employer board this
-      repo has never heard of, which is exactly what a later resolver lane needs a URL for.
-    * `UnresolvablePostingURL` -- the host IS a recognized provider, but this particular URL's
-      posting reference cannot be evidenced (`TRAILING_CHROME_HIT`'s lever `/apply` is the
-      pinned example). That employer already has a working adapter; the defect is the URL's
-      shape, not a missing tenant, and handing it to a resolver built for unrecognized vendors
-      would not advance anything. Filtering this out here, rather than in the resolver, is what
-      keeps `lane_seeds` a queue of vendors this repo cannot reach yet, not a junk drawer for
-      every malformed URL any lane happens to see.
+    * A REGISTERED provider whose slug this value does not carry (`UnknownBoardURL`, e.g.
+      Workable's bare shortlink `apply.workable.com/j/{code}`, which omits the org). That
+      employer already has a working adapter; the defect is the URL's shape, not a missing
+      tenant, and seeding it would file a KNOWN provider's posting into a queue built for
+      vendors this repo has never heard of.
+    * A malformed value (`UnknownBoardURL` from `urlparse`'s own bare `ValueError` on an
+      unbalanced bracket, e.g. `https://[broken`). Not a URL at all in any usable sense.
+    * NO provider registers the host at all (`UnregisteredBoardHost`, a `core/board_urls.py`
+      subclass carved out for exactly this). That is the tier-D vendor recon measured (Oracle
+      HCM, iCIMS, UKG, ...): a real employer board this repo has never heard of, which is
+      exactly what a later resolver lane needs a URL for.
 
-    None also when `viewJobUrl` is blank (nothing to seed), and when it DOES resolve to a
-    board (tier 1 of `hit_identity`): that hit is being applied under the real provider's
-    identity THIS run, so seeding it too would hand a resolver a URL a board scan already owns.
+    Only the third is caught here. `UnresolvablePostingURL` -- the host IS registered, but this
+    URL's POSTING reference cannot be evidenced (`TRAILING_CHROME_HIT`'s lever `/apply` is the
+    pinned example) -- is the fourth failure mode and was already excluded before this fix; it
+    is a narrower version of the same "known vendor, unusable value" story as the Workable case
+    above, just caught one level deeper (`parse_board_target` succeeds; `parse_posting_target`'s
+    own posting-shape check fails).
+
+    `_is_addressable_url` runs FIRST and independently of which exception `parse_posting_target`
+    would raise, because a garbage string (`"not a url at all"`) can reach `UnregisteredBoardHost`
+    too -- `urlparse` assigns it a literal, space-containing "hostname" rather than raising, so
+    the exception class alone cannot tell a real unregistered vendor from noise.
+
+    None also when `viewJobUrl` is blank (nothing to seed), and when it DOES resolve to a board
+    (tier 1 of `hit_identity`): that hit is being applied under the real provider's identity THIS
+    run, so seeding it too would hand a resolver a URL a board scan already owns.
     """
     apply_url = _text(_nested(job, "recruit", "viewJobUrl"))
-    if not apply_url:
+    if not apply_url or not _is_addressable_url(apply_url):
         return None
     try:
         parse_posting_target(apply_url)
     except UnresolvablePostingURL:
         return None
-    except UnknownBoardURL:
+    except UnregisteredBoardHost:
         return apply_url
+    except UnknownBoardURL:
+        return None
     return None
 
 

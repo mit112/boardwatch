@@ -32,7 +32,10 @@ import pytest
 import respx
 from indeed_shape import (
     DEREFERENCE_HITS,
+    GARBAGE_VIEW_JOB_URL_HIT,
+    KNOWN_PROVIDER_UNROUTABLE_SEED_HIT,
     LOCAL_MIDNIGHT_HIT,
+    MALFORMED_VIEW_JOB_URL_HIT,
     NAME_COLLISION_HITS,
     NO_BODY_HIT,
     NO_EMPLOYER_PAGE_HIT,
@@ -414,11 +417,14 @@ def test_a_second_hit_for_one_posting_is_dropped_before_it_reaches_apply_board(t
 
 
 def test_a_view_job_url_naming_no_recognized_board_is_seeded(tmp_path):
-    """The tier-D case. No host in `core/board_urls.py` matches, so `UnknownBoardURL` is the
-    signal that a real employer board exists and this repo has no adapter for it at all.
+    """The tier-D case. No provider is registered for this host, so `UnregisteredBoardHost`
+    is the signal that a real employer board exists and this repo has no adapter for it at
+    all. The expected URL is a LITERAL, not `TENANT_SEED_HIT.view_job_url`: a fixture
+    mutation that broke the fixture's own contract must not also break what this test
+    expects, or the assertion is checking the fixture against itself.
     """
     seed = indeed.tenant_seed_url(job_dict(TENANT_SEED_HIT))
-    assert seed == TENANT_SEED_HIT.view_job_url
+    assert seed == "https://careers.example-hcm.com/en/sites/CX_1/job/9601"
 
 
 @respx.mock
@@ -431,7 +437,7 @@ def test_a_hit_whose_view_job_url_is_unrecognized_is_seeded_through_collect(tmp_
 
     result = _collect(IndeedLane(), tmp_path)
 
-    assert result.discovered_seeds == (TENANT_SEED_HIT.view_job_url,)
+    assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9601",)
     assert {(s.provider, s.slug) for s in result.snapshots} == {
         (LANE_PROVIDER, "Example-Manufacturing")
     }
@@ -484,7 +490,7 @@ def test_an_unidentifiable_hit_is_still_seeded(tmp_path):
 
     result = _collect(IndeedLane(), tmp_path)
 
-    assert result.discovered_seeds == (UNIDENTIFIABLE_TENANT_SEED_HIT.view_job_url,)
+    assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9701",)
     assert result.tally.counts["not_attemptable"] == 1
     assert result.snapshots == ()
 
@@ -498,7 +504,7 @@ def test_a_refused_companys_hit_is_still_seeded(tmp_path):
 
     result = _collect(IndeedLane(), tmp_path, admits=False)
 
-    assert result.discovered_seeds == (TENANT_SEED_HIT.view_job_url,)
+    assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9601",)
     assert result.snapshots == ()
 
 
@@ -512,7 +518,83 @@ def test_two_hits_naming_the_same_unresolved_tenant_url_seed_it_once(tmp_path):
 
     result = _collect(IndeedLane(), tmp_path)
 
-    assert result.discovered_seeds == (TENANT_SEED_HIT.view_job_url,)
+    assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9601",)
+
+
+def test_a_known_providers_url_with_no_extractable_slug_is_not_seeded(tmp_path):
+    """THE BLOCKER TRAP. `apply.workable.com/j/ABC123` is Workable's own bare shortlink -- a
+    REGISTERED provider -- and `parse_posting_target` refuses it with `UnknownBoardURL` because
+    it carries no org, the SAME exception class an unregistered host raises. A client keying its
+    seed decision on that exception alone would file a known provider's posting into the tier-D
+    queue; only `UnregisteredBoardHost` -- a distinct, narrower exception -- may seed.
+    """
+    seed = indeed.tenant_seed_url(job_dict(KNOWN_PROVIDER_UNROUTABLE_SEED_HIT))
+
+    assert seed is None
+
+
+@respx.mock
+def test_a_known_providers_unroutable_hit_is_not_seeded_through_collect(tmp_path):
+    _mock_one([KNOWN_PROVIDER_UNROUTABLE_SEED_HIT])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == ()
+
+
+def test_a_malformed_view_job_url_is_not_seeded(tmp_path):
+    """THE BLOCKER TRAP, second half. `https://[broken` makes `urlparse` raise a bare
+    `ValueError` inside `core/board_urls.py`, converted there to `UnknownBoardURL` -- again the
+    same class an unregistered host raises. Not a URL in any usable sense, let alone a tenant.
+    """
+    seed = indeed.tenant_seed_url(job_dict(MALFORMED_VIEW_JOB_URL_HIT))
+
+    assert seed is None
+
+
+@respx.mock
+def test_a_malformed_view_job_url_is_not_seeded_through_collect(tmp_path):
+    """A malformed `viewJobUrl` must cost this seed and nothing else -- the hit still falls
+    through to tier 2 and is applied normally."""
+    _mock_one([MALFORMED_VIEW_JOB_URL_HIT])
+
+    result = _collect(IndeedLane(), tmp_path)
+
+    assert result.discovered_seeds == ()
+    assert {(s.provider, s.slug) for s in result.snapshots} == {
+        (LANE_PROVIDER, "Halcyon-Works")
+    }
+
+
+def test_a_non_absolute_garbage_string_is_not_seeded(tmp_path):
+    """`urlparse` does not raise on this at all -- once `parse_board_target` prepends a scheme,
+    it returns a literal, space-containing string as the "hostname", which reaches
+    `UnregisteredBoardHost` exactly like a real unrecognized vendor would. Only
+    `_is_addressable_url`'s own check (a scheme, a real hostname, no embedded whitespace) tells
+    the two apart.
+    """
+    seed = indeed.tenant_seed_url(job_dict(GARBAGE_VIEW_JOB_URL_HIT))
+
+    assert seed is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "not a url at all",
+        "",
+        "ftp://careers.example-hcm.com/job/1",
+        "https://",
+        "https://[broken",
+        "careers.example-hcm.com/job/1",  # no scheme at all -- board_urls.py would still accept it
+    ],
+)
+def test_is_addressable_url_rejects_non_absolute_and_malformed_values(url):
+    assert indeed._is_addressable_url(url) is False
+
+
+def test_is_addressable_url_accepts_a_real_absolute_url():
+    assert indeed._is_addressable_url("https://careers.example-hcm.com/job/1") is True
 
 
 # ---------------------------------------------------------------------------------------

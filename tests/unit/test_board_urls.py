@@ -1,7 +1,7 @@
 import pytest
 
 from boardwatch.core import board_urls
-from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.core.board_urls import UnknownBoardURL, UnregisteredBoardHost, parse_board_target
 from boardwatch.providers import registry
 
 
@@ -162,6 +162,28 @@ def test_bare_suffix_host_surfaces_slug_help(monkeypatch: pytest.MonkeyPatch) ->
     _install(monkeypatch, _SuffixHostProvider)
     with pytest.raises(UnknownBoardURL, match="career-site path"):
         parse_board_target("https://acme.suffixy.example.com")
+
+
+def test_a_genuinely_unmatched_host_raises_the_narrower_subclass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`UnregisteredBoardHost` exists so a caller deciding whether a URL names a MISSING tenant
+    (`lanes/indeed.py::tenant_seed_url`, D-413) can tell this apart from a REGISTERED provider
+    whose slug this value just does not carry -- see the next test for that half. A subclass, so
+    every existing `except UnknownBoardURL` elsewhere keeps catching it unchanged."""
+    _install(monkeypatch, _SuffixHostProvider)
+    with pytest.raises(UnregisteredBoardHost):
+        parse_board_target("https://notsuffixy.example.com/Careers")
+
+
+def test_a_matched_host_with_no_extractable_slug_stays_the_base_class() -> None:
+    """THE OTHER HALF of the same distinction, against the REAL registry. Greenhouse is a
+    REGISTERED provider with no `slug_help`, so a bare root URL falls through with an empty path
+    and no help text -- this must NOT raise `UnregisteredBoardHost`, or a caller keying a
+    tier-D decision on that subclass would misfile a known provider's URL as an unknown vendor."""
+    with pytest.raises(UnknownBoardURL) as exc_info:
+        parse_board_target("https://boards.greenhouse.io")
+    assert not isinstance(exc_info.value, UnregisteredBoardHost)
 
 
 def test_normalizer_value_error_becomes_unknown_board_url(
