@@ -57,7 +57,12 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
-from boardwatch.store.queries import insert_run, save_profile, upsert_lane_company
+from boardwatch.store.queries import (
+    finish_run,
+    insert_run,
+    save_profile,
+    upsert_lane_company,
+)
 from boardwatch.store.seed_queries import SeedReader, record_seeds, unresolved_seeds
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
@@ -1060,16 +1065,26 @@ def test_a_resolver_crash_reaches_the_RETURNED_errors_not_only_errors_json(
     )
     assert any("selectolax fell over" in e for e in errors), "the first crash's repr must ride along"
 
-    with engine.connect() as conn:
-        persisted = list(
-            conn.execute(
-                select(tables.runs.c.errors_json).where(tables.runs.c.id == run_id)
-            ).scalar_one()
-            or []
-        )
-    assert not any("crashed the resolver" in note for note in persisted), (
-        "the crash must NOT be written straight to errors_json here -- that direct, invisible "
-        f"write is the double-record the fix removes: {persisted}"
+    # `finish_run` (the pipeline's own persistence of the returned errors) is the ONE path the
+    # crash reaches `errors_json`. Before the fix it was written twice -- directly here AND via
+    # `finish_run`; the direct write is gone, so BEFORE `finish_run` there are ZERO notes and AFTER
+    # it there is EXACTLY ONE. Asserting only "zero direct writes" would miss a regression that
+    # dropped the crash from the returned errors too.
+    def _persisted() -> list[str]:
+        with engine.connect() as conn:
+            return list(
+                conn.execute(
+                    select(tables.runs.c.errors_json).where(tables.runs.c.id == run_id)
+                ).scalar_one()
+                or []
+            )
+
+    assert not any("crashed the resolver" in note for note in _persisted()), (
+        f"no direct write to errors_json (that direct write was the double-record): {_persisted()}"
+    )
+    finish_run(engine, run_id, errors=errors)
+    assert sum("crashed the resolver" in note for note in _persisted()) == 1, (
+        f"the crash must be persisted EXACTLY ONCE, and only via finish_run: {_persisted()}"
     )
 
 

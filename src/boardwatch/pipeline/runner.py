@@ -654,8 +654,9 @@ def _run_lanes(
                 # Any OTHER post-fetch failure (neither typed phase): still reported, still
                 # non-fatal, named as the apply phase because that is the dominant post-fetch write.
                 errors.append(f"lane {name}: apply failed: {exc!r}")
-            # A resolver that crashed on a seed is charged in `_persist_seed_work`, but that crash
-            # is otherwise durable ONLY in `runs.errors_json`, which no operator surface queries.
+            # A resolver that crashed on a seed is returned for charging in `_persist_seed_work`
+            # (charged unless that persistence itself fails), but that crash is otherwise durable
+            # ONLY in `runs.errors_json`, which no operator surface queries.
             # Surfaced HERE, from the returned `LaneResult`, so it reaches the returned errors --
             # which become `summary.errors` (the morning digest, the console) and `stage_errors`
             # (`runs.errors_json`, via `finish_run`). On BOTH the clean-apply and failed-apply

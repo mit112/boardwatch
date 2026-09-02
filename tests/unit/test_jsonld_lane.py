@@ -1209,7 +1209,7 @@ def test_a_failed_apply_requeues_a_resolved_seed_uncharged_but_charges_an_unreso
 
     `resolved_at` is never cleared, so the fail-safe direction is asymmetric on purpose:
 
-    * A seed whose FETCH succeeded but whose posting was rolled back by the batch apply is
+    * A seed whose FETCH succeeded but whose posting the batch apply did not prove landed is
       RE-QUEUED UNCHARGED and left open -- its fetch worked, so the fetch ceiling must not retire
       it, and a clean run must be free to land the posting it already produced.
     * A seed whose fetch FAILED is charged unresolved, because the ceiling is what retires it.
@@ -1282,7 +1282,7 @@ def test_a_resolved_seed_at_the_attempt_ceiling_survives_a_failed_apply(
     """BLOCKER: a resolved seed at the ceiling must not be aged out forever by a failed apply.
 
     This is the boundary the old blanket "charge every attempt unresolved on a failed apply" got
-    wrong. A seed at `attempts == max_attempts - 1` that resolves and is then rolled back by a
+    wrong. A seed at `attempts == max_attempts - 1` that resolves and is then left unproven by a
     batch apply failure was charged to `max_attempts` and written unresolved, so `unresolved_seeds`
     (`attempts < max_attempts`) never selected it again -- a real posting lost for good, with no
     next run to pay the "one redundant GET" the old note promised. It must be re-queued UNCHARGED
@@ -1357,7 +1357,7 @@ def test_a_resolved_seed_at_the_attempt_ceiling_survives_a_failed_apply(
             max_attempts=max_attempts, limit=10,
         )
     assert [s.id for s in still_open] == [seed_id], (
-        "a resolved seed rolled back at the ceiling must stay selectable, not age out forever"
+        "a resolved seed left unproven at the ceiling must stay selectable, not age out forever"
     )
     assert still_open[0].attempts == max_attempts - 1, "it must not have been charged"
 

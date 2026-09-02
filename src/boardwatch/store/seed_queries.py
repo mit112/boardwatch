@@ -275,8 +275,10 @@ def record_seed_attempt(
 
     **`charge=False` records the turn WITHOUT moving `attempts`.** `last_attempt_run_id` and
     `last_attempt_at` still advance, and `resolved_at` is still set iff `resolved`, but the
-    ceiling counter does not. Two turns are deliberately not charged, because in neither did the
-    seed's own fetch fail: a seed that resolved but whose batch apply did not prove its snapshot
+    ceiling counter does not. Two turns are deliberately not charged toward the ceiling -- not
+    because the fetch failed (a charged resolution's fetch succeeded too), but because charging
+    either would retire a seed that still owes work: a seed that resolved but whose batch apply did
+    not prove its snapshot
     landed (applies are PER-COMPANY transactions, so a later company aborting leaves this one
     unproven -- the FETCH ceiling must not retire it before a clean run can land it), and a
     redundant alias closed without a GET (it cost no request at all). The default charges,

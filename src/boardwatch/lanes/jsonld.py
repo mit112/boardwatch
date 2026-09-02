@@ -687,10 +687,13 @@ class JsonLdLane:
         keyed on the URL: every identity is recoverable without a request, so the cap rations
         requests that have not been paid for yet rather than discarding ones that have.
 
-        **EVERY SEED THAT HAS ITS TURN IS CHARGED, INCLUDING ONE THAT CRASHES THE RESOLVER.** The
-        per-seed body below cannot raise: an unexpected failure is isolated and charged like any
-        other non-resolution, and reported to the runner through `resolver_errors` as a visible
-        lane error rather than disguised as an empty extraction. Letting it escape would discard
+        **EVERY SEED THAT HAS ITS TURN IS RETURNED FOR CHARGING, INCLUDING ONE THAT CRASHES THE
+        RESOLVER.** The per-seed body below cannot raise: an unexpected failure is isolated,
+        returned as a non-resolution, and reported to the runner through `resolver_errors` as a
+        visible lane error rather than disguised as an empty extraction. The runner charges
+        non-resolutions (`_persist_seed_work`) but deliberately leaves a resolved-but-unapplied
+        seed uncharged, so charging is the runner's call, not an invariant this loop holds over
+        every turn. Letting the failure escape would discard
         not just that seed but EVERY attempt already recorded this run, because the runner only
         ever charges what a returned `LaneResult` carries -- so a single malformed page would leave
         a whole run's seeds at the same attempt count, to be re-fetched at one GET each, every run,
