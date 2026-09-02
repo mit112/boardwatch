@@ -164,7 +164,7 @@ def _apply_listed(
                 conn, raw, posting_id=posting_id, company_id=company_id,
                 company_name=company_name, title=fields["title"],
                 locations=fields["locations_json"],
-                content_hash=new_hash, first_seen_at=now, now=now,
+                content_hash=new_hash, body_text=raw.body_text, first_seen_at=now, now=now,
             )
             result.new += 1
             continue
@@ -212,6 +212,7 @@ def _apply_listed(
             title=values.get("title", row.title),
             locations=values.get("locations_json", row.locations_json),
             content_hash=values.get("content_hash", row.content_hash),
+            body_text=values.get("body_text", row.body_text),
             first_seen_at=row.first_seen_at, now=now,
         )
     return result
@@ -227,6 +228,7 @@ def _write_posting_identity(
     title: str,
     locations: Any,
     content_hash: str,
+    body_text: str,
     first_seen_at: datetime,
     now: datetime,
 ) -> None:
@@ -243,15 +245,20 @@ def _write_posting_identity(
     needs is already in hand at this point, so the cost is O(postings this board listed) and no
     body is loaded that was not already in memory.
 
-    `title` and `locations` are PASSED rather than read off `raw`, for the same reason
-    `content_hash` and `first_seen_at` already were: what the identity must name is what the row
-    now holds, and after a secondhand declaration (D-414(a)) both can come off the row instead of
-    off this observation. `url` is deliberately NOT among them, and that is measured rather than
-    assumed: `compute_identities` reads company / provider_posting_id / title / locations /
-    content_hash / body_text / company_name and never touches `IdentityInputs.url`, so passing the
-    row's URL instead of the observation's produces byte-identical stored identities. URL only
-    ranks survivors in `core.dedup`, off a separate loader that reads the COLUMN back. A parameter
-    that cannot change an output is not a safeguard, it is a claim nobody can test.
+    `title`, `locations`, `content_hash` and `body_text` are PASSED rather than read off `raw`,
+    for the same reason `first_seen_at` already was: what the identity must name is what the ROW
+    now holds, and after a secondhand declaration (D-414(a)) each can come off the row instead of
+    off this observation. `body_text` matters here as much as `content_hash` and used to be read
+    from `raw`: `compute_identities` reads it, and on a secondhand UPDATE whose stored provider
+    body is empty while Indeed's is not, the aggregator's text would let it record an `exact_quad`
+    the persisted row cannot reproduce — `identities verify` would then read stale and the leakage
+    metrics would carry a claim no recomputation from the row could confirm. `url` is deliberately
+    NOT among the passed values, and that is measured rather than assumed: `compute_identities`
+    reads company / provider_posting_id / title / locations / content_hash / body_text /
+    company_name and never touches `IdentityInputs.url`, so passing the row's URL instead of the
+    observation's produces byte-identical stored identities. URL only ranks survivors in
+    `core.dedup`, off a separate loader that reads the COLUMN back. A parameter that cannot change
+    an output is not a safeguard, it is a claim nobody can test.
 
     Deliberately NOT wrapped in a try/except. A failure fails the board's transaction, so the
     posting and its identity commit or vanish together — the D16 property this module is built
@@ -278,7 +285,7 @@ def _write_posting_identity(
                     else None
                 ),
                 content_hash=content_hash,
-                body_text=raw.body_text,
+                body_text=body_text,
                 url=raw.url,
                 first_seen_at=first_seen_at,
             )
@@ -367,15 +374,18 @@ def _inserted_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     """`_mutable_fields` with a secondhand LOCATION downgraded to no location evidence at all.
 
     D-414(a), and the reason the INSERT needs a rule of its own after all. The original split said
-    a secondhand INSERT is harmless because a later provider board scan corrects it. THAT IS FALSE
-    FOR A LANE-FIRST COMPANY, and the store says so three times: `queries.upsert_lane_company`
-    writes `watched=False` (D-285, and load-bearing — a watched `hiringcafe` row would add an
-    `unknown provider` line to every run forever); `queries.get_watched_companies` filters
-    `watched.is_(True)`; and `scan.coordinator` takes its company rows from nowhere else. So when a
-    lane converges onto a provider the user does not already watch, NOTHING will ever scan that
-    board, and the row this INSERT writes is the only one there will ever be. An aggregator's
-    `Austin, TX` on a genuinely remote role then stands indefinitely and hard-vetoes the lead under
-    `location_filter_mode = "hard"`.
+    a secondhand INSERT is harmless because a later provider board scan corrects it. That holds for
+    a TIER-2 lane-first company only, and the store says why three times: `upsert_lane_company`
+    writes `watched=False` for it (D-285, load-bearing — a watched row on a provider the scanner
+    cannot parse would add an `unknown provider` line to every run forever); `get_watched_companies`
+    filters `watched.is_(True)`; and `scan.coordinator` takes its company rows from nowhere else, so
+    a tier-2 hit's INSERT is the only writer that row will ever have. A TIER-1 hit is now
+    auto-watched (`upsert_lane_company(watch=True)`), so a scan DOES correct it — next run, not this
+    one, because the lane stage runs after the scan. Either way this INSERT's location decides at
+    least one run, and a location the aggregator assigned that classifies `non_us` would hard-veto —
+    DELETE — the lead under `location_filter_mode = "hard"` on a role never placed outside the US.
+    `classify_location` is a positive US allowlist that drops only a CONFIRMED non-US posting, so a
+    US metro or an unresolved string is KEPT: the hazard is a false `non_us`, not a metro.
 
     FAIL-SAFE DIRECTION, chosen for THIS gate and different from the one next door. The location
     gate's failure modes are not symmetric: a false `non_us` DELETES a real lead permanently and

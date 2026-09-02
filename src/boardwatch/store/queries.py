@@ -411,21 +411,31 @@ def upsert_watch(conn: Connection, *, provider: str, slug: str, name: str, sourc
     return target
 
 
-def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str) -> int:
-    """Record a company an aggregator lane discovered: `source='lane'`, and NOT watched (D-285).
-    Returns its `companies.id`.
+def upsert_lane_company(
+    conn: Connection, *, provider: str, slug: str, name: str, watch: bool = False
+) -> int:
+    """Record a company an aggregator lane discovered: `source='lane'`. Returns its `companies.id`.
 
-    Unwatched is load-bearing, not caution. `scan/coordinator.py` looks every watched company's
-    provider up in the registry and appends `unknown provider` to `summary.errors` on a miss, so
-    a watched `hiringcafe` row would add an error line to every run forever. Nothing downstream
-    of the scan filters on `watched`, so the lane's postings still reach the shortlist.
+    Stored `watched=False` (D-285) UNLESS the caller passes `watch=True`. Unwatched is
+    load-bearing, not caution: `scan/coordinator.py` looks every watched company's provider up in
+    the registry and appends `unknown provider` to `summary.errors` on a miss, so a watched
+    `hiringcafe` row would add an error line to every run forever. Nothing downstream of the scan
+    filters on `watched`, so the lane's postings still reach the shortlist either way.
 
-    A sibling of `upsert_watch` rather than a parameter on it: a defaulted `watched=` would
-    silently backfill every existing caller with a value none of them chose.
+    `watch=True` is for exactly the case the default forbids: a company on a provider the scanner
+    CAN parse. An Indeed tier-1 convergence sits on a supported board (`hit_identity` assigns a
+    real provider only when `parse_posting_target` recovered one), so watching it adds no `unknown
+    provider` line AND is the DRAIN for the secondhand body that hit wrote (D-414(a)): with the
+    board watched, the next scan fetches the employer's own JD, `remote_policy` and location and
+    replaces JD v1, which otherwise decides forever because a lane-first company is scanned by
+    nothing. It stays a defaulted parameter rather than a second function because the default
+    (`False`) preserves every existing caller's behaviour exactly and the flag is MONOTONIC —
+    `False`->`True` only, never the reverse — so it is safe from any lane at any frequency.
 
-    On conflict this touches NOTHING AT ALL, name included. A lane must never unwatch a board
-    the user watches and must never relabel a `registry` company as lane-discovered — either
-    would make the store's own account of where a company came from a lie.
+    With `watch=False` this touches NOTHING AT ALL on conflict, name included; with `watch=True`
+    it upgrades ONLY `watched` (`False`->`True`) and still leaves name and source alone. A lane
+    must never unwatch a board the user watches and must never relabel a `registry` company as
+    lane-discovered — either would make the store's own account of where a company came from a lie.
 
     `name` looked inert and is not: `scan/apply.py` reads `companies.name` and feeds it into
     `IdentityInputs.company_name`, a component of the `cross_host` posting identity. So letting
@@ -439,20 +449,45 @@ def upsert_lane_company(conn: Connection, *, provider: str, slug: str, name: str
     trade: it is cosmetic, it is stable, and it makes this function safe no matter how often or
     from where a caller invokes it.
 
-    The `on_conflict_do_nothing` clause is case-SENSITIVE, so on its own it would happily insert
-    a second row for a board already stored under another case. `stored_slug` is what stops it,
-    and the id it resolves to is returned so the caller does not have to re-select by a slug the
-    store may not hold.
+    The insert's conflict clause is case-SENSITIVE, so on its own it would happily add a second
+    row for a board already stored under another case. `stored_slug` is what stops it, and the id
+    it resolves to is returned so the caller does not have to re-select by a slug the store may
+    not hold. When `stored_slug` already found the row, a `watch=True` upgrade is an UPDATE keyed
+    on the stored slug, not a re-insert, for the same reason.
     """
     target = stored_slug(conn, provider=provider, slug=slug)
     if target is None:
         stmt = sqlite_insert(companies).values(
-            name=name, provider=provider, slug=slug, source="lane", watched=False
+            name=name, provider=provider, slug=slug, source="lane", watched=watch
         )
+        # `watch=True` must survive a race that inserted this row first (upgrade its `watched`);
+        # `watch=False` must still touch nothing on conflict. Only `watched` is ever set on
+        # conflict, so a raced row's name and source are never relabelled.
         conn.execute(
-            stmt.on_conflict_do_nothing(index_elements=[companies.c.provider, companies.c.slug])
+            stmt.on_conflict_do_update(
+                index_elements=[companies.c.provider, companies.c.slug],
+                set_={"watched": True},
+            )
+            if watch
+            else stmt.on_conflict_do_nothing(
+                index_elements=[companies.c.provider, companies.c.slug]
+            )
         )
         target = slug
+    elif watch:
+        # The row already exists, possibly under another slug CASE (`target`). Upgrade THAT row
+        # rather than inserting the lane's spelling as a second one. `watched.is_(False)` keeps
+        # the upgrade monotonic and leaves an already-watched board — and its name and source —
+        # untouched.
+        conn.execute(
+            update(companies)
+            .where(
+                companies.c.provider == provider,
+                companies.c.slug == target,
+                companies.c.watched.is_(False),
+            )
+            .values(watched=True)
+        )
     return int(
         conn.execute(
             select(companies.c.id).where(

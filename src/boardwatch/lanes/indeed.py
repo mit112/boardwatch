@@ -84,16 +84,20 @@ hand, and a board GET per company to replace a JD it already holds would spend t
 justifies the lane. So a converged posting is written with Indeed's url, title and body under the
 provider's `(company_id, provider_posting_id)`.
 
-**"A LATER BOARD SCAN CORRECTS IT" WAS RECORDED HERE AND IT IS FALSE.** It holds only where the
-user ALREADY WATCHES the provider board this hit converged onto. When the lane is the one that
-discovered the company, `queries.upsert_lane_company` stores it `watched=False` (D-285, and
-load-bearing: a watched row for a provider the scan registry does not know appends an
-`unknown provider` line to every run forever), `queries.get_watched_companies` filters
-`watched.is_(True)`, and `scan/coordinator.py` reads its company rows from nowhere else. Nothing
-will EVER scan that board. For a lane-first company there is no later scan, no revision and no
-correction -- what this lane writes is what the store holds until a human watches the board by
-hand. The two halves of D-414(a) below are what make that permanence safe rather than a slow
-deletion path.
+**"A LATER BOARD SCAN CORRECTS IT" HOLDS FOR A TIER-1 CONVERGENCE, and this lane now makes it
+hold on purpose.** It is true where the user ALREADY watches the provider board the hit converged
+onto; and for a tier-1 hit onto a supported board the user does NOT yet watch, this lane turns
+watching ON (`LaneCompanySnapshot.watch` -> `queries.upsert_lane_company`'s monotonic upgrade),
+because the provider is one `scan/coordinator.py` can parse, so a watched row for it adds no
+`unknown provider` line. The next scan then fetches the employer's own JD, `remote_policy` and
+location and drains the secondhand row this hit wrote. **The permanence below is therefore TIER-2
+ONLY.** A hit keyed under `indeed` (the last segment of `employer.relativeCompanyPageUrl`, a board
+this repo cannot scan) is stored `watched=False`, `queries.get_watched_companies` filters
+`watched.is_(True)`, and `scan/coordinator.py` reads its rows from nowhere else, so nothing will
+ever scan it -- no later revision, no correction, what this lane writes is what the store holds
+until a human watches something by hand. The two halves of D-414(a) below matter for BOTH tiers:
+for tier 2 they are the permanence guard, and for a now-watched tier 1 they hold the ONE RUN
+between this lane writing the secondhand row and the next scan draining it.
 
 WHAT A CONVERGED HIT DOES **NOT** DO IS OVERWRITE THE PROVIDER'S OWN FIELDS ON A ROW THAT ALREADY
 EXISTS (D-414(a)). `scan/apply.py`'s D25 rule refreshes every provider-sourced column on every
@@ -112,18 +116,23 @@ against the shipped rules: an employer body of `Visa sponsorship is available.` 
 and a 31-character Indeed rendering of the same posting reading `Applicants must be US citizens.`
 reads `ineligible` with the span `must be US citizens`. The span is real and the invariant passes
 on its face -- but it was cut from Indeed's text, not the employer's, so the provenance is a lie.
-`delivery_queries.placeable_by_run` then excludes the posting outright and `ineligible_job_ids`
-routes an already-delivered lead into the ineligible drain, so the lead leaves the apply lane on
-the strength of a sentence its employer never wrote. A declared `body_text` suppresses the whole
-revision, so a converged hit can never restate the employer's JD.
+An `ineligible` verdict then drops the posting from the placeable set and
+`delivery_queries.ineligible_job_ids` routes an already-delivered lead into the ineligible drain,
+so the lead leaves the apply lane on the strength of a sentence its employer never wrote. A
+declared `body_text` suppresses the whole revision, so a converged hit can never restate the
+employer's JD.
 
-THE INSERT WRITES EVERYTHING EXCEPT THE LOCATION, because a lane-first row has no later scan to
-correct it (above). Indeed's `Austin, TX` on a genuinely remote role would otherwise stand forever
-and hard-veto the lead under `location_filter_mode = "hard"`. `_inserted_fields` stores `[]`, which
-`classify_location` reads as `unknown` and the hard gate keeps -- the direction that declines to
-filter rather than the one that deletes. Everything else the hit carries is still written: a row
-this lane creates has no prior observation to preserve, and blanking a column there would replace
-a value the lane genuinely holds with a schema default.
+THE INSERT WRITES EVERYTHING EXCEPT THE LOCATION. A location the aggregator assigned that
+classifies `non_us` would hard-veto -- DELETE -- the lead under `location_filter_mode = "hard"`,
+on a role whose employer never placed it outside the US: for the one run before the scan corrects
+a now-watched tier-1 row, and forever on a tier-2 one. That is the one direction that removes a
+real lead (`classify_location` is a positive US allowlist that drops only a CONFIRMED non-US
+posting, so a US metro like `Austin, TX` or an unresolved string is KEPT -- the veto is not the
+hazard, a false `non_us` is). `_inserted_fields` stores `[]`, which classifies `unknown` and the
+hard gate keeps -- the direction that declines to filter rather than the one that deletes.
+Everything else the hit carries is still written: a row this lane creates has no prior observation
+to preserve, and blanking a column there would replace a value the lane genuinely holds with a
+schema default.
 
 ONLY `parse_posting_target` IS USED, AND `parse_board_target` IS DELIBERATELY NOT A SECOND TIER.
 Falling back to a company-only resolution would file an INDEED-keyed posting under a real ATS
@@ -782,6 +791,14 @@ class IndeedLane:
                         slug=slug,
                         name=company_name(company.hits[0][1]),
                         snapshot=lane_snapshot(postings, company.url),
+                        # A tier-1 convergence (`provider != LANE_PROVIDER`) sits on a board the
+                        # scanner can parse -- `hit_identity` only assigns a real provider when
+                        # `parse_posting_target` recovered one -- so watching it is safe (no
+                        # `unknown provider` line) and is the DRAIN for the secondhand body this
+                        # hit wrote: the next scan replaces JD v1 with the employer's own text and
+                        # its real `remote_policy`/location (D-414(a)). Tier 2 is keyed under
+                        # `indeed`, has no board to scan, and stays unwatched.
+                        watch=provider != LANE_PROVIDER,
                     )
                 )
         return LaneResult(
