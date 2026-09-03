@@ -1857,6 +1857,90 @@ def test_a_closed_lead_returns_to_the_apply_queue_when_its_posting_reopens(
     assert _folders(root / CLOSED_DIR) == []
 
 
+def test_a_jobs_live_posting_is_offered_even_when_a_closed_sibling_was_delivered_later(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The measured lost delivery (D-432), asserted through the disk path rather than the query.
+
+    eBay job 35249 held an open Workday requisition delivered at run 73 and a dead lane copy of
+    the same job delivered at run 137. `delivered_unapplied` offered a job's MOST RECENTLY
+    delivered posting, so the dead copy decided the job and a live requisition was filed under
+    `_closed`, which nothing ever offers again.
+
+    Asserted here as well as in `test_delivery_queries` because `closed_job_ids` reporting on
+    itself is a component's self-report; the folder on disk is a different path to the same claim.
+    The two postings carry different titles so the folder NAME says which one was offered.
+
+    The second phase is the control. Without it, `_folders(root / CLOSED_DIR) == []` is satisfied
+    by a sync that never files anything as closed at all.
+    """
+    with engine.begin() as conn:
+        live, job = _deliver(
+            conn, apps, "live", title="Software Engineer",
+            delivered_at=NOW - timedelta(days=2),
+        )
+        dead, _ = _deliver(
+            conn, apps, "dead", job_id=job, title="Software Engineer II", delivered_at=NOW
+        )
+        _set_status(conn, dead, "closed")
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert report.created == 1
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+    assert _folders(root / CLOSED_DIR) == []
+
+    # Control: with NO live posting left on the job, the drain still fires.
+    with engine.begin() as conn:
+        _set_status(conn, live, "closed")
+    with engine.connect() as conn:
+        recon = reconcile_queue(conn, root=root)
+    assert recon.to_closed == 1
+    assert _folders(root) == []
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Software_Engineer"]
+
+
+def test_a_lead_already_buried_in_closed_walks_out_on_the_next_run_by_itself(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The repair path, which is the whole user-visible payoff of D-432 and had no pin.
+
+    The live store holds ONE folder already filed this way — eBay job 35249, sitting in `_closed`
+    under a dead lane copy while its Workday requisition is open. D-432 claims it comes back out
+    on the next run with nothing to run by hand, on the grounds that `reconcile_queue` runs BEFORE
+    `sync_queue`, `_index` scans `_closed`, and `_entry_for` falls back to the by-job index. That
+    was a claim read off the code; this asserts it.
+
+    The starting state is built the way the store reached it: the dead posting is delivered and
+    synced ALONE, so the folder is genuinely stamped for it and genuinely in `_closed`. The live
+    sibling is only then given its EARLIER delivery, which is what run 73 was.
+
+    `created == 0` is the load-bearing half. Without the by-job fallback the changed winner would
+    find no folder for its own posting id and mint a SECOND one — leaving the first orphaned in
+    `_closed`, which is the two-folder state D-430's conflict was made of.
+    """
+    with engine.begin() as conn:
+        dead, job = _deliver(conn, apps, "dead", title="Software Engineer II", delivered_at=NOW)
+        _set_status(conn, dead, "closed")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Software_Engineer_II"]
+    assert _folders(root) == []
+
+    # The live sibling, delivered EARLIER — exactly the shape that buried job 35249.
+    with engine.begin() as conn:
+        _deliver(
+            conn, apps, "live", job_id=job, title="Software Engineer",
+            delivered_at=NOW - timedelta(days=2),
+        )
+    with engine.connect() as conn:
+        recon = reconcile_queue(conn, root=root)
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert recon.to_queue == 1
+    assert _folders(root / CLOSED_DIR) == []
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+    assert report.created == 0, "a second folder was minted instead of re-stamping the first"
+
+
 def test_closed_outranks_the_derived_drains_but_never_an_owner_statement(
     engine: Engine, root: Path, apps: Path
 ) -> None:

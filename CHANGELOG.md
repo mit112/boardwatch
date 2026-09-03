@@ -291,6 +291,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A job that was still open could be filed away as closed, and never offered again.** When the
+  same job is found twice — once on the employer's own board and once through a job site — only one
+  of the two is shown in your queue. Which one was picked came down to whichever had a résumé
+  written for it most recently. So when the job site's copy went stale and was marked closed after
+  the employer's own listing had already been tailored, the stale copy decided the whole job: it was
+  moved into the `_closed` folder, taken off the review page, and nothing ever brought it back —
+  while the employer was still hiring for it.
+
+  The live listing is now the one you are shown whenever a job has one, and the most recent résumé
+  only decides between listings that are equally alive. Anything already filed away for this reason
+  comes back out on the next run by itself; there is nothing to run by hand.
+
+  Measured against the real store on 2 September 2026: one job, an open eBay software engineering
+  requisition buried under a stale copy of itself. Small, but it is a job that would have been
+  applied to and was not, which is the one kind of miss this tool exists to prevent.
+
 - **A job stuck in the delivery queue reported the same error on every run, forever.** When
   boardwatch works out that two job postings are really the same job, the second one's folder needs
   the same name as the first one's — and the queue refused to move it onto a name already in use,
