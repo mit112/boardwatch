@@ -19,12 +19,16 @@ import pytest
 
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.engine import evaluate
+from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.lanes.base import Lane
 from boardwatch.lanes.jobapps import (
     SUPPORTED_SCHEMA_VERSION,
     JobAppsLane,
     JobAppsSourceError,
     strip_header,
+    unescape_markdown,
 )
 
 # The real separator: a THREE-line sandwich, byte-identical in 930 of 930 sampled files.
@@ -595,3 +599,105 @@ def test_a_partly_refused_run_tallies_only_the_admitted_company(tmp_path):
     assert result.tally.counts["body_inline"] == 1
     assert result.tally.counts["not_attemptable"] == 0
     assert result.tally.attempted == 1, "a refused company must not enter the tally at all"
+
+
+# ---------------------------------------------------------------------------------------
+# job-apps' markdown escapes (D-443).
+#
+# This lane is the ONLY one that carries them: measured over the live store, 473 of the 1,620
+# bodies it ingests (29.2%) contain a backslash escape, and every other provider measures 0.0%.
+# ---------------------------------------------------------------------------------------
+
+# Verbatim from a live body the catalog could not read.
+_ESCAPED_BAR = r"3\+ years of experience in software engineering or a relevant field."
+_PLAIN_BAR = "3+ years of experience in software engineering or a relevant field."
+
+# The most common escaped form on this lane, and it stays SILENT even unescaped: the catalog
+# has no arm for four modifiers between `of` and `experience`. Pinned so the residual is
+# visible rather than assumed fixed by D-443 -- unescaping is necessary here, not sufficient.
+_STILL_UNCOVERED = "3+ years of non-internship professional software development experience"
+
+
+@pytest.mark.parametrize(
+    ("escaped", "plain"),
+    [
+        (_ESCAPED_BAR, _PLAIN_BAR),
+        (r"H\-1B sponsorship is not available", "H-1B sponsorship is not available"),
+        (r"Requires U.S\. citizenship", "Requires U.S. citizenship"),
+        (r"\* Bachelor's degree \(or equivalent\)", "* Bachelor's degree (or equivalent)"),
+        (r"C\+\+ and Python", "C++ and Python"),
+    ],
+)
+def test_markdown_escapes_are_removed(escaped, plain):
+    assert unescape_markdown(escaped) == plain
+
+
+@pytest.mark.parametrize(
+    "untouched",
+    [
+        r"Caf\u00e9 in the office",   # undecoded JSON escape: dropping the backslash leaves `u00e9`
+        r"line one\nline two",        # same, for a newline
+        r"column\tseparated",
+        r"regex classes \d and \w are not escapes at all",
+    ],
+)
+def test_a_non_punctuation_escape_is_left_exactly_as_job_apps_wrote_it(untouched):
+    """`\\uXXXX` outnumbers every markdown escape on disk (150,665 to 540,050 for `\\-`).
+
+    It is a DIFFERENT and unfixed upstream defect. Unescaping it would put the literal text
+    `u00e9` into the frozen JD, which is worse than the escape, so the punctuation restriction
+    in `_MARKDOWN_ESCAPE` is load-bearing rather than incidental.
+    """
+    assert unescape_markdown(untouched) == untouched
+
+
+def test_the_escaped_years_bar_writes_NO_requirement_row_and_the_plain_one_does():
+    """The reason this fix exists, pinned against the eligibility engine rather than asserted.
+
+    A backslash before `+` is invisible to a reader and fatal to the catalog: the escaped
+    sentence produces ZERO requirement rows, so the posting carries nothing evaluable, lands
+    `uncertain`, and routes to the APPLY lane as blindly-appliable. Measured over the live
+    store, 132 jobapps bodies go from zero rows to some rows on this change alone, and 83
+    verdicts move -- 70 of them `uncertain` to `ineligible`.
+
+    If the unescape is ever reverted, THIS is the assertion that fails.
+    """
+    catalog = load_rules(Path("/nonexistent"))  # bundled catalog
+    facts = Facts(total_years_experience=1)
+    policy = Policy()
+
+    def years(body: str) -> list[str]:
+        return [
+            item.rule_id or ""
+            for item in evaluate(body, facts, policy, catalog).requirements
+            if (item.rule_id or "").startswith("experience_years:")
+        ]
+
+    assert years(_ESCAPED_BAR) == [], "the escaped bar must be what the catalog cannot see"
+    assert years(_PLAIN_BAR), "and the plain bar must be what it can"
+    assert years(unescape_markdown(_ESCAPED_BAR)) == years(_PLAIN_BAR)
+    assert years(_STILL_UNCOVERED) == [], (
+        "unescaping is necessary but NOT sufficient -- this form needs a catalog arm, and "
+        "pinning it here keeps the residual from being read as closed"
+    )
+
+
+def test_a_body_read_off_disk_reaches_the_posting_unescaped(tmp_path):
+    """End to end through the lane, because `unescape_markdown` being correct is not the claim.
+
+    The claim is that `_body` APPLIES it -- a pure function nobody calls fixes nothing.
+    """
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "escaped", jd=f"{_HEADER}{_MARKER}\n\n{_ESCAPED_BAR}\n")
+    (posting,) = _postings(_collect(root, tmp_path))
+    assert posting.body_text is not None
+    assert _PLAIN_BAR in posting.body_text
+    assert "\\" not in posting.body_text
+
+
+def test_the_header_strip_still_runs_before_the_unescape(tmp_path):
+    """Order matters: unescaping first would not change the marker, but a body that fails to
+    strip must still fail CLOSED rather than arriving unescaped-but-with-a-header."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "noheader", jd=f"Company: Acme\n\n{_ESCAPED_BAR}\n")
+    assert _postings(_collect(root, tmp_path)) == []

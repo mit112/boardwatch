@@ -65,6 +65,7 @@ rate on this population is not small.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -202,6 +203,28 @@ def strip_header(text: str) -> str | None:
     if index < 0:
         return None
     return text[index + len(_HEADER_MARKER) :].lstrip("\n")
+
+
+# Every other lane measures 0.0% backslash escapes over the live store; job-apps' files are
+# markdown-escaped and 29.2% of the bodies this lane ingests (473 of 1,620) carry one. The
+# escapes are INVISIBLE to the eligibility catalog rather than merely ugly: `3\+ years of
+# non\-internship professional software development experience` writes NO requirement row
+# where `3+ years ...` writes one, so the posting lands `uncertain` with nothing evaluable and
+# routes to the apply lane. Measured: 175 ingested bodies carry an escaped years bar and
+# `experience_years` is silent on the WHOLE BODY for 164 of them. Unescaping here fixes every
+# family at once, which teaching ten regexes to tolerate a backslash would not.
+#
+# ONLY an ASCII-punctuation follower is unescaped -- that is exactly the markdown escape set,
+# and the restriction is load-bearing. `\uXXXX` (150,665 occurrences on disk) and `\n`
+# (16,361) are a DIFFERENT and unfixed upstream defect, undecoded JSON escapes; dropping their
+# backslash would leave the literal text `u00e9` in the frozen JD, which is worse than the
+# escape. They are left exactly as job-apps wrote them.
+_MARKDOWN_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
+
+
+def unescape_markdown(text: str) -> str:
+    """job-apps' markdown escapes removed, leaving every non-punctuation escape untouched."""
+    return _MARKDOWN_ESCAPE.sub(r"\1", text)
 
 
 def posting_identity(record: _Record) -> _Identity:
@@ -521,7 +544,7 @@ class JobAppsLane:
         body = strip_header(text)
         if body is None or not body.strip():
             return None
-        return body
+        return unescape_markdown(body)
 
     def _source_url(self) -> str:
         return f"file://{self._source_dir}"
