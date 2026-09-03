@@ -1886,3 +1886,95 @@ eliminated, and nothing here changes between sessions). Verbatim:
 
 | **hiring.cafe: ONE unexplained POST-FIX failure (run 142) — and D-420 recorded two wrong framings before this one.** #304 (`11a1ae95`) merged **2026-09-01T07:56:34Z**. Against that boundary: **130, 131, 133, 134, 135, 136, 137 all FAILED and all seven PREDATE the fix** (132 ok, a single unexplained point); post-fix **138, 139, 140, 141, 143, 144 ok** and **142 is the only failure**. **So #304 WORKED** — this is neither a regression nor chronic flakiness. Not time-of-day: 138 also started 09:00Z and passed. **METHOD LESSON, which cost two wrong entries in one session: date a behaviour claim against the COMMIT that changed the behaviour, not against a run streak — a streak has no denominator until you know when the code changed.** Do NOT retry the eliminated dead ends: the header lever failed twice (D-369; run 133 reproduced the refusal byte for byte) and the UA and volume premises were both false. | **watch** |
 
+
+## Moved out of STATE on 2026-09-03 — run 145's readout and three long-settled deferrals, kept verbatim
+
+### Run 145 — read out; both of the night's queue fixes are CONFIRMED IN PRODUCTION
+
+96.4 min, exit **ok**, 94 tailored leads. Queue **598 apply / 732 review / 274 ineligible / 107
+closed / 0 reported**. Full numbers: `METRICS.md` (Run 145). **D-432 CONFIRMED** — the buried eBay
+requisition (job 35249) left `_closed` for `_review` and its genuinely-dead same-titled sibling
+(35247) correctly stayed. **D-434 CONFIRMED** — `_reported/` created and empty, exactly as "0
+reported, 0 skipped on the live store" predicted, so a live reconcile could not have exercised that
+drain either way and the unit tests were the only thing that could catch it.
+
+**A count prediction and a mechanism prediction are different claims, and only the second was
+D-432's.** `_closed` went 103 → **107**, not the predicted 102: a 96-minute rescan of 1,124 boards
+found new closures, and the prediction implicitly held the world still for an hour and a half.
+
+- **Track 2's cap cost has no measured UPPER bound.** A per-company cell costs *at least* one
+  `lane_new_companies_per_run` slot, and would cost exactly one only if a quoted-phrase search
+  returned cards solely from the named employer — which was never probed. **Read the funnel's
+  per-lane `admitted`/`refused` split on the first armed run**; it measures this directly.
+
+- **T1's concurrent case-variant duplicate race** — deferred, pre-existing, worst case a dead-weight
+  row. Fix is a `(provider, lower(slug))` unique index plus a reconcile.
+
+- **T3's exotic hostnames** — unicode-dot/fullwidth IDN and legacy IPv4 can still store an
+  undrainable row. Dead weight only.
+
+- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION (D-436).** `reports/abstain.py`
+  aggregates per `rule_id` across the WHOLE corpus, so a pattern that matches most phrasings and
+  misses a near-miss variant is neither `never_fired` nor `fully_abstaining` — its rate looks
+  **healthy**. The keystone makes a rule that cannot resolve a profile FIELD visible as a 100%
+  abstain rate; it says nothing about an extractor that cannot find the requirement in the TEXT,
+  because the rule never got the chance to abstain. A blind two-judge audit put **24% of `eligible`
+  wrong (13 of 54)** and **every single miss was `no requirement row written`**, not a rule
+  deciding badly. **Unfixed.** The honest fix is a THIRD OUTCOME per family — "the extractor ran and
+  matched nothing" and "the JD is silent" are collapsed into one today and the second one clears —
+  not more patterns, which is whack-a-mole.
+
+- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES — the 24% is UNCHANGED.**
+  Measured, not assumed: the two fixed sentences came from the pre-correction 218-job sample and do
+  not survive into the real 144. The fixes are safe (0 regressions) and close real leaks, but the
+  delivered population's defect rate did not move. **The 13 have ~7 distinct root causes**, so more
+  patterns is whack-a-mole. **The unarmed answer is the two-stage shape already built:**
+  `boardwatch eligibility gate request`/`gate apply` (the `final_gate:` LLM lane — ineligible-capable,
+  keystone-guarded, identity-keyed, read by the ranker) over the **~8-10 leads/day delivered**, which
+  is the only population where zero-ineligible is reachable. **0 rows on the live store today.**
+  Owner-gated.
+
+| **`companies.last_health` / `last_ok_at` are a LYING instrument** | 178 of 379 watched boards read NULL, which looks like "never succeeded" — **all 178 were scanned by run 133** (128 complete, 7 partial, 43 unchanged). The scan path does not maintain these columns. **Judge fleet health from `board_scans` per run instead**: run 133 was 379 attempted / 271 complete / 87 unchanged / 21 partial / **0 failed** | tooling gotcha |
+
+| **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
+
+0. ~~gate 1 >= 80%~~ / ~~"cover most of what job-apps does daily"~~ **BOTH RETIRED. Gate 1 is now
+   PER-SOURCE RECALL (D-421), and the only thing still owed from the owner is the THRESHOLD, per
+   source.** The instrument is built and has a first reading (see Current standing). Set a bar per
+   source rather than one number — the direct-ATS mechanism is already at 94–100% while the
+   aggregator mechanism is at 12–33%, and any single average hides that. **Do not re-litigate 80%,
+   and do not re-derive "most".**
+
+1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED — it keeps running until gate 1 is
+   met.** Both schedulers armed: boardwatch 04:00, job-apps 08:30. **The retirement work is now a
+   written plan, not a question: `docs/program/RETIREMENT-PLAN.md`.** Do not re-raise WHETHER, and do
+   not re-derive the gap analysis.
+   ~~2. Indeed's dependency posture.~~ **DECIDED by Mit 2026-09-01 (D-410): approved.** Closed; do
+   not re-open or re-probe.
+
+*(Resolved and no longer open: the delivery slate cap — D-345, `(company_id, normalized_title,
+content_hash)` at N=1; do not reopen as identity suppression, which is D-295 and is refused.
+Whether `runner.py` should keep swallowing a funnel-write failure — D-288. Clearance IS a blocker
+(D-257). Seniority band = `entry` (D-258), and it is **armed on the live profile**.)*
+
+### The 2-year-bar question, moved out of STATE on 2026-09-03 (now A4)
+
+**1. ANSWER ONE QUESTION, AND IT DOES NOT WORK THE WAY AN EARLIER READING CLAIMED: does a stated
+2-YEAR bar rule you out?** `near_miss_years_ceiling = 3` makes the engine ABSTAIN at or under 3
+years, so those leads are held for review. **LOWERING IT DOES NOT RELEASE THEM — IT REJECTS THEM
+(D-440).** Ceiling **2** rejects 290 postings; **0-1** rejects **505**. That reverses D-333 and takes
+the expensive error direction: a wrong `unmet` writes `ineligible` with a quoted span and silently
+removes a gettable job, and **the reject pile is never inspected**. Recommendation: do NOT lower it.
+It also cannot deliver the range attributed to it — of 1,141 abstained rows, 583 are the band and
+**465 are `scoped to a skill`**, which abstains whatever the ceiling is.
+
+**AND THERE IS NO DATA FIX HIDING BEHIND IT — that was checked.** The résumé's dated Experience
+section parses to **20 months / 1.67 years** across three roles: a 7-month SWE co-op plus **13
+months of internships**, which these postings routinely exclude by name. The stored `1` understates
+the raw total by ~8 months and **all of it is internship time**, so against a 2-year bar the résumé
+and the stored fact agree. **The value is defensible and correcting it would not clear the bar.**
+
+**Which leaves the question genuinely yours and not a data error**: it is whether you would apply to
+a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
+answer that, and D-440 has priced every option so it is a row-pick rather than an opinion.
+

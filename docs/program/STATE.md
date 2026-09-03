@@ -21,10 +21,11 @@
 
 ## Current standing
 
-### Session 2026-09-03: the queue is audited END TO END and the eligibility catalog is measured at 8% of the problem
+### Session 2026-09-03: the queue is audited END TO END, and the waste is EXTRACTION — now with a mechanism
 
-Reasoning: **D-436**, **D-438**. Numbers: `METRICS.md` (Session 2026-09-03).
-**No run** — the 04:00 tick produces run 145.
+Reasoning: **D-436**, **D-438**, **D-442**, **D-443**. Numbers: `METRICS.md` (Session 2026-09-03).
+**Run 145** read out below. The earlier headline "the catalog is 8% of the problem" is RETIRED — it
+read a verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
 
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
@@ -108,24 +109,12 @@ unreachable and getting there is a **D-290 widening, the owner's**. Everything e
 again.** Do not propose per-company cells without naming a mechanism that actually filters by
 employer. The code stays merged and inert at `0`.
 
-**1. ANSWER ONE QUESTION, AND IT DOES NOT WORK THE WAY AN EARLIER READING CLAIMED: does a stated
-2-YEAR bar rule you out?** `near_miss_years_ceiling = 3` makes the engine ABSTAIN at or under 3
-years, so those leads are held for review. **LOWERING IT DOES NOT RELEASE THEM — IT REJECTS THEM
-(D-440).** Ceiling **2** rejects 290 postings; **0-1** rejects **505**. That reverses D-333 and takes
-the expensive error direction: a wrong `unmet` writes `ineligible` with a quoted span and silently
-removes a gettable job, and **the reject pile is never inspected**. Recommendation: do NOT lower it.
-It also cannot deliver the range attributed to it — of 1,141 abstained rows, 583 are the band and
-**465 are `scoped to a skill`**, which abstains whatever the ceiling is.
-
-**AND THERE IS NO DATA FIX HIDING BEHIND IT — that was checked.** The résumé's dated Experience
-section parses to **20 months / 1.67 years** across three roles: a 7-month SWE co-op plus **13
-months of internships**, which these postings routinely exclude by name. The stored `1` understates
-the raw total by ~8 months and **all of it is internship time**, so against a 2-year bar the résumé
-and the stored fact agree. **The value is defensible and correcting it would not clear the bar.**
-
-**Which leaves the question genuinely yours and not a data error**: it is whether you would apply to
-a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
-answer that, and D-440 has priced every option so it is a row-pick rather than an opinion.
+**1. THE 2-YEAR-BAR QUESTION IS NOW ROW A4 IN "Owner-gated" BELOW — it is a decision, not an
+action.** The two things a future session must not re-derive: **lowering
+`near_miss_years_ceiling` REJECTS rather than releases** (D-440), and **there is no data fix
+hiding behind it** — the résumé parses to 20 months, of which 13 are internships these
+postings exclude by name, so the stored `1` and the résumé agree against a 2-year bar. Full
+reasoning moved WHOLE into `STANDING-FACTS.md` at this close.
 
 **2a. THE RE-KEY IS LIVE RIGHT NOW, NOT A PREDICTION.** The pull moved BOTH hashes — `rules_hash`
 from the catalog change and `profile_hash` too, since D-438's resolver adds `education_timing` to
@@ -168,18 +157,11 @@ yield unreadable. That is why "both levers" was rejected.
 FIXED, D-432, and its blast radius re-measured as 1 job, not 16. The `_reported` folder drain —
 SHIPPED, D-434. The `perf` flaky bound — CHARACTERISED and FIXED, D-435.)*
 
-### Run 145 — read out; both of the night's queue fixes are CONFIRMED IN PRODUCTION
+### Run 145 — read out, and both of the night's queue fixes are CONFIRMED IN PRODUCTION
 
-96.4 min, exit **ok**, 94 tailored leads. Queue **598 apply / 732 review / 274 ineligible / 107
-closed / 0 reported**. Full numbers: `METRICS.md` (Run 145). **D-432 CONFIRMED** — the buried eBay
-requisition (job 35249) left `_closed` for `_review` and its genuinely-dead same-titled sibling
-(35247) correctly stayed. **D-434 CONFIRMED** — `_reported/` created and empty, exactly as "0
-reported, 0 skipped on the live store" predicted, so a live reconcile could not have exercised that
-drain either way and the unit tests were the only thing that could catch it.
-
-**A count prediction and a mechanism prediction are different claims, and only the second was
-D-432's.** `_closed` went 103 → **107**, not the predicted 102: a 96-minute rescan of 1,124 boards
-found new closures, and the prediction implicitly held the world still for an hour and a half.
+96.4 min, exit **ok**, 94 tailored leads. Queue **598 apply / 732 review / 274 ineligible /
+107 closed / 0 reported**. D-432 and D-434 both confirmed in production. Full readout moved
+WHOLE into `STANDING-FACTS.md` at this close; numbers in `METRICS.md` (Run 145).
 
 ### Owed, and specifically NOT done
 
@@ -196,64 +178,63 @@ found new closures, and the prediction implicitly held the world still for an ho
   swung ~10 of 40 leads**, which is why the review lane's wrong-hold rate is a RANGE (**17%-47%**) and
   not a number. One sentence collapses it. Not free either way: D-333 records that each extra year
   moves genuinely-too-senior postings into the delivered pool, and the reject pile is never inspected.
-- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION (D-436).** `reports/abstain.py`
-  aggregates per `rule_id` across the WHOLE corpus, so a pattern that matches most phrasings and
-  misses a near-miss variant is neither `never_fired` nor `fully_abstaining` — its rate looks
-  **healthy**. The keystone makes a rule that cannot resolve a profile FIELD visible as a 100%
-  abstain rate; it says nothing about an extractor that cannot find the requirement in the TEXT,
-  because the rule never got the chance to abstain. A blind two-judge audit put **24% of `eligible`
-  wrong (13 of 54)** and **every single miss was `no requirement row written`**, not a rule
-  deciding badly. **Unfixed.** The honest fix is a THIRD OUTCOME per family — "the extractor ran and
-  matched nothing" and "the JD is silent" are collapsed into one today and the second one clears —
-  not more patterns, which is whack-a-mole.
-- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES — the 24% is UNCHANGED.**
-  Measured, not assumed: the two fixed sentences came from the pre-correction 218-job sample and do
-  not survive into the real 144. The fixes are safe (0 regressions) and close real leaks, but the
-  delivered population's defect rate did not move. **The 13 have ~7 distinct root causes**, so more
-  patterns is whack-a-mole. **The unarmed answer is the two-stage shape already built:**
-  `boardwatch eligibility gate request`/`gate apply` (the `final_gate:` LLM lane — ineligible-capable,
-  keystone-guarded, identity-keyed, read by the ranker) over the **~8-10 leads/day delivered**, which
-  is the only population where zero-ineligible is reachable. **0 rows on the live store today.**
-  Owner-gated.
-- **`experience_years` MISSES SPELLED-OUT AND ESCAPED YEARS BARS, and it is a BODY-NORMALISATION
-  defect, not a regex one (D-436).** All eight patterns anchor on `\d{1,2}` adjacent to `years`, so
-  `Six to eight years`, `four (4) years` (the `)` breaks digit→`years` adjacency) and `5\+ years`
-  write zero rows. **477 open bodies carry markdown-escaped punctuation, 175 of them with a
-  `\+ years` bar.** **Owner-gated because un-escaping at ingest RE-VERSIONS POSTINGS** — that is the
-  sentence that stops someone doing it cheaply. Teaching eight regexes to tolerate stray backslashes
-  fixes the symptom at the wrong layer.
+- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION — D-436, unfixed.** The
+  keystone makes a rule that cannot resolve a profile FIELD visible; it says nothing about an
+  extractor that cannot find the requirement in the TEXT. Reasoning moved WHOLE into
+  `STANDING-FACTS.md` at this close. The honest fix is a THIRD OUTCOME per family, not more
+  patterns.
+- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES (D-436).** Moved
+  WHOLE into `STANDING-FACTS.md`. The 13 have ~7 distinct root causes, so more patterns is
+  whack-a-mole; **D-443 is the first of them fixed at its actual layer.**
+- **THE ESCAPED-BARS HALF IS BUILT AND AWAITING YOUR MERGE — #354, D-443.** The escapes are **one
+  lane's**: jobapps **473 of 1,620 bodies (29.2%)**, workday 6, greenhouse 2, **every other provider
+  0.0%**, so the fix is one unescape in `lanes/jobapps._body` and not a body-normalisation layer (a
+  shared normaliser would have rewritten 137,057 bodies to fix zero). Measured through the real
+  engine: **132 bodies go from ZERO requirement rows to some, 83 verdicts move, 11 leads leave
+  `eligible`**, and nine of the new rows are sponsorship refusals that were unreadable. All 83 moves
+  were read against the employer's own quoted span, including the single promotion. **Still
+  owner-gated to MERGE** because it re-versions postings and changes what you are told you can apply
+  to — not because anything about it is unmeasured.
+- **The spelled-out and parenthesised halves are REFUSED on measurement, and that reverses this
+  session's own write-up (D-443).** `four (4) years` looked clean at 9 sentences on the 487-lead
+  sample; over the whole store the form is **1,006 distinct sentences** dominated by `no convictions
+  for DUI … within the last five (5) years`, `Four (4) year undergraduate degree` and `Two (2) year
+  Associate degree`. Spelled-out numerals are worse: `every two years thereafter`, `at least every
+  five years` (EEO boilerplate), and **`Up to three years of professional software development
+  experience` — a CEILING a minimum-bar pattern would invert.** **A class read as safe on a filtered
+  sample was not safe on the population.**
+- **Unescaping is NECESSARY, NOT SUFFICIENT, and a test pins the residual.** `3+ years of
+  non-internship professional software development experience` — the most common escaped form on
+  that lane — writes zero rows *even unescaped*, because no catalog arm allows four modifiers
+  between `of` and `experience`. That, not more escape handling, is the next coverage increment.
 - **`classify_location` FAILS OPEN on unrecognised cities**, so Nottingham (UK) postings reached a
   US-only queue in the D-436 audit. Not fixed; the fail-open direction is deliberate (D-294) and
   narrowing it is a precision/recall decision, not a bug fix.
 - **THE LIVE STORE HAS 0 REPORTED AND 0 SKIPPED JOBS**, so run 145 cannot exercise the new
   `_reported` drain (D-434) in either direction. **A clean live reconcile is NOT evidence it
   works** — the unit tests are the only thing that can catch it. Measured by a peer session.
-- **Track 2's cap cost has no measured UPPER bound.** A per-company cell costs *at least* one
-  `lane_new_companies_per_run` slot, and would cost exactly one only if a quoted-phrase search
-  returned cards solely from the named employer — which was never probed. **Read the funnel's
-  per-lane `admitted`/`refused` split on the first armed run**; it measures this directly.
 - **No alert wiring for the seed leak.** `boardwatch seeds` is a command you must run. The
   finalize-block alert-ordering invariant makes wiring it a separate change with its own review.
-- **T1's concurrent case-variant duplicate race** — deferred, pre-existing, worst case a dead-weight
-  row. Fix is a `(provider, lower(slug))` unique index plus a reconcile.
-- **T3's exotic hostnames** — unicode-dot/fullwidth IDN and legacy IPv4 can still store an
-  undrainable row. Dead weight only.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-0. ~~gate 1 >= 80%~~ / ~~"cover most of what job-apps does daily"~~ **BOTH RETIRED. Gate 1 is now
-   PER-SOURCE RECALL (D-421), and the only thing still owed from the owner is the THRESHOLD, per
-   source.** The instrument is built and has a first reading (see Current standing). Set a bar per
-   source rather than one number — the direct-ATS mechanism is already at 94–100% while the
-   aggregator mechanism is at 12–33%, and any single average hides that. **Do not re-litigate 80%,
-   and do not re-derive "most".**
+**0-1. RETIRED / ANSWERED — moved WHOLE into `STANDING-FACTS.md` at this close.** Gate 1 is
+PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-apps keeps running
+until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
+80%, do not re-derive "most", do not re-probe Indeed.**
 
-1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED — it keeps running until gate 1 is
-   met.** Both schedulers armed: boardwatch 04:00, job-apps 08:30. **The retirement work is now a
-   written plan, not a question: `docs/program/RETIREMENT-PLAN.md`.** Do not re-raise WHETHER, and do
-   not re-derive the gap analysis.
-   ~~2. Indeed's dependency posture.~~ **DECIDED by Mit 2026-09-01 (D-410): approved.** Closed; do
-   not re-open or re-probe.
+**A. MERGE #354, OR DON'T — the four measured decisions waiting on you, in the order they pay.**
+
+| # | decision | what it costs / buys | where the numbers are |
+|---|---|---|---|
+| **A1** | **Merge #354** (D-443, job-apps unescape) | 132 bodies gain their first requirement row; **11 leads leave `eligible`**; 70 move `uncertain`→`ineligible`, each quoting the employer. Re-versions 478 postings on the next ingest. **Gated only because it changes what you are told you can apply to** | #354's body; `METRICS.md` (Session 2026-09-03) |
+| **A2** | **Spot-check `verdicts_a.json` / `verdicts_b.json`, then `gate apply`** | ~116 demotions across 597, **15 of 15 spans survive the keystone guard, 0 failures** on the 77-lead measurement | Current standing, above |
+| **A3** | **D-442's routing predicate** — zero requirement rows ⇒ `_review` | apply **597 → 116**, review 1,007 → 1,488. An **81% cut** to the pile you work from. **Not a bug fix** — it is what you want the apply lane to MEAN | D-442 |
+| **A4** | **Does a stated 2-YEAR bar rule you out?** | `near_miss_years_ceiling`; **lowering it REJECTS rather than releases** (ceiling 2 rejects 290, 0-1 rejects 505). Recommendation: do NOT lower | D-440 |
+
+**A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
+population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
+
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
    multi-tenancy gap of its kind; D-054 forbids us authoring non-tech field content.
@@ -271,10 +252,9 @@ found new closures, and the prediction implicitly held the world still for an ho
 4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Role
    TAXONOMY, not dedup. D-345 bounds the delivery damage; it does not answer this.
 
-*(Resolved and no longer open: the delivery slate cap — D-345, `(company_id, normalized_title,
-content_hash)` at N=1; do not reopen as identity suppression, which is D-295 and is refused.
-Whether `runner.py` should keep swallowing a funnel-write failure — D-288. Clearance IS a blocker
-(D-257). Seniority band = `entry` (D-258), and it is **armed on the live profile**.)*
+*(Resolved and no longer open: five items — the delivery slate cap (D-345), the funnel-write
+swallow (D-288), clearance as a blocker (D-257), the seniority band (D-258). Moved WHOLE into
+`STANDING-FACTS.md` at this close.)*
 
 ## Phase status
 
@@ -296,7 +276,5 @@ there. Only these are not settled:
 | Item | Detail | Owner |
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
-| **`companies.last_health` / `last_ok_at` are a LYING instrument** | 178 of 379 watched boards read NULL, which looks like "never succeeded" — **all 178 were scanned by run 133** (128 complete, 7 partial, 43 unchanged). The scan path does not maintain these columns. **Judge fleet health from `board_scans` per run instead**: run 133 was 379 attempted / 271 complete / 87 unchanged / 21 partial / **0 failed** | tooling gotcha |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
