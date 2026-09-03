@@ -202,7 +202,7 @@ PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-a
 until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
 80%, do not re-derive "most", do not re-probe Indeed.**
 
-**A. THE EIGHT MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Two are merges (A1, A5) and they must be read out on ONE run; the rest are independent.
+**A. THE NINE MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Three are merges — **#354 (A1), #344 (A5), #357 (A9)** — and none is auto-merging. Read the ordering note under the table before starting: two of them move the catalog, and A2 fails SILENTLY if it runs first.
 
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
@@ -214,13 +214,14 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 | **A6** | **The 89 duplicates already standing** — leave them, or bulk-skip them | 53 groups, one of 10. **Recommended: bulk `mark_job_skipped`** — folders move to `_skipped/`, nothing is deleted, **reversible in one call**. Deletion is REJECTED: these are 142 distinct jobs, so the queue's existing delete argument does not transfer | D-446 |
 | **A7** | **Keep paying for the 50-board hiring.cafe sample, or revert it** | ~**60 min/run forever** for **10 delivered leads** on run 145. Reverting is a `companies` restore from `companies-prehcsample-20260902-183019.csv`. **Adding the other 282 is CLOSED and is not this question** | D-441 |
 | **A8** | **Does a degree disjunction reach a SCOPED bar?** — wire `degree_alternative_to_years` to the six scoped/domain minimum patterns | **365 SWE+US postings move `ineligible` → `uncertain`**, out of a reject pile that is never inspected and into review. Cost: `abstain_by` is **DOCUMENT-scoped**, so a JD saying "Bachelor's or 4 years" for its general bar would also waive a separate "8+ years of C++". Today the same sentence **abstains on the total arm and rejects on a scoped one**. **A claim about what a disjunction MEANS, not a consistency repair** | D-447; `test_experience_range_recall.py`, the defect pin |
+| **A9** | **Merge #357** (D-447, the four-word domain phrase) | `5+ years of **full stack** software engineering experience` was one word over the `{0,2}` run and wrote **no requirement row at all** — `uncertain` by silence, which `review_gate` reads as blindly-appliable. **565 of 8,162 four-modifier bodies have the family silent.** Widening adds **2,355 matches / 1,474 spans / 2,269 bodies**, every span beginning with a year count; **15 SWE+US demotions, all 5-10 year bars on Senior/Staff/Lead/Principal/VP titles**. The vocabulary fix was tried first and bought **zero**. **STACKED — needs A1 (#354) first** | #357; D-447 |
 
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
 
 **A2 is ORDER-FORCED and fails SILENTLY if you get it wrong.** `record_gate_verdict` builds its identity from the catalog and stores the `rules_hash`, so **any catalog change invalidates gate rows written before it** — verdicts applied ahead of #354 and D-447 are written under an identity the ranker no longer reads. No error, no warning, just no effect. Land the catalog PRs first, then judge, then apply.
 
-**A8 is independent of A1 and A3** — it moves postings that are already `ineligible`, which neither the unescape nor the routing predicate touches. **A1 and A5 must be read out on ONE run, not two.** #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
+**A8 is independent of A1 and A3** — it moves postings that are already `ineligible`, which neither the unescape nor the routing predicate touches. **A1 and A5 must be read out on ONE run, not two.** **A9 is STACKED on A1**: its base branch is #354's, so #354 merges first or #357 cannot. **A9 also moves the catalog**, so it is one of the two changes A2 must wait behind. #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
 
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
