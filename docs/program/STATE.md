@@ -46,7 +46,9 @@ ALREADY WATCHES.** **The plan's own shape was refuted by arithmetic before it wa
 profile terms x 1,812 stored names = 25,368 cells, which at 83 runs/14 days is a **358-day**
 rotation. Owner's call with four shapes priced: **1 term x 443 watched = 443 cells, 12/run, a full
 pass every ~37 runs (~6.3 days)** — the only shape readable before the 2026-09-09 re-measure.
-`lane_company_combos_per_run` ships at **0 (OFF)**; **arming is the owner's**.
+`lane_company_combos_per_run` ships at **0 (OFF)**. **It was armed on 2026-09-03 and DISARMED the
+same night — the premise is REFUTED on live measurement (D-437, and Next action 0). The code stays
+merged and inert.**
 **The plan's "nothing in `lanes/linkedin.py` changes" was WRONG** — `card_nodes` treats zero cards
 as a STRUCTURAL failure, correct for a facet and backwards for a cell naming one employer, so
 folding them in would have pushed reported failures ~0 -> ~11 every run and buried the outage
@@ -90,29 +92,32 @@ equal their slug and almost all are CORRECT (`Anthropic`, `OpenAI`, `Airbnb`), s
 
 ## Next action
 
-**0. TRACK 2 IS ARMED — READ THE FIRST ARMED RUN. This is a measurement now, not a decision.**
-**Owner armed it 2026-09-03: `lane_company_combos_per_run = 0 → 12`**, verified through
-`load_settings()` and `config.toml`, not the CLI's self-report. **Run 145 is the first run that
-issues company cells** — 12 of them, previewed live (`"Tailscale" software engineer`,
-`"NBCUniversal" software engineer`). The ring is **450** watched companies as of arming, so a full
-pass is **38 runs**, not the 37 measured against 443. Disarming is the same command with `0`.
-The code (D-433):
-per-company LinkedIn cells, `"Acme Corp" software engineer`, seeded from the store's own watched
-boards, one target title per employer, 12 cells a run = a full pass over all 443 watched companies
-every ~37 runs (~6.3 days). **The falsifiable gate is the 342 already-watched misses at 65
-employers** — boardwatch scans those boards and still missed those postings, so if that number does
-not move, Track 2 did not work. Re-measure with `.agent/2026-09-02c-session/linkedin_reach.py`.
-**READ THE FUNNEL'S PER-LANE `admitted`/`refused` SPLIT ON THE FIRST ARMED RUN**: a cell costs *at
-least* one company-cap slot and the upper bound is NOT established — a cell surfacing a staffing
-agency charges for that too. **Do NOT raise the cap** (D-417). It does not contend with the board
-sample — different source, no boards admitted, no scan floor changed — **but run 145 now has TWO
-movers**: LinkedIn's own `admitted`/`refused` split shifts as cells take up to 12 of its 50 company
-slots, so do not read a LinkedIn change as the board sample's doing, or the reverse.
+**0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.**
+The owner armed `lane_company_combos_per_run = 12` on 2026-09-03; it was **dry-run against the live
+host before the first tick and disarmed the same night at 01:34** (verified through
+`load_settings()` and `config.toml`). Reasoning and the numbers: **D-437**.
 
-**The rotation estimate is session-driven, not automatic.** ~38 runs is ~6.5 days at the measured
-83 runs / 14 days — but that cadence came from on-demand runs during sessions. On the 04:00 tick
-alone it is one run a day and a full pass takes five weeks. Check the actual run rate before
-reading "one pass" into any date.
+**The central premise was false and had never been probed.** A quoted company name is NOT a company
+filter on LinkedIn's guest endpoint — it is a relevance-ranked keyword. Running the exact 12 cells
+run 145 would have issued, through the same builder and ring: **4 of 120 cards on target (3%)**.
+`"Tailscale" software engineer` returned DoorDash, OpenAI, Reddit and Scale AI and **zero**
+Tailscale; `"NBCUniversal" software engineer` returned Microsoft, Netflix and NVIDIA and **zero**
+NBCUniversal.
+
+**And the cap cost is the opposite of what D-433 estimated.** Those 12 cells present **78 distinct
+companies, 61 of them new**, against a cap of 50 — and cells sit BEFORE the hub nets in the
+interleave. Arming it takes **all 50 slots and leaves the hub nets zero**, so it is a straight
+regression to the LinkedIn lane's actual breadth mechanism. D-433's "at least one slot per cell,
+upper bound not established" was right to flag the gap and far too optimistic about its size.
+
+**A CONTROL WAS NECESSARY AND THE FIRST READING WAS ENCOURAGING AND WRONG.** Six well-known
+companies read **~20%** on target with result sets nearly disjoint from an unfaceted control, which
+looks like the company name working. All twelve read **3%** — the six-company sample was biased
+toward employers who post heavily on LinkedIn, and the ring is not.
+
+**The 342 already-watched misses are therefore STILL OPEN and Track 2 is not the answer.** Do not
+re-arm it, and do not propose per-company cells again without a probe that names a mechanism which
+actually filters by employer. The code stays merged and inert at `0`.
 
 **1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
 (D-428; watched 403 → 453). Population 332 boards / 471 postings, **1.42 in-window postings per
