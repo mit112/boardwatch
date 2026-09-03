@@ -61,51 +61,30 @@ gate rows written before it. Land the catalog PRs first, then arm ONCE.
 
 ## Next action
 
-**0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.**
-Armed at `lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host before the
-first tick, disarmed the same night at 01:34 (verified through `load_settings()` and `config.toml`).
-Full reasoning: **D-437**. The numbers that entry does not carry, kept here:
-
-- **On target: 4 of 120 cards (3%).** A quoted company name is a relevance-ranked KEYWORD on the
-  guest endpoint, not a company filter. `"Tailscale" software engineer` returned zero Tailscale.
-- **The cap cost is the opposite of D-433's estimate: those 12 cells present 78 distinct companies,
-  61 of them new, against a cap of 50** — and cells sit BEFORE the hub nets in the interleave, so
-  arming it takes all 50 slots and leaves the hub nets ZERO. A straight regression.
-- **A control was necessary**: six well-known companies read ~20% on target; all twelve read 3%. The
-  six-company sample was biased toward employers who post heavily on LinkedIn. The ring is not.
-- **The obvious rescue is closed and was probed**: LinkedIn's real filter is `f_C=<numeric company
-  id>` and the guest fragment serves no numeric id, only a slug. Employer filtering needs a
-  slug-to-id mechanism on another surface — a widening of D-290 and the owner's call, not a probe.
-
+**0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.** Armed at
+`lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host **before** the first
+tick, disarmed 01:34. **4 of 120 cards on target (3%)**; 12 cells present **78 distinct companies,
+61 new, against a cap of 50**, ahead of the hub nets, so arming it takes every slot. The rescue is
+closed and was probed: the guest fragment serves **no numeric company id**, so `f_C=` is
+unreachable and getting there is a **D-290 widening, the owner's**. Everything else: **D-437**.
 **The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism
 again.** Do not propose per-company cells without naming a mechanism that actually filters by
 employer. The code stays merged and inert at `0`.
 
-**1. ANSWER ONE QUESTION — but note it does NOT work the way an earlier reading of it claimed:
-does a stated 2-YEAR experience bar rule you out?** `experience_years.near_miss_years_ceiling = 3`
-makes the engine ABSTAIN on bars at or under 3 years, so those leads are HELD FOR REVIEW.
+**1. ANSWER ONE QUESTION, AND IT DOES NOT WORK THE WAY AN EARLIER READING CLAIMED: does a stated
+2-YEAR bar rule you out?** `near_miss_years_ceiling = 3` makes the engine ABSTAIN at or under 3
+years, so those leads are held for review. **LOWERING IT DOES NOT RELEASE THEM — IT REJECTS THEM
+(D-440).** Ceiling **2** rejects 290 postings; **0-1** rejects **505**. That reverses D-333 and takes
+the expensive error direction: a wrong `unmet` writes `ineligible` with a quoted span and silently
+removes a gettable job, and **the reject pile is never inspected**. Recommendation: do NOT lower it.
+It also cannot deliver the range attributed to it — of 1,141 abstained rows, 583 are the band and
+**465 are `scoped to a skill`**, which abstains whatever the ceiling is.
 
-**LOWERING THE CEILING DOES NOT RELEASE THEM — IT REJECTS THEM (D-440).** A lower ceiling resolves
-those bars `unmet`, which makes the posting `ineligible` and removes it from the pile because the
-engine has started declaring you unqualified. Priced: ceiling **2** rejects 290 postings at exactly
-a 3-year bar; ceiling **0-1** rejects **505** (259 at 2y + 290 at 3y). That reverses D-333's
-recorded ruling rather than tuning a parameter, and it takes the EXPENSIVE error direction — a wrong
-`unmet` writes `ineligible` with a quoted span and silently removes a gettable job, while a wrong
-abstain costs a look. **The reject pile is never inspected, so no outcome loop can ever contradict
-it.** Recommendation on the numbers: do NOT lower it.
-
-**And the ceiling cannot deliver the range that was attributed to it.** Of 1,141 abstained
-`experience_years` rows on delivered leads, **583 are the near-miss band and 465 are `scoped to a
-skill`** — which abstains in both directions whatever the ceiling is (corpus-wide: 186,553 scoped
-against 27,823 near-miss). **If one declared year understates you, the thing to change is
-`total_years_experience` — profile DATA — not this policy threshold. THAT WAS CHECKED, and it does
-NOT hide a data fix.** Parsed from the résumé's own dated Experience section: **20 months / 1.67
-years** across three roles — a 7-month SWE co-op (Jul 2024–Feb 2025) plus **13 months of
-internships** (Mar 2021–Feb 2022, Feb–Apr 2021). The stored `1` understates the raw total by ~8
-months, but **all of that difference is internship time**, which the postings in question routinely
-exclude by name ("non-internship professional software development experience"). So against a 2-year
-bar the résumé and the stored fact agree: **20 months < 24, and the professional stretch alone is
-7 months.** The stored value is defensible and correcting it would not clear a 2-year bar.
+**AND THERE IS NO DATA FIX HIDING BEHIND IT — that was checked.** The résumé's dated Experience
+section parses to **20 months / 1.67 years** across three roles: a 7-month SWE co-op plus **13
+months of internships**, which these postings routinely exclude by name. The stored `1` understates
+the raw total by ~8 months and **all of it is internship time**, so against a 2-year bar the résumé
+and the stored fact agree. **The value is defensible and correcting it would not clear the bar.**
 
 **Which leaves the question genuinely yours and not a data error**: it is whether you would apply to
 a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
@@ -137,10 +116,14 @@ the gate ONCE: `eligibility gate request` → judge → `gate apply`. The reques
 live data (521 judgeable items of 537, independence preserved); `gate apply` writes **immutable**
 evaluations, so it is an attended act.
 
-**3. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
-(D-428; watched 403 → 453). Population 332 boards / 471 postings, **1.42 in-window postings per
-board**; the remaining 282 cost ~15 min/run. Reversal:
-`companies-prehcsample-20260902-183019.csv`.
+**3. THE 50-BOARD SAMPLE IS READ AND THE REMAINING 282 ARE REFUSED (D-441). CLOSED — do not
+re-open it from hiring.cafe's in-window counts, which is the number that was wrong.** Run 145
+answered it in one run: the sample's **59 boards contributed 8,303 postings** against D-428's
+predicted 79, and the run took **96.4 min writing 15,356 versions** against run 144's 21.9 min and
+2,020 — **105x the postings, ~21-27x the minutes**, and 8,303 is a FLOOR because eleven of the top
+twelve contributors hit `detail_fetch_budget = 400`. **It bought 10 delivered leads.** The sample is
+NOT reverted; whether to keep paying ~60 min/run for 10 leads is the OWNER's, and is a different
+question from adding 282 more, which is closed.
 
 **4. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
 `.agent/2026-09-02-session/per_source_recall.py`. **The residual is LinkedIn alone**, and Track 2 is
@@ -158,6 +141,19 @@ yield unreadable. That is why "both levers" was rejected.
 *(Closed since the last close: Track 2 — BUILT and DISARMED, D-433. The buried live requisition —
 FIXED, D-432, and its blast radius re-measured as 1 job, not 16. The `_reported` folder drain —
 SHIPPED, D-434. The `perf` flaky bound — CHARACTERISED and FIXED, D-435.)*
+
+### Run 145 — read out; both of the night's queue fixes are CONFIRMED IN PRODUCTION
+
+96.4 min, exit **ok**, 94 tailored leads. Queue **598 apply / 732 review / 274 ineligible / 107
+closed / 0 reported**. Full numbers: `METRICS.md` (Run 145). **D-432 CONFIRMED** — the buried eBay
+requisition (job 35249) left `_closed` for `_review` and its genuinely-dead same-titled sibling
+(35247) correctly stayed. **D-434 CONFIRMED** — `_reported/` created and empty, exactly as "0
+reported, 0 skipped on the live store" predicted, so a live reconcile could not have exercised that
+drain either way and the unit tests were the only thing that could catch it.
+
+**A count prediction and a mechanism prediction are different claims, and only the second was
+D-432's.** `_closed` went 103 → **107**, not the predicted 102: a 96-minute rescan of 1,124 boards
+found new closures, and the prediction implicitly held the world still for an hour and a half.
 
 ### Owed, and specifically NOT done
 
