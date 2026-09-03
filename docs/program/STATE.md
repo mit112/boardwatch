@@ -90,25 +90,20 @@ and the stored fact agree. **The value is defensible and correcting it would not
 a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
 answer that, and D-440 has priced every option so it is a row-pick rather than an opinion.
 
-**2a. THE RE-KEY IS LIVE RIGHT NOW, NOT A PREDICTION — every stored verdict reads `None` until the
-next run.** The pull moved BOTH hashes: `rules_hash` from the catalog change, and `profile_hash`
-too, because D-438's resolver adds `education_timing` to `declared_fields()` and therefore to the
-hashed profile. Measured immediately after: the live identity matches **no** stored
-`eligibility_inputs` row, so a fresh read returns `None` for all ~138k open postings.
+**2a. THE RE-KEY IS LIVE RIGHT NOW, NOT A PREDICTION.** The pull moved BOTH hashes — `rules_hash`
+from the catalog change and `profile_hash` too, since D-438's resolver adds `education_timing` to
+`declared_fields()`. Measured straight after: the live identity matches **no** stored
+`eligibility_inputs` row, so a fresh read returns `None` for all ~138k open postings. **Nothing is
+corrupted and it self-heals on the next run.** Until then the web view shows every lead unevaluated
+and the apply lane reads INFLATED (`review_gate.lane` routes `None` like `uncertain`), while the
+folders on disk still hold the last reconcile at 598 apply / 732 review. **Expect the web view and
+the folder tree to disagree until the 04:00 tick.** A full re-evaluation was deliberately NOT
+triggered: `eligibility run` would write ~138k rows over hours, duplicating what the tick does.
 
-**Nothing is corrupted and it self-heals on the next run**, which re-evaluates under the new
-identity. But until then: the web app shows every lead unevaluated, and because `review_gate.lane`
-routes a `None` verdict like `uncertain`, the APPLY LANE READS INFLATED. The queue FOLDERS on disk
-still reflect the last reconcile (598 apply / 732 review) and are unchanged. **Expect the web view
-and the folder tree to disagree until the 04:00 tick.** A full re-evaluation was deliberately NOT
-triggered: it is the corpus re-evaluation the owner asked to witness, and the scheduled run does it.
-
-**2. THE CATALOG WORK IS MERGED AND THE CHECKOUT IS PULLED — what remains is the DRAIN, and it is
-not the small step it reads as.** D-436 and D-438 are on `main` (`ff5dfd79`); the primary checkout is
-pulled and its catalog loads 7 families / 57 patterns; 400 live bodies were evaluated through the
-tick's own path with no crash, and `student_status` abstains because `education_timing` is
-undeclared, so nothing is newly rejected. **The owed ledger drain releases 1,595 of 1,609 decisions —
-99.1% — see the Owed section: precision work FIRST, drain LAST, and stage it with `--job <id>`.**
+**2. THE CATALOG WORK IS MERGED AND THE CHECKOUT IS PULLED — what remains is the DRAIN.** D-436 and
+D-438 are on `main`; the checkout is pulled and its catalog loads 7 families / 57 patterns, with 400
+live bodies evaluated through the tick's own path and no crash. **The owed ledger drain releases
+1,595 of 1,609 decisions — 99.1% — so: precision work FIRST, drain LAST, staged with `--job <id>`.**
 
 **3. THE 50-BOARD SAMPLE IS READ AND THE REMAINING 282 ARE REFUSED (D-441). CLOSED — do not
 re-open it from hiring.cafe's in-window counts, which is the number that was wrong.** Run 145
@@ -132,6 +127,9 @@ code) and **ARM the `grnh.se` resolver** (D-429, ~90 boards, ~5 min/run). **Both
 run 147**: each admits boards, and landing either inside runs 145-147 makes the hiring.cafe sample's
 yield unreadable. That is why "both levers" was rejected.
 
+*(Closed since the last close: Track 2 — BUILT and DISARMED, D-433. The buried live requisition —
+FIXED, D-432, and its blast radius re-measured as 1 job, not 16. The `_reported` folder drain —
+SHIPPED, D-434. The `perf` flaky bound — CHARACTERISED and FIXED, D-435.)*
 
 ### Run 145 — read out; both of the night's queue fixes are CONFIRMED IN PRODUCTION
 
@@ -236,10 +234,10 @@ found new closures, and the prediction implicitly held the world still for an ho
 4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Role
    TAXONOMY, not dedup. D-345 bounds the delivery damage; it does not answer this.
 
-
-*(Decisions that closed earlier open questions are NOT restated here — cite the number: the
-delivery slate cap D-345, the funnel-write swallow D-288, clearance as a blocker D-257, and
-seniority band `entry` D-258, which is armed on the live profile.)*
+*(Resolved and no longer open: the delivery slate cap — D-345, `(company_id, normalized_title,
+content_hash)` at N=1; do not reopen as identity suppression, which is D-295 and is refused.
+Whether `runner.py` should keep swallowing a funnel-write failure — D-288. Clearance IS a blocker
+(D-257). Seniority band = `entry` (D-258), and it is **armed on the live profile**.)*
 
 ## Phase status
 
