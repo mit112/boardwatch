@@ -209,7 +209,39 @@ PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-a
 until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
 80%, do not re-derive "most", do not re-probe Indeed.**
 
-**A. THE NINE MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Three are merges — **#354 (A1), #344 (A5), #357 (A9)** — and none is auto-merging. Read the ordering note under the table before starting: two of them move the catalog, and A2 fails SILENTLY if it runs first.
+**A. THE NINE DECISIONS — MOST ARE NOW ANSWERED. 2026-09-03, and read the provenance line.**
+
+> **A1, A6 and #354 are VERIFIED DONE from the repo and the store** — `main` carries #354
+> (`113b91af`), and the live store holds **87 `queue.skipped.*` rows and 0 ledger `skipped`
+> dispositions**, which is A6 executed through the reversible mechanism D-446 recommended.
+> Reversal list: `a6-skipped-duplicates-20260903-114210.json` in the config dir.
+>
+> **The RULINGS below (A2, A3, A4, A7, A8) are RELAYED through a peer session, not read
+> from Mit directly by the session that wrote this line.** They are recorded so the work
+> is not re-litigated, and they are marked so a wrong relay is correctable rather than
+> canon. **Confirm before acting on one that deletes or rejects.**
+>
+> **A5 (#344) is NOT decided: Mit said he would wrap it up directly.** It is gate-green and
+> CI-green and is deliberately unmerged.
+
+| # | ruling | status |
+|---|---|---|
+| **A1** | merge | **DONE** — `main` `113b91af` |
+| **A2** | **yes** | must run AFTER the catalog PRs (see the silent-failure note below) |
+| **A3** | **delegated** | the routing predicate is ours to implement |
+| **A4** | **yes — "I don't have 2 years of work ex"** | this ANSWERS the fact question D-440 said was the honest alternative |
+| **A5** | **open — Mit is wrapping it up directly** | #344, gate 0, CI 24/24 |
+| **A6** | executed | **DONE** — 87 skipped, reversible |
+| **A7** | **unsure** | still open |
+| **A8** | **NO — a disjunction does NOT waive a scoped bar** | the D-448 wiring stays reverted; the defect pin stays |
+| **A9** | merge | #357 rebuilt on fresh `main`, gating |
+
+**A4's answer is a FACT, not a policy move, and that distinction is the whole of D-440.**
+"I don't have 2 years of work ex" answers the profile question; it does NOT by itself say
+to lower `near_miss_years_ceiling`, because lowering it makes the engine REJECT those
+postings rather than release them. Re-read D-440 before changing the value.
+
+The original priced table follows, unchanged, because it is what the rulings are against.
 
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
