@@ -118,10 +118,11 @@ class QueueRow:
     tex_uri: str
     pdf_uri: str | None
     target_flag: bool | None
-    #: Which kinds of requirement the CURRENT evaluation left unconfirmed. Read from the same
-    #: evaluation as `verdict` above, in the same call, so the lane can never hold a lead for a
-    #: requirement a newer verdict beside it had already resolved. Defaulted so a row built
-    #: without it — every test fixture that predates the lane gates — behaves as before.
+    #: What the CURRENT evaluation's requirement rows say: which kinds it left unconfirmed, and
+    #: whether it produced any row at all. Read from the same evaluation as `verdict` above, in
+    #: the same call, so the lane can never hold a lead for a requirement a newer verdict beside
+    #: it had already resolved. Defaulted so a row built without it — every test fixture that
+    #: predates the lane gates — behaves as before.
     requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS
 
     @property
@@ -514,6 +515,7 @@ def review_job_ids(conn: Connection) -> set[int]:
             title=row.title,
             experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
             eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+            no_requirement_rows=row.requirement_flags.no_requirement_rows,
             posting_closed=row.closed,
         )
         == REVIEW_DIR
@@ -567,6 +569,7 @@ def apply_lane_placements(
                 title=row.title,
                 experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
                 eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+                no_requirement_rows=row.requirement_flags.no_requirement_rows,
                 posting_closed=row.closed,
             )
             == ""

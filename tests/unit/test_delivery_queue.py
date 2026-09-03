@@ -99,6 +99,56 @@ APPLY_URL = "https://boards.test/apply?gh_jid=1&src=a&b=c"
 SIDECARS = ("resume.projected.yaml", "projection-manifest.json")
 
 
+#: The facts `_deliver` stores, and the reason they are not the empty `Facts()`: a work-auth rule
+#: with nothing to resolve against ABSTAINS (`unknown`), which sets `eligibility_unconfirmed` and
+#: holds the lead for review. Resolved US authorization makes the same rule report `met`, so every
+#: seeded body — `INELIGIBLE_JD` included — reaches the APPLY queue, which is where the drain
+#: tests below need the lead to start before `_make_ineligible` turns its verdict.
+FACTS = Facts(
+    work_authorization=WorkAuthFact(
+        status="citizen", jurisdiction="us", needs_sponsorship=False
+    )
+)
+#: The bundled default policy. `_make_ineligible` stores DIFFERENT facts (needs_sponsorship) with
+#: `work_auth: blocker`, which is a different identity — that is how a lead's verdict turns
+#: mid-test, and why nothing else may depend on this identity surviving that call.
+POLICY = Policy()
+
+
+def _judge_version(conn: Connection, version_id: int, body: str) -> None:
+    """Evaluate one frozen version under the identity `_save_identity` stores.
+
+    A revision is a new evaluation subject: `current_verdicts` keys on the CURRENT version, so a
+    version inserted without one leaves the lead with NO verdict, which since A3 routes it to
+    `_review`. Production writes the evaluation alongside the revision; these fixtures do too.
+    """
+    catalog = load_rules(load_settings().config_dir)
+    write_evaluation(
+        conn,
+        posting_version_id=version_id,
+        identity=build_identity(
+            posting_version_id=version_id, facts=FACTS, policy=POLICY,
+            catalog=catalog, declared_fields=declared_fields(),
+        ),
+        result=evaluate(body, FACTS, POLICY, catalog),
+    )
+
+
+def _save_identity(conn: Connection) -> None:
+    """The stored profile + eligibility `current_identity` recomputes the read's identity from.
+
+    Written by content, so calling it once per delivered lead stores the same hashes every time.
+    """
+    save_profile(
+        conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
+        locations=["Boston, MA"], remote_only=False, skills=["python"],
+        taxonomy_version="v1", resume_max_pages=1,
+    )
+    save_eligibility(
+        conn, facts_json=facts_payload(FACTS), policy_json=POLICY.model_dump(mode="json")
+    )
+
+
 @pytest.fixture(autouse=True)
 def _scratch_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
@@ -186,6 +236,13 @@ def _deliver(
 
     Returns `(posting_id, job_id)`. `pdf=False` writes no PDF on disk; `pdf_uri=None` records an
     artifact whose `meta_json` names no PDF at all. The two are different absences.
+
+    It is EVALUATED, which is the production shape and is what puts it in the APPLY lane: a
+    delivered posting has been through the eligibility gate, and since A3 a lead with no current
+    evaluation routes to `_review` — nothing cleared it, so it is not blindly appliable. These
+    fixtures used to store no profile at all, which made every verdict `None` and every lead
+    appliable by default; the folder-tree behaviour they assert is the apply lane's, so the
+    fixture now says so out loud.
     """
     typ, pdf_path = _lead_folder(apps, key, pdf=pdf)
     run_id = int(
@@ -261,6 +318,8 @@ def _deliver(
             run_id=run_id,
         )
     )
+    _save_identity(conn)
+    _judge_version(conn, version_id, body)
     return posting_id, job
 
 
@@ -441,16 +500,19 @@ def test_a_changed_jd_rewrites_the_folder(engine: Engine, root: Path, apps: Path
 
     revised = JD + " Updated: now also requires Rust."
     with engine.begin() as conn:
-        conn.execute(
-            insert(posting_versions).values(
-                posting_id=posting_id,
-                content_hash="v-one-revised",
-                body_text=revised,
-                captured_at=NOW + timedelta(hours=1),
-                run_id=None,
-                capture_reason="revised",
-            )
+        revised_version = int(
+            conn.execute(
+                insert(posting_versions).values(
+                    posting_id=posting_id,
+                    content_hash="v-one-revised",
+                    body_text=revised,
+                    captured_at=NOW + timedelta(hours=1),
+                    run_id=None,
+                    capture_reason="revised",
+                )
+            ).inserted_primary_key[0]
         )
+        _judge_version(conn, revised_version, revised)
     with engine.connect() as conn:
         report = sync_queue(conn, root=root, owner_name=OWNER)
 
@@ -867,6 +929,39 @@ def test_an_applied_or_skipped_lead_keeps_that_folder_even_when_also_reported(
     assert _folders(root / REPORTED_DIR) == []
 
 
+#: A body the bundled catalog matches NOTHING in, so a real evaluation of it produces zero
+#: requirement rows — A3's population. Its premise is asserted in the test that uses it.
+SILENT_JD = "Join our team. We build delightful things and we value curiosity."
+
+
+def test_a_lead_whose_JD_states_no_requirement_is_filed_under_review(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A3 through the FOLDER TREE, which is a different call site from the page's (D-332).
+
+    `sync_queue` places a lead in the lane `review_gate.lane` returns, so dropping the new
+    argument from that call puts this folder back at the queue root while the page still shows it
+    under review — the exact disagreement `_review` exists to prevent. The control is the default
+    `JD`, which states requirements and stays at the root.
+    """
+    # Different companies, so the two leads cannot share a folder NAME and each assertion below
+    # names the lead it is about.
+    with engine.begin() as conn:
+        _deliver(conn, apps, "silent", company="Silent Co", body=SILENT_JD)
+        _deliver(conn, apps, "stated", company="Stated Co")
+    catalog = load_rules(load_settings().config_dir)
+    # The premise, out loud: if a catalog edit ever finds a requirement in this body, this fails
+    # here rather than silently testing nothing.
+    assert evaluate(SILENT_JD, FACTS, POLICY, catalog).requirements == ()
+    assert evaluate(JD, FACTS, POLICY, catalog).requirements != ()
+
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert _folders(root) == ["Stated_Co_Software_Engineer"]
+    assert _folders(root / REVIEW_DIR) == ["Silent_Co_Software_Engineer"]
+
+
 INELIGIBLE_JD = "Applicants must be authorized to work in the United States."
 
 
@@ -971,11 +1066,15 @@ def test_a_verdict_that_no_longer_governs_returns_the_lead_to_the_queue(
     assert _folders(root) == [], "premise: the lead must be drained before it can come back"
     assert _folders(root / INELIGIBLE_DIR) == drained_folder
 
+    # Back to the identity `_deliver` wrote its evaluation under, so the ORIGINAL `eligible`
+    # verdict governs again. A third identity would leave the lead unevaluated, which since A3
+    # returns it to `_review` rather than to the apply queue — a true answer to a different
+    # question than the one this test asks.
     with engine.begin() as conn:
         save_eligibility(
             conn,
-            facts_json=facts_payload(Facts()),
-            policy_json=Policy().model_dump(mode="json"),
+            facts_json=facts_payload(FACTS),
+            policy_json=POLICY.model_dump(mode="json"),
         )
     with engine.connect() as conn:
         restored = reconcile_queue(conn, root=root)
@@ -1436,6 +1535,7 @@ def test_the_identity_hash_does_not_move_when_a_lead_is_delivered_again(
                 )
             ).inserted_primary_key[0]
         )
+        _judge_version(conn, version_id, JD)
         run_id = int(
             conn.execute(
                 insert(runs).values(started_at=NOW + timedelta(hours=2), boards_attempted=1)

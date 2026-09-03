@@ -59,7 +59,15 @@ from boardwatch.store.db import ensure_schema, get_engine
 
 # `init` answers: 3 = skip the board wizard, then the profile prompts.
 INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
-BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
+#: The stated requirement is load-bearing, not decoration. The pipeline evaluates this body for
+#: real, and since A3 an evaluation that produces NO requirement row holds the lead in `_review` —
+#: so a body the catalog reads nothing out of would put every lead in a drain and no assertion
+#: about the queue root below could pass. `degree` is a `preference` family by default, so the row
+#: makes the lead APPLY-lane rather than merely present.
+BODY = (
+    "We are hiring a backend engineer to work on Python and PostgreSQL services. "
+    "Bachelor's degree in Computer Science required."
+)
 
 
 @pytest.fixture()

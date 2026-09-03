@@ -42,6 +42,7 @@ from boardwatch.store.delivery_queries import (
     closed_job_ids,
     delivered_unapplied,
     queue_detail,
+    review_job_ids,
     standing_slate_keys,
 )
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
@@ -847,3 +848,67 @@ def test_every_drain_has_a_recorded_answer_on_whether_it_holds_a_slot() -> None:
         assert (f"`{state}` is KEPT" in doc) == kept, (
             f"this test and standing_slate_keys' docstring disagree about `{state}`"
         )
+
+
+# ------------------------------------------------- the zero-row lane gate, through the store (A3)
+
+#: A body the bundled catalog has NOTHING to say about, so a real evaluation of it produces zero
+#: requirement rows. Verified against `evaluate` in the test below rather than asserted here, so
+#: the fixture cannot drift into saying something the catalog does recognise and pass vacuously.
+SILENT_JD = "Join our team. We build delightful things and we value curiosity."
+
+#: A body with exactly ONE requirement the catalog reads, from a family the default policy does not
+#: treat as a blocker — so the evaluation is `eligible` with a row, which is the control the store
+#: can actually produce. Under the bundled policy only the hard and experience families block, and
+#: each of those sets one of the two OLDER flags, so `uncertain` with rows and no flag is not
+#: reachable from the default catalog and cannot be the control here.
+DEGREE_JD = "Bachelor's degree in Computer Science required."
+
+
+def test_a_lead_whose_JD_yields_no_requirement_row_is_flagged_and_routed_to_review(
+    engine: Engine,
+) -> None:
+    """A3, end to end through the read the delivery lane actually uses.
+
+    `test_review_gate.py` passes the three booleans in literally, so it pins what the router does
+    with a flag and nothing about whether the flag is ever computed or ever reaches a call site. A
+    read still filtered to unconfirmed rows, or a `lane(...)` call at one of the six sites that
+    forgot the new argument, leaves every one of those tests green and this one red.
+
+    The control is a lead whose JD DOES carry a requirement row: it keeps `no_requirement_rows`
+    False and stays in the apply lane, so the routing above is attributable to the predicate and
+    not to the read returning True for everything.
+    """
+    catalog = load_rules(load_settings().config_dir)
+    silent = evaluate(SILENT_JD, Facts(), Policy(), catalog)
+    stated = evaluate(DEGREE_JD, Facts(), Policy(), catalog)
+    # The fixtures' own premise, asserted rather than assumed: one body yields no row at all and
+    # the other yields at least one. A catalog edit that makes SILENT_JD detectable fails HERE.
+    assert len(silent.requirements) == 0
+    assert len(stated.requirements) >= 1
+
+    with engine.begin() as conn:
+        _save_profile(conn)
+        for key, body in (("silent", SILENT_JD), ("stated", DEGREE_JD)):
+            posting_id, _ = _deliver(conn, key, posting_body=body, version_body=body)
+            version_id = int(
+                conn.execute(
+                    posting_versions.select().where(posting_versions.c.posting_id == posting_id)
+                ).one().id
+            )
+            _write_evaluation(conn, posting_id, version_id, body)
+
+    with engine.connect() as conn:
+        # Keyed by which body was seeded: `_deliver` names the artifact path after its key.
+        seeded = {
+            ("silent" if "/silent/" in row.tex_uri else "stated"): row
+            for row in delivered_unapplied(conn, skipped=set())
+        }
+        held = review_job_ids(conn)
+    assert set(seeded) == {"silent", "stated"}
+    assert seeded["silent"].requirement_flags.no_requirement_rows is True
+    assert seeded["stated"].requirement_flags.no_requirement_rows is False
+    # `review_job_ids` is derived from the same `delivered_unapplied` + `lane` pair the `_review`
+    # folder is, so this is the drain's own answer and not a second opinion (D-332).
+    assert seeded["silent"].job_id in held
+    assert seeded["stated"].job_id not in held

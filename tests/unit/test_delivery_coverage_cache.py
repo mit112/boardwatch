@@ -245,7 +245,11 @@ def _render(engine: Engine, ctx: ApiContext) -> dict[str, Any]:
 
 
 def _rows_by_id(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    return {row["posting_id"]: row for row in payload["rows"]}
+    """Both lists. Coverage is rendered by `_row_json` for every row the payload carries, and the
+    lane these fixtures land in is not this file's subject: they seed no evaluation, so since A3
+    every lead is held for review as unevaluated. Reading `rows` alone would make every assertion
+    below a `KeyError` for a reason that has nothing to do with the coverage memo."""
+    return {row["posting_id"]: row for row in payload["rows"] + payload["review"]}
 
 
 # ------------------------------------------------------------------------------- the memo itself
@@ -417,7 +421,10 @@ def test_a_changed_master_resume_discards_the_memo_and_an_unrecognised_edit_does
 
     baseline = _render(engine, ctx)
     assert parses.n == 1
-    assert baseline["rows"][0]["coverage_detail"]["covered"] == ["Rust"]
+    # `_rows_by_id`, not `["rows"][0]`: the seeded lead carries no evaluation, so since A3 the
+    # payload lists it under `review`. Coverage is rendered the same on either list.
+    (baseline_row,) = _rows_by_id(baseline).values()
+    assert baseline_row["coverage_detail"]["covered"] == ["Rust"]
 
     # An edit the taxonomy cannot see: same skills, different bytes, memo retained.
     _write_resume(ctx, RESUME_REWORDED)
@@ -428,8 +435,9 @@ def test_a_changed_master_resume_discards_the_memo_and_an_unrecognised_edit_does
     _write_resume(ctx, RESUME_FEWER)
     changed = _render(engine, ctx)
     assert parses.n == 2, "a changed master résumé served terms from the previous generation"
-    assert changed["rows"][0]["coverage_detail"]["covered"] == []
-    assert changed["rows"][0]["coverage"] == 0.0
+    (changed_row,) = _rows_by_id(changed).values()
+    assert changed_row["coverage_detail"]["covered"] == []
+    assert changed_row["coverage"] == 0.0
 
 
 # --------------------------------------------------------------------------------------- the cap

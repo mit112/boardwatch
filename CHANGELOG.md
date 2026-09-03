@@ -302,6 +302,34 @@ All notable changes to this project are documented here. The format follows
   — the delivery queue, the reconcile report, the run funnel, the web viewer — reads it back, so
   a rename cannot orphan an artifact.
 
+- **The apply queue now means "a rule read this job description and cleared it".** The queue you
+  work from has two lists: one you can apply to without opening the job description, and one to
+  read first. A job reached the first list whenever nothing was found against it — and for most of
+  them, nothing was found because the eligibility rules had matched **nothing at all** in the job
+  description. Measured on your own store on 2026-09-03: of 646 jobs in the apply list, **521 had
+  not a single requirement extracted from their description**, and another **34 had never been
+  judged at all** under your current profile. Only **91** were there because a rule actually read a
+  requirement and cleared it. An independent blind two-judge audit priced that silent-clear
+  population at 32% not worth applying to.
+
+  Those 555 jobs now go to the **read-first** list instead, each labelled with why: *nothing
+  extracted* when the rules found no requirement in the description, and *not evaluated* when
+  nothing has judged the job yet. They are held for a look, not dropped — the second is the
+  transient one and the next run can clear it by itself. The apply list drops from 646 to 91 on
+  today's queue.
+
+  This is not a bug fix. It is what the apply list is supposed to mean: an empty page of findings
+  is not a clearance. A job the rules affirmatively cleared still goes straight to the apply list,
+  and a job already marked eligible is unaffected — measured, none of the 521 were eligible.
+
+  **Your folder tree re-files itself on the next run**; nothing needs re-running by hand. There is
+  no switch back — the change is the definition, not a setting.
+
+  One knock-on worth knowing about: the alert that watches for "runs are delivering work but none
+  of it is blindly appliable" now has far less headroom. The last ten runs each put 40-77 leads in
+  the apply list under the old rule and 3-15 under this one, so a real drought will show up there
+  sooner than it used to. Nothing has changed about when it fires; the margin has.
+
 - **The hiring.cafe search no longer takes 30 runs to work through the employers it already
   found.** New employers a search discovers are admitted 10 per run. For hiring.cafe that limit
   was only ever slowing down a queue it had already filled: its search looks back 7 days, so the
