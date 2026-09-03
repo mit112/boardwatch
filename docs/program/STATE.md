@@ -29,6 +29,46 @@ Reasoning: **D-436**, **D-438**. Numbers: `METRICS.md` (Session 2026-09-03).
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
 
+### CORRECTION — "the catalog is 8% of the problem" was WRONG, and it was the session's headline
+
+**It read a verdict DISTRIBUTION as a defect ATTRIBUTION.** 8% of the apply lane carries an
+`eligible` verdict; that says where verdicts land, not where the defect lives. Measured
+independently by two sessions, the defect is **catalog COVERAGE**:
+
+| | |
+|---|---|
+| apply lane | **597** |
+| of which `uncertain` | **526** |
+| **of those, with ZERO requirement rows** | **487** |
+| their JD bodies | median **4,636 chars**, only 4 under 200, **391 over 2,000** |
+
+**The catalog extracts NOTHING from ~490 substantial job descriptions.** They reach the apply lane as
+blindly-appliable **because there is nothing unconfirmed to hold them for** — `_no_evaluable_requirement`
+makes them `uncertain`, and `review_gate.lane()` never reads WHY. The routing is deciding correctly on
+the information it is handed. **`experience_unconfirmed` fires 497 times in the review lane — the flag
+works.** All 597 apply-lane leads carry both flags False because nothing was extracted, not because
+nothing is wrong.
+
+**So the ~36% unapplyable rate IS the extraction gap, arriving from the other end** — the same finding
+as D-436's "every miss was a missing row", and the same reason the abstain report cannot see it: a
+family that extracts nothing is silent, and silence is indistinguishable from "the JD says nothing".
+
+**THE GATE IS MEASURED, NOT ESTIMATED (2026-09-03).** 77 apply-lane leads, two independent judges,
+through the real schema, nothing applied: **15 demoted (19.5%), and 15 of 15 rejections survive
+`accept_oracle_verdict`'s keystone span guard — ZERO span failures.** Every rejection quotes the
+employer's own JD. Two are cases the catalog cannot reach at all (a French-language JD; one with
+markdown-escaped punctuation). Scaled to 597: ~**116 demoted, each with a checkable quote**. Judged
+verdicts saved at `{config_dir}/verdicts_a.json` / `verdicts_b.json` — **spot-check a sample, then
+`gate apply`**. The earlier "~50-100 wrongly removed" was an estimate that treated inter-rater
+disagreement as error-against-truth and ignored the span guard; it is retired.
+
+**What this changes.** The `final_gate:` LLM lane is the TREATMENT — it reads the JD directly and
+catches what the patterns miss. **Catalog coverage is the CURE**, and the instrument for finding these
+490 is partial-match instrumentation of the patterns themselves (a family that ALMOST matched), which
+is the one design a cue vocabulary cannot substitute for — correct silence and a missed extraction
+look identical to a cue, and not to a near-miss. See D-442 for the routing question, which is a
+decision about what the apply lane MEANS and not a bug fix.
+
 ### The 2026-09-03 queue audit — the catalog is 8% of the problem
 
 Blind two-judge audits of what the owner actually opens. Full numbers and method in METRICS

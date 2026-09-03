@@ -205,7 +205,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 11092 | Session — 2026-09-02c · NO RUN: the hiring.cafe board sample is ADMITTED at 50 boards (watched 403 → 453), D-425's "471 boards" is corrected to 471 POSTINGS across 332 BOARDS, and `click.appcast.io` is refused as a resolver target at 1 of 40 |
 | METRICS.md | 11205 | Session — 2026-09-02d · NO RUN: the buried live requisition is fixed and measured at 1 job (not the 16 the handoff carried), LinkedIn gains a per-company axis whose planned shape is refuted at a 358-day rotation, and the `perf` CI bound is characterised as sitting inside a 0.92 s empty gap |
 | METRICS.md | 11275 | Session — 2026-09-03 · NO RUN: a blind two-judge audit measures the APPLY LANE at 32% UNAPPLYABLE — worse than the 24% on the `eligible` verdict, which is only 8% of what the owner sees — every miss is a MISSING REQUIREMENT ROW rather than a mis-decided rule, and the two pattern fixes that shipped move the measured rate by ZERO |
-| METRICS.md | 11445 | Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production |
+| METRICS.md | 11497 | Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production |
 
 ---
 
@@ -11290,6 +11290,58 @@ event. **All 1,034 corpus cases passed that version.** The corpus being green wa
 safety; the control that caught it lives in a different suite entirely. An even earlier gate exited
 **2** at the FIRST target on **R7**, the `rules.yaml` content pin in
 `tools/generalization/allowlists.py` — not R14, and not something `fixture_refresh --record` writes.
+
+### The `final_gate:` lane, MEASURED on the live apply lane — 19.5% demoted, 0 span failures
+
+Two independent judges scored **77 leads** sampled from the stable 597-lead apply lane (post
+re-evaluation), through the real gate schema. **Nothing was applied.**
+
+| | |
+|---|---|
+| demoted to `ineligible` | **15 (19.5%)** |
+| uncertain | 10 |
+| eligible | 52 |
+| **rejections surviving `accept_oracle_verdict`'s keystone span guard** | **15 of 15** |
+| downgraded because the span did not resolve | **0** |
+
+**Every rejection is anchored to a verbatim quote from the employer's own JD.** Sample:
+`"without the need for current or future visa sponsorship"`, `"This role does not qualify for
+employer sponsored work authorization"`, `"Permanent US work authorization is a condition of
+employment"`, `"Five or more years of experience developing web applications"`, `"2+ years of
+industry software engineering experience (does not include internships or co-ops)"`.
+
+**Two are cases the deterministic catalog structurally cannot reach**: a FRENCH-language JD
+(`Vous avez au moins 5 ans d'expérience`) and one carrying markdown-escaped punctuation
+(`full\-time`). That is the coverage gap above, seen through the treatment.
+
+**This retires an ESTIMATE that was doing the work of a refusal.** The earlier "~50-100 wrongly
+removed of ~500" treated inter-rater disagreement as error-against-truth and ignored the keystone
+guard. **The measured span-failure rate is zero.** Scaled to 597, roughly **116 leads would be
+demoted, each carrying a checkable quote**. Judged verdicts for the 77 are saved at
+`{config_dir}/verdicts_a.json` and `verdicts_b.json` for spot-checking before any `gate apply`.
+
+### CORRECTION — the "8%" headline read a DISTRIBUTION as an ATTRIBUTION
+
+Two sessions independently measured the apply lane after the 2026-09-03 re-evaluation:
+
+| | measured |
+|---|---|
+| apply lane | 597 |
+| of which `uncertain` | 526 |
+| **of those, ZERO requirement rows** | **487** (peer's independent pass: 481) |
+| their JD bodies | median **4,636 chars**, 4 under 200, **391 over 2,000** |
+| review-lane `experience_requirement` holds | **497** — the flag WORKS |
+| apply-lane leads with both requirement flags False | **all 597** |
+
+**The catalog extracts nothing from ~490 substantial JDs**, which then reach the apply lane as
+blindly-appliable because `review_gate.lane()` has no unconfirmed requirement to hold them for. The
+routing is correct on the information it is handed; the verdict already carries the distinction
+(`uncertain` *because nothing was evaluable*) and the lane never reads it.
+
+**So "the catalog is 8% of the problem, the routing is the rest" is backwards.** 8% is the share of
+the apply lane carrying an `eligible` verdict — a statement about where verdicts LAND, not about
+where the defect LIVES. The ~36% unapplyable rate is the extraction gap seen from the other end, and
+it is the same finding as D-436's "every miss was a missing row".
 
 ### The two populations, and they differ by 8x
 
