@@ -50,6 +50,7 @@ from boardwatch.delivery.queue import (
     JD_FILE,
     LINK_FILE,
     LOCK_FILE,
+    REPORTED_DIR,
     REVIEW_DIR,
     SKIPPED_DIR,
     URL_FILE,
@@ -68,7 +69,12 @@ from boardwatch.store.applications import create_application, set_application_st
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import QueueDetail, QueueRow
 from boardwatch.store.queries import save_eligibility, save_profile
-from boardwatch.store.queue_state import mark_job_skipped, unmark_job_skipped
+from boardwatch.store.queue_state import (
+    mark_job_reported,
+    mark_job_skipped,
+    unmark_job_reported,
+    unmark_job_skipped,
+)
 from boardwatch.store.tables import (
     artifacts,
     companies,
@@ -755,6 +761,112 @@ def test_a_skipped_lead_drains_to_skipped_and_unskipping_brings_it_back(
     assert _folders(root / SKIPPED_DIR) == []
 
 
+def test_a_reported_lead_drains_to_its_own_folder_and_comes_back_when_un_reported(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """D-427's deferral, closed. The Report action hid a lead from the web queue but left its
+    folder at the top level, so the owner still saw it in the apply pile.
+
+    **The drain runs on BOTH sides, which is what makes it a drain and not a trapdoor** — the
+    quarantine rule requires the re-entry path be designed in the same change, and `Report` ships
+    an Undo, so un-reporting has to return the lead by the same mechanism that removed it.
+
+    `to_reported` is asserted alongside `moved`: the count is reported on the run line, and a
+    drain omitted from `moved` prints "0 moved" while folders move — the exact unreported-number
+    defect the `moved` property was added to fix.
+    """
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert (drained.to_reported, drained.moved, drained.failed) == (1, 1, 0)
+    assert _folders(root / REPORTED_DIR) == [folder]
+    assert _folders(root) == []
+
+    with engine.begin() as conn:
+        unmark_job_reported(conn, job_id=job_id)
+    with engine.connect() as conn:
+        restored = reconcile_queue(conn, root=root)
+    assert (restored.to_queue, restored.failed) == (1, 0)
+    assert _folders(root) == [folder]
+    assert _folders(root / REPORTED_DIR) == []
+
+
+def test_the_sync_that_follows_a_report_does_not_mint_the_folder_again(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The half a reconcile-only test cannot see, and the reason `_reported` is NOT `_ineligible`.
+
+    `_sync_queue` calls `reconcile_queue` and then `sync_queue` in ONE call. Without withholding
+    the reported job from `delivered_unapplied`, reconcile moves the folder into `_reported/` and
+    the sync immediately behind it **RELOCATES IT STRAIGHT BACK OUT** — so the lead the owner
+    reported is in the apply queue again every run, while the reconcile count reads a healthy 1.
+
+    **`moved` is the tell, and `created` is NOT** — that distinction was got wrong first time and
+    a review caught it. `_index` scans `_reported/`, so `_entry_for` finds the drained folder and
+    the relocation pass MOVES it; nothing is ever created, so `report.created == 0` holds against
+    the broken implementation too and pins nothing. Verified by mutation, both ways round.
+
+    A reported lead's verdict is still `eligible`, which is exactly why reusing `_ineligible`
+    would fail here: reconcile pulls an ineligible folder back out the moment the verdict clears,
+    and this one never was ineligible.
+    """
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root)
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.moved == 0, "sync relocated a reported lead back to the apply queue"
+    assert report.created == 0
+    assert _folders(root) == []
+    assert _folders(root / REPORTED_DIR) == [folder]
+
+
+def test_an_applied_or_skipped_lead_keeps_that_folder_even_when_also_reported(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The precedence boundary, asserted from the side that could silently swallow a lead.
+
+    `reported` outranks the derived drains — it is an owner statement — but ranks below the two
+    statements about what the owner DID with the lead. Nothing is lost by that: the
+    `queue.reported.<job_id>` marker is the record a later investigation reads, and it survives
+    whichever folder holds the copy.
+
+    Asserted with `_skipped` rather than `_applied` because `closed_job_ids` and the applied set
+    are both built from `delivered_unapplied`, which excludes applied leads unconditionally — so
+    the applied-versus-reported ordering is unobservable by construction, exactly as the closed
+    tests already record.
+    """
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+
+    assert (drained.to_skipped, drained.to_reported) == (1, 0)
+    assert _folders(root / SKIPPED_DIR) == [folder]
+    assert _folders(root / REPORTED_DIR) == []
+
+
 INELIGIBLE_JD = "Applicants must be authorized to work in the United States."
 
 
@@ -933,6 +1045,7 @@ def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
     assert set(DRAIN_DIRS) == {
         APPLIED_DIR,
         SKIPPED_DIR,
+        REPORTED_DIR,
         INELIGIBLE_DIR,
         REVIEW_DIR,
         CLOSED_DIR,
@@ -983,26 +1096,40 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     review = {7}
     closed = {7}
     assert queue._wanted_location(
-        entry, applied=both, skipped={}, closed=closed, ineligible=verdict, review=review
+        entry, applied=both, skipped=both, reported=both, closed=closed,
+        ineligible=verdict, review=review,
     ) == APPLIED_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped=both, closed=closed, ineligible=verdict, review=review
+        entry, applied={}, skipped=both, reported=both, closed=closed,
+        ineligible=verdict, review=review,
     ) == SKIPPED_DIR
+    # `reported` is an owner statement, so it outranks both derived drains AND `closed` -- but it
+    # ranks below the two statements about what the owner DID with the lead. Nothing is lost by
+    # that: the `queue.reported.<job_id>` marker is the record an investigation reads, and it
+    # survives whichever folder holds the copy (D-427).
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, reported=both, closed=closed,
+        ineligible=verdict, review=review,
+    ) == REPORTED_DIR
     # closed ranks below BOTH owner statements and above both derived drains: the employer taking
     # the requisition down does not un-say what the owner already decided, but it does settle a
     # lead the gate could only have held for a second look.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, closed=closed, ineligible=verdict, review=review
+        entry, applied={}, skipped={}, reported={}, closed=closed,
+        ineligible=verdict, review=review,
     ) == CLOSED_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, closed=set(), ineligible=verdict, review=review
+        entry, applied={}, skipped={}, reported={}, closed=set(),
+        ineligible=verdict, review=review,
     ) == INELIGIBLE_DIR
     # review ranks below ineligible (a lead that is both is ineligible) and above the apply queue.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, closed=set(), ineligible={}, review=review
+        entry, applied={}, skipped={}, reported={}, closed=set(),
+        ineligible={}, review=review,
     ) == REVIEW_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, closed=set(), ineligible={}, review=set()
+        entry, applied={}, skipped={}, reported={}, closed=set(),
+        ineligible={}, review=set(),
     ) == ""
 
 
@@ -1578,9 +1705,10 @@ def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     assert (root / INELIGIBLE_DIR).is_dir()
     assert (root / REVIEW_DIR).is_dir()
     assert (root / CLOSED_DIR).is_dir()
+    assert (root / REPORTED_DIR).is_dir()
     assert _folders(root) == []
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
-        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR]
+        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR, REPORTED_DIR]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks
     # it, and `profile_bundle/locking.py` is explicit that its presence is not a signal.
@@ -1593,10 +1721,15 @@ def test_failed_is_derived_from_failures_so_the_two_cannot_disagree() -> None:
     # EVERY drain is set, and each contributes a distinct value, so a `moved` that forgets one
     # cannot land on the right total by accident. Omitting `to_ineligible` here is exactly how the
     # first version of this change shipped a `moved` that printed 0 while 294 folders moved.
+    #
+    # `to_closed` and `to_reported` were absent from this literal for a while and the comment above
+    # still claimed "EVERY drain" — a stale claim rather than a hole, since each is covered by its
+    # own end-to-end drain test, but a reader trusting it believed this guarded fields it did not.
     recon = queue.ReconcileReport(
-        to_applied=1, to_skipped=2, to_ineligible=4, to_review=8, to_queue=16
+        to_applied=1, to_skipped=2, to_reported=4, to_ineligible=8, to_review=16,
+        to_closed=32, to_queue=64,
     )
-    assert recon.moved == 31
+    assert recon.moved == 127
     assert recon.failed == 0
 
 

@@ -313,6 +313,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Reporting a job took it off the review page but left it sitting in your apply folder.** The
+  Report action records that a job was marked eligible by mistake and hides it from the web queue —
+  but its folder stayed at the top level of the queue directory, so the job you had just reported
+  was still in the pile you work from, and came back on every run.
+
+  A reported job now moves to its own `_reported/` folder, kept separate from `_skipped/` so the
+  wrong eligibility call is still findable later, and the run line counts the move. **Undo works
+  the same way round**: un-reporting brings the folder straight back to the apply queue on the
+  next run, with nothing to do by hand.
+
+  A job you already applied to or deliberately skipped keeps that folder even if it is also
+  reported — those say what you did with the job, and the report is a note about the decision, not
+  a replacement for it. The record itself is stored separately, so nothing is lost either way.
+
 - **A job that was still open could be filed away as closed, and never offered again.** When the
   same job is found twice — once on the employer's own board and once through a job site — only one
   of the two is shown in your queue. Which one was picked came down to whichever had a résumé
