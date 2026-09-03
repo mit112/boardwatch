@@ -97,6 +97,8 @@ families:
           - "or an? equivalent"
         abstain_by:
           - "or equivalent experience"
+        abstain_by_sentence:
+          - "or [0-9]+ years"
         consumes_cues: ["no"]
         pattern: "bachelor"
 """
@@ -125,6 +127,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         "suppressed_by_sentence": sum(bool(p.suppressed_by_sentence) for p in patterns),
         "subject_suppressors": sum(bool(p.subject_suppressors) for p in patterns),
         "abstain_by": sum(bool(p.abstain_by) for p in patterns),
+        "abstain_by_sentence": sum(bool(p.abstain_by_sentence) for p in patterns),
         "jurisdiction_map": sum(bool(p.jurisdiction_map) for p in patterns),
         "consumes_cues": sum(bool(p.consumes_cues) for p in patterns),
     }
@@ -156,6 +159,13 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # the years bar abstain, not resolve unmet.
         #
         "abstain_by": 9,
+        # The SAME regex as two of those nine, at a different SCOPE, on the six
+        # scoped/domain minimum patterns. The owner ruled that the `or` in
+        # "a Bachelor's OR N years of X experience" clears the bar it joins, and the word
+        # `or` is also what bounds the ruling -- a disjunction in ANOTHER sentence waives
+        # nothing, which is his separate earlier ruling and 7 postings' worth of behaviour.
+        # Two scopes because one cannot express both answers.
+        "abstain_by_sentence": 6,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
     }
@@ -181,6 +191,7 @@ def test_optional_pattern_members_are_compiled_and_carried(tmp_path: Path) -> No
         pattern.suppressed_by_unit,
         pattern.suppressed_by_sentence,
         pattern.abstain_by,
+        pattern.abstain_by_sentence,
         pattern.cue_idioms,
     ):
         assert len(carried) == 1
