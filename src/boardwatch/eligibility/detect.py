@@ -22,6 +22,8 @@ The scopes, all applied per match:
   abstain_by              DOCUMENT-scoped, and does NOT drop: it marks the row undecidable
                           so the resolver renders UNKNOWN. Dropping would return `eligible`
                           by silence, the worst direction.
+  abstain_by_sentence     The same abstain, UNIT-scoped. An escape that waives the bar its
+                          own sentence states, and reaches no bar in any other sentence.
 
 Every dropping rule only ever removes a detection, so a mistake is toward zero rows rather
 than toward a verdict. Zero rows stores `eligible`, which every surface must render as "no
@@ -279,6 +281,15 @@ def detect(
                         body_text, offset + lo, offset + hi, pattern.abstain_by,
                         inside_span=True,
                     )
+                    if abstained is None:
+                        # Searched over the UNIT, not over `body_text` with unit bounds: a
+                        # bounded search on the whole body can be defeated by a longer match
+                        # that starts inside the unit and ends past it, which `finditer`
+                        # returns instead of the shorter one that fits. The unit string
+                        # cannot produce that match at all.
+                        abstained = _suppressed(
+                            unit, lo, hi, pattern.abstain_by_sentence, inside_span=True
+                        )
                     found.append(
                         Detection(
                             family=family.id,

@@ -565,6 +565,39 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # THE DEGREE DISJUNCTION REACHES THIS ARM, BOUNDED TO ONE SENTENCE. D-449 is the
+        # entry that left this OPEN and named the mechanism; the ruling below closed it.
+        # `total_years_minimum` has abstained on "a Bachelor's OR N years of experience" since
+        # D-073; these six never did, so the same requirement was undecidable when the JD wrote
+        # "years of experience" and a REJECTION when it wrote "years of SOFTWARE ENGINEERING
+        # experience". One word decided whether a posting the owner can actually get was deleted
+        # from view, and the reject pile is never inspected, so nothing downstream could ever
+        # contradict it.
+        #
+        # MEASURED OVER ALL 147,642 OPEN BODIES, three arms against one another: 996 postings
+        # move and 232 of them are SWE+US. EVERY move is `ineligible` -> `uncertain`; nothing
+        # moves toward `eligible`, and no other family moves at all. That is structural, not
+        # luck -- all six of these patterns imply a `_SCOPED_YEARS` value, and that resolver
+        # branch has no `met` at all, so the only row transition available here is
+        # `unmet` -> `unknown`. D-449 sized the same class at 581 by where the ESCAPE sits;
+        # 232 is the count that actually changes VERDICT, which is smaller because many of
+        # those postings are rejected by another family as well.
+        #
+        # AND THE POPULATION IS NOT THE SHAPE THE OWNER WAS SHOWN. Of the 232, exactly ONE
+        # reads "degree OR N years"; 219 read "BS + N years OR MS + M years", where the degree
+        # arm carries its own floor and a master's does not clear it alone. That is not new
+        # here: `degree_alternative_to_years` has abstained on precisely those sentences on the
+        # TOTAL arm since D-073. This change stops the two arms disagreeing; it does not widen
+        # what the escape MEANS. Tightening the escape to the literal either/or shape is a
+        # separate decision about the REGEX, and it would move the total arm with it.
+        #
+        # THE OWNER RULED, AND THE RULING IS EXACTLY AS WIDE AS THE SENTENCE: "because of the
+        # wording of 'or', degree should clear it". The `or` is the reason, so it is also the
+        # bound. `abstain_by_sentence`, NOT `abstain_by`: the document-scoped form would also
+        # waive a SEPARATE "8+ years of C++" stated elsewhere in the posting, which the owner
+        # ruled the other way on and which 7 postings depend on (D-449). Same regex, and the
+        # scope is the whole difference between honouring both rulings and breaking one.
+        abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
         pattern: '(?<![-–—\d])\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
 
@@ -596,6 +629,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # The sentence-scoped degree escape, as on scoped_years_minimum.
+        abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
@@ -624,6 +659,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # The sentence-scoped degree escape, as on scoped_years_minimum.
+        abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
       - id: scoped_range_years_activity
@@ -632,6 +669,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # The sentence-scoped degree escape, as on scoped_years_minimum.
+        abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
@@ -667,6 +706,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # The sentence-scoped degree escape, as on scoped_years_minimum.
+        abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+(?:of|in))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?!(?:age|old|experience|equivalent|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}?\s*(?:,\s*|\s+(?:and|or)\s+)(?:[\w.+#/-]+\s+){0,3}?experience\b'
 
@@ -713,6 +754,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
+        # The sentence-scoped degree escape, as on scoped_years_minimum.
+        abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>[2-9]|1[0-9])\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
 

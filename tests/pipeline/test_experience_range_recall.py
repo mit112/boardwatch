@@ -284,51 +284,117 @@ def test_the_wider_window_does_not_defeat_an_existing_guard(catalog: RulesCatalo
 
 
 # ---------------------------------------------------------------------------------------
-# The degree-vs-experience disjunction is INCONSISTENT ACROSS THE FAMILY — pinned, NOT fixed.
+# The degree-vs-experience disjunction, now SENTENCE-SCOPED across the family — and this
+# block is the record of WHY, because it used to pin the opposite.
 #
-# `total_years_minimum` and `range_years_minimum` carry `degree_alternative_to_years`; the six
-# scoped/domain minimum patterns do not. So "a Bachelor's OR N years of X experience" ABSTAINS
-# when it lands on the total arm and REJECTS when it lands on a scoped one -- same sentence,
-# opposite outcome, decided by which pattern happened to match.
+# `total_years_minimum` and `range_years_minimum` have carried `degree_alternative_to_years`
+# since D-073; the six scoped/domain minimum patterns did not. So "a Bachelor's OR N years of
+# X experience" ABSTAINED when the phrasing landed on the total arm and REJECTED when it
+# landed on a scoped one — same semantics, opposite verdict, decided by whether the JD wrote
+# the word `software`. This file asserted that as a DEFECT rather than fixing it, because
+# whether a disjunction reaches a SCOPED bar is a claim about what the disjunction MEANS, not
+# a consistency repair, and the claim was the owner's to make (row A8, D-449).
 #
-# NOT fixed here, and the reason is not effort. Wiring the escape to the other six was built and
-# measured: it moves 365 SWE+US postings from `ineligible` to `uncertain`. But `abstain_by` is
-# DOCUMENT-scoped -- the catalog's own comment says an escape "ELSEWHERE in the posting may
-# waive it" -- so wiring it means a JD stating "Bachelor's or 4 years" for its general bar also
-# waives a separate "8+ years of C++". Whether a disjunction reaches a SCOPED bar is a claim
-# about what the disjunction MEANS, not a consistency repair, and it is the owner's (row A8).
+# HE MADE IT. Asked whether "Bachelor's degree or 5+ years of software engineering
+# experience" rules out a master's holder, he ruled it does not: "because of the wording of
+# 'or', degree should clear it."
 #
-# The widening above does NOT extend it: measured, 0 of the 17 SWE+US postings this change
-# demotes carry a disjunction at all. The two were separable and the coupling was rhetorical.
+# THE RULING IS EXACTLY AS WIDE AS THE SENTENCE, because the word `or` is the reason he gave.
+# Where an `or` joins the degree clause to the years bar, the degree clears the bar; where the
+# two sit in different sentences with no `or` between them, nothing clears it — which is the
+# owner's SEPARATE, earlier ruling, and 7 live postings rest on it. So the escape wired onto
+# the six scoped/domain patterns is `abstain_by_sentence`, evaluated inside the sentence
+# carrying the bar. The document-scoped `abstain_by` wiring D-447 built and D-449 refused
+# would have fixed the class below and broken the cross-sentence one in the same change.
 # ---------------------------------------------------------------------------------------
 
-#: Verbatim from the live store. Each clears on the DEGREE arm, so today's `ineligible` removes
-#: a job the owner can actually get -- and the reject pile is never inspected, so nothing
-#: downstream will ever contradict it. This test asserts the DEFECT so it stays visible.
-DEGREE_DISJUNCTIONS_ON_A_SCOPED_ARM = [
-    # Already broken at {0,2} -- this is the pre-existing defect, not something this change made.
+#: The first two are VERBATIM from the live store; the third is the sentence the owner was
+#: actually shown, which is also D-449's own worked example.
+#:
+#: THE SECOND ONE IS THE POPULATION, AND IT IS NOT THE SHAPE THE OWNER WAS ASKED ABOUT.
+#: Measured over all 147,642 open bodies, 996 postings move and 232 of them are SWE+US — and
+#: of those 232, exactly ONE reads "degree OR N years". 219 read "BS + N years OR MS + M
+#: years", where the degree arm carries its own floor, so a master's does not clear it on its
+#: own. That is deliberately in the list rather than hidden from it: `degree_alternative_to_
+#: years` has abstained on precisely these sentences on the TOTAL arm since D-073, so what
+#: this change does is stop the arms disagreeing — it does not widen what the escape MEANS.
+#: The direction is the safe one either way (abstain, never delete), and the two-stage gate
+#: is what decides an abstained row.
+SAME_SENTENCE_DISJUNCTIONS_ON_A_SCOPED_ARM = [
+    # Live store, and the owner's literal shape: one bar, two paths, joined by `OR`.
+    "Bachelor's degree in engineering, computer science, or STEM discipline; "
+    "OR 9+ years of professional experience as a software engineer",
+    # Live store, and the shape 219 of the 232 SWE+US moves actually carry.
+    "Bachelor's degree in Computer Science, AI, Electrical Engineering, Computer "
+    "Engineering, or related fields plus at least 6 years of experience developing AI and "
+    "ML algorithms or technologies, or Master's degree plus at least 4 years of experience "
+    "developing AI and ML algorithms.",
+    # D-449's worked example, and the sentence the owner was shown verbatim.
     "Bachelor's degree or 5+ years of software engineering experience.",
-    # And this one the widening DOES newly reach, which is stated rather than hidden: at {0,2} it
-    # wrote no row and read `uncertain` by silence; it now reads `ineligible` by a bar whose
-    # disjunction the scoped arm cannot see. Measured over the live store, ZERO of the 17 SWE+US
-    # postings this change demotes carry a disjunction, so the class is real and currently empty.
-    "Bachelor's degree or 5+ years of full stack software engineering experience.",
+    # The range sibling is wired too, and reaches the escape by its degree-AFTER arm. The
+    # floor is 6, deliberately CLEAR of D-333's 3-year near-miss band: at "3-6" the band
+    # abstains the row on its own and the case would pass with the escape absent, which is a
+    # test of the band rather than of this change.
+    "6-8 years of software engineering experience or a Bachelor's degree is required.",
 ]
 
 
-@pytest.mark.parametrize("body", DEGREE_DISJUNCTIONS_ON_A_SCOPED_ARM)
-def test_a_disjunction_on_a_SCOPED_arm_still_rejects_and_that_is_the_open_defect(
+@pytest.mark.parametrize("body", SAME_SENTENCE_DISJUNCTIONS_ON_A_SCOPED_ARM)
+def test_a_SAME_sentence_disjunction_on_a_scoped_arm_no_longer_rejects(
     catalog: RulesCatalog, body: str
 ) -> None:
-    """PINS A DEFECT, deliberately. If this starts failing, someone wired the escape to the
-    scoped patterns -- which is row A8 and the owner's call, not a green-tests decision."""
-    assert _verdict(catalog, body, NEW_GRAD) == "ineligible", body
+    """The owner's ruling, as a verdict. The row still EXISTS — abstaining is not dropping,
+    and dropping would return `eligible` by silence — it is merely undecidable."""
+    rows = _rows(catalog, body, NEW_GRAD)
+    assert rows, f"the bar must still be detected, only undecided: {body}"
+    assert _verdict(catalog, body, NEW_GRAD) != "ineligible", body
 
 
-def test_the_SAME_sentence_on_the_TOTAL_arm_abstains(catalog: RulesCatalog) -> None:
-    """The asymmetry itself, in one assertion: identical semantics, opposite verdicts, and the
-    only difference is which pattern the phrasing happens to reach."""
+def test_the_escape_still_cannot_bridge_a_FOUR_WORD_domain_phrase(catalog: RulesCatalog) -> None:
+    """A NAMED RESIDUAL, pinned rather than fixed, and it is not a scope problem.
+
+    D-447 widened the BAR's arbitrary-word run to {0,3} so `5+ years of full stack software
+    engineering experience` writes a row at all. `degree_alternative_to_years` has its own,
+    separate window — `[^.\n]{0,25}?experience` between the years and the noun — and 35
+    characters of domain phrase do not fit it. So the escape does not match this sentence,
+    the bar is decided, and the posting is still `ineligible`.
+
+    That is OUTSIDE the owner's ruling, which was about whether an `or` reaches the bar, not
+    about how many words an escape may cross. Widening this second window is its own change
+    with its own span read, exactly as {0,3} was — and this assertion is what makes it a
+    deliberate act rather than a quiet increment.
+    """
+    body = "Bachelor's degree or 5+ years of full stack software engineering experience."
+    assert _verdict(catalog, body, NEW_GRAD) == "ineligible"
+
+
+def test_the_TOTAL_and_SCOPED_arms_now_agree(catalog: RulesCatalog) -> None:
+    """The asymmetry itself, in one assertion — and it is now an equality.
+
+    Identical semantics, and the only difference between the two sentences is which pattern
+    the phrasing happens to reach. Before the ruling the second was `ineligible`.
+    """
     assert _verdict(catalog, "Bachelor's degree or 5+ years of experience.", NEW_GRAD) != "ineligible"
     assert _verdict(
         catalog, "Bachelor's degree or 5+ years of software engineering experience.", NEW_GRAD
-    ) == "ineligible"
+    ) != "ineligible"
+
+
+def test_a_CROSS_sentence_disjunction_still_rejects_a_separate_skill_bar(
+    catalog: RulesCatalog,
+) -> None:
+    """THE OWNER'S OTHER RULING, pinned at the verdict so a later widening cannot take it
+    back quietly.
+
+    A degree disjunction stated for the general bar does NOT waive a separate `8+ years of
+    C++` elsewhere in the posting: there is no `or` joining them, which is the same reasoning
+    that clears the same-sentence case above. This is the assertion that fails if the escape
+    is ever moved to document scope, and 7 live postings are what it protects.
+    """
+    body = (
+        "A Bachelor's degree in CS or 3+ years of experience is required.\n"
+        "8+ years of C++ experience is required."
+    )
+    rows = _rows(catalog, body, NEW_GRAD)
+    assert any(d == "unmet" for _, d in rows), rows
+    assert _verdict(catalog, body, NEW_GRAD) == "ineligible"

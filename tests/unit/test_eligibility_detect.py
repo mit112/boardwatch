@@ -227,6 +227,54 @@ def test_the_disjunction_abstain_is_document_scoped(catalog) -> None:
     assert len(dets) == 2 and all(d.abstained for d in dets)
 
 
+def test_a_SAME_sentence_disjunction_abstains_the_SCOPED_arm(catalog) -> None:
+    """The owner's ruling, at the mechanism that carries it. D-449 is where the question
+    was left open, and where the two populations it splits into are sized.
+
+    "Bachelor's degree or 5+ years of software engineering experience." is one sentence with
+    two paths, and the owner ruled the degree path clears it — "because of the wording of
+    'or', degree should clear it". The bar therefore ABSTAINS on the scoped arm exactly as it
+    already did on the total arm, and the word `software` stops deciding whether a posting is
+    deleted from view.
+
+    The escape reaching this pattern is `abstain_by_sentence`, NOT the document-scoped
+    `abstain_by` the total arm uses. That distinction is the next test.
+    """
+    body = "Bachelor's degree or 5+ years of software engineering experience."
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.pattern.id == "scoped_years_minimum"]
+    assert dets and dets[0].abstained  # kept visible, marked undecidable
+
+
+def test_a_CROSS_sentence_disjunction_does_NOT_reach_a_SCOPED_bar(catalog) -> None:
+    """THE OWNER'S OTHER RULING, and the reason the escape above is sentence-scoped (D-449).
+
+    Asked whether a degree disjunction waives a SEPARATE skill bar stated elsewhere, he ruled
+    it does not, and his reasoning for the same-sentence case is what makes the two consistent:
+    the word `or` is what clears the bar, and no `or` joins these two clauses. 7 live postings
+    depend on this staying `ineligible`.
+
+    So this test is the durable form of that ruling. It FAILS if the escape is ever widened to
+    document scope — which is precisely the wiring D-447 built and D-449 refused, because it
+    would have fixed the same-sentence class and broken this one silently.
+    """
+    body = (
+        "A Bachelor's degree in CS or 3+ years of experience is required.\n"
+        "8+ years of C++ experience is required."
+    )
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.pattern.id == "scoped_years_minimum"]
+    assert dets, "the separate skill bar must still be DETECTED"
+    assert all(d.abstained is None for d in dets), (
+        "a disjunction in another sentence must not waive a separate skill bar"
+    )
+    # Positive control: the disjunction is real and IS reaching its own sentence's total arm,
+    # so a green assertion above cannot be a regex that simply never matches this body.
+    total = [d for d in detect(body, catalog, enabled_families=ALL)
+             if d.pattern.id == "total_years_minimum"]
+    assert total and total[0].abstained
+
+
 def test_a_range_years_disjunction_with_a_degree_abstains(catalog) -> None:
     """The disjunction guard is on the range pattern too: "3-5 years of experience or a
     Master's degree" is the same either-path requirement as the total-years form."""

@@ -86,6 +86,12 @@ class PatternSpec:
     # Document-scoped, but ABSTAINS instead of dropping: an escape that may waive the
     # requirement keeps the row visible rather than losing it to a wrong `eligible`.
     abstain_by: tuple[re.Pattern[str], ...]
+    # The SAME abstain, bounded to the unit the detection sits in. A fifth scope rather than
+    # a wider `abstain_by`, because whether an escape reaches a bar in ANOTHER sentence is a
+    # claim about what the escape MEANS, and the owner has ruled both answers live: a degree
+    # disjunction waives the bar its own `or` joins it to, and does NOT waive a separate
+    # skill bar stated elsewhere in the posting (D-449). One scope cannot express both.
+    abstain_by_sentence: tuple[re.Pattern[str], ...]
     # Surface form -> jurisdiction code, for a pattern that CAPTURES the jurisdiction its
     # sentence scopes itself to. An absent surface resolves to `other`, which abstains.
     jurisdiction_map: dict[str, str]
@@ -634,6 +640,9 @@ def _pattern(
             raw.get("subject_suppressors"), at, "subject_suppressors"
         ),
         abstain_by=_regex_list(raw.get("abstain_by"), at, "abstain_by"),
+        abstain_by_sentence=_regex_list(
+            raw.get("abstain_by_sentence"), at, "abstain_by_sentence"
+        ),
         jurisdiction_map={
             str(k): str(v) for k, v in (raw.get("jurisdiction_map") or {}).items()
         },
