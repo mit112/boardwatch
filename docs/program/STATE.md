@@ -98,7 +98,18 @@ it.** Recommendation on the numbers: do NOT lower it.
 `experience_years` rows on delivered leads, **583 are the near-miss band and 465 are `scoped to a
 skill`** — which abstains in both directions whatever the ceiling is (corpus-wide: 186,553 scoped
 against 27,823 near-miss). **If one declared year understates you, the thing to change is
-`total_years_experience` — profile DATA — not this policy threshold.**
+`total_years_experience` — profile DATA — not this policy threshold. THAT WAS CHECKED, and it does
+NOT hide a data fix.** Parsed from the résumé's own dated Experience section: **20 months / 1.67
+years** across three roles — a 7-month SWE co-op (Jul 2024–Feb 2025) plus **13 months of
+internships** (Mar 2021–Feb 2022, Feb–Apr 2021). The stored `1` understates the raw total by ~8
+months, but **all of that difference is internship time**, which the postings in question routinely
+exclude by name ("non-internship professional software development experience"). So against a 2-year
+bar the résumé and the stored fact agree: **20 months < 24, and the professional stretch alone is
+7 months.** The stored value is defensible and correcting it would not clear a 2-year bar.
+
+**Which leaves the question genuinely yours and not a data error**: it is whether you would apply to
+a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
+answer that, and D-440 has priced every option so it is a row-pick rather than an opinion.
 
 **2. MERGE #341 (D-436) AND #343 (D-438) ATTENDED, THEN ARM THE `final_gate:` LANE — in that order,
 and the order is FORCED.** Both PRs move `rules_hash`; `record_gate_verdict` keys on
