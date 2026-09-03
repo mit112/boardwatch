@@ -11136,6 +11136,27 @@ host. Extracting the JS target: **40 of 40 extracted, 0 errors**, and:
 **1 of 40 (2.5%)** parses to a supported board; 144 seeds collapse onto ~6 employers. Against
 `grnh.se`'s 12/12 → 9 boards, appcast is the smaller prize despite the larger seed count.
 
+### Shipped this session, and what each gate read
+
+| commit | what | gate |
+|---|---|---|
+| `dad52c08` | the board sample + the 332-board correction (D-428) | exit 0, **9,188** passed, 95.52% |
+| `fb91a5df` | the `grnh.se` resolver (D-429) | exit 0, **9,205** passed, 95.52% |
+| `6da6d11e` | queue folder consolidation (D-430) | exit 0, **9,206** passed, 95.52% |
+
+**`grnh.se` resolver, live against the store:** 8 seeds → **8 distinct boards**, 0 landed off-board,
+0 fetch failures; a later 6-seed pass dropped **1** already-stored board, so the known-filter fires
+on real data. Slugs reproduce D-428's sampled set exactly (`raft`, `rackner`, `grvty`,
+`twosixtechnologies`, `rfsmart`, `sharkninjaoperatingllc`, `fanaticscollectibles`,
+`skyepointdecisionsinc`).
+
+**Review and mutation yield, which is the number worth keeping:** the resolver's first cut gated
+green at **9,197 passed with six mutations caught and a no-op control**, and a review then found
+**nine** defects it had passed. A second campaign against the fixed version found a **tenth** (the
+duplicate counter on the 404 path was itself uncovered). Final campaigns: **8 of 8** mutations caught
+on the resolver, **2 of 3** on the queue fix — the third proved its own branch unnecessary, and that
+branch was deleted rather than pinned.
+
 ### Disk — reclaimed
 
 **5.2 GB free at 98% → 11 GB free at 95%.** `boardwatch.db.bak-pretierA-20260902-153250` (5.52 GB)

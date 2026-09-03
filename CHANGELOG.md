@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch companies discover-grnh` turns stored short links into boards you can watch.** Some
+  job links boardwatch finds are `grnh.se` addresses — Greenhouse's own link shortener. The address
+  itself names no employer, so nothing could follow them up and 122 of them were sitting unread.
+  This command follows each one to where it actually leads and collects the employer job boards it
+  finds, then writes them to a file for you to look over. Delete anything that is not a real
+  employer board and run `boardwatch companies import` on the rest.
+
+  Every board comes with the link it was found through, printed beside it, because that is the only
+  way to tell a real employer apart from a piece of the job-site's own plumbing at a glance. Boards
+  you already have are left out, so the list does not grow back the same rows every time you run it.
+
+  It changes nothing on its own: no board is watched, nothing is added to your run, and the links
+  stay on the list until a board built from one actually delivers. **Watching a board costs about
+  three seconds on every future run**, so the file is a proposal and importing it is the decision.
+  Sampled live before it was built: twelve of twelve links led to a real board, and nine different
+  employers came out of those twelve — none of them already being watched.
+
 - **A "Report" button in the review app, for jobs that look eligible but are not.** Until now a job
   in the review queue could only be applied to or skipped, and skipping a job that was marked
   eligible by mistake threw away the useful signal — that the eligibility decision itself was wrong.
@@ -273,6 +290,20 @@ All notable changes to this project are documented here. The format follows
   increase how many leads reach the queue; only the delivery count does that (D-394).
 
 ### Fixed
+
+- **A job stuck in the delivery queue reported the same error on every run, forever.** When
+  boardwatch works out that two job postings are really the same job, the second one's folder needs
+  the same name as the first one's — and the queue refused to move it onto a name already in use,
+  which is the right instinct but left the two folders deadlocked. Nothing removed either one and
+  the job was no longer offered under its old identity, so the error came back on every single run
+  and could never clear itself. Duplicate folders left over from a merge like this are now removed,
+  keeping one folder for the job, and the run reports how many it retired.
+
+  This only ever bit when **both** postings had already been given a folder, which is why it went
+  unnoticed: the existing test covered the case where only one had. Measured in the wild as one job
+  erroring on five consecutive runs. No delivery was lost to it, but a permanent error in the daily
+  report is the fastest way to teach yourself to ignore the one message that says the queue has
+  stopped copying jobs across.
 
 - **Leads whose folder name differed from another lead's only by capitalisation were silently
   missing from your queue.** Two different jobs can produce almost the same folder name — `onX`

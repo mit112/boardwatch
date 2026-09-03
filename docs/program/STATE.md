@@ -21,7 +21,7 @@
 
 ## Current standing
 
-### Session 2026-09-02c: the board sample is ADMITTED, `click.appcast.io` is REFUSED, and a figure the docs carried was wrong
+### Session 2026-09-02c: the board sample is ADMITTED, the `grnh.se` resolver and the queue fix SHIP, `click.appcast.io` is REFUSED, and a figure the docs carried was wrong
 
 Reasoning: **D-428**. Numbers: `METRICS.md` (Session 2026-09-02c). **No run** — the 04:00 tick
 produces run 145, the first run that reads any of this.
@@ -84,6 +84,32 @@ gate can see. Three of the first round's six sat where a test file was MISSING w
 95%. **Mutation-pinning proves the tests catch the bugs you imagined, and nothing more. Route
 consequential changes through a review as well as the gate.**
 
+**6. THE `grnh.se` RESOLVER IS BUILT AND SHIPPED, AND DELIBERATELY NOT ARMED (D-429).**
+`boardwatch companies discover-grnh` follows each stored short link to the board behind it and
+emits a registry-format candidate file. **Not a `Lane`, not in `LANE_FACTORIES`, so it costs a run
+zero seconds**; arming is `companies import`, a separate act, and **should wait for run 147** or the
+two board levers cannot be read apart. Writes nothing — not the store, not `watched`, not
+`resolved_at`. Live: 8 seeds → 8 boards, 0 off-board, 0 failed.
+**The sizing in this file was incomplete: `FetchResult` DISCARDED the redirect destination**, so the
+resolver was impossible without growing the shared fetch contract (3 construction sites, safe).
+`FetchFailure` needed it too — a 404 target has already NAMED its board, and an aged backlog is
+mostly live boards with expired requisitions.
+
+**7. THE RECURRING `QueueConflictError` IS FIXED (D-430)** — a TWO-folder identity convergence.
+Both postings had folders, the loser's planned name collided with the winner's, and nothing ever
+removed a folder. Fixed by DELETING the duplicate (owner's call); `SyncReport` gains `retired`.
+No `engine_version` bump, no ledger drain, no migration.
+**LEFT OPEN and BIGGER: a LIVE requisition is buried in `_closed`.** `delivered_unapplied` picks a
+job's winner by ARTIFACT RECENCY, not liveness, so a dead lane copy's `closed` flag decides the job
+— an actual lost delivery, not noise, and NOT fixed by the folder consolidation. Own decision owed.
+
+**8. TWO REVIEWS AGAIN BEAT A GREEN GATE.** The resolver's first cut gated green (9,197 passed) with
+six mutations caught and a no-op control; a review then found **nine** findings, including a default
+stdout path whose rich word-wrap broke the YAML it emitted, a census that counted a deduplicated
+seed in NO bucket, and a dedupe test with **no negative control**. A second mutation campaign found
+a tenth. **A mutation campaign only tests the bugs you already imagined** — three findings sat where
+no mutation could reach.
+
 ## Next action
 
 **1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** The
@@ -92,7 +118,7 @@ for, and it is spoiled by arming a second board lever in the same window** — t
 rejected "both". Population: 332 boards / 471 postings, **1.42 in-window postings per board**;
 the remaining 282 cost ~15 min/run. Reversal: `companies-prehcsample-20260902-183019.csv`.
 
-**2. `grnh.se` RESOLVER — APPROVED TO BUILD, AND ARMING IS A SEPARATE CALL.** The premise is MEASURED: 12 of 12 seeds followed their
+**2. `grnh.se` RESOLVER — BUILT AND SHIPPED (D-429); ARMING IS STILL OWED AND IS THE OWNER'S.** The premise is MEASURED: 12 of 12 seeds followed their
 redirect to a URL `parse_board_target` accepts, 0 misses / 0 errors, yielding **9 distinct greenhouse
 boards from 12 seeds** (~1.3 seeds/board, so 122 seeds ≈ 90 boards); **0 of the 9 already watched,
 6 absent from `companies` entirely** — board-fleet growth, not re-discovery. `parse_board_target`
@@ -111,12 +137,25 @@ diagnosed. **The residual is LinkedIn alone**, and that is a judgment about a po
 
 ### Owed, and specifically NOT done
 
-- **`grnh.se` redirect-following: BUILDING APPROVED by the owner 2026-09-02, ARMING IS NOT.**
-  Arming must wait for run 147 or it contaminates the board sample's reading — the two board
+- **`grnh.se` redirect-following is BUILT and SHIPPED (D-429), and deliberately NOT ARMED.**
+  `boardwatch companies discover-grnh` emits candidates; `companies import` is the arming act.
+  **Arming must wait for run 147** or it contaminates the board sample's reading — the two board
   levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
-- **The recurring delivery `QueueConflictError` on posting 131368** fired again in run 144. In every
-  run since 140 and still unfixed.
+- **`perf` CI IS A FLAKY BOUND AND CAN REDDEN `main` ON AN UNRELATED COMMIT.**
+  `tests/perf/test_top_perf.py::test_top_path_median_under_one_second` asserts a median < 1.0s over
+  5 runs. `08d7b957` failed it TWICE (medians 1.0068, 1.0063) while `git diff 27a23a6a..08d7b957`
+  touched **zero `.py` files** — the measured path was byte-identical to a CI-green parent. It is
+  CI-only (not in `make check`), so it never blocks local work. Characterise the distribution before
+  widening the bound; do not just re-run.
+- **The `_reported` on-disk folder drain is NOT built** (D-427's deliberate deferral). The Report
+  action hides a lead from the web queue but leaves its folder at top level. Parity needs a drain
+  keyed on `reported_job_ids` exactly as `_skipped` is, touching `names.DRAIN_DIRS`,
+  `reconcile_queue`'s disposition, `ReconcileReport` and the one-source drain set. **Do NOT reuse
+  `_ineligible`** — reconcile pulls those back, because a reported lead's verdict is still
+  `eligible`.
+- **`delivered_unapplied` picks a job's winner by ARTIFACT RECENCY, not liveness** — see D-430. One
+  live requisition is buried today.
 - **No alert wiring for the seed leak.** `boardwatch seeds` is a command you must run. The
   finalize-block alert-ordering invariant makes wiring it a separate change with its own review.
 - **T1's concurrent case-variant duplicate race** — deferred, pre-existing, worst case a dead-weight
