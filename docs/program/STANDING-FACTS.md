@@ -1900,6 +1900,20 @@ at the lane's depth and run 143 logged `lane jobapps → 432 attempted`.
 | `_skipped` | 16,918 over 174 reasons | skipped by design |
 | `_too_senior` | **0 records** (49,662 folders, each with `job_description.txt` + an apply URL) | unreachable by this lane |
 
+> **SUPERSEDED 2026-09-03 — the harvest RAN and every count in the table above has moved. The table
+> is kept verbatim; these are the current numbers.** lane depth **529** records (472 held, 57
+> absent); **`_eligibility_review` 1,465 (1,442 held, 23 absent) — NO LONGER "MISSED": the owner's
+> 2026-09-02 one-time harvest demonstrably executed**, verified on the EXACT-URL key alone with no
+> fuzzy matching at **1,364 of 1,461 (93.4%)** present under the `jobapps` stamp, **1,341 of them
+> first seen 2026-09-02**; `_review_later` 2 (1 held); `_skipped` **17,193** over its reasons (6,278
+> held, 10,915 absent, excluded BY DESIGN); `_too_senior` **50,269 folders, still 0 records** and
+> therefore still unreachable by ANY depth change, because the lane keys on `discovery_record.json`.
+> **What is left in the buckets the lane is supposed to read is 81 records.** So the BACKLOG half of
+> this section is closed; what is not closed is the DAILY FLOW — on 2026-09-03 job-apps found 1,619
+> postings of which boardwatch held 551 (34.0%) independently, 530 (32.7%) only by reading job-apps'
+> tree, and **538 (33.2%) not at all.** The two measures are not additive: `_skipped`'s 10,915
+> absent are largely the same postings seen from the disk side.
+
 `_eligibility_review` records are `schema_version: 2` with keys identical to what the lane reads —
 fully readable, out of reach only by depth. **Root cause is a shape mismatch:** the lane's docstring
 describes the tree as `<queue>/<ATS>/<posting>/`, so it was written expecting an ATS name at the
@@ -1956,6 +1970,17 @@ cleared**, which is another reason to harvest first.
 | **indeed** | 12.6% but **0 absent**; armed, and **fixes itself in ~7 daily runs** (D-417), no new work |
 | **hiringcafe** | **17.0% with a WORKING lane, 1,958 absent — UNEXPLAINED.** One investigation owed |
 | **linkedin** | **32.5%, 6,789 absent**; 57 of 77 sampled misses are employers with no ATS board |
+
+> **SUPERSEDED 2026-09-03 — the three rows above are run 143's and are kept verbatim; these are run
+> 147's, window 2026-08-21..09-03.** indeed **15.5%, 0 absent, 6,568 `lane-only`**; hiringcafe
+> **20.7%, 1,331 absent**; linkedin **34.8%, 5,650 absent**. Overall independent recall 26.5%,
+> `lane-only` **8,244 (38.3%, UP from 32.4%)**, absent 7,719 (35.9%, down from 44.4%).
+> **Two corrections to the row text itself, not just its numbers.** First, **"indeed … fixes itself
+> in ~7 daily runs (D-417), no new work" is SCOPED TO A RETIRED 35-POSTING POPULATION and is false
+> of the current one** — see `RETIREMENT-PLAN.md` §6's re-scoping note; Indeed is now 80% of the
+> whole switch-off exposure, its `indeed_search_pages` sits at its floor of 1, and its `24h` date
+> filter means the existing bucket can never be drained by it. Second, **the "57 of 77" linkedin
+> figure is a SAMPLE and the population is 5,650** — do not carry the sample's proportions onto it.
 
 **The test is decidable now: retire when `lane-only` falls to a level the owner accepts losing.** It
 is measurable every run by D-421's script and is the exposure by construction. Sequence: harvest →

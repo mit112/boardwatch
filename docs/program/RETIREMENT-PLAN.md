@@ -31,17 +31,61 @@ lane, keyed on the lane's own provenance stamp in `postings.raw_json` (D-399's d
 remains the only sound one). Script:
 `.agent/2026-09-02-session/per_source_recall.py`, read-only.
 
-**Where we stand — first reading, run 143, 14d window 2026-08-20..09-02, 21,863 postings:**
+**THE INSTRUMENT'S OWN PROPERTY, MEASURED 2026-09-03 AND NEVER PREVIOUSLY RECORDED — READ IT BEFORE
+SETTING ANY THRESHOLD.** `status_of` unions THREE keys: normalised URL, ATS `(slug, posting-ref)`
+identity, and normalised `(company, title)`. **For 87% of job-apps' volume only the third key can
+ever fire**, so for those sources the headline is an *equivalent-role* match and NOT a
+posting-identity match. Measured over the run-147 window: job-apps records an AGGREGATOR host as its
+`canonical_direct_url` for **18,793 of 21,497** postings (linkedin 10,031, indeed 7,771, jobright
+991), and **0.0% of those are ATS-parseable** — so neither the URL key nor the identity key can match
+them even when boardwatch genuinely holds the job off the employer's own board. Remove the
+`(company, title)` union from `status_of` and independent recall falls **25.7% -> 2.6%**.
 
-| | value |
-|---|---|
-| **recall, drawn-from sources** | **4,913 of 20,653 = 23.8%** |
-| employer's own board (lever/ashby/greenhouse/workday) | **94–100%** |
-| aggregator + search (linkedin/hiringcafe/indeed) | **12–33%** |
-| **lane-only — what dies at switch-off** | **7,091 (32.4%)** |
-| never held at all | 9,715 (44.4%) |
-| **independent if job-apps stopped today** | **5,057 of 21,863 = 23.1%** |
-| source coverage (sources boardwatch draws from) | **94.4%**; 99.6% excluding the jobright refusal |
+**2.6% is NOT a lower bound on real recall.** It measures URL agreement, and the strict key is
+structurally incapable on an aggregator host — 0.0% strict on every one of linkedin.com,
+indeed.com and jobright.ai. Where identity IS checkable the two keys agree closely:
+`job-boards.greenhouse.io` 55.7% strict / 55.7% loose, `boards.greenhouse.io` 85.0% / 90.0%,
+`jobs.lever.co` 52.9% / 55.9%, `jobs.ashbyhq.com` 47.9% / 63.8%. **That 0–16 point spread does NOT
+transfer to LinkedIn**, because those four are boards boardwatch scans directly, where a
+`(company, title)` hit is near-certain to be the right requisition.
+
+**The fuzzy key is also MANY-TO-ONE, in both directions.** 1,763 boardwatch postings carry the
+`jobapps` provenance stamp, yet they account for **8,244** `lane-only` classifications — ~4.7
+job-apps postings shadowed per stamped posting. One boardwatch record for `(amazon, software
+engineer)` marks EVERY job-apps posting sharing that normalised pair. So `lane-only` overstates what
+boardwatch actually holds, the true `absent` count is higher than the table below, and `independent`
+inherits the same inflation. **The property is identical in every reading, so the SERIES is
+comparable; what it bounds is the meaning of the LEVEL** — which is exactly what a numeric threshold
+would fix. Do not set one without this on the page. Reproduce by re-running `status_of` with the
+`by_ct` union deleted, and check it against a host whose URLs ARE parseable as the control.
+
+**Where we stand — run 147, 14d window 2026-08-21..09-03, 21,497 postings; run 143's first reading
+kept beside it so the direction is readable, NOT averaged with it (the windows differ by one day):**
+
+| | run 143 (first reading) | **run 147 (current)** |
+|---|---|---|
+| **recall, drawn-from sources** | 4,913 of 20,653 = 23.8% | **5,377 of 20,289 = 26.5%** |
+| employer's own board (lever/ashby/greenhouse/workday) | 94–100% | **86–100%** |
+| aggregator + search (linkedin/hiringcafe/indeed) | 12–33% | **16–35%** |
+| **lane-only — what dies at switch-off** | 7,091 (32.4%) | **8,244 (38.3%)** |
+| never held at all | 9,715 (44.4%) | **7,719 (35.9%)** |
+| **independent if job-apps stopped today** | 5,057 of 21,863 = 23.1% | **5,534 of 21,497 = 25.7%** |
+| source coverage (sources boardwatch draws from) | 94.4%; 99.6% ex-jobright | unchanged |
+
+**READ THE `lane-only` ROW, NOT THE TOP ONE. `absent` FELL 8.5 POINTS AND ONLY ~2.6 OF THEM BECAME
+INDEPENDENT — THE OTHER ~5.9 BECAME DEPENDENCY.** Between the two readings the `jobapps` lane
+harvested more of job-apps' own tree, which converts `absent` into `lane-only`: progress on HOLDING
+the posting, regress on the only thing retirement needs. Switch-off exposure went UP, 32.4% ->
+38.3%.
+
+**The MARGINAL rate is well above the trailing average, and that part is real.** Per-day independent
+recall: 08-21 20.4%, 08-27 23.8%, 09-02 32.3%, **09-03 34.0%** — the fleet went 379 -> 453 boards and
+Indeed armed on 09-02, so the 14-day average is dragged down by days that ran a smaller system.
+**Per-day `lane-only` shows NO such trend**: it sits at 32–42% on every one of the 14 days, 09-02 at
+42.0% and 09-03 at 32.7%. So the exposure is steady-state, not a backlog artifact that will clear.
+
+**`indeed` is 6,568 of the 8,244 — 80% of the entire switch-off exposure**, against linkedin 892 and
+hiringcafe 459. See §6's re-scoping note before quoting D-417 at it.
 
 **No numeric threshold is set, deliberately.** A single number averages a solved mechanism against
 an unsolved one, which is precisely how the 80% bar concealed that the direct-ATS half was already
@@ -305,6 +349,19 @@ Field mapping for `RawPosting`: `employer.name` -> company; `title`; `key` ->
 employer-board URL** — dereference it with `parse_board_target`/`parse_posting_target` and register
 the company under its REAL provider when it resolves, exactly as the hiring.cafe lane does (#304).
 That is better for gate 1 and for dedup than registering everything under `indeed`.
+
+**RE-SCOPED 2026-09-03: THE "35" BELOW IS A RETIRED POPULATION, AND D-417's "FIXES ITSELF IN ~7
+DAILY RUNS" MUST NOT BE QUOTED AT THE CURRENT ONE.** D-417 measured Indeed against the old
+216-posting gate, where tier C was 35 postings. Under the current instrument Indeed carries
+**7,771 job-apps finds, 15.5% independent recall, and 6,568 `lane-only` — 80% of boardwatch's
+entire switch-off exposure.** Three things make "self-healing" false at that scale, all MEASURED
+2026-09-03: `indeed_search_pages` is at its FLOOR of 1 and `indeed_results_per_page` at its MAX of
+100, so the per-run ceiling is fixed at facets x 100; run 145's lane contributed **158** new
+postings against job-apps' **~555/day** off the same endpoint; and the lane's date filter is
+**`24h`**, so postings already in the `lane-only` bucket can never be found by it — they only leave
+the metric as the 14-day window slides. Per-day `lane-only` confirms it empirically: 32–42% on
+every one of the 14 days, with no downward trend. **Indeed is the largest and cheapest remaining
+lever, and it needs a sizing, not a wait.**
 
 Note the 35 are `lane-only`, not absent: boardwatch **already holds** these postings via the
 `jobapps` lane. They fail gate 1 only because that lane is their sole origin. So a second
