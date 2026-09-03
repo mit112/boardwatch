@@ -221,14 +221,20 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 | # | ruling | status |
 |---|---|---|
 | **A1** | merge | **DONE** — `main` `113b91af` |
-| **A2** | **yes** | must run AFTER the catalog PRs (see the silent-failure note below) |
-| **A3** | **delegated** | the routing predicate is ours to implement |
-| **A4** | **yes — "I don't have 2 years of work ex"** | this ANSWERS the fact question D-440 said was the honest alternative |
+| **A2** | **yes — and the SPOT-CHECK IS DONE AND PASSED (15/15 correct against the employer's own words). The APPLY HALF IS IMPOSSIBLE.** | `gate apply` REFUSES `verdicts_a/b.json`: they carry `label`/`reason`/`evidence`, and `OracleVerdict` also requires `decision` and `confidence`. **They are audit notes, not gate verdicts** — nothing can be applied without fabricating a confidence the judges never gave. Applying anything needs a real `gate request` → judge → `gate apply` cycle. VERIFIED by reading both files and the dataclass |
+| **A3** | **delegated — re-priced 598 → 90, and NOT YET IMPLEMENTABLE** | the unescape runs in `lanes/jobapps._body` **at INGEST**, while `preflight` reads `posting_versions.body_text` straight from the store — so **all 478 already-escaped bodies stay escaped until the lane re-ingests them**, and `eligibility run` cannot realise D-443. Price the predicate after those bodies refresh, not before. VERIFIED by reading both call sites |
+| **A4** | **REFUSED after measurement** | his answer was a FACT, not an instruction — exactly the distinction D-440 exists to record. Measured cost against the CURRENT store is **1,458 postings rejected**, not D-440's 505. `near_miss_years_ceiling` STAYS at 3 |
 | **A5** | merge | **DONE** — #344, `main` `6770608c`; gate 0 (9,336 passed), CI 24/24 |
 | **A6** | executed | **DONE** — 87 skipped, reversible |
-| **A7** | **unsure** | still open |
-| **A8** | **NO — a disjunction does NOT waive a scoped bar** | the D-448 wiring stays reverted; the defect pin stays |
+| **A7** | **hold one run** | re-read after the next full run before deciding |
+| **A8** | **HALF CLOSED, HALF NEVER ASKED — do not read this row as settled** | **Cross-sentence** ("does a disjunction waive a SEPARATE `8+ years of C++`?") is his ruling, is **7 of 588 postings**, and is **already the shipped behaviour** — nothing to do. **Same-sentence** (`Bachelor's degree or 5+ years of software engineering experience` — does it waive ITSELF on the scoped arm?) is **581 postings and was NEVER PUT TO HIM.** The A8 row conflated the two |
 | **A9** | merge | **DONE** — #357, `main` `268f904d` |
+
+**A8's same-sentence half is the live question, and the asymmetry is ONE WORD.**
+`…or 5+ years of experience` resolves `uncertain`; `…or 5+ years of **software engineering** experience` resolves `ineligible` — because only the total arm carries
+`degree_alternative_to_years`. Mit holds a Master's and clears the degree arm in both. **D-073 already ruled this shape undecidable for the total arm and cites a real job deleted by getting it
+wrong.** The D-447-era wiring is the WRONG instrument: being document-scoped it would fix the 581 and break the 7 he just ruled on. The right one is a **sentence-scoped escape** (`_suppressed` already takes `bounds`; `abstain_by` never passes one) — shared machinery, and its own decision.
+Written up as **D-449**, which lands with its own PR; `--show D-449` exits 1 until then.
 
 **A4's answer is a FACT, not a policy move, and that distinction is the whole of D-440.**
 "I don't have 2 years of work ex" answers the profile question; it does NOT by itself say
@@ -248,7 +254,7 @@ postings rather than release them. Re-read D-440 before changing the value.
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
 
-**A2 is ORDER-FORCED and fails SILENTLY if you get it wrong.** `record_gate_verdict` builds its identity from the catalog and stores the `rules_hash`, so **any catalog change invalidates gate rows written before it** — verdicts applied ahead of #354 and D-447 are written under an identity the ranker no longer reads. No error, no warning, just no effect. Land the catalog PRs first, then judge, then apply.
+**A2's ordering note still applies to the FULL cycle, not to the files.** The files cannot be applied at all (see the row); this is about whatever you judge next. **It is ORDER-FORCED and fails SILENTLY if you get it wrong.** `record_gate_verdict` builds its identity from the catalog and stores the `rules_hash`, so **any catalog change invalidates gate rows written before it** — verdicts applied ahead of #354 and D-447 are written under an identity the ranker no longer reads. No error, no warning, just no effect. Land the catalog PRs first, then judge, then apply.
 
 **A8 is independent of A1 and A3** — it moves postings that are already `ineligible`, which neither the unescape nor the routing predicate touches. **A1 and A5 must be read out on ONE run, not two.** **A9 is STACKED on A1**: its base branch is #354's, so #354 merges first or #357 cannot. **A9 also moves the catalog**, so it is one of the two changes A2 must wait behind. #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
 
