@@ -33,72 +33,16 @@ verdict distribution as a defect attribution, and D-443 names the mechanism it w
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
 
-### The 2026-09-03 queue audit — the waste is catalog COVERAGE, not routing
+### The 2026-09-03 queue audit — SETTLED, moved whole into `STANDING-FACTS.md`
 
-Blind two-judge audits of what the owner actually opens, reproduced independently by two sessions.
-Mechanism: **D-436** (extraction) and **D-442** (the routing read). Full method in METRICS.
-
-**THE HEADLINE THIS SESSION FIRST PUBLISHED — "the catalog is 8% of the problem, routing is the
-rest" — WAS WRONG, and it was wrong by reading a verdict DISTRIBUTION as a defect ATTRIBUTION.**
-8% of the apply lane carries an `eligible` verdict; that says where verdicts land, not where the
-defect lives. Three sessions handed `review_gate.lane()` forward as *the lever* and **none had read
-it.**
-
-| | |
-|---|---|
-| apply lane | **597** — 526 `uncertain`, 49 `eligible`, 22 unevaluated |
-| **of the 526, with ZERO requirement rows** | **481-487** (two independent counts) |
-| their JD bodies | median **4,636 chars**, only 4 under 200, **~390 over 2,000** |
-| `_review` | **1,007** — `experience_requirement` 497, `ineligible_verdict` 288, `role_unconfirmed` 175 |
-
-**The routing is deciding CORRECTLY.** `experience_unconfirmed` fires **497** times, so the flag
-works; all 597 apply-lane leads carry both flags False **because nothing was extracted, not because
-nothing is wrong**. `_no_evaluable_requirement` makes them `uncertain` and `review_gate` never reads
-WHY. **So the ~36% unapplyable rate IS the extraction gap arriving from the other end** — the same
-finding as D-436's "every miss was a missing row", and the same reason the abstain report cannot see
-it: **a family that extracts nothing is silent, and silence is indistinguishable from "the JD says
-nothing".**
-
-**IT SPLITS, AND ONLY A QUARTER IS COVERAGE (D-442).** Probing the zero-row bodies: **128 (26.3%)
-carry a years bar in some form** (14 escaped punctuation, 24 spelled-out, 10 parenthesised), 55
-citizenship/LPR, 32 sponsorship, 6 clearance, 4 non-English, **0 degree-required**. The other **~74%
-trip none of those probes** — for those the JD may genuinely state no catalogued requirement, making
-`uncertain` correct and the only question what an apply lane should DO with it. **The negative half
-is bounded by those probes and nothing wider**: widening them can only move leads from the second
-population into the first, never the reverse.
-
-**THE GATE IS MEASURED, NOT ESTIMATED.** 77 apply-lane leads, two independent judges, real schema,
-nothing applied: **15 demoted (19.5%), and 15 of 15 rejections survive `accept_oracle_verdict`'s
-keystone span guard — ZERO span failures.** Every rejection quotes the employer's own JD, and two are
-cases no amount of pattern work reaches (a French-language JD; markdown-escaped punctuation). Scaled
-to 597: ~**116 demoted, each with a checkable quote**. Verdicts at `{config_dir}/verdicts_a.json` /
-`verdicts_b.json` — **spot-check, then `gate apply`**. The earlier "~50-100 wrongly removed" treated
-inter-rater disagreement as error-against-truth and ignored the guard; **retired**.
-
-**Treatment vs cure.** The `final_gate:` LLM lane is the TREATMENT — it reads the JD directly and
-catches what the patterns miss. **Catalog coverage is the CURE**, and the instrument is
-**partial-match instrumentation of the patterns themselves** (a family that ALMOST matched), which a
-cue vocabulary cannot substitute for: correct silence and a missed extraction look identical to a
-cue and different to a near-miss. **D-442 holds the routing question** — ~360 of the 481 have no
-detectable requirement at all, so it is "what should an apply lane do with a JD that states
-nothing?", a decision about what the lane MEANS rather than a bug fix. Priced: apply **597 → 116**.
-
-**The queue's 219 redundant leads are MOSTLY NOT A DEFECT (D-439).** 127 duplicate
-`(company, normalised-title)` groups, but only **45 groups / 76 leads share one `content_hash`**;
-the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI ×9 is nine real
-reqs). An earlier reading called it identity resolution — **wrong**. The mechanism is D-345's cap
-DEFERRING rather than dropping while scoped to one run, so a one-JD group delivers one member per
-run forever. CGS Federal ×10 on a single hash is the shape that IS a defect.
-
-**Sized and NOT built:** un-escaping markdown bodies 2.2% (owner-gated, re-versions postings);
-`role_gate` missing the inverted `Engineer, Software` form (5 leads — the class D-305 fixed in
-`seniority_gate` and never carried across); non-SWE residual in review only (apply-lane NOT_SWE was
-0 of 40); `classify_location` fails open on Nottingham.
-
-**`final_gate:` is built, keystone-guarded, identity-keyed, read by the ranker, and 0 rows on the
-live store.** Request path VERIFIED live: **521 judgeable items of 537**, independence preserved,
-read-only. **Ordering is forced** — `record_gate_verdict` keys on `build_identity(..., catalog, ...)`,
-so any catalog change invalidates gate rows written before it. Land catalog PRs first, then arm ONCE.
+Two blind two-judge audits, reproduced independently by two sessions. **The conclusion that still
+drives work: the waste is catalog COVERAGE, not routing** — `review_gate` decides correctly on the
+information it is given, and 481-487 of the apply lane's 526 `uncertain` leads carry **zero**
+requirement rows against a median JD of 4,636 characters. The headline this session first
+published — "the catalog is 8% of the problem, routing is the rest" — is **RETIRED**: it read a
+verdict DISTRIBUTION as a defect ATTRIBUTION. Mechanism in **D-436** and **D-442**; the three
+mechanisms found since in **D-443**, **D-447** and **D-449**. What is left to do about it is items
+1-3 under Next action, not this block.
 
 ## Next action
 
