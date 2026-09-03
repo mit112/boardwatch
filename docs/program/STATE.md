@@ -30,10 +30,6 @@ modifier window). Numbers: `METRICS.md`, **both** the `Session — 2026-09-03` a
 pass (see item 2a). The earlier headline "the catalog is 8% of the problem" is RETIRED — it read a
 verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
 
-> **`D-444` and `D-447` are NOT on `main` yet — they land with #344 and #357.**
-> `python -m tools.decisions --show D-444` exits 1 until then, and that is the PR being unmerged,
-> **not a broken index**. Do not "repair" it. (`D-443` landed with #354.)
-
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
 
@@ -204,20 +200,23 @@ PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-a
 until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
 80%, do not re-derive "most", do not re-probe Indeed.**
 
-**A. THE NINE DECISIONS — MOST ARE NOW ANSWERED. 2026-09-03, and read the provenance line.**
+**A. THE NINE DECISIONS — FOUR DONE, FOUR RULED, ONE OPEN. 2026-09-03; read the provenance line.**
 
-> **A1, A6 and #354 are VERIFIED DONE from the repo and the store** — `main` carries #354
-> (`113b91af`), and the live store holds **87 `queue.skipped.*` rows and 0 ledger `skipped`
-> dispositions**, which is A6 executed through the reversible mechanism D-446 recommended.
-> Reversal list: `a6-skipped-duplicates-20260903-114210.json` in the config dir.
+> **FOUR OF THE NINE ARE DONE AND VERIFIED FROM THE REPO AND THE STORE, not from a merge
+> message.** `main` carries **#354 (A1)**, **#357 (A9)** and **#344 (A5)**; the live store holds
+> **87 `queue.skipped.*` rows and 0 ledger `skipped` dispositions**, which is **A6** executed
+> through the reversible mechanism D-446 recommended. Reversal list:
+> `a6-skipped-duplicates-20260903-114210.json` in the config dir.
 >
-> **The RULINGS below (A2, A3, A4, A7, A8) are RELAYED through a peer session, not read
-> from Mit directly by the session that wrote this line.** They are recorded so the work
-> is not re-litigated, and they are marked so a wrong relay is correctable rather than
-> canon. **Confirm before acting on one that deletes or rejects.**
+> **The slate cap is confirmed live through the shipped code, not a proxy**: reading
+> `standing_slate_keys` against the store gives **1,514 keys held, 3 still carrying more than one
+> lead, 3 redundant leads** — down from 53 groups / 89 leads before A6. The 87 skips are correctly
+> EXCLUDED from the seed, which is the property that makes every deferral end.
 >
-> **A5 (#344) is NOT decided: Mit said he would wrap it up directly.** It is gate-green and
-> CI-green and is deliberately unmerged.
+> **The RULINGS below (A2, A3, A4, A7, A8) were RELAYED through a peer session**, not read from
+> Mit directly by the session that wrote this line. Recorded so the work is not re-litigated, and
+> marked so a wrong relay is correctable rather than canon. **Confirm before acting on one that
+> deletes or rejects.**
 
 | # | ruling | status |
 |---|---|---|
@@ -225,30 +224,26 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 | **A2** | **yes** | must run AFTER the catalog PRs (see the silent-failure note below) |
 | **A3** | **delegated** | the routing predicate is ours to implement |
 | **A4** | **yes — "I don't have 2 years of work ex"** | this ANSWERS the fact question D-440 said was the honest alternative |
-| **A5** | **open — Mit is wrapping it up directly** | #344, gate 0, CI 24/24 |
+| **A5** | merge | **DONE** — #344, `main` `6770608c`; gate 0 (9,336 passed), CI 24/24 |
 | **A6** | executed | **DONE** — 87 skipped, reversible |
 | **A7** | **unsure** | still open |
 | **A8** | **NO — a disjunction does NOT waive a scoped bar** | the D-448 wiring stays reverted; the defect pin stays |
-| **A9** | merge | #357 rebuilt on fresh `main`, gating |
+| **A9** | merge | **DONE** — #357, `main` `268f904d` |
 
 **A4's answer is a FACT, not a policy move, and that distinction is the whole of D-440.**
 "I don't have 2 years of work ex" answers the profile question; it does NOT by itself say
 to lower `near_miss_years_ceiling`, because lowering it makes the engine REJECT those
 postings rather than release them. Re-read D-440 before changing the value.
 
-The original priced table follows, unchanged, because it is what the rulings are against.
+**The priced table below holds only the decisions still OPEN or delegated.** A1, A5, A6 and A9 are done and their pricing is in D-443, D-439/D-444, D-446 and D-447 — repeating it here would be a second copy that can drift.
 
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
-| **A1** | **Merge #354** (D-443, job-apps unescape) | 132 bodies gain their first requirement row; **11 leads leave `eligible`**; 70 move `uncertain`→`ineligible`, each quoting the employer. Re-versions 478 postings on the next ingest. **Gated only because it changes what you are told you can apply to** | #354's body; `METRICS.md` (Session 2026-09-03) |
 | **A2** | **Spot-check the 15 judged rejections, then decide whether to run a FULL gate cycle** | `verdicts_a.json` (8) + `verdicts_b.json` (7) hold **15 rejections** from the 77-lead measurement, each quoting the employer; **15 of 15 spans survive the keystone guard, 0 failures**. Applying them demotes **15 postings, NOT ~116** — the ~116 is what a full `gate request` → judge → `gate apply` over all 597 would project at the measured 19.5%, and nobody has run that cycle. **MUST run AFTER A1 and D-447 land** (see below) | the two files, in the config dir |
 | **A3** | **D-442's routing predicate** — zero requirement rows ⇒ `_review` | apply **597 → 116**, review 1,007 → 1,488. An **81% cut** to the pile you work from. **Not a bug fix** — it is what you want the apply lane to MEAN | D-442 |
 | **A4** | **Does a stated 2-YEAR bar rule you out?** | `near_miss_years_ceiling`; **lowering it REJECTS rather than releases** (ceiling 2 rejects 290, 0-1 rejects 505). Recommendation: do NOT lower | D-440 |
-| **A5** | **Merge #344** (D-439/D-444, the seeded slate cap) | a byte-identical twin is held until you apply to or skip the first, instead of arriving the next day. **Stops the pile growing; removes none of it.** Gated for the same reason as A1 — it changes which leads a run delivers | #344's body; D-439, D-444 |
-| **A6** | **The 89 duplicates already standing** — leave them, or bulk-skip them | 53 groups, one of 10. **Recommended: bulk `mark_job_skipped`** — folders move to `_skipped/`, nothing is deleted, **reversible in one call**. Deletion is REJECTED: these are 142 distinct jobs, so the queue's existing delete argument does not transfer | D-446 |
 | **A7** | **Keep paying for the 50-board hiring.cafe sample, or revert it** | ~**60 min/run forever** for **10 delivered leads** on run 145. Reverting is a `companies` restore from `companies-prehcsample-20260902-183019.csv`. **Adding the other 282 is CLOSED and is not this question** | D-441 |
 | **A8** | **Does a degree disjunction reach a SCOPED bar?** — wire `degree_alternative_to_years` to the six scoped/domain minimum patterns | **365 SWE+US postings move `ineligible` → `uncertain`**, out of a reject pile that is never inspected and into review. Cost: `abstain_by` is **DOCUMENT-scoped**, so a JD saying "Bachelor's or 4 years" for its general bar would also waive a separate "8+ years of C++". Today the same sentence **abstains on the total arm and rejects on a scoped one**. **A claim about what a disjunction MEANS, not a consistency repair** | D-447; `test_experience_range_recall.py`, the defect pin |
-| **A9** | **Merge #357** (D-447, the four-word domain phrase) | `5+ years of **full stack** software engineering experience` was one word over the `{0,2}` run and wrote **no requirement row at all** — `uncertain` by silence, which `review_gate` reads as blindly-appliable. **565 of 8,162 four-modifier bodies have the family silent.** Widening adds **2,355 matches / 1,474 spans / 2,269 bodies**, every span beginning with a year count; **15 SWE+US demotions, all 5-10 year bars on Senior/Staff/Lead/Principal/VP titles**. The vocabulary fix was tried first and bought **zero**. **STACKED — needs A1 (#354) first** | #357; D-447 |
 
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
