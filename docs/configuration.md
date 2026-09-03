@@ -54,7 +54,7 @@ daily pipeline unattended" in the README). Presence-gated, off unless set:
 | Path | Purpose |
 |---|---|
 | `{config_dir}/resume.yaml` | Your authored, structured résumé (written by `tailor init`, read by `tailor validate`/`tailor run`). |
-| `{data_dir}/tailored/` | Output directory for rendered LaTeX source and its compiled PDF, one `tailored-<posting-id>.{tex,pdf}` pair per posting. |
+| `{data_dir}/tailored/` | Output directory for rendered LaTeX source and its compiled PDF, one `<Your Name>_<Company>_<Role>.{tex,pdf}` pair per posting. The untailored-master safety net and the Tier B render take a `_untailored` / `_llm` suffix so all three stay apart. |
 
 ### Tier B (opt-in LLM rewording)
 

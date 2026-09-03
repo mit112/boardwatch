@@ -35,6 +35,8 @@ from sqlalchemy import Connection, Engine, select
 
 from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.settings import Settings
+from boardwatch.delivery.api import resolve_owner_name
+from boardwatch.delivery.names import ResumeNaming, plan_resume_naming
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
 from boardwatch.llm.cache import ResponseCache
@@ -65,7 +67,7 @@ from boardwatch.store.queries import (
     finish_run,
     get_profile,
 )
-from boardwatch.store.tables import extractions, postings
+from boardwatch.store.tables import companies, extractions, postings
 from boardwatch.tailor.apply import apply_plan
 from boardwatch.tailor.coverage import (
     CoverageReport,
@@ -155,6 +157,12 @@ class _TierAPlan:
     # the persona-shaped résumé, so `tailored.title` carries `resolved_title` into the render.
     persona_id: str
     resolved_title: str
+    # The two posting facts the delivered artifact is NAMED for. `jd_title` is the posting's
+    # own title, which is also what the delivery queue names its folder and download after;
+    # `resolved_title` is the persona headline and is shared across many postings, so it
+    # would not tell two leads at one company apart.
+    company: str
+    jd_title: str
 
 
 @dataclass(frozen=True)
@@ -519,8 +527,12 @@ def _plan_tier_a(
             raise NoCurrentVersionError(f"posting {posting_id} has no current version")
         # current_posting_versions ignores status for an explicit list; enforce open here, and
         # read the posting title in the same round-trip — it is the persona-selection input.
+        # The company comes along on the same join because it names the delivered PDF, and
+        # `companies.name` is the one place it lives (the delivery queue reads the same column).
         prow = conn.execute(
-            select(postings.c.status, postings.c.title).where(postings.c.id == posting_id)
+            select(postings.c.status, postings.c.title, companies.c.name.label("company"))
+            .join(companies, postings.c.company_id == companies.c.id)
+            .where(postings.c.id == posting_id)
         ).one()
         if prow.status != "open":
             raise NoCurrentVersionError(
@@ -560,6 +572,8 @@ def _plan_tier_a(
         cv=cv,
         persona_id=persona.id,
         resolved_title=resolved_title,
+        company=str(prow.company or ""),
+        jd_title=jd_title,
     )
 
 
@@ -609,7 +623,34 @@ def run_tailor(
     table, plan, cv = r.table, r.plan, r.cv
     persona_id, resolved_title = r.persona_id, r.resolved_title
 
-    renderer = LatexRenderer(config_dir=settings.config_dir)
+    # What the owner sees when he opens the delivered file, at both layers: the filename and
+    # the PDF's own /Info Title and Author. `resolve_owner_name` is the ONE resolver for whose
+    # résumé this is — the same one the delivery queue's folders and the web download name use,
+    # so the four agree — and it is fed the config dir rather than a constant because the next
+    # person to run boardwatch is not this one. `conn=None` is deliberate and not a shortcut:
+    # the connection only supplies `work_auth`, and the name comes from `answers.yaml` or the
+    # authored résumé, so naming a file needs no round trip. The `profile` table has no name
+    # column at all, which is why `get_profile` below cannot be the source.
+    owner_name = resolve_owner_name(None, settings.config_dir)
+
+    def plan_name(variant: str = "") -> ResumeNaming:
+        """This lead's naming, per artifact. The tailored render, the untailored safety net and
+        the Tier B render share a folder, so each takes its own `variant` — and takes it from
+        the one formatter, so the three can never drift into two schemes."""
+        return plan_resume_naming(
+            owner_name=owner_name,
+            company=r.company,
+            role=r.jd_title,
+            identity_hash=str(posting_id),
+            variant=variant,
+        )
+
+    naming = plan_name()
+    renderer = LatexRenderer(
+        config_dir=settings.config_dir,
+        pdf_title=naming.pdf_title,
+        pdf_author=naming.pdf_author,
+    )
     source = renderer.emit(tailored)
     # Hash the authored model, not its render: the render drops bullet_id/entry_id/tech_tags,
     # so two different masters that merely *look* the same would content-address to one
@@ -739,10 +780,16 @@ def run_tailor(
         max_pages = max(1, profile_row.resume_max_pages) if profile_row is not None else 1
         chosen_runner = typst_runner or _default_runner
 
-        name = f"tailored-{posting_id}"
-        typ_path = Path(out_dir) / f"{name}.tex"  # deterministic reference (§5)
+        # §5's deterministic reference, kept: both paths are still a pure function of the lead,
+        # and the `.tex`/`.pdf` pair still shares one stem — which is what `to_pdf`'s
+        # delete-the-stale-PDF guard and the both-unshippable cleanup below both rely on. The
+        # scheme is human-readable now because the owner reads these filenames; nothing in `src/`
+        # reconstructs either name by convention, so the stored `uri`/`pdf_uri` remain the only
+        # references that have to agree with disk.
+        name = naming.stem
+        typ_path = Path(out_dir) / f"{name}.tex"
         pdf_path_candidate = Path(out_dir) / f"{name}.pdf"
-        untailored_name = f"untailored-{posting_id}"
+        untailored_name = plan_name("untailored").stem
         untailored_typ_path = Path(out_dir) / f"{untailored_name}.tex"
         untailored_pdf_path = Path(out_dir) / f"{untailored_name}.pdf"
 
@@ -828,7 +875,7 @@ def run_tailor(
 
         llm_uri: str | None = None
         if (client is not None or tb_override is not None) and llm_source is not None:
-            llm_name = f"tailored-{posting_id}-llm"
+            llm_name = plan_name("llm").stem
             try:
                 validate_layout(tailored_b, llm_source)
             except LayoutViolation:

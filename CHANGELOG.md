@@ -271,6 +271,37 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The résumé you send now says whose it is, and what it is for.** Every delivered PDF was
+  called `tailored-<posting id>.pdf` and carried no PDF title or author at all — its document
+  properties read as an untitled file by an unknown author, and the filename told an employer
+  nothing. That is the name that lands in their upload dialog.
+
+  The file is now named for the application:
+
+  ```
+  Mit_Sheth_HP_Software_Engineer.pdf     the filename
+  Mit Sheth - Software Engineer - HP     the PDF's own Title
+  Mit Sheth                              the PDF's own Author
+  ```
+
+  **Your name comes from your own files, never from the code** — `answers.yaml`'s
+  `identity.full_name` first, then your résumé's header line, which is the same resolver the
+  delivery queue's folders and the web download already used, so all four now agree. The role is
+  the posting's own title, the job you applied to, rather than the persona headline you share
+  across many postings. The whole filename is held to about 80 characters: the role gives way
+  first, then the company, and your own name is never cut.
+
+  Employer names are arbitrary text, so `&`, `%`, `_`, `#`, `$`, braces, tildes and backslashes
+  are escaped into the PDF metadata — unescaped, any one of them fails the compile and costs the
+  lead its résumé. Accents and CJK survive in the PDF title and in the filename. A posting with
+  no title or a lead with no company still names a file rather than crashing. The untailored
+  safety net and the opt-in LLM render take a `_untailored` / `_llm` suffix so all three artifacts
+  of one lead stay apart.
+
+  **Nothing reconstructs these names.** The database records the path it wrote, and every reader
+  — the delivery queue, the reconcile report, the run funnel, the web viewer — reads it back, so
+  a rename cannot orphan an artifact.
+
 - **The hiring.cafe search no longer takes 30 runs to work through the employers it already
   found.** New employers a search discovers are admitted 10 per run. For hiring.cafe that limit
   was only ever slowing down a queue it had already filled: its search looks back 7 days, so the

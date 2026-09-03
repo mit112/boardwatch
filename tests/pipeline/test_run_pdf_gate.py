@@ -86,7 +86,9 @@ def test_a_lead_that_cannot_compile_either_way_is_dropped_not_fatal(
     out_root = tmp_path / "apps"
 
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
-        if typ.stem.endswith(f"-{doomed_id}"):
+        # Selected by the LEAD FOLDER, which is `_slug(company, posting_id)` and still carries
+        # the posting id — the résumé filename is named for the application and does not.
+        if typ.parent.name.endswith(f"-{doomed_id}"):
             return _fail(f"boom:{typ.name}")
         return _ok(pdf)
 
