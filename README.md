@@ -363,10 +363,14 @@ rejected. **Two binaries are required, not one** — `tectonic` to compile and p
 `pdfinfo` to count the pages; without `pdfinfo` the page-count gate cannot answer and every
 lead is refused. `boardwatch doctor` probes for both and exits non-zero if either is
 missing. Output lands at
-`{data_dir}/tailored/tailored-<posting-id>.{tex,pdf}` — a deterministic path, so
-**re-running `tailor run` for the same posting overwrites that file** even though each run
-is recorded as its own artifact in the database; the file on disk always reflects your most
-recent run, not necessarily the one you're currently reading about. If a later compile
+`{data_dir}/tailored/<Your Name>_<Company>_<Role>.{tex,pdf}` — named for the application, so
+it reads as itself in an employer's upload dialog, and the PDF's own Title and Author carry
+`<Your Name> - <Role> - <Company>` and your name. Your name comes from your `answers.yaml`
+`identity.full_name` or your résumé's header, never from the code. The path is still a
+deterministic function of the lead, so **re-running `tailor run` for the same posting overwrites
+that file** even though each run is recorded as its own artifact in the database; the file on
+disk always reflects your most recent run, not necessarily the one you're currently reading
+about. If a later compile
 fails, the stale PDF from the previous run is removed rather than left behind next to the
 new source.
 

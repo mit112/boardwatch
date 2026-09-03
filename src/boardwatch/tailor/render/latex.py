@@ -53,6 +53,9 @@ _ARTIFACT_SYMBOL = "<placeholder>"
 _ARTIFACT_WORDS: tuple[str, ...] = ("TODO", "FIXME", "lorem", "ipsum", "XXX")
 _MARKER_RE = re.compile(r"%%([A-Z]+)_(?:START|END)%%")
 _ALLOWED_MARKERS = frozenset({"TITLE", "SUMMARY", "SECTIONS"})
+# The last line of any LaTeX preamble, and the only anchor a user's own template is guaranteed
+# to carry — deliberately not a `%%..%%` marker, which a config-dir template would not have.
+_PREAMBLE_END = "\\begin{document}"
 
 
 def _word_token_pattern(token: str) -> re.Pattern[str]:
@@ -233,10 +236,23 @@ def _extracurricular(resume: Resume) -> str:
 class LatexRenderer:
     """Renders a `Resume` into the resolved LaTeX template's `%%SECTIONS%%` slot and compiles
     it via tectonic. `config_dir=None` uses the bundled default template (re-review 2 minor:
-    `LatexRenderer()` with no config must work standalone)."""
+    `LatexRenderer()` with no config must work standalone).
 
-    def __init__(self, config_dir: Path | None = None) -> None:
+    `pdf_title`/`pdf_author` become the document's /Info `Title` and `Author`. They are given
+    per instance rather than per `emit` call because a renderer is already built per lead, and
+    because widening the `Renderer` protocol would put the metadata in front of every caller
+    that only wants a preview."""
+
+    def __init__(
+        self,
+        config_dir: Path | None = None,
+        *,
+        pdf_title: str | None = None,
+        pdf_author: str | None = None,
+    ) -> None:
         self._config_dir = config_dir
+        self._pdf_title = pdf_title
+        self._pdf_author = pdf_author
 
     def emit(self, resume: Resume, *, reworded: frozenset[str] = frozenset()) -> str:
         template = resolve_template(self._config_dir)
@@ -261,10 +277,13 @@ class LatexRenderer:
         # `%%TITLE_*%%` token can survive into the .tex. When the résumé has a title the
         # escaped headline replaces the pair; when it does not (or a custom template omits the
         # pair) the slot degrades to nothing — no crash, no title, no stray marker.
+        metadata = self._pdf_metadata()
         out_lines: list[str] = []
         in_title = False
         for line in template.splitlines():
             stripped = line.strip()
+            if metadata and stripped == _PREAMBLE_END:
+                out_lines.extend(metadata)
             if stripped == "%%TITLE_START%%":
                 in_title = True
                 if title_line is not None:
@@ -279,6 +298,38 @@ class LatexRenderer:
             if stripped == "%%SECTIONS_START%%":
                 out_lines.extend(sections.splitlines())
         return "\n".join(out_lines) + "\n"
+
+    def _pdf_metadata(self) -> list[str]:
+        """The `\\hypersetup` block for the document's /Info Title and Author, or no lines.
+
+        **Injected here rather than written into the bundled template.** A template-side fix would
+        be shadowed the moment a user installs their own `resume_template.tex`, which is exactly
+        the configuration this ships into. `\\begin{document}` is the anchor because it is the one
+        line every template is guaranteed to carry, and the block goes immediately BEFORE it: that
+        is where hyperref's own documentation puts the PDF-info keys, and where drivers that read
+        them at `\\begin{document}` still see them. Measured under this toolchain (tectonic/XeTeX)
+        the keys also survive from just after `\\begin{document}`, so the position is a portability
+        choice rather than a necessity — and it is pinned by a test so it cannot drift silently.
+
+        `\\providecommand` first, so a template that never loads hyperref loses the metadata
+        instead of failing to compile — a failed compile costs the owner the lead (P1a), and
+        losing a /Info key costs nothing that matters.
+
+        `escape` is this module's one escaping helper and it is sufficient here: measured
+        through tectonic, every sequence it produces — `\\&` `\\%` `\\_` `\\#` `\\$` `\\{` `\\}`
+        `\\textasciitilde{}` `\\textasciicircum{}` `\\textbackslash{}` — round-trips through
+        hyperref's `\\pdfstringdef` into /Info verbatim, and non-ASCII survives as itself. Its
+        whitespace collapse and en-dash normalization apply to the metadata too, which is
+        wanted: a scraped employer name can carry newlines.
+        """
+        keys = [
+            f"pdf{key}={{{escape(value)}}}"
+            for key, value in (("title", self._pdf_title), ("author", self._pdf_author))
+            if value
+        ]
+        if not keys:
+            return []
+        return ["\\providecommand{\\hypersetup}[1]{}", f"\\hypersetup{{{','.join(keys)}}}"]
 
     def to_pdf(
         self, source: str, out_dir: Path, name: str, runner: CompileRunner

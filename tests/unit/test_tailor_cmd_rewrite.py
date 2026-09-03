@@ -404,8 +404,7 @@ def test_rewrite_apply_emits_llm_artifact_with_lineage(env: Env, tmp_path: Path)
         e.relation == "rewritten_from" and e.parent_artifact_id == tier_a_row.id for e in edges
     )
 
-    llm_typ = out_dir / f"tailored-{posting_id}-llm.tex"
-    assert llm_typ.exists()
+    llm_typ = next(iter(out_dir.glob("*_llm.tex")))
     assert "reworded (Tier B)" in llm_typ.read_text(encoding="utf-8")
 
 

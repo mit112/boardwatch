@@ -223,7 +223,7 @@ def test_binary_missing_raises_render_tool_missing(tmp_path: Path) -> None:
 
 def test_tier_b_binary_missing_raises_render_tool_missing(tmp_path: Path) -> None:
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
-        if "-llm" in typ.name:
+        if "_llm" in typ.name:
             return CompileOutcome(CompileReason.BINARY_MISSING, None, None, "")
         return _ok(pdf, 1)
 
@@ -487,7 +487,7 @@ def test_tier_b_layout_violation_is_skipped_tier_a_ships(tmp_path: Path) -> None
     gated above) remains the lead's sole deliverable -- fail-soft, not fail-drop."""
 
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
-        assert "-llm" not in typ.name  # the layout-violating Tier B .tex must never compile
+        assert "_llm" not in typ.name  # the layout-violating Tier B .tex must never compile
         return _ok(pdf, 1)
 
     settings = _settings(tmp_path)
@@ -541,7 +541,7 @@ def test_tier_b_lineage_references_the_shipped_tier_a_artifact_after_degrade(
     a résumé that never shipped while `tier_a_artifact_id` pointed at the row that did."""
 
     def runner(typ: Path, pdf: Path) -> CompileOutcome:
-        if "-llm" in typ.name or "untailored" in typ.name:
+        if "_llm" in typ.name or "untailored" in typ.name:
             return _ok(pdf, 1)
         return _fail("tailored compile boom")  # forces Tier A to degrade
 
@@ -570,3 +570,93 @@ def test_tier_b_lineage_references_the_shipped_tier_a_artifact_after_degrade(
     # The load-bearing assertion: Tier B's lineage hash must equal what Tier A actually
     # shipped, not the rejected tailored render (`tailored_hash` inside run_tailor).
     assert tier_b.meta_json["tier_a_content_hash"] == tier_a.content_hash
+
+
+# --- the delivered artifact's name ---------------------------------------------------------
+
+
+def _answers(settings: Settings, full_name: str) -> None:
+    """The owner's own name, in the one file where a name is a named field. Never a constant
+    in `src/`: the next person to run boardwatch is not this one."""
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    (settings.config_dir / "answers.yaml").write_text(
+        f'identity:\n  full_name: "{full_name}"\n', encoding="utf-8"
+    )
+
+
+def test_the_delivered_resume_is_named_for_the_owner_company_and_role(tmp_path: Path) -> None:
+    """What the owner opens is `Ada_Lovelace_Hewlett_Packard_Backend_Engineer.pdf`, not
+    `tailored-<posting id>.pdf`, and the row that production reads points at exactly that
+    file. The ROLE is the posting's own title — the job that was applied to — not the persona
+    headline, which is shared across many postings and would not tell two leads apart.
+    """
+    settings = _settings(tmp_path)
+    _answers(settings, "Ada Lovelace")
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    with engine.begin() as conn:
+        conn.execute(companies.update().values(name="Hewlett Packard"))
+    out = tmp_path / "day" / "hp-lead"
+
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=lambda typ, pdf: _ok(pdf, 1),
+    )
+
+    stem = "Ada_Lovelace_Hewlett_Packard_Backend_Engineer"
+    assert res.pdf_path == out / f"{stem}.pdf"
+    assert (out / f"{stem}.pdf").is_file()
+    assert (out / f"{stem}.tex").is_file()
+    assert not list(out.glob("tailored-*")), "the machine-readable name is still being written"
+
+    tailored = next(r for r in _artifact_rows(engine) if r.kind == "resume_tailored")
+    # `meta_json.$.pdf_uri` is how production finds the PDF (D-058); nothing reconstructs the
+    # name by convention, so the stored path is the only thing that has to agree with disk.
+    assert tailored.meta_json["pdf_uri"] == str(out / f"{stem}.pdf")
+    assert tailored.uri == str(out / f"{stem}.tex")
+
+
+def test_the_untailored_fallback_keeps_its_own_name_beside_the_tailored_one(
+    tmp_path: Path,
+) -> None:
+    """Two artifacts of one lead share a folder, so the safety net must stay distinguishable
+    from the render it replaced."""
+    def runner(typ: Path, pdf: Path) -> CompileOutcome:
+        return _ok(pdf, 1) if "untailored" in typ.name else _fail("tailored boom")
+
+    settings = _settings(tmp_path)
+    _answers(settings, "Ada Lovelace")
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    out = tmp_path / "day" / "acme-lead"
+
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=runner,
+    )
+
+    assert res.pdf_path == out / "Ada_Lovelace_acme_Backend_Engineer_untailored.pdf"
+    assert res.degraded is True
+
+
+def test_a_posting_with_a_blank_title_still_names_a_file(tmp_path: Path) -> None:
+    """The empty-input floor: a blank posting title must not produce `Ada_Lovelace__.pdf`,
+    an empty component, or a crash."""
+    settings = _settings(tmp_path)
+    _answers(settings, "Ada Lovelace")
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    with engine.begin() as conn:
+        conn.execute(postings.update().values(title=""))
+    out = tmp_path / "day" / "acme-lead"
+
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=out,
+        typst_runner=lambda typ, pdf: _ok(pdf, 1),
+    )
+
+    assert res.pdf_path is not None
+    name = res.pdf_path.name
+    assert name.startswith("Ada_Lovelace_acme_posting_"), name
+    assert "__" not in name
+    assert res.pdf_path.is_file()

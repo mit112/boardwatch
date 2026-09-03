@@ -42,6 +42,11 @@ DRAIN_DIRS: tuple[str, ...] = (
 
 PDF_SUFFIX = ".pdf"
 
+#: Cap on the delivered résumé's own filename, in UTF-8 bytes including `PDF_SUFFIX`. Far below
+#: `COMPONENT_BYTE_CAP` on purpose: this name is read by a person in an employer's upload dialog,
+#: which truncates in the middle, so the budget is about legibility rather than the filesystem.
+RESUME_NAME_BYTE_CAP = 80
+
 #: Reserved on Windows with or without an extension, in any case. A closed catalog: an
 #: out-of-catalog name is a normal name, never a new bucket.
 RESERVED_DEVICE_NAMES: frozenset[str] = frozenset(
@@ -59,6 +64,8 @@ _FIXED_BYTES = _SEPARATOR_BYTES + len(PDF_SUFFIX)
 _SEPARATOR_RUN = re.compile(r"_+")
 # Windows rejects a trailing dot or space; a leading one is legal but invisible.
 _STRIPPED_EDGES = "_. "
+# The résumé's PDF /Info title reads as prose, so its parts are joined by a spaced hyphen.
+_TITLE_JOIN = " - "
 
 
 class NameBudgetError(ValueError):
@@ -76,6 +83,19 @@ class LeadNames:
 
     folder: str
     pdf: str
+
+
+@dataclass(frozen=True)
+class ResumeNaming:
+    """How one delivered résumé is named, at both layers a reader sees.
+
+    `stem` carries no suffix: the renderer derives `<stem>.tex` and `<stem>.pdf` from it, and
+    the two have to stay a matched pair.
+    """
+
+    stem: str
+    pdf_title: str
+    pdf_author: str
 
 
 def slug(value: str) -> str:
@@ -135,6 +155,67 @@ def plan_lead_names(
             f"cap of {DESTINATION_BYTE_CAP}"
         )
     return names
+
+
+def plan_resume_naming(
+    *,
+    owner_name: str,
+    company: str,
+    role: str,
+    identity_hash: str,
+    variant: str = "",
+) -> ResumeNaming:
+    """THE format of a delivered résumé's name and PDF metadata. Change it here, nowhere else.
+
+    - filename `{owner}_{company}_{role}[_{variant}].pdf`, slugged and underscore-separated;
+    - PDF `/Title` `{owner} - {role} - {company}`, in the ORIGINAL text, since /Info is free
+      text and has no length limit — the slug would read the filename back at the owner;
+    - PDF `/Author` the owner's own name.
+
+    `variant` distinguishes the other artifacts of the same lead — the untailored safety net
+    and the Tier B render share a folder with the tailored one — and is priced into the budget
+    rather than appended past it.
+
+    **The owner's name is never truncated.** It is the component a recruiter has to read, so
+    `RESUME_NAME_BYTE_CAP` binds the company and the role only: the role gives way first, then
+    the company, the same order `plan_lead_names` uses. A pathological owner name therefore
+    overruns the cap instead of being cut, which is the intended trade.
+
+    Unlike `plan_lead_names` this raises nothing: no path is being priced, so there is no root
+    that can make every name impossible.
+    """
+    owner = _component(owner_name, identity_hash)
+    org = _component(company, identity_hash)
+    part = _component(role, identity_hash)
+    tail = f"{_SEPARATOR}{variant}" if variant else ""
+
+    spare = (
+        RESUME_NAME_BYTE_CAP
+        - len(PDF_SUFFIX)
+        - _byte_len(tail)
+        - _byte_len(owner)
+        - 2 * len(_SEPARATOR)
+    )
+    part = _fit(part, spare - _byte_len(org), identity_hash)
+    org = _fit(org, spare - _byte_len(part), identity_hash)
+
+    shown = [_display(text) for text in (owner_name, role, company)]
+    return ResumeNaming(
+        stem=f"{owner}{_SEPARATOR}{org}{_SEPARATOR}{part}{tail}",
+        # `or owner` covers a caller with nothing to show at all: a slug is a worse title than
+        # the original text and a better one than an empty string.
+        pdf_title=_TITLE_JOIN.join(text for text in shown if text) or owner,
+        pdf_author=shown[0] or owner,
+    )
+
+
+def _display(value: str) -> str:
+    """`value` with its whitespace collapsed — the metadata's rendering of a raw field.
+
+    Deliberately not `slug`: PDF /Info keeps the punctuation and the accents, and the one
+    thing it cannot keep is the multi-line whitespace a scraped field can carry.
+    """
+    return " ".join(value.split())
 
 
 def _is_name_char(char: str) -> bool:

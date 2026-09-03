@@ -199,7 +199,8 @@ def test_run_resume_override_is_honoured(env: Env, tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout
     assert not (env.config_dir / "resume.yaml").exists()
     assert "guarantee: PASS" in result.stdout.replace("\n", "")
-    assert (env.data_dir / "tailored" / f"tailored-{posting_id}.tex").is_file()
+    # Named by content now, not by posting id, so the claim is "one .tex landed here".
+    assert len(list((env.data_dir / "tailored").glob("*.tex"))) == 1
 
 
 def test_run_out_dir_override_is_honoured(
@@ -220,8 +221,8 @@ def test_run_out_dir_override_is_honoured(
     monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
     result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
     assert result.exit_code == 0, result.stdout
-    assert (out / f"tailored-{posting_id}.tex").is_file()
-    assert (out / f"tailored-{posting_id}.pdf").is_file()
+    assert len(list(out.glob("*.tex"))) == 1
+    assert len(list(out.glob("*.pdf"))) == 1
     assert (out / "tectonic-compile.log").is_file()
     assert not (env.data_dir / "tailored").exists()  # default location untouched
 
@@ -242,8 +243,9 @@ def test_run_out_dir_receives_pdf_when_typst_available(
     monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_typst)
     result = _run(env, ["tailor", "run", str(posting_id), "--out", str(out)])
     assert result.exit_code == 0, result.stdout
-    assert (out / f"tailored-{posting_id}.pdf").is_file()
-    assert str(out / f"tailored-{posting_id}.pdf") in result.stdout.replace("\n", "")
+    pdf = next(iter(out.glob("*.pdf")))
+    assert pdf.is_file()
+    assert str(pdf) in result.stdout.replace("\n", "")
     assert not (env.data_dir / "tailored").exists()
 
 

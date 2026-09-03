@@ -391,3 +391,54 @@ def test_to_pdf_writes_tex_and_deletes_stale_pdf(tmp_path):
     assert captured["tex_path"] == out_dir / "acme.tex"
     assert captured["pdf_path"] == out_dir / "acme.pdf"
     assert captured["pdf_existed"] is False  # stale pdf deleted before the runner ran
+
+
+# --- PDF /Info metadata ------------------------------------------------------------------
+
+
+def test_emit_puts_the_pdf_metadata_in_the_preamble_with_latex_specials_escaped():
+    """The block is injected here rather than written into the bundled template, so that a
+    user's own `{config_dir}/resume_template.tex` gets it too instead of shadowing it — and it
+    lands in the PREAMBLE, where hyperref's documentation puts the PDF-info keys. Measured, the
+    escaping is the load-bearing half: an unescaped `&`/`%`/`_` inside `\\hypersetup` fails the
+    tectonic compile outright, which would cost the lead its résumé."""
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer(
+        pdf_title="Ada Lovelace - Backend Engineer - Procter & Gamble_Labs 100%",
+        pdf_author="Ada Lovelace",
+    ).emit(_r())
+
+    assert (
+        r"\hypersetup{pdftitle={Ada Lovelace - Backend Engineer - "
+        r"Procter \& Gamble\_Labs 100\%},pdfauthor={Ada Lovelace}}"
+    ) in src
+    body = src.index("\\begin{document}")
+    assert src.index("\\hypersetup{pdftitle=") < body, "the block landed after the preamble"
+    # A template that never loads hyperref must lose the metadata, not fail to compile: a
+    # failed compile costs the owner the lead.
+    assert src.index("\\providecommand{\\hypersetup}[1]{}") < src.index("\\hypersetup{pdftitle=")
+
+
+def test_emit_omits_the_metadata_block_entirely_when_none_is_supplied():
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    src = LatexRenderer().emit(_r())
+    assert "hypersetup" not in src
+    assert "providecommand" not in src
+
+
+def test_emit_injects_the_metadata_into_a_users_own_template_too(tmp_path):
+    """The shadowing question, pinned: the fix must reach a config-dir template."""
+    from boardwatch.tailor.render.latex import LatexRenderer
+
+    (tmp_path / "resume_template.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\usepackage[hidelinks]{hyperref}\n"
+        "\\begin{document}\nMY CUSTOM TEMPLATE\n"
+        "%%SECTIONS_START%%\n%%SECTIONS_END%%\n\\end{document}\n"
+    )
+    src = LatexRenderer(tmp_path, pdf_title="T", pdf_author="A").emit(_r())
+    assert "MY CUSTOM TEMPLATE" in src
+    assert r"\hypersetup{pdftitle={T},pdfauthor={A}}" in src
+    assert src.index("\\hypersetup{pdftitle=") < src.index("\\begin{document}")

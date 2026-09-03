@@ -313,7 +313,7 @@ def test_tier_b_report_shows_reworded_count_and_disclaimer(
     assert result.exit_code == 0, result.stdout
     flat = result.stdout.replace("\n", "")
     assert "Tier B (LLM): reworded 2 · unchanged 0 · fell back 0" in flat
-    assert (out / f"tailored-{posting_id}-llm.tex").exists()
+    assert len(list(out.glob("*_llm.tex"))) == 1
     assert "NOT structurally proven" in flat
 
 

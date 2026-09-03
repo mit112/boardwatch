@@ -8,6 +8,7 @@ budget is counted through a different path than the one that produced it.
 from __future__ import annotations
 
 import ast
+import hashlib
 import os
 import re
 import subprocess
@@ -21,10 +22,14 @@ from boardwatch.delivery.names import (
     COMPONENT_BYTE_CAP,
     DESTINATION_BYTE_CAP,
     DRAIN_DIRS,
+    PDF_SUFFIX,
     RESERVED_DEVICE_NAMES,
+    RESUME_NAME_BYTE_CAP,
     LeadNames,
     NameBudgetError,
+    ResumeNaming,
     plan_lead_names,
+    plan_resume_naming,
     slug,
 )
 
@@ -33,6 +38,9 @@ OTHER_IDENTITY = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
 OWNER = "Ada Lovelace"  # slugs to 12 bytes
 OWNER_SLUG = "Ada_Lovelace"
 COMPANY = "Acme"  # slugs to 4 bytes
+#: `_component`'s fallback stem for a blank part, digested here rather than by calling the
+#: module's own `_short_hash` — an assertion against the shared helper would be vacuous.
+PLAN_FALLBACK = hashlib.sha256(IDENTITY.encode("utf-8")).hexdigest()[:8]
 SHORT_ROOT = Path("/q")
 
 
@@ -469,3 +477,114 @@ def test_plan_lead_names_is_deterministic_and_frozen() -> None:
     assert first == plan("Software Engineer, Compilers")
     with pytest.raises(AttributeError):
         first.folder = "other"  # type: ignore[misc]
+
+
+# --------------------------------------------------------------------------------------
+# The delivered résumé's own name and PDF metadata
+# --------------------------------------------------------------------------------------
+
+
+ROLE = "Software Engineer"
+
+
+def naming(
+    *,
+    owner_name: str = OWNER,
+    company: str = COMPANY,
+    role: str = ROLE,
+    identity_hash: str = IDENTITY,
+    variant: str = "",
+) -> ResumeNaming:
+    return plan_resume_naming(
+        owner_name=owner_name,
+        company=company,
+        role=role,
+        identity_hash=identity_hash,
+        variant=variant,
+    )
+
+
+def test_the_resume_is_named_owner_company_role_and_the_metadata_agrees_with_it() -> None:
+    """The owner's chosen format, all three layers at once: an underscored filename, a
+    spaced-hyphen PDF title that reads role-then-company, and the owner as PDF author."""
+    planned = naming()
+    assert f"{planned.stem}{PDF_SUFFIX}" == "Ada_Lovelace_Acme_Software_Engineer.pdf"
+    assert planned.pdf_title == "Ada Lovelace - Software Engineer - Acme"
+    assert planned.pdf_author == "Ada Lovelace"
+
+
+def test_the_metadata_keeps_the_original_text_the_filename_had_to_slug() -> None:
+    """PDF /Info is free text, so the punctuation and accents the filename loses survive there.
+    Without this the title would read the slug back at the owner."""
+    planned = naming(company="Nestlé & Co.", role="Backend Engineer (Remote)")
+    assert planned.pdf_title == "Ada Lovelace - Backend Engineer (Remote) - Nestlé & Co."
+    assert planned.stem == "Ada_Lovelace_Nestlé_Co_Backend_Engineer_Remote"
+
+
+def test_the_role_gives_way_first_the_company_second_and_the_owner_never() -> None:
+    """The cap is on the company and the role. A recruiter reading the file in an upload
+    dialog has to see whose résumé it is, so the owner's name is the one component that is
+    never cut — measured here by requiring it whole while both others are shortened."""
+    company = "Connexxion Telecoms Group International Holdings"
+    role = "Staff Software Development Engineer, Platform Infrastructure"
+    planned = naming(company=company, role=role)
+    filename = f"{planned.stem}{PDF_SUFFIX}"
+
+    assert blen(filename) <= RESUME_NAME_BYTE_CAP, filename
+    assert filename.startswith(f"{OWNER_SLUG}_"), "the owner's name was cut"
+    tail = planned.stem[len(OWNER_SLUG) + 1 :]
+    assert blen(tail) < blen(slug(company)) + 1 + blen(slug(role)), "nothing was truncated"
+    # Both survivors keep a hash suffix, so two long roles at one company never collide.
+    assert naming(company=company, role=role + " and Developer Experience") != planned
+
+
+def test_a_role_that_alone_overruns_the_cap_still_leaves_the_company_readable() -> None:
+    """The floor: when the role cannot fit at all it degrades to its hash rather than to
+    nothing, and the company is not sacrificed to it."""
+    planned = naming(role="Distinguished " * 12 + "Engineer", company="Acme Robotics")
+    assert blen(f"{planned.stem}{PDF_SUFFIX}") <= RESUME_NAME_BYTE_CAP
+    assert planned.stem.startswith(f"{OWNER_SLUG}_Acme_Robotics_")
+    assert planned.stem != f"{OWNER_SLUG}_Acme_Robotics_"
+
+
+def test_a_blank_company_or_role_falls_back_to_the_posting_and_never_to_an_empty_part() -> None:
+    """A posting with no title and a lead with no company must still name a file. The
+    fallback is the queue's own `posting_<hash>`, so the two agree, and it keys on the
+    posting so two nameless leads do not collide."""
+    planned = naming(company="", role="")
+    assert planned.stem == f"{OWNER_SLUG}_posting_{PLAN_FALLBACK}_posting_{PLAN_FALLBACK}"
+    assert "__" not in planned.stem
+    assert planned.pdf_title == "Ada Lovelace", "empty segments must be dropped, not spaced"
+    assert planned.pdf_author == "Ada Lovelace"
+    other = naming(company="", role="", identity_hash=OTHER_IDENTITY)
+    assert other.stem != planned.stem
+
+
+def test_each_variant_is_distinguishable_from_the_others_and_still_inside_the_cap() -> None:
+    """The untailored safety net and the Tier B render are different artifacts of one lead and
+    share a folder, so their names must differ from the tailored one and from each other."""
+    base = naming()
+    untailored = naming(variant="untailored")
+    llm = naming(variant="llm")
+    stems = {base.stem, untailored.stem, llm.stem}
+    assert len(stems) == 3, stems
+    assert untailored.stem == f"{base.stem}_untailored"
+    assert llm.stem == f"{base.stem}_llm"
+    for planned in (base, untailored, llm):
+        assert blen(f"{planned.stem}{PDF_SUFFIX}") <= RESUME_NAME_BYTE_CAP
+    # The metadata describes the application, not the artifact, so it does not vary.
+    assert untailored.pdf_title == llm.pdf_title == base.pdf_title
+
+
+def test_the_variant_is_priced_into_the_cap_rather_than_appended_past_it() -> None:
+    long_role = "Senior Backend Platform Engineer, Developer Infrastructure"
+    with_variant = naming(role=long_role, variant="untailored")
+    assert blen(f"{with_variant.stem}{PDF_SUFFIX}") <= RESUME_NAME_BYTE_CAP
+    assert with_variant.stem.endswith("_untailored")
+
+
+def test_plan_resume_naming_is_deterministic_and_frozen() -> None:
+    first = naming()
+    assert first == naming()
+    with pytest.raises(AttributeError):
+        first.stem = "other"  # type: ignore[misc]
