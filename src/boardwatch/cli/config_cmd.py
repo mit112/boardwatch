@@ -142,6 +142,14 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "lane_hub_combos_per_run": (
         int, "next run", "LinkedIn term/hub combinations searched per run, ≥0"
     ),
+    "lane_company_combos_per_run": (
+        int,
+        "next run",
+        "per-company LinkedIn search cells per run, ≥0 (0 = off). Each cell asks your FIRST "
+        "target title at one watched company, and takes at least one slot from "
+        "lane_new_companies_per_run. The title never rotates, so reorder profile target_titles "
+        "to change which role is asked at every employer",
+    ),
     "lane_hub_distance_miles": (
         int, "next run", "LinkedIn hub search radius in miles, ≥0"
     ),

@@ -1526,6 +1526,124 @@ def test_a_mined_facet_is_searched_usa_wide_but_is_never_crossed_with_a_hub(
     assert lane._search_nets == (("software engineer", "Austin, TX"),)
 
 
+def test_per_company_cells_get_their_own_parameter_and_are_never_crossed_with_a_hub(
+    tmp_path: Path,
+) -> None:
+    """The boundary `_linkedin_lane` owns for the company axis, and the OFF arm beside it.
+
+    A company cell is an ordinary keyword string, so it costs one request — but it gets its OWN
+    lane parameter rather than a slot in `search_facets`, because the two differ on what an empty
+    result MEANS. Crossing it with the hubs would cost one request per employer PER METRO and
+    multiply a rotation already 443 cells long by seven.
+
+    **The disarmed arm is the load-bearing one.** `lane_company_combos_per_run` ships at 0, so
+    every existing run must take this path and add exactly zero requests; a change that appended
+    cells unconditionally would raise LinkedIn's request volume for every user on upgrade, against
+    a host whose permission rests on the volume staying small (D-290).
+    """
+    def _lane(**overrides: object) -> object:
+        return _linkedin_lane(
+            LaneContext(
+                settings=_settings(
+                    tmp_path,
+                    lane_search_hubs=("Austin, TX",),
+                    lane_hub_combos_per_run=99,
+                    **overrides,
+                ),
+                facets=LaneFacets(profile=("software engineer",), mined=("platform engineer",)),
+                rotation_index=0,
+                watched_companies=("Acme Corp", "Beta Inc"),
+            )
+        )
+
+    armed = _lane(lane_company_combos_per_run=2)
+    assert armed._search_companies == (
+        '"Acme Corp" software engineer',
+        '"Beta Inc" software engineer',
+    )
+    assert armed._search_nets == (("software engineer", "Austin, TX"),), (
+        "a company cell must never enter the hub matrix"
+    )
+    # Its OWN parameter, not a slot in `search_facets`: a facet returning zero cards is a
+    # structural failure the lane errs loud about, while a cell naming one employer legitimately
+    # matches nothing most runs (see `LinkedInLane.__init__`).
+    assert armed._search_facets == ("software engineer", "platform engineer")
+
+    disarmed = _lane()
+    assert disarmed._search_facets == ("software engineer", "platform engineer")
+    assert disarmed._search_companies == ()
+
+
+def test_a_mined_facet_is_never_crossed_with_a_COMPANY_either(tmp_path: Path) -> None:
+    """The second exclusion, which is stricter than the hub one and for a compounding reason.
+
+    A mined term is this repo's inference from delivered leads. Crossing it with an employer
+    infers a title AND an employer in one request, so a wrong inference on either axis wastes the
+    cell — and the profile's own titles, which the user actually wrote down, would reach each
+    employer proportionally later for it.
+    """
+    def _lane(facets: LaneFacets) -> object:
+        return _linkedin_lane(
+            LaneContext(
+                settings=_settings(tmp_path, lane_company_combos_per_run=99),
+                facets=facets,
+                rotation_index=0,
+                watched_companies=("Acme Corp",),
+            )
+        )
+
+    both = _lane(LaneFacets(profile=("software engineer",), mined=("platform engineer",)))
+    assert both._search_companies == ('"Acme Corp" software engineer',)
+
+    # **The discriminating arm, and it is the whole test.** With a profile present, the term cap
+    # takes the profile's title first either way, so passing `profile + mined` to `company_nets`
+    # produces the IDENTICAL output and an assertion made only above is vacuous — the exact
+    # premise-bounding D-430 was written about, found here by mutation. A store with delivered
+    # leads and no profile row is reachable (`_lane_facets` returns `profile=()` for it) and is
+    # where the two spellings diverge: no declared target means NO company cell, not a cell built
+    # on an inference.
+    mined_only = _lane(LaneFacets(profile=(), mined=("platform engineer",)))
+    assert mined_only._search_facets == ("platform engineer",)
+    assert mined_only._search_companies == ()
+
+
+def test_the_company_ring_reaching_a_factory_is_the_STORE_s_watched_list(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The half no unit test of `company_nets` can reach, and the exact shape that already caught
+    the rotation index out.
+
+    `company_nets` is tested exhaustively against a company list a test hands it. That says
+    nothing about what PRODUCTION hands it, and the whole track is inert if the answer is `()`:
+    every existing test stays green, the run reports its searches, and no cell is ever built.
+
+    Both directions are asserted. The unwatched row is the control — it is a lane PLACEHOLDER
+    (1,369 of them live against 443 watched), and admitting it would make the ring 4x longer and
+    the rotation unreadable.
+    """
+    recorded: list[tuple[str, ...]] = []
+
+    def _factory(ctx: LaneContext) -> StubLane:
+        recorded.append(ctx.watched_companies)
+        return StubLane([])
+
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name="Acme Corp", provider="greenhouse", slug="acme", source="user", watched=True
+            )
+        )
+        conn.execute(
+            insert(tables.companies).values(
+                name="Placeholder Co", provider="linkedin", slug="ph", source="lane", watched=False
+            )
+        )
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"linkedin": _factory})
+    _run_lanes(engine, _settings(tmp_path, lanes_enabled=("linkedin",)), insert_run(engine))
+
+    assert recorded == [("Acme Corp",)]
+
+
 # --------------------------------------------------------------------------------------
 # The seed channel: a lane never writes `lane_seeds` itself
 # --------------------------------------------------------------------------------------

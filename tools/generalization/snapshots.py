@@ -68,6 +68,14 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.lane_search_hubs": (),
     "Settings.lane_hub_combos_per_run": 12,
     "Settings.lane_hub_distance_miles": 25,
+    # Per-company LinkedIn search cells per run. 0 is the neutral default on both counts this
+    # table asks about. It is OFF, so it adds no request to any existing user's run; and the
+    # feature it disarms names no company in code — the ring is read from the tenant's OWN
+    # watched boards (`queries.watched_company_names`), so a user watching hospital boards gets
+    # hospital names by the same path. The one number the module does hold,
+    # `facets.MAX_COMPANY_FACET_TERMS = 1`, is a ceiling on how many of the tenant's own target
+    # titles each cell carries — arithmetic about rotation length, not a view about roles.
+    "Settings.lane_company_combos_per_run": 0,
     # The Indeed lane's page ceiling and page size. Neutral on the axis this table classifies on:
     # both bound how much the lane may ASK for, and neither says anything about roles, seniority,
     # geography or field. 1 x 100 is the shape that was measured, so the defaults add no request
@@ -144,6 +152,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.lane_search_pages": "operational",
     "Settings.lane_search_hubs": "preference",
     "Settings.lane_hub_combos_per_run": "operational",
+    "Settings.lane_company_combos_per_run": "operational",
     "Settings.lane_hub_distance_miles": "operational",
     "Settings.indeed_search_pages": "operational",
     "Settings.indeed_results_per_page": "operational",

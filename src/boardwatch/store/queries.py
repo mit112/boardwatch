@@ -352,6 +352,30 @@ def get_watched_companies(
     return list(conn.execute(stmt).all())
 
 
+def watched_company_names(conn: Connection) -> tuple[str, ...]:
+    """Every watched company's display NAME, oldest row first — the company axis lane cells rotate.
+
+    The NAME, not the slug: a cell is a keyword phrase an employer's own posting has to contain,
+    and `bytedance-inc` is not what ByteDance writes on a requisition. Duplicates across providers
+    are left in and collapsed by the caller, which is where the case rule lives.
+
+    **`ORDER BY id` is load-bearing, not tidiness.** The caller slices a rotating window over this
+    list, so an unordered read would hand a different ring to every run and the rotation would
+    revisit and starve arbitrary companies while still reporting a full pass. Ordering by id also
+    makes the ring GROW AT THE END: watching a new board appends rather than reshuffling, so an
+    in-flight rotation keeps its coverage instead of being renumbered under itself.
+
+    Watched only. An unwatched row is usually a lane PLACEHOLDER — `linkedin:google`,
+    `hiringcafe:adhoc:amazon` — and there are 1,369 of them against 443 watched (measured
+    2026-09-02). Including them makes the ring 1,812 long and a full pass ~26 days instead of ~6,
+    which is the difference between a rotation whose result can be read and one whose cannot.
+    """
+    rows = conn.execute(
+        select(companies.c.name).where(companies.c.watched.is_(True)).order_by(companies.c.id)
+    ).all()
+    return tuple(str(row.name) for row in rows if str(row.name).strip())
+
+
 def stored_slug(conn: Connection, *, provider: str, slug: str) -> str | None:
     """The slug this provider already stores for `slug`, compared WITHOUT REGARD TO CASE.
 

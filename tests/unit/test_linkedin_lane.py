@@ -518,6 +518,9 @@ def test_the_facets_are_a_second_keyword_argument_and_stored_as_a_tuple():
         "search_pages",
         "search_nets",
         "hub_distance_miles",
+        # Appended LAST, so no existing positional call moves and `hub_distance_miles` stays
+        # beside the `search_nets` it qualifies.
+        "search_companies",
     ]
     assert LinkedInLane(search_facets=["software engineer"])._search_facets == (
         "software engineer",
@@ -861,6 +864,75 @@ def test_an_empty_first_page_is_still_the_structural_failure_it_always_was(tmp_p
         ).collect(_fetcher(tmp_path), lambda provider, slug: True)
 
     assert bodies.call_count == 0
+
+
+@respx.mock
+def test_a_company_cell_matching_nothing_is_a_quiet_employer_and_not_a_failure(tmp_path):
+    """The distinction `search_companies` exists to make, and it is the reason the cells are NOT
+    folded into `search_facets`.
+
+    A facet returning zero cards is a moved fragment or a challenge page, and this lane errs loud
+    about it. **A cell naming one employer legitimately matches nothing most runs** — the whole
+    population is 342 postings a fortnight across 65 employers, drawn from a 443-name ring at 12
+    cells a run behind a 24-hour recency filter. Folded together, arming the cells would push the
+    reported failure count from ~0 to ~11 every run and an operator could no longer tell a quiet
+    employer from a host that had started refusing us.
+
+    The live facet beside it is the control: without it the run raises on the all-empty guard and
+    this would pass for the wrong reason.
+    """
+    cards = search_cards()[:2]
+    facet = _mock_facet("software engineer", cards)
+    quiet = _mock_facet('"Acme Corp" software engineer', None)
+    _mock_bodies(cards)
+
+    result = LinkedInLane(
+        search_facets=("software engineer",),
+        search_companies=('"Acme Corp" software engineer',),
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert (facet.call_count, quiet.call_count) == (1, 1), "the cell must still be REQUESTED"
+    # Reported as a page fetched, not as a search that never got an answer: `0` is what a real
+    # failure reads, and the funnel's page table is where the two are told apart.
+    assert dict(result.search_pages)[_facet_url('"Acme Corp" software engineer')] == 1
+
+
+@respx.mock
+def test_a_company_cell_whose_request_is_REFUSED_is_still_a_failure(tmp_path):
+    """`may_be_empty` is a statement about the RESULT SET, never about the transport.
+
+    A 403 has produced no answer at all, so it stays the failure it always was — otherwise arming
+    the cells would silently absorb the exact refusal (`robots.txt` disallows these guest routes)
+    that this lane's permission posture depends on noticing.
+    """
+    refused = _mock_facet_refused('"Acme Corp" software engineer')
+    _mock_bodies([])
+
+    with pytest.raises(SearchPageError, match="request failures"):
+        LinkedInLane(search_companies=('"Acme Corp" software engineer',)).collect(
+            _fetcher(tmp_path), lambda provider, slug: True
+        )
+    assert refused.called
+
+
+@respx.mock
+def test_cells_are_not_built_at_all_when_none_are_configured(tmp_path):
+    """`search_urls(())` returns the UNFACETED search, so an unguarded call would add a
+    whole-labour-market request to every run that builds no cells — which is every run until an
+    operator arms them, and is the one page this lane exists never to fetch. Caught in review
+    only because an existing test asserted `root.call_count == 0`."""
+    cards = search_cards()[:2]
+    root = respx.get(linkedin.SEARCH_URL).mock(
+        return_value=httpx.Response(200, text=search_page_html(cards))
+    )
+    _mock_facet("software engineer", cards)
+    _mock_bodies(cards)
+
+    LinkedInLane(search_facets=("software engineer",), search_companies=()).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert root.call_count == 0
 
 
 @respx.mock

@@ -99,6 +99,11 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lane_search_hubs",
         "lane_hub_combos_per_run",
         "lane_hub_distance_miles",
+        # OUT for the same reason the seven above are: it decides how much corpus arrives, never
+        # how the corpus is judged, and `policy_version` derives from `config_hash` -- so
+        # classifying it IN would stale every permanent disposition the moment an operator armed
+        # the company cells. No verdict moves when this changes.
+        "lane_company_combos_per_run",
         # The Indeed lane's own two page knobs, OUT for exactly the reason the four above are.
         # They are acquisition — how much corpus arrives — and `policy_version` is derived from
         # `config_hash`, so classifying them IN would mark every permanent `built`/`skipped`
