@@ -115,9 +115,15 @@ companies read **~20%** on target with result sets nearly disjoint from an unfac
 looks like the company name working. All twelve read **3%** — the six-company sample was biased
 toward employers who post heavily on LinkedIn, and the ring is not.
 
-**The 342 already-watched misses are therefore STILL OPEN and Track 2 is not the answer.** Do not
-re-arm it, and do not propose per-company cells again without a probe that names a mechanism which
-actually filters by employer. The code stays merged and inert at `0`.
+**The obvious rescue is closed too, and it was probed.** LinkedIn's real filter is
+`f_C=<numeric company id>`, and the guest fragment serves **no numeric company id** — a card carries
+`urn:li:jobPosting:<id>` and a company SLUG only. Filtering by employer would need a slug-to-id
+discovery mechanism on another LinkedIn surface, which is a **widening of D-290 and the owner's
+call**, not a probe.
+
+**The 342 already-watched misses are therefore STILL OPEN and the LinkedIn residual has no proposed
+mechanism again.** Do not re-arm Track 2, and do not propose per-company cells without naming a
+mechanism that actually filters by employer. The code stays merged and inert at `0`.
 
 **1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
 (D-428; watched 403 → 453). Population 332 boards / 471 postings, **1.42 in-window postings per
