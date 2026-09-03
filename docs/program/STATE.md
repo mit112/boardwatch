@@ -102,6 +102,21 @@ so any catalog change invalidates gate rows written before it. Land catalog PRs 
 
 ## Next action
 
+**THE THREE THINGS CARRIED OUT OF 2026-09-03, in the order they pay. Everything else Mit ruled
+on is done and recorded — see the ruling table under "Owner-gated".**
+
+1. **RE-PRICE A3 AFTER RUN 147, NOT BEFORE.** D-443's unescape runs at INGEST, so the 478 already-
+   escaped bodies keep their escapes until the lane re-ingests them. The 598 → 90 figure is
+   computed against a population that has not refreshed yet, so pricing the routing predicate now
+   prices the wrong one.
+2. **READ A7's YIELD ON THAT SAME RUN.** The 50-board hiring.cafe sample costs ~60 min/run and
+   bought 10 delivered leads on run 145. Mit ruled **hold one run**, so run 147 is the read.
+3. **A8's SAME-SENTENCE CASE — 581 postings, and it is STILL HIS.** His ruling covered the
+   cross-sentence half (7 postings, already the shipped behaviour). The instrument needed is a
+   **sentence-scoped `abstain_by`** — `_suppressed` already takes `bounds` and `abstain_by` never
+   passes one — which is shared machinery and its own decision. **A document-scoped fix would
+   repair the 581 and BREAK the 7 he just ruled on.**
+
 **0. TRACK 2 IS REFUTED AND DISARMED. DO NOT RE-ARM IT, and do not propose per-company cells without naming a mechanism that actually filters by employer** — a quoted company name does not. Code stays merged and inert at `0`. **The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism again.** Measurement and the closed rescue: **D-437**, and this section verbatim in `STANDING-FACTS.md`.
 
 **1. THE 2-YEAR-BAR QUESTION IS NOW ROW A4 IN "Owner-gated" BELOW — it is a decision, not an
