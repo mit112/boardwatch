@@ -1849,3 +1849,31 @@ cleared**, which is another reason to harvest first.
 is measurable every run by D-421's script and is the exposure by construction. Sequence: harvest →
 let Indeed reach steady state → diagnose hiring.cafe → **re-measure ~2026-09-09**. The residual is
 then LinkedIn alone, which is a judgment about a population, not an engineering gap.
+
+## Closed blockers, moved WHOLE out of STATE
+
+> Lifted from `STATE.md`'s live-blocker table on 2026-09-03 when that file passed its size
+> target again. **Nothing was summarised** — each row is byte-identical to the one removed,
+> and each names the PR and decision that closed it. They are kept because a closed blocker
+> records what the fix was FOR, which a decision entry alone does not always make obvious.
+
+| Item | Detail | Owner |
+|---|---|---|
+| ~~The `experience_years` group reads a REFINEMENT as a CONTRADICTION~~ **CLOSED by #291 / D-389** | `refinement_groups` ships as a second group kind in versioned catalog DATA: `exclusive_groups` keeps PRESENCE semantics, `refinement_groups` dissolves only on a real `MET`/`UNMET` straddle. Only `experience_years` moved — **a global rule regresses 8 of 1,034 corpus cases** (D-388), because `clearable_required` is a DISJUNCTION not a weaker rung. **913 of a PINNED 1,868 flip `uncertain` -> `ineligible` (48.9%)**, corpus 0/1034 (predicted before review). **`engine_version` MOVES so a LEDGER DRAIN IS OWED.** Known property, direction deliberate: the refinement pass runs BEFORE stage 1b, so a same-implies split beside another present member dissolves the group where stage-1b-first would let a decisive `unmet` stand — the shipped order is the ABSTAIN direction | **CLOSED** |
+| ~~Delivery-drought cannot see APPLY-LANE starvation~~ **CLOSED by #285 / D-384** | `delivery_drought.py` counts `artifacts.kind == TAILORED_KIND`, written **regardless of which lane `review_gate.lane()` routes to**, so a global misclassification shipped zero apply-ready leads with every existing alarm green. `check_apply_lane_drought` now fires when the last 3 clean runs each delivered PLACEABLE leads and none reached the apply lane. **The old sizing was wrong, not merely pessimistic**: it priced a guard inside `_sync_queue`, but the three job-id readers already take only a connection and `QueueRow` already carries `delivered_run_id`, so nothing in `review_gate`, `_sync_queue` or the web server's result type had to change. Known property, direction abstain-not-alarm: `delivered_unapplied` attributes a re-delivered job to the NEWER run, so an older run can read zero placeable and the window abstains | **CLOSED** |
+| ~~Four detector fallbacks are print-only, not durable~~ **CLOSED by #260** | The `intake-death` / `delivery-drought` / `liveness-blindness` / `corpus-regression` "check not run" handlers now call `append_run_error` like the three artifact-write handlers beside them, so a DETECTOR that crashes leaves a row in `runs.errors_json` and not only a digest line. Four one-line additions, inert on the normal path; each pinned by its OWN parametrised test, because a single test crashing all four passes while three of the four calls are missing. **Known shared property:** `append_run_error` is not internally defensive and these sit inside `except` handlers — matched to the three existing handlers deliberately rather than diverging; it needs two simultaneous failures and fails loudly via the withheld heartbeat | **CLOSED** |
+
+## Standing facts mis-filed as live blockers, moved WHOLE out of STATE
+
+> Lifted from `STATE.md`'s live-blocker table on 2026-09-03. Neither is a blocker: both are
+> permanent properties of the system that a fresh session needs before touching the queue or
+> the live store, plus `resume.yaml`'s import-source rule. **All three are byte-identical to the
+> rows removed.** The third was nearly DELETED on a false check: a grep for `resume.yaml`
+> matched unrelated lines here and was read as "already carried". It is not carried anywhere
+> else — verify the CLAIM, never a substring of it.
+
+| Item | Detail | Owner |
+|---|---|---|
+| **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
+| **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
+| **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |

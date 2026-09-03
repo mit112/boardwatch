@@ -11407,6 +11407,32 @@ bodies:
 | work_auth | 133 | 58 | 43.6% | mostly EEO boilerplate — **but two real misses inside** |
 | experience_years | 393 | 61 | 15.5% | — |
 
+**A SECOND DESIGN WAS TRIED AND REFUTED, so the monitoring gap is UNFIXED and the direction is
+now known.** v2 required a REQUIREMENT MARKER in the same sentence as the topic word, using the
+marker vocabulary `rules.yaml` documents for its own patterns (`must be/have/hold`, `require[sd]`,
+`required|mandatory|essential|only`) rather than a bare mention. It did not work — and it made two
+families WORSE:
+
+| family | v1 (topic mention) | v2 (requirement-framed) |
+|---|---:|---:|
+| work_auth | 43.6% | 30.4% |
+| clearance | 52.9% | 45.5% |
+| degree | 79.4% | **57.7%** — still unusable |
+| experience_years | 15.5% | **40.4%** — worse |
+| internship | 75.0% | **96.6%** — worse |
+
+`internship` degrades to near-total because a requirement marker beside the word `intern` is
+precisely the shape the family is DESIGNED to ignore ("must be currently enrolled", "internship
+experience required"), and `experience_years` degrades because a marker beside "years of experience"
+is often a bar the family correctly reads as `met`. **Tighter cues do not separate a missed
+extraction from correct silence, because correct silence is itself requirement-framed.**
+
+**What a working instrument needs, and it is not cue vocabulary:** the signal is *the family's own
+pattern ALMOST matched* — a partial match on a pattern's required tokens — which is near-miss
+instrumentation of the regexes themselves, not a second vocabulary sitting beside them. That is a
+real piece of design work and it is NOT built. Until it exists the silence audit stays a hand-driven
+discovery tool: run it, read the matched SENTENCES, never quote the rate.
+
 **As a RATE it is unusable — shipping it would cry wolf at 79%.** As a DISCOVERY tool it found two
 real `work_auth` misses, both now fixed: `Sponsorship will not be provided for this position.` (the
 negator sits between modal and copula) and `US Citizens only (onsite role).` (the clause ends in a
