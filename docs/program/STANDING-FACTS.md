@@ -527,6 +527,35 @@ current** — D-391 is the reason. Still live, and stated where they belong: eve
 drain designed in the same change; a cap never observed firing is unverified; the keystone invariant
 is untouched.
 
+### A sample selected by the thing you are measuring cannot measure it — four instances, and the fourth broke the circle from INSIDE the change
+
+The same error four times in two days, each time producing a number that was true about the sample
+and false about the population:
+
+1. **D-437** — six companies read ~20% on target; all twelve read **3%**. The six were picked for
+   looking promising.
+2. **D-441** — hiring.cafe's own in-window view gave **1.42 postings per board**, a true number
+   about the aggregator's window. Admitting a board scans its **entire open inventory**: the 50
+   sized at 79 postings delivered **8,303**.
+3. **D-443's first write-up** — `four (4) years` read clean at 9 sentences on a 487-lead sample;
+   store-wide the form is **1,006 sentences** dominated by DUI-conviction boilerplate and
+   `Four (4) year undergraduate degree`. A class read as safe on a filtered sample was not safe.
+4. **D-445** — the `gh_jid` join keyed on `(company_id, gh_jid)` and returned a confident **zero**.
+   A Greenhouse job id is unique across **Greenhouse**, not per company row, so the key hid the
+   only case worth finding. On the right key: 4, and all 4 are one employer under two rows.
+
+**The fourth is the one worth transferring, and it is not the join.** In D-443 the circle broke
+because a **test refused an exemplar chosen for being representative** — `3\+ years of
+non-internship professional software development experience`, picked as the commonest escaped form,
+still wrote zero rows unescaped. That was not a test of the fix catching the bug; it was a test of
+the stated REASON, and the reason is precisely what a sample gets wrong. Writing the assertion
+before believing the claim is what forced the population read.
+
+**So the cheap defence is not "measure twice".** It is: state the mechanism you believe, pick the
+case you think most representative, and assert it *before* you believe yourself. Instances 1, 2 and
+4 were caught by a second measurement, which is expensive and only happens when someone is
+suspicious. Instance 3 was caught by a test, which is cheap and happens whether or not anyone is.
+
 ## Discovery, coverage and the board backlog
 
 > Moved WHOLE from `STATE.md` on 2026-08-23d (Mit's ruling). Nothing was reworded; these are the
@@ -1977,4 +2006,31 @@ and the stored fact agree. **The value is defensible and correcting it would not
 **Which leaves the question genuinely yours and not a data error**: it is whether you would apply to
 a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
 answer that, and D-440 has priced every option so it is a row-pick rather than an opinion.
+
+## Moved out of STATE on 2026-09-03b — two CLOSED items kept verbatim
+
+Both said "closed" or "do not re-arm" in their own first line while occupying ten lines of the next-action list. Kept whole because each is a refutation, and a refutation summarised is a refutation that gets re-proposed.
+
+### Track 2 — refuted on live measurement and disarmed
+
+**0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.** Armed at
+`lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host **before** the first
+tick, disarmed 01:34. **4 of 120 cards on target (3%)**; 12 cells present **78 distinct companies,
+61 new, against a cap of 50**, ahead of the hub nets, so arming it takes every slot. The rescue is
+closed and was probed: the guest fragment serves **no numeric company id**, so `f_C=` is
+unreachable and getting there is a **D-290 widening, the owner's**. Everything else: **D-437**.
+**The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism
+again.** Do not propose per-company cells without naming a mechanism that actually filters by
+employer. The code stays merged and inert at `0`.
+
+### The 50-board hiring.cafe sample — read out and closed
+
+**3. THE 50-BOARD SAMPLE IS READ AND THE REMAINING 282 ARE REFUSED (D-441). CLOSED — do not
+re-open it from hiring.cafe's in-window counts, which is the number that was wrong.** Run 145
+answered it in one run: the sample's **59 boards contributed 8,303 postings** against D-428's
+predicted 79, and the run took **96.4 min writing 15,356 versions** against run 144's 21.9 min and
+2,020 — **105x the postings, ~21-27x the minutes**, and 8,303 is a FLOOR because eleven of the top
+twelve contributors hit `detail_fetch_budget = 400`. **It bought 10 delivered leads.** The sample is
+NOT reverted; whether to keep paying ~60 min/run for 10 leads is the OWNER's, and is a different
+question from adding 282 more, which is closed.
 

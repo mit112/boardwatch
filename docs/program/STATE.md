@@ -99,15 +99,7 @@ so any catalog change invalidates gate rows written before it. Land catalog PRs 
 
 ## Next action
 
-**0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.** Armed at
-`lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host **before** the first
-tick, disarmed 01:34. **4 of 120 cards on target (3%)**; 12 cells present **78 distinct companies,
-61 new, against a cap of 50**, ahead of the hub nets, so arming it takes every slot. The rescue is
-closed and was probed: the guest fragment serves **no numeric company id**, so `f_C=` is
-unreachable and getting there is a **D-290 widening, the owner's**. Everything else: **D-437**.
-**The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism
-again.** Do not propose per-company cells without naming a mechanism that actually filters by
-employer. The code stays merged and inert at `0`.
+**0. TRACK 2 IS REFUTED AND DISARMED. DO NOT RE-ARM IT, and do not propose per-company cells without naming a mechanism that actually filters by employer** — a quoted company name does not. Code stays merged and inert at `0`. **The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism again.** Measurement and the closed rescue: **D-437**, and this section verbatim in `STANDING-FACTS.md`.
 
 **1. THE 2-YEAR-BAR QUESTION IS NOW ROW A4 IN "Owner-gated" BELOW — it is a decision, not an
 action.** The two things a future session must not re-derive: **lowering
@@ -116,29 +108,18 @@ hiding behind it** — the résumé parses to 20 months, of which 13 are interns
 postings exclude by name, so the stored `1` and the résumé agree against a 2-year bar. Full
 reasoning moved WHOLE into `STANDING-FACTS.md` at this close.
 
-**2a. THE RE-KEY IS LIVE RIGHT NOW, NOT A PREDICTION.** The pull moved BOTH hashes — `rules_hash`
-from the catalog change and `profile_hash` too, since D-438's resolver adds `education_timing` to
-`declared_fields()`. Measured straight after: the live identity matches **no** stored
-`eligibility_inputs` row, so a fresh read returns `None` for all ~138k open postings. **Nothing is
-corrupted and it self-heals on the next run.** Until then the web view shows every lead unevaluated
-and the apply lane reads INFLATED (`review_gate.lane` routes `None` like `uncertain`), while the
-folders on disk still hold the last reconcile at 598 apply / 732 review. **Expect the web view and
-the folder tree to disagree until the 04:00 tick.** A full re-evaluation was deliberately NOT
-triggered: `eligibility run` would write ~138k rows over hours, duplicating what the tick does.
+**2a. THE RE-KEY IS RESOLVED — RUN 146 DID IT, AND THE "HOURS" ESTIMATE IN THIS FILE WAS WRONG BY ~10x.** Both hashes moved (`rules_hash` from the catalog change, `profile_hash` because D-438's resolver adds `education_timing` to `declared_fields()`), and this file said a full re-evaluation would write ~138k rows *over hours* so it was deliberately not triggered. **Run 146 wrote them in 10 minutes**, 12:18-12:28 on 2026-09-03: **138,582 of 138,677 open postings now carry a verdict under the live identity — 99.93%.**
+
+**The lane split was RE-READ after the re-key rather than assumed, through `review_gate.lane()` itself and not a proxy: 597 apply / 1,007 review / 107 closed — UNCHANGED. So A3's pricing below is current, not stale.** What still disagrees is the folder tree, and by very little: run 146 ran no reconcile, so disk holds run 145's filing (598 / 732 / 274 `_ineligible` / 107 / 7 `_applied`) while the store now wants 597 / 719 / 288 / 107. **That is ~14 folders out of 1,711 — the re-key barely moved the lanes**, and the next full run closes it.
+
+**Watch out for run 146 in the runs table: `boards_attempted = 0`, every scan column NULL, `status = ok`.** It was **a peer session's `boardwatch eligibility run`**, issued to clear the re-key — not a fleet failure, though it is indistinguishable from one at a glance and it consumed a run id. Do not read it as a lost discovery day and do not compare its minutes against runs 143-145.
 
 **2. THE CATALOG WORK IS MERGED AND THE CHECKOUT IS PULLED — what remains is the DRAIN.** D-436 and
 D-438 are on `main`; the checkout is pulled and its catalog loads 7 families / 57 patterns, with 400
 live bodies evaluated through the tick's own path and no crash. **The owed ledger drain releases
 1,595 of 1,609 decisions — 99.1% — so: precision work FIRST, drain LAST, staged with `--job <id>`.**
 
-**3. THE 50-BOARD SAMPLE IS READ AND THE REMAINING 282 ARE REFUSED (D-441). CLOSED — do not
-re-open it from hiring.cafe's in-window counts, which is the number that was wrong.** Run 145
-answered it in one run: the sample's **59 boards contributed 8,303 postings** against D-428's
-predicted 79, and the run took **96.4 min writing 15,356 versions** against run 144's 21.9 min and
-2,020 — **105x the postings, ~21-27x the minutes**, and 8,303 is a FLOOR because eleven of the top
-twelve contributors hit `detail_fetch_budget = 400`. **It bought 10 delivered leads.** The sample is
-NOT reverted; whether to keep paying ~60 min/run for 10 leads is the OWNER's, and is a different
-question from adding 282 more, which is closed.
+**3. THE 50-BOARD SAMPLE IS READ AND THE REMAINING 282 ARE REFUSED (D-441). CLOSED** — do not re-open it from hiring.cafe's in-window counts, which is the number that was wrong. It bought **10 delivered leads** for ~60 min/run. Whether to keep paying is the OWNER's (row **A7**) and is a different question from adding 282 more, which is closed. Full numbers verbatim in `STANDING-FACTS.md`.
 
 **4. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
 `.agent/2026-09-02-session/per_source_recall.py`. **The residual is LinkedIn alone**, and Track 2 is
@@ -170,14 +151,10 @@ WHOLE into `STANDING-FACTS.md` at this close; numbers in `METRICS.md` (Run 145).
   **Arming must wait for run 147** or it contaminates the board sample's reading — the two board
   levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
-- **THE OWNER'S CALL, and it outweighs every rule shipped this session: does a stated 2-YEAR
-  experience bar rule you out?** `experience_years.near_miss_years_ceiling = 3` makes the engine
-  ABSTAIN on bars at or under 3 years rather than reject. Across the **475** review-lane leads held
-  for `experience_requirement` the rows are **2,809 `unknown` · 258 `unmet` · 43 `met`** — the engine
-  declining to decide on exactly the bar he is closest to. **Two blind judges disagreed on this and it
-  swung ~10 of 40 leads**, which is why the review lane's wrong-hold rate is a RANGE (**17%-47%**) and
-  not a number. One sentence collapses it. Not free either way: D-333 records that each extra year
-  moves genuinely-too-senior postings into the delivered pool, and the reject pile is never inspected.
+- **The 2-year-bar question is ROW A4, and is stated there once.** It was written out here, in
+  next-action item 1, and in the table — one decision in three places. The numbers that matter
+  (**2,809 `unknown` · 258 `unmet` · 43 `met`** across 475 review-lane leads; two blind judges
+  swinging ~10 of 40, which is why the wrong-hold rate is a RANGE of **17%-47%**) live in D-440.
 - **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION — D-436, unfixed.** The
   keystone makes a rule that cannot resolve a profile FIELD visible; it says nothing about an
   extractor that cannot find the requirement in the TEXT. Reasoning moved WHOLE into
@@ -207,6 +184,7 @@ WHOLE into `STANDING-FACTS.md` at this close; numbers in `METRICS.md` (Run 145).
   non-internship professional software development experience` — the most common escaped form on
   that lane — writes zero rows *even unescaped*, because no catalog arm allows four modifiers
   between `of` and `experience`. That, not more escape handling, is the next coverage increment.
+- **THE `gh_jid` CONVERGENCE ITEM IS REFUTED AS AN IDENTITY QUESTION, AND THE REAL MECHANISM IS BIGGER THAN IT WAS (D-445).** It proposed an `IDENTITY_ALGORITHM_VERSION` bump — re-keying **161,085 postings to reach 4 leads**. Measured store-wide first: **all 4 cases are one employer under TWO `companies` rows** (Peloton, Roblox, Stripe, Lyft), so identity is not failing — the employer exists twice. **303 employers have postings under more than one row**, and it costs the shipped slate cap **20 redundant standing leads it cannot see** (89 on the `company_id` key, 109 on a company-NAME key; all 20 read by hand, zero false merges). **Company-row consolidation is the lever, is a DATA change needing no re-key or drain, and is NOT TAKEN** — it re-parents postings on the live store and the merge RULE needs its own measurement. **The first measurement returned a confident, wrong ZERO** because the key included `company_id` and a Greenhouse job id is unique across GREENHOUSE.
 - **`classify_location` FAILS OPEN on unrecognised cities**, so Nottingham (UK) postings reached a
   US-only queue in the D-436 audit. Not fixed; the fail-open direction is deliberate (D-294) and
   narrowing it is a precision/recall decision, not a bug fix.
@@ -223,7 +201,7 @@ PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-a
 until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
 80%, do not re-derive "most", do not re-probe Indeed.**
 
-**A. MERGE #354, OR DON'T — the four measured decisions waiting on you, in the order they pay.**
+**A. THE SEVEN MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Two are merges (A1, A5) and they must be read out on ONE run; the rest are independent.
 
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
@@ -231,9 +209,14 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 | **A2** | **Spot-check `verdicts_a.json` / `verdicts_b.json`, then `gate apply`** | ~116 demotions across 597, **15 of 15 spans survive the keystone guard, 0 failures** on the 77-lead measurement | Current standing, above |
 | **A3** | **D-442's routing predicate** — zero requirement rows ⇒ `_review` | apply **597 → 116**, review 1,007 → 1,488. An **81% cut** to the pile you work from. **Not a bug fix** — it is what you want the apply lane to MEAN | D-442 |
 | **A4** | **Does a stated 2-YEAR bar rule you out?** | `near_miss_years_ceiling`; **lowering it REJECTS rather than releases** (ceiling 2 rejects 290, 0-1 rejects 505). Recommendation: do NOT lower | D-440 |
+| **A5** | **Merge #344** (D-439/D-444, the seeded slate cap) | a byte-identical twin is held until you apply to or skip the first, instead of arriving the next day. **Stops the pile growing; removes none of it.** Gated for the same reason as A1 — it changes which leads a run delivers | #344's body; D-439, D-444 |
+| **A6** | **The 89 duplicates already standing** — leave them, or bulk-skip them | 53 groups, one of 10. **Recommended: bulk `mark_job_skipped`** — folders move to `_skipped/`, nothing is deleted, **reversible in one call**. Deletion is REJECTED: these are 142 distinct jobs, so the queue's existing delete argument does not transfer | D-446 |
+| **A7** | **Keep paying for the 50-board hiring.cafe sample, or revert it** | ~**60 min/run forever** for **10 delivered leads** on run 145. Reverting is a `companies` restore from `companies-prehcsample-20260902-183019.csv`. **Adding the other 282 is CLOSED and is not this question** | D-441 |
 
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
+
+**A1 and A5 must be read out on ONE run, not two.** #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
 
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
