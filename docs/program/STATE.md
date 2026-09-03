@@ -21,11 +21,18 @@
 
 ## Current standing
 
-### Session 2026-09-03: the queue is audited END TO END, and the waste is EXTRACTION — now with a mechanism
+### Session 2026-09-03: the queue is audited END TO END, the waste is EXTRACTION — and three items closed by REFUTATION rather than by building
 
-Reasoning: **D-436**, **D-438**, **D-442**, **D-443**. Numbers: `METRICS.md` (Session 2026-09-03).
-**Run 145** read out below. The earlier headline "the catalog is 8% of the problem" is RETIRED — it
-read a verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
+Reasoning: **D-436**, **D-438**, **D-442**, **D-443** (extraction); **D-439**, **D-444** (the slate
+cap); **D-445**, **D-446** (the `gh_jid` refutation and the standing duplicates); **D-447** (the
+modifier window). Numbers: `METRICS.md`, **both** the `Session — 2026-09-03` and
+`Session — 2026-09-03b` blocks. **Run 145** read out below; **run 146** was an eligibility-only
+pass (see item 2a). The earlier headline "the catalog is 8% of the problem" is RETIRED — it read a
+verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
+
+> **`D-443`, `D-444` and `D-447` are NOT on `main` yet — they land with their PRs (#354, #344,
+> #357).** `python -m tools.decisions --show D-444` exits 1 until then, and that is the PR being
+> unmerged, **not a broken index**. Do not "repair" it.
 
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
