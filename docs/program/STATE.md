@@ -249,7 +249,7 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 `…or 5+ years of experience` resolves `uncertain`; `…or 5+ years of **software engineering** experience` resolves `ineligible` — because only the total arm carries
 `degree_alternative_to_years`. Mit holds a Master's and clears the degree arm in both. **D-073 already ruled this shape undecidable for the total arm and cites a real job deleted by getting it
 wrong.** The D-447-era wiring is the WRONG instrument: being document-scoped it would fix the 581 and break the 7 he just ruled on. The right one is a **sentence-scoped escape** (`_suppressed` already takes `bounds`; `abstain_by` never passes one) — shared machinery, and its own decision.
-Written up as **D-449**, which lands with its own PR; `--show D-449` exits 1 until then.
+Written up as **D-449**, on `main`.
 
 **A4's answer is a FACT, not a policy move, and that distinction is the whole of D-440.**
 "I don't have 2 years of work ex" answers the profile question; it does NOT by itself say
