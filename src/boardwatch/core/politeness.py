@@ -54,11 +54,21 @@ class FetchFailure(Exception):
     """
 
     def __init__(
-        self, message: str, status_code: int | None = None, *, redirected: bool = False
+        self,
+        message: str,
+        status_code: int | None = None,
+        *,
+        redirected: bool = False,
+        final_url: str = "",
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.redirected = redirected
+        # WHERE THE NON-200 CAME FROM, when a response was seen at all. `redirected` says only
+        # THAT the client moved; a caller resolving a shortener needs to know WHERE, because a
+        # redirect target that 404s has still NAMED the board it 404'd on. Empty when no response
+        # exists to read it from — the retry-exhausted path below has only the requested URL.
+        self.final_url = final_url
 
 
 class _RetryableStatus(Exception):
@@ -74,6 +84,12 @@ class FetchResult:
     content: bytes
     not_modified: bool
     observed_validators: ResponseValidators | None
+    # WHERE THE RESPONSE ACTUALLY CAME FROM, after this client followed any redirects. The
+    # requested URL is not enough for a caller resolving a SHORTENER: `grnh.se/<token>` names no
+    # employer, and only the redirect target does. Defaulted and last so the 304 construction
+    # below and the contract probe keep working positionally; empty means "no URL was observed",
+    # which is the honest reading for a 304 that carries no response body or URL.
+    final_url: str = ""
 
 
 def identifying_user_agent() -> str:
@@ -279,6 +295,7 @@ class Fetcher:
                 f"HTTP {response.status_code} for {url}",
                 status_code=response.status_code,
                 redirected=bool(response.history),
+                final_url=str(response.url),
             )
         etag = response.headers.get("ETag")
         last_modified = response.headers.get("Last-Modified")
@@ -287,7 +304,7 @@ class Fetcher:
             if etag or last_modified
             else None
         )
-        return FetchResult(200, response.content, False, observed)
+        return FetchResult(200, response.content, False, observed, str(response.url))
 
 
 def _parse_retry_after(response: httpx.Response) -> float | None:

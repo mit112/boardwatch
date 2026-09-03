@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 
@@ -20,6 +21,10 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.github_lists import candidate_document, discover, fetch_listings, select
+from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED
+from boardwatch.lanes.grnh_seeds import candidate_document as grnh_candidate_document
+from boardwatch.lanes.grnh_seeds import resolve as grnh_resolve
+from boardwatch.lanes.grnh_seeds import without_known as grnh_without_known
 from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
@@ -31,6 +36,7 @@ from boardwatch.store.queries import (
     unwatch,
     upsert_watch,
 )
+from boardwatch.store.seed_queries import unresolved_seeds
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
@@ -185,6 +191,61 @@ def export(ctx: typer.Context) -> None:
         {"name": r.slug, "provider": r.provider, "slug": r.slug, "tags": []} for r in rows
     ]}
     console.print(yaml.safe_dump(payload, sort_keys=False))
+
+
+@companies_app.command("discover-grnh")
+def discover_grnh_(
+    ctx: typer.Context,
+    limit: int = typer.Option(
+        200, "--limit", min=1, help="How many stored grnh.se seeds to follow."
+    ),
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the candidate file here instead of stdout."),
+    ] = None,
+) -> None:
+    """Propose greenhouse boards from stored `grnh.se` seeds, for review.
+
+    `grnh.se` is Greenhouse's own shortener, so the redirect target names the board. MEASURED
+    2026-09-02: 12 of 12 sampled seeds landed on a URL `parse_board_target` accepts, yielding 9
+    distinct boards, 0 of them already watched.
+
+    Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise, and
+    the seed rows are left unresolved because a board CANDIDATE is not a resolved posting. Review
+    it, delete any row whose evidence URL is ATS chrome rather than an employer board, then
+    `companies import` it. That human step is the owner's ruling (D-291 build).
+
+    **This is not wired into a run.** Arming these boards costs ~3.2s each on every future run,
+    so admission stays a separate, deliberate act.
+    """
+    # ensure=False for the reason `discover` states: a command whose docstring promises no store
+    # write must not migrate a production database as a side effect of being asked a question.
+    app_ctx = build_context(ctx.obj, ensure=False)
+    if not inspect(app_ctx.engine).has_table("lane_seeds"):
+        console.print("[red]no lane_seeds table — run `boardwatch init` first[/red]")
+        raise typer.Exit(code=1)
+    with app_ctx.engine.connect() as conn:
+        seeds = unresolved_seeds(
+            conn, hosts=GRNH_HOSTS, max_attempts=MAX_ATTEMPTS_CONSIDERED, limit=limit
+        )
+    resolution = grnh_resolve(seeds, Fetcher(app_ctx.settings))
+    # Boards already stored are dropped, the same rule `discover` applies via `is_known`. This
+    # command charges no attempt and never sets `resolved_at`, so the seed set is IDENTICAL on
+    # every invocation -- without this, a reviewer who imports the good rows is handed the whole
+    # list again next time, including the ATS chrome they just deleted.
+    with app_ctx.engine.connect() as conn:
+        resolution = grnh_without_known(
+            resolution, is_known=lambda p, s: company_exists(conn, provider=p, slug=s)
+        )
+    document = grnh_candidate_document(resolution, generated_on=date.today())
+    if out is None:
+        # Plain stdout, not `console.print`: rich WORD-WRAPS at the console width, which breaks
+        # a header comment across lines that no longer start with `#` and makes the document
+        # fail `safe_load` -- the exact escape `_one_line` exists to prevent, one layer down.
+        typer.echo(document, nl=False)
+        return
+    out.write_text(document, encoding="utf-8")
+    console.print(f"Wrote {len(resolution.boards)} candidate board(s) to {out}")
 
 
 @companies_app.command("discover")
