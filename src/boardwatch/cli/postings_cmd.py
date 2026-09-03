@@ -24,7 +24,7 @@ from collections.abc import Callable
 from typing import Any
 
 import typer
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
@@ -35,8 +35,9 @@ from boardwatch.core.posting_identity import compute_identities
 # re-exporting it as public API would create a second name for one behaviour — the drain has to
 # run the exact function the scan path runs, or it repairs rows into a third, different shape.
 from boardwatch.providers.smartrecruiters import _body_text as _smartrecruiters_body
+from boardwatch.store.body_revision import record_body_revision
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
-from boardwatch.store.tables import companies, posting_versions, postings
+from boardwatch.store.tables import companies, postings
 
 #: Closed catalog. A provider is repairable here only if its stored `raw_json` carries everything
 #: its body parser reads; out-of-catalog is an error, never a new bucket.
@@ -99,20 +100,12 @@ def reparse_bodies(
             changed.append(posting_id)
             if not apply_:
                 continue
-            conn.execute(
-                update(postings)
-                .where(postings.c.id == posting_id)
-                .values(content_hash=new_hash, body_text=body)
-            )
-            conn.execute(
-                posting_versions.insert().values(
-                    posting_id=posting_id,
-                    content_hash=new_hash,
-                    body_text=body,
-                    captured_at=now,
-                    run_id=None,
-                    capture_reason="revised",
-                )
+            record_body_revision(
+                conn,
+                posting_id=posting_id,
+                body_text=body,
+                content_hash=new_hash,
+                captured_at=now,
             )
 
         identity_rows = 0
