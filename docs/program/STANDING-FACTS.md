@@ -2117,3 +2117,17 @@ twelve contributors hit `detail_fetch_budget = 400`. **It bought 10 delivered le
 NOT reverted; whether to keep paying ~60 min/run for 10 leads is the OWNER's, and is a different
 question from adding 282 more, which is closed.
 
+## Moved out of STATE on 2026-09-03c — the escaped-bars block, MERGED as #354, kept verbatim
+
+Owner-gated for a day, merged 2026-09-03. Kept whole because it is the measurement that
+justified re-versioning 478 postings, and a summary would not.
+
+- **THE ESCAPED-BARS HALF IS BUILT AND AWAITING YOUR MERGE — #354, D-443.** The escapes are **one
+  lane's**: jobapps **473 of 1,620 bodies (29.2%)**, workday 6, greenhouse 2, **every other provider
+  0.0%**, so the fix is one unescape in `lanes/jobapps._body` and not a body-normalisation layer (a
+  shared normaliser would have rewritten 137,057 bodies to fix zero). Measured through the real
+  engine: **132 bodies go from ZERO requirement rows to some, 83 verdicts move, 11 leads leave
+  `eligible`**, and nine of the new rows are sponsorship refusals that were unreadable. All 83 moves
+  were read against the employer's own quoted span, including the single promotion. **Still
+  owner-gated to MERGE** because it re-versions postings and changes what you are told you can apply
+  to — not because anything about it is unmeasured.

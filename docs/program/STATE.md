@@ -30,9 +30,9 @@ modifier window). Numbers: `METRICS.md`, **both** the `Session — 2026-09-03` a
 pass (see item 2a). The earlier headline "the catalog is 8% of the problem" is RETIRED — it read a
 verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
 
-> **`D-443`, `D-444` and `D-447` are NOT on `main` yet — they land with their PRs (#354, #344,
-> #357).** `python -m tools.decisions --show D-444` exits 1 until then, and that is the PR being
-> unmerged, **not a broken index**. Do not "repair" it.
+> **`D-444` and `D-447` are NOT on `main` yet — they land with #344 and #357.**
+> `python -m tools.decisions --show D-444` exits 1 until then, and that is the PR being unmerged,
+> **not a broken index**. Do not "repair" it. (`D-443` landed with #354.)
 
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
@@ -171,15 +171,10 @@ WHOLE into `STANDING-FACTS.md` at this close; numbers in `METRICS.md` (Run 145).
 - **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES (D-436).** Moved
   WHOLE into `STANDING-FACTS.md`. The 13 have ~7 distinct root causes, so more patterns is
   whack-a-mole; **D-443 is the first of them fixed at its actual layer.**
-- **THE ESCAPED-BARS HALF IS BUILT AND AWAITING YOUR MERGE — #354, D-443.** The escapes are **one
-  lane's**: jobapps **473 of 1,620 bodies (29.2%)**, workday 6, greenhouse 2, **every other provider
-  0.0%**, so the fix is one unescape in `lanes/jobapps._body` and not a body-normalisation layer (a
-  shared normaliser would have rewritten 137,057 bodies to fix zero). Measured through the real
-  engine: **132 bodies go from ZERO requirement rows to some, 83 verdicts move, 11 leads leave
-  `eligible`**, and nine of the new rows are sponsorship refusals that were unreadable. All 83 moves
-  were read against the employer's own quoted span, including the single promotion. **Still
-  owner-gated to MERGE** because it re-versions postings and changes what you are told you can apply
-  to — not because anything about it is unmeasured.
+- **The job-apps unescape is MERGED (#354, D-443) — the numbers are now history, kept in
+  `STANDING-FACTS.md`.** One lane's problem: jobapps **473 of 1,620 bodies (29.2%)**, every other
+  provider 0.0%. **132 bodies gained their first requirement row, 83 verdicts moved, 11 leads left
+  `eligible`**, each read against the employer's own quoted span.
 - **The spelled-out and parenthesised halves are REFUSED on measurement, and that reverses this
   session's own write-up (D-443).** `four (4) years` looked clean at 9 sentences on the 487-lead
   sample; over the whole store the form is **1,006 distinct sentences** dominated by `no convictions
