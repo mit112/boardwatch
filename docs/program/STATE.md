@@ -114,6 +114,22 @@ answer that, and D-440 has priced every option so it is a row-pick rather than a
 **2. MERGE #341 (D-436) AND #343 (D-438) ATTENDED, THEN ARM THE `final_gate:` LANE — in that order,
 and the order is FORCED.** Both PRs move `rules_hash`; `record_gate_verdict` keys on
 `build_identity(..., catalog, ...)`, so any catalog change invalidates gate rows written before it.
+**THE LEDGER DRAIN IS NOT A SMALL CLEANUP — MEASURED, IT RELEASES 99.1% OF THE LEDGER.**
+`ledger reopen --stale` under the merged catalog would release **1,595 of 1,609 decisions, every one
+`built`**. That is the "rebuild the whole shortlist" case the command's own docstring warns about,
+and it would re-offer ~1,595 jobs into a queue that already holds ~1,240 leads and is measured **36%
+unapplyable**. **Draining before the precision work floods the queue rather than refreshing it.**
+
+**The command IS the review, by design.** Its docstring: *"A stamp mismatch is never released
+automatically (design §2.4) — auto-expiry on mismatch would rebuild the whole shortlist on any
+settings tweak, and an automatic re-open cannot be reviewed before it happens. This is that
+review."* So it is not a chore to be completed unattended; running it IS the reviewing act.
+
+**Recommended order, and the drain is LAST rather than automatic:** land the precision work first
+(the `final_gate:` lane over the delivered set is the 36% lever), then drain, so what re-enters the
+shortlist is judged rather than merely re-offered. `reopened_at` is set rather than rows deleted, so
+the drain is additive and can be taken in stages with `--job <id>` instead of `--stale`.
+
 **Merge attended**: the first run after either lands re-evaluates the corpus and relocates real
 leads — measured, every delivered lead reads verdict `None` and the apply lane goes **537 → 1,222**
 as `None` routes like `uncertain`. A **ledger drain is owed** and D-351's counter restarts. Then run
