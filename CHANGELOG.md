@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **LinkedIn can now be asked about a named employer, not only about a job title.** Every LinkedIn
+  search boardwatch made asked *what* ("software engineer") and *where* ("in Austin"). It never
+  asked *at whom*. So a job posted by a company you already watch, but listed on LinkedIn and not
+  on that company's own careers page, was never looked for — measured at **342 postings across 65
+  employers you already watch** in a fortnight, including Palo Alto Networks, NVIDIA, Accenture,
+  Citi and Rivian.
+
+  Each run can now also ask LinkedIn directly about companies from your own watch list —
+  `"Palo Alto Networks" software engineer` — working through the list a few at a time so every
+  watched company comes round about once a week. Each cell asks your **first** target title, so
+  reorder your profile's target titles if you want a different role asked at every employer.
+
+  **Off until you turn it on, and the cost is added, not moved.** `boardwatch config set
+  lane_company_combos_per_run 12` arms it; the default is 0 and adds no requests to any existing
+  run. 12 is the sized value: it covers all 443 watched companies in about six days at the
+  current run rate, and adds up to a dozen extra searches per run on top of the ones already
+  made. Each cell also takes at least one slot from the per-run new-company allowance. Nothing is
+  subtracted anywhere, which is exactly why arming it is your decision and not a default.
+
+  The company list comes from your store, never from the code. A user watching hospital boards
+  gets hospital names by exactly this path.
+
 - **`boardwatch companies discover-grnh` turns stored short links into boards you can watch.** Some
   job links boardwatch finds are `grnh.se` addresses — Greenhouse's own link shortener. The address
   itself names no employer, so nothing could follow them up and 122 of them were sitting unread.

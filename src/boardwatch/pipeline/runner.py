@@ -51,6 +51,7 @@ from boardwatch.lanes.base import Lane, LaneContext, LaneResult
 from boardwatch.lanes.facets import (
     MINED_FACET_WINDOW_DAYS,
     LaneFacets,
+    company_nets,
     hub_nets,
     mined_facet_candidates,
     role_facets,
@@ -124,6 +125,7 @@ from boardwatch.store.queries import (
     get_profile,
     reap_stale_runs,
     upsert_lane_company,
+    watched_company_names,
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
 from boardwatch.store.run_funnel_queries import lead_provenance
@@ -199,10 +201,32 @@ def _linkedin_lane(ctx: LaneContext) -> LinkedInLane:
     reach each metro proportionally later, which is the one thing the net exists to do. Mined
     facets are already searched USA-wide by the facet path above; they are an inference from
     delivered leads, not an ask, and they do not get to slow down the ask.
+
+    **The COMPANY cells need no new URL shape** — a cell is `"Acme Corp" software engineer`, an
+    ordinary keyword string that `search_urls` already `quote`s into the one parameter it belongs
+    to. They do need their OWN parameter rather than a slot in `search_facets`, and the plan that
+    called for the latter was wrong: a facet returning zero cards is a structural failure the lane
+    errs loud about, while a cell naming one employer legitimately matches nothing most runs. See
+    `LinkedInLane.__init__`, which owns that distinction.
+
+    They cross `facets.profile` only, like the nets and for a stricter version of the same
+    reason — `company_nets` caps the term axis at one, because 14 titles against 443 watched
+    companies is a 358-day rotation and a rotation nothing revisits buys nothing. The mined half
+    is excluded a second time over: it is an inference, and inferring a title AND an employer at
+    once compounds two guesses into one request.
+
+    Off unless `lane_company_combos_per_run` is set, so this path adds exactly zero requests to
+    every existing run until an operator arms it.
     """
     return LinkedInLane(
         posting_budget=ctx.settings.lane_posting_budget,
         search_facets=ctx.facets.profile + ctx.facets.mined,
+        search_companies=company_nets(
+            ctx.facets.profile,
+            ctx.watched_companies,
+            rotation_index=ctx.rotation_index,
+            combos_per_run=ctx.settings.lane_company_combos_per_run,
+        ),
         search_pages=ctx.settings.lane_search_pages,
         search_nets=hub_nets(
             ctx.facets.profile,
@@ -558,6 +582,12 @@ def _run_lanes(
     # Read ONCE for the stage, not once per lane: it is the same profile for every lane, and a
     # second read could only differ by racing a `profile set` mid-run.
     facets = _lane_facets(engine)
+    # Same rule, same reason, for the company axis: one ring for the stage, so every lane that
+    # builds cells this run rotates over the identical list. Read even when no lane is armed for
+    # cells -- it is one indexed select over ~450 rows, and branching on a Settings value here
+    # would put the knob in two places.
+    with engine.connect() as conn:
+        watched_companies = watched_company_names(conn)
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
@@ -589,6 +619,7 @@ def _run_lanes(
         settings=settings,
         facets=facets,
         rotation_index=_rotation_index(run_id),
+        watched_companies=watched_companies,
         pending_seeds=pending_seeds,
     )
 

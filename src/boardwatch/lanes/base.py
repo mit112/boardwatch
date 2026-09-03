@@ -245,6 +245,15 @@ class LaneContext:
     settings: Settings
     facets: LaneFacets
     rotation_index: int
+    # The watched companies a per-company search cell may name, in the store's own order
+    # (`queries.watched_company_names`). Here for the same reason `facets` is: it comes from the
+    # STORE, and a lane that reached in for its own employer list would be both untestable and
+    # the one place a hardcoded company could hide.
+    #
+    # Defaulted to EMPTY, which yields no cells at all, so the four lanes that build none are
+    # unaffected and no test of them had to move. Empty is also the honest reading for a store
+    # with no watched boards: ask nothing, rather than fail.
+    watched_companies: tuple[str, ...] = ()
     # How a lane READS `lane_seeds`, without ever holding a `Connection`. The runner owns the
     # connection and supplies this closure, exactly as it supplies `CompanyAdmission` — and for
     # the same recorded reason: the decision needs store access, and a lane opening its own

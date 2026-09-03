@@ -23,6 +23,7 @@ from boardwatch.store.queries import (
     unwatch,
     upsert_lane_company,
     upsert_watch,
+    watched_company_names,
 )
 from boardwatch.store.tables import companies
 
@@ -333,3 +334,60 @@ def test_watch_true_never_downgrades_an_already_watched_registry_board(engine: E
     assert row.watched is True, "a lane convergence unwatched a board the user watches"
     assert row.source == "registry", "a watch upgrade relabelled a registry company"
     assert row.name == "Acme Corporation", "a watch upgrade overwrote a curated name"
+
+
+# ------------------------------------------------- the company ring per-company cells rotate
+
+
+def _add(engine: Engine, *, name: str, provider: str, slug: str, watched: bool) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            companies.insert().values(
+                name=name, provider=provider, slug=slug, source="user", watched=watched
+            )
+        )
+
+
+def test_the_company_ring_is_watched_rows_only_in_the_stores_own_order(engine: Engine) -> None:
+    """Both halves, because each fails to a different useless ring.
+
+    WATCHED ONLY: an unwatched row is usually a lane PLACEHOLDER (`linkedin:google`), and the
+    live store holds 1,369 of them against 443 watched — including them makes a full rotation
+    ~26 days instead of ~6, which is the difference between a result that can be read inside the
+    measurement window and one that cannot.
+
+    ORDER BY id: the caller slices a rotating window over this list, so an unordered read hands a
+    different ring to every run and the rotation revisits and starves arbitrary companies while
+    still reporting a full pass. Ordering by id also makes the ring GROW AT THE END, so watching
+    a new board appends instead of renumbering an in-flight rotation under itself.
+    """
+    _add(engine, name="Zeta", provider="greenhouse", slug="zeta", watched=True)
+    _add(engine, name="Placeholder", provider="linkedin", slug="ph", watched=False)
+    _add(engine, name="Alpha", provider="ashby", slug="alpha", watched=True)
+
+    with engine.connect() as conn:
+        assert watched_company_names(conn) == ("Zeta", "Alpha")
+
+    # The ring grows at the END, so an in-flight rotation keeps its coverage.
+    _add(engine, name="Mu", provider="lever", slug="mu", watched=True)
+    with engine.connect() as conn:
+        assert watched_company_names(conn) == ("Zeta", "Alpha", "Mu")
+
+
+def test_the_company_ring_is_the_NAME_and_never_the_slug(engine: Engine) -> None:
+    """A cell is a keyword phrase an employer's own posting has to contain, and `bytedance-inc`
+    is not what ByteDance writes on a requisition. The two differ here on purpose: a ring built
+    from slugs asks for strings no posting carries and would read as a lane that found nothing."""
+    _add(engine, name="ByteDance", provider="greenhouse", slug="bytedance-inc", watched=True)
+    with engine.connect() as conn:
+        assert watched_company_names(conn) == ("ByteDance",)
+
+
+def test_a_company_with_a_blank_name_yields_no_ring_entry(engine: Engine) -> None:
+    """An empty phrase composes the cell `"" software engineer`, which asks LinkedIn for the
+    empty phrase and returns the unfaceted market — a request the run would report as a company
+    cell. The watched control beside it is what keeps this from passing on an empty ring."""
+    _add(engine, name="   ", provider="greenhouse", slug="blank", watched=True)
+    _add(engine, name="Real Co", provider="ashby", slug="real", watched=True)
+    with engine.connect() as conn:
+        assert watched_company_names(conn) == ("Real Co",)

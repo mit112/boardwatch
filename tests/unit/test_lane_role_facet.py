@@ -19,7 +19,13 @@ from __future__ import annotations
 
 import pytest
 
-from boardwatch.lanes.facets import MAX_FACETS_PER_RUN, hub_nets, role_facets
+from boardwatch.lanes.facets import (
+    MAX_COMPANY_FACET_TERMS,
+    MAX_FACETS_PER_RUN,
+    company_nets,
+    hub_nets,
+    role_facets,
+)
 
 
 def test_a_target_title_becomes_a_normalized_search_TERM_not_a_url_slug():
@@ -254,3 +260,161 @@ def test_a_run_counter_advances_the_window_even_when_two_runs_share_a_day():
 
     assert len({c for c in consecutive}) == 3
     assert set().union(*(set(c) for c in consecutive)) == {(t, h) for t in terms for h in hubs}
+
+
+# ------------------------------------------------------- per-company cells (Track 2, D-433)
+
+
+def test_a_company_cell_is_the_employers_name_QUOTED_beside_exactly_one_term():
+    """The cell shape, and the term cap that makes the rotation finite.
+
+    `"Acme Corp" software engineer` is what job-apps issues (`job_discovery.py:2438`) and it is an
+    ordinary keyword string: `linkedin.search_urls` quotes it into `keywords=`, so no new URL
+    builder exists anywhere for this.
+
+    **The second target title is the control.** Without `MAX_COMPANY_FACET_TERMS` this returns two
+    cells for one employer, which is the 25,368-cell matrix whose rotation takes 358 days — the
+    shape measurement refuted. The company is asked about once, not once per title.
+    """
+    cells = company_nets(
+        ("software engineer", "data scientist"),
+        ("Acme Corp",),
+        rotation_index=0,
+        combos_per_run=99,
+    )
+    assert cells == ('"Acme Corp" software engineer',)
+    assert MAX_COMPANY_FACET_TERMS == 1
+    assert not any("data scientist" in cell for cell in cells)
+
+
+def test_the_quotes_are_around_the_COMPANY_and_not_the_whole_cell():
+    """A phrase quote around the employer keeps `Acme Corp` from matching `Acme` and `Corp`
+    separately; a quote around the whole cell would demand the title be part of the company's
+    name and match nothing. Asserted on the exact string because the difference is two characters
+    and both spellings look right at a glance."""
+    (cell,) = company_nets(("software engineer",), ("Acme Corp",), rotation_index=0, combos_per_run=1)
+    assert cell.startswith('"Acme Corp"')
+    assert cell.endswith(" software engineer")
+    assert cell.count('"') == 2
+
+
+def test_two_spellings_of_ONE_employer_are_one_cell_and_two_employers_stay_two():
+    """Companies deduplicate WITHOUT REGARD TO CASE, which the hub axis does not do.
+
+    The store really holds one board under two casings — `stored_slug` exists because
+    `ashby:Lightfield` and `ashby:lightfield` were one board with one set of postings — so two
+    cells differing only in case are one search bought twice, and the slice would return fewer
+    DISTINCT cells than `combos_per_run` promises.
+
+    The third company is the control: an implementation that deduplicated too eagerly, or that
+    folded on a prefix, collapses it too and the count still reads 2.
+    """
+    cells = company_nets(
+        ("software engineer",),
+        ("Acme Corp", "ACME CORP", "Acme Corporation"),
+        rotation_index=0,
+        combos_per_run=99,
+    )
+    assert cells == (
+        '"Acme Corp" software engineer',
+        '"Acme Corporation" software engineer',
+    ), "first-seen spelling must survive, and a different employer must not be folded in"
+
+
+def test_a_company_name_carrying_a_double_quote_cannot_break_the_phrase():
+    """An employer name is arbitrary user/store data, and an embedded quote would terminate the
+    phrase early and turn the tail into loose keywords — a query for a DIFFERENT thing that still
+    returns results, which is why this is worth a test rather than a comment."""
+    (cell,) = company_nets(
+        ("software engineer",), ('Acme "The Real" Corp',), rotation_index=0, combos_per_run=1
+    )
+    assert cell.count('"') == 2
+    assert cell == '"Acme The Real Corp" software engineer'
+
+
+def test_a_company_name_that_is_really_a_PATH_yields_no_cell_but_a_dotted_name_still_does():
+    """`companies add` writes `name = entry.name if entry else slug` and the shipped registry has
+    37 entries, so a hand-added board is named by its slug — and a Workday slug is a full
+    composite. The live store really holds this one.
+
+    **The second and third arms are the control, and they are why the rule is a PATH and not a
+    separator.** A review proposed refusing any name equal to its slug; measured, that deletes 145
+    of 453 watched companies including `Anthropic` and `OpenAI`, whose slug IS their name. And
+    `Alarm.com` is a real employer, so a dot cannot be the signal either.
+    """
+    cells = company_nets(
+        ("software engineer",),
+        (
+            "walmart.wd504.myworkdayjobs.com/walmart/WalmartExternal",
+            "Alarm.com",
+            "Anthropic",
+        ),
+        rotation_index=0,
+        combos_per_run=99,
+    )
+    assert cells == ('"Alarm.com" software engineer', '"Anthropic" software engineer')
+
+
+@pytest.mark.parametrize(
+    ("terms", "companies", "combos_per_run"),
+    [
+        (("software engineer",), ("Acme",), 0),
+        ((), ("Acme",), 12),
+        (("software engineer",), (), 12),
+        (("",), ("Acme",), 12),
+        (("software engineer",), ("   ",), 12),
+    ],
+    ids=["off-switch", "no-terms", "no-companies", "blank-term", "blank-company"],
+)
+def test_company_cells_are_empty_when_any_required_input_is_empty(terms, companies, combos_per_run):
+    """0 is the OFF switch and is the shipped default, so this is the path every existing run
+    takes. A blank term or a blank company name yields no cell rather than an empty one: an empty
+    `keywords=` builds LinkedIn's UNFACETED listing, a different page entirely, and the run would
+    report a cell it never asked for."""
+    assert company_nets(terms, companies, rotation_index=0, combos_per_run=combos_per_run) == ()
+
+
+def test_company_cells_rotate_disjointly_and_cover_the_ring():
+    """The rotation contract, at the end of the range the LIVE sizing actually sits in.
+
+    `hub_nets` runs `c = 33` against `m = 35` — effectively no rotation. Company cells run
+    `c = 12` against `m = 443`, so `2c <= m` holds with room and consecutive runs must be
+    disjoint. Both arms of the condition are asserted, and the whole ring is covered in
+    `ceil(m / c)` runs rather than merely touched.
+    """
+    companies = tuple(f"Company {i}" for i in range(8))       # m = 8, c = 4  ->  2c == m
+    first = company_nets(("swe",), companies, rotation_index=0, combos_per_run=4)
+    second = company_nets(("swe",), companies, rotation_index=1, combos_per_run=4)
+    assert len(set(first)) == 4 and len(set(second)) == 4
+    assert set(first) & set(second) == set()
+    assert set(first) | set(second) == {f'"{c}" swe' for c in companies}
+
+    # m < 2c: overlap is FORCED and is exactly 2c - m cells, the same pigeonhole as the hub axis.
+    over = [company_nets(("swe",), companies, rotation_index=r, combos_per_run=6) for r in (0, 1)]
+    assert len(set(over[0]) & set(over[1])) == 2 * 6 - 8
+
+    # c >= m: the whole ring every run, and the rotation index cannot change it.
+    assert len({company_nets(("swe",), companies, rotation_index=r, combos_per_run=8)
+                for r in range(5)}) == 1
+
+
+def test_a_run_counter_advances_the_company_window_even_when_two_runs_share_a_day():
+    """`rotation_index` is the run id, not the date — runs here are on demand and several a day
+    is the normal case, so a date-keyed window would make the second run of a day pay full price
+    for cells the first had just fetched."""
+    companies = tuple(f"Company {i}" for i in range(6))
+    consecutive = [
+        company_nets(("swe",), companies, rotation_index=r, combos_per_run=2) for r in (7, 8, 9)
+    ]
+    assert len(set(consecutive)) == 3
+    assert set().union(*(set(c) for c in consecutive)) == {f'"{c}" swe' for c in companies}
+
+
+def test_the_company_ring_is_a_function_of_the_list_AS_GIVEN_not_of_a_sets_iteration_order():
+    """Deduplicating through a `set` would make the ring — and therefore which cells a given run
+    draws — depend on hash order, so one run could not be reproduced from the store that produced
+    it. First-seen order, both axes, exactly as `hub_nets` promises."""
+    companies = ("Zeta", "Alpha", "Zeta", "Mu")
+    assert company_nets(("swe",), companies, rotation_index=0, combos_per_run=99) == (
+        '"Zeta" swe', '"Alpha" swe', '"Mu" swe',
+    )

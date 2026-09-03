@@ -116,10 +116,34 @@ MAX_MINED_CANDIDATES = 32
 # while pruning a working term costs leads.
 MIN_TRIAL_POSTINGS = 150
 
+# How many of the profile's target titles each company cell is crossed with, and it is ONE. The
+# reason is arithmetic, not taste, and it was measured before it was chosen (D-433).
+#
+# A company cell is a rotating slice of a term-by-company matrix, exactly as a hub net is a slice
+# of a term-by-hub one. But where the hub side is seven fixed metros, the company side is the
+# store: 1,812 distinct names live, 443 of them watched. Crossing the live profile's 14 target
+# titles with all of them is 25,368 cells, and at the measured cadence of 83 runs in 14 days a
+# full rotation at 12 cells a run takes **358 days** -- no cell is ever revisited and nothing the
+# rotation buys can be read. One term against the watched companies alone is 443 cells, a full
+# pass every ~37 runs (~6 days), which is the only shape whose result is readable inside the
+# window the measurement was commissioned for.
+#
+# It is a CEILING on the term axis, not a claim that one title is enough. The other 13 are already
+# searched USA-wide by the profile facet path and crossed with the hubs by `hub_nets`; what a
+# company cell adds is the EMPLOYER axis, and buying it 14 times over costs 14x for breadth two
+# other paths already have.
+MAX_COMPANY_FACET_TERMS = 1
+
 # Runs of anything that is not a letter or digit collapse to one separator. A slash surviving
 # into a slug would change which URL is requested -- `/jobs/a/b` is not the role route -- so
 # this is a routing invariant, not tidiness.
 _SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+# Whitespace runs inside a company name, collapsed so two spellings of one employer produce one
+# cell. Company names are NOT put through `search_term`: that folds every non-alphanumeric run to
+# a space, which turns `AT&T` into `at t` and asks for a company that does not exist. A name is
+# the employer's own string and is searched as written.
+_WHITESPACE = re.compile(r"\s+")
 
 
 @dataclass(frozen=True)
@@ -234,6 +258,90 @@ def hub_nets(
     unique_terms = list(dict.fromkeys(terms))
     unique_hubs = list(dict.fromkeys(hubs))
     matrix = [(term, hub) for term in unique_terms for hub in unique_hubs]
+    if combos_per_run >= len(matrix):
+        return tuple(matrix)
+    start = (rotation_index * combos_per_run) % len(matrix)
+    return tuple(matrix[(start + index) % len(matrix)] for index in range(combos_per_run))
+
+
+def company_term(name: str) -> str:
+    """One company name as a phrase safe to quote inside a keyword query, or "" if it holds none.
+
+    An embedded double quote is replaced rather than escaped: the cell wraps the name in quotes to
+    make it a phrase, and a name carrying its own quote would terminate that phrase early and turn
+    the tail into loose keywords -- a query for a DIFFERENT thing that would still return results,
+    which is the failure mode worth spending a line on.
+
+    **A name carrying a PATH is refused outright**, because `companies add` writes
+    `name = entry.name if entry else slug` and the shipped registry has 37 entries, so a board
+    added by hand is named by its slug -- and a Workday slug is a full composite. The live store
+    holds `walmart.wd504.myworkdayjobs.com/walmart/WalmartExternal` as a company NAME, which
+    composes a cell no requisition can contain, costs a slot in the rotation, and reports nothing
+    about why it found nothing.
+
+    **Only a path, deliberately not `name == slug`.** A review proposed the wider rule; measured
+    against the live store it would delete 145 of 453 watched companies, including `Anthropic`,
+    `OpenAI`, `Notion`, `Airbnb` and `1Password` -- names that equal their slug because the slug is
+    the name. The measured harm is 1 row, and `.` alone cannot be the signal either: `Alarm.com` is
+    a real employer. A separator is not evidence; a PATH is.
+    """
+    cleaned = _WHITESPACE.sub(" ", name.replace('"', " ")).strip()
+    return "" if "/" in cleaned else cleaned
+
+
+def company_nets(
+    terms: Sequence[str], companies: Sequence[str], *, rotation_index: int, combos_per_run: int
+) -> tuple[str, ...]:
+    """The deterministic rotating slice of the term-by-company matrix, as composed keyword strings.
+
+    A company cell is one target title asked AT one named employer -- `"Acme Corp" software
+    engineer`. It needs no new URL shape: the guest endpoint already takes `keywords=` and
+    `linkedin.search_url` already quotes the term, so a cell is an ordinary facet string and the
+    lane does not change. This is the one thing job-apps does that boardwatch did not
+    (`job_discovery.py:2438`).
+
+    **The rotation arithmetic is `hub_nets`', deliberately verbatim, and so are its conditions.**
+    Write `m = len(matrix)` and `c = combos_per_run`:
+
+    - `c >= m`: the whole matrix every run; no rotation, and none needed.
+    - `2c <= m`: consecutive runs are DISJOINT and the matrix is covered in `ceil(m / c)` runs.
+    - `m < 2c`: consecutive runs necessarily OVERLAP in `2c - m` cells.
+
+    **Written down rather than inherited, because the RATIO differs by an order of magnitude even
+    though the regime does not.** Measured against the live config: hub nets are 14 profile facets
+    x 7 hubs = `m = 98` with `c = 33`, and company cells are `m = 443` with `c = 12`. Both satisfy
+    `2c <= m`, so both are disjoint -- an earlier draft of this paragraph said hub nets ran
+    `c = 33` against `m = 35` and were effectively unrotated, which is `hub_nets`' old FIVE-term
+    reference configuration and not what the live profile produces. What actually differs is the
+    pass length: 3 runs against 37. The condition here fails only for an operator watching fewer
+    than `2c` companies, who is buying the whole set every run anyway.
+
+    **Both inputs are deduplicated, order-preserving, and the product is not** -- the same rule
+    `hub_nets` states, so the matrix stays rectangular and the arithmetic above still describes it.
+    Companies are deduplicated WITHOUT REGARD TO CASE, which `hub_nets` does not do for hubs: the
+    store really holds one employer under two spellings (`stored_slug` exists because of it), and
+    two cells differing only in case are one search bought twice.
+
+    `terms` is capped at `MAX_COMPANY_FACET_TERMS`. The cap is applied AFTER deduplication, so a
+    profile that repeats its first title does not spend the whole term budget on one spelling.
+
+    The company list comes from the STORE and is passed in, never read here and never written
+    down: a module naming employers would fit exactly one user, which is the failure the
+    multi-tenancy requirement names first.
+    """
+    if combos_per_run <= 0 or not terms or not companies:
+        return ()
+    unique_terms = list(dict.fromkeys(term for term in terms if term))[:MAX_COMPANY_FACET_TERMS]
+    unique_companies: dict[str, str] = {}
+    for name in companies:
+        phrase = company_term(name)
+        if phrase:
+            unique_companies.setdefault(phrase.casefold(), phrase)
+    if not unique_terms or not unique_companies:
+        return ()
+    matrix = [
+        f'"{company}" {term}' for term in unique_terms for company in unique_companies.values()
+    ]
     if combos_per_run >= len(matrix):
         return tuple(matrix)
     start = (rotation_index * combos_per_run) % len(matrix)

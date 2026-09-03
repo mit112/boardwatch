@@ -77,7 +77,27 @@ provider+slug**. This is the mechanism D-428 already used for hiring.cafe.
 - **Owner's call before importing** — it spends run budget permanently.
 - Snapshot `companies` to CSV first; that is the reversal artifact, not a DB copy.
 
-### Track 2 — per-company query cells in the EXISTING native lane (the real lever)
+### Track 2 — per-company query cells in the EXISTING native lane — **BUILT, DISARMED (D-433)**
+
+> **SHIPPED 2026-09-02, and this section's own sizing was REFUTED before it was.** The shape below —
+> every profile term crossed with every company — is **25,368 cells** against the live store, and at
+> the measured cadence of 83 runs in 14 days a full pass at 12 cells a run takes **358 days**.
+> Nothing is ever revisited, so nothing it buys can be read. **What shipped is ONE term × the 443
+> WATCHED companies = 443 cells, a full pass every ~37 runs (~6.3 days)** — the owner's call with
+> four shapes priced, and the only one readable before the 2026-09-09 gate-1 re-measure.
+> `facets.MAX_COMPANY_FACET_TERMS = 1` records the term ceiling; `lane_company_combos_per_run`
+> ships at **0 (OFF)** and **12** is the sized value. **Read D-433 before touching any of this.**
+>
+> Two things this section asked to be checked, both checked and both binding:
+> **(1)** `admits` is free only for an existing `linkedin:` row, and **48 of the 65 gate employers
+> have none**, so each costs a cap slot. **(2)** The live cap is **50**, not the 10 recorded here —
+> runs 141-144 admitted 29/49/47/32 — so a company cell displaces a hub-net company roughly 1:1.
+> Bounded and priced, not starvation: `_search` interleaves round-robin, so a cell's own employer
+> lands in the first pass. **The cap is still NOT to be raised (D-417).**
+>
+> The original sizing follows, unedited, because it is what the refutation is against.
+
+
 
 This is the one thing job-apps does that boardwatch does not. `job_discovery.py:2438` issues
 `query = f'"{company}" software engineer'` per target company. boardwatch only ever issues

@@ -211,6 +211,29 @@ class Settings(BaseModel):
     lane_search_hubs: tuple[str, ...] = ()
     lane_hub_combos_per_run: int = Field(default=12, ge=0)
     lane_hub_distance_miles: int = Field(default=25, ge=0)
+    # How many per-COMPANY LinkedIn search cells a run buys: one target title asked at one
+    # employer the store already watches (`facets.company_nets`, D-433). This is the axis the
+    # profile facets and the hub nets do not have -- they ask WHAT and WHERE, never AT WHOM.
+    #
+    # **Default 0, which is OFF, exactly as every lane here ships disarmed.** Arming it is an
+    # operator decision because it spends two budgets that are already committed: search requests
+    # against a host nobody here operates, and slots in the per-run new-company cap, which a
+    # company cell takes ahead of the hub nets because a cell's own employer lands early in the
+    # round-robin interleave. Measured 2026-09-02: the LinkedIn cap is 50 and recent runs used
+    # 29-49 of it.
+    #
+    # **N cells cost AT LEAST N cap slots, and the upper bound is NOT established.** A cell would
+    # cost exactly one only if a quoted-phrase keyword search returned cards solely from the named
+    # employer, and that has not been probed -- `admits` is asked per distinct company slug in the
+    # merged card pool, so a cell surfacing a staffing agency or a partner charges for that too.
+    # Stated rather than assumed, because the first armed run MEASURES it: the funnel reports
+    # `admitted` and `refused` per lane, so read that split before raising this knob.
+    #
+    # **12 is the sized value, not the default** (owner's call, 2026-09-02): against 443 watched
+    # companies it is a full pass every ~37 runs -- ~6 days at the measured cadence of 83 runs in
+    # 14 days -- which is what makes the result readable at all. See `MAX_COMPANY_FACET_TERMS`
+    # for why the term axis is 1 and not 14.
+    lane_company_combos_per_run: int = Field(default=0, ge=0)
     # The Indeed lane's own page ceiling and page size, kept OFF `lane_search_pages` on purpose.
     # That knob is shared, and the two lanes it already serves buy ~10 (LinkedIn) and ~150
     # (hiring.cafe) listings a page against Indeed's 100 — so one number cannot mean the same

@@ -290,6 +290,7 @@ class LinkedInLane:
         search_pages: int = DEFAULT_SEARCH_PAGES,
         search_nets: Sequence[tuple[str, str]] = (),
         hub_distance_miles: int = DEFAULT_HUB_DISTANCE_MILES,
+        search_companies: Sequence[str] = (),
     ) -> None:
         self._posting_budget = posting_budget
         # Injected rather than read here: the facets are derived from the user's profile row, which
@@ -300,6 +301,18 @@ class LinkedInLane:
         # all and report an empty run as a quiet day.
         self._search_pages = max(1, search_pages)
         self._search_nets = tuple(search_nets)
+        # Per-company cells, kept in their OWN tuple rather than folded into `search_facets`, and
+        # the reason is `card_nodes`, not tidiness. A facet or a net returning zero cards is a
+        # STRUCTURAL failure -- the fragment moved, or a challenge answered in its place -- and
+        # `_search` counts it as one. **For a cell naming one employer, zero cards is the normal
+        # day**: the whole population is 342 postings a fortnight across 65 employers, drawn from
+        # a 443-name ring at 12 cells a run behind a 24-hour recency filter, so most cells
+        # legitimately match nothing. Folded into `search_facets` they would push `failed` from
+        # ~0 to ~11 every armed run and the operator could no longer tell a quiet employer from a
+        # host that had started refusing us -- destroying the outage signal this lane errs loud to
+        # protect. Separated, a cell is ALLOWED to be empty and the facets and nets still are not,
+        # so the signal survives on the searches that can legitimately carry it.
+        self._search_companies = tuple(search_companies)
         self._hub_distance_miles = hub_distance_miles
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
@@ -362,24 +375,47 @@ class LinkedInLane:
         of results, and a search that filled every page is truncated. Those are different facts
         about the same posting count, and only the first is benign.
         """
-        urls = search_urls(self._search_facets) + tuple(
-            search_net_url(term, hub, self._hub_distance_miles)
-            for term, hub in self._search_nets
+        # (url, may_be_empty). Company cells sit BETWEEN the facets and the nets, which is the
+        # position the cap sizing was measured at: `_group_by_company` admits in first-seen order
+        # over the interleave, so a cell's own employer is offered ahead of every hub net.
+        # **BOTH keyword groups are guarded on non-empty, and that is not defensive noise.**
+        # `search_urls(())` returns the UNFACETED search -- the general labour market, the one
+        # page this lane exists never to fetch. An unguarded call therefore ADDS that request to
+        # every run whose group is empty, which for the company cells is every run until an
+        # operator arms them. The unfaceted page is reachable only through the explicit fallback
+        # branch below, which is the only place it is the intended answer.
+        def _keyword_urls(terms: tuple[str, ...], *, may_be_empty: bool) -> tuple[
+            tuple[str, bool], ...
+        ]:
+            return tuple((url, may_be_empty) for url in search_urls(terms)) if terms else ()
+
+        urls_with_tolerance: tuple[tuple[str, bool], ...] = (
+            _keyword_urls(self._search_facets, may_be_empty=False)
+            + _keyword_urls(self._search_companies, may_be_empty=True)
+            + tuple(
+                (search_net_url(term, hub, self._hub_distance_miles), False)
+                for term, hub in self._search_nets
+            )
         )
-        if not self._search_facets and not self._search_nets:
+        if not urls_with_tolerance:
             # The unfaceted fallback keeps the single-search contract it shipped with: a transport
             # or structural failure on its FIRST page propagates, because with one facet there are
             # no other results for it to cost, and `card_nodes`' own message is the most specific
             # one available.
-            entries, pages = self._facet_pages(fetcher, urls[0])
-            return entries, ((urls[0], pages),)
+            #
+            # Reached through the EMPTY url list rather than by re-testing the three inputs, so
+            # the branch cannot drift out of step with what the list above actually built. The URL
+            # comes from `search_urls` itself, which is where the unfaceted shape is defined.
+            (unfaceted,) = search_urls(())
+            entries, pages = self._facet_pages(fetcher, unfaceted)
+            return entries, ((unfaceted, pages),)
 
         per_search: list[list[_SearchEntry]] = []
         page_counts: list[tuple[str, int]] = []
         failed = 0
-        for url in urls:
+        for url, may_be_empty in urls_with_tolerance:
             try:
-                entries, pages = self._facet_pages(fetcher, url)
+                entries, pages = self._facet_pages(fetcher, url, may_be_empty=may_be_empty)
             except (FetchFailure, SearchPageError):
                 # Per-search isolation, the same shape D-307 gave a board's apply failure inside a
                 # scan. One search per target title or hub net means a run makes many, so the
@@ -413,8 +449,19 @@ class LinkedInLane:
         ]
         return interleaved, tuple(page_counts)
 
-    def _facet_pages(self, fetcher: Fetcher, url: str) -> tuple[list[_SearchEntry], int]:
+    def _facet_pages(
+        self, fetcher: Fetcher, url: str, *, may_be_empty: bool = False
+    ) -> tuple[list[_SearchEntry], int]:
         """One facet's cards over at most `self._search_pages` pages, and the pages fetched.
+
+        **`may_be_empty` is a statement about the RESULT SET, never about the transport.** It is
+        set only for a per-company cell, where matching nothing is the ordinary outcome, and it
+        changes exactly one thing: a zero-CARD first page returns no entries instead of raising,
+        and is reported as one page FETCHED so the funnel still distinguishes it from a search
+        that never got an answer. A `FetchFailure` on the first page still propagates for a cell,
+        because a refused request has produced no answer at all -- absorbing that would silently
+        swallow the refusal (`robots.txt` disallows these guest routes) this lane's permission
+        posture depends on noticing.
 
         **A PAGE WITH NO CARDS MEANS TWO DIFFERENT THINGS AND THIS IS WHERE THEY SEPARATE.** On
         the FIRST page it is `card_nodes`' structural failure -- the fragment moved, or a
@@ -445,7 +492,20 @@ class LinkedInLane:
             try:
                 result = fetcher.get(page)
                 nodes = card_nodes(result.content.decode("utf-8", "replace"))
-            except (FetchFailure, SearchPageError):
+            except SearchPageError:
+                if page_index == 0 and not may_be_empty:
+                    raise
+                # A CELL is allowed to match nothing: the page was requested and answered, it
+                # simply listed no posting at this employer inside the recency window. Counted as
+                # a page FETCHED (below) rather than as a failure, so the funnel distinguishes a
+                # quiet employer from a search that never got an answer.
+                if page_index == 0:
+                    pages += 1
+                break
+            except FetchFailure:
+                # NOT tolerated for a cell either. `may_be_empty` is a statement about the
+                # RESULT SET, never about the transport: a refused or unreachable request has
+                # produced no answer at all, which is the failure the caller must count.
                 if page_index == 0:
                     raise
                 break
