@@ -588,17 +588,27 @@ def test_a_refused_company_costs_no_request_and_no_attempt(respx_mock: respx.Rou
 def test_an_out_of_catalog_seed_is_charged_but_costs_no_request(
     respx_mock: respx.Router, tmp_path: Path
 ) -> None:
-    """The cost leak this ceiling exists to bound.
+    """The cost leak this ceiling exists to bound, on the population the READ actually delivers.
 
-    An unresolvable URL that is never charged sits in the ordered candidate set forever, taking a
-    scanned slot every run from a seed that could have been resolved. Charged, it ages out.
+    A seed the host filter admitted and the catalog then refuses sits in this lane's ordered
+    candidate set, taking a scanned slot every run from a seed that could have been resolved.
+    Charged, it ages out.
+
+    **BOTH URLs BELOW ARE CHARGED, BUT ONLY THE SECOND CAN ARRIVE THIS WAY IN PRODUCTION.** The
+    icims.com one is on a host `SEED_HOSTS`/`SEED_HOST_SUFFIXES` do not claim, so the real read
+    never returns it and `_Reader` is injecting it; it is kept because it pins the refusal for a
+    host that leaves the catalog. `careers.garmin.com/search` is a CLAIMED host at a path no
+    vendor pattern fullmatches, which is what the shipped read hands this loop -- and the reason
+    `SEED_SCAN_LIMIT` is ten times the request budget. A seed on an unclaimed host is charged by
+    nothing and is not this lane's to drain; `boardwatch seeds` (D-426) is what sees that one.
     """
     _mock_lists(respx_mock)
     declined = "https://career-schwab.icims.com/jobs/125797/java-engineer/job"
-    lane = JsonLdLane(_Reader((_seed(declined, 42),)))
+    claimed_host_no_posting = "https://careers.garmin.com/search"
+    lane = JsonLdLane(_Reader((_seed(declined, 42), _seed(claimed_host_no_posting, 43))))
     result = lane.collect(_fetcher(tmp_path), _Admits())
-    assert result.seed_attempts == ((42, False),)
-    assert result.tally.counts["not_attemptable"] == 1
+    assert result.seed_attempts == ((42, False), (43, False))
+    assert result.tally.counts["not_attemptable"] == 2
     assert respx_mock.calls.call_count == 2  # the two list GETs, and nothing else
 
 

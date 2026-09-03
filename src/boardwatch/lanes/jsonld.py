@@ -73,9 +73,23 @@ one re-fetches, every run, forever, every posting the lane has ever delivered.
 **THIS LANE SEEDS ONLY WHAT IT CAN ITSELF RESOLVE.** The lists carry 793 `*.icims.com` URLs, and
 recording them would be a bucket with no drain -- rows nothing can resolve, occupying the ordered
 candidate set that a real seed has to come through. Widening the discovery filter belongs to
-whichever lane can resolve the rest. The DRAIN is deliberately not filtered the same way: seeds
-arrive from other lanes under their own policy, so an out-of-catalog seed is an ordinary input
-here, refused without a request and charged an attempt so that it ages out.
+whichever lane can resolve the rest.
+
+**THE DRAIN'S FILTER IS LOOSER THAN DISCOVERY'S BY EXACTLY ONE HALF, AND NO MORE.** Discovery
+needs host AND path (`match_vendor`); the drain selects on HOST alone. A seed another lane
+recorded on a catalog HOST that this lane still cannot claim -- a path no vendor pattern
+fullmatches, or a URL one of the six real providers owns -- is therefore an ordinary input here:
+refused without a request and CHARGED, so the attempt ceiling ages it out.
+
+**A SEED ON A HOST NO CATALOG CLAIMS IS NEVER SELECTED, SO NOTHING EVER CHARGES IT, AND THIS LANE
+IS NOT ITS DRAIN.** That is the priced cost of the host filter above, not an oversight, and
+widening the read is not the fix: `store.seed_queries.unresolved_seeds` offers no all-hosts form
+on purpose (D-426), and `tests/unit/test_jsonld_lane.py` and `tests/unit/test_lane_seeds.py` both
+fail any version of this read that claims hosts it cannot resolve. Such a row's re-entry path is a
+resolver whose catalog claims its host -- D-422 measured the queue arriving AHEAD of its consumers,
+and the Oracle HCM and Eightfold seeds it named are still waiting -- and `boardwatch seeds` (D-426)
+is what keeps that population from accumulating unmeasured. MEASURED 2026-09-03: **1,377 of 1,481
+unresolved rows, on 387 hosts, every one at `attempts = 0`.**
 
 ---
 
@@ -114,9 +128,12 @@ budget, so the company cap is a second and redundant bound. That is an owner dec
 shipped default and is NOT taken here. The lane ships disarmed; the first armed run measures it.
 
 `SEED_SCAN_LIMIT = 400`, ten times the request budget, and it is not a second budget. Reading a
-seed row is a cheap indexed SELECT; REQUESTING one is the cost. Scanning wide is what lets an
-out-of-catalog seed be refused without spending a request slot, so a `lane_seeds` table that is
-90% URLs this lane cannot resolve still fills all forty request slots with ones it can.
+seed row is a cheap indexed SELECT; REQUESTING one is the cost. Scanning wide is what lets a
+CLAIMED-HOST seed this lane still cannot resolve -- wrong path shape, or a real provider's URL --
+be refused without spending a request slot, so a scan that is mostly refusals still fills all
+forty request slots with seeds it can resolve. It buys nothing against the rest of the table, and
+does not need to: the read never returns a row on a host no catalog claims, so those cost no scan
+slot either.
 
 A refusal by the company cap is NOT charged an attempt, and that is the one asymmetry here: the
 cap deferred that company, it did not try it, and charging would age a seed out of the queue for
