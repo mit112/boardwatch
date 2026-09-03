@@ -151,6 +151,7 @@ WHOLE into `STANDING-FACTS.md` at this close; numbers in `METRICS.md` (Run 145).
   **Arming must wait for run 147** or it contaminates the board sample's reading — the two board
   levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
+- **A DEGREE DISJUNCTION DECIDES DIFFERENTLY DEPENDING ON WHICH ARM MATCHES — PINNED, NOT FIXED (A8).** `total_years_minimum` and `range_years_minimum` carry `degree_alternative_to_years`; the six scoped/domain patterns never did. So "a Bachelor's OR N years of X" **abstains** on the total arm and **rejects** on a scoped one — same sentence, opposite outcome, decided by which pattern happens to match. A peer session's control caught it while wiring the recall fix, and the wiring is **reverted**: a test now pins the defect instead. **If that test starts passing, somebody made A8's decision without Mit.**
 - **The 2-year-bar question is ROW A4, and is stated there once.** It was written out here, in
   next-action item 1, and in the table — one decision in three places. The numbers that matter
   (**2,809 `unknown` · 258 `unmet` · 43 `met`** across 475 review-lane leads; two blind judges
@@ -201,7 +202,7 @@ PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-a
 until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
 80%, do not re-derive "most", do not re-probe Indeed.**
 
-**A. THE SEVEN MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Two are merges (A1, A5) and they must be read out on ONE run; the rest are independent.
+**A. THE EIGHT MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Two are merges (A1, A5) and they must be read out on ONE run; the rest are independent.
 
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
@@ -212,11 +213,12 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 | **A5** | **Merge #344** (D-439/D-444, the seeded slate cap) | a byte-identical twin is held until you apply to or skip the first, instead of arriving the next day. **Stops the pile growing; removes none of it.** Gated for the same reason as A1 — it changes which leads a run delivers | #344's body; D-439, D-444 |
 | **A6** | **The 89 duplicates already standing** — leave them, or bulk-skip them | 53 groups, one of 10. **Recommended: bulk `mark_job_skipped`** — folders move to `_skipped/`, nothing is deleted, **reversible in one call**. Deletion is REJECTED: these are 142 distinct jobs, so the queue's existing delete argument does not transfer | D-446 |
 | **A7** | **Keep paying for the 50-board hiring.cafe sample, or revert it** | ~**60 min/run forever** for **10 delivered leads** on run 145. Reverting is a `companies` restore from `companies-prehcsample-20260902-183019.csv`. **Adding the other 282 is CLOSED and is not this question** | D-441 |
+| **A8** | **Does a degree disjunction reach a SCOPED bar?** — wire `degree_alternative_to_years` to the six scoped/domain minimum patterns | **365 SWE+US postings move `ineligible` → `uncertain`**, out of a reject pile that is never inspected and into review. Cost: `abstain_by` is **DOCUMENT-scoped**, so a JD saying "Bachelor's or 4 years" for its general bar would also waive a separate "8+ years of C++". Today the same sentence **abstains on the total arm and rejects on a scoped one**. **A claim about what a disjunction MEANS, not a consistency repair** | D-447; `test_experience_range_recall.py`, the defect pin |
 
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
 
-**A1 and A5 must be read out on ONE run, not two.** #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
+**A8 is independent of A1 and A3** — it moves postings that are already `ineligible`, which neither the unescape nor the routing predicate touches. **A1 and A5 must be read out on ONE run, not two.** #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
 
 2. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
 3. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
