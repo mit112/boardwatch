@@ -21,121 +21,108 @@
 
 ## Current standing
 
-### Session 2026-09-02c: the board sample is ADMITTED, the `grnh.se` resolver and the queue fix SHIP, `click.appcast.io` is REFUSED, and a figure the docs carried was wrong
+### Session 2026-09-02d: the buried live requisition is FIXED, LinkedIn gets a COMPANY axis, the `_reported` drain closes D-427, and the `perf` flake is CHARACTERISED as a load detector
 
-Reasoning: **D-428**. Numbers: `METRICS.md` (Session 2026-09-02c). **No run** — the 04:00 tick
-produces run 145, the first run that reads any of this.
+Reasoning: **D-432**, **D-433**, **D-434**, **D-435**. Numbers: `METRICS.md`
+(Session 2026-09-02d).
+**No run** — the 04:00 tick produces run 145.
 
-**1. THE OWNER'S BOARD-ADMISSION CALL IS TAKEN AND APPLIED.** Asked with all three options priced;
-the owner chose **a 50-board sample**, rejecting `grnh.se`-first, both-levers, and hold-until-09-09.
-Applied via `companies import --verify` (D-291 decision 2): **watched 403 → 453**, rows
-2,122 → 2,166, `0 skipped / 0 empty / 0 recased`. **Verified by counting the store, not by the CLI's
-"Imported 50 watches"** — the +44/+6 split reconciles exactly against 44 addable / 6 known-unwatched.
-Sample is **RANDOM on pinned seed 20260902, deliberately not top-by-yield**, carrying 79 in-window
-postings at **+2.7 min/run**. Reversal: `companies-prehcsample-20260902-183019.csv`.
-**READ THE YIELD OVER RUNS 145-147**, then decide the remaining 282 boards.
+**1. THE BURIED LIVE REQUISITION IS FIXED (D-432, PR #336).** `delivered_unapplied` picked a
+canonical job's winner by ARTIFACT RECENCY, so a dead lane copy tailored after the employer's own
+live requisition decided the job: `closed_job_ids` reported the JOB closed and `reconcile_queue`
+filed a live lead under `_closed`. Liveness now decides; recency only breaks its ties.
+**THE CORRECTION RAN OPPOSITE TO THE ONE COMMISSIONED.** The handoff said D-430's "1 job" was wrong
+and the figure was 16. Joined through the DELIVERED ARTIFACTS — the only postings the queue can
+offer — it is **1**, eBay 35249, exactly the job D-430 named. The 16 counted every posting on a
+canonical job and ranked by `last_seen_at`; the rule ranks by `artifacts.created_at`.
+**Completeness measured separately:** 101 jobs have every delivered posting closed and **0** hold a
+live posting anywhere, so no residual class exists that a winner rule cannot reach. The buried lead
+walks out on run 145 by itself — reconcile precedes sync and `_entry_for` falls back to the by-job
+index. **No `engine_version` bump, no ledger drain, no migration.**
 
-**2. D-425's "471 BOARDS" WAS POSTINGS. It is 471 postings across 332 DISTINCT BOARDS** (293
-never-seen employers / 377 postings; 39 known-unwatched / 94). Budget is charged per BOARD, so full
-admission is **~17.7 min/run, not the ~25 min this file and the handoff both carried**, and yield is
-**1.42 in-window postings per board**. The lever is cheaper AND weaker than recorded; neither
-correction was visible while the unit was a posting.
+**2. LINKEDIN GETS A COMPANY AXIS — TRACK 2 BUILT AND DISARMED (D-433, PR #337).** Every LinkedIn
+search asked WHAT and WHERE, never AT WHOM. **342 absent postings sit at 65 employers boardwatch
+ALREADY WATCHES.** **The plan's own shape was refuted by arithmetic before it was built**: 14
+profile terms x 1,812 stored names = 25,368 cells, which at 83 runs/14 days is a **358-day**
+rotation. Owner's call with four shapes priced: **1 term x 443 watched = 443 cells, 12/run, a full
+pass every ~37 runs (~6.3 days)** — the only shape readable before the 2026-09-09 re-measure.
+`lane_company_combos_per_run` ships at **0 (OFF)**; **arming is the owner's**.
+**The plan's "nothing in `lanes/linkedin.py` changes" was WRONG** — `card_nodes` treats zero cards
+as a STRUCTURAL failure, correct for a facet and backwards for a cell naming one employer, so
+folding them in would have pushed reported failures ~0 -> ~11 every run and buried the outage
+signal. **The registration sites are FOUR and the fourth is `tools/generalization/snapshots.py`,
+which holds TWO dicts** (`EXPECTED_SETTINGS_DEFAULTS` and `SETTINGS_FIELD_CLASS`) — not the
+USE site, which is not a registration at all. **What is new is the ORDERING**: R10 runs at
+the FIRST `make check` target, so a missed snapshot entry produces no pytest output and
+reads like a broken gate rather than a missing row. Corrected by the peer session.
 
-**3. `click.appcast.io` IS REFUSED AS A RESOLVER TARGET, ON MEASUREMENT.** It was the largest
-unclaimed seed host (144) and a candidate to outrank `grnh.se`. It does not. **It redirects in
-JAVASCRIPT**, so an HTTP redirect-follower reads `200 hops=0` — the first pass's "0 of 12 resolve"
-measured THE PROBE, not the host. Extracting the JS target: **40 of 40, 0 errors**, but only
-**1 of 40 (2.5%)** parses to a supported board; the 144 seeds collapse onto ~6 employers
-(CVS 26, Cox 9) on the **same unsupported-adapter tail D-422 and D-425 already named** — a third
-instrument naming one missing adapter class. **Do not build an appcast resolver.**
+**3. THE `_reported` FOLDER DRAIN CLOSES D-427's DEFERRAL (D-434).** A reported lead was hidden
+from the web queue but its folder stayed at the TOP LEVEL, so it was still in the pile the owner
+works from. **The site a reconcile-only reading misses**: `_sync_queue` runs reconcile AND sync in
+one call, so without withholding the reported job from `delivered_unapplied` the sync mints the
+folder again while the reconcile count reads a healthy 1. Ranked below `applied`/`skipped`, above
+`closed`. `_ineligible` refused — reconcile pulls those back the moment the verdict clears.
 
-**4. DISK RECLAIMED: 5.2 GB free at 98% → 11 GB at 95%** — the 5.52 GB pre-tier-A store
-backup was deleted on the owner's call; it was frozen at run 143, so restoring it would have
-discarded run 144's harvest. The CSVs are the artifacts that reverse an admission, not a DB copy.
+**4. THE `perf` CI FLAKE IS CHARACTERISED AND IT IS NOT A CODE SIGNAL.** 15 local samples of the
+median-of-5: **quiet mode 0.373-0.414 (n=4), loaded mode 1.336-1.675 (n=11), and NOTHING between
+0.414 and 1.336.** The distribution is BIMODAL with a 0.92 s empty gap and **the 1.0 s bound sits
+inside the gap**. It is a machine-load detector, not a code-speed guard. The two CI failures read
+1.0068 and 1.0063 — inside a gap local runs never occupy — which says CI's LOADED mode sits at ~1.0
+rather than ~1.5 (4 vCPU runner vs a 10-core Mac), so on CI the bound sits ON the loaded mode's
+centre: a coin flip whenever the runner is contended, which with 4 shards x 3 versions it usually
+is. **FIXED (D-435): `TOP_PATH_CEILING_SECONDS = 2.5`**, derived from that distribution — it
+clears the worst observed loaded median by ~49% and still catches a 6x regression against the quiet
+mode. **Asserting the MINIMUM was tried and REFUTED by the same samples**: 10 of 15 would still fail
+a 1.0 s minimum against 11 of 15 for the median, because under sustained load ALL FIVE iterations
+are slow. Stated as a relaxation: detecting a 2-3x regression is what is given up.
 
-**5. THE PEER'S WORK LANDED.** `boardwatch-d3` shipped the review app's Report action and D-427 in
-`08d7b957`; CI on the combined main is green. The two sessions serialised their DECISIONS/index
-writes by message rather than colliding.
-
-**6. THE `grnh.se` RESOLVER IS BUILT AND SHIPPED, AND DELIBERATELY NOT ARMED (D-429).**
-`boardwatch companies discover-grnh` follows each stored short link to the board behind it and
-emits a registry-format candidate file. **Not a `Lane`, not in `LANE_FACTORIES`, so it costs a run
-zero seconds**; arming is `companies import`, a separate act, and **should wait for run 147** or the
-two board levers cannot be read apart. Writes nothing — not the store, not `watched`, not
-`resolved_at`. Live: 8 seeds → 8 boards, 0 off-board, 0 failed.
-**The sizing in this file was incomplete: `FetchResult` DISCARDED the redirect destination**, so the
-resolver was impossible without growing the shared fetch contract (3 construction sites, safe).
-`FetchFailure` needed it too — a 404 target has already NAMED its board, and an aged backlog is
-mostly live boards with expired requisitions.
-
-**7. THE RECURRING `QueueConflictError` IS FIXED (D-430)** — a TWO-folder identity convergence.
-Both postings had folders, the loser's planned name collided with the winner's, and nothing ever
-removed a folder. Fixed by DELETING the duplicate (owner's call); `SyncReport` gains `retired`.
-No `engine_version` bump, no ledger drain, no migration.
-**LEFT OPEN and BIGGER: a LIVE requisition is buried in `_closed`.** `delivered_unapplied` picks a
-job's winner by ARTIFACT RECENCY, not liveness, so a dead lane copy's `closed` flag decides the job
-— an actual lost delivery, not noise, and NOT fixed by the folder consolidation. Own decision owed.
-
-**8. TWO REVIEWS AGAIN BEAT A GREEN GATE.** The resolver's first cut gated green (9,197 passed) with
-six mutations caught and a no-op control; a review then found **nine** findings, including a default
-stdout path whose rich word-wrap broke the YAML it emitted, a census that counted a deduplicated
-seed in NO bucket, and a dedupe test with **no negative control**. A second mutation campaign found
-a tenth. **A mutation campaign only tests the bugs you already imagined** — three findings sat where
-no mutation could reach.
-
-**9. THE LINKEDIN RESIDUAL IS PLANNED AND JOBSPY IS REFUSED (D-431).** The owner asked whether to
-adopt JobSpy. **It calls the SAME guest endpoint `lanes/linkedin.py` already calls** — no capability
-boardwatch lacks, only a Chrome UA and more query cells, at the price of `tls-client`+`numpy`+
-`pandas`. D-414 refused it once already on the same grounds. **D-417's "these employers have no ATS
-board" is REFUTED at scale**: n=77 read 74% not-in-store, the full 5,876-posting set reads **48.3%**,
-led by Raytheon/Netflix/Perplexity/Upstart — a **discovery** gap, not an architecture limit. Also:
-a "known" employer is usually a lane PLACEHOLDER (`linkedin:google`), so board admission reaches
-**6.5%, not 45.9%**. **The next session builds from `LINKEDIN-CLOSURE-PLAN.md`.**
+**5. THREE REVIEWS BEAT THREE GREEN GATES, AGAIN.** #336 gated green with three caught mutations
+and a review found four defects — including a stale mechanism paragraph in the ARMED
+`apply_lane_drought`. #337 gated green with nine of ten mutations caught and a review found six,
+including the `card_nodes` defect above. **None was reachable by mutation, because none is a
+branch.** Two further lessons: a mutation of mine was MIS-SPECIFIED (it mutated the raw column,
+where an unverifiable posting still reads `open`) and would have been read as a hole in the pin;
+and one of my tests was VACUOUS (byte-identical output under the term cap) and only the campaign's
+control revealed it. **A review's finding can also be OVERSTATED**: #337's largest said the company
+ring was broken for "a large and growing share" of rows; re-measured, 145 of 453 watched names
+equal their slug and almost all are CORRECT (`Anthropic`, `OpenAI`, `Airbnb`), so the fix is narrow
+— a PATH is refused, a separator is not.
 
 ## Next action
 
-**0. BUILD TRACK 2 OF `LINKEDIN-CLOSURE-PLAN.md` — per-company LinkedIn query cells.** LinkedIn is
-the ENTIRE retirement residual (D-424): every other source is solved or self-solving, and Indeed is
-**0 absent / 6,740 lane-only**, which converts with no new work. Track 2 targets the **3,037 absent
-postings (51.7%)** at employers boardwatch already knows by name. **It needs NO new URL shape** —
-the guest endpoint already takes `keywords=`, so a company cell is a composed facet string: add a
-`hub_nets` sibling in `lanes/facets.py` and append its cells to `search_facets` in `_linkedin_lane`.
-Seed from the store, watched first. **Facets come from the PROFILE and the STORE, never the module** (multi-tenancy).
-**Size it against `lane_posting_budget = 300` and the measured 2.39 s/body, not against the company
-count** — new cells must not starve the hub nets that already work.
-**Falsifiable first gate: the 342 ALREADY-WATCHED misses.** Nothing but query coverage can explain
-them, so if they do not move, Track 2 did not work. **Do NOT raise the company cap** (D-417: 10 → 50
-bought +1 posting). **Do NOT re-propose JobSpy** (D-431).
+**0. ARM TRACK 2, OR DECIDE NOT TO — OWNER'S CALL, AND IT IS ONE COMMAND.**
+`boardwatch config set lane_company_combos_per_run 12`. The code is SHIPPED and DISARMED (D-433):
+per-company LinkedIn cells, `"Acme Corp" software engineer`, seeded from the store's own watched
+boards, one target title per employer, 12 cells a run = a full pass over all 443 watched companies
+every ~37 runs (~6.3 days). **The falsifiable gate is the 342 already-watched misses at 65
+employers** — boardwatch scans those boards and still missed those postings, so if that number does
+not move, Track 2 did not work. Re-measure with `.agent/2026-09-02c-session/linkedin_reach.py`.
+**READ THE FUNNEL'S PER-LANE `admitted`/`refused` SPLIT ON THE FIRST ARMED RUN**: a cell costs *at
+least* one company-cap slot and the upper bound is NOT established — a cell surfacing a staffing
+agency charges for that too. **Do NOT raise the cap** (D-417). It does not contend with the board
+sample: it admits no boards and changes no scan floor.
 
-**1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** The
-sample is ADMITTED and armed (D-428; watched 403 → 453). **This is the only thing runs 145-147 are
-for, and it is spoiled by arming a second board lever in the same window** — that is why the owner
-rejected "both". Population: 332 boards / 471 postings, **1.42 in-window postings per board**;
-the remaining 282 cost ~15 min/run. Reversal: `companies-prehcsample-20260902-183019.csv`.
+**1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
+(D-428; watched 403 → 453). Population 332 boards / 471 postings, **1.42 in-window postings per
+board**; the remaining 282 cost ~15 min/run. Reversal:
+`companies-prehcsample-20260902-183019.csv`.
 
-**2. `grnh.se` RESOLVER — BUILT AND SHIPPED (D-429); ARMING IS STILL OWED AND IS THE OWNER'S.** The premise is MEASURED: 12 of 12 seeds followed their
-redirect to a URL `parse_board_target` accepts, 0 misses / 0 errors, yielding **9 distinct greenhouse
-boards from 12 seeds** (~1.3 seeds/board, so 122 seeds ≈ 90 boards); **0 of the 9 already watched,
-6 absent from `companies` entirely** — board-fleet growth, not re-discovery. `parse_board_target`
-already accepts `boards.greenhouse.io/<slug>` and `job-boards.greenhouse.io/<slug>`, so no new ATS
-adapter is needed. **ARMING IS THE OWNER'S CALL AND SHOULD WAIT FOR RUN 147** — ~90 boards is ~5
-min/run forever, and arming before the sample is read makes the two yields inseparable.
+**2. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
+`.agent/2026-09-02-session/per_source_recall.py`. **The residual is LinkedIn alone**, and Track 2 is
+the only lever that has moved since — which is why arming it (item 0) belongs before this, not after.
 
-**3. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424), once Indeed has reached steady state. Three of
-the four inputs have moved: the harvest is in, Indeed is armed and uncapped at 50, hiring.cafe is
-diagnosed. **The residual is LinkedIn alone**, and that is a judgment about a population.
+**3. SET PER-SOURCE THRESHOLDS** (owner). Framing DECIDED: option D then C — decompose LinkedIn
+first (**done**, D-431), then bar on `lane-only` exposure rather than recall. The numeric level is
+still the owner's.
 
-**4. SET PER-SOURCE THRESHOLDS** (owner). **Framing DECIDED 2026-09-02: option D then C** —
-decompose LinkedIn first (**done**, D-431), then set the bar on `lane-only` exposure rather than on
-recall, because a recall bar would score boardwatch against a population it structurally does not
-serve. The numeric level is still the owner's.
+**4. TRACK 1 — admit the 92 already-admissible LinkedIn boards** (382 postings, ~4.9 min/run, no new
+code) and **ARM the `grnh.se` resolver** (D-429, ~90 boards, ~5 min/run). **Both still HELD until
+run 147**: each admits boards, and landing either inside runs 145-147 makes the hiring.cafe sample's
+yield unreadable. That is why "both levers" was rejected.
 
-**5. TRACK 1 — admit the 92 already-admissible LinkedIn boards** (382 postings, ~4.9 min/run,
-no new code). **Owner's call, and it COMPETES with the hiring.cafe sample's window**: landing both
-inside runs 145-147 makes neither yield separable, which is why "both levers" was rejected.
-
-*(Closed since the last close: the board-admission call — TAKEN and applied, D-428.
-`click.appcast.io` — PROBED and REFUSED at 1 of 40; **do not build an appcast resolver**.)*
+*(Closed since the last close: Track 2 — BUILT and DISARMED, D-433. The buried live requisition —
+FIXED, D-432, and its blast radius re-measured as 1 job, not 16. The `_reported` folder drain —
+SHIPPED, D-434. The `perf` flaky bound — CHARACTERISED and FIXED, D-435.)*
 
 ### Owed, and specifically NOT done
 
@@ -144,20 +131,13 @@ inside runs 145-147 makes neither yield separable, which is why "both levers" wa
   **Arming must wait for run 147** or it contaminates the board sample's reading — the two board
   levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
-- **`perf` CI IS A FLAKY BOUND AND CAN REDDEN `main` ON AN UNRELATED COMMIT.**
-  `tests/perf/test_top_perf.py::test_top_path_median_under_one_second` asserts a median < 1.0s over
-  5 runs. `08d7b957` failed it TWICE (medians 1.0068, 1.0063) while `git diff 27a23a6a..08d7b957`
-  touched **zero `.py` files** — the measured path was byte-identical to a CI-green parent. It is
-  CI-only (not in `make check`), so it never blocks local work. Characterise the distribution before
-  widening the bound; do not just re-run.
-- **The `_reported` on-disk folder drain is NOT built** (D-427's deliberate deferral). The Report
-  action hides a lead from the web queue but leaves its folder at top level. Parity needs a drain
-  keyed on `reported_job_ids` exactly as `_skipped` is, touching `names.DRAIN_DIRS`,
-  `reconcile_queue`'s disposition, `ReconcileReport` and the one-source drain set. **Do NOT reuse
-  `_ineligible`** — reconcile pulls those back, because a reported lead's verdict is still
-  `eligible`.
-- **`delivered_unapplied` picks a job's winner by ARTIFACT RECENCY, not liveness** — see D-430. One
-  live requisition is buried today.
+- **THE LIVE STORE HAS 0 REPORTED AND 0 SKIPPED JOBS**, so run 145 cannot exercise the new
+  `_reported` drain (D-434) in either direction. **A clean live reconcile is NOT evidence it
+  works** — the unit tests are the only thing that can catch it. Measured by a peer session.
+- **Track 2's cap cost has no measured UPPER bound.** A per-company cell costs *at least* one
+  `lane_new_companies_per_run` slot, and would cost exactly one only if a quoted-phrase search
+  returned cards solely from the named employer — which was never probed. **Read the funnel's
+  per-lane `admitted`/`refused` split on the first armed run**; it measures this directly.
 - **No alert wiring for the seed leak.** `boardwatch seeds` is a command you must run. The
   finalize-block alert-ordering invariant makes wiring it a separate change with its own review.
 - **T1's concurrent case-variant duplicate race** — deferred, pre-existing, worst case a dead-weight
