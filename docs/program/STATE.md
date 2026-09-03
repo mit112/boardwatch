@@ -90,8 +90,13 @@ equal their slug and almost all are CORRECT (`Anthropic`, `OpenAI`, `Airbnb`), s
 
 ## Next action
 
-**0. ARM TRACK 2, OR DECIDE NOT TO — OWNER'S CALL, AND IT IS ONE COMMAND.**
-`boardwatch config set lane_company_combos_per_run 12`. The code is SHIPPED and DISARMED (D-433):
+**0. TRACK 2 IS ARMED — READ THE FIRST ARMED RUN. This is a measurement now, not a decision.**
+**Owner armed it 2026-09-03: `lane_company_combos_per_run = 0 → 12`**, verified through
+`load_settings()` and `config.toml`, not the CLI's self-report. **Run 145 is the first run that
+issues company cells** — 12 of them, previewed live (`"Tailscale" software engineer`,
+`"NBCUniversal" software engineer`). The ring is **450** watched companies as of arming, so a full
+pass is **38 runs**, not the 37 measured against 443. Disarming is the same command with `0`.
+The code (D-433):
 per-company LinkedIn cells, `"Acme Corp" software engineer`, seeded from the store's own watched
 boards, one target title per employer, 12 cells a run = a full pass over all 443 watched companies
 every ~37 runs (~6.3 days). **The falsifiable gate is the 342 already-watched misses at 65
@@ -100,7 +105,14 @@ not move, Track 2 did not work. Re-measure with `.agent/2026-09-02c-session/link
 **READ THE FUNNEL'S PER-LANE `admitted`/`refused` SPLIT ON THE FIRST ARMED RUN**: a cell costs *at
 least* one company-cap slot and the upper bound is NOT established — a cell surfacing a staffing
 agency charges for that too. **Do NOT raise the cap** (D-417). It does not contend with the board
-sample: it admits no boards and changes no scan floor.
+sample — different source, no boards admitted, no scan floor changed — **but run 145 now has TWO
+movers**: LinkedIn's own `admitted`/`refused` split shifts as cells take up to 12 of its 50 company
+slots, so do not read a LinkedIn change as the board sample's doing, or the reverse.
+
+**The rotation estimate is session-driven, not automatic.** ~38 runs is ~6.5 days at the measured
+83 runs / 14 days — but that cadence came from on-demand runs during sessions. On the 04:00 tick
+alone it is one run a day and a full pass takes five weeks. Check the actual run rate before
+reading "one pass" into any date.
 
 **1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
 (D-428; watched 403 → 453). Population 332 boards / 471 postings, **1.42 in-window postings per
