@@ -38,7 +38,7 @@ from boardwatch.store.db import WalUnsafeFilesystemError, get_readonly_engine
 console = Console()
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8787
+DEFAULT_PORT = 8799
 
 
 def web(
