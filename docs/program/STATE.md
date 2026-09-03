@@ -74,12 +74,18 @@ decision about what the apply lane MEANS and not a bug fix.
 Blind two-judge audits of what the owner actually opens. Full numbers and method in METRICS
 (`Session — 2026-09-03`); the mechanism is D-436.
 
-- **The apply lane is 481 `uncertain` / 44 `eligible` / 12 `None`** — only **8%** of what the owner
-  sees carries an `eligible` verdict. The rest FAILED OPEN through `review_gate.lane()`. Fixing the
-  eligibility catalog addresses 8% of his queue.
-- **Apply lane: ~36% unapplyable** (n=80, two disjoint samples, 8/10 agreement) — ~175 dead leads.
-  **All 13 of the first audit's false positives carried `uncertain`, not `eligible`** — a ROUTING
-  fact, not a catalog fact.
+- **Apply lane: ~36% unapplyable** (n=80, two disjoint samples, 8/10 agreement) — ~175 dead leads,
+  and **every** unapplyable lead judged carried `uncertain`, none cleared by the engine.
+- **"ROUTING, NOT THE CATALOG" WAS THE WRONG READING AND IS CORRECTED BY D-442.** Three sessions
+  recorded "the catalog is 8% of the problem, routing is the rest" and handed `review_gate.lane()`
+  forward as the lever. **Nobody had read it.** Read: **the routing is deciding correctly.**
+  `experience_unconfirmed` fires **497** times, and **all 597 apply-lane leads carry BOTH flags
+  False** — because **481 of the 526 `uncertain` ones have ZERO requirement rows of any kind.**
+  They are `uncertain` via `_no_evaluable_requirement`, and **they are not stubs: median JD body
+  4,636 chars, 387 of them OVER 2,000.** **387 substantial JDs the catalog read nothing from.**
+  **The waste is EXTRACTION, and `review_gate` has no unconfirmed requirement to hold them for.**
+  "8% carry an `eligible` verdict" is a statement about verdict DISTRIBUTION, not about where the
+  defect lives — we read a distribution as an attribution.
 - **The queue carries 219 redundant leads, and MOST ARE NOT A DEFECT (corrected — see D-439).**
   127 duplicate `(company, normalised-title)` groups, but only **45 groups / 76 leads share one
   `content_hash`**; the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI
@@ -303,4 +309,3 @@ there. Only these are not settled:
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
 | **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is now PROVEN to fire** | Run 131 (2026-08-29, `runs = 1`, exit 0) was the first real unattended tick. The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Verified at the 2026-08-29f close: the tree is on `main` at `10baad5`, clean, and all six alert modules import through the editable venv.** A stale 8-hour-old `.git/index.lock` had silently blocked every `git pull` that session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park it on `main` before ending every session** — from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
-| **hiring.cafe: ONE unexplained POST-FIX failure (run 142) — and D-420 recorded two wrong framings before this one.** #304 (`11a1ae95`) merged **2026-09-01T07:56:34Z**. Against that boundary: **130, 131, 133, 134, 135, 136, 137 all FAILED and all seven PREDATE the fix** (132 ok, a single unexplained point); post-fix **138, 139, 140, 141, 143, 144 ok** and **142 is the only failure**. **So #304 WORKED** — this is neither a regression nor chronic flakiness. Not time-of-day: 138 also started 09:00Z and passed. **METHOD LESSON, which cost two wrong entries in one session: date a behaviour claim against the COMMIT that changed the behaviour, not against a run streak — a streak has no denominator until you know when the code changed.** Do NOT retry the eliminated dead ends: the header lever failed twice (D-369; run 133 reproduced the refusal byte for byte) and the UA and volume premises were both false. | **watch** |
