@@ -23391,6 +23391,36 @@ is never a clean bill of health** (D-P2-18). And they are not stubs:
 **387 substantial job descriptions from which the catalog read nothing at all, routed to the apply
 lane as blindly-appliable.** That is the ~36%.
 
+**THE 481 SPLIT IN TWO, AND ONLY ONE HALF IS AN EXTRACTION GAP — a peer session reproduced the
+population independently (487 to this entry's 481, same median, 391 over 2,000 chars) and then
+probed what the bodies actually contain:**
+
+| probe over the zero-row leads | count |
+|---|---:|
+| a years bar in ANY form | **128 (26.3%)** — escaped punctuation 14, spelled-out 24, parenthesised 10 |
+| citizenship / LPR | 55 (11.3%) |
+| sponsorship / visa | 32 (6.6%) |
+| clearance | 6 |
+| non-English body | 4 |
+| degree-required | **0** |
+
+**So ~26% carry requirement language the catalog missed — a genuine coverage failure — and ~74%
+trip none of those probes at all.** For that second group the JD may simply state no catalogued
+requirement, in which case `uncertain` is the CORRECT verdict and the only open question is what an
+apply lane should DO with it. **Both framings that preceded this were partly right and neither was
+the whole thing**: "routing, not the catalog" attributed it all to routing, this entry's first
+draft attributed it all to coverage, and the measurement says roughly a quarter coverage and three
+quarters design.
+
+**That negative half is bounded by those probes and nothing wider.** "No requirement language"
+means none of *those* patterns, not none at all, so widening the probe set can only move leads from
+the second population into the first — never the reverse.
+
+**IT ALSO SHARPENS THE OWNER'S QUESTION.** It is not "should the apply lane be verified-appliable or
+best-effort" in the abstract. It is: **~360 of the 481 are leads with no detectable requirement at
+all — what should an apply lane do with a JD that states nothing?** That is answerable in a
+sentence, where the general version is not.
+
 **THE DIAGNOSIS INVERTS THE HANDOFF.** "Routing is the rest" is wrong: `review_gate` is deciding
 correctly on the information it is given, because **no unconfirmed requirement exists to hold them
 for**. The verdict already carries the distinction — `uncertain` *because nothing was evaluable* —
