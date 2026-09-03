@@ -19,7 +19,7 @@ Every seeding shape here sets DISTINCT `locations_json`, because a shared locati
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -27,10 +27,14 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
+from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import Settings
+from boardwatch.store.applications import create_application
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.queue_state import mark_job_reported, mark_job_skipped
+from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings
 
 NOW = utcnow()
 TITLE = "Backend Engineer"
@@ -221,7 +225,12 @@ def test_the_drain_surfaces_a_capped_lead_annotated_with_its_survivor(env: Path)
     capped = [p for p in shown.visible if p.slate_capped_by is not None]
     assert len(capped) == 2
     survivors = {p.posting_id for p in shown.visible if p.slate_capped_by is None}
-    # Every annotation points at a row that is actually on the slate.
+    # Every annotation points at a row that is actually on the slate. **This holds because this
+    # fixture has NO standing leads (D-439) — it is not the general invariant it reads as.** Once
+    # the cap is seeded from the queue the blocker may be a lead delivered weeks ago and absent
+    # from `visible` entirely; `test_slate_capped_by_names_the_STANDING_lead_when_that_is_the_
+    # blocker` pins that case. Narrowed here rather than deleted, because within a run the
+    # annotation must still resolve on the slate.
     assert {p.slate_capped_by for p in capped} <= survivors
     # Drained rows do not consume limit slots, so the drain returns more than `limit`.
     assert len(shown.visible) > 3
@@ -244,3 +253,486 @@ def test_every_considered_posting_still_lands_in_exactly_one_bucket(env: Path) -
     )
     assert results.considered == 5
     assert accounted == results.considered
+
+
+# ------------------------------------------------- the cap across RUNS, not just within one (D-439)
+
+
+def _delivered_by_a_PRIOR_run(
+    engine: Engine, posting_id: int, *, at: datetime = NOW
+) -> int:
+    """Put `posting_id` in the standing queue the way a previous run leaves it.
+
+    **Both halves are required and the test is vacuous without the second.** The artifact is what
+    puts a lead in the queue; the `built` disposition is what stops it ranking again. Deliver
+    without it and the lead is still a candidate in the next ranking, so the ordinary PER-RUN cap
+    fires on the pair and the test passes whether or not the cap is seeded from the queue — which
+    is exactly what a first version of these tests did, caught by mutation.
+    """
+    with engine.begin() as conn:
+        # `.first()` on a DESC order, not `.one()`: a posting may carry several versions, and the
+        # current delivery is against the newest.
+        version_id = int(
+            conn.execute(
+                posting_versions.select()
+                .where(posting_versions.c.posting_id == posting_id)
+                .order_by(posting_versions.c.id.desc())
+            ).first().id
+        )
+        conn.execute(insert(artifacts).values(
+            posting_version_id=version_id, kind="resume_tailored",
+            uri=f"/out/{posting_id}.typ", generator="boardwatch.tailor",
+            media_type="text/x-typst", meta_json={}, created_at=at, run_id=None,
+        ))
+        job_id = int(
+            conn.execute(postings.select().where(postings.c.id == posting_id)).one().job_id
+        )
+        record_disposition(
+            conn, job_id, disposition="built", reason="lead_built", policy_version="v1", now=NOW,
+        )
+        return job_id
+
+
+def test_a_lead_already_standing_in_the_queue_caps_its_byte_identical_twin(env: Path) -> None:
+    """The defect D-345 could not see, because it reasoned about a slate and not about a pile.
+
+    Its cap DEFERS rather than drops — "a capped row is never recorded `seen`, so it ranks again on
+    the very next run". Scoped to one call, that means the group delivers its next member the next
+    day whether or not the owner ever looked at the first. Over runs it accumulates: measured on the
+    live store, **49 exact-key groups holding 84 redundant standing leads**, one delivering on six
+    consecutive runs, every run respecting the cap.
+
+    So the cap is seeded from the standing queue. The second copy is withheld while the first is
+    still waiting, and the assertion is on `hidden_slate_cap` as well as the slate, because a
+    version that simply dropped the row would pass an assertion on `visible` alone.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    delivered = [p.posting_id for p in result.visible]
+    assert second not in delivered, (
+        "the twin of a lead already standing in the queue must not be delivered again"
+    )
+    assert result.hidden_slate_cap == 1, "it must be DEFERRED by the cap, not dropped elsewhere"
+    # The standing lead does not re-rank at all — it carries a live `built` disposition — so the
+    # ONLY thing the cap can be acting on is the queue seed. That is what makes this fail against
+    # the per-run version.
+    assert first not in delivered
+    assert result.hidden_handled == 1
+
+
+def test_the_deferral_ENDS_when_the_owner_actions_the_standing_lead(env: Path) -> None:
+    """The re-entry path, and it is the half that makes this a deferral rather than suppression.
+
+    D-345's quarantine needs no scheduled drain because the next run is the drain. Seeding the cap
+    changes WHEN that fires, not whether: a second copy of a byte-identical JD becomes useful
+    exactly when the owner has dealt with the first, and `applied` is what says so.
+
+    Without this arm the change would be indistinguishable from permanent suppression of the twin —
+    which is D-295, and is refused.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    job_id = _delivered_by_a_PRIOR_run(engine, first)
+
+    held = rank_open_postings(engine, _settings(env), limit=10)
+    assert held.hidden_slate_cap == 1 and second not in [p.posting_id for p in held.visible]
+
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_id, status="applied", source="test")
+
+    released = rank_open_postings(engine, _settings(env), limit=10)
+    assert second in [p.posting_id for p in released.visible], (
+        "once the standing lead is applied its twin must be delivered"
+    )
+    assert released.hidden_slate_cap == 0
+
+
+def test_a_standing_lead_with_a_DIFFERENT_jd_caps_nothing(env: Path) -> None:
+    """The control that keeps the seeded cap out of D-295 territory.
+
+    `content_hash` is what separates one requisition multi-posted from two genuinely distinct ones.
+    D-345 measured the looser `(company, title)` key wrongly collapsing run 125's two Evlo AI leads,
+    which carry different hashes. Same company, same title, different JD: the standing lead must not
+    withhold it.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "other-hash")])
+    with engine.begin() as conn:
+        first = int(conn.execute(postings.select().order_by(postings.c.id)).first().id)
+        second = int(list(conn.execute(postings.select().order_by(postings.c.id)))[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert [p.posting_id for p in result.visible] == [second]
+    assert result.hidden_slate_cap == 0
+
+
+def test_a_delivered_lead_that_is_still_rankable_does_not_cap_ITSELF(env: Path) -> None:
+    """The seed carries standing posting ids, so a standing lead that is still a candidate would
+    find its OWN id in the holders and defer itself forever.
+
+    That window is real, not hypothetical. `rank_open_postings(..., record_surfaced=False)` is the
+    pipeline's own call — the docstring on `surfaced_job_ids` says the disposition is recorded
+    later, "at the point it genuinely takes one" — so between delivery and that write a lead has an
+    artifact and no live disposition. A `seen` that ages out reopens the same window on purpose.
+
+    Without the self-exclusion the lead is withheld by its own presence in the queue and the TTL
+    that was supposed to bring it back never can. Delivered here WITHOUT a disposition, which is
+    the only difference from the test above and the whole of the scenario.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        only = int(conn.execute(postings.select().order_by(postings.c.id)).first().id)
+        version_id = int(
+            conn.execute(
+                posting_versions.select().where(posting_versions.c.posting_id == only)
+            ).one().id
+        )
+        conn.execute(insert(artifacts).values(
+            posting_version_id=version_id, kind="resume_tailored", uri="/out/x.typ",
+            generator="boardwatch.tailor", media_type="text/x-typst", meta_json={},
+            created_at=NOW, run_id=None,
+        ))
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert [p.posting_id for p in result.visible] == [only], (
+        "a lead must not be withheld by its own presence in the standing queue"
+    )
+    assert result.hidden_slate_cap == 0
+
+
+def _close(engine: Engine, posting_id: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(postings.update().where(postings.c.id == posting_id).values(status="closed"))
+
+
+def test_a_CLOSED_standing_lead_does_not_hold_its_twins_slot(env: Path) -> None:
+    """The first of the two suppression bugs the first cut shipped (D-439).
+
+    A closed lead is out of the queue and **can never be applied to or skipped**, so if it holds a
+    cap slot it holds it forever and its still-OPEN byte-identical twin is never delivered again —
+    with no reachable drain. `top_cmd`'s own guard comment is exactly this case: *"the cost of
+    firing wrongly is a real lead nobody ever sees."*
+
+    **The rule underneath: liveness is a property of the POSTING, content is a property of the
+    JOB.** The closed lead's twin may be open — same bytes, different liveness — which is D-432's
+    buried-live-requisition bug arriving from the other direction. That is why `closed` is excluded
+    and `ineligible` is not.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+    _close(engine, first)
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert second in [p.posting_id for p in result.visible], (
+        "a closed standing lead must not withhold its still-open twin"
+    )
+    assert result.hidden_slate_cap == 0
+
+
+def test_a_REPORTED_standing_lead_does_not_hold_its_twins_slot(env: Path) -> None:
+    """The second suppression bug, and the worse one.
+
+    A report says "this looks wrongly-eligible, hold it for investigation". The owner will by
+    definition never apply to it, and it is already hidden from the web queue, so **neither release
+    condition can ever fire.** Holding a slot on it is permanent suppression of a distinct posting —
+    D-295 by accident, which is what D-439 exists to avoid.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    job_id = _delivered_by_a_PRIOR_run(engine, first)
+    with engine.begin() as conn:
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert second in [p.posting_id for p in result.visible]
+    assert result.hidden_slate_cap == 0
+
+
+def test_a_SKIPPED_standing_lead_releases_its_twin_too(env: Path) -> None:
+    """The `skipped` half of the release condition, pinned separately from `applied`.
+
+    Without this, deleting `or job_id in skipped` from the seed leaves every other test green and a
+    skipped lead's twin is withheld forever with nothing failing. A mutation reported as one is two.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    job_id = _delivered_by_a_PRIOR_run(engine, first)
+
+    held = rank_open_postings(engine, _settings(env), limit=10)
+    assert held.hidden_slate_cap == 1 and second not in [p.posting_id for p in held.visible]
+
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+
+    released = rank_open_postings(engine, _settings(env), limit=10)
+    assert second in [p.posting_id for p in released.visible]
+    assert released.hidden_slate_cap == 0
+
+
+def test_a_NBSP_body_cannot_be_capped_against_a_body_less_standing_lead(env: Path) -> None:
+    """The reachable half of the empty-body guard, and the reason `content_hash != ""` was not it.
+
+    **The two guards use different definitions of empty.** `top_cmd` asks SQLite
+    `trim(body_text, " \\t\\n\\r\\f\\v")`, which does NOT strip U+00A0; `content_hash` normalises
+    with Python's Unicode-aware `\\s`, which does. So a JD that is only `&nbsp;` after extraction
+    passes `not row.body_empty`, **gets a slate key**, and hashes to the empty digest — where a
+    body-less standing lead would be waiting for it. All 245 body-less postings live share that one
+    digest, so the collision is with every one of them at the same company and title.
+
+    The seed therefore refuses the empty digest outright. `content_hash != ""` could not: the column
+    is NOT NULL and a hash is always 64 hex chars, so it excluded nothing at all.
+    """
+    # DERIVED from the body the fixture writes, never a literal: if `normalize_body`'s whitespace
+    # class ever stopped being Unicode-aware, production would stop collapsing nbsp and the guard
+    # would go dead — and a hard-coded digest would keep this test green while it happened.
+    nbsp_hash = content_hash("\u00a0")
+    assert nbsp_hash == content_hash(""), "nbsp must normalise to the empty digest"
+    engine = _seed(
+        env,
+        [("cgs-federal", TITLE, nbsp_hash), ("cgs-federal", TITLE, nbsp_hash)],
+        body="\u00a0",
+    )
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+
+    result = rank_open_postings(engine, _settings(env), limit=10, include_zero_signal=True)
+
+    assert second in [p.posting_id for p in result.visible], (
+        "the empty digest must never become a slate key a real candidate can collide with"
+    )
+    assert result.hidden_slate_cap == 0
+
+
+def test_the_seed_keys_on_the_DELIVERED_version_not_the_posting_s_current_hash(env: Path) -> None:
+    """`scan/apply.py` rewrites `postings.content_hash` in place on a revision; the owner's queue
+    renders the FROZEN `posting_versions.body_text`.
+
+    The cap's claim is that a byte-identical JD is *already in front of the owner*. What they were
+    given is the frozen body, so the seed must key on it — otherwise a revision silently moves the
+    claim onto text they have never seen, in either direction.
+
+    Here the standing lead was delivered at `jd-hash` and its posting has since been revised to
+    `revised-hash`. The candidate carries `jd-hash`: the JD the owner actually holds. It must be
+    capped. Against the mutable column the seed would hold `revised-hash` and the candidate would
+    ship as a second copy of a JD the owner already has.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+    with engine.begin() as conn:  # the posting is revised AFTER delivery; the version is frozen
+        conn.execute(
+            postings.update().where(postings.c.id == first).values(content_hash="revised-hash")
+        )
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert second not in [p.posting_id for p in result.visible], (
+        "the cap must key on the JD the owner was actually given, not the posting's current hash"
+    )
+    assert result.hidden_slate_cap == 1
+
+
+def test_a_body_less_standing_lead_holds_NO_slot(env: Path) -> None:
+    """The guard the first cut only claimed to have. `content_hash != ""` was a tautology — the
+    column is NOT NULL and a hash is always 64 hex chars — so a body-less standing lead seeded the
+    **empty digest** as a slate key and would collide every other body-less posting at the same
+    company and title. All 245 body-less postings live share that one digest.
+    """
+    empty = content_hash("")
+    engine = _seed(env, [("cgs-federal", TITLE, empty), ("cgs-federal", TITLE, empty)], body="")
+    assert empty == content_hash(""), "derived, not written down"
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+
+    result = rank_open_postings(
+        engine, _settings(env), limit=10, include_zero_signal=True
+    )
+
+    assert second in [p.posting_id for p in result.visible], (
+        "an empty JD must not become a slate key that collides every body-less posting"
+    )
+    assert result.hidden_slate_cap == 0
+
+
+def test_slate_capped_by_names_the_STANDING_lead_when_that_is_the_blocker(env: Path) -> None:
+    """`slate_capped_by` has to stay traceable now that the blocker may not be in this output.
+
+    The existing invariant test asserts `{p.slate_capped_by} <= survivors` and stays green only
+    because its fixture has no standing leads — after the seed, the blocker can be a lead delivered
+    weeks ago and absent from `visible` entirely. That is the honest cost of seeding the cap; the
+    alternative is a cap that cannot say what blocked a row.
+
+    So the field is pinned to name the STANDING posting, which is a real id the reader can look up.
+    Without this, an implementation that left it `None` when the blocker is off-slate would satisfy
+    every other test here and silently make the cap unauditable.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    _delivered_by_a_PRIOR_run(engine, first)
+
+    shown = rank_open_postings(engine, _settings(env), limit=10, include_slate_cap=True)
+    capped = [p for p in shown.visible if p.slate_capped_by is not None]
+
+    assert [p.posting_id for p in capped] == [second]
+    assert capped[0].slate_capped_by == first, (
+        "the cap must name the standing lead that blocked it, even though that lead is not in "
+        "this output"
+    )
+    assert first not in {p.posting_id for p in shown.visible}
+
+
+
+
+def test_the_two_deferrals_are_counted_APART_not_folded_into_one_number(env: Path) -> None:
+    """D-439 gave `hidden_slate_cap` two drain conditions and left it one number.
+
+    A row capped by THIS RUN's slate returns tomorrow whatever the owner does. A row capped by a
+    lead already in the queue returns only when they apply to or skip it. Reported as one total,
+    a queue the owner has stopped draining looks identical to a busy run — the standing half
+    climbs while the total holds, and nothing says so.
+
+    Both directions are pinned here, so neither `standing == total` nor `standing == 0` survives:
+    the first arm has no standing lead at all and the second is blocked by nothing else.
+    """
+    within_run = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    result = rank_open_postings(within_run, _settings(env), limit=10)
+    assert result.hidden_slate_cap == 1
+    assert result.hidden_slate_cap_standing == 0, (
+        "a row displaced by this run's own slate returns on the next run and must not be "
+        "reported as waiting on the owner"
+    )
+
+
+def test_a_row_capped_by_a_STANDING_lead_is_counted_as_waiting_on_the_owner(env: Path) -> None:
+    """The other arm of the split, and the one that carries the operational signal.
+
+    See `test_the_two_deferrals_are_counted_APART_not_folded_into_one_number` for why one number
+    is not enough. Here the only blocker is a lead delivered by a previous run, so the deferral
+    ends when the owner actions it and nothing the program does on its own will release it.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "jd-hash"), ("cgs-federal", TITLE, "jd-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    _delivered_by_a_PRIOR_run(engine, int(rows[0].id))
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert result.hidden_slate_cap == 1
+    assert result.hidden_slate_cap_standing == 1, (
+        "the blocker is in the queue, not on this slate, so the wait is on the owner"
+    )
+
+
+def test_slate_capped_by_names_the_MOST_RECENTLY_delivered_of_several_holders(env: Path) -> None:
+    """Which holder gets named, when a key holds more than one standing lead.
+
+    `slate_capped_by` renders to the operator as "same JD as <id>", so the id has to be one they
+    can place. With several standing holders the seed's ordering decides which one that is, and
+    ordering the seed on `postings.id` names whichever copy happens to carry the lowest row id —
+    which may be a lead delivered a month ago, buried under everything since. **49 of the live
+    store's exact-key groups hold more than one lead**, so this is the ordinary case.
+
+    Delivery recency is the answer: name the copy the owner saw most recently. Here the OLDER
+    delivery deliberately carries the LOWER posting id, so a seed ordered on `postings.id` would
+    name it and this test would fail.
+    """
+    engine = _seed(
+        env,
+        [
+            ("cgs-federal", TITLE, "jd-hash"),
+            ("cgs-federal", TITLE, "jd-hash"),
+            ("cgs-federal", TITLE, "jd-hash"),
+        ],
+    )
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    stale, recent, candidate = (int(row.id) for row in rows)
+    _delivered_by_a_PRIOR_run(engine, stale, at=NOW - timedelta(days=30))
+    _delivered_by_a_PRIOR_run(engine, recent, at=NOW)
+
+    shown = rank_open_postings(engine, _settings(env), limit=10, include_slate_cap=True)
+    capped = [p for p in shown.visible if p.slate_capped_by is not None]
+
+    assert [p.posting_id for p in capped] == [candidate]
+    assert capped[0].slate_capped_by == recent, (
+        "with several standing holders the cap must name the one the owner saw most recently, "
+        "not whichever carries the lowest posting id"
+    )
+
+
+def test_a_posting_delivered_TWICE_seeds_its_most_recent_version(env: Path) -> None:
+    """The tie-break, and without it SQLite may emit either delivered version.
+
+    A posting can carry more than one tailored artifact: delivered at run 100 against JD v1, its
+    ledger disposition lapses, `scan/apply` revises the body, and it is delivered again at run 140
+    against v2. The join then yields two rows for that posting, and a seed that keeps whichever
+    comes first can hold **v1's hash — a JD the owner no longer has** — which is the exact failure
+    the frozen hash exists to prevent.
+
+    Ordering by `artifacts.created_at DESC` is the recency half of `_supersedes`; the liveness half
+    is the `status == 'open'` filter. Here the candidate carries v2, the version the owner actually
+    holds, and must be capped.
+    """
+    engine = _seed(env, [("cgs-federal", TITLE, "v2-hash"), ("cgs-federal", TITLE, "v2-hash")])
+    with engine.begin() as conn:
+        rows = list(conn.execute(postings.select().order_by(postings.c.id)))
+    first, second = int(rows[0].id), int(rows[1].id)
+    with engine.begin() as conn:
+        current_version = int(
+            conn.execute(
+                posting_versions.select().where(posting_versions.c.posting_id == first)
+            ).one().id
+        )
+        stale_version = int(conn.execute(insert(posting_versions).values(
+            posting_id=first, content_hash="v1-hash", body_text=SAME_JD,
+            captured_at=NOW - timedelta(days=30), capture_reason="new",
+        )).inserted_primary_key[0])
+        # An OLD delivery against v1 and the CURRENT one against v2. The stale version carries the
+        # HIGHER row id, so a seed ordering on `postings.id` alone would pick exactly the wrong one.
+        for version_id, at, uri in (
+            (stale_version, NOW - timedelta(days=30), "/out/old.typ"),
+            (current_version, NOW, "/out/new.typ"),
+        ):
+            conn.execute(insert(artifacts).values(
+                posting_version_id=version_id, kind="resume_tailored", uri=uri,
+                generator="boardwatch.tailor", media_type="text/x-typst", meta_json={},
+                created_at=at, run_id=None,
+            ))
+        record_disposition(
+            conn, int(rows[0].job_id), disposition="built", reason="lead_built",
+            policy_version="v1", now=NOW,
+        )
+
+    result = rank_open_postings(engine, _settings(env), limit=10)
+
+    assert second not in [p.posting_id for p in result.visible], (
+        "the seed must hold the MOST RECENTLY delivered version's hash, not an older one"
+    )
+    assert result.hidden_slate_cap == 1

@@ -54,6 +54,7 @@ from boardwatch.rank.seniority_gate import (
 )
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.applications import applied_job_ids
+from boardwatch.store.delivery_queries import EMPTY_BODY_HASH, standing_slate_keys
 from boardwatch.store.identity_queries import (
     identities_complete,
     load_identities,
@@ -108,7 +109,13 @@ class RankedPosting:
     # reason is the text that decided it for humans.
     hard_filter: HardFilterClause | None = None
     hard_filter_reason: str = ""
-    # The lead already on this run's slate that used up this row's `(company_id,
+    # The lead holding this row's `(company_id, normalized_title, content_hash)` allowance.
+    # **It may be a lead from an EARLIER run, not one on this run's slate (D-439)** — the cap
+    # is seeded from the standing queue, so the blocker is whatever is already in front of the
+    # owner. It is therefore not guaranteed to appear in this call's `visible`, and a reader
+    # resolving it may have to look the posting up rather than find it above. That is the
+    # honest cost of the seed; the alternative is a cap that cannot say what blocked a row.
+    # It used up this row's `(company_id,
     # normalized_title, content_hash)` allowance, set only when it is surfaced by the
     # `--include-slate-cap` drain. A normally-visible posting has None. Carries the
     # survivor's posting_id rather than a bare bool for the same reason `duplicate_of`
@@ -232,13 +239,27 @@ class RankedResults:
     hidden_duplicate: int = 0
     # The delivery slate cap (D-345). Rows that cleared every filter, were inside the rank
     # cutoff, and were displaced only because a byte-identical JD from the same company and
-    # title already held a slot this run. Its own bucket and never folded into
+    # title already held a slot — **either on this run's slate or already in the owner's queue
+    # (D-439)**, which are different deferrals: the first drains on the next run, the second when
+    # the owner applies to or skips the lead they have. Its own bucket and never folded into
     # `hidden_duplicate`: that one is gated on identity completeness and means the dedup
     # subsystem elected a survivor, which is a claim this cap deliberately does not make.
     #
     # This count IS the number of delivery slots the cap freed, exactly — a capped row does
     # not increment `kept`, so each one is refilled from further down the ranking.
     hidden_slate_cap: int = 0
+    # How many of `hidden_slate_cap` were blocked by a lead ALREADY IN THE QUEUE rather than by
+    # one delivered on this run. **A strict subset of `hidden_slate_cap` and NOT in the identity
+    # above** — the same shape as `hidden_handled_this_run` and its siblings, which are also
+    # reported dimensions of a bucket rather than buckets of their own.
+    #
+    # It exists because D-439 changed what the parent counter MEANS without changing the
+    # counter. Before it, every capped row re-entered on the next run and the number needed no
+    # qualification. Now the two halves wait on different events — the next run, or the owner
+    # actioning a lead they already hold — and a single number cannot say which. A queue the
+    # owner has stopped draining shows up here as this subset rising while the parent stays
+    # flat; folded together, that is invisible.
+    hidden_slate_cap_standing: int = 0
     # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
     # caller that forgets to set it gets "suppression disabled" rather than silently
     # claiming the subsystem ran. `hidden_duplicate == 0` on its own is ambiguous — it means
@@ -277,7 +298,7 @@ class RankedResults:
 
 
 SLATE_CAP_PER_KEY = 1
-"""How many leads per run may share one `(company_id, normalized_title, content_hash)` (D-345).
+"""How many leads may share one `(company_id, normalized_title, content_hash)` (D-345, D-439).
 
 A DELIVERY cap, not an identity claim and not a suppression. Run 129 spent 9 of its 10 slots on
 one CGS Federal requisition split across nine cities: one company, one normalized title, one
@@ -287,8 +308,16 @@ suppressing identity kind — includes `locations`.
 **This is categorically not D-295**, which was `company_title_location` IDENTITY suppression and
 was refused three times. Nothing here asserts two postings are the same job, nothing is
 suppressed permanently, and no `IDENTITY_ALGORITHM_VERSION` bump or ledger migration is implied.
-A capped row is never recorded `seen`, so it ranks again on the very next run — the re-entry path
-is the next run itself, by construction, which is why this quarantine needs no scheduled drain.
+A capped row is never recorded `seen`, so it ranks again — the re-entry path is by construction and
+this quarantine needs no scheduled drain.
+
+**The cap is seeded from the STANDING QUEUE as well as the current slate (D-439), and that changes
+WHEN the deferral ends, not what the cap claims.** Originally it carried nothing forward, so the
+deferral lasted exactly one day and the group delivered its next member on the next run regardless
+of whether the owner had looked at the first. Over runs that accumulates: 49 exact-key groups
+holding 84 redundant standing leads, one delivering on six consecutive runs, every run respecting
+the cap. Seeded, a second copy of a byte-identical JD is withheld until the first is `applied` or
+`skipped` — which is exactly when a second copy becomes useful.
 
 Why 1, measured over runs 119-129's 110 delivered leads rather than argued: this key at N=1 frees
 9 slots and fires on exactly two runs (r120:1, r129:8) with ZERO collateral. The looser
@@ -407,6 +436,11 @@ def rank_open_postings(
             stats.rules_hash,
         )
         new_ids = _new_posting_ids(conn) if only_new else None
+        # The leads ALREADY in front of the owner, keyed the way the slate cap keys a run
+        # (D-439). Read here rather than in the fill loop so it costs one query, not one
+        # per candidate, and inside the existing connection so no second reader is opened.
+        applied = applied_job_ids(conn)
+        standing_slate = standing_slate_keys(conn, applied=applied)
     scored: list[RankedPosting] = []
     # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
     slate_keys: dict[int, tuple[int, str, str]] = {}
@@ -500,7 +534,14 @@ def rank_open_postings(
         # `body_empty` is the flag the select already computes for the zero-signal rule; reused
         # rather than re-derived, and it is the precise condition — an empty `normalized_title`
         # (2 open postings) would collide the same way, so it is excluded too.
-        if row.normalized_title and not row.body_empty:
+        # `content_hash != EMPTY_BODY_HASH` and NOT `not row.body_empty`, and the two are not the
+        # same test. `body_is_empty()` is SQLite `trim(body_text, " \t\n\r\f\v")`, which does NOT
+        # strip U+00A0; `content_hash` normalises with Python's Unicode-aware `\s`, which does. So a
+        # JD that is only `&nbsp;` after extraction passes `body_empty` and hashes to the empty
+        # digest that 245 body-less postings share — two unrelated requisitions at one company and
+        # title would then be "byte-identical" to each other. Keying on the digest is the guard;
+        # `body_empty` stays for the zero-signal rule, which asks a different question.
+        if row.normalized_title and row.content_hash != EMPTY_BODY_HASH:
             slate_keys[int(row.id)] = (
                 int(row.company_id), row.normalized_title, row.content_hash,
             )
@@ -550,7 +591,6 @@ def rank_open_postings(
     suppressions: dict[int, Suppression] = {}
     anchors: dict[int, int] = {}
     handled: dict[int, LedgerRow] = {}
-    applied: dict[int, str] = {}
     eligible_ids = [p.posting_id for p in eligible]
     with engine.connect() as dedup_conn:
         # The run-scoped twins' membership test (B5). Empty when there is no run — `top`/gate
@@ -598,7 +638,8 @@ def rank_open_postings(
         # `track`, and mirroring it into a disposition would give one fact two homes that can
         # disagree. The ranker asks `applications` directly, exactly as `protected_job_ids`
         # already does for regrouping.
-        applied = applied_job_ids(dedup_conn)
+        # Read once, above, alongside the standing slate seed: two reads on SQLite are two
+        # snapshots, and the seed and the suppression must agree about the same run.
 
     # Only non-duplicate rows are counted against `limit`. Drained duplicates are appended
     # unconditionally, so `--include-duplicates` can return more than `limit` rows.
@@ -610,10 +651,29 @@ def rank_open_postings(
     # duplicates land in `hidden_duplicate` instead.
     kept = 0
     hidden_slate_cap = 0
-    # `(company_id, normalized_title, content_hash)` -> the posting_ids already holding slots
-    # for it this run, in slate order. Scoped to one call, so the cap is per RUN and carries
-    # nothing forward.
-    slate_held_by: dict[tuple[int, str, str], list[int]] = {}
+    hidden_slate_cap_standing = 0
+    # `(company_id, normalized_title, content_hash)` -> the posting_ids holding slots for it, in
+    # slate order.
+    #
+    # **SEEDED FROM THE STANDING QUEUE, not empty (D-439).** It was scoped to one call, and the
+    # comment here said so: "the cap is per RUN and carries nothing forward". That was the defect.
+    # D-345's cap DEFERS rather than drops — a capped row is never recorded `seen`, so it ranks
+    # again on the very next run — so a group sharing one byte-identical JD delivered one member
+    # per run, forever, and they piled up in a queue that does carry forward. Measured: 49 exact-key
+    # groups holding 84 redundant standing leads, one group delivering on six consecutive runs.
+    # Every one of those runs respected the cap.
+    #
+    # Seeding it makes the deferral end at the right moment instead of after one day: a second copy
+    # of a byte-identical JD becomes useful exactly when the owner has actioned the first, and
+    # `applied`/`skipped` are what say so. The re-entry path is unchanged in kind and strictly
+    # better in timing — still no `seen` written, still no identity claim, still not D-295.
+    slate_held_by: dict[tuple[int, str, str], list[int]] = {
+        key: list(posting_ids) for key, posting_ids in standing_slate.items()
+    }
+    # The seed's members, flattened, so a capped row can say WHICH deferral it is waiting on.
+    # Read only for reporting; `slate_held_by` grows as this run delivers, and membership here
+    # does not, which is the distinction being counted.
+    standing_ids = {posting_id for ids in standing_slate.values() for posting_id in ids}
     hidden_handled = 0
     hidden_applied = 0
     hidden_handled_this_run = 0
@@ -673,19 +733,38 @@ def rank_open_postings(
             # quarantine `continue` above, so a capped row is by construction one that cleared
             # all of them.
             slate_key = slate_keys.get(posting.posting_id)
+            # A posting never caps ITSELF. The seed carries standing posting ids, and a standing
+            # lead that is still rankable — one whose `seen` has aged out, or that was delivered
+            # without a disposition — would otherwise find its own id in `holders` and defer
+            # forever. Excluding it costs nothing within a run, where an id appears at most once.
             holders: list[int] = (
-                slate_held_by.get(slate_key, []) if slate_key is not None else []
+                [
+                    held
+                    for held in slate_held_by.get(slate_key, [])
+                    if held != posting.posting_id
+                ]
+                if slate_key is not None
+                else []
             )
             if len(holders) >= SLATE_CAP_PER_KEY and not include_slate_cap:
                 # NOT surfaced and NOT counted against `limit`: the slot is refilled from
                 # further down the ranking, and because no `seen` is recorded this row ranks
-                # again on the next run. That is the whole re-entry path — the cap defers a
-                # lead by a day, it does not consume it.
+                # again. **The re-entry path is no longer "the next run" (D-439):** the blocker
+                # may be a standing lead, and the deferral then ends when the owner applies to or
+                # skips it — which is when a second copy of a byte-identical JD becomes useful.
+                # A lead that can never be actioned is excluded from the seed for exactly this
+                # reason (`standing_slate_keys`), so the deferral always has an end.
                 hidden_slate_cap += 1
+                if any(held in standing_ids for held in holders):
+                    hidden_slate_cap_standing += 1
                 continue
             if len(holders) >= SLATE_CAP_PER_KEY:
-                # Annotated with the FIRST holder: the row that displaced this one is the one
-                # that took the last allowance, and at N=1 it is the only one there is.
+                # Annotated with the FIRST holder, and the seed is ordered so that means the
+                # MOST RECENTLY DELIVERED one (`standing_slate_keys`). This renders to the
+                # operator as "same JD as <id>", so the id has to be one they can place; naming
+                # whichever copy carries the lowest posting id could point at a lead delivered a
+                # month ago. Multi-holder keys are the ordinary case and the count grows until
+                # this ships — 49 groups at D-439, 53 a day later.
                 visible.append(replace(posting, slate_capped_by=holders[0]))
                 continue
             # A drained row is NOT surfaced. `--include-over-seniority`, `--include-non-swe` and
@@ -703,7 +782,13 @@ def rank_open_postings(
             ):
                 surfaced_job_ids.append(job_id)
             if slate_key is not None:
-                slate_held_by.setdefault(slate_key, []).append(posting.posting_id)
+                # `not in` guards the seed: a standing lead that is still rankable is
+                # self-excluded above and then delivered, and appending it again would make
+                # `len(holders)` stop counting DISTINCT holders. Harmless at a cap of 1 and
+                # silently halving the allowance at any higher value.
+                holding = slate_held_by.setdefault(slate_key, [])
+                if posting.posting_id not in holding:
+                    holding.append(posting.posting_id)
             visible.append(posting)
             kept += 1
         else:
@@ -729,6 +814,7 @@ def rank_open_postings(
         skipped_not_new=skipped_not_new,
         hidden_duplicate=hidden_duplicate,
         hidden_slate_cap=hidden_slate_cap,
+        hidden_slate_cap_standing=hidden_slate_cap_standing,
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
         hidden_applied=hidden_applied,
@@ -954,10 +1040,20 @@ def _print_hidden_notices(
             markup=False,
         )
     if results.hidden_slate_cap and not include_slate_cap:
+        # The two deferrals are named separately because they end on different events, and
+        # saying "apply to or skip the one you have" about a row blocked by THIS run's slate
+        # would be wrong — that one returns tomorrow whatever the owner does.
+        standing = results.hidden_slate_cap_standing
+        waiting = (
+            f" {standing} of them wait on a lead already in your queue and return when you "
+            "apply to or skip it; the rest return on the next run."
+            if standing
+            else " They return on the next run."
+        )
         target.print(
             f"{results.hidden_slate_cap} slot(s) freed by the slate cap — one lead per "
-            "company, title and byte-identical JD per run. Deferred to the next run, not "
-            "dropped; see them with --include-slate-cap.",
+            f"company, title and byte-identical JD, counting the ones already in your queue."
+            f"{waiting} Deferred, not dropped; see them with --include-slate-cap.",
             markup=False,
         )
     if results.hidden_duplicate and not include_duplicates:
@@ -1032,7 +1128,8 @@ def top(
     include_slate_cap: bool = typer.Option(
         False,
         "--include-slate-cap",
-        help="Show leads the per-run slate cap deferred (same company, title and JD).",
+        help="Show leads the slate cap deferred (same company, title and JD as one you "
+        "already have).",
     ),
     include_handled: bool = typer.Option(
         False,

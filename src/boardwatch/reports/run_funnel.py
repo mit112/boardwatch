@@ -320,11 +320,19 @@ class ShortlistCounts:
     hidden_duplicate: int = 0
     # D-345, the delivery slate cap: leads that cleared every filter and were inside the rank
     # cutoff, displaced only because a byte-identical JD from the same company and title already
-    # held a slot THIS RUN. Never folded into `hidden_duplicate` — that one asserts the dedup
+    # held a slot — on THIS RUN's slate or already in the owner's QUEUE (D-439). The two drain
+    # differently: the first on the next run, the second when the owner applies to or skips the
+    # lead they already have. Never folded into `hidden_duplicate` — that one asserts the dedup
     # subsystem elected a survivor, a claim this cap deliberately does not make. Not gated on
     # identity completeness, so 0 here means 0. Equals the number of slots the cap freed and
     # refilled, because a capped row never increments the ranker's `kept`.
     hidden_slate_cap: int = 0
+    # The half of `hidden_slate_cap` blocked by a lead ALREADY IN THE QUEUE, not by one this run
+    # delivered. **A subset, not a bucket** — reported like `handled_this_run`, never added to
+    # the identity. D-439 gave the parent counter two drain conditions and this is what tells
+    # them apart across runs: this rising while the parent holds means the queue is not being
+    # drained, which the parent alone cannot show.
+    slate_cap_standing: int = 0
     # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
     # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
     # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
@@ -1236,9 +1244,16 @@ def build_run_funnel(
                     reason="hidden_slate_cap",
                     count=shortlist.hidden_slate_cap,
                     note=(
-                        "same company, title and byte-identical JD as a lead already on this "
-                        "run's slate; deferred to the next run, not suppressed — inspect with "
+                        "same company, title and byte-identical JD as a lead already in the "
+                        "queue or on this run's slate; deferred, not suppressed — inspect with "
                         "`top --include-slate-cap`"
+                        + (
+                            f" ({shortlist.slate_cap_standing} waiting on a lead already in "
+                            "the queue, which drains only when the owner applies to or skips "
+                            "it; the rest return next run)"
+                            if shortlist.slate_cap_standing
+                            else ""
+                        )
                     ),
                 ),
                 Drop(

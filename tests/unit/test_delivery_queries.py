@@ -27,6 +27,7 @@ import pytest
 from sqlalchemy import Connection, Engine, insert, text
 
 from boardwatch.core.settings import load_settings
+from boardwatch.delivery.names import DRAIN_DIRS
 from boardwatch.eligibility.audit import AuditRequirement
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
@@ -41,6 +42,7 @@ from boardwatch.store.delivery_queries import (
     closed_job_ids,
     delivered_unapplied,
     queue_detail,
+    standing_slate_keys,
 )
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
 from boardwatch.store.queries import save_profile
@@ -796,3 +798,52 @@ def test_the_module_contains_no_write() -> None:
                 else ""
             )
             assert name not in forbidden, f"delivery_queries calls {name}()"
+
+
+def test_every_drain_has_a_recorded_answer_on_whether_it_holds_a_slot() -> None:
+    """`DRAIN_DIRS` is one catalog with TWO ladders over it, and they drift silently.
+
+    `queue._wanted_location` ranks all six drains into folders. `standing_slate_keys` decides, for
+    the same six, whether a lead in that state may still hold a slate slot. Nothing couples them:
+    a seventh drain added to the queue would be filed correctly and be invisible to the seed, so a
+    lead in it would hold a slot with **no release condition at all** — permanently suppressing a
+    distinct posting. That is the exact shape of the bug D-439 fixed, arriving from a new drain
+    instead of from the run boundary.
+
+    Coupling the ranking query to the queue module to fix this would put `closed_job_ids` and
+    `ineligible_job_ids` on a perf-tested path for a check that never varies, so the correspondence
+    is pinned here instead: every member of the catalog must appear below with a decision, and the
+    decision must be the one `standing_slate_keys`' docstring argues for. Adding a drain fails this
+    test until someone answers the question for it.
+    """
+    holds_a_slot = {
+        # The owner acted, so a second copy of the same JD is now useful to them.
+        "_applied": False,
+        "_skipped": False,
+        # A report means the eligibility decision is under investigation; neither release
+        # condition (apply / skip) can ever fire, so it must not hold a slot.
+        "_reported": False,
+        # A closed requisition cannot be applied to. Excluded via `postings.status`, not a job set.
+        "_closed": False,
+        # KEPT: the twin shares the JD byte for byte, so it carries the same verdict and capping it
+        # loses nothing — and `reconcile` returns the folder the moment the verdict clears.
+        "_ineligible": True,
+        # KEPT: a lead awaiting the owner's look is, definitionally, in front of the owner.
+        "_review": True,
+    }
+    assert set(holds_a_slot) == set(DRAIN_DIRS), (
+        "a drain was added or renamed without deciding whether a lead in it may still hold a "
+        "slate slot; answer it here and in standing_slate_keys' docstring"
+    )
+    # The table above is only as good as its agreement with the function it describes, and the
+    # function's reasoning lives in its docstring. `is KEPT` is the phrase that carries the
+    # decision there, so a drain flipped in one place and not the other fails here.
+    doc = standing_slate_keys.__doc__ or ""
+    for drain, kept in holds_a_slot.items():
+        state = drain.lstrip("_")
+        assert f"`{state}`" in doc, (
+            f"standing_slate_keys' docstring never mentions the `{state}` drain"
+        )
+        assert (f"`{state}` is KEPT" in doc) == kept, (
+            f"this test and standing_slate_keys' docstring disagree about `{state}`"
+        )

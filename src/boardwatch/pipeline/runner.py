@@ -1673,6 +1673,7 @@ def run_pipeline(
             skipped_not_new=ranked.skipped_not_new,
             hidden_duplicate=ranked.hidden_duplicate,
             hidden_slate_cap=ranked.hidden_slate_cap,
+            slate_cap_standing=ranked.hidden_slate_cap_standing,
             hidden_handled=ranked.hidden_handled,
             hidden_applied=ranked.hidden_applied,
             hidden_over_seniority=ranked.hidden_over_seniority,

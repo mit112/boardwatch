@@ -349,6 +349,27 @@ All notable changes to this project are documented here. The format follows
   on that lane still produces no requirement even once unescaped.
 
 
+- **The same job kept arriving in your queue, one copy a day, forever.** When one employer posts a
+  single role to a dozen cities, boardwatch already limits it to one lead per run — but only per
+  run. The copies it held back came round again the next day whether or not you had looked at the
+  first, so they stacked up: **49 jobs are sitting in your queue with 84 redundant copies between
+  them**, one of them having arrived on six days running. `Tech Consulting` junior Python developer
+  and a CGS Federal ServiceNow role are the worst of them.
+
+  A second copy of a job whose description is *byte-for-byte identical* is now held back until you
+  have actually applied to or skipped the first — which is the point at which a second copy is any
+  use to you. Jobs that merely share a company and a title still come through: twelve Cisco
+  "Software Engineer" roles have twelve different descriptions and are twelve different jobs.
+
+  **This stops new copies accumulating; it does not remove the 84 already there.** Clearing those
+  is a separate call, because their folders are already on disk.
+
+  Two smaller things that follow from it. `top` and the run summary now say how many held-back
+  copies are waiting on *you* rather than on tomorrow's run — the two used to be one number, so a
+  queue you had stopped working through looked exactly like a busy day. And when a copy is held
+  back, the job it names as the reason is now the one you saw **most recently**, not whichever
+  copy happened to be oldest in the database.
+
 - **Reporting a job took it off the review page but left it sitting in your apply folder.** The
   Report action records that a job was marked eligible by mistake and hides it from the web queue —
   but its folder stayed at the top level of the queue directory, so the job you had just reported
