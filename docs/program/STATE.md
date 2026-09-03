@@ -21,124 +21,109 @@
 
 ## Current standing
 
-### Session 2026-09-02d: the buried live requisition is FIXED, LinkedIn gets a COMPANY axis, the `_reported` drain closes D-427, and the `perf` flake is CHARACTERISED as a load detector
+### Session 2026-09-03: the queue is audited END TO END and the eligibility catalog is measured at 8% of the problem
 
-Reasoning: **D-432**, **D-433**, **D-434**, **D-435**. Numbers: `METRICS.md`
-(Session 2026-09-02d).
+Reasoning: **D-436**, **D-438**. Numbers: `METRICS.md` (Session 2026-09-03).
 **No run** — the 04:00 tick produces run 145.
 
-**1. THE BURIED LIVE REQUISITION IS FIXED (D-432, PR #336).** `delivered_unapplied` picked a
-canonical job's winner by ARTIFACT RECENCY, so a dead lane copy tailored after the employer's own
-live requisition decided the job: `closed_job_ids` reported the JOB closed and `reconcile_queue`
-filed a live lead under `_closed`. Liveness now decides; recency only breaks its ties.
-**THE CORRECTION RAN OPPOSITE TO THE ONE COMMISSIONED.** The handoff said D-430's "1 job" was wrong
-and the figure was 16. Joined through the DELIVERED ARTIFACTS — the only postings the queue can
-offer — it is **1**, eBay 35249, exactly the job D-430 named. The 16 counted every posting on a
-canonical job and ranked by `last_seen_at`; the rule ranks by `artifacts.created_at`.
-**Completeness measured separately:** 101 jobs have every delivered posting closed and **0** hold a
-live posting anywhere, so no residual class exists that a winner rule cannot reach. The buried lead
-walks out on run 145 by itself — reconcile precedes sync and `_entry_for` falls back to the by-job
-index. **No `engine_version` bump, no ledger drain, no migration.**
+Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
+**D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
 
-**2. LINKEDIN GETS A COMPANY AXIS — TRACK 2 BUILT AND DISARMED (D-433, PR #337).** Every LinkedIn
-search asked WHAT and WHERE, never AT WHOM. **342 absent postings sit at 65 employers boardwatch
-ALREADY WATCHES.** **The plan's own shape was refuted by arithmetic before it was built**: 14
-profile terms x 1,812 stored names = 25,368 cells, which at 83 runs/14 days is a **358-day**
-rotation. Owner's call with four shapes priced: **1 term x 443 watched = 443 cells, 12/run, a full
-pass every ~37 runs (~6.3 days)** — the only shape readable before the 2026-09-09 re-measure.
-`lane_company_combos_per_run` ships at **0 (OFF)**. **It was armed on 2026-09-03 and DISARMED the
-same night — the premise is REFUTED on live measurement (D-437, and Next action 0). The code stays
-merged and inert.**
-**The plan's "nothing in `lanes/linkedin.py` changes" was WRONG** — `card_nodes` treats zero cards
-as a STRUCTURAL failure, correct for a facet and backwards for a cell naming one employer, so
-folding them in would have pushed reported failures ~0 -> ~11 every run and buried the outage
-signal. **The registration sites are FOUR and the fourth is `tools/generalization/snapshots.py`,
-which holds TWO dicts** (`EXPECTED_SETTINGS_DEFAULTS` and `SETTINGS_FIELD_CLASS`) — not the
-USE site, which is not a registration at all. **What is new is the ORDERING**: R10 runs at
-the FIRST `make check` target, so a missed snapshot entry produces no pytest output and
-reads like a broken gate rather than a missing row. Corrected by the peer session.
+### The 2026-09-03 queue audit — the catalog is 8% of the problem
 
-**3. THE `_reported` FOLDER DRAIN CLOSES D-427's DEFERRAL (D-434).** A reported lead was hidden
-from the web queue but its folder stayed at the TOP LEVEL, so it was still in the pile the owner
-works from. **The site a reconcile-only reading misses**: `_sync_queue` runs reconcile AND sync in
-one call, so without withholding the reported job from `delivered_unapplied` the sync mints the
-folder again while the reconcile count reads a healthy 1. Ranked below `applied`/`skipped`, above
-`closed`. `_ineligible` refused — reconcile pulls those back the moment the verdict clears.
+Blind two-judge audits of what the owner actually opens. Full numbers and method in METRICS
+(`Session — 2026-09-03`); the mechanism is D-436.
 
-**4. THE `perf` CI FLAKE IS CHARACTERISED AND IT IS NOT A CODE SIGNAL.** 15 local samples of the
-median-of-5: **quiet mode 0.373-0.414 (n=4), loaded mode 1.336-1.675 (n=11), and NOTHING between
-0.414 and 1.336.** The distribution is BIMODAL with a 0.92 s empty gap and **the 1.0 s bound sits
-inside the gap**. It is a machine-load detector, not a code-speed guard. The two CI failures read
-1.0068 and 1.0063 — inside a gap local runs never occupy — which says CI's LOADED mode sits at ~1.0
-rather than ~1.5 (4 vCPU runner vs a 10-core Mac), so on CI the bound sits ON the loaded mode's
-centre: a coin flip whenever the runner is contended, which with 4 shards x 3 versions it usually
-is. **FIXED (D-435): `TOP_PATH_CEILING_SECONDS = 2.5`**, derived from that distribution — it
-clears the worst observed loaded median by ~49% and still catches a 6x regression against the quiet
-mode. **Asserting the MINIMUM was tried and REFUTED by the same samples**: 10 of 15 would still fail
-a 1.0 s minimum against 11 of 15 for the median, because under sustained load ALL FIVE iterations
-are slow. Stated as a relaxation: detecting a 2-3x regression is what is given up.
+- **The apply lane is 481 `uncertain` / 44 `eligible` / 12 `None`** — only **8%** of what the owner
+  sees carries an `eligible` verdict. The rest FAILED OPEN through `review_gate.lane()`. Fixing the
+  eligibility catalog addresses 8% of his queue.
+- **Apply lane: ~36% unapplyable** (n=80, two disjoint samples, 8/10 agreement) — ~175 dead leads.
+  **All 13 of the first audit's false positives carried `uncertain`, not `eligible`** — a ROUTING
+  fact, not a catalog fact.
+- **The queue carries 219 redundant leads, and MOST ARE NOT A DEFECT (corrected — see D-439).**
+  127 duplicate `(company, normalised-title)` groups, but only **45 groups / 76 leads share one
+  `content_hash`**; the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI
+  ×9 is nine real reqs, Haystack ×6 is six). An earlier reading of this called it an
+  identity-resolution failure — **that was wrong.** The real mechanism is D-345's cap DEFERRING
+  rather than dropping, scoped to one run while the queue is not, so a one-JD group delivers one
+  member per run forever. CGS Federal ×10 on a single hash is the shape that IS a defect.
+- Sized and NOT built: un-escaping markdown bodies 2.2% (owner-gated, re-versions postings);
+  `role_gate` missing the inverted `Engineer, Software` form (5 leads — the class D-305 fixed in
+  `seniority_gate` and never carried across); non-SWE residual in review only (apply-lane NOT_SWE
+  was 0 of 40, so D-305 holds where it matters); `classify_location` fails open on Nottingham.
 
-**5. THREE REVIEWS BEAT THREE GREEN GATES, AGAIN.** #336 gated green with three caught mutations
-and a review found four defects — including a stale mechanism paragraph in the ARMED
-`apply_lane_drought`. #337 gated green with nine of ten mutations caught and a review found six,
-including the `card_nodes` defect above. **None was reachable by mutation, because none is a
-branch.** Two further lessons: a mutation of mine was MIS-SPECIFIED (it mutated the raw column,
-where an unverifiable posting still reads `open`) and would have been read as a hole in the pin;
-and one of my tests was VACUOUS (byte-identical output under the term cap) and only the campaign's
-control revealed it. **A review's finding can also be OVERSTATED**: #337's largest said the company
-ring was broken for "a large and growing share" of rows; re-measured, 145 of 453 watched names
-equal their slug and almost all are CORRECT (`Anthropic`, `OpenAI`, `Airbnb`), so the fix is narrow
-— a PATH is refused, a separator is not.
+**The lever is the `final_gate:` LLM lane** — built, keystone-guarded, identity-keyed, read by the
+ranker, and **0 rows on the live store**. It only has to run over the ~8-10 leads/day delivered.
+**Request path VERIFIED on live data**: `build_gate_request` over the real apply lane produced **521
+judgeable items of 537**, independence preserved, read-only. **Ordering is forced** —
+`record_gate_verdict` keys on `build_identity(..., catalog, ...)`, so any catalog change invalidates
+gate rows written before it. Land the catalog PRs first, then arm ONCE.
 
 ## Next action
 
 **0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.**
-The owner armed `lane_company_combos_per_run = 12` on 2026-09-03; it was **dry-run against the live
-host before the first tick and disarmed the same night at 01:34** (verified through
-`load_settings()` and `config.toml`). Reasoning and the numbers: **D-437**.
+Armed at `lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host before the
+first tick, disarmed the same night at 01:34 (verified through `load_settings()` and `config.toml`).
+Full reasoning: **D-437**. The numbers that entry does not carry, kept here:
 
-**The central premise was false and had never been probed.** A quoted company name is NOT a company
-filter on LinkedIn's guest endpoint — it is a relevance-ranked keyword. Running the exact 12 cells
-run 145 would have issued, through the same builder and ring: **4 of 120 cards on target (3%)**.
-`"Tailscale" software engineer` returned DoorDash, OpenAI, Reddit and Scale AI and **zero**
-Tailscale; `"NBCUniversal" software engineer` returned Microsoft, Netflix and NVIDIA and **zero**
-NBCUniversal.
+- **On target: 4 of 120 cards (3%).** A quoted company name is a relevance-ranked KEYWORD on the
+  guest endpoint, not a company filter. `"Tailscale" software engineer` returned zero Tailscale.
+- **The cap cost is the opposite of D-433's estimate: those 12 cells present 78 distinct companies,
+  61 of them new, against a cap of 50** — and cells sit BEFORE the hub nets in the interleave, so
+  arming it takes all 50 slots and leaves the hub nets ZERO. A straight regression.
+- **A control was necessary**: six well-known companies read ~20% on target; all twelve read 3%. The
+  six-company sample was biased toward employers who post heavily on LinkedIn. The ring is not.
+- **The obvious rescue is closed and was probed**: LinkedIn's real filter is `f_C=<numeric company
+  id>` and the guest fragment serves no numeric id, only a slug. Employer filtering needs a
+  slug-to-id mechanism on another surface — a widening of D-290 and the owner's call, not a probe.
 
-**And the cap cost is the opposite of what D-433 estimated.** Those 12 cells present **78 distinct
-companies, 61 of them new**, against a cap of 50 — and cells sit BEFORE the hub nets in the
-interleave. Arming it takes **all 50 slots and leaves the hub nets zero**, so it is a straight
-regression to the LinkedIn lane's actual breadth mechanism. D-433's "at least one slot per cell,
-upper bound not established" was right to flag the gap and far too optimistic about its size.
+**The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism
+again.** Do not propose per-company cells without naming a mechanism that actually filters by
+employer. The code stays merged and inert at `0`.
 
-**A CONTROL WAS NECESSARY AND THE FIRST READING WAS ENCOURAGING AND WRONG.** Six well-known
-companies read **~20%** on target with result sets nearly disjoint from an unfaceted control, which
-looks like the company name working. All twelve read **3%** — the six-company sample was biased
-toward employers who post heavily on LinkedIn, and the ring is not.
+**1. ANSWER ONE QUESTION — but note it does NOT work the way an earlier reading of it claimed:
+does a stated 2-YEAR experience bar rule you out?** `experience_years.near_miss_years_ceiling = 3`
+makes the engine ABSTAIN on bars at or under 3 years, so those leads are HELD FOR REVIEW.
 
-**The obvious rescue is closed too, and it was probed.** LinkedIn's real filter is
-`f_C=<numeric company id>`, and the guest fragment serves **no numeric company id** — a card carries
-`urn:li:jobPosting:<id>` and a company SLUG only. Filtering by employer would need a slug-to-id
-discovery mechanism on another LinkedIn surface, which is a **widening of D-290 and the owner's
-call**, not a probe.
+**LOWERING THE CEILING DOES NOT RELEASE THEM — IT REJECTS THEM (D-440).** A lower ceiling resolves
+those bars `unmet`, which makes the posting `ineligible` and removes it from the pile because the
+engine has started declaring you unqualified. Priced: ceiling **2** rejects 290 postings at exactly
+a 3-year bar; ceiling **0-1** rejects **505** (259 at 2y + 290 at 3y). That reverses D-333's
+recorded ruling rather than tuning a parameter, and it takes the EXPENSIVE error direction — a wrong
+`unmet` writes `ineligible` with a quoted span and silently removes a gettable job, while a wrong
+abstain costs a look. **The reject pile is never inspected, so no outcome loop can ever contradict
+it.** Recommendation on the numbers: do NOT lower it.
 
-**The 342 already-watched misses are therefore STILL OPEN and the LinkedIn residual has no proposed
-mechanism again.** Do not re-arm Track 2, and do not propose per-company cells without naming a
-mechanism that actually filters by employer. The code stays merged and inert at `0`.
+**And the ceiling cannot deliver the range that was attributed to it.** Of 1,141 abstained
+`experience_years` rows on delivered leads, **583 are the near-miss band and 465 are `scoped to a
+skill`** — which abstains in both directions whatever the ceiling is (corpus-wide: 186,553 scoped
+against 27,823 near-miss). **If one declared year understates you, the thing to change is
+`total_years_experience` — profile DATA — not this policy threshold.**
 
-**1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
+**2. MERGE #341 (D-436) AND #343 (D-438) ATTENDED, THEN ARM THE `final_gate:` LANE — in that order,
+and the order is FORCED.** Both PRs move `rules_hash`; `record_gate_verdict` keys on
+`build_identity(..., catalog, ...)`, so any catalog change invalidates gate rows written before it.
+**Merge attended**: the first run after either lands re-evaluates the corpus and relocates real
+leads — measured, every delivered lead reads verdict `None` and the apply lane goes **537 → 1,222**
+as `None` routes like `uncertain`. A **ledger drain is owed** and D-351's counter restarts. Then run
+the gate ONCE: `eligibility gate request` → judge → `gate apply`. The request path is verified on
+live data (521 judgeable items of 537, independence preserved); `gate apply` writes **immutable**
+evaluations, so it is an attended act.
+
+**3. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** Unchanged
 (D-428; watched 403 → 453). Population 332 boards / 471 postings, **1.42 in-window postings per
 board**; the remaining 282 cost ~15 min/run. Reversal:
 `companies-prehcsample-20260902-183019.csv`.
 
-**2. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
+**4. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
 `.agent/2026-09-02-session/per_source_recall.py`. **The residual is LinkedIn alone**, and Track 2 is
 the only lever that has moved since — which is why arming it (item 0) belongs before this, not after.
 
-**3. SET PER-SOURCE THRESHOLDS** (owner). Framing DECIDED: option D then C — decompose LinkedIn
+**5. SET PER-SOURCE THRESHOLDS** (owner). Framing DECIDED: option D then C — decompose LinkedIn
 first (**done**, D-431), then bar on `lane-only` exposure rather than recall. The numeric level is
 still the owner's.
 
-**4. TRACK 1 — admit the 92 already-admissible LinkedIn boards** (382 postings, ~4.9 min/run, no new
+**6. TRACK 1 — admit the 92 already-admissible LinkedIn boards** (382 postings, ~4.9 min/run, no new
 code) and **ARM the `grnh.se` resolver** (D-429, ~90 boards, ~5 min/run). **Both still HELD until
 run 147**: each admits boards, and landing either inside runs 145-147 makes the hiring.cafe sample's
 yield unreadable. That is why "both levers" was rejected.
@@ -154,6 +139,43 @@ SHIPPED, D-434. The `perf` flaky bound — CHARACTERISED and FIXED, D-435.)*
   **Arming must wait for run 147** or it contaminates the board sample's reading — the two board
   levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
+- **THE OWNER'S CALL, and it outweighs every rule shipped this session: does a stated 2-YEAR
+  experience bar rule you out?** `experience_years.near_miss_years_ceiling = 3` makes the engine
+  ABSTAIN on bars at or under 3 years rather than reject. Across the **475** review-lane leads held
+  for `experience_requirement` the rows are **2,809 `unknown` · 258 `unmet` · 43 `met`** — the engine
+  declining to decide on exactly the bar he is closest to. **Two blind judges disagreed on this and it
+  swung ~10 of 40 leads**, which is why the review lane's wrong-hold rate is a RANGE (**17%-47%**) and
+  not a number. One sentence collapses it. Not free either way: D-333 records that each extra year
+  moves genuinely-too-senior postings into the delivered pool, and the reject pile is never inspected.
+- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION (D-436).** `reports/abstain.py`
+  aggregates per `rule_id` across the WHOLE corpus, so a pattern that matches most phrasings and
+  misses a near-miss variant is neither `never_fired` nor `fully_abstaining` — its rate looks
+  **healthy**. The keystone makes a rule that cannot resolve a profile FIELD visible as a 100%
+  abstain rate; it says nothing about an extractor that cannot find the requirement in the TEXT,
+  because the rule never got the chance to abstain. A blind two-judge audit put **24% of `eligible`
+  wrong (13 of 54)** and **every single miss was `no requirement row written`**, not a rule
+  deciding badly. **Unfixed.** The honest fix is a THIRD OUTCOME per family — "the extractor ran and
+  matched nothing" and "the JD is silent" are collapsed into one today and the second one clears —
+  not more patterns, which is whack-a-mole.
+- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES — the 24% is UNCHANGED.**
+  Measured, not assumed: the two fixed sentences came from the pre-correction 218-job sample and do
+  not survive into the real 144. The fixes are safe (0 regressions) and close real leaks, but the
+  delivered population's defect rate did not move. **The 13 have ~7 distinct root causes**, so more
+  patterns is whack-a-mole. **The unarmed answer is the two-stage shape already built:**
+  `boardwatch eligibility gate request`/`gate apply` (the `final_gate:` LLM lane — ineligible-capable,
+  keystone-guarded, identity-keyed, read by the ranker) over the **~8-10 leads/day delivered**, which
+  is the only population where zero-ineligible is reachable. **0 rows on the live store today.**
+  Owner-gated.
+- **`experience_years` MISSES SPELLED-OUT AND ESCAPED YEARS BARS, and it is a BODY-NORMALISATION
+  defect, not a regex one (D-436).** All eight patterns anchor on `\d{1,2}` adjacent to `years`, so
+  `Six to eight years`, `four (4) years` (the `)` breaks digit→`years` adjacency) and `5\+ years`
+  write zero rows. **477 open bodies carry markdown-escaped punctuation, 175 of them with a
+  `\+ years` bar.** **Owner-gated because un-escaping at ingest RE-VERSIONS POSTINGS** — that is the
+  sentence that stops someone doing it cheaply. Teaching eight regexes to tolerate stray backslashes
+  fixes the symptom at the wrong layer.
+- **`classify_location` FAILS OPEN on unrecognised cities**, so Nottingham (UK) postings reached a
+  US-only queue in the D-436 audit. Not fixed; the fail-open direction is deliberate (D-294) and
+  narrowing it is a precision/recall decision, not a bug fix.
 - **THE LIVE STORE HAS 0 REPORTED AND 0 SKIPPED JOBS**, so run 145 cannot exercise the new
   `_reported` drain (D-434) in either direction. **A clean live reconcile is NOT evidence it
   works** — the unit tests are the only thing that can catch it. Measured by a peer session.
