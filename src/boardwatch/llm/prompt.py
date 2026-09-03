@@ -16,7 +16,7 @@ PROMPT_VERSION: str = "p3-extract-2"
 EXTRACTION_SYSTEM: str = """You extract requirement patterns from job descriptions.
 Return a JSON array. Each element has exactly two keys:
 - "family": one of work_auth, experience_years, clearance, degree, contract_not_fte,
-  internship, other
+  internship, student_status, other
 - "span_quote": a verbatim substring from the job description
 
 Rules:

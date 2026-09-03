@@ -107,10 +107,10 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     assert catalog.source == "bundled"
     assert [f.id for f in catalog.families] == [
         "work_auth", "experience_years", "clearance", "degree",
-        "contract_not_fte", "internship",
+        "contract_not_fte", "internship", "student_status",
     ]
     assert len(catalog.negation_cues) == 26
-    assert sum(len(f.patterns) for f in catalog.families) == 55
+    assert sum(len(f.patterns) for f in catalog.families) == 57
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -139,7 +139,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # `us_citizen_standalone_required` carries the sentence-scoped stand-down that keeps the
         # `U.S. Citizenship and Immigration Services` E-Verify boilerplate out.
         "suppressed_by_unit": 18,
-        "suppressed_by_sentence": 4,
+        "suppressed_by_sentence": 5,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
         # an ownership verb before an internship mention says the JD runs the programme. The
@@ -229,9 +229,19 @@ def test_the_policy_map_is_materialised_from_catalog_defaults(tmp_path: Path) ->
     catalog = load_rules(tmp_path)
     materialised = catalog.materialised_policy(Policy())
     assert set(materialised) == {f.id for f in catalog.families}
-    # work_auth ships `blocker` by default (D-035); every other family ships `preference`.
-    assert materialised["work_auth"] == "blocker"
-    assert {v for f, v in materialised.items() if f != "work_auth"} == {"preference"}
+    # TWO families ship `blocker`, and they do so for OPPOSITE reasons. `work_auth` is the
+    # canonical hard stop (D-035). `student_status` ships blocker so that it ABSTAINS
+    # (D-438): severity is per-family, so a `preference` row leaves `engine.blocking()` and
+    # the verdict falls through to `eligible` -- measured, an enrolment requirement read
+    # `uncertain` before that family existed and `eligible` after, for a profile declaring
+    # nothing. Its fact is optional and an absent fact resolves UNKNOWN, never UNMET, so the
+    # blocker default cannot reject an owner who has not opted in.
+    #
+    # The set is pinned as a LITERAL rather than derived, so a THIRD family acquiring a
+    # blocker default has to be argued for here rather than arriving silently.
+    blockers = {f for f, v in materialised.items() if v == "blocker"}
+    assert blockers == {"work_auth", "student_status"}
+    assert {v for f, v in materialised.items() if f not in blockers} == {"preference"}
     overridden = catalog.materialised_policy(Policy(families={"degree": "blocker"}))
     assert overridden["degree"] == "blocker"
     assert overridden["clearance"] == "preference"

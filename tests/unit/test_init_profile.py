@@ -134,7 +134,9 @@ def test_help_smoke(env: Path) -> None:
 # work_auth(status,jurisdiction,needs_sponsorship,policy),
 # experience_years(total,policy), clearance(scheme,level,state,accesses,obtainable,policy),
 # degree(highest_degree,policy), contract_not_fte(preference,policy),
-# internship(preference,policy). A blank field is skipped; a blank policy takes the default.
+# internship(preference,policy),
+# student_status(currently_enrolled,graduation_yyyymm,policy).
+# A blank field is skipped; a blank policy takes the default.
 # This script is POSITIONAL, so a new family (or field) shifts every later answer. That is
 # why P9 and P2a had to edit it, and why
 # test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting in
@@ -150,6 +152,7 @@ _ELIG_INIT = (
     "none\nblocker\n"           # degree
     "fte_only\nblocker\n"       # contract_not_fte
     "exclude\n\n"               # internship: default policy
+    "\n\n\n"                    # student_status: skip both fields, default policy
 )
 
 
@@ -243,6 +246,7 @@ _ELIG_EDIT = (
     "master\n\n"                       # degree: change to master, default policy
     "open_to_contract\n\n"             # contract_not_fte: change, default policy
     "\n\n"                             # internship: keep `exclude` from init
+    "\n\n\n"                           # student_status: keep both fields, default policy
 )
 
 

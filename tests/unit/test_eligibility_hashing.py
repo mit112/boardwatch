@@ -106,6 +106,7 @@ DECLARED = {
     "degree": ("highest_degree", "total_years_experience", "field_of_study"),
     "contract_not_fte": ("employment_type_preference",),
     "internship": ("internship_preference",),
+    "student_status": ("education_timing",),
 }
 
 FACTS = Facts(
@@ -278,6 +279,10 @@ def test_ranking_only_profile_fields_are_never_hashed(tmp_path: Path) -> None:
         # exception below. Editing it must re-key, or a corrected field returns the old verdict.
         "field_of_study",
         "employment_type_preference", "internship_preference",
+        # P10. Resolver-declared input of `student_status`, so it arrives through `enabled`.
+        # It MUST re-key: a corrected graduation date or enrolment bit that did not move the
+        # identity would leave every cohort verdict frozen at the old answer.
+        "education_timing",
         "career_field",  # engine-gated (not resolver-declared) — hashed unconditionally, per B1
     }
 

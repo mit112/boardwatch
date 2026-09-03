@@ -55,6 +55,33 @@ class ClearanceFact(BaseModel):
     obtainable: bool | None = None
 
 
+class EducationTimingFact(BaseModel):
+    """Student status and graduating cohort, STRUCTURED for the same reason work auth is:
+    the two bits answer different questions and neither can be inferred from the other.
+
+    `currently_enrolled` answers "must be actively enrolled"; `graduation_yyyymm` answers
+    "graduation date between December 2026 and May 2027". A graduate is not necessarily
+    outside a window, and someone inside a window is not necessarily still enrolled, so
+    inferring either from the other produces the backwards `met` this design forbids.
+
+    **NEITHER IS DERIVED FROM THE CURRENT DATE, deliberately.** A resolver that compared a
+    stored graduation date against `utcnow()` would return different verdicts for identical
+    facts on different days, and `build_identity` hashes the facts, not the clock -- so the
+    ledger could not tell a real re-evaluation from the calendar moving. Both bits are
+    declared, never computed.
+
+    `graduation_yyyymm` is an INT in `YYYYMM` form (August 2025 is 202508) rather than a date:
+    the catalog's field types are bool/int/choice/choice_set and there is no date type, so a
+    real date would need a new type in `catalog._FIELD_TYPES` and a new `_coerce` branch --
+    shared type-system code -- to buy an ordering that a zero-padded int already gives.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    currently_enrolled: bool | None = None
+    graduation_yyyymm: StrictInt | None = None
+
+
 class Facts(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -82,6 +109,10 @@ class Facts(BaseModel):
     # resolver input, so it is hashed EXPLICITLY in build_identity, not via declared_fields).
     # Validated against catalog.career_fields at the engine (authoritative) and the CLI
     # (friendly), never in this type — the vocabulary belongs to the catalog (D-P2-4).
+    # P10. Student status and graduating cohort. Structured because the two bits are
+    # orthogonal; see EducationTimingFact. Absent means "not declared" and the resolver
+    # abstains, exactly as every other profile-tier fact does.
+    education_timing: EducationTimingFact | None = None
     career_field: str | None = None
 
 
