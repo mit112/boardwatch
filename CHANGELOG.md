@@ -313,6 +313,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A job description saying "5+ years of full stack software engineering experience" produced no
+  requirement at all — one word too many for the rules to read.** `5+ years of software engineering
+  experience` was read; adding `full stack` in front of it was not, because the rule allowed at most
+  three words between the year count and the word "experience". A posting whose only stated
+  requirement was phrased that way came out with **nothing to check**, which is what sends it to your
+  apply folder as ready to go.
+
+  Of the postings phrasing a bar that way, **565 had no requirement read from the whole job
+  description**. Widening the rule by one word was checked against every open posting before
+  shipping: it reads **1,474 new distinct phrases**, and every one of them starts with a year count
+  — no "up to three years" ceilings, no company histories, no equal-opportunity boilerplate.
+
+  Two related things stated rather than quietly left: adding words like "software" to the rule's
+  vocabulary was tried first and changed **nothing at all**, and a separate inconsistency this
+  uncovered — a "Bachelor's degree **or** N years of experience" alternative being honoured for some
+  phrasings and ignored for others — is **not** fixed here, because deciding it changes 365
+  postings and is a judgement call rather than a repair.
+
+
 - **Job descriptions that arrived through the job-apps lane were being read with their punctuation
   escaped, and the eligibility rules could not see through it.** A requirement written
   `3\+ years of experience` is indistinguishable from `3+ years of experience` to a person and

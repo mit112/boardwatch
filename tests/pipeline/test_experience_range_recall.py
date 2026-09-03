@@ -175,3 +175,160 @@ def test_the_non_range_twins_still_behave(catalog: RulesCatalog) -> None:
     """The splice must not disturb the patterns it was cut from."""
     assert _verdict(catalog, "5+ years of professional software engineering experience.", NEW_GRAD) == "ineligible"
     assert _verdict(catalog, "5+ years of experience.", NEW_GRAD) == "ineligible"
+
+
+# ---------------------------------------------------------------------------------------
+# The FOUR-modifier domain phrase (D-447).
+#
+# `5+ years of professional software engineering experience` already worked: `professional` is
+# a listed adjective and `software engineering` is two arbitrary words, inside the {0,2} run.
+# `5+ years of full stack software engineering experience` did NOT, because `full stack
+# software engineering` is four. One word over, and the posting wrote no row at all.
+#
+# Every sentence below is a real span from the live store, and each is the reason the window
+# moved. Measured before shipping, over all 138,677 open bodies: the widening adds 2,355
+# matches across 1,474 distinct spans, and every one of them begins with a year count.
+# ---------------------------------------------------------------------------------------
+
+#: Verbatim from postings that produced ZERO `experience_years` rows at {0,2}. The titles they
+#: came from are Senior, Staff, Lead, Principal and Vice President -- exactly the too-senior
+#: postings that were reaching the apply lane as blindly-appliable.
+FOUR_MODIFIER_BARS = [
+    "5+ years of full stack software engineering experience.",
+    "6+ years of Full Stack software engineering experience.",
+    "10+ years of Full Stack software engineering experience.",
+    "4+ years of full stack software engineering experience.",
+    "5+ years of full stack software development experience.",
+    "5+ years of full software development lifecycle experience.",
+    "7 years minimum professional software development experience.",
+    "5+ years of related big data engineering experience.",
+    "5+ years of data engineering related development experience.",
+    "5+ years of full time Software Engineering experience.",
+    "6+ years of enterprise full stack engineering experience.",
+    "8+ years of NAND design relevant proven experience.",
+]
+
+#: The same form UNDER the near-miss ceiling. It must write a row and NOT reject -- the row is
+#: the fix, `uncertain` is D-333's band doing its job, and conflating the two would let a later
+#: ceiling change silently look like a recall regression.
+FOUR_MODIFIER_BARS_INSIDE_THE_BAND = [
+    "3+ years of non-internship professional software development experience.",
+    "2+ years of full stack software engineering experience.",
+]
+
+
+@pytest.mark.parametrize("body", FOUR_MODIFIER_BARS)
+def test_a_four_modifier_domain_phrase_is_read_as_a_bar(catalog: RulesCatalog, body: str) -> None:
+    """Each of these FAILS against the {0,2} catalog, which is what makes the widening
+    non-vacuous: at {0,2} they produce no row, so the verdict is `uncertain`, not `ineligible`."""
+    assert _verdict(catalog, body, NEW_GRAD) == "ineligible", body
+
+
+@pytest.mark.parametrize("body", FOUR_MODIFIER_BARS_INSIDE_THE_BAND)
+def test_a_four_modifier_bar_inside_the_near_miss_band_writes_a_row_and_abstains(
+    catalog: RulesCatalog, body: str
+) -> None:
+    """The recall fix and the near-miss band are separate claims, so they are asserted apart.
+
+    At {0,2} these wrote NOTHING, which is `uncertain` by silence -- indistinguishable from a JD
+    that states no bar. Now they write a row that resolves `unknown`, which is `uncertain` for a
+    stated REASON. Same verdict, completely different evidence chain, and only the second can be
+    reviewed.
+    """
+    result = evaluate(body, NEW_GRAD, BLOCKER_ALL, catalog)
+    rows = [i for i in result.requirements if (i.rule_id or "").startswith("experience_years:")]
+    assert rows, body
+    assert result.verdict != "ineligible", body
+
+
+@pytest.mark.parametrize("body", FOUR_MODIFIER_BARS)
+def test_the_same_bars_CLEAR_a_senior_profile(catalog: RulesCatalog, body: str) -> None:
+    """The multi-tenancy guard, restated for the wider window: a run that cannot clear anyone is
+    a blanket veto wearing a rule's name. Ten years in, none of these may reject."""
+    assert _verdict(catalog, body, SENIOR) != "ineligible", body
+
+
+def test_the_widening_does_not_reach_a_FIFTH_word(catalog: RulesCatalog) -> None:
+    """{0,3} is a measured stopping point, not a step toward {0,4} (D-447).
+
+    Each extra word is another clause boundary the run may cross. This pins the boundary so a
+    later widening is a deliberate act with its own span read, not a quiet increment.
+    """
+    assert _verdict(
+        catalog, "5+ years of one two three four five experience.", NEW_GRAD
+    ) != "ineligible"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # A CEILING, not a floor -- the `(?<!to\s)` guard, still holding at the wider window.
+        "Up to 3 years of professional software development lifecycle experience.",
+        # Company tenure. The subject suppressor must still win over four modifiers.
+        "Our engineering team has 25 years of full stack software engineering experience.",
+        "We bring 30 years of deep enterprise data platform experience to every engagement.",
+        # A stated PREFERENCE read as a hard floor is the worst verdict this family can produce.
+        "5+ years of full stack software engineering experience preferred.",
+        "Ideally 6+ years of Full Stack software engineering experience.",
+    ],
+)
+def test_the_wider_window_does_not_defeat_an_existing_guard(catalog: RulesCatalog, body: str) -> None:
+    """The widening adds reach, and reach is exactly what walks into a suppressor's blind spot.
+
+    These are the four guards `scoped_years_minimum` already carries -- the `to` lookbehind, the
+    company-side subject, the hedge vocabulary and the degree disjunction -- each re-asserted
+    with four modifiers in the span, because a guard verified at two words is not verified at
+    four.
+    """
+    assert _verdict(catalog, body, NEW_GRAD) != "ineligible", body
+
+
+# ---------------------------------------------------------------------------------------
+# The degree-vs-experience disjunction is INCONSISTENT ACROSS THE FAMILY — pinned, NOT fixed.
+#
+# `total_years_minimum` and `range_years_minimum` carry `degree_alternative_to_years`; the six
+# scoped/domain minimum patterns do not. So "a Bachelor's OR N years of X experience" ABSTAINS
+# when it lands on the total arm and REJECTS when it lands on a scoped one -- same sentence,
+# opposite outcome, decided by which pattern happened to match.
+#
+# NOT fixed here, and the reason is not effort. Wiring the escape to the other six was built and
+# measured: it moves 365 SWE+US postings from `ineligible` to `uncertain`. But `abstain_by` is
+# DOCUMENT-scoped -- the catalog's own comment says an escape "ELSEWHERE in the posting may
+# waive it" -- so wiring it means a JD stating "Bachelor's or 4 years" for its general bar also
+# waives a separate "8+ years of C++". Whether a disjunction reaches a SCOPED bar is a claim
+# about what the disjunction MEANS, not a consistency repair, and it is the owner's (row A8).
+#
+# The widening above does NOT extend it: measured, 0 of the 17 SWE+US postings this change
+# demotes carry a disjunction at all. The two were separable and the coupling was rhetorical.
+# ---------------------------------------------------------------------------------------
+
+#: Verbatim from the live store. Each clears on the DEGREE arm, so today's `ineligible` removes
+#: a job the owner can actually get -- and the reject pile is never inspected, so nothing
+#: downstream will ever contradict it. This test asserts the DEFECT so it stays visible.
+DEGREE_DISJUNCTIONS_ON_A_SCOPED_ARM = [
+    # Already broken at {0,2} -- this is the pre-existing defect, not something this change made.
+    "Bachelor's degree or 5+ years of software engineering experience.",
+    # And this one the widening DOES newly reach, which is stated rather than hidden: at {0,2} it
+    # wrote no row and read `uncertain` by silence; it now reads `ineligible` by a bar whose
+    # disjunction the scoped arm cannot see. Measured over the live store, ZERO of the 17 SWE+US
+    # postings this change demotes carry a disjunction, so the class is real and currently empty.
+    "Bachelor's degree or 5+ years of full stack software engineering experience.",
+]
+
+
+@pytest.mark.parametrize("body", DEGREE_DISJUNCTIONS_ON_A_SCOPED_ARM)
+def test_a_disjunction_on_a_SCOPED_arm_still_rejects_and_that_is_the_open_defect(
+    catalog: RulesCatalog, body: str
+) -> None:
+    """PINS A DEFECT, deliberately. If this starts failing, someone wired the escape to the
+    scoped patterns -- which is row A8 and the owner's call, not a green-tests decision."""
+    assert _verdict(catalog, body, NEW_GRAD) == "ineligible", body
+
+
+def test_the_SAME_sentence_on_the_TOTAL_arm_abstains(catalog: RulesCatalog) -> None:
+    """The asymmetry itself, in one assertion: identical semantics, opposite verdicts, and the
+    only difference is which pattern the phrasing happens to reach."""
+    assert _verdict(catalog, "Bachelor's degree or 5+ years of experience.", NEW_GRAD) != "ineligible"
+    assert _verdict(
+        catalog, "Bachelor's degree or 5+ years of software engineering experience.", NEW_GRAD
+    ) == "ineligible"

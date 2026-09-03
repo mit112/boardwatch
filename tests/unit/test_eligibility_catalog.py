@@ -152,8 +152,9 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # exposure to "Our engineers have 30 years ..." the moment it widens the twin's reach.
         "subject_suppressors": 25,
         # 7 on the degree family (degree_equivalence) + 2 on the experience family
-        # (degree_alternative_to_years on total_ and range_years_minimum, D-073): a
-        # degree-gated disjunctive alternative makes the years bar abstain, not resolve unmet.
+        # (degree_alternative_to_years, D-073): a degree-gated disjunctive alternative makes
+        # the years bar abstain, not resolve unmet.
+        #
         "abstain_by": 9,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
