@@ -205,8 +205,8 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 11093 | Session — 2026-09-02c · NO RUN: the hiring.cafe board sample is ADMITTED at 50 boards (watched 403 → 453), D-425's "471 boards" is corrected to 471 POSTINGS across 332 BOARDS, and `click.appcast.io` is refused as a resolver target at 1 of 40 |
 | METRICS.md | 11206 | Session — 2026-09-02d · NO RUN: the buried live requisition is fixed and measured at 1 job (not the 16 the handoff carried), LinkedIn gains a per-company axis whose planned shape is refuted at a 358-day rotation, and the `perf` CI bound is characterised as sitting inside a 0.92 s empty gap |
 | METRICS.md | 11276 | Session — 2026-09-03 · NO RUN: a blind two-judge audit measures the APPLY LANE at 32% UNAPPLYABLE — worse than the 24% on the `eligible` verdict, which is only 8% of what the owner sees — every miss is a MISSING REQUIREMENT ROW rather than a mis-decided rule, and the two pattern fixes that shipped move the measured rate by ZERO |
-| METRICS.md | 11498 | Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production |
-| METRICS.md | 11544 | Session — 2026-09-03b · RUN 146 is an ELIGIBILITY-ONLY pass that re-keys the whole corpus in 10 minutes (not the predicted hours), the `gh_jid` convergence item is REFUTED at 4 leads that are all ONE EMPLOYER TWICE, and the slate cap's three review findings are closed |
+| METRICS.md | 11569 | Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production |
+| METRICS.md | 11615 | Session — 2026-09-03b · RUN 146 is an ELIGIBILITY-ONLY pass that re-keys the whole corpus in 10 minutes (not the predicted hours), the `gh_jid` convergence item is REFUTED at 4 leads that are all ONE EMPLOYER TWICE, and the slate cap's three review findings are closed |
 
 ---
 
@@ -11395,7 +11395,9 @@ sponsorship frames, a structured field rendered as text, and a nationality gate 
 
 All eight patterns anchor on `\d{1,2}` adjacent to `years`. **477 open bodies carry markdown-escaped
 punctuation, 175 of them with a `\+ years` bar** (`3\+ years`, `5\-7 Years`, `non\-internship`).
-Owner-gated: un-escaping at ingest re-versions postings.
+Owner-gated: un-escaping at ingest re-versions postings. **Attributed and priced later the same
+session — see "The coverage gap, sized to the whole store" below and D-443: the escapes are ONE
+lane's, so the fix is one unescape at ingest rather than a body-normalisation layer.**
 
 ### Graduating-cohort gating — a blocker class with NO rule family
 
@@ -11494,6 +11496,75 @@ parenthetical). Diagnosed and NOT fixed: `US Citizens only (no dual citizenship)
 matches and a general negation-cue guard drops it because `no` appears in "no dual citizenship"; the
 fix is a document-level cue idiom that moves a catalog census, for one posting in 700.
 
+
+### The coverage gap, sized to the whole store — and one of the "safe" classes withdrawn (D-443)
+
+D-442 ended on "the underlying fix is EXTRACTION, not routing" and left it unsized. Sizing started
+from the four classes of requirement language the catalog was missing on the 487 zero-row apply-lane
+leads. Two were written up in this session as **safe to fix**. Re-measured against the whole live
+store, **only one survives, and it turned out not to be a catalog problem at all.**
+
+**Escapes are ONE LANE's, at 29.2%, and every other provider is at zero.** Over all 138,677 open
+postings' current bodies:
+
+| provider | bodies | any `\` escape | escaped years bar |
+|---|---:|---:|---:|
+| **jobapps** | 1,620 | **473 (29.2%)** | **175** |
+| workday | 96,816 | 6 (0.0%) | 0 |
+| greenhouse | 22,082 | 2 (0.0%) | 0 |
+| all nine other providers | 18,159 | **0 (0.0%)** | 0 |
+
+boardwatch does not create them: the lane reads job-apps' own `job_description.txt`, escaped at the
+source. **This is the same defect "`experience_years` is a BODY-NORMALISATION defect" above sized at
+477 bodies / 175 bars and left owner-gated; the counts agree (478/175) and what is added here is the
+ATTRIBUTION and the verdict-level price, not a second finding.** So the fix is **one unescape at
+ingest**, which repairs every family at once, not ten
+regexes taught to tolerate a backslash. Measured through the **real engine** over the 478 affected
+bodies: 189 row counts change, **132 go from ZERO rows to some rows**, and **83 verdicts move** — 70
+`uncertain`→`ineligible`, 7 `eligible`→`uncertain`, 4 `eligible`→`ineligible`, 1 each the other way.
+**11 leads leave `eligible`.** Nine of the new rows are `work_auth:no_sponsorship_offered unmet`:
+**sponsorship refusals that were unreadable**, not merely years bars.
+
+**THE PARENTHESISED-DIGIT CLASS IS WITHDRAWN, AND THIS CORRECTS THIS SESSION'S OWN WRITE-UP.**
+Scoped to the 487-lead sample it looked clean at 9 distinct sentences. Over the whole store the form
+appears in **2,065 bodies across 1,006 distinct sentences**, and the top of that list is
+`no convictions for DUI, DWI, OUI within the last five (5) years` (113), `College degree or two (2)
+or more years of leadership experience` (58), `Four (4) year undergraduate degree` and `Two (2) year
+Associate degree`. **A class read as safe on a filtered sample was not safe on the population** —
+the same error shape as D-436's, where fix targets were chosen from a sample drawn before the
+population was corrected. The lesson is not "read the sentences"; it is **read them at the scale the
+change will run at.**
+
+**Spelled-out numerals and citizenship stay refused**, on the sentences rather than the counts:
+`every two years thereafter` (a background-check cadence), `For the past seven years we've been
+growing` (company history), `at least every five years` (EEO boilerplate), and **`Up to three years
+of professional software development experience` — a CEILING, which a minimum-bar pattern would
+invert**; `Citizens, Green Card Holders, EAD Holders, and H-1B transfer candidates are...` is
+INCLUSIVE of this owner and `Green Card Assistance` is a benefit.
+
+**Unescaping is NECESSARY, NOT SUFFICIENT, and that is pinned rather than assumed.** The most common
+escaped form on the lane — `3+ years of non-internship professional software development experience`
+— stays silent even unescaped, because no catalog arm allows four modifiers between `of` and
+`experience`. A test asserts it is still silent, so the residual cannot be read as closed.
+
+**EVERY MOVE IN THE RISKY DIRECTION WAS READ, NOT SAMPLED.** `ineligible` removes a job from view
+and the reject pile is never inspected, so the 83 moved verdicts were dumped with the JD span each
+new row quotes:
+
+| move | n | what the employer actually wrote |
+|---|---:|---|
+| `uncertain` → `ineligible` | 70 | `7+ years of Software Development Engineering experience`, `6-10 years' experience in`, `5+ years in program management`, and `does not provide immigration-related sponsorship` |
+| `eligible` → `ineligible` | 4 | `7+ years of experience in`, `5+ years of full-cycle B2B closing experience` (a sales role), `4+ years' in QA domain`, `5+ years' Software Engineering experience` |
+| `eligible` → `uncertain` | 7 | 2-3 year bars landing in the near-miss band — `2+ years of non-internship design or architecture`, `2-4 years' experience` — held for review, not rejected |
+| `ineligible` → `uncertain` | 1 | `1+ year of experience with` — newly readable, and the band abstains rather than rejects. **The safe direction** |
+| **`uncertain` → `eligible`** | **1** | **`0-3 years of total professional experience`** — read in full: a genuine new-grad bar resolving `met` against a one-year profile, on a body that produced ZERO rows while escaped |
+
+**The only promotion is correct and was verified end to end**, which matters because it is the one
+direction where a wrong answer ships a bad lead rather than withholding a good one.
+
+**Two mutations confirm the tests are not vacuous** (the first attempt mutated nothing and passed —
+that run is the no-op control): dropping the unescape call fails the end-to-end lane test; widening
+the escape set from ASCII punctuation to `.` fails all four `\uXXXX`/`\n`/`\t`/Windows-path guards.
 
 ## Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production
 

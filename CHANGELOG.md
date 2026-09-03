@@ -313,6 +313,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Job descriptions that arrived through the job-apps lane were being read with their punctuation
+  escaped, and the eligibility rules could not see through it.** A requirement written
+  `3\+ years of experience` is indistinguishable from `3+ years of experience` to a person and
+  invisible to the rules, so those postings came out carrying **no requirements at all** — which
+  reads as "nothing to check" and sends them straight to your apply folder.
+
+  This affected **473 of the 1,620 postings that lane brings in (29.2%)**; every other source was
+  unaffected. Removing the escapes as the body is read gives **132 postings their first requirement
+  of any kind** and changes **83 verdicts** — including **11 that were being shown as eligible and
+  are not**, and nine sponsorship refusals that had been unreadable.
+
+  Two limits worth stating. `\uXXXX` sequences in the same files are a different, unfixed problem
+  and are deliberately left alone, because "fixing" them would put literal text like `u00e9` into
+  the job description. And this does not close the coverage gap on its own: the most common phrasing
+  on that lane still produces no requirement even once unescaped.
+
+
 - **Reporting a job took it off the review page but left it sitting in your apply folder.** The
   Report action records that a job was marked eligible by mistake and hides it from the web queue —
   but its folder stayed at the top level of the queue directory, so the job you had just reported
