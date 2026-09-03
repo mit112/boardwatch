@@ -223,6 +223,14 @@ run that delivers nothing would silently present an older run as current.
 into 100 multi-posting job groups. `applications` keys on `job_id`, so a posting whose sibling was
 applied to must not reappear. One queue entry per job, showing the most recently delivered posting.
 
+> **Departure, ruled 2026-09-02 (D-432).** "The most recently delivered posting" is no longer the
+> whole rule, and the sentence above is kept as written so the departure is visible rather than
+> silently overwritten. The winner is now the job's **LIVE** posting where it has one; delivery
+> recency decides only between equally live ones. As written, a dead lane copy tailored after the
+> employer's own live requisition decided the whole job, so `closed_job_ids` reported the JOB
+> closed and a live requisition was filed under `_closed`, which offers nothing again — measured on
+> the live store as one job, eBay 35249. Both liveness ties behave exactly as this paragraph says.
+
 **Measured scale, which the design must survive on day one:** 656 tailored résumés exist across 547
 distinct postings, and `applications` has **zero rows, ever**. So the first sync produces a queue of
 roughly 540 entries, not ten — fewer once the unwatched board's nine drain out. It grows by about

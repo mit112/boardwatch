@@ -25,13 +25,21 @@ It never sets `fatal`. The run succeeded and the leads it produced are real — 
 `_review`, reviewable and not lost — so this tickets, it does not trip the dead-man's switch.
 
 **Known property, and its direction is abstain rather than alarm.** `delivered_unapplied` returns
-one row per canonical JOB at its MOST RECENT delivery, so a job an older run in the window
-delivered and a newer run re-delivered is attributed to the newer run alone. An older run can
-therefore read zero placeable leads because its work was re-delivered, not because it delivered
-nothing — and this detector then abstains on that window. That is a false NEGATIVE, never a false
-positive, which is the right direction for an alarm nobody is present to dismiss. It is also rare
-in practice: delivery is recency-dominated and runs 120-130 shipped 100% same-day postings, so
-consecutive runs re-delivering one job is not the normal shape.
+one row per canonical JOB, and attribution follows whichever of the job's postings that read
+offers, so a job two runs in the window both delivered is credited to exactly one of them. An
+older run can therefore read zero placeable leads because its work is credited elsewhere, not
+because it delivered nothing — and this detector then abstains on that window. That is a false
+NEGATIVE, never a false positive, which is the right direction for an alarm nobody is present to
+dismiss.
+
+**The selection rule changed under this paragraph and the old wording is kept out deliberately.**
+It said the winner was "the MOST RECENT delivery" and bounded the effect with "delivery is
+recency-dominated". Since D-432 the winner is the job's LIVE posting, and recency only breaks a
+tie between equally live ones — so a job whose live posting was delivered at run 73 is credited to
+run 73 however many later runs re-deliver a closed sibling, and a recency argument no longer bounds
+anything. The detector's DIRECTION is unchanged and no run loses credit it previously had: a closed
+winner was already excluded here by `row.closed`, so the only movement is an older run gaining
+credit it should always have had.
 
 **Why a count and not a rate.** `corpus_regression` deliberately uses a rate because an identity
 re-key legitimately drops its count by 96% on a clean run. This detector is immune to that

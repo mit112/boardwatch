@@ -36,7 +36,12 @@ from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store import delivery_queries
 from boardwatch.store.applications import create_application
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.delivery_queries import RequirementView, delivered_unapplied, queue_detail
+from boardwatch.store.delivery_queries import (
+    RequirementView,
+    closed_job_ids,
+    delivered_unapplied,
+    queue_detail,
+)
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
@@ -245,6 +250,67 @@ def test_two_postings_of_one_job_collapse_to_the_most_recent_delivery(engine: En
         rows = delivered_unapplied(conn, skipped=set())
     assert [(row.posting_id, row.job_id) for row in rows] == [(newer, job)]
     assert older not in {row.posting_id for row in rows}
+
+
+@pytest.mark.parametrize(
+    ("watched", "expected_status"),
+    [(True, "open"), (False, "unverifiable")],
+    ids=["open", "unverifiable"],
+)
+def test_a_live_posting_outranks_a_later_delivered_closed_sibling(
+    engine: Engine, watched: bool, expected_status: str
+) -> None:
+    """Liveness decides a canonical job's offered posting; delivery recency only breaks its ties.
+
+    The failure this pins is a measured lost delivery, not a hypothetical: eBay job 35249 held an
+    open Workday requisition delivered at run 73 and a dead lane copy of the same job delivered at
+    run 137. Recency alone handed the job to the dead copy, `closed_job_ids` therefore reported
+    the JOB closed, and `reconcile_queue` filed a live lead under `_closed`, where nothing offers
+    it again.
+
+    A one-posting-per-job fixture cannot reach this, which is the same premise-bounding that let
+    D-430's conflict survive five runs — the sibling is the whole mechanism.
+
+    The `unverifiable` arm is not decoration, and it is the only thing that catches the inverted
+    predicate: a rule asking `!= "open"` of the rendered status passes the first arm and then
+    buries a posting on a board nothing enumerates, which is live work held back by a fault that
+    is entirely ours (D-324). Confirmed by mutation, both ways round.
+    """
+    with engine.begin() as conn:
+        live, job = _deliver(
+            conn, "live", delivered_at=NOW - timedelta(days=2), watched=watched
+        )
+        dead, _ = _deliver(conn, "dead", job_id=job, status="closed", delivered_at=NOW)
+    with engine.connect() as conn:
+        rows = delivered_unapplied(conn, skipped=set())
+        closed = closed_job_ids(conn)
+    assert [(row.posting_id, row.status) for row in rows] == [(live, expected_status)]
+    assert dead not in {row.posting_id for row in rows}
+    assert not rows[0].closed
+    assert job not in closed
+
+
+def test_a_job_whose_delivered_postings_are_all_closed_is_still_reported_closed(
+    engine: Engine,
+) -> None:
+    """The control for the test above, and it fails against two different wrong rules.
+
+    Without it, `job not in closed_job_ids` there is satisfied by a `closed_job_ids` that reports
+    nothing at all. And `[(live, ...)]` there is satisfied by a rule that simply prefers the
+    OLDEST delivery — which this one catches, because with no live posting to prefer the winner
+    must still be the most recently delivered.
+    """
+    with engine.begin() as conn:
+        older, job = _deliver(
+            conn, "older", status="closed", delivered_at=NOW - timedelta(days=2)
+        )
+        newer, _ = _deliver(conn, "newer", job_id=job, status="closed", delivered_at=NOW)
+    with engine.connect() as conn:
+        rows = delivered_unapplied(conn, skipped=set())
+        closed = closed_job_ids(conn)
+    assert [row.posting_id for row in rows] == [newer]
+    assert older not in {row.posting_id for row in rows}
+    assert closed == {job}
 
 
 def test_an_applied_job_removes_every_sibling_posting(engine: Engine) -> None:

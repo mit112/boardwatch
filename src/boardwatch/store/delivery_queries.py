@@ -25,8 +25,8 @@ faked with a default instead:
 
 **Deduplication is by canonical job, not by posting** (design §6.1). Measured on the live store: 227
 postings fall into 100 multi-posting job groups, and `applications` keys on `job_id`, so a posting
-whose sibling was applied to must not reappear. One entry per job, showing the most recently
-delivered posting.
+whose sibling was applied to must not reappear. One entry per job, showing its LIVE posting where
+the job has one and the most recently delivered posting otherwise (`_supersedes`).
 
 **No `IN (...)` list is ever built over the corpus.** The delivered set is reached by a JOIN from
 `artifacts` (656 rows) outward, never by collecting 48,000+ open posting ids and binding them — the
@@ -231,6 +231,46 @@ def _status(status: object, watched: object) -> str:
     return STATUS_UNVERIFIABLE if str(status) == "open" and not watched else str(status)
 
 
+def _supersedes(row: Row[Any], incumbent: Row[Any]) -> bool:
+    """Whether `row` replaces `incumbent` as its canonical job's one offered posting.
+
+    **Liveness first; delivery recency only breaks its ties** (D-432). Rows arrive ascending by
+    delivery, so plain assignment means "the last one wins", and that was the rule until it cost a
+    delivery: eBay job 35249 held an open Workday requisition delivered at run 73 and a dead lane
+    copy of the same job delivered at run 137. The dead copy won on recency, so `closed_job_ids`
+    reported the JOB closed and `reconcile_queue` filed a live lead under `_closed`, which offers
+    nothing again. Measured 2026-09-02, joined through the delivered artifacts: one job.
+
+    **The question is "is this posting CLOSED?", never "is it not open?"** — the two differ on
+    `STATUS_UNVERIFIABLE`, and a posting on a board nothing enumerates is live work held back by a
+    fault that is entirely ours (D-324), so preferring a genuinely dead sibling over it would bury
+    the very lead this rule exists to surface. The `unverifiable` arm of the pin catches the
+    inverted form. Reading `_status` rather than `postings.status` is not what defends that,
+    and cannot be: `_status` passes `closed` through untouched, so the two spellings are
+    indistinguishable by any test. It is here to stay in step with the one derivation if a fourth
+    rendered status is ever added.
+
+    Both liveness ties — all live, all closed — fall through to recency unchanged, so this narrows
+    today's behaviour to the one case that was wrong rather than replacing it.
+
+    **THE INVERSE TRAP THIS CREATES, NAMED AND BOUNDED RATHER THAN LEFT TO BE FOUND.** Nothing can
+    ever close an `unverifiable` posting: `_process_missing` writes `closed` only off a `complete`
+    snapshot of a watched board. So a job holding BOTH an unverifiable posting and a genuinely
+    closed one is now held in the queue permanently, where recency used to drain it whenever the
+    closed sibling happened to be the later delivery. Measured on the live store 2026-09-02:
+    **2** jobs hold both a live and a closed delivered posting and **both** live sides are a
+    genuine `open`, so the trap's population is **0** today.
+
+    Accepted deliberately, and the direction is the one this file already takes everywhere else: a
+    dead requisition left in the queue costs the owner one click, while a live requisition filed
+    under `_closed` is an application never sent. Fail-open is the correct side of THIS gate even
+    though it is the wrong side of others.
+    """
+    if _status(row.status, row.watched) != STATUS_CLOSED:
+        return True
+    return _status(incumbent.status, incumbent.watched) == STATUS_CLOSED
+
+
 def _queue_row(
     row: Row[Any],
     *,
@@ -413,11 +453,16 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     excluded by an application nor marked applied, so it would sit in the queue forever. The
     `postings_job_required_*` triggers make that unreachable for any row the scanner wrote.
 
+    Which of a job's postings is shown is `_supersedes`: a live one, and the most recently
+    delivered only among equally live ones. That choice decides the job's `closed` and `verdict`
+    for every derived reader below, so it is not a display detail.
+
     Ordered most recently delivered first. Callers that want it ranked re-rank it; the store does
     not recompute a score (design §6.2 — score and coverage are recomputed live, never persisted).
     """
     applied = applied_job_ids(conn)
-    # Ascending, so the LAST row written into `winners` for a job is its most recent delivery.
+    # Ascending, so `_supersedes` reads a later delivery as the incumbent's challenger and its
+    # liveness tie falls through to the most recent one.
     rows = conn.execute(
         _delivered_select().order_by(artifacts.c.created_at, artifacts.c.id)
     ).all()
@@ -428,7 +473,9 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
         job_id = int(row.job_id)
         if job_id in applied or job_id in skipped:
             continue
-        winners[job_id] = row
+        incumbent = winners.get(job_id)
+        if incumbent is None or _supersedes(row, incumbent):
+            winners[job_id] = row
 
     ordered = sorted(
         winners.values(), key=lambda row: (row.delivered_at, int(row.artifact_id)), reverse=True
