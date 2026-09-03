@@ -49,40 +49,13 @@ measured THE PROBE, not the host. Extracting the JS target: **40 of 40, 0 errors
 (CVS 26, Cox 9) on the **same unsupported-adapter tail D-422 and D-425 already named** — a third
 instrument naming one missing adapter class. **Do not build an appcast resolver.**
 
-**4. DISK RECLAIMED: 5.2 GB free at 98% → 11 GB at 95%.** The 5.52 GB
-`boardwatch.db.bak-pretierA-*` was deleted on the owner's call. It was frozen at **run 143**, so
-restoring it would have discarded run 144's harvest — it was never a usable rollback target. The
-CSVs are the artifacts that actually reverse an admission.
+**4. DISK RECLAIMED: 5.2 GB free at 98% → 11 GB at 95%** — the 5.52 GB pre-tier-A store
+backup was deleted on the owner's call; it was frozen at run 143, so restoring it would have
+discarded run 144's harvest. The CSVs are the artifacts that reverse an admission, not a DB copy.
 
 **5. THE PEER'S WORK LANDED.** `boardwatch-d3` shipped the review app's Report action and D-427 in
-`08d7b957` (its gate green, 9,188 passed, 95.52%). CI on the combined main `27a23a6a` came back
-GREEN. The two sessions serialised their DECISIONS/index writes by message rather than colliding.
-
-### Session 2026-09-02b (condensed — full detail in D-423/425/426 and METRICS run 144)
-
-**All four items are CLOSED and none needs re-deriving.**
-
-1. **D-423's ONE-TIME HARVEST RAN** (run 144, 21m54s, exit 0): `jobapps` 432 → **1,789 attempted**,
-   237 → **1,778 resolved**; honest yield **1,495 new postings**; companies 1,364 → 2,122.
-   **Both temporary levers reverted and verified two ways** (clean tree; `config.toml` byte-identical
-   to its pre-harvest backup). **The backlog is drained — do not harvest again.**
-2. **THE SEED DRAIN IS CONFIRMED end to end** — 37 attempted / 22 resolved, and **10 of the 37 were
-   discovered by `indeed` and drained by `jsonld`**, the first production evidence of D-416's
-   cross-lane handoff. D-422's open question is CLOSED. Do not re-investigate.
-3. **HIRING.CAFE'S 17% IS A BOARD-FLEET GAP, NOT A LANE DEFECT (D-425).** Of 1,634 absent: 1,123
-   (68.7%) hosts with no adapter, 377 (23.1%) supported provider / employer never seen, 94
-   known-unwatched, **only 39 (2.4%) on a watched board**. Do not re-derive the decomposition.
-4. **`boardwatch seeds` SHIPPED (D-426).** 909 of 1,001 unresolved seeds (90.8%) across 249 hosts
-   are claimed by nothing. Largest: `click.appcast.io` 144 (**now refused, see above**),
-   `grnh.se` 122, `indeed.com` 68 (circular).
-
-**THE GATE WAS GREEN ON A BROKEN CUT, TWICE (D-426).** Two `/code-review` rounds found **eleven**
-findings a green gate passed, on code that was ALREADY mutation-pinned — a metric printing
-`claimable -3 (133.3%)` under a concurrent write, a report counting REGISTERED rather than ENABLED
-resolvers, a leak metric drifting toward "healthy" as the leak grew, and a tracked stray database no
-gate can see. Three of the first round's six sat where a test file was MISSING while coverage read
-95%. **Mutation-pinning proves the tests catch the bugs you imagined, and nothing more. Route
-consequential changes through a review as well as the gate.**
+`08d7b957`; CI on the combined main is green. The two sessions serialised their DECISIONS/index
+writes by message rather than colliding.
 
 **6. THE `grnh.se` RESOLVER IS BUILT AND SHIPPED, AND DELIBERATELY NOT ARMED (D-429).**
 `boardwatch companies discover-grnh` follows each stored short link to the board behind it and
@@ -110,7 +83,29 @@ seed in NO bucket, and a dedupe test with **no negative control**. A second muta
 a tenth. **A mutation campaign only tests the bugs you already imagined** — three findings sat where
 no mutation could reach.
 
+**9. THE LINKEDIN RESIDUAL IS PLANNED AND JOBSPY IS REFUSED (D-431).** The owner asked whether to
+adopt JobSpy. **It calls the SAME guest endpoint `lanes/linkedin.py` already calls** — no capability
+boardwatch lacks, only a Chrome UA and more query cells, at the price of `tls-client`+`numpy`+
+`pandas`. D-414 refused it once already on the same grounds. **D-417's "these employers have no ATS
+board" is REFUTED at scale**: n=77 read 74% not-in-store, the full 5,876-posting set reads **48.3%**,
+led by Raytheon/Netflix/Perplexity/Upstart — a **discovery** gap, not an architecture limit. Also:
+a "known" employer is usually a lane PLACEHOLDER (`linkedin:google`), so board admission reaches
+**6.5%, not 45.9%**. **The next session builds from `LINKEDIN-CLOSURE-PLAN.md`.**
+
 ## Next action
+
+**0. BUILD TRACK 2 OF `LINKEDIN-CLOSURE-PLAN.md` — per-company LinkedIn query cells.** LinkedIn is
+the ENTIRE retirement residual (D-424): every other source is solved or self-solving, and Indeed is
+**0 absent / 6,740 lane-only**, which converts with no new work. Track 2 targets the **3,037 absent
+postings (51.7%)** at employers boardwatch already knows by name. **It needs NO new URL shape** —
+the guest endpoint already takes `keywords=`, so a company cell is a composed facet string: add a
+`hub_nets` sibling in `lanes/facets.py` and append its cells to `search_facets` in `_linkedin_lane`.
+Seed from the store, watched first. **Facets come from the PROFILE and the STORE, never the module** (multi-tenancy).
+**Size it against `lane_posting_budget = 300` and the measured 2.39 s/body, not against the company
+count** — new cells must not starve the hub nets that already work.
+**Falsifiable first gate: the 342 ALREADY-WATCHED misses.** Nothing but query coverage can explain
+them, so if they do not move, Track 2 did not work. **Do NOT raise the company cap** (D-417: 10 → 50
+bought +1 posting). **Do NOT re-propose JobSpy** (D-431).
 
 **1. READ THE 50-BOARD SAMPLE'S YIELD OVER RUNS 145-147, THEN DECIDE THE REMAINING 282.** The
 sample is ADMITTED and armed (D-428; watched 403 → 453). **This is the only thing runs 145-147 are
@@ -130,7 +125,14 @@ min/run forever, and arming before the sample is read makes the two yields insep
 the four inputs have moved: the harvest is in, Indeed is armed and uncapped at 50, hiring.cafe is
 diagnosed. **The residual is LinkedIn alone**, and that is a judgment about a population.
 
-**4. SET PER-SOURCE THRESHOLDS** (owner). The instrument exists and has two readings; the bar does not.
+**4. SET PER-SOURCE THRESHOLDS** (owner). **Framing DECIDED 2026-09-02: option D then C** —
+decompose LinkedIn first (**done**, D-431), then set the bar on `lane-only` exposure rather than on
+recall, because a recall bar would score boardwatch against a population it structurally does not
+serve. The numeric level is still the owner's.
+
+**5. TRACK 1 — admit the 92 already-admissible LinkedIn boards** (382 postings, ~4.9 min/run,
+no new code). **Owner's call, and it COMPETES with the hiring.cafe sample's window**: landing both
+inside runs 145-147 makes neither yield separable, which is why "both levers" was rejected.
 
 *(Closed since the last close: the board-admission call — TAKEN and applied, D-428.
 `click.appcast.io` — PROBED and REFUSED at 1 of 40; **do not build an appcast resolver**.)*

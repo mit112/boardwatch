@@ -11157,6 +11157,40 @@ duplicate counter on the 404 path was itself uncovered). Final campaigns: **8 of
 on the resolver, **2 of 3** on the queue fix — the third proved its own branch unnecessary, and that
 branch was deleted rather than pinned.
 
+### LinkedIn — the retirement residual, decomposed (D-431)
+
+Instrument: `.agent/2026-09-02c-session/linkedin_reach.py`, read-only. Window 2026-08-20..2026-09-02.
+
+**Per-source status, same window, same instrument family:**
+
+| source | job-apps found | independent | lane-only | absent |
+|---|---:|---:|---:|---:|
+| **linkedin** | 10,127 | 3,329 (32.9%) | **922 (9.1%)** | **5,876 (58.0%)** |
+| **indeed** | 7,746 | 1,006 (13.0%) | **6,740 (87.0%)** | **0 (0.0%)** |
+
+**Indeed is 0 absent** — boardwatch already holds everything job-apps finds there; those 6,740
+convert from lane-only to independent as the native lane reaches steady state, with **no new work**.
+That is why LinkedIn is the whole residual.
+
+**LinkedIn's 5,876 absent, by whether the EMPLOYER is reachable at all:**
+
+| bucket | postings | share | employers |
+|---|---:|---:|---:|
+| employer not in the store at all | 2,839 | **48.3%** | 1,730 |
+| known, but only a LANE PLACEHOLDER row (no board) | 2,313 | 39.4% | 349 |
+| known + real ATS row → **admissible today** | 382 | 6.5% | 92 |
+| **already watched — a pure COVERAGE miss** | **342** | 5.8% | 65 |
+
+**D-417's n=77 read 74% not-in-store; the full population reads 48.3%**, and that bucket is led by
+Raytheon, Netflix, Perplexity, Weights & Biases, Upstart, Illumio, NinjaOne, U.S. Bank — employers
+that plainly do have ATS boards. **A discovery gap, not an architecture limit.**
+
+**JobSpy viability probe (2026-09-02, two queries, deliberately small):** 25/25 rows carried a
+description both times; description length median **5,771** and **5,121** chars; **28 s per
+25-posting query with bodies**; every `job_url` a `www.linkedin.com` permalink. The endpoint works —
+**and it is the same guest endpoint `lanes/linkedin.py:98` already calls**, which is why D-431
+refuses the dependency.
+
 ### Disk — reclaimed
 
 **5.2 GB free at 98% → 11 GB free at 95%.** `boardwatch.db.bak-pretierA-20260902-153250` (5.52 GB)
