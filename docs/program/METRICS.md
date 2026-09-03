@@ -11593,6 +11593,16 @@ merges.
 **Standing duplicates re-measured (D-446):** **53 exact-key groups, 89 redundant leads**, up from
 49/84 one day earlier. Sizes 37×2, 7×3, 5×4, 1×5, 2×6, **1×10**. 142 distinct job ids across them.
 
+**A third extraction mechanism, found and REFUSED on its own size.** Splitter fidelity first, over
+400 bodies: engine and a punctuation splitter agree **302**, disagree **4**, engine-only **0** — so
+the splitter is faithful and the disagreements are real. Three of the four are **a negation cue
+firing on a clause that STRENGTHENS the bar** (`does not include internships or co-ops`, `not
+solely projects or tech leadership`, `rather than one stage of a large team`); each goes **0 → 1
+detection** when only the cue clause is removed. Sized over 900 bodies: **72 (8.0%) carry such a
+phrase, 3 (0.33%) gain a detection.** **Not fixed** — an idiom entry blinds both cue searches, and
+`rather than` is a listed cue because *"X rather than Y"* is a real polarity flip. Full reasoning in
+`STANDING-FACTS.md`.
+
 **Catalog probe, negative and worth one line:** all 7 families check out — every pattern's `implies`
 is in its family's `implies_vocabulary`, and no vocabulary entry is never-implied. Ungrouped
 `implies` values exist and are correct, not a fork: grouping exists only where values conflict or

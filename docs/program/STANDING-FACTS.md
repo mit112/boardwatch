@@ -527,6 +527,65 @@ current** — D-391 is the reason. Still live, and stated where they belong: eve
 drain designed in the same change; a cap never observed firing is unverified; the keystone invariant
 is untouched.
 
+### Negation over-reach on strengthening clauses — REAL, MEASURED at 0.33%, and deliberately NOT fixed
+
+A third way a years bar goes unread, distinct from D-443's escaping and D-447's modifier window:
+**a `negation_cues` member occurring in the unit outside the matched span, in a clause that
+STRENGTHENS or scopes the requirement rather than negating it.** Confirmed by removing only the
+cue clause and re-running `detect()`:
+
+| as written | cue removed | the cue |
+|---|---|---|
+| `2–12+ years of industry software engineering experience (does not include internships or co-ops)` | **0 → 1** `scoped_range_years_minimum` | `not` |
+| `8+ years in … data engineering, including 2+ years directly managing engineers (not solely projects or tech leadership).` | **0 → 1** `domain_years_minimum` | `not` |
+| `5+ years in applied machine learning … end to end rather than one stage of a large team.` | **0 → 1** `domain_years_minimum` | `rather than` |
+
+`does not include internships or co-ops` makes the bar HARDER and deletes it instead. The harm is
+in the hiding direction — the bar goes unread, the lead lands `uncertain` with zero requirement
+rows, which is **D-442's symptom from a third direction**, invisible to the abstain report for the
+same reason the other two are.
+
+**Sized before proposing anything, and the size is what decides it.** Over 900 bodies: **72 (8.0%)
+carry one of the candidate phrases, and only 3 (0.33%) gain a detection when it is removed.** So
+the existing rule is well scoped 69 times out of 72 — the cue usually sits in a different unit and
+the detection survives.
+
+**DO NOT add these to `negation_cue_idioms`.** An idiom makes the cue invisible to BOTH cue
+searches, so a genuine negation spelled the same way is then missed — and `rather than` is a listed
+cue precisely because *"we want X rather than Y"* is a real polarity flip. **Widening polarity is
+the fail-dangerous direction**: the failure mode is reading "you must NOT have X" as a requirement
+to have it. A 0.33% recall gain does not buy that risk. Recorded so the mechanism is never
+re-derived, and so the next session does not mistake "small" for "unknown".
+
+Splitter fidelity was established first, because the whole finding rests on it: over 400 bodies,
+engine and a punctuation splitter agree **302** times, disagree **4**, and the engine finds
+something the splitter misses **0** times.
+
+### A control can be mis-specified in the SCOPE it asserts over — and then it fails in BOTH directions
+
+The four instances above are all a *sample* being wrong while the test was fine. This is the other
+kind, and it is worse because nothing about it looks like a test problem.
+
+A peer session, wiring `degree_alternative_to_years` onto the six scoped/domain patterns that
+lacked it, wrote a control asserting that **every sentence released from `ineligible` must contain
+a degree token.** It failed — `4 years of experience developing` (×54), `8+ years of programming
+experience`, `4+ years C++ experience`, no degree anywhere. The first reading was "the wiring
+over-reaches".
+
+**The wiring was correct and the control was measuring nothing.** `abstain_by` is
+**document-scoped** by design — the catalog's own comment says an abstain escape *elsewhere in the
+posting* may waive it — so the disjunction sits somewhere other than the waived sentence, and
+checking that sentence for a degree token cannot ever find it.
+
+**The same broken assertion had already nearly passed a change on false evidence and then nearly
+rejected it on false evidence.** A control asserting the wrong scope is not conservative in either
+direction; it is noise that happens to look like signal twice.
+
+**How to apply:** when a guard asserts a property of a *thing*, state the scope the engine actually
+evaluates that property over, and check the guard reads at that scope. Document-scoped waiving,
+unit-scoped negation cues and sentence-scoped patterns are three different scopes in this one
+subsystem, and a guard written at the wrong one returns confident nonsense.
+
 ### A sample selected by the thing you are measuring cannot measure it — four instances, and the fourth broke the circle from INSIDE the change
 
 The same error four times in two days, each time producing a number that was true about the sample
