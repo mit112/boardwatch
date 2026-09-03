@@ -612,10 +612,13 @@ def test_a_partly_refused_run_tallies_only_the_admitted_company(tmp_path):
 _ESCAPED_BAR = r"3\+ years of experience in software engineering or a relevant field."
 _PLAIN_BAR = "3+ years of experience in software engineering or a relevant field."
 
-# The most common escaped form on this lane, and it stays SILENT even unescaped: the catalog
-# has no arm for four modifiers between `of` and `experience`. Pinned so the residual is
-# visible rather than assumed fixed by D-443 -- unescaping is necessary here, not sufficient.
-_STILL_UNCOVERED = "3+ years of non-internship professional software development experience"
+# The most common escaped form on this lane. It was SILENT even unescaped when D-443 shipped --
+# no arm allowed four modifiers between `of` and `experience` -- and D-447 widened
+# `scoped_years_minimum`'s arbitrary-word run to {0,3} on a measured span read, closing it.
+# Kept rather than deleted: this assertion is what made the residual VISIBLE, and it now pins
+# the JOIN of the two changes. Neither alone reads this bar -- the widening never sees it while
+# the escape hides it, and the unescape cannot parse it while the window is {0,2}.
+_WAS_UNCOVERED_UNTIL_D445 = "3+ years of non-internship professional software development experience"
 
 
 @pytest.mark.parametrize(
@@ -676,9 +679,12 @@ def test_the_escaped_years_bar_writes_NO_requirement_row_and_the_plain_one_does(
     assert years(_ESCAPED_BAR) == [], "the escaped bar must be what the catalog cannot see"
     assert years(_PLAIN_BAR), "and the plain bar must be what it can"
     assert years(unescape_markdown(_ESCAPED_BAR)) == years(_PLAIN_BAR)
-    assert years(_STILL_UNCOVERED) == [], (
-        "unescaping is necessary but NOT sufficient -- this form needs a catalog arm, and "
-        "pinning it here keeps the residual from being read as closed"
+    assert years(_WAS_UNCOVERED_UNTIL_D445), (
+        "D-447 widened the scoped run to {0,3}, so this lane's single most common bar is now "
+        "read -- if this is empty the window regressed and D-443's unescape stops paying here"
+    )
+    assert years(r"3\+ years of non\-internship professional software development experience") == [], (
+        "and it is still invisible while ESCAPED, which is the join the two changes make"
     )
 
 
