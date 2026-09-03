@@ -79,6 +79,13 @@ NOW = datetime(2026, 8, 26, 12, 0, 0)
 JD_ELIGIBLE = "Bachelor's degree preferred. We build lovely software in Python."
 JD_UNCERTAIN = "We build lovely software."
 JD_INELIGIBLE = "Applicants must be authorized to work in the United States."
+#: An `uncertain` verdict that still reaches the APPLY lane, which `JD_UNCERTAIN` no longer does:
+#: it carries a requirement row, so A3's zero-row hold does not fire, and the abstaining family is
+#: `student_status` — a blocker (hence `uncertain`) that is neither a hard family nor
+#: `experience_years`, so neither of the two older requirement holds fires either.
+JD_UNCERTAIN_STATED = (
+    "Candidates must be currently enrolled in a degree program. We build lovely software."
+)
 #: The one facts/policy pair in this file that can yield `ineligible` at all: every family ships
 #: `default_policy: preference`, and only a `blocker` family can produce that verdict (D-319).
 BLOCKING_FACTS = Facts(
@@ -226,8 +233,20 @@ def _deliver(
     title: str = "Software Engineer",
     watched: bool = True,
     locations: list[str] | None = None,
+    judge: bool = True,
+    facts: Facts | None = None,
+    policy: Policy | None = None,
 ) -> tuple[int, int]:
-    """One delivered lead: company, job, posting, frozen version, tailored artifact."""
+    """One delivered lead: company, job, posting, frozen version, tailored artifact.
+
+    `judge=True` writes a real evaluation of `body`, which is what puts the lead in the apply
+    lane: since A3 a lead with no current evaluation routes to `_review`, because nothing cleared
+    it. These fixtures used to leave every verdict `None` and rely on that fail-open.
+
+    Pass `facts`/`policy` when the test stores a non-default identity — the evaluation has to be
+    written under the identity `current_identity` will recompute, or it does not govern and the
+    lead reads as unevaluated. `judge=False` is for a test that is ABOUT the unevaluated case.
+    """
     company_id = int(
         conn.execute(
             insert(companies).values(
@@ -267,6 +286,13 @@ def _deliver(
             created_at=delivered_at, run_id=run_id,
         )
     )
+    if judge:
+        # The profile too: `current_identity` reads the STORE, and with no profile saved it is
+        # `(None, None)` — every verdict comes back `None` however many evaluations were written.
+        # `save_profile` keys by content, so the callers that already store the same profile keep
+        # the same identity.
+        _profile(conn, facts=facts, policy=policy)
+        _judge(conn, posting_id, body, facts=facts, policy=policy)
     return posting_id, job
 
 
@@ -728,10 +754,22 @@ def test_a_review_lead_is_listed_not_dropped_and_the_band_reconciles(
     """
     with engine.begin() as conn:
         _profile(conn, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
-        software, _ = _deliver(conn, "swe", title="Software Engineer", body=JD_UNCERTAIN)
-        held, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner",
-                           body=JD_UNCERTAIN)
-        rejected, _ = _deliver(conn, "noauth", title="Software Engineer", body=JD_INELIGIBLE)
+        # `JD_ELIGIBLE` rather than `JD_UNCERTAIN` for both, so the TITLE is the only difference
+        # that decides the lane. `JD_UNCERTAIN` carries no requirement row at all, which since A3
+        # holds a lead on its own — both leads would land in `review` and `in_queue` would be 0,
+        # which is a true count of a fixture that no longer exercises the role gate.
+        software, _ = _deliver(
+            conn, "swe", title="Software Engineer", body=JD_ELIGIBLE,
+            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+        )
+        held, _ = _deliver(
+            conn, "nurse", title="Registered Nurse Practitioner", body=JD_ELIGIBLE,
+            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+        )
+        rejected, _ = _deliver(
+            conn, "noauth", title="Software Engineer", body=JD_INELIGIBLE,
+            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+        )
         # The premise, stated out loud rather than assumed: if the engine stops calling this
         # body ineligible, THIS fails instead of the counts passing vacuously.
         assert (
@@ -750,6 +788,54 @@ def test_a_review_lead_is_listed_not_dropped_and_the_band_reconciles(
     assert counts["ineligible"] == 1
     assert counts["review"] == 1
     assert counts["in_queue"] == 1
+
+
+def test_a_lead_whose_JD_states_no_requirement_is_listed_under_review_with_that_reason(
+    live: Live, engine: Engine
+) -> None:
+    """A3 through the API, which is a DIFFERENT call site from the folder tree's (D-332).
+
+    `JD_UNCERTAIN` carries no requirement at all, so a real evaluation of it produces zero rows —
+    the 521-lead population. Both halves are asserted because they fail differently: dropping the
+    new argument from `queue_payload`'s lane calls puts the lead back in `rows`, and dropping it
+    from `_row_json`'s `classify` call leaves the row listed under `review` with a reason drawn
+    from a branch that did not hold it.
+
+    The control is the SAME shape with a stated requirement, which stays in `rows` — so the
+    routing is attributable to the empty extraction and not to the body being short.
+    """
+    with engine.begin() as conn:
+        silent, _ = _deliver(conn, "silent", body=JD_UNCERTAIN)
+        stated, _ = _deliver(conn, "stated", body=JD_UNCERTAIN_STATED)
+        assert _judge(conn, silent, JD_UNCERTAIN) == "uncertain"
+        assert _judge(conn, stated, JD_UNCERTAIN_STATED) == "uncertain"
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["posting_id"] for row in payload["rows"]] == [stated]
+    review = {row["posting_id"]: row for row in payload["review"]}
+    assert silent in review
+    assert review[silent]["review_reason"] == "no_requirements_found"
+    assert payload["counts"]["review"] == 1
+
+
+def test_an_unevaluated_lead_is_listed_under_review_as_unevaluated(
+    live: Live, engine: Engine
+) -> None:
+    """The third case, through the API: nothing has judged this lead under the live profile.
+
+    `judge=False` is what makes it real — the fixture stores a profile but writes no evaluation,
+    which is the 34-lead population. Its reason must be `unevaluated` and not
+    `no_requirements_found`: the two are separate members precisely because this one is transient.
+    """
+    with engine.begin() as conn:
+        _profile(conn)
+        unjudged, _ = _deliver(conn, "unjudged", judge=False)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    assert payload["rows"] == []
+    review = {row["posting_id"]: row for row in payload["review"]}
+    assert review[unjudged]["verdict"] is None
+    assert review[unjudged]["review_reason"] == "unevaluated"
 
 
 def test_a_closed_lead_leaves_both_lists_and_is_counted_as_closed_not_ineligible(
@@ -821,10 +907,10 @@ def test_coverage_is_a_live_fraction_and_thin_jd_is_derived_from_it(
         measured, _ = _deliver(conn, "python", body=JD_ELIGIBLE)
         thin, _ = _deliver(conn, "thin", body=JD_UNCERTAIN)
 
-    rows = {
-        row["posting_id"]: row
-        for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
-    }
+    # Both lists: `thin_jd` is a property of the JD, not of the lane, and a JD with no recognised
+    # requirement is exactly the lead A3 now holds for review — so the thin one is under `review`.
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    rows = {row["posting_id"]: row for row in payload["rows"] + payload["review"]}
 
     assert rows[measured]["thin_jd"] is False
     assert rows[measured]["coverage"] == 1.0
@@ -1056,9 +1142,14 @@ def test_uncertain_is_never_summed_into_the_eligible_count(live: Live, engine: E
     with engine.begin() as conn:
         _profile(conn)
         clear, _ = _deliver(conn, "clear", body=JD_ELIGIBLE)
-        vague, _ = _deliver(conn, "vague", body=JD_UNCERTAIN)
+        # `JD_UNCERTAIN_STATED`, not `JD_UNCERTAIN`: `in_queue` counts the APPLY lane, and since
+        # A3 a body carrying no requirement row at all is held for review — which would make
+        # `in_queue` 1 and, worse, make the `eligible != in_queue` discriminator below pass for
+        # the wrong reason. This body abstains on a stated requirement instead, so the lead is
+        # genuinely `uncertain` AND genuinely in the apply lane.
+        vague, _ = _deliver(conn, "vague", body=JD_UNCERTAIN_STATED)
         assert _judge(conn, clear, JD_ELIGIBLE) == "eligible"
-        assert _judge(conn, vague, JD_UNCERTAIN) == "uncertain"
+        assert _judge(conn, vague, JD_UNCERTAIN_STATED) == "uncertain"
 
     payload = call(live, "/api/queue", bearer=live.token).json()
     verdicts = {row["posting_id"]: row["verdict"] for row in payload["rows"]}
@@ -1089,14 +1180,21 @@ def test_counts_report_ineligible_as_its_own_cell_and_keep_it_out_of_the_queue(
     """
     with engine.begin() as conn:
         _profile(conn, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
-        clear, _ = _deliver(conn, "clear", body=JD_UNCERTAIN)
-        barred, _ = _deliver(conn, "barred", body=JD_INELIGIBLE)
+        clear, _ = _deliver(
+            conn, "clear", body=JD_ELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY
+        )
+        barred, _ = _deliver(
+            conn, "barred", body=JD_INELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY
+        )
         assert (
             _judge(conn, barred, JD_INELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
             == "ineligible"
         )
+        # `JD_ELIGIBLE` rather than `JD_UNCERTAIN`: the claim under test is that a NON-ineligible
+        # lead is still listed, and a zero-requirement body is now held for review on its own,
+        # which would move the lead out of `rows` for a reason this test is not about.
         assert (
-            _judge(conn, clear, JD_UNCERTAIN, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+            _judge(conn, clear, JD_ELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
             != "ineligible"
         )
 

@@ -31,7 +31,7 @@ export type Verdict = "eligible" | "uncertain" | "ineligible";
 export type PostingStatus = "open" | "closed" | "unverifiable";
 
 /**
- * Which of four reasons holds a lead in the review lane, from `delivery/review_gate.classify` —
+ * Which reason holds a lead in the review lane, from `delivery/review_gate.classify` —
  * the same call the lane itself is a projection of, so a row's reason and the list it arrived in
  * are one decision (D-332). A CLOSED set: the frontend's map over it is exhaustive, so adding a
  * member server-side is a compile error here rather than a row that silently renders bare.
@@ -45,12 +45,21 @@ export type PostingStatus = "open" | "closed" | "unverifiable";
  * read before anything is spent on the lead; the second says a stated experience bar is not
  * confirmed satisfied, which is a lead the reader may well still want. One member for both would
  * lose the distinction that decides what the reader does next.
+ *
+ * `no_requirements_found` and `unevaluated` are the two ABSENCES, and they are separate from each
+ * other on the same test. The first says the catalog read the JD and found no requirement in it,
+ * so nothing was cleared and the reader has to read it themselves — a state that will not change
+ * until the catalog does. The second says nothing has evaluated the lead yet, which the next run
+ * may well fix on its own. Both were the apply lane's largest population before A3 (521 and 34 of
+ * 646 measured leads), so folding them would also lose the split that change is measured on.
  */
 export type ReviewReason =
   | "ineligible_verdict"
   | "non_us_location"
   | "role_vetoed"
   | "role_unconfirmed"
+  | "unevaluated"
+  | "no_requirements_found"
   | "eligibility_unconfirmed"
   | "experience_requirement";
 

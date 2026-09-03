@@ -121,11 +121,29 @@ def test_uncertain_non_swe_role_routes_to_review() -> None:
     )
 
 
-def test_unevaluated_none_verdict_is_treated_like_uncertain() -> None:
-    # None (unevaluated) is transient staleness or a body-less lead; location + title still decide.
-    assert lane(verdict=None, locations=["Austin, TX"], title="Software Engineer") == ""
-    assert lane(verdict=None, locations=["Kaunas, Lithuania"], title="Software Engineer") == REVIEW_DIR
-    assert lane(verdict=None, locations=["Austin, TX"], title="Front Office Agent") == REVIEW_DIR
+def test_an_unevaluated_lead_is_held_for_review() -> None:
+    """A3, and it REVERSES `test_unevaluated_none_verdict_is_treated_like_uncertain`.
+
+    A `None` verdict used to be treated like `uncertain` — location and title decided, and a US
+    software lead nothing had evaluated went into the blind-apply queue. That is the same
+    clear-by-silence the zero-row gate below closes, one step earlier: with no evaluation there is
+    no requirement row, so no rule cleared anything. 34 of the 646 apply-lane leads measured on
+    2026-09-03 were in it for exactly that reason.
+
+    The location and role gates still outrank it, because each of those is a DECIDED fact about
+    the lead and "nothing has been evaluated" is the absence of one.
+    """
+    assert classify(verdict=None, locations=["Austin, TX"], title="Software Engineer") == (
+        REVIEW_DIR,
+        "unevaluated",
+    )
+    assert classify(
+        verdict=None, locations=["Kaunas, Lithuania"], title="Software Engineer"
+    ) == (REVIEW_DIR, "non_us_location")
+    assert classify(verdict=None, locations=["Austin, TX"], title="Front Office Agent") == (
+        REVIEW_DIR,
+        "role_unconfirmed",
+    )
 
 
 def test_ineligible_is_held_for_review_not_blind_applied() -> None:
@@ -377,3 +395,171 @@ def test_lane_projects_the_new_gates_too() -> None:
             eligibility_unconfirmed=eligibility,
         )
         assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# ------------------------------------------------------- the zero-row gate (A3) and its ranking
+
+
+def test_a_zero_row_evaluation_is_held_for_review_not_blind_applied() -> None:
+    """A3. US, software, `uncertain`, and neither older flag set — held because the eligibility
+    catalog produced NO requirement row for this JD at all.
+
+    Not a bug fix: it is what the apply lane MEANS. Such a lead reached the blind-apply queue
+    because nothing was found in the body, never because a rule cleared anything — a clear by
+    silence with an empty evidence chain, which is the one thing "No flags != cleared" forbids.
+    MEASURED on the live store on 2026-09-03 through `delivered_unapplied` + `lane`, before and
+    after on one snapshot: 521 of the 646 apply-lane leads (81%) were there for this reason and
+    no other, and the apply lane went 646 -> 91.
+    """
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+    ) == (REVIEW_DIR, "no_requirements_found")
+
+
+def test_a_lead_carrying_at_least_one_requirement_row_still_reaches_apply() -> None:
+    """The other side of the predicate, so it narrows rather than closes the lane.
+
+    91 of the 646 measured apply-lane leads carry >=1 requirement row, and those are exactly the
+    ones the change keeps: a row means the catalog read the JD and reached a disposition, which is
+    the evidence the apply lane is supposed to rest on.
+    """
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        no_requirement_rows=False,
+    ) == ("", None)
+
+
+def test_eligible_short_circuits_ABOVE_the_zero_row_gate_too() -> None:
+    """The `eligible` short-circuit is not moved, and MEASUREMENT is why it costs nothing.
+
+    Live store, 2026-09-03, through the production path: of the 646 apply-lane leads, 521 carry
+    zero requirement rows and ALL 521 are `uncertain` — ZERO are `eligible`. Every one of the 55
+    `eligible` apply-lane leads carries >=1 row. So the population this placement holds back is
+    empty, measured.
+
+    It is also empty by construction for a default policy: `engine.evaluate`'s zero-row branch
+    already returns `uncertain` whenever no family — enabled or user-EXCLUDED — could have found a
+    requirement (`_no_evaluable_requirement`), which is precisely the clear-by-silence A3 targets.
+    `eligible` with zero rows is reachable only when an excluded family WOULD have detected one:
+    the JD stated a requirement and the user's own policy opted out of it. That is a decision, not
+    silence, and holding it here would re-open a settled question — the same reason the two older
+    flags sit below the short-circuit (D-380).
+    """
+    assert classify(
+        verdict="eligible",
+        locations=["Austin, TX"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+    ) == ("", None)
+
+
+def test_the_absence_holds_are_ranked_ABOVE_the_two_unconfirmed_row_flags() -> None:
+    """Ordering, and it is observable. `unevaluated` > `no_requirements_found` > the two flags.
+
+    Each earlier reason EXPLAINS the later ones' silence: with no evaluation there are no rows, and
+    with no rows there is no unconfirmed row either. So reporting a row-derived reason for a lead
+    that has no rows would name evidence that does not exist — the same error, in reverse, as
+    reporting the experience bar when a hard-family rule abstained.
+
+    Both combinations below are incoherent inputs (a zero-row evaluation cannot also carry an
+    `unmet`/`unknown` row — `current_requirement_flags` derives all three from one query, and
+    `test_the_zero_row_flag_excludes_the_two_unconfirmed_flags` pins that). They are asserted
+    anyway: the ranking is the only thing that decides what a caller who passes both is told.
+    """
+    assert classify(
+        verdict=None,
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+        experience_unconfirmed=True,
+        eligibility_unconfirmed=True,
+    ) == (REVIEW_DIR, "unevaluated")
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+        experience_unconfirmed=True,
+        eligibility_unconfirmed=True,
+    ) == (REVIEW_DIR, "no_requirements_found")
+    # ...and the pre-existing ranking between the two flags is untouched.
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer",
+        experience_unconfirmed=True,
+        eligibility_unconfirmed=True,
+    ) == (REVIEW_DIR, "eligibility_unconfirmed")
+
+
+def test_an_earlier_gate_still_wins_over_the_zero_row_gate() -> None:
+    """A decided fact outranks an absence, exactly as it does for the two older flags.
+
+    Without this the new branch could silently capture leads the location and role gates own, and
+    the reader would lose the reason they act on.
+    """
+    assert classify(
+        verdict="uncertain",
+        locations=["Kaunas, Lithuania"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+    ) == (REVIEW_DIR, "non_us_location")
+    assert classify(
+        verdict="uncertain",
+        locations=["Chicago, Illinois, United States"],
+        title="Registered Nurse Practitioner",
+        no_requirement_rows=True,
+    ) == (REVIEW_DIR, "role_vetoed")
+    assert classify(
+        verdict="ineligible",
+        locations=["Austin, TX"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+    ) == (REVIEW_DIR, "ineligible_verdict")
+    # A dead requisition still outranks everything, and carries NO reason into `_closed`.
+    assert classify(
+        verdict="uncertain",
+        locations=["Austin, TX"],
+        title="Software Engineer",
+        no_requirement_rows=True,
+        posting_closed=True,
+    ) == LaneDecision(CLOSED_DIR, None)
+
+
+def test_the_zero_row_gate_is_inert_when_the_caller_states_rows_exist() -> None:
+    """The default is False, so a caller that says nothing keeps its exact old behaviour.
+
+    This is the arm that fails if the branch is ever written inverted (`if not no_requirement_rows`)
+    — every lead in the queue would then be held for a reason that describes almost none of them.
+    """
+    for verdict, locations, title in _CASES:
+        assert classify(verdict=verdict, locations=locations, title=title) == classify(
+            verdict=verdict, locations=locations, title=title, no_requirement_rows=False
+        )
+    assert classify(
+        verdict="uncertain", locations=["Austin, TX"], title="Software Engineer"
+    ) == ("", None)
+
+
+def test_lane_projects_the_zero_row_gate_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
+    for verdict in ("uncertain", "eligible", None):
+        for no_rows in (False, True):
+            decision = classify(
+                verdict=verdict,
+                locations=["San Jose, CA, United States"],
+                title="Software Engineer",
+                no_requirement_rows=no_rows,
+            )
+            assert decision.lane == lane(
+                verdict=verdict,
+                locations=["San Jose, CA, United States"],
+                title="Software Engineer",
+                no_requirement_rows=no_rows,
+            )
+            assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)

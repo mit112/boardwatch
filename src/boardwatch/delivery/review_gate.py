@@ -10,7 +10,7 @@ unevaluated (``None``) verdict — routes to the review lane instead. That inclu
 ``eligible`` lead: eligibility answers the six blocker families, and says nothing about
 whether the role is software or the office is in the US.
 
-Two further gates narrow the same fail-open from the other side. A lead can be US and
+Three further gates narrow the same fail-open from the other side. A lead can be US and
 software and still carry a requirement the engine could not confirm: an experience bar it
 does not meet or cannot resolve, or a hard-family (work_auth/clearance) rule that ABSTAINED.
 Those rode into the apply queue as ``uncertain``, because the verdict alone cannot say which
@@ -18,13 +18,24 @@ requirement was unresolved. They now route to review — reviewable, NOT dropped
 narrowing the owner asked for: an abstain is not evidence of ineligibility and must never be
 spent as though it were (D-380).
 
-Reading those two gates means this is no longer a pure re-derivation over the row's own
-fields: it takes a two-boolean SUMMARY of the row's current requirement set, which the caller
+The third gate is not the same shape as those two, and it is **not a bug fix — it is what the
+apply lane MEANS.** A lead whose current evaluation produced NO requirement row at all was in
+the blind-apply queue because the eligibility catalog found nothing in its job description,
+never because a rule cleared anything: a clear by silence with an empty evidence chain, which
+is the one thing the keystone forbids ("No flags" ≠ cleared). MEASURED on the live store on
+2026-09-03 through ``delivered_unapplied`` + :func:`lane`, before and after on ONE snapshot:
+521 of 646 apply-lane leads (81%) were there for that reason alone, and a blind two-judge
+audit priced that population at 32% unapplyable. They now route to review, and the apply lane
+means "a rule read this JD and cleared it". A lead nothing has evaluated at all is the same
+silence one step earlier and goes the same way, under its own reason.
+
+Reading those gates means this is no longer a pure re-derivation over the row's own
+fields: it takes a three-boolean SUMMARY of the row's current requirement set, which the caller
 reads under the SAME identity as the verdict it passes alongside. That is a deliberate
 departure from D-323's "reads no stored eligibility state". The drift D-323 guarded against is
 this module reaching into the DB on its own and disagreeing with the caller's verdict; the
 summary travels WITH the verdict from one identity-scoped read, so the two cannot come from
-different evaluations. Both flags default False, which is exactly the old behaviour.
+different evaluations. All three flags default False, which is exactly the old behaviour.
 """
 
 from __future__ import annotations
@@ -63,11 +74,22 @@ CLOSED_DIR = "_closed"
 #: while a hard-family abstain means a blocking rule could not be decided at all and the JD needs
 #: reading before anything is spent on it. Reporting either as ``role_unconfirmed`` would name the
 #: wrong gate; adding one member for both would lose the distinction the reader needs.
+#:
+#: ``no_requirements_found`` and ``unevaluated`` are the two absences, and they are separate from
+#: each other for the same test: what the reader does next differs. A zero-row lead HAS a current
+#: evaluation and the catalog found nothing in its body — that will not change until the catalog
+#: does, so the JD needs a human read. An ``unevaluated`` lead has no current evaluation at all,
+#: which is transient: the next eligibility run may well decide it. Folding them would also lose
+#: the split the change is measured on (521 zero-row against 34 unevaluated on 2026-09-03).
+#: Neither is folded into the two flags above, which both presuppose a ROW the engine could not
+#: resolve; these two say there is no row, and no evaluation, respectively.
 ReviewReason = Literal[
     "ineligible_verdict",
     "non_us_location",
     "role_vetoed",
     "role_unconfirmed",
+    "unevaluated",
+    "no_requirements_found",
     "eligibility_unconfirmed",
     "experience_requirement",
 ]
@@ -93,9 +115,10 @@ def classify(
     title: str,
     experience_unconfirmed: bool = False,
     eligibility_unconfirmed: bool = False,
+    no_requirement_rows: bool = False,
     posting_closed: bool = False,
 ) -> LaneDecision:
-    """Decide the lane AND, in the same pass, which of the six reasons held the lead.
+    """Decide the lane AND, in the same pass, which of the eight reasons held the lead.
 
     The single place either answer is computed. The reason is a by-product of the branch the
     lane decision already takes, never a re-derivation, which is why the two cannot disagree.
@@ -103,17 +126,29 @@ def classify(
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
     blind-applied. Everything else — ``uncertain`` or an unevaluated ``None`` verdict —
-    is held for review when it is *confirmed* non-US, *confirmed* non-software, or carries
-    an unconfirmed requirement (the two flags below).
+    is held for review when it is *confirmed* non-US, *confirmed* non-software, or the
+    requirement summary says no rule cleared anything (the three flags below).
 
-    The two flags are read AFTER the ``eligible`` short-circuit, so they cannot move an
-    ``eligible`` lead. That is not a gap under a policy that makes the families blockers: a
-    ``work_auth``/``clearance``/``experience_years`` row resolving ``unmet`` or ``unknown``
-    is blocking, so the verdict cannot be ``eligible`` in the first place — the flags are
-    always False there. Under a policy that demotes one of those families below ``blocker``
-    the row stops blocking and the verdict CAN be ``eligible`` with the flag set; routing
-    that lead is a separate decision about whether ``eligible`` should face any gate at all,
-    which is not settled here and is deliberately left where it is.
+    The three flags are read AFTER the ``eligible`` short-circuit, so they cannot move an
+    ``eligible`` lead. For the two unconfirmed flags that is not a gap under a policy that makes
+    the families blockers: a ``work_auth``/``clearance``/``experience_years`` row resolving
+    ``unmet`` or ``unknown`` is blocking, so the verdict cannot be ``eligible`` in the first
+    place — the flags are always False there. Under a policy that demotes one of those families
+    below ``blocker`` the row stops blocking and the verdict CAN be ``eligible`` with the flag
+    set; routing that lead is a separate decision about whether ``eligible`` should face any gate
+    at all, which is not settled here and is deliberately left where it is.
+
+    ``no_requirement_rows`` sits below the short-circuit for a stronger reason than safety, and it
+    was MEASURED rather than assumed: of the 646 apply-lane leads on 2026-09-03, all 521 zero-row
+    ones were ``uncertain`` and NONE were ``eligible``, so the placement holds nothing back today.
+    It is also nearly empty by construction. ``engine.evaluate``'s own zero-row branch already
+    returns ``uncertain`` whenever no family — enabled or user-EXCLUDED — could have found a
+    requirement, which is exactly the clear-by-silence this gate is for. ``eligible`` with zero
+    rows is what is left: an excluded family WOULD have detected a requirement, i.e. the JD stated
+    one and the user's own policy opted out of it. That is a decision, not silence, so holding it
+    would re-open a settled question — and unlike the two flags above, this gate cannot be caught
+    out by family SEVERITY, because a lead with no rows has no rows of any severity (D-380's R2
+    gap is untouched by it).
 
     Location fails OPEN on ``unknown``, exactly as the hard US gate does (the visa ruling:
     an unclassifiable location is never blind-dropped). Only a confirmed ``non_us`` lead is
@@ -124,12 +159,14 @@ def classify(
     remote lead here. Role, by contrast, is demoted on anything not positively ``swe`` — a
     title carrying no software signal is not blindly-appliable.
 
-    An unevaluated (``None``) verdict is treated like ``uncertain`` rather than sent
-    straight to review: a delivered lead is ``None`` only transiently (its evaluation went
-    stale when the profile identity moved) or when it is body-less, and in both cases the
-    location and title are the signals that decide whether the owner can open the link and
-    apply. The eligibility verdict, when it returns, can only move such a lead to
-    ``ineligible`` (excluded) — never make a foreign or non-software lead appliable.
+    An unevaluated (``None``) verdict is held for review, and REVERSES the reading that it be
+    treated like ``uncertain``. ``eligibility_evaluations.verdict`` is ``NOT NULL`` under a
+    three-value CHECK, so ``None`` here means exactly one thing: no current evaluation exists
+    under this identity (a stale one after the profile identity moved, or a body-less lead the
+    engine never saw). Nothing cleared anything for such a lead either, which is the same silence
+    the zero-row gate refuses — so it goes the same way rather than resting on location and title
+    alone. It is reviewable, NOT dropped, and it is the transient case: the next eligibility run
+    can return a real verdict and move it back.
     """
     # ABOVE every other branch, and the ordering is the point: a closed posting cannot be applied
     # to, so no verdict, location or role below can make it work again. Reaching this first is also
@@ -165,6 +202,17 @@ def classify(
     # reachable ONLY once this short-circuit moves below the flags. It does not move below them.
     if verdict == "eligible":
         return LaneDecision("", None)
+    # The two ABSENCES rank above the two unconfirmed-row flags, and above each other in this
+    # order, because each one EXPLAINS the silence of the ones below it: with no evaluation there
+    # are no rows, and with no rows there is no unconfirmed row either. Reporting a row-derived
+    # reason for a lead that has no row would name evidence that does not exist — the same error
+    # as reporting the experience bar when a hard-family rule abstained. The combination is in any
+    # case unreachable from the production read, which derives all three from one query, so the
+    # ranking's only job is to decide what a caller who passes both is told.
+    if verdict is None:
+        return LaneDecision(REVIEW_DIR, "unevaluated")
+    if no_requirement_rows:
+        return LaneDecision(REVIEW_DIR, "no_requirements_found")
     # The hard-family abstain outranks the experience bar: it says a BLOCKING rule could not be
     # decided, which is a stronger reason to read the JD than a bar the engine did decide and the
     # lead simply may not clear. Reporting the weaker one when both hold would understate the hold.
@@ -182,6 +230,7 @@ def lane(
     title: str,
     experience_unconfirmed: bool = False,
     eligibility_unconfirmed: bool = False,
+    no_requirement_rows: bool = False,
     posting_closed: bool = False,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
@@ -197,5 +246,6 @@ def lane(
         title=title,
         experience_unconfirmed=experience_unconfirmed,
         eligibility_unconfirmed=eligibility_unconfirmed,
+        no_requirement_rows=no_requirement_rows,
         posting_closed=posting_closed,
     ).lane

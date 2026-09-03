@@ -39,6 +39,28 @@ describe("the requirement-hold badges", () => {
     expect(container.textContent ?? "").toMatch(/states an experience requirement/i);
   });
 
+  it("words the two absences as absences of OURS, never as claims about the posting", () => {
+    // A3's whole point is that these leads were cleared by SILENCE, so the copy must not read as
+    // a finding about the JD. "This posting has no requirements" would be exactly that finding,
+    // and it is the wording most likely to be written by someone shortening the label.
+    const found = render(<ReviewReasonBadge reason="no_requirements_found" showReason />);
+    screen.getByText("nothing extracted");
+    const foundText = found.container.textContent ?? "";
+    expect(foundText).toMatch(/catalog found no requirement/i);
+    expect(foundText).toMatch(/no rule cleared anything/i);
+    expect(foundText).not.toMatch(/this posting has no requirement/i);
+    found.unmount();
+
+    const unevaluated = render(<ReviewReasonBadge reason="unevaluated" showReason />);
+    screen.getByText("not evaluated");
+    const unevaluatedText = unevaluated.container.textContent ?? "";
+    expect(unevaluatedText).toMatch(/nothing has evaluated this lead/i);
+    // The transience is the difference from `no_requirements_found`, and it is what the reader
+    // acts on: one clears itself on the next run, the other never will.
+    expect(unevaluatedText).toMatch(/next run/i);
+    unevaluated.unmount();
+  });
+
   // D-412 follow-up: `role_vetoed` used to hard-code "the role gate classified this title as
   // not software", which is false whenever the veto actually fired on a seniority/executive
   // phrase in a real software title ("Java Developer - Vice President"). Reinstating that copy
@@ -62,6 +84,8 @@ describe("the requirement-hold badges", () => {
       "role_unconfirmed",
       "eligibility_unconfirmed",
       "experience_requirement",
+      "no_requirements_found",
+      "unevaluated",
     ];
     const labels = reasons.map((reason) => {
       const { container, unmount } = render(<ReviewReasonBadge reason={reason} />);

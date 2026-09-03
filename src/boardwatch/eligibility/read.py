@@ -111,11 +111,18 @@ EXPERIENCE_FAMILY = "experience_years:"
 
 
 class RequirementFlags(NamedTuple):
-    """Two booleans summarising one posting's current requirement rows.
+    """Three booleans summarising one posting's current requirement rows.
 
-    A summary, not the rows: the lane decision needs to know only whether an unconfirmed
-    requirement of each kind EXISTS, and carrying the rows would invite a second, differently
-    filtered opinion downstream.
+    A summary, not the rows: the lane decision needs to know only whether a requirement of each
+    kind EXISTS, and carrying the rows would invite a second, differently filtered opinion
+    downstream.
+
+    The third flag does not ask a stronger version of the first two — it asks a DIFFERENT
+    question, and that is why it is its own field rather than a widening of either. The two
+    `*_unconfirmed` flags ask which kind of requirement the engine left unresolved, so both
+    presuppose a row; `no_requirement_rows` asks whether the extractor produced a row at all.
+    They are mutually exclusive by construction: all three come from the one query below, so a
+    posting with no rows cannot carry an unconfirmed one.
     """
 
     #: A REQUIRED `experience_years` row resolved `unmet` or `unknown` — a bar not confirmed met.
@@ -124,11 +131,23 @@ class RequirementFlags(NamedTuple):
     #: `unmet` is deliberately NOT folded in: an unmet hard rule makes the verdict `ineligible`,
     #: which has its own drain, and counting it here would relabel that lead's hold.
     eligibility_unconfirmed: bool = False
+    #: The current evaluation produced NO requirement row: no family matched anything in the body,
+    #: of any disposition and any requiredness. Neither filter the two flags above apply is applied
+    #: here — a `met` row and a `preferred` row both mean the catalog read the JD and reached a
+    #: disposition, which is the whole of the question — so a row of ANY shape clears it.
+    no_requirement_rows: bool = False
 
 
 #: The all-False summary, as ONE immutable value. Callers use it as the default for a posting with
 #: no current evaluation, and as an argument default — which `RequirementFlags()` cannot be, since a
 #: call in a default is flagged even when the type is immutable.
+#:
+#: All three fields are claims about an evaluation, so the all-False value asserts NONE of them:
+#: not "this posting has requirement rows", but "nothing is known about its requirements". That is
+#: exactly right for a posting with no current evaluation, which is the case it defaults for — and
+#: it is why the lane routes that case on the `None` verdict arriving from the same read rather
+#: than on `no_requirement_rows`, which would make an absence indistinguishable from a measured
+#: False.
 NO_REQUIREMENT_FLAGS = RequirementFlags()
 
 
@@ -138,7 +157,7 @@ def current_requirement_flags(
     profile_hash: str | None,
     rules_hash: str | None,
 ) -> dict[int, RequirementFlags]:
-    """posting_id -> which kinds of requirement its CURRENT evaluation left unconfirmed.
+    """posting_id -> what its CURRENT evaluation's requirement rows say about the delivery lane.
 
     Scoped exactly like `current_verdicts` — same identity, same version list, same read of
     `current_evaluations_chunked` — so a caller that takes both gets a verdict and a summary from
@@ -148,44 +167,53 @@ def current_requirement_flags(
 
     A posting with no current evaluation is absent from the result, exactly as it is absent from
     `current_verdicts`; the caller's `.get(...)` default supplies the all-False summary, which is
-    the old behaviour.
+    the old behaviour. That case is NOT `no_requirement_rows`: see `NO_REQUIREMENT_FLAGS`.
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
     evals = current_evaluations_chunked(conn, posting_version_ids, profile_hash, rules_hash)
     version_by_eval = {eval_id: vid for vid, (eval_id, _) in evals.items()}
     flags: dict[int, list[bool]] = {}
+    # Evaluations that produced at least one row, so the zero-row set is the rest of the
+    # evaluations THIS read already found. Derived from the same rows as the two flags rather
+    # than from a second `NOT EXISTS` query, which would be a differently scoped opinion about
+    # the same evaluation -- the drift this whole function exists to prevent.
+    with_rows: set[int] = set()
     for chunk in id_chunks(list(version_by_eval)):
         rows = conn.execute(
             select(
                 eligibility_requirements.c.evaluation_id,
                 eligibility_requirements.c.rule_id,
                 eligibility_requirements.c.disposition,
-            ).where(
-                eligibility_requirements.c.evaluation_id.in_(chunk),
-                eligibility_requirements.c.disposition.in_(("unmet", "unknown")),
-                # `engine.blocking` counts a row only when it is `required` AND its family is a
-                # blocker, so a `preferred`/`bonus` row can never make a verdict `ineligible` or
-                # `uncertain`. Holding a lead for one would be a hold on a requirement that cannot
-                # block -- 2,790 rows on the live store, `clearance_preferred` the bulk of them.
-                # Severity is the other half of that test and is NOT stored per row (it comes from
-                # the caller's policy), so it is not filtered here; under a policy that demotes one
-                # of these families the flag can still be set for a row that no longer blocks.
-                # That is reachable only once an `eligible` verdict is subject to these gates,
-                # which it is not today.
-                eligibility_requirements.c.requiredness == "required",
-            )
+                eligibility_requirements.c.requiredness,
+            ).where(eligibility_requirements.c.evaluation_id.in_(chunk))
         ).all()
         for row in rows:
+            with_rows.add(int(row.evaluation_id))
             rule_id, disposition = row.rule_id, str(row.disposition)
             if not rule_id:
                 continue
+            # Both filters are applied HERE rather than in the where-clause, because the zero-row
+            # question needs every row and these two questions need a subset of them. One read,
+            # three answers: a narrowed query would have to be a second one, differently scoped.
+            #
+            # `engine.blocking` counts a row only when it is `required` AND its family is a
+            # blocker, so a `preferred`/`bonus` row can never make a verdict `ineligible` or
+            # `uncertain`. Holding a lead for one would be a hold on a requirement that cannot
+            # block -- 2,790 rows on the live store, `clearance_preferred` the bulk of them.
+            # Severity is the other half of that test and is NOT stored per row (it comes from
+            # the caller's policy), so it is not filtered here; under a policy that demotes one
+            # of these families the flag can still be set for a row that no longer blocks.
+            # That is reachable only once an `eligible` verdict is subject to these gates,
+            # which it is not today.
+            if str(row.requiredness) != "required" or disposition not in ("unmet", "unknown"):
+                continue
             experience = rule_id.startswith(EXPERIENCE_FAMILY)
             eligibility = disposition == "unknown" and rule_id.startswith(HARD_FAMILIES)
-            # Only a row that sets a flag creates an entry. The where-clause above admits an
-            # unconfirmed row from ANY family -- `degree`, `internship`, `contract_not_fte` --
-            # and those decide nothing here; entering them would carry ~2k all-False summaries
-            # that read exactly like the absent default while costing a dict entry each.
+            # Only a row that sets a flag creates an entry. An unconfirmed row from ANY other
+            # family -- `degree`, `internship`, `contract_not_fte` -- decides nothing here;
+            # entering it would carry ~2k all-False summaries that read exactly like the absent
+            # default while costing a dict entry each.
             if not (experience or eligibility):
                 continue
             seen = flags.setdefault(int(row.evaluation_id), [False, False])
@@ -198,6 +226,14 @@ def current_requirement_flags(
         posting_id = version_to_posting.get(vid)
         if posting_id is not None:
             out[posting_id] = RequirementFlags(experience, eligibility)
+    # A zero-row evaluation sets no flag above, so it would otherwise be absent -- and absent
+    # means "nothing is known about its requirements", which is the one thing that IS known here:
+    # the catalog read the body and matched nothing. A posting whose rows are all decided stays
+    # absent, because for that one the all-False default is the true summary.
+    for eval_id, vid in version_by_eval.items():
+        posting_id = version_to_posting.get(vid)
+        if eval_id not in with_rows and posting_id is not None:
+            out[posting_id] = RequirementFlags(no_requirement_rows=True)
     return out
 
 

@@ -17,6 +17,10 @@ import { Badge } from "./Badge";
  * is a decision the gate made; the second is an abstain, and calling it "not software" would
  * assert the decision it declined to make. `eligibility_unconfirmed` is worded the same way and for
  * the same reason: it reports that a blocking rule ABSTAINED, never that the lead is ineligible.
+ *
+ * `no_requirements_found` and `unevaluated` are both absences and are worded as absences of
+ * OURS. Neither says anything about the posting: the first reports that our catalog matched
+ * nothing in the JD, the second that no evaluation exists yet.
  */
 const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
   non_us_location: {
@@ -52,6 +56,19 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     label: "experience requirement",
     reason:
       "Held for review: this posting states an experience requirement the profile does not confirm meeting.",
+  },
+  no_requirements_found: {
+    label: "nothing extracted",
+    // States what the CATALOG did, never what the posting requires: finding no requirement is a
+    // fact about our own coverage of this JD, and wording it as "this posting has no
+    // requirements" would assert a reading of the posting that nothing here supports.
+    reason:
+      "Held for review: the eligibility catalog found no requirement in this job description, so no rule cleared anything. Read the JD before applying.",
+  },
+  unevaluated: {
+    label: "not evaluated",
+    reason:
+      "Held for review: nothing has evaluated this lead under the current profile yet, so there is no verdict and no evidence either way. The next run may decide it.",
   },
 };
 

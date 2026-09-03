@@ -1,4 +1,4 @@
-"""`eligibility.read.current_requirement_flags` — the DB read behind the delivery lane's two
+"""`eligibility.read.current_requirement_flags` — the DB read behind the delivery lane's three
 requirement gates.
 
 Seeds through `record_evaluation`, the production write path, so the flags are read back out of
@@ -7,7 +7,13 @@ rows written the way real ones are. This exists because the lane tests
 flag and say nothing about whether the flag is ever computed. A read that silently returned `{}`
 would leave both new gates fully open and every one of those tests still green.
 
-The two flags are deliberately asymmetric and each asymmetry is pinned below:
+The three flags do not ask one question. The two `*_unconfirmed` flags ask which kind of
+requirement was left UNRESOLVED; `no_requirement_rows` asks whether the extractor produced any
+requirement row AT ALL, of any disposition and any requiredness. A body the catalog says nothing
+about sets the third and neither of the first two, which is why it could not be carried on either
+of them.
+
+The two unconfirmed flags are deliberately asymmetric and each asymmetry is pinned below:
 
 * experience takes `unmet` AND `unknown` — both mean "not confirmed satisfied", which is what the
   lane asks.
@@ -27,7 +33,7 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.engine import engine_version
-from boardwatch.eligibility.read import current_requirement_flags
+from boardwatch.eligibility.read import NO_REQUIREMENT_FLAGS, current_requirement_flags
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import RequirementItem, record_evaluation
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
@@ -200,4 +206,85 @@ def test_an_unconfirmed_row_from_an_UNRELATED_family_creates_no_entry(engine: En
     """
     with engine.begin() as conn:
         pid, vid = _seed(conn, "l", ("degree:bachelors_required", "required", "unmet"))
+    assert pid not in _flags(engine, [vid])
+
+
+# --------------------------------------------------- the zero-row flag (A3), and its two controls
+
+
+def test_an_evaluation_with_NO_requirement_row_sets_the_zero_row_flag(engine: Engine) -> None:
+    """The 521-lead population: the catalog found nothing in the body, so nothing was cleared.
+
+    This is the ONLY entry `current_requirement_flags` creates for a posting whose evaluation
+    resolved no requirement either way, and it is what the lane's zero-row gate reads. A read that
+    kept the old `disposition IN ('unmet','unknown')` filter returns `{}` here, leaves the gate
+    fully open, and every literal-argument test in `test_review_gate.py` stays green.
+    """
+    with engine.begin() as conn:
+        pid, vid = _seed(conn, "m")
+    flags = _flags(engine, [vid])
+    assert flags[pid].no_requirement_rows is True
+    assert flags[pid].experience_unconfirmed is False
+    assert flags[pid].eligibility_unconfirmed is False
+
+
+def test_a_single_row_of_ANY_disposition_clears_the_zero_row_flag(engine: Engine) -> None:
+    """The control, and the reason it is `met`: the flag counts ROWS, not verdicts.
+
+    A `met` row sets neither older flag, so this posting stays ABSENT from the result — and the
+    absent default (`NO_REQUIREMENT_FLAGS`) must therefore report `no_requirement_rows` False.
+    Both halves matter: an implementation that entered every summarised posting would return a
+    present-and-all-False entry here (indistinguishable from the default, so no test could tell),
+    while one that counted only unconfirmed rows would report this lead as zero-row and hold a
+    lead whose requirement the engine had DECIDED.
+    """
+    with engine.begin() as conn:
+        pid, vid = _seed(conn, "n", ("work_auth:us_authorization_required", "required", "met"))
+    assert pid not in _flags(engine, [vid])
+    assert NO_REQUIREMENT_FLAGS.no_requirement_rows is False
+
+
+def test_a_NON_required_row_also_clears_the_zero_row_flag(engine: Engine) -> None:
+    """Requiredness is not part of THIS question, though it is part of the other two.
+
+    A `preferred` bar can never block a verdict, so it sets neither unconfirmed flag — but the
+    catalog did read the JD and produce a row, so the lead is not a clear by silence. Folding the
+    zero-row test into the existing `requiredness == 'required'` filter would hold it anyway.
+    """
+    with engine.begin() as conn:
+        pid, vid = _seed(
+            conn, "o", ("experience_years:total_years_minimum", "preferred", "unmet")
+        )
+    assert pid not in _flags(engine, [vid])
+
+
+def test_the_zero_row_flag_excludes_the_two_unconfirmed_flags(engine: Engine) -> None:
+    """Mutual exclusion, from ONE query: a zero-row evaluation cannot carry an unconfirmed row.
+
+    This is what makes the lane's ranking between them unreachable in production, and it has to be
+    asserted here rather than assumed in the classifier, which takes the three booleans literally.
+    """
+    with engine.begin() as conn:
+        empty_pid, empty_vid = _seed(conn, "p")
+        held_pid, held_vid = _seed(
+            conn, "q", ("work_auth:us_authorization_required", "required", "unknown")
+        )
+    flags = _flags(engine, [empty_vid, held_vid])
+    assert flags[empty_pid] == (False, False, True)
+    assert flags[held_pid].no_requirement_rows is False
+    assert flags[held_pid].eligibility_unconfirmed is True
+
+
+def test_a_posting_with_NO_evaluation_is_absent_rather_than_zero_row(engine: Engine) -> None:
+    """The THIRD case, and it is not this read's to answer.
+
+    A posting nothing evaluated under the live identity is absent from `current_verdicts` and must
+    stay absent here, so the two reads keep describing the same evaluation. The lane routes it on
+    the `None` verdict that arrives from the same read — never on a flag default, which would make
+    an absence indistinguishable from a measured False. 34 of the 646 apply-lane leads measured on
+    2026-09-03 were in this case.
+    """
+    with engine.begin() as conn:
+        pid, vid = _version(conn, "r")
+    assert _flags(engine, [vid]) == {}
     assert pid not in _flags(engine, [vid])
