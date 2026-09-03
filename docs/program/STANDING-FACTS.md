@@ -527,6 +527,118 @@ current** — D-391 is the reason. Still live, and stated where they belong: eve
 drain designed in the same change; a cap never observed firing is unverified; the keystone invariant
 is untouched.
 
+### Negation over-reach on strengthening clauses — REAL, MEASURED at 0.33%, and deliberately NOT fixed
+
+A third way a years bar goes unread, distinct from D-443's escaping and D-447's modifier window:
+**a `negation_cues` member occurring in the unit outside the matched span, in a clause that
+STRENGTHENS or scopes the requirement rather than negating it.** Confirmed by removing only the
+cue clause and re-running `detect()`:
+
+| as written | cue removed | the cue |
+|---|---|---|
+| `2–12+ years of industry software engineering experience (does not include internships or co-ops)` | **0 → 1** `scoped_range_years_minimum` | `not` |
+| `8+ years in … data engineering, including 2+ years directly managing engineers (not solely projects or tech leadership).` | **0 → 1** `domain_years_minimum` | `not` |
+| `5+ years in applied machine learning … end to end rather than one stage of a large team.` | **0 → 1** `domain_years_minimum` | `rather than` |
+
+`does not include internships or co-ops` makes the bar HARDER and deletes it instead. The harm is
+in the hiding direction — the bar goes unread, the lead lands `uncertain` with zero requirement
+rows, which is **D-442's symptom from a third direction**, invisible to the abstain report for the
+same reason the other two are.
+
+**Sized before proposing anything, and the size is what decides it.** Over 900 bodies: **72 (8.0%)
+carry one of the candidate phrases, and only 3 (0.33%) gain a detection when it is removed.** So
+the existing rule is well scoped 69 times out of 72 — the cue usually sits in a different unit and
+the detection survives.
+
+**DO NOT add these to `negation_cue_idioms`.** An idiom makes the cue invisible to BOTH cue
+searches, so a genuine negation spelled the same way is then missed — and `rather than` is a listed
+cue precisely because *"we want X rather than Y"* is a real polarity flip. **Widening polarity is
+the fail-dangerous direction**: the failure mode is reading "you must NOT have X" as a requirement
+to have it. A 0.33% recall gain does not buy that risk. Recorded so the mechanism is never
+re-derived, and so the next session does not mistake "small" for "unknown".
+
+Splitter fidelity was established first, because the whole finding rests on it: over 400 bodies,
+engine and a punctuation splitter agree **302** times, disagree **4**, and the engine finds
+something the splitter misses **0** times.
+
+### Three times in one session the APPARATUS contaminated the measurement, not the sample — and none of the three looked like a tooling problem
+
+The four instances above are a *sample* being unrepresentative. These are a different family, and
+they are harder to catch because the number that comes out is clean, specific and confident:
+
+1. **Wrong scope.** A guard asserted that every sentence released from `ineligible` must contain a
+   degree token. `abstain_by` is DOCUMENT-scoped, so the disjunction sits elsewhere in the body and
+   the guard could not find it at any sample size. It nearly passed a change on false evidence,
+   then nearly rejected the same change on false evidence.
+2. **Wrong splitter.** A probe split bodies on `[.!?;:]` and reported patterns that "match but
+   write no row". `detect()` splits by the SCOPE a pattern declares. Fidelity had to be established
+   first — 400 bodies, agree 302, disagree 4, engine-only 0 — before any of those 4 meant anything.
+3. **Wrong `sys.path`.** A verification printed "what the primary checkout's venv would give" and
+   got a row identical to the branch under test, because `sys.path.insert` pointed at that same
+   branch's package and `bundled_rules_text()` read it. **A verification step that silently
+   verified itself**, and it was one message away from being reported as independent corroboration.
+
+**How to apply.** Before believing a measurement, ask what the apparatus would print **if the thing
+were not true** — the null control — and confirm it prints something different. (2) was caught by
+running the engine's own splitter beside the probe's; (3) by printing the catalog version and
+finding three distinct ones where a null control returns identical rows. **The tell they share is
+that all three produced a number, not an error.** A component's self-report is not verification;
+neither is a probe's.
+
+### A control can be mis-specified in the SCOPE it asserts over — and then it fails in BOTH directions
+
+The four instances above are all a *sample* being wrong while the test was fine. This is the other
+kind, and it is worse because nothing about it looks like a test problem.
+
+A peer session, wiring `degree_alternative_to_years` onto the six scoped/domain patterns that
+lacked it, wrote a control asserting that **every sentence released from `ineligible` must contain
+a degree token.** It failed — `4 years of experience developing` (×54), `8+ years of programming
+experience`, `4+ years C++ experience`, no degree anywhere. The first reading was "the wiring
+over-reaches".
+
+**The wiring was correct and the control was measuring nothing.** `abstain_by` is
+**document-scoped** by design — the catalog's own comment says an abstain escape *elsewhere in the
+posting* may waive it — so the disjunction sits somewhere other than the waived sentence, and
+checking that sentence for a degree token cannot ever find it.
+
+**The same broken assertion had already nearly passed a change on false evidence and then nearly
+rejected it on false evidence.** A control asserting the wrong scope is not conservative in either
+direction; it is noise that happens to look like signal twice.
+
+**How to apply:** when a guard asserts a property of a *thing*, state the scope the engine actually
+evaluates that property over, and check the guard reads at that scope. Document-scoped waiving,
+unit-scoped negation cues and sentence-scoped patterns are three different scopes in this one
+subsystem, and a guard written at the wrong one returns confident nonsense.
+
+### A sample selected by the thing you are measuring cannot measure it — four instances, and the fourth broke the circle from INSIDE the change
+
+The same error four times in two days, each time producing a number that was true about the sample
+and false about the population:
+
+1. **D-437** — six companies read ~20% on target; all twelve read **3%**. The six were picked for
+   looking promising.
+2. **D-441** — hiring.cafe's own in-window view gave **1.42 postings per board**, a true number
+   about the aggregator's window. Admitting a board scans its **entire open inventory**: the 50
+   sized at 79 postings delivered **8,303**.
+3. **D-443's first write-up** — `four (4) years` read clean at 9 sentences on a 487-lead sample;
+   store-wide the form is **1,006 sentences** dominated by DUI-conviction boilerplate and
+   `Four (4) year undergraduate degree`. A class read as safe on a filtered sample was not safe.
+4. **D-445** — the `gh_jid` join keyed on `(company_id, gh_jid)` and returned a confident **zero**.
+   A Greenhouse job id is unique across **Greenhouse**, not per company row, so the key hid the
+   only case worth finding. On the right key: 4, and all 4 are one employer under two rows.
+
+**The fourth is the one worth transferring, and it is not the join.** In D-443 the circle broke
+because a **test refused an exemplar chosen for being representative** — `3\+ years of
+non-internship professional software development experience`, picked as the commonest escaped form,
+still wrote zero rows unescaped. That was not a test of the fix catching the bug; it was a test of
+the stated REASON, and the reason is precisely what a sample gets wrong. Writing the assertion
+before believing the claim is what forced the population read.
+
+**So the cheap defence is not "measure twice".** It is: state the mechanism you believe, pick the
+case you think most representative, and assert it *before* you believe yourself. Instances 1, 2 and
+4 were caught by a second measurement, which is expensive and only happens when someone is
+suspicious. Instance 3 was caught by a test, which is cheap and happens whether or not anyone is.
+
 ## Discovery, coverage and the board backlog
 
 > Moved WHOLE from `STATE.md` on 2026-08-23d (Mit's ruling). Nothing was reworded; these are the
@@ -1885,4 +1997,123 @@ Moved WHOLE out of `STATE.md` 2026-09-03 (settled: the finding is closed, the de
 eliminated, and nothing here changes between sessions). Verbatim:
 
 | **hiring.cafe: ONE unexplained POST-FIX failure (run 142) — and D-420 recorded two wrong framings before this one.** #304 (`11a1ae95`) merged **2026-09-01T07:56:34Z**. Against that boundary: **130, 131, 133, 134, 135, 136, 137 all FAILED and all seven PREDATE the fix** (132 ok, a single unexplained point); post-fix **138, 139, 140, 141, 143, 144 ok** and **142 is the only failure**. **So #304 WORKED** — this is neither a regression nor chronic flakiness. Not time-of-day: 138 also started 09:00Z and passed. **METHOD LESSON, which cost two wrong entries in one session: date a behaviour claim against the COMMIT that changed the behaviour, not against a run streak — a streak has no denominator until you know when the code changed.** Do NOT retry the eliminated dead ends: the header lever failed twice (D-369; run 133 reproduced the refusal byte for byte) and the UA and volume premises were both false. | **watch** |
+
+
+## Moved out of STATE on 2026-09-03 — run 145's readout and three long-settled deferrals, kept verbatim
+
+### Run 145 — read out; both of the night's queue fixes are CONFIRMED IN PRODUCTION
+
+96.4 min, exit **ok**, 94 tailored leads. Queue **598 apply / 732 review / 274 ineligible / 107
+closed / 0 reported**. Full numbers: `METRICS.md` (Run 145). **D-432 CONFIRMED** — the buried eBay
+requisition (job 35249) left `_closed` for `_review` and its genuinely-dead same-titled sibling
+(35247) correctly stayed. **D-434 CONFIRMED** — `_reported/` created and empty, exactly as "0
+reported, 0 skipped on the live store" predicted, so a live reconcile could not have exercised that
+drain either way and the unit tests were the only thing that could catch it.
+
+**A count prediction and a mechanism prediction are different claims, and only the second was
+D-432's.** `_closed` went 103 → **107**, not the predicted 102: a 96-minute rescan of 1,124 boards
+found new closures, and the prediction implicitly held the world still for an hour and a half.
+
+- **Track 2's cap cost has no measured UPPER bound.** A per-company cell costs *at least* one
+  `lane_new_companies_per_run` slot, and would cost exactly one only if a quoted-phrase search
+  returned cards solely from the named employer — which was never probed. **Read the funnel's
+  per-lane `admitted`/`refused` split on the first armed run**; it measures this directly.
+
+- **T1's concurrent case-variant duplicate race** — deferred, pre-existing, worst case a dead-weight
+  row. Fix is a `(provider, lower(slug))` unique index plus a reconcile.
+
+- **T3's exotic hostnames** — unicode-dot/fullwidth IDN and legacy IPv4 can still store an
+  undrainable row. Dead weight only.
+
+- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION (D-436).** `reports/abstain.py`
+  aggregates per `rule_id` across the WHOLE corpus, so a pattern that matches most phrasings and
+  misses a near-miss variant is neither `never_fired` nor `fully_abstaining` — its rate looks
+  **healthy**. The keystone makes a rule that cannot resolve a profile FIELD visible as a 100%
+  abstain rate; it says nothing about an extractor that cannot find the requirement in the TEXT,
+  because the rule never got the chance to abstain. A blind two-judge audit put **24% of `eligible`
+  wrong (13 of 54)** and **every single miss was `no requirement row written`**, not a rule
+  deciding badly. **Unfixed.** The honest fix is a THIRD OUTCOME per family — "the extractor ran and
+  matched nothing" and "the JD is silent" are collapsed into one today and the second one clears —
+  not more patterns, which is whack-a-mole.
+
+- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES — the 24% is UNCHANGED.**
+  Measured, not assumed: the two fixed sentences came from the pre-correction 218-job sample and do
+  not survive into the real 144. The fixes are safe (0 regressions) and close real leaks, but the
+  delivered population's defect rate did not move. **The 13 have ~7 distinct root causes**, so more
+  patterns is whack-a-mole. **The unarmed answer is the two-stage shape already built:**
+  `boardwatch eligibility gate request`/`gate apply` (the `final_gate:` LLM lane — ineligible-capable,
+  keystone-guarded, identity-keyed, read by the ranker) over the **~8-10 leads/day delivered**, which
+  is the only population where zero-ineligible is reachable. **0 rows on the live store today.**
+  Owner-gated.
+
+| **`companies.last_health` / `last_ok_at` are a LYING instrument** | 178 of 379 watched boards read NULL, which looks like "never succeeded" — **all 178 were scanned by run 133** (128 complete, 7 partial, 43 unchanged). The scan path does not maintain these columns. **Judge fleet health from `board_scans` per run instead**: run 133 was 379 attempted / 271 complete / 87 unchanged / 21 partial / **0 failed** | tooling gotcha |
+
+| **`unchanged` staleness is now BOUNDED (D-298, #153)** | The `unchanged` verdict comes from the upstream HTTP validator (ETag/Last-Modified → 304), not a boardwatch payload hash. `validator_max_age_hours` (default 24) drops a validator older than the TTL, forcing an unconditional refetch, so a permanently-stale upstream can no longer freeze a board forever — the silent-staleness window is capped at the TTL, and a regression test now exercises the aged-validator refetch. Still open: within the TTL an `unchanged` is trusted with no independent check. The separate "59 of 135 boards listed nothing" figure was a **`postings_listed`-on-304 artifact — CORRECTED to 17 real dead-weight (D-300)**, now cleaned; the 118 `ok` boards hold 39,253 open postings | open (mitigated) |
+
+0. ~~gate 1 >= 80%~~ / ~~"cover most of what job-apps does daily"~~ **BOTH RETIRED. Gate 1 is now
+   PER-SOURCE RECALL (D-421), and the only thing still owed from the owner is the THRESHOLD, per
+   source.** The instrument is built and has a first reading (see Current standing). Set a bar per
+   source rather than one number — the direct-ATS mechanism is already at 94–100% while the
+   aggregator mechanism is at 12–33%, and any single average hides that. **Do not re-litigate 80%,
+   and do not re-derive "most".**
+
+1. ~~Does job-apps keep running, or is it retired?~~ **ANSWERED — it keeps running until gate 1 is
+   met.** Both schedulers armed: boardwatch 04:00, job-apps 08:30. **The retirement work is now a
+   written plan, not a question: `docs/program/RETIREMENT-PLAN.md`.** Do not re-raise WHETHER, and do
+   not re-derive the gap analysis.
+   ~~2. Indeed's dependency posture.~~ **DECIDED by Mit 2026-09-01 (D-410): approved.** Closed; do
+   not re-open or re-probe.
+
+*(Resolved and no longer open: the delivery slate cap — D-345, `(company_id, normalized_title,
+content_hash)` at N=1; do not reopen as identity suppression, which is D-295 and is refused.
+Whether `runner.py` should keep swallowing a funnel-write failure — D-288. Clearance IS a blocker
+(D-257). Seniority band = `entry` (D-258), and it is **armed on the live profile**.)*
+
+### The 2-year-bar question, moved out of STATE on 2026-09-03 (now A4)
+
+**1. ANSWER ONE QUESTION, AND IT DOES NOT WORK THE WAY AN EARLIER READING CLAIMED: does a stated
+2-YEAR bar rule you out?** `near_miss_years_ceiling = 3` makes the engine ABSTAIN at or under 3
+years, so those leads are held for review. **LOWERING IT DOES NOT RELEASE THEM — IT REJECTS THEM
+(D-440).** Ceiling **2** rejects 290 postings; **0-1** rejects **505**. That reverses D-333 and takes
+the expensive error direction: a wrong `unmet` writes `ineligible` with a quoted span and silently
+removes a gettable job, and **the reject pile is never inspected**. Recommendation: do NOT lower it.
+It also cannot deliver the range attributed to it — of 1,141 abstained rows, 583 are the band and
+**465 are `scoped to a skill`**, which abstains whatever the ceiling is.
+
+**AND THERE IS NO DATA FIX HIDING BEHIND IT — that was checked.** The résumé's dated Experience
+section parses to **20 months / 1.67 years** across three roles: a 7-month SWE co-op plus **13
+months of internships**, which these postings routinely exclude by name. The stored `1` understates
+the raw total by ~8 months and **all of it is internship time**, so against a 2-year bar the résumé
+and the stored fact agree. **The value is defensible and correcting it would not clear the bar.**
+
+**Which leaves the question genuinely yours and not a data error**: it is whether you would apply to
+a 2-year-bar posting anyway, knowing employers enforce those bars unevenly. Nobody but you can
+answer that, and D-440 has priced every option so it is a row-pick rather than an opinion.
+
+## Moved out of STATE on 2026-09-03b — two CLOSED items kept verbatim
+
+Both said "closed" or "do not re-arm" in their own first line while occupying ten lines of the next-action list. Kept whole because each is a refutation, and a refutation summarised is a refutation that gets re-proposed.
+
+### Track 2 — refuted on live measurement and disarmed
+
+**0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.** Armed at
+`lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host **before** the first
+tick, disarmed 01:34. **4 of 120 cards on target (3%)**; 12 cells present **78 distinct companies,
+61 new, against a cap of 50**, ahead of the hub nets, so arming it takes every slot. The rescue is
+closed and was probed: the guest fragment serves **no numeric company id**, so `f_C=` is
+unreachable and getting there is a **D-290 widening, the owner's**. Everything else: **D-437**.
+**The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism
+again.** Do not propose per-company cells without naming a mechanism that actually filters by
+employer. The code stays merged and inert at `0`.
+
+### The 50-board hiring.cafe sample — read out and closed
+
+**3. THE 50-BOARD SAMPLE IS READ AND THE REMAINING 282 ARE REFUSED (D-441). CLOSED — do not
+re-open it from hiring.cafe's in-window counts, which is the number that was wrong.** Run 145
+answered it in one run: the sample's **59 boards contributed 8,303 postings** against D-428's
+predicted 79, and the run took **96.4 min writing 15,356 versions** against run 144's 21.9 min and
+2,020 — **105x the postings, ~21-27x the minutes**, and 8,303 is a FLOOR because eleven of the top
+twelve contributors hit `detail_fetch_budget = 400`. **It bought 10 delivered leads.** The sample is
+NOT reverted; whether to keep paying ~60 min/run for 10 leads is the OWNER's, and is a different
+question from adding 282 more, which is closed.
 
