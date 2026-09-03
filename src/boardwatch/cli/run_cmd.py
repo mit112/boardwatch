@@ -104,6 +104,12 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     unmeasured = (
         f" · {counts.signal_unmeasured} body signal unmeasured" if counts.signal_unmeasured else ""
     )
+    # Named separately because the two halves end on different events (D-439): one on the next
+    # run, one only when the owner actions the lead they already hold. Suppressed at 0 so the
+    # line does not grow for the case where the distinction does not arise.
+    slate_standing = (
+        f" ({counts.slate_cap_standing} on your queue)" if counts.slate_cap_standing else ""
+    )
     return (
         f"{counts.shortlisted} shortlisted of {counts.considered} considered "
         f"({counts.hidden_hard_filter} hard-filtered, "
@@ -111,7 +117,7 @@ def _shortlist_line(summary: PipelineSummary) -> str:
         f"{counts.hidden_zero_signal} zero signal, "
         f"{counts.hidden_over_seniority} over seniority, "
         f"{counts.hidden_duplicate} duplicate, "
-        f"{counts.hidden_slate_cap} slate-capped, "
+        f"{counts.hidden_slate_cap} slate-capped{slate_standing}, "
         f"{counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
         f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}{unmeasured}"
