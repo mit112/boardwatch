@@ -78,7 +78,7 @@ from boardwatch.store.delivery_queries import (
     review_job_ids,
 )
 from boardwatch.store.queries import canonical_job_ids
-from boardwatch.store.queue_state import skipped_job_ids
+from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts
 
@@ -90,6 +90,7 @@ DEFAULT_QUEUE_ROOT = Path.home() / "boardwatch-queue"
 LOCK_FILE = ".queue.lock"
 APPLIED_DIR = "_applied"
 SKIPPED_DIR = "_skipped"
+REPORTED_DIR = "_reported"
 INELIGIBLE_DIR = "_ineligible"
 DETAILS_FILE = "details.json"
 JD_FILE = "job_description.txt"
@@ -201,6 +202,7 @@ class ReconcileReport:
 
     to_applied: int = 0
     to_skipped: int = 0
+    to_reported: int = 0
     to_ineligible: int = 0
     to_review: int = 0
     to_closed: int = 0
@@ -218,6 +220,7 @@ class ReconcileReport:
         return (
             self.to_applied
             + self.to_skipped
+            + self.to_reported
             + self.to_ineligible
             + self.to_review
             + self.to_closed
@@ -263,10 +266,10 @@ def sync_queue(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
     every mark-applied without the owner's folders churning under them.
 
     A lead whose folder currently sits in a drain is pulled back out, because the database has
-    just said it is neither applied nor skipped and creating a second folder for it would be the
-    one outcome worse than a stale one. `reconcile_queue` applies the same rule from the other
-    side; both hold the same lock, so they cannot disagree mid-flight, and neither depends on the
-    other having run first.
+    just said it is none of applied, skipped or reported, and creating a second folder for it
+    would be the one outcome worse than a stale one. `reconcile_queue` applies the same rule from
+    the other side; both hold the same lock, so they cannot disagree mid-flight, and neither
+    depends on the other having run first.
 
     `root` is resolved first. `plan_lead_names` prices its byte budget against the path it is
     given, so a relative root would price a shorter destination than the one actually written and
@@ -285,7 +288,9 @@ def reconcile_queue(conn: Connection, *, root: Path) -> ReconcileReport:
 
     Applied wins over skipped when a job is both: an application is a statement that the owner
     engaged with the employer, and a skip is a statement that they did not look. The stronger
-    claim decides where the folder lives.
+    claim decides where the folder lives. A REPORTED job ranks below both — those say what the
+    owner did with the lead, while a report says the eligibility decision was wrong — and above
+    `closed` and the derived verdicts. Full precedence and its reasoning: `_wanted_location`.
 
     Nothing is deleted, ever — not a folder without a `details.json`, not a folder whose
     destination is already occupied, not a folder for a posting the database has forgotten.
@@ -385,9 +390,19 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # A REVIEW lead, by contrast, IS work to look at, so it STAYS in `rows`: `lane_of` routes it to
     # the `_review` subdir rather than excluding it, and `_index` scans `_review`, so a lead is
     # created wherever it belongs and moves between the apply queue and review as its class changes.
+    # A REPORTED lead is excluded on the same footing as a skipped one, and through the same
+    # parameter, because `delivered_unapplied` asks its caller for the job-keyed set to withhold
+    # rather than deciding what withholding means. `delivery/api.py` already unions the two for
+    # the web queue; without the union here `reconcile_queue` would move the folder into
+    # `_reported/` and the `sync_queue` that follows it in the SAME call would RELOCATE IT STRAIGHT
+    # BACK OUT -- `_index` scans the drains, so the relocation pass finds it and moves it -- and
+    # the lead the owner reported would be in the apply queue again every run while the reconcile
+    # count read a healthy 1. The tell is `moved`, not `created`: nothing is ever created here, so
+    # a test asserting `created == 0` passes against the broken version and pins nothing.
+    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
     rows = [
         row
-        for row in delivered_unapplied(conn, skipped=set(skipped_job_ids(conn)))
+        for row in delivered_unapplied(conn, skipped=withheld)
         if row.verdict != "ineligible"
     ]
     lane_of = {
@@ -784,6 +799,7 @@ def _clear_staging(root: Path) -> None:
 def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     applied = applied_job_ids(conn)
     skipped = skipped_job_ids(conn)
+    reported = reported_job_ids(conn)
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
@@ -799,6 +815,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     counts = {
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
+        REPORTED_DIR: 0,
         INELIGIBLE_DIR: 0,
         REVIEW_DIR: 0,
         CLOSED_DIR: 0,
@@ -810,6 +827,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
             entry,
             applied=applied,
             skipped=skipped,
+            reported=reported,
             closed=closed,
             ineligible=ineligible,
             review=review,
@@ -835,6 +853,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     return ReconcileReport(
         to_applied=counts[APPLIED_DIR],
         to_skipped=counts[SKIPPED_DIR],
+        to_reported=counts[REPORTED_DIR],
         to_ineligible=counts[INELIGIBLE_DIR],
         to_review=counts[REVIEW_DIR],
         to_closed=counts[CLOSED_DIR],
@@ -849,6 +868,7 @@ def _wanted_location(
     *,
     applied: dict[int, str],
     skipped: dict[int, str],
+    reported: dict[int, str],
     closed: set[int],
     ineligible: dict[int, str],
     review: set[int],
@@ -862,6 +882,15 @@ def _wanted_location(
     below `ineligible` — a lead that is both is ineligible, not merely unverified — and above the
     apply queue, so an unverified `uncertain` lead is held for a look rather than blind-applied.
 
+    `reported` is an owner statement too, so it outranks the derived verdicts for the same reason
+    — but it ranks BELOW `applied` and `skipped`, and that is not arbitrary. Those two say what the
+    owner DID with the lead; a report says the eligibility DECISION was wrong. A lead they actually
+    applied to, or deliberately skipped, is filed under the action they took. **Nothing is lost by
+    ranking it last of the three**: the `queue.reported.<job_id>` marker is the record a later
+    investigation reads, and it survives whichever folder holds the copy (D-427). It must NOT reuse
+    `_ineligible` — reconcile pulls those back out the moment the verdict clears, and a reported
+    lead's verdict is still `eligible`, so it would return to the queue on the very next run.
+
     `closed` sits between the owner statements and the derived verdicts, and both boundaries are
     deliberate. It ranks BELOW them because an application the owner already sent is a fact about
     what they did and does not stop being true when the requisition comes down. It ranks ABOVE
@@ -873,6 +902,8 @@ def _wanted_location(
         return APPLIED_DIR
     if entry.job_id in skipped:
         return SKIPPED_DIR
+    if entry.job_id in reported:
+        return REPORTED_DIR
     if entry.job_id in closed:
         return CLOSED_DIR
     if entry.job_id in ineligible:
@@ -1110,6 +1141,7 @@ __all__ = [
     "LINK_FILE",
     "LOCK_FILE",
     "RECLAIM_WINDOW_SECONDS",
+    "REPORTED_DIR",
     "SKIPPED_DIR",
     "URL_FILE",
     "WEBLOC_FILE",
