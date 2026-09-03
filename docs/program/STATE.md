@@ -207,7 +207,7 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
 | **A1** | **Merge #354** (D-443, job-apps unescape) | 132 bodies gain their first requirement row; **11 leads leave `eligible`**; 70 move `uncertain`→`ineligible`, each quoting the employer. Re-versions 478 postings on the next ingest. **Gated only because it changes what you are told you can apply to** | #354's body; `METRICS.md` (Session 2026-09-03) |
-| **A2** | **Spot-check `verdicts_a.json` / `verdicts_b.json`, then `gate apply`** | ~116 demotions across 597, **15 of 15 spans survive the keystone guard, 0 failures** on the 77-lead measurement | Current standing, above |
+| **A2** | **Spot-check the 15 judged rejections, then decide whether to run a FULL gate cycle** | `verdicts_a.json` (8) + `verdicts_b.json` (7) hold **15 rejections** from the 77-lead measurement, each quoting the employer; **15 of 15 spans survive the keystone guard, 0 failures**. Applying them demotes **15 postings, NOT ~116** — the ~116 is what a full `gate request` → judge → `gate apply` over all 597 would project at the measured 19.5%, and nobody has run that cycle. **MUST run AFTER A1 and D-447 land** (see below) | the two files, in the config dir |
 | **A3** | **D-442's routing predicate** — zero requirement rows ⇒ `_review` | apply **597 → 116**, review 1,007 → 1,488. An **81% cut** to the pile you work from. **Not a bug fix** — it is what you want the apply lane to MEAN | D-442 |
 | **A4** | **Does a stated 2-YEAR bar rule you out?** | `near_miss_years_ceiling`; **lowering it REJECTS rather than releases** (ceiling 2 rejects 290, 0-1 rejects 505). Recommendation: do NOT lower | D-440 |
 | **A5** | **Merge #344** (D-439/D-444, the seeded slate cap) | a byte-identical twin is held until you apply to or skip the first, instead of arriving the next day. **Stops the pile growing; removes none of it.** Gated for the same reason as A1 — it changes which leads a run delivers | #344's body; D-439, D-444 |
@@ -217,6 +217,8 @@ until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **D
 
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
+
+**A2 is ORDER-FORCED and fails SILENTLY if you get it wrong.** `record_gate_verdict` builds its identity from the catalog and stores the `rules_hash`, so **any catalog change invalidates gate rows written before it** — verdicts applied ahead of #354 and D-447 are written under an identity the ranker no longer reads. No error, no warning, just no effect. Land the catalog PRs first, then judge, then apply.
 
 **A8 is independent of A1 and A3** — it moves postings that are already `ineligible`, which neither the unescape nor the routing predicate touches. **A1 and A5 must be read out on ONE run, not two.** #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
 
