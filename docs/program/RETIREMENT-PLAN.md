@@ -97,37 +97,53 @@ Gate 3 (anti-degradation, independent count must not fall) **HELD at 49**, basel
 
 ## 2. The gap, decomposed — do not re-derive this
 
-> **The "80%" figures below are the RETIRED bar (§1, D-421).** The tier decomposition, the per-tier
-> ceilings and the "no path that skips both C and D" conclusion all still stand — they are statements
-> about where job-apps' postings live, which did not change. **Only the threshold they are measured
-> against was withdrawn.** Read them as sizing, not as a gate.
+**Re-measured 2026-09-03 on the WHOLE run-147 population (21,497 postings), which is what the table
+below reports.** The earlier decomposition ran on a **168-posting** sample against the bar D-421
+retired; it is kept only as a note at the end of this section, because two of its conclusions are
+now refuted and a future session must not reach for them.
 
-Of the **168** misses (131 held nowhere, 37 held only via the `jobapps` lane), grouped by the host
-of job-apps' `canonical_direct_url`:
+Postings grouped by the host of job-apps' `canonical_direct_url`. **The host is a function of which
+SOURCE found the posting, not extra information about where the job lives** — that is the single
+most important property of this table (D-451).
 
-| tier | postings | what it needs |
-|---|---:|---|
-| **A. providers boardwatch ALREADY has** | **11** | company admission / a `gh_jid` resolver pattern. No new adapter. |
-| **B. linkedin.com** | **77** | LinkedIn discovery method (§4). Existing lane, existing endpoint. |
-| **C. indeed.com** | **35** | an Indeed source. **BLOCKED — owner decision, §6.** |
-| **D. everything else** | **45** | new adapters across ~30 vendors (Oracle HCM 6, iCIMS 3, UKG 3, Avature, Paylocity, Breezy, Rippling, jibeapply, PageUp, governmentjobs, first-party career sites) |
+| tier | postings | what it needs | sized in |
+|---|---:|---|---|
+| **A. the six providers' OWN hosts** | **434** (+2.02pp) | company admission plus resolvers. **No new adapter, no new code.** 401 of 434 already parse via `parse_posting_target`; 103 sit on a stored slug, only **40** on one already `watched=1`; **293 distinct new boards** would be admitted. **Workable is the outlier — 17 of its 19 URLs are unparseable**, so it is a resolver gap, not an admission one. | D-451 |
+| **B. linkedin.com** | **5,650 absent** | nothing buildable at a defensible price. The tightest defensible loss is **395 postings = 28/day**; **the recommendation is ACCEPT THE LOSS.** | D-453, `LINKEDIN-CLOSURE-PLAN.md` |
+| **C. indeed.com** | **0 absent / 6,568 lane-only** | not a source question — the lane exists. Its binder is the **new-company admission cap**, which discards 24–51% of every fetched hit set. | D-452, §6 |
+| **D. everything else** | **1,451 attributable · 23 FIXABLE** | **decided against (D-451)**, except a `jsonld` **catalog row** (data, ~10 lines) for `oraclecloud.com`/`taleo.net`/`amazon.jobs`, which is 18 of the 23. | D-451 |
+| **UNATTRIBUTABLE — no vendor named at all** | **6,268 = 81.2% of the 7,719 absent** | **nothing. Rescue rate 0%.** `linkedin.com` 5,650, `jobright.ai` 617, `google.com` 1; their `posting_identities` carry only the aggregator URL. | D-451 |
 
-### The arithmetic that decides the plan (DERIVED, ceilings — assumes a tier is FULLY solved)
+**READ THE LAST ROW BEFORE SIZING ANY VENDOR WORK.** 81.2% of the absent set records no vendor,
+host or ATS token, so an adapter is definitionally unable to reach it. Any sizing that counts
+employers or hosts is measuring the 18.8% it can see and silently assuming the rest. The absent
+partition is EXACT, not approximate: 1,331 hiring.cafe-absent + 5,650 linkedin + 617 jobright +
+1 google + 120 github-list/`insidehighered` = **7,719**.
 
-```
-have 48                                          22.2%
-+ A existing providers  (11)  ->  59             27.3%
-+ B linkedin            (77)  -> 136             63.0%
-+ C indeed              (35)  -> 171             79.2%   <-- STILL ONE SHORT of 172
-+ D new adapters        (45)  -> 216            100.0%
-```
+**The largest lever in this table is not in tier D and needs no vendor code at all**: hiring.cafe
+lane throughput is worth **1,331 postings (+6.19pp)**, because the 1,331 are absent only because
+that lane never surfaced them — **the store already holds 34 vendor tokens through it with zero
+adapters built** (D-451's null control). Tier A is worth **434 (+2.02pp)**, **19x** what all ~30
+tier-D adapters would fix.
 
-**Consequence, stated plainly: there is no path to 80% that skips both C and D.** Even solving
-A + B + C perfectly lands at 79.2%. The goal requires tier D work regardless of the Indeed call.
+### What the retired 168-sample arithmetic said, and which parts of it are now WRONG
 
-Of tier B's 77: **58 are companies boardwatch has never seen at all**, 11 are companies present
-via LinkedIn whose posting we missed, 8 are companies held only via another provider. MEASURED.
-This is why page-depth knobs cannot close it — `lane_search_pages` reaches at most those 11.
+Tiers on the sample read A 11 · B 77 · C 35 · D 45, and the ceiling arithmetic ran
+`48 (22.2%) -> 59 -> 136 -> 171 (79.2%) -> 216 (100%)`, from which the plan concluded **"there is no
+path to 80% that skips both C and D"** and **"the goal requires tier D work regardless of the Indeed
+call."**
+
+**Both conclusions are withdrawn.** The threshold they scored against was retired by D-421, and the
+tier-D premise was refuted by D-451 — all ~30 adapters fix **0** of the hiring.cafe-absent set,
+because that lane keys every vendor under itself. **Do not quote the arithmetic and do not re-derive
+it**; the population it ran on no longer exists, and a 168-row sample cannot size a 21,497-row one
+tier at a time.
+
+**One thing the sample got wrong in the other direction, and it is worth knowing which:** of tier
+B's 77, **58 (75%) were read as companies boardwatch had never seen at all.** That figure was
+**refuted at scale** — the full population reads **46.1%** (D-431, reproduced by D-453). What
+survives is only the narrow mechanical point it was used for: page-depth knobs cannot close
+LinkedIn, because `lane_search_pages` reaches only the already-present subset.
 
 ---
 
@@ -269,19 +285,36 @@ dicts); `reports/manifest.py::_CONFIG_IRRELEVANT`; `core/settings.py`. All are a
 Track D touches no source file, so it can run through the others' gate time for free. Start it
 first and let it soak.
 
-### Wave 2 — tier D adapters, after Wave 1 lands
+### Wave 2 — tier D adapters: DECIDED AGAINST (D-451). Do not build them.
 
-~30 vendors, ranked: Oracle HCM (6), iCIMS (3), UKG/UltiPro (3), then singletons. **Mandatory** —
-§2's arithmetic shows 80% is unreachable without part of this.
+**Not deferred — refused, on a measured ceiling.** All ~30 vendor adapters together fix **0** of
+the 1,331 hiring.cafe-absent postings, because `lanes/hiringcafe.py:140` keys every hit under
+`hiringcafe` and the JD body arrives from hiring.cafe's own GET, so the vendor's site is never
+requested. Against the 120 non-hiring.cafe misses the remaining vendors fix **23 postings, +0.107pp
+— 1.6 postings/day for ~30 adapters.** Tier A is 19x that and needs no new code. §2 has the table;
+D-451 has the null control (34 vendor tokens already held with zero adapters, `avature` 22 times
+despite D-413 refusing it).
 
-**CRITICAL DESIGN FACT, do not rediscover:** these must be **LANES, not `Provider`s.** Registering
-a seventh provider is blocked two ways (D-278 §4.1) — `test_build_providers_one_instance_per_class_keyed_by_name`
-asserts `set(built) == {the six names}` as a set EQUALITY, and fixture rule R13 demands a pinned
-fixture dir per registered provider and fires immediately on one with none. A lane returns the same
-`BoardSnapshot` and inherits every persistence invariant for free.
+**The one thing worth building is not an adapter:** a `jsonld` **catalog row** — data, ~10 lines —
+for `oraclecloud.com`/`taleo.net` (8 fixable, 51 inert seeds) and `amazon.jobs` (10 fixable, 22
+inert seeds, single host, body fully inline per D-413). That is **18 of the 23.** Every other vendor
+(icims, ukg, avature, paylocity, dayforce, governmentjobs, jibeapply, pageup, rippling, bamboohr)
+fixes **0 or 1 each**. D-413's direction — a seed problem, one resolver with a per-vendor strategy
+table — is confirmed; only its `82.4%`/`87.0%` ceilings retire with the bar.
 
-Vendors are independent of each other, so Wave 2 is itself N-way parallel once one adapter has set
-the shape. Do the first one alone, then fan out.
+**CRITICAL DESIGN FACT, do not rediscover:** anything that does get built must be a **LANE, not a
+`Provider`.** Registering a seventh provider is blocked at **FOUR** gated sites, three of them set
+equalities that fail on the seventh name alone (verified in the current tree, 2026-09-03):
+
+| site | what it asserts |
+|---|---|
+| `tests/unit/test_provider_registry.py:25` | `set(built) == {the six names}` — set EQUALITY (D-278 §4.1) |
+| `tests/unit/test_provider_registry.py:31` | `registry.PROVIDER_NAMES == frozenset({the six})` — a **second** set equality |
+| `tools/generalization/fixtures.py:175` `check_fixture_coverage` | **R13** — a pinned fixture dir per registered provider, **both directions** (:180, :190) |
+| `tools/generalization/fixtures.py:368` `check_fixture_review_due` | **R15** — every registered provider declares a `FIXTURE_PROVENANCE` review deadline, **both directions** (:373, :383) |
+
+A lane returns the same `BoardSnapshot` and inherits every persistence invariant for free, and trips
+none of the four.
 
 ### Gate scheduling — the real bottleneck
 
@@ -306,13 +339,17 @@ caught a blocker on the SmartRecruiters change that the author and the orchestra
 2. Land Wave 0. One gate.
 3. Dispatch A, B, C together with full briefs. Queue gates two at a time.
 4. sol-review each as it lands; land the green ones.
-5. Re-read gate 1 after one run. Then Wave 2.
+5. Re-read gate 1 after one run. **There is no Wave 2 to follow it** — tier-D adapters are refused
+   (D-451). The next lever after gate 1 is read is §6's Indeed cap (D-452), then tier A admission.
 
 **Do not stop to re-derive §2, §3 or §4.** They are measured and reproducible via §9.
 
-## 6. Indeed — APPROVED by the owner 2026-09-01, and how to build it
+## 6. Indeed — APPROVED by the owner 2026-09-01, built, and sized
 
-Tier C is 35 postings / 16.2 points, and §2 shows the 80% bar is very hard without it.
+**The lane is BUILT and armed.** Indeed carries **6,568 `lane-only` — 80% of boardwatch's entire
+switch-off exposure** and **0 absent**, so this is no longer a source question. What remains is the
+admission cap, sized below and in D-452. The posture decision and the build notes are kept because
+they are what a future session would otherwise re-derive.
 
 **Both Indeed routes were probed live on 2026-09-01:**
 
@@ -361,13 +398,40 @@ postings against job-apps' **~555/day** off the same endpoint; and the lane's da
 **`24h`**, so postings already in the `lane-only` bucket can never be found by it — they only leave
 the metric as the 14-day window slides. Per-day `lane-only` confirms it empirically: 32–42% on
 every one of the 14 days, with no downward trend. **Indeed is the largest and cheapest remaining
-lever, and it needs a sizing, not a wait.**
+lever.**
 
-Note the 35 are `lane-only`, not absent: boardwatch **already holds** these postings via the
-`jobapps` lane. They fail gate 1 only because that lane is their sole origin. So a second
-possibility exists and is untested: **Phase 1/2 may pick some of them up from LinkedIn**, since a
-job posted to Indeed is often posted to LinkedIn too. Measure that after Phase 1 before treating
-tier C as blocked.
+### THE SIZING, DONE — D-452. The binder is the ADMISSION CAP, not any request budget.
+
+The lane spends **15 s of a 96-minute run (0.26%)** and is the cheapest network lane per posting by
+7x. What binds it is the **new-company admission cap**: `lanes/indeed.py:773-778` `continue`s over a
+refused company's whole hit list, so **the cap drops POSTINGS, not just registrations**, and refused
+postings are counted **nowhere** — the funnel's `attempted` understates the hit set the lane fetched.
+Run 145 admitted **50** and refused **332** of 382 genuinely-new companies; refused hits are a
+derived interval of **[332, 718]**, i.e. **24–51% of every fetched hit set is discarded**, and
+uncapping would take `resolved` from 273 to ~605–991 **at zero extra HTTP requests.**
+
+**Its refusal list held 80 tier-1 companies in one run** (55 workday, 14 ashby, 6 lever, 3
+greenhouse, 2 smartrecruiters). A tier-1 admission sets `watch=True` (`lanes/indeed.py:805`), so the
+board joins the scan fleet and boardwatch then holds that employer's **whole board on every later
+run, independently of Indeed and of the 24h window** — the compounding lever. It is also priced:
+9.33 s/board, so 80/run is **+12.4 min per run, forever**. Hence a **tier-aware** cap, not
+`"unlimited"`, which on a stream like Indeed would repeat LinkedIn's documented mistake.
+
+**Order: (1) one run with the Indeed override at `"unlimited"` — it is simultaneously the
+measurement and the intervention; (2) tier-aware admission; (3) arm company cells on Indeed; (4)
+`indeed_search_pages = 2`, only after (1). NOT: widening `SEARCH_RECENCY_HOURS`, uncapping
+permanently, or adding a `location` argument.** `indeed_search_pages` is second, not first, because
+`zip_longest` puts every page-1 hit ahead of every later-page hit (`lanes/indeed.py:889`), so pages
+2..N reach only already-stored companies while the cap holds.
+
+**D-452 records the bound that goes with all of this: the sizing counted what these levers would
+MATCH, not what they would FIX against gate 1.** There is no evidence the 332 refused companies'
+postings intersect job-apps' 6,568 lane-only Indeed postings, and the gate scores only the
+intersection.
+
+**The `24h` window is not the difference either** — job-apps asks the identical one
+(`job_discovery.py:6013`). What separates its ~555/day from 158/run is query shape: **222
+company-name queries/day against boardwatch's 14 broad titles and zero company queries.**
 
 ---
 

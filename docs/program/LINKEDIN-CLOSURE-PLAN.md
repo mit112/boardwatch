@@ -1,45 +1,91 @@
-# Closing the LinkedIn gap — the plan, measured 2026-09-02
+# The LinkedIn gap — sized, and the recommendation is ACCEPT THE LOSS
 
 > **Read this before proposing any LinkedIn work.** It exists so the comparison below is never
-> re-derived, and so JobSpy is not re-proposed. Reasoning: **D-431**. Numbers: METRICS
-> (Session 2026-09-02c). Retirement context: `RETIREMENT-PLAN.md`, **D-421**, **D-424**.
+> re-derived, and so JobSpy is not re-proposed. Reasoning: **D-431**, re-measured on the full
+> population by **D-453**. Retirement context: `RETIREMENT-PLAN.md`, **D-421**, **D-424**.
+>
+> **The bottom line, so nobody reads three tracks as a work queue: the defensible residual is 395
+> postings = 28/day (D-453). Track 1 is over-sized 3.4x, Track 2 is built and disarmed on
+> measurement (D-437), and Track 3 is closed.** What is left in this file is the sizing, not a plan
+> to execute.
 
-## Why this is the only thing left
+## Where LinkedIn sits among the sources
 
-Gate 1 is per-source recall (D-421). Every other source is solved or self-solving:
+Gate 1 is per-source recall (D-421). Standing per source, run 147:
 
-| source | standing 2026-09-02 |
+| source | standing, run 147 (2026-09-03) |
 |---|---|
-| employer's own boards (lever/ashby/greenhouse/workday) | **94–100% — solved** |
-| **indeed** | **0 absent, 6,740 lane-only.** boardwatch already holds everything job-apps finds; the native lane converts it as it reaches steady state. **No new work.** |
-| hiringcafe | diagnosed as a board-fleet gap (D-425); the 50-board sample is admitted and reads out over runs 145–147 (D-428) |
+| employer's own boards (lever/ashby/greenhouse/workday) | **86–100% — solved** |
+| **indeed** | **0 absent, 6,568 lane-only — 80% of the entire switch-off exposure.** **It does NOT convert by itself (D-452).** Its binder is the new-company admission cap, which discards 24–51% of every fetched hit set and refused **80 tier-1 employer boards** in one run; and its `24h` window means postings already in `lane-only` are unreachable. **There IS new work here, and it is the largest lever on the board.** |
+| hiringcafe | a board-fleet gap (D-425); the 50-board sample cost ~20x its sizing and the remaining 282 boards are refused (D-441). Lane throughput is nonetheless worth **1,331 postings / +6.19pp** (D-451) |
 | jobright | REFUSED deliberately (D-406) |
-| **linkedin** | **the whole residual** |
+| **linkedin** | **the largest residual — and the recommendation is ACCEPT THE LOSS (D-453)** |
 
-**The retirement test is `lane-only` falling to a level the owner accepts losing (D-424).** Indeed is
-87% of today's lane-only and converts by itself. So LinkedIn is what decides retirement.
+**The retirement test is `lane-only` falling to a level the owner accepts losing (D-424).** **Indeed
+is the bigger number and does not self-heal (D-452); LinkedIn is the bigger LOSS, because its
+postings are absent rather than merely dependent.** So this file sizes LinkedIn; it no longer claims
+LinkedIn alone decides retirement.
 
-## The gap, decomposed — 5,876 absent LinkedIn postings, 14d to 2026-09-02
+## The gap, decomposed — 5,650 absent LinkedIn postings, run-147 window to 2026-09-03
 
-| bucket | postings | share | employers | reachable how |
+**Re-established on ALL 5,650 (D-453).** D-431 measured 5,876 in the previous window and D-417 used
+a 77-posting sample; this reproduces D-431's shape **within 2pp**, so the decomposition is stable and
+only the population moved.
+
+| bucket | employers | postings | share | reachable how |
 |---|---:|---:|---:|---|
-| employer not in the store at all | 2,839 | 48.3% | 1,730 | needs discovery |
-| known, but only a **lane placeholder** row (no board) | 2,313 | 39.4% | 349 | **name is known** |
-| known + **real ATS row → admissible today** | 382 | 6.5% | 92 | `companies import` |
-| already watched (a real coverage miss) | 342 | 5.8% | 65 | search breadth |
+| employer not in the store under **any** key | 1,609 | 2,606 | 46.1% | needs discovery |
+| known, but only a **lane placeholder** row (no board) | 364 | 2,283 | 40.4% | **name is known** |
+| known + **real ATS row → admissible today** | **108** | **403** | 7.1% | `companies import` |
+| already watched (a real coverage miss) | 79 | 358 | 6.3% | search breadth |
 
-**Two corrections this measurement forced, both recorded in D-431:**
+**2,160 distinct employers**, and the loss is long-tailed rather than concentrated: top 10 = 737
+postings (13.0%), top 100 = 2,233 (39.5%), and **1,392 employers have exactly one** absent posting
+(24.6% of volume). The head is major employers on proprietary career sites — Google 115, Amazon 95,
+AMD 86, Walmart 74, JPMorganChase 67, Qualcomm 66, Deloitte 63, AWS 62, GM 56, IBM 53 — **a class
+D-311 already refused adapters for.**
 
-1. **D-417's "these employers plausibly have no ATS board" is REFUTED at scale.** That was n=77 and
-   read 74% not-in-store; the full population reads **48.3%**, and the not-in-store bucket is led by
-   **Raytheon, Netflix, Perplexity, Weights & Biases, Upstart, Illumio, NinjaOne, U.S. Bank** —
-   companies that plainly do have ATS boards. This is a **discovery** gap, not an architecture limit.
+**Three corrections this measurement forced (D-453), on top of D-431's two:**
+
+1. **D-417's "these employers plausibly have no ATS board" is REFUTED at scale, and the not-in-store
+   head needs two names struck: Perplexity and Illumio ARE in the store**, via `ashby:perplexity`
+   and a workday-style slug key. The rest of that head (Raytheon, Netflix, Weights & Biases,
+   Upstart, NinjaOne, U.S. Bank) stands. This is a **discovery** gap, not an architecture limit.
 2. **A "known" employer is usually NOT admissible.** `linkedin:google`, `jobapps:ibm`,
    `hiringcafe:adhoc:amazon` are lane-provenance placeholders, not boards; `companies import` takes
-   only the six real ATS providers. Board admission therefore reaches **6.5%**, not 45.9%.
+   only the six real ATS providers. Board admission therefore reaches **7.1%**, not 46%.
+3. **The decorated-name undercount is real but ~1%, so it does not rescue the table.** A slug-exact
+   key saved 13 employers / 46 postings and a name-prefix key 24 / 48, about half of the latter
+   false positives (`Nike` → "Nike Consultant"). Null controls: 300 salted nonsense names → **0/300**
+   in store; the `independent` set → **446/446 (100%)** against 53.9% for absent.
 
-**51.7% (3,037) of the absent set is at an employer boardwatch ALREADY KNOWS BY NAME** (342 watched +
-382 admissible + 2,313 placeholder). That is the population Track 2 targets.
+**53.9% (3,044) of the absent set is at an employer boardwatch ALREADY KNOWS BY NAME** (358 watched +
+403 admissible + 2,283 placeholder).
+
+## THE NUMBER THAT DECIDES THIS FILE — only 40.4% of the loss would ever be shown
+
+**Run boardwatch's own live gates over the 5,650 and only 2,281 (40.4%) reach the shortlist at all.**
+`exclude_titles` vetoes **3,130 = 55.4%** (Senior 1,617, Staff 461, Sr 354, II 300, III 196,
+Principal 184); `role_gate` `not_swe` 87; `seniority_gate` `above_band` 152; **the location veto
+fired ZERO times.**
+
+**The controls are what make this honest rather than convenient.** The `independent` set keeps
+**40.8%** — nearly identical, so **the absent set is NOT preferentially junk**, which is the
+uncomfortable direction. `lane-only` keeps 97.0%, which it must, being job-apps' filtered output by
+construction.
+
+Intersected with **job-apps' own verdict** on the same 5,650 (its `disposition_events`): no
+disposition **3,407 (60.3%)**, ended at prefilter 614 (10.9%), ended at scaffold 1,133 (20.1%),
+**reached its apply pipeline 401 (7.1%)**. Control: the `independent` set reaches its pipeline at
+8.1% — the same rate, so this is not a bucket artefact.
+
+**THE TIGHTEST DEFENSIBLE LOSS: absent AND boardwatch would keep it AND job-apps itself carried it
+= 395 postings = 28/day**, at 318 employers (1.24 each; Amazon 14, AWS 7, IBM 6, GM 5). Of those 395
+only **176 (12.6/day)** sit at an employer boardwatch already has a row for — **176 is the entire
+free ceiling of any query-shaped mechanism.**
+
+**The recommendation is ACCEPT THE LOSS (D-453).** No track below changes 28/day by an order of
+magnitude.
 
 ## JobSpy is REFUSED, on measurement (D-431)
 
@@ -68,14 +114,25 @@ usable JDs to an unauthenticated guest request today.
 
 ## The plan — three tracks, cheapest first
 
-### Track 1 — admit the 92 already-admissible boards (no new code)
-382 absent postings sit at employers whose `companies` row already carries a **real ATS
-provider+slug**. This is the mechanism D-428 already used for hiring.cafe.
+### Track 1 — admit the already-admissible boards (no new code) — **OVER-SIZED 3.4x (D-453)**
 
-- Generate candidates with the D-428 pattern (random or full; 92 is small), `companies import --verify`.
-- **Cost: 92 boards × 3.2s ≈ 4.9 min/run, forever.** Weigh against D-417's caveat.
-- **Owner's call before importing** — it spends run budget permanently.
+**403 absent postings sit at 108 employers whose `companies` row already carries a real ATS
+provider+slug — but 382/92 was never the yield, and neither is 403/108.** Priced on what boardwatch
+would actually keep:
+
+| basis | postings | per day | boards |
+|---|---:|---:|---:|
+| raw absent at an admissible employer | 403 | 29 | 108 |
+| **survives boardwatch's own gates** | **113** | **8** | **52** |
+| **and job-apps itself carried it** | **13** | **0.9** | **10** |
+
+- **Cost: 108 boards × 3.2 s ≈ 5.8 min/run, forever** — paid in full whichever basis you believe.
+- **Owner's call before importing.** It spends run budget permanently for 8/day at best.
+- Generate candidates with the D-428 pattern, `companies import --verify`.
 - Snapshot `companies` to CSV first; that is the reversal artifact, not a DB copy.
+- **D-441 is the caution to read, not D-417's:** the last board sample admitted on a per-board
+  posting estimate cost ~20x its sizing, because admitting a board scans its **entire open
+  inventory**, not its in-window slice.
 
 ### Track 2 — per-company query cells in the EXISTING native lane — **BUILT, DISARMED (D-433)**
 
@@ -139,32 +196,77 @@ D-417 proved is NOT the lever. A company-faceted cell returns postings at a comp
 cap (the `select()` rule elsewhere is that an already-stored company is FREE), or the cap will eat
 the very cells this track adds.
 
-### Track 3 — widen the facets (optional, measure before building)
-job-apps also feeds up to **20 learned terms** into its sweep. boardwatch takes facets from
-`target_titles_json` alone. Adding learned terms is a *profile* question, not a code one.
-**Measure first**: how many of the 5,876 absent postings carry a title no current facet would match?
-If the answer is small, do not build it.
+### Track 3 — widen the facets — **CLOSED (D-453). Already built, already at budget, and the premise was false.**
+
+This section said "measure before building". **It was measured, and the answer closes it twice
+over.**
+
+**It is already built and armed.** `_lane_facets` mines extra terms at the full budget
+(`MAX_MINED_FACETS_PER_RUN = 8`, `lanes/facets.py:65`) and already holds `junior software engineer`
+and `full stack developer`; the candidate pool before the cap is 32. Null control:
+`mined_facet_candidates([], profile)` → `()`.
+
+**And the premise it rested on — that absent postings carry titles no facet matches — is FALSE,
+because LinkedIn fuzzes its own matching.** 565 of the lane's 1,972 holdings (**28.7%**) carry **no
+facet phrase at all**, including exactly the terms a wider facet list would add (`full stack
+developer`, `java developer`, `ai engineer`, `frontend developer`, `python developer`). So the term
+is not what fetched them, and adding terms does not explain what is missing. The instrument
+discriminates, which is the control: ATS-board rows are 7.8% phrase-covered, hiringcafe 16.7%,
+indeed 45.9%, **linkedin 71.3%**.
+
+**Geometry is not the edge either.** `HUB_LOCATIONS` is **byte-identical** to `lane_search_hubs`
+(same 7 metros, `job_discovery.py:136`; D-411 copied it exactly) and both ask a 24h window. Per run
+boardwatch issues 33 hub cells × 5 pages × 10 + 22 no-location terms × 5 pages ≈ **1,650+ card
+slots** against job-apps' 222 × 5 + 12 × 8 = **1,206**. Normalised per DAY — mandatory, because both
+ask 24h and boardwatch's ~6.6 runs/day re-sample one pool, so a per-run comparison would be
+dishonest — boardwatch acquires **219 postings/day** against job-apps' **716/day** (3.3x) while
+spending **4.9 search requests per posting** against job-apps' **0.33**. **The gap is redundancy, not
+geometry.**
+
+**54% of the 5,650 is outside every hub metro at `distance=25`**, so only a no-location cell can
+reach it — and boardwatch's own holdings are **56.2% inside** a hub metro against job-apps' 33%.
+**The hub nets work; they are aimed at the smaller half of the loss.**
+
+### The ONE open probe — do NOT run it without the owner
+
+Whether N non-company **no-location** strings return disjoint card sets: 12 strings drawn from the 24
+unused mined candidates, measuring card-id disjointness against the current 22, **~15 s**. It either
+establishes a ceiling for raising `MAX_MINED_FACETS_PER_RUN` 8 → 32 (+45 GETs/run ≈ +0.9 min/run,
+DERIVED) or closes the last idea in this file. **It runs straight into the company cap for the 55% of
+the loss at unknown employers** — D-437 measured 12 nationwide cells presenting 61 new companies
+against a cap of 50. It issues live requests against an endpoint whose permission is a recorded owner
+ruling (D-290), which is why it is his call and not a session's.
 
 ## How to know it worked
 
 The instrument exists and is read-only: `.agent/2026-09-02c-session/linkedin_reach.py` (this
 decomposition) and `.agent/2026-09-02-session/per_source_recall.py` (gate 1).
 
-| | now | target |
+| | now (run 147) | target |
 |---|---:|---|
-| linkedin independent | 32.9% | rises |
-| linkedin absent | 5,876 | falls |
-| **linkedin lane-only** | **922** | **falls — this is the retirement exposure** |
-| already-watched misses | 342 | → ~0 (pure search breadth; nothing else explains them) |
+| linkedin independent | 34.8% | rises |
+| linkedin absent | 5,650 | falls |
+| **linkedin lane-only** | **892** | **falls — this is the retirement exposure** |
+| already-watched misses | 358 | → ~0 (pure search breadth; nothing else explains them) |
+| **absent · would be kept · job-apps carried it** | **395 = 28/day** | **this is the LOSS being accepted (D-453)** |
 
-**The 342 already-watched misses are the honest first gate on Track 2.** boardwatch watches those
+**The 358 already-watched misses are the honest first gate on Track 2.** boardwatch watches those
 boards and still missed those postings, so no admission, no discovery and no dependency can explain
 them — only query coverage can. If Track 2 does not move that number, it did not work.
+
+**And read the last row before reading any of the others.** 395 postings/day-adjusted is the whole
+prize; a track that moves `absent` without moving that number has bought postings boardwatch's own
+gates then discard.
 
 ## Traps
 
 - **Do not raise the LinkedIn company cap again.** D-417 ran the experiment: 10 → 50 bought **+1
   posting** while refusals rose 344 → 617. It is admission-bound in appearance only.
+  **This trap is LinkedIn's ALONE and does NOT transfer to Indeed (D-452).** It holds here because
+  **LinkedIn's tier-1 count is exactly 0** — the lane exposes no external apply URL, so a cap slot
+  can only ever buy a `linkedin:` placeholder row. On Indeed a slot can buy a scannable employer
+  board (~54 per run), and 80 tier-1 companies were refused in a single run. **A trap transfers only
+  as far as the mechanism it was measured on.**
 - **`lane_search_pages` is shared.** It was reverted 10 → 5; one page knob cannot mean the same
   thing for LinkedIn's ~10 cards, hiring.cafe's ~150 and Indeed's 100 (D-414 §1).
 - **A LinkedIn body must be declared `secondhand`** if it is ever written over a posting an employer
