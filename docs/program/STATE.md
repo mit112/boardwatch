@@ -40,10 +40,13 @@ Blind two-judge audits of what the owner actually opens. Full numbers and method
 - **Apply lane: ~36% unapplyable** (n=80, two disjoint samples, 8/10 agreement) — ~175 dead leads.
   **All 13 of the first audit's false positives carried `uncertain`, not `eligible`** — a ROUTING
   fact, not a catalog fact.
-- **The queue is 14-18% DUPLICATES** (apply 537 → 462 distinct `(company, normalised-title)` groups;
-  review 703 → 576). `delivered_unapplied` already dedups by canonical `job_id`, so these are
-  **different job ids for one role — an identity-resolution failure upstream**, not a queue bug.
-  Stripe New Grad ×6, CGS Federal ×10, Evlo AI ×9. **Highest-value unbuilt fix after the routing.**
+- **The queue carries 219 redundant leads, and MOST ARE NOT A DEFECT (corrected — see D-439).**
+  127 duplicate `(company, normalised-title)` groups, but only **45 groups / 76 leads share one
+  `content_hash`**; the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI
+  ×9 is nine real reqs, Haystack ×6 is six). An earlier reading of this called it an
+  identity-resolution failure — **that was wrong.** The real mechanism is D-345's cap DEFERRING
+  rather than dropping, scoped to one run while the queue is not, so a one-JD group delivers one
+  member per run forever. CGS Federal ×10 on a single hash is the shape that IS a defect.
 - Sized and NOT built: un-escaping markdown bodies 2.2% (owner-gated, re-versions postings);
   `role_gate` missing the inverted `Engineer, Software` form (5 leads — the class D-305 fixed in
   `seniority_gate` and never carried across); non-SWE residual in review only (apply-lane NOT_SWE
@@ -59,47 +62,43 @@ gate rows written before it. Land the catalog PRs first, then arm ONCE.
 ## Next action
 
 **0. TRACK 2 IS REFUTED ON LIVE MEASUREMENT AND IS DISARMED. DO NOT RE-ARM IT.**
-The owner armed `lane_company_combos_per_run = 12` on 2026-09-03; it was **dry-run against the live
-host before the first tick and disarmed the same night at 01:34** (verified through
-`load_settings()` and `config.toml`). Reasoning and the numbers: **D-437**.
+Armed at `lane_company_combos_per_run = 12` on 2026-09-03, dry-run against the live host before the
+first tick, disarmed the same night at 01:34 (verified through `load_settings()` and `config.toml`).
+Full reasoning: **D-437**. The numbers that entry does not carry, kept here:
 
-**The central premise was false and had never been probed.** A quoted company name is NOT a company
-filter on LinkedIn's guest endpoint — it is a relevance-ranked keyword. Running the exact 12 cells
-run 145 would have issued, through the same builder and ring: **4 of 120 cards on target (3%)**.
-`"Tailscale" software engineer` returned DoorDash, OpenAI, Reddit and Scale AI and **zero**
-Tailscale; `"NBCUniversal" software engineer` returned Microsoft, Netflix and NVIDIA and **zero**
-NBCUniversal.
+- **On target: 4 of 120 cards (3%).** A quoted company name is a relevance-ranked KEYWORD on the
+  guest endpoint, not a company filter. `"Tailscale" software engineer` returned zero Tailscale.
+- **The cap cost is the opposite of D-433's estimate: those 12 cells present 78 distinct companies,
+  61 of them new, against a cap of 50** — and cells sit BEFORE the hub nets in the interleave, so
+  arming it takes all 50 slots and leaves the hub nets ZERO. A straight regression.
+- **A control was necessary**: six well-known companies read ~20% on target; all twelve read 3%. The
+  six-company sample was biased toward employers who post heavily on LinkedIn. The ring is not.
+- **The obvious rescue is closed and was probed**: LinkedIn's real filter is `f_C=<numeric company
+  id>` and the guest fragment serves no numeric id, only a slug. Employer filtering needs a
+  slug-to-id mechanism on another surface — a widening of D-290 and the owner's call, not a probe.
 
-**And the cap cost is the opposite of what D-433 estimated.** Those 12 cells present **78 distinct
-companies, 61 of them new**, against a cap of 50 — and cells sit BEFORE the hub nets in the
-interleave. Arming it takes **all 50 slots and leaves the hub nets zero**, so it is a straight
-regression to the LinkedIn lane's actual breadth mechanism. D-433's "at least one slot per cell,
-upper bound not established" was right to flag the gap and far too optimistic about its size.
+**The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism
+again.** Do not propose per-company cells without naming a mechanism that actually filters by
+employer. The code stays merged and inert at `0`.
 
-**A CONTROL WAS NECESSARY AND THE FIRST READING WAS ENCOURAGING AND WRONG.** Six well-known
-companies read **~20%** on target with result sets nearly disjoint from an unfaceted control, which
-looks like the company name working. All twelve read **3%** — the six-company sample was biased
-toward employers who post heavily on LinkedIn, and the ring is not.
+**1. ANSWER ONE QUESTION — but note it does NOT work the way an earlier reading of it claimed:
+does a stated 2-YEAR experience bar rule you out?** `experience_years.near_miss_years_ceiling = 3`
+makes the engine ABSTAIN on bars at or under 3 years, so those leads are HELD FOR REVIEW.
 
-**The obvious rescue is closed too, and it was probed.** LinkedIn's real filter is
-`f_C=<numeric company id>`, and the guest fragment serves **no numeric company id** — a card carries
-`urn:li:jobPosting:<id>` and a company SLUG only. Filtering by employer would need a slug-to-id
-discovery mechanism on another LinkedIn surface, which is a **widening of D-290 and the owner's
-call**, not a probe.
+**LOWERING THE CEILING DOES NOT RELEASE THEM — IT REJECTS THEM (D-440).** A lower ceiling resolves
+those bars `unmet`, which makes the posting `ineligible` and removes it from the pile because the
+engine has started declaring you unqualified. Priced: ceiling **2** rejects 290 postings at exactly
+a 3-year bar; ceiling **0-1** rejects **505** (259 at 2y + 290 at 3y). That reverses D-333's
+recorded ruling rather than tuning a parameter, and it takes the EXPENSIVE error direction — a wrong
+`unmet` writes `ineligible` with a quoted span and silently removes a gettable job, while a wrong
+abstain costs a look. **The reject pile is never inspected, so no outcome loop can ever contradict
+it.** Recommendation on the numbers: do NOT lower it.
 
-**The 342 already-watched misses are therefore STILL OPEN and the LinkedIn residual has no proposed
-mechanism again.** Do not re-arm Track 2, and do not propose per-company cells without naming a
-mechanism that actually filters by employer. The code stays merged and inert at `0`.
-
-**1. ANSWER ONE QUESTION, AND IT OUTWEIGHS EVERY RULE SHIPPED THIS SESSION: does a stated 2-YEAR
-experience bar rule you out?** `experience_years.near_miss_years_ceiling = 3` makes the engine
-ABSTAIN on bars at or under 3 years rather than reject them. Across the **475** review-lane leads
-held for `experience_requirement` the rows are **2,809 `unknown` · 258 `unmet` · 43 `met`** — the
-engine declining to decide on exactly the bar you are closest to. **Two blind judges disagreed on
-this and it moved ~10 of 40 leads**, which is why the review lane's wrong-hold rate is a RANGE
-(**17%–47%**) rather than a number. Not free either way — D-333 records that each extra year moves
-genuinely-too-senior postings into the delivered pool, and **the reject pile is never inspected, so
-a wrong `unmet` is invisible by construction.**
+**And the ceiling cannot deliver the range that was attributed to it.** Of 1,141 abstained
+`experience_years` rows on delivered leads, **583 are the near-miss band and 465 are `scoped to a
+skill`** — which abstains in both directions whatever the ceiling is (corpus-wide: 186,553 scoped
+against 27,823 near-miss). **If one declared year understates you, the thing to change is
+`total_years_experience` — profile DATA — not this policy threshold.**
 
 **2. MERGE #341 (D-436) AND #343 (D-438) ATTENDED, THEN ARM THE `final_gate:` LANE — in that order,
 and the order is FORCED.** Both PRs move `rules_hash`; `record_gate_verdict` keys on

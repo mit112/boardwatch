@@ -266,3 +266,60 @@ class TestSponsorshipRefusalDiscriminatesOnObjectNotDistance:
         assert ("work_auth:no_sponsorship_offered", "unmet") in _work_auth_rows(
             catalog, body, EAD_NEEDS_SPONSORSHIP
         )
+
+
+# Found by a SILENCE AUDIT, not by reading patterns: over 700 random live bodies, count the
+# documents whose text plainly raises a family's topic where that family wrote ZERO rows. As a
+# RATE that measure is useless -- `internship` reads 75% because its trigger is a
+# self-declaration and never a mention (by design, and worth 40.1% -> 100.0% precision), and
+# `degree` reads 79% because "Bachelor's preferred" is a preference. As a DISCOVERY tool it
+# works: two of the `work_auth` silences were real, and both are D-436's class.
+PASSIVE_REFUSAL = (
+    "Legal authorization to work in the United States - Sponsorship will not be provided "
+    "for this position."
+)
+#: The negator sits between the modal and the copula ("will NOT be"), so neither the
+#: `(is|are|will be)?` arm nor the `(not|no longer|never)` arm could consume it.
+CITIZENS_ONLY_PARENTHETICAL = "US Citizens only (onsite role)."
+#: The clause ends in a parenthetical rather than a full stop, and the terminator is what stops
+#: the standalone pattern swallowing a sentence that merely BEGINS with the phrase -- so it is
+#: widened by one character rather than removed.
+SPONSORSHIP_OFFERED = "Sponsorship will be provided for the right candidate."
+COMPANY_NAMED_VISA = (
+    "Visa is a world leader in payments technology, facilitating transactions worldwide."
+)
+EEO_BOILERPLATE = (
+    "We provide equal employment without regard to race, color, national origin, citizenship, "
+    "ancestry, religion, creed, sex, or veteran status."
+)
+
+
+class TestSilenceAuditFindings:
+    def test_a_passive_refusal_is_ineligible(self, catalog: RulesCatalog) -> None:
+        assert _verdict(catalog, PASSIVE_REFUSAL, EAD_NEEDS_SPONSORSHIP) == "ineligible"
+        assert ("work_auth:no_sponsorship_offered", "unmet") in _work_auth_rows(
+            catalog, PASSIVE_REFUSAL, EAD_NEEDS_SPONSORSHIP
+        )
+
+    def test_a_citizens_only_clause_ending_in_a_parenthetical_fires(
+        self, catalog: RulesCatalog
+    ) -> None:
+        assert ("work_auth:us_citizen_standalone_required", "unmet") in _work_auth_rows(
+            catalog, CITIZENS_ONLY_PARENTHETICAL, EAD_NEEDS_SPONSORSHIP
+        )
+
+    def test_the_mirror_offer_is_not_read_as_a_refusal(self, catalog: RulesCatalog) -> None:
+        """The control the passive arm most needs: `will BE provided` is the OPPOSITE claim and
+        must resolve as an OFFER, never a refusal. A widened negation arm that swallowed this
+        would reject every posting that offers sponsorship."""
+        rows = _work_auth_rows(catalog, SPONSORSHIP_OFFERED, EAD_NEEDS_SPONSORSHIP)
+        assert ("work_auth:no_sponsorship_offered", "unmet") not in rows
+        assert _verdict(catalog, SPONSORSHIP_OFFERED, EAD_NEEDS_SPONSORSHIP) != "ineligible"
+
+    @pytest.mark.parametrize(
+        "body", [COMPANY_NAMED_VISA, EEO_BOILERPLATE], ids=["company_named_visa", "eeo"]
+    )
+    def test_topic_MENTIONS_stay_silent(self, catalog: RulesCatalog, body: str) -> None:
+        """The other half of what the silence audit measured. These are why its RATE overstates:
+        a body can raise the topic without stating a requirement, and silence is then correct."""
+        assert _work_auth_rows(catalog, body, EAD_NEEDS_SPONSORSHIP) == []
