@@ -2662,6 +2662,7 @@ def _sync_queue(
     console.print(
         f"  queue → {root}: {synced.created} new, {synced.updated} updated, "
         f"{synced.unchanged} unchanged, {synced.moved + drained.moved} moved, "
+        f"{synced.retired} retired, "
         f"{synced.failed + drained.failed} failed{contended}",
         markup=False,
     )

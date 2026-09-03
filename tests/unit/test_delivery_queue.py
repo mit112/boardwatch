@@ -1170,6 +1170,49 @@ def test_a_lead_whose_canonical_job_MOVED_keeps_the_folder_it_already_has(
     )
 
 
+def test_TWO_folders_converging_on_one_job_are_consolidated_not_refused_forever(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The two-folder variant of the convergence above, and the one that shipped a permanent bug.
+
+    The test above delivers the second posting only AFTER the first sync, so the second posting
+    never has a folder of its own and the conflict cannot arise. Here BOTH postings are delivered
+    and synced first, so both get folders — disambiguated by the eight-hex identity suffix,
+    because they share company and title. The convergence then re-keys the loser's planned name
+    onto the name the winner's folder already occupies.
+
+    Against the version that DROPPED an ambiguous job from the by-job index, `_entry_for` returned
+    the stale folder, `_relocate` refused an occupied destination, and nothing ever removed either
+    folder or re-offered the losing posting — so it raised `QueueConflictError` on this sync and
+    on every sync after it. Measured in production as posting 131368, in all of runs 140-144.
+    """
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one")
+        second, second_job = _deliver(conn, apps, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 2, _folders(root)
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == first).values(job_id=second_job))
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failed == 0, report.failures
+    assert report.retired == 1, f"the duplicate folder was left on disk: {_folders(root)}"
+    folders = _folders(root)
+    assert len(folders) == 1, f"one job must hold one folder, got: {folders}"
+    assert int(str(_details(root / folders[0])["posting_id"])) == second
+
+    # And it must STAY consolidated: a second pass has nothing left to retire and must not
+    # oscillate between the two names.
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failed, again.retired) == (0, 0), (again.failures, again.retired)
+    assert _folders(root) == folders
+
+
 def test_a_name_still_taken_after_disambiguation_is_REPORTED_not_returned_twice(
     tmp_path: Path,
 ) -> None:

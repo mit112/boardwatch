@@ -171,12 +171,17 @@ class SyncReport:
 
     `failed` is derived from `failures` rather than counted alongside it, so the two can never
     disagree.
+
+    `retired` is orthogonal too, and counts DUPLICATE folders deleted because identity resolution
+    converged two postings onto one canonical job. It is reported rather than silent because it
+    is the only destructive thing this function does.
     """
 
     created: int = 0
     updated: int = 0
     unchanged: int = 0
     moved: int = 0
+    retired: int = 0
     failures: tuple[LeadFailure, ...] = ()
     contended: bool = False
 
@@ -397,9 +402,14 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         for row in rows
     }
     artifact_ids = _tailored_artifact_ids(conn)
-    entries, by_job = _resolve_job_identity(conn, _index(root)[0])
+    entries, by_job, duplicates = _resolve_job_identity(conn, _index(root)[0])
     planned, failures = _plan(rows, root=root, owner_name=owner_name)
     failed = {failure.posting_id for failure in failures}
+
+    # BEFORE the relocation pass, which is what would otherwise refuse the occupied destination.
+    retired, retire_failures = _consolidate_duplicates(duplicates, entries, by_job)
+    failures.extend(retire_failures)
+    failed.update(failure.posting_id for failure in retire_failures)
 
     moved = 0
     for row in rows:
@@ -454,6 +464,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         updated=updated,
         unchanged=unchanged,
         moved=moved,
+        retired=retired,
         failures=tuple(failures),
     )
 
@@ -780,7 +791,11 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
     # would otherwise be filed against the identity it was written under rather than the one it
     # has now.
-    entries, _ = _resolve_job_identity(conn, entries)
+    # Duplicates are read but NOT consolidated here: deleting a folder happens in exactly one
+    # place, `sync_queue`, which is the pass that has the plan and the offered rows to decide a
+    # keeper with. Reconcile moves by `entry.job_id` and never renames, so it cannot hit the
+    # occupied-destination conflict that consolidation exists to end.
+    entries, _, _ = _resolve_job_identity(conn, entries)
     counts = {
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
@@ -867,6 +882,52 @@ def _wanted_location(
     return ""
 
 
+def _consolidate_duplicates(
+    duplicates: dict[int, tuple[_Entry, ...]],
+    entries: dict[int, _Entry],
+    by_job: dict[int, _Entry],
+) -> tuple[int, list[LeadFailure]]:
+    """Collapse folders that identity resolution converged onto ONE canonical job.
+
+    **This is the only place this module deletes a lead folder, and the deletion is safe for a
+    reason that does not generalise.** The queue holds COPIES — no `artifacts` row points into
+    it, and `reconcile_queue`/`sync_queue` rebuild any folder from the store — and every folder
+    reaching here is fully classified, so the "never delete what you cannot classify" rule is not
+    engaged. What is removed is a SECOND copy of one job; the job keeps a folder.
+
+    **The keeper is simply the first path, and which one survives is genuinely arbitrary.** Both
+    folders are copies of one job; the relocation pass then moves the survivor to the planned
+    name — free, because the duplicate that occupied it is gone — and the create/update pass
+    re-stamps its `details.json` for the offered posting. Preferring the offered posting's folder
+    was tried and no test could tell the two apart, which is the definition of a branch that is
+    not earning its place. Sorting by path is what makes the choice deterministic across runs.
+    There is no oscillation risk to guard against here: after this pass the job has ONE folder,
+    so a second run finds no duplicate at all.
+
+    Deleting is per-folder isolated: one unremovable directory must not cost the other leads, so
+    it becomes a `LeadFailure` like any other and the survivor is still indexed.
+    """
+    retired = 0
+    failures: list[LeadFailure] = []
+    for job_id, group in sorted(duplicates.items()):
+        keeper = group[0]
+        by_job[job_id] = keeper
+        for entry in group:
+            if entry.path == keeper.path:
+                continue
+            try:
+                shutil.rmtree(entry.path)
+            except Exception as exc:  # one undeletable folder must never cost the rest
+                failures.append(LeadFailure(posting_id=entry.posting_id, detail=_detail(exc)))
+                continue
+            # Drop the removed folder from the posting index too, or `_entry_for` hands the
+            # create/update pass a path that no longer exists.
+            if entries.get(entry.posting_id) is entry:
+                del entries[entry.posting_id]
+            retired += 1
+    return retired, failures
+
+
 def _relocate(src: Path, dst: Path) -> None:
     """Move a whole folder, refusing an occupied destination rather than merging into it."""
     if dst.exists():
@@ -923,7 +984,7 @@ def _index(root: Path) -> tuple[dict[int, _Entry], tuple[str, ...]]:
 
 def _resolve_job_identity(
     conn: Connection, entries: dict[int, _Entry]
-) -> tuple[dict[int, _Entry], dict[int, _Entry]]:
+) -> tuple[dict[int, _Entry], dict[int, _Entry], dict[int, tuple[_Entry, ...]]]:
     """Refresh each folder's job identity from the store, and index the folders by it as well.
 
     A folder records the `job_id` it was written under, and that answer GOES STALE. Identity
@@ -939,25 +1000,32 @@ def _resolve_job_identity(
     it, the skip state keys on it, and `delivered_unapplied` deduplicates on it. `_index` keying
     its dict on `posting_id` was the odd one out.
 
-    Returns the entries with a refreshed `job_id`, and a second index keyed by that job. **A job
-    two folders both resolve to is dropped from the by-job index rather than picked between** —
-    the same refusal `_index` makes for two folders claiming one posting, and it costs nothing
-    beyond leaving today's exact-posting behaviour in place for that lead.
+    Returns the entries with a refreshed `job_id`, a second index keyed by that job, and the
+    groups where more than one folder resolved to one job.
+
+    **The duplicates are RETURNED rather than dropped, and that is a correction.** Dropping them
+    was believed to cost "nothing beyond leaving today's exact-posting behaviour in place", which
+    is true when only ONE of the two postings has a folder. When BOTH do — the disambiguation
+    pair, which is exactly what a shared company+title produces — the dropped job left
+    `_entry_for` returning the OLD folder while the planned name pointed at the folder the other
+    posting already occupied, and `_relocate` then refused an occupied destination on every run
+    forever, because nothing here removed a folder and the losing posting was no longer offered.
+    Measured: posting 131368, in every run from 140 to 144.
     """
     current = canonical_job_ids(conn, sorted({entry.posting_id for entry in entries.values()}))
     refreshed: dict[int, _Entry] = {}
-    by_job: dict[int, _Entry] = {}
-    ambiguous: set[int] = set()
+    grouped: dict[int, list[_Entry]] = {}
     for posting_id, entry in entries.items():
         entry = replace(entry, job_id=current.get(posting_id, entry.job_id))
         refreshed[posting_id] = entry
-        if entry.job_id in by_job:
-            ambiguous.add(entry.job_id)
-        else:
-            by_job[entry.job_id] = entry
-    for job_id in ambiguous:
-        by_job.pop(job_id, None)
-    return refreshed, by_job
+        grouped.setdefault(entry.job_id, []).append(entry)
+    by_job = {job_id: group[0] for job_id, group in grouped.items() if len(group) == 1}
+    duplicates = {
+        job_id: tuple(sorted(group, key=lambda e: e.path))
+        for job_id, group in grouped.items()
+        if len(group) > 1
+    }
+    return refreshed, by_job, duplicates
 
 
 def _entry_for(
