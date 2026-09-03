@@ -21,83 +21,45 @@
 
 ## Current standing
 
-### Session 2026-09-03: the queue is audited END TO END, and the waste is EXTRACTION — now with a mechanism
+### Session 2026-09-03: the queue is audited END TO END, the waste is EXTRACTION — and three items closed by REFUTATION rather than by building
 
-Reasoning: **D-436**, **D-438**, **D-442**, **D-443**. Numbers: `METRICS.md` (Session 2026-09-03).
-**Run 145** read out below. The earlier headline "the catalog is 8% of the problem" is RETIRED — it
-read a verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
+Reasoning: **D-436**, **D-438**, **D-442**, **D-443** (extraction); **D-439**, **D-444** (the slate
+cap); **D-445**, **D-446** (the `gh_jid` refutation and the standing duplicates); **D-447** (the
+modifier window). Numbers: `METRICS.md`, **both** the `Session — 2026-09-03` and
+`Session — 2026-09-03b` blocks. **Run 145** read out below; **run 146** was an eligibility-only
+pass (see item 2a). The earlier headline "the catalog is 8% of the problem" is RETIRED — it read a
+verdict distribution as a defect attribution, and D-443 names the mechanism it was hiding.
 
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
 
-### The 2026-09-03 queue audit — the waste is catalog COVERAGE, not routing
+### The 2026-09-03 queue audit — SETTLED, moved whole into `STANDING-FACTS.md`
 
-Blind two-judge audits of what the owner actually opens, reproduced independently by two sessions.
-Mechanism: **D-436** (extraction) and **D-442** (the routing read). Full method in METRICS.
-
-**THE HEADLINE THIS SESSION FIRST PUBLISHED — "the catalog is 8% of the problem, routing is the
-rest" — WAS WRONG, and it was wrong by reading a verdict DISTRIBUTION as a defect ATTRIBUTION.**
-8% of the apply lane carries an `eligible` verdict; that says where verdicts land, not where the
-defect lives. Three sessions handed `review_gate.lane()` forward as *the lever* and **none had read
-it.**
-
-| | |
-|---|---|
-| apply lane | **597** — 526 `uncertain`, 49 `eligible`, 22 unevaluated |
-| **of the 526, with ZERO requirement rows** | **481-487** (two independent counts) |
-| their JD bodies | median **4,636 chars**, only 4 under 200, **~390 over 2,000** |
-| `_review` | **1,007** — `experience_requirement` 497, `ineligible_verdict` 288, `role_unconfirmed` 175 |
-
-**The routing is deciding CORRECTLY.** `experience_unconfirmed` fires **497** times, so the flag
-works; all 597 apply-lane leads carry both flags False **because nothing was extracted, not because
-nothing is wrong**. `_no_evaluable_requirement` makes them `uncertain` and `review_gate` never reads
-WHY. **So the ~36% unapplyable rate IS the extraction gap arriving from the other end** — the same
-finding as D-436's "every miss was a missing row", and the same reason the abstain report cannot see
-it: **a family that extracts nothing is silent, and silence is indistinguishable from "the JD says
-nothing".**
-
-**IT SPLITS, AND ONLY A QUARTER IS COVERAGE (D-442).** Probing the zero-row bodies: **128 (26.3%)
-carry a years bar in some form** (14 escaped punctuation, 24 spelled-out, 10 parenthesised), 55
-citizenship/LPR, 32 sponsorship, 6 clearance, 4 non-English, **0 degree-required**. The other **~74%
-trip none of those probes** — for those the JD may genuinely state no catalogued requirement, making
-`uncertain` correct and the only question what an apply lane should DO with it. **The negative half
-is bounded by those probes and nothing wider**: widening them can only move leads from the second
-population into the first, never the reverse.
-
-**THE GATE IS MEASURED, NOT ESTIMATED.** 77 apply-lane leads, two independent judges, real schema,
-nothing applied: **15 demoted (19.5%), and 15 of 15 rejections survive `accept_oracle_verdict`'s
-keystone span guard — ZERO span failures.** Every rejection quotes the employer's own JD, and two are
-cases no amount of pattern work reaches (a French-language JD; markdown-escaped punctuation). Scaled
-to 597: ~**116 demoted, each with a checkable quote**. Verdicts at `{config_dir}/verdicts_a.json` /
-`verdicts_b.json` — **spot-check, then `gate apply`**. The earlier "~50-100 wrongly removed" treated
-inter-rater disagreement as error-against-truth and ignored the guard; **retired**.
-
-**Treatment vs cure.** The `final_gate:` LLM lane is the TREATMENT — it reads the JD directly and
-catches what the patterns miss. **Catalog coverage is the CURE**, and the instrument is
-**partial-match instrumentation of the patterns themselves** (a family that ALMOST matched), which a
-cue vocabulary cannot substitute for: correct silence and a missed extraction look identical to a
-cue and different to a near-miss. **D-442 holds the routing question** — ~360 of the 481 have no
-detectable requirement at all, so it is "what should an apply lane do with a JD that states
-nothing?", a decision about what the lane MEANS rather than a bug fix. Priced: apply **597 → 116**.
-
-**The queue's 219 redundant leads are MOSTLY NOT A DEFECT (D-439).** 127 duplicate
-`(company, normalised-title)` groups, but only **45 groups / 76 leads share one `content_hash`**;
-the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI ×9 is nine real
-reqs). An earlier reading called it identity resolution — **wrong**. The mechanism is D-345's cap
-DEFERRING rather than dropping while scoped to one run, so a one-JD group delivers one member per
-run forever. CGS Federal ×10 on a single hash is the shape that IS a defect.
-
-**Sized and NOT built:** un-escaping markdown bodies 2.2% (owner-gated, re-versions postings);
-`role_gate` missing the inverted `Engineer, Software` form (5 leads — the class D-305 fixed in
-`seniority_gate` and never carried across); non-SWE residual in review only (apply-lane NOT_SWE was
-0 of 40); `classify_location` fails open on Nottingham.
-
-**`final_gate:` is built, keystone-guarded, identity-keyed, read by the ranker, and 0 rows on the
-live store.** Request path VERIFIED live: **521 judgeable items of 537**, independence preserved,
-read-only. **Ordering is forced** — `record_gate_verdict` keys on `build_identity(..., catalog, ...)`,
-so any catalog change invalidates gate rows written before it. Land catalog PRs first, then arm ONCE.
+Two blind two-judge audits, reproduced independently by two sessions. **The conclusion that still
+drives work: the waste is catalog COVERAGE, not routing** — `review_gate` decides correctly on the
+information it is given, and 481-487 of the apply lane's 526 `uncertain` leads carry **zero**
+requirement rows against a median JD of 4,636 characters. The headline this session first
+published — "the catalog is 8% of the problem, routing is the rest" — is **RETIRED**: it read a
+verdict DISTRIBUTION as a defect ATTRIBUTION. Mechanism in **D-436** and **D-442**; the three
+mechanisms found since in **D-443**, **D-447** and **D-449**. What is left to do about it is items
+1-3 under Next action, not this block.
 
 ## Next action
+
+**THE THREE THINGS CARRIED OUT OF 2026-09-03, in the order they pay. Everything else Mit ruled
+on is done and recorded — see the ruling table under "Owner-gated".**
+
+1. **RE-PRICE A3 AFTER RUN 147, NOT BEFORE.** D-443's unescape runs at INGEST, so the 478 already-
+   escaped bodies keep their escapes until the lane re-ingests them. The 598 → 90 figure is
+   computed against a population that has not refreshed yet, so pricing the routing predicate now
+   prices the wrong one.
+2. **READ A7's YIELD ON THAT SAME RUN.** The 50-board hiring.cafe sample costs ~60 min/run and
+   bought 10 delivered leads on run 145. Mit ruled **hold one run**, so run 147 is the read.
+3. **A8's SAME-SENTENCE CASE — 581 postings, and it is STILL HIS.** His ruling covered the
+   cross-sentence half (7 postings, already the shipped behaviour). The instrument needed is a
+   **sentence-scoped `abstain_by`** — `_suppressed` already takes `bounds` and `abstain_by` never
+   passes one — which is shared machinery and its own decision. **A document-scoped fix would
+   repair the 581 and BREAK the 7 he just ruled on.**
 
 **0. TRACK 2 IS REFUTED AND DISARMED. DO NOT RE-ARM IT, and do not propose per-company cells without naming a mechanism that actually filters by employer** — a quoted company name does not. Code stays merged and inert at `0`. **The 342 already-watched misses are STILL OPEN and the LinkedIn residual has no proposed mechanism again.** Measurement and the closed rescue: **D-437**, and this section verbatim in `STANDING-FACTS.md`.
 
@@ -164,15 +126,10 @@ WHOLE into `STANDING-FACTS.md` at this close; numbers in `METRICS.md` (Run 145).
 - **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES (D-436).** Moved
   WHOLE into `STANDING-FACTS.md`. The 13 have ~7 distinct root causes, so more patterns is
   whack-a-mole; **D-443 is the first of them fixed at its actual layer.**
-- **THE ESCAPED-BARS HALF IS BUILT AND AWAITING YOUR MERGE — #354, D-443.** The escapes are **one
-  lane's**: jobapps **473 of 1,620 bodies (29.2%)**, workday 6, greenhouse 2, **every other provider
-  0.0%**, so the fix is one unescape in `lanes/jobapps._body` and not a body-normalisation layer (a
-  shared normaliser would have rewritten 137,057 bodies to fix zero). Measured through the real
-  engine: **132 bodies go from ZERO requirement rows to some, 83 verdicts move, 11 leads leave
-  `eligible`**, and nine of the new rows are sponsorship refusals that were unreadable. All 83 moves
-  were read against the employer's own quoted span, including the single promotion. **Still
-  owner-gated to MERGE** because it re-versions postings and changes what you are told you can apply
-  to — not because anything about it is unmeasured.
+- **The job-apps unescape is MERGED (#354, D-443) — the numbers are now history, kept in
+  `STANDING-FACTS.md`.** One lane's problem: jobapps **473 of 1,620 bodies (29.2%)**, every other
+  provider 0.0%. **132 bodies gained their first requirement row, 83 verdicts moved, 11 leads left
+  `eligible`**, each read against the employer's own quoted span.
 - **The spelled-out and parenthesised halves are REFUSED on measurement, and that reverses this
   session's own write-up (D-443).** `four (4) years` looked clean at 9 sentences on the 487-lead
   sample; over the whole store the form is **1,006 distinct sentences** dominated by `no convictions
@@ -202,24 +159,61 @@ PER-SOURCE RECALL (D-421) and only the per-source THRESHOLD is still owed; job-a
 until it is met (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410). **Do not re-litigate
 80%, do not re-derive "most", do not re-probe Indeed.**
 
-**A. THE NINE MEASURED DECISIONS WAITING ON YOU, in the order they pay.** Three are merges — **#354 (A1), #344 (A5), #357 (A9)** — and none is auto-merging. Read the ordering note under the table before starting: two of them move the catalog, and A2 fails SILENTLY if it runs first.
+**A. THE NINE DECISIONS — FOUR DONE, FOUR RULED, ONE OPEN. 2026-09-03; read the provenance line.**
+
+> **FOUR OF THE NINE ARE DONE AND VERIFIED FROM THE REPO AND THE STORE, not from a merge
+> message.** `main` carries **#354 (A1)**, **#357 (A9)** and **#344 (A5)**; the live store holds
+> **87 `queue.skipped.*` rows and 0 ledger `skipped` dispositions**, which is **A6** executed
+> through the reversible mechanism D-446 recommended. Reversal list:
+> `a6-skipped-duplicates-20260903-114210.json` in the config dir.
+>
+> **The slate cap is confirmed live through the shipped code, not a proxy**: reading
+> `standing_slate_keys` against the store gives **1,514 keys held, 3 still carrying more than one
+> lead, 3 redundant leads** — down from 53 groups / 89 leads before A6. The 87 skips are correctly
+> EXCLUDED from the seed, which is the property that makes every deferral end.
+>
+> **The RULINGS below (A2, A3, A4, A7, A8) were RELAYED through a peer session**, not read from
+> Mit directly by the session that wrote this line. Recorded so the work is not re-litigated, and
+> marked so a wrong relay is correctable rather than canon. **Confirm before acting on one that
+> deletes or rejects.**
+
+| # | ruling | status |
+|---|---|---|
+| **A1** | merge | **DONE** — `main` `113b91af` |
+| **A2** | **yes — and the SPOT-CHECK IS DONE AND PASSED (15/15 correct against the employer's own words). The APPLY HALF IS IMPOSSIBLE.** | `gate apply` REFUSES `verdicts_a/b.json`: they carry `label`/`reason`/`evidence`, and `OracleVerdict` also requires `decision` and `confidence`. **They are audit notes, not gate verdicts** — nothing can be applied without fabricating a confidence the judges never gave. Applying anything needs a real `gate request` → judge → `gate apply` cycle. VERIFIED by reading both files and the dataclass |
+| **A3** | **delegated — re-priced 598 → 90, and NOT YET IMPLEMENTABLE** | the unescape runs in `lanes/jobapps._body` **at INGEST**, while `preflight` reads `posting_versions.body_text` straight from the store — so **all 478 already-escaped bodies stay escaped until the lane re-ingests them**, and `eligibility run` cannot realise D-443. Price the predicate after those bodies refresh, not before. VERIFIED by reading both call sites |
+| **A4** | **REFUSED after measurement** | his answer was a FACT, not an instruction — exactly the distinction D-440 exists to record. Measured cost against the CURRENT store is **1,458 postings rejected**, not D-440's 505. `near_miss_years_ceiling` STAYS at 3 |
+| **A5** | merge | **DONE** — #344, `main` `6770608c`; gate 0 (9,336 passed), CI 24/24 |
+| **A6** | executed | **DONE** — 87 skipped, reversible |
+| **A7** | **hold one run** | re-read after the next full run before deciding |
+| **A8** | **HALF CLOSED, HALF NEVER ASKED — do not read this row as settled** | **Cross-sentence** ("does a disjunction waive a SEPARATE `8+ years of C++`?") is his ruling, is **7 of 588 postings**, and is **already the shipped behaviour** — nothing to do. **Same-sentence** (`Bachelor's degree or 5+ years of software engineering experience` — does it waive ITSELF on the scoped arm?) is **581 postings and was NEVER PUT TO HIM.** The A8 row conflated the two |
+| **A9** | merge | **DONE** — #357, `main` `268f904d` |
+
+**A8's same-sentence half is the live question, and the asymmetry is ONE WORD.**
+`…or 5+ years of experience` resolves `uncertain`; `…or 5+ years of **software engineering** experience` resolves `ineligible` — because only the total arm carries
+`degree_alternative_to_years`. Mit holds a Master's and clears the degree arm in both. **D-073 already ruled this shape undecidable for the total arm and cites a real job deleted by getting it
+wrong.** The D-447-era wiring is the WRONG instrument: being document-scoped it would fix the 581 and break the 7 he just ruled on. The right one is a **sentence-scoped escape** (`_suppressed` already takes `bounds`; `abstain_by` never passes one) — shared machinery, and its own decision.
+Written up as **D-449**, on `main`.
+
+**A4's answer is a FACT, not a policy move, and that distinction is the whole of D-440.**
+"I don't have 2 years of work ex" answers the profile question; it does NOT by itself say
+to lower `near_miss_years_ceiling`, because lowering it makes the engine REJECT those
+postings rather than release them. Re-read D-440 before changing the value.
+
+**The priced table below holds only the decisions still OPEN or delegated.** A1, A5, A6 and A9 are done and their pricing is in D-443, D-439/D-444, D-446 and D-447 — repeating it here would be a second copy that can drift.
 
 | # | decision | what it costs / buys | where the numbers are |
 |---|---|---|---|
-| **A1** | **Merge #354** (D-443, job-apps unescape) | 132 bodies gain their first requirement row; **11 leads leave `eligible`**; 70 move `uncertain`→`ineligible`, each quoting the employer. Re-versions 478 postings on the next ingest. **Gated only because it changes what you are told you can apply to** | #354's body; `METRICS.md` (Session 2026-09-03) |
 | **A2** | **Spot-check the 15 judged rejections, then decide whether to run a FULL gate cycle** | `verdicts_a.json` (8) + `verdicts_b.json` (7) hold **15 rejections** from the 77-lead measurement, each quoting the employer; **15 of 15 spans survive the keystone guard, 0 failures**. Applying them demotes **15 postings, NOT ~116** — the ~116 is what a full `gate request` → judge → `gate apply` over all 597 would project at the measured 19.5%, and nobody has run that cycle. **MUST run AFTER A1 and D-447 land** (see below) | the two files, in the config dir |
 | **A3** | **D-442's routing predicate** — zero requirement rows ⇒ `_review` | apply **597 → 116**, review 1,007 → 1,488. An **81% cut** to the pile you work from. **Not a bug fix** — it is what you want the apply lane to MEAN | D-442 |
 | **A4** | **Does a stated 2-YEAR bar rule you out?** | `near_miss_years_ceiling`; **lowering it REJECTS rather than releases** (ceiling 2 rejects 290, 0-1 rejects 505). Recommendation: do NOT lower | D-440 |
-| **A5** | **Merge #344** (D-439/D-444, the seeded slate cap) | a byte-identical twin is held until you apply to or skip the first, instead of arriving the next day. **Stops the pile growing; removes none of it.** Gated for the same reason as A1 — it changes which leads a run delivers | #344's body; D-439, D-444 |
-| **A6** | **The 89 duplicates already standing** — leave them, or bulk-skip them | 53 groups, one of 10. **Recommended: bulk `mark_job_skipped`** — folders move to `_skipped/`, nothing is deleted, **reversible in one call**. Deletion is REJECTED: these are 142 distinct jobs, so the queue's existing delete argument does not transfer | D-446 |
 | **A7** | **Keep paying for the 50-board hiring.cafe sample, or revert it** | ~**60 min/run forever** for **10 delivered leads** on run 145. Reverting is a `companies` restore from `companies-prehcsample-20260902-183019.csv`. **Adding the other 282 is CLOSED and is not this question** | D-441 |
 | **A8** | **Does a degree disjunction reach a SCOPED bar?** — wire `degree_alternative_to_years` to the six scoped/domain minimum patterns | **365 SWE+US postings move `ineligible` → `uncertain`**, out of a reject pile that is never inspected and into review. Cost: `abstain_by` is **DOCUMENT-scoped**, so a JD saying "Bachelor's or 4 years" for its general bar would also waive a separate "8+ years of C++". Today the same sentence **abstains on the total arm and rejects on a scoped one**. **A claim about what a disjunction MEANS, not a consistency repair** | D-447; `test_experience_range_recall.py`, the defect pin |
-| **A9** | **Merge #357** (D-447, the four-word domain phrase) | `5+ years of **full stack** software engineering experience` was one word over the `{0,2}` run and wrote **no requirement row at all** — `uncertain` by silence, which `review_gate` reads as blindly-appliable. **565 of 8,162 four-modifier bodies have the family silent.** Widening adds **2,355 matches / 1,474 spans / 2,269 bodies**, every span beginning with a year count; **15 SWE+US demotions, all 5-10 year bars on Senior/Staff/Lead/Principal/VP titles**. The vocabulary fix was tried first and bought **zero**. **STACKED — needs A1 (#354) first** | #357; D-447 |
 
 **A1 and A3 interact and A1 comes first**: the unescape moves 132 leads out of the zero-rows
 population A3 prices, so deciding A3 before A1 lands prices a population that is about to shrink.
 
-**A2 is ORDER-FORCED and fails SILENTLY if you get it wrong.** `record_gate_verdict` builds its identity from the catalog and stores the `rules_hash`, so **any catalog change invalidates gate rows written before it** — verdicts applied ahead of #354 and D-447 are written under an identity the ranker no longer reads. No error, no warning, just no effect. Land the catalog PRs first, then judge, then apply.
+**A2's ordering note still applies to the FULL cycle, not to the files.** The files cannot be applied at all (see the row); this is about whatever you judge next. **It is ORDER-FORCED and fails SILENTLY if you get it wrong.** `record_gate_verdict` builds its identity from the catalog and stores the `rules_hash`, so **any catalog change invalidates gate rows written before it** — verdicts applied ahead of #354 and D-447 are written under an identity the ranker no longer reads. No error, no warning, just no effect. Land the catalog PRs first, then judge, then apply.
 
 **A8 is independent of A1 and A3** — it moves postings that are already `ineligible`, which neither the unescape nor the routing predicate touches. **A1 and A5 must be read out on ONE run, not two.** **A9 is STACKED on A1**: its base branch is #354's, so #354 merges first or #357 cannot. **A9 also moves the catalog**, so it is one of the two changes A2 must wait behind. #344 shrinks the delivered population and #354 changes the verdicts on it, so whichever lands second is measured against a population the first moved. **A6 is independent of both** — it touches only leads already on disk.
 
