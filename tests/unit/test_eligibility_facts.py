@@ -63,6 +63,7 @@ def test_absent_facts_render_as_null_not_missing_keys() -> None:
     assert set(payload) == {
         "work_authorization", "total_years_experience", "security_clearance", "highest_degree",
         "field_of_study", "employment_type_preference", "internship_preference",
+        "education_timing",
         "career_field",  # engine-gated (not resolver-declared) — hashed unconditionally, per B1
     }
     assert all(value is None for value in payload.values())

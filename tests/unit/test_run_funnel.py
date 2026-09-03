@@ -944,7 +944,7 @@ def test_the_markdown_reports_every_catalog_rule_including_those_that_never_fire
     body = funnel_to_markdown(funnel(abstain=build_abstain_report(cat, {})))
 
     ids = [pattern.rule_id for family in cat.families for pattern in family.patterns]
-    assert len(ids) == 55
+    assert len(ids) == 57
     for rule_id in ids:
         assert rule_id in body, f"{rule_id} absent from the artifact"
     assert "never fired" in body

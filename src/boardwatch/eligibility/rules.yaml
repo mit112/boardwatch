@@ -1621,3 +1621,95 @@ families:
         # you will own the summer cohort end to end." matched it, and the mentor stand-down
         # could not help because its match starts INSIDE the span.
         pattern: '(?:this(?:\s+(?:role|position|job|posting|opening|opportunity|internship|programme|program))?|the\s+(?:role|position|job|posting|opening|opportunity|internship))\s+(?:is|will\s+be)\s+(?:an?\s+)?(?:paid\s+|unpaid\s+|full[-\s]?time\s+|part[-\s]?time\s+|\d{1,2}[-\s]?(?:week|month)\s+|\d{4}\s+|summer\s+|fall\s+|autumn\s+|spring\s+|winter\s+){0,3}(?:internship|co-?op)(?!\w)|\bas\s+an?\s+intern(?![\s-]*(?:program|programme|manager|coordinator|lead|supervisor|director|recruiter|mentor))\b[^.]{0,40}\byou\s+will\b|(?:apply|applying|application)\s+(?:for|to)\s+(?:our\s+|the\s+)?(?:(?:\d{4}|summer|fall|autumn|spring|winter)\s+){0,3}(?:internship|co-?op)(?!\w)|\bthis\s+internship\b'
+
+  # P10. GRADUATING-COHORT / STUDENT-STATUS GATING. Measured 2026-09-03: 1,059 open bodies
+  # require current enrolment and 222 carry a cohort window, and 26 of the 537 leads in the
+  # apply queue carry the language. For a candidate who graduated in the past, roughly half of
+  # those are HARD BLOCKS that no rule in the catalog could fire on -- invisible by
+  # construction rather than by a pattern gap, which is the class this family closes.
+  #
+  # WHY THIS IS NOT THE `internship` FAMILY, and the internship family's own comment is the
+  # reason. It records that enrolment was DELIBERATELY excluded there because "must be
+  # currently enrolled" fired on "Software Engineer - New Grad 2026" -- permanent roles that
+  # are exactly what this tool searches for. That ruling is correct AND it is about a different
+  # question. Enrolment is a WRONG answer to "is this an internship?" and the RIGHT answer to
+  # "am I in the cohort this posting will consider?": the same sentence that must not hide a
+  # permanent new-grad role from a student must exclude it for someone who graduated two years
+  # ago. The comment names the precedent itself -- job-apps files stale graduation windows
+  # under a separate bucket for the same reason.
+  #
+  # DEFAULT `blocker`, and the reason is the OPPOSITE of the usual one -- it is what makes this
+  # family ABSTAIN rather than what makes it reject.
+  #
+  # Shipping `preference` was tried and is measurably WORSE. Severity is resolved per FAMILY, so
+  # a `preference` row leaves `engine.blocking()` entirely and the verdict falls through to
+  # `eligible` -- exactly the trap the `experience_years` near-miss comment records. Measured:
+  # "Must be currently enrolled in an accredited degree program." read `uncertain` before this
+  # family existed (zero rows, so `_no_evaluable_requirement` fired) and read **`eligible`**
+  # after, for a profile that had declared nothing about enrolment. That is a BACKWARDS
+  # `eligible` -- it asserts the candidate qualifies for a posting that requires enrolment --
+  # and it would have hit every user who never opted in, which is all of them by default.
+  #
+  # `blocker` is ALSO the safe direction here, which is what separates it from D-035's reasoning
+  # for the other five families. The fact is optional, and an undeclared fact resolves UNKNOWN,
+  # never UNMET: an un-opted-in user therefore reads `uncertain` and can never be rejected by
+  # this family. Only a user who has DECLARED `currently_enrolled: false` or a graduation date
+  # outside a stated window can reach `unmet`, and that is a decision they made.
+  - id: student_status
+    label: Student status and graduating cohort
+    tier: profile
+    fact: education_timing
+    answer_type: structured
+    default_policy: blocker
+    question: "Are you currently enrolled in a degree program, and when did (or will) you graduate?"
+    fields:
+      - name: currently_enrolled
+        type: bool
+      - name: graduation_yyyymm
+        type: int
+    implies_vocabulary:
+      - current_enrollment_required
+      - graduation_window_required
+    # No exclusive_groups and no refinement_groups: the two members answer DIFFERENT questions
+    # (enrolment now vs a dated window) and a posting can legitimately state both, so neither
+    # a contradiction nor a refinement is the right reading of co-occurrence.
+    patterns:
+      - id: current_enrollment_required
+        requiredness: required
+        implies: current_enrollment_required
+        scope: sentence
+        requirement_text: "The posting requires the applicant to be currently enrolled in a degree program"
+        # THE OBJECT MUST BE A DEGREE OR AN INSTITUTION. Bare `pursuing` is a common verb in
+        # ordinary JD prose ("pursuing excellence", "pursuing new markets") and matching it
+        # alone would fire on postings that state no enrolment requirement at all.
+        #
+        # THE ESCAPE IS SENTENCE-SCOPED AND IS THE WHOLE PRECISION STORY. Measured on the live
+        # apply lane, the phrasings that MUST NOT fire are all same-sentence disjunctions that
+        # readmit a graduate: "Currently pursuing OR RECENTLY COMPLETED a degree" (Hipp
+        # Health), "Computer Science GRADUATE OR currently enrolled" (Thales), "A 2025 or 2026
+        # graduate with OR PURSUING a B.S." (Quora). Each states enrolment as one acceptable
+        # path, not a requirement. This is the same shape `us_citizen_or_lpr_required` handles
+        # with its own sentence escape, and without it this pattern writes a false `unmet`
+        # carrying a real JD span on postings the candidate is genuinely eligible for.
+        suppressed_by_sentence:
+          # LOOKAHEAD TERMINATION on the `or pursuing` / `or enrolled` arms, the same device
+          # the internship family's stand-downs use. Without it the escape OVERLAPS the span
+          # it is meant to suppress -- "a 2025 or 2026 graduate with OR PURSUING a B.S."
+          # matched `or pursuing`, which starts one token before the `pursuing ...` span, and
+          # a suppressor whose match is not outside the span cannot fire. Measured: that one
+          # posting was a false `unmet` until the lookahead was added.
+          - '\bor\s+(?:recently\s+)?(?:completed|graduated|finished|hold|holding|have\s+(?:completed|graduated|obtained))|\b(?:graduate|graduated|degree|alumni)\s+or\b|\bor\s+(?:are\s+)?(?=(?:actively\s+|currently\s+)?(?:pursuing|enrolled)\b)|\bor\s+(?:a\s+)?recent\s+grad'
+        pattern: '\b(?:actively\s+|currently\s+)?(?:enrolled\s+(?:in|at)|pursuing)\s+(?:an?\s+|the\s+|your\s+)?(?:accredited\s+|full[-\s]?time\s+)?(?:university|college|degree\s+program|academic\s+program|(?:bachelor|master|graduate|undergraduate|doctoral|b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.?|ph\.?\s?d)[\w.''’]*(?:\s+degree)?)'
+      - id: graduation_window_required
+        requiredness: required
+        implies: graduation_window_required
+        scope: sentence
+        requirement_text: "The posting restricts applicants to a graduation-date window"
+        # A CLOSED window only. `graduation date BETWEEN X AND Y` excludes everyone outside it,
+        # which is the blocking shape. An UPPER BOUND is deliberately NOT matched: "Graduated
+        # with a CS degree BY Summer 2027" (Whatnot, 4 leads in the live apply lane) and
+        # "degree by summer 2027 or equivalent experience" (Stripe) are satisfied by anyone who
+        # already holds the degree, so reading them as a restriction would reject the exact
+        # candidate they are open to. The `between ... and ...` frame is what makes the
+        # exclusion two-sided and therefore decidable against a stored graduation date.
+        pattern: '\bgraduat\w*\s+(?:date\s+)?between\s+(?P<from_month>[A-Za-z]+)\s+(?P<from_year>20\d\d)\s+(?:and|to|through|-|–)\s+(?P<to_month>[A-Za-z]+)\s+(?P<to_year>20\d\d)'

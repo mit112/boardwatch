@@ -442,6 +442,96 @@ def _resolve_contract_not_fte(
     return Resolution(MET, "non-permanent employment is acceptable", support)
 
 
+#: The twelve month names as ONE STRING, split on use. A dict literal here trips
+#: generalization R9 ("non-empty collection default") — correctly: a collection of strings
+#: sitting at module scope is exactly the shape a user's own values would take, and the rule
+#: cannot tell a calendar from a preference. It is also deliberately NOT `calendar.month_name`,
+#: which is locale-sensitive: a JD says "December" whatever locale the process runs under, and
+#: a parser that stopped matching under a different `LC_TIME` would fail silently toward a
+#: wrong bound.
+_MONTH_NAMES = (
+    "january february march april may june "
+    "july august september october november december"
+)
+
+#: The shortest prefix that still names one month. `ju` is ambiguous (june/july), so three is
+#: the floor; `sept` and `sep` both resolve, which is what live postings actually write.
+_MONTH_PREFIX_MIN = 3
+
+
+def _month_ordinal(name: str) -> int | None:
+    """1-12 for a month name or unambiguous prefix, else None.
+
+    None is a real answer and the caller ABSTAINS on it: a month this cannot read must not
+    be resolved to a bound and then decided against.
+    """
+    token = name.strip().lower().rstrip(".")
+    if len(token) < _MONTH_PREFIX_MIN:
+        return None
+    matches = [
+        index
+        for index, month in enumerate(_MONTH_NAMES.split(), start=1)
+        if month.startswith(token)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _yyyymm(month: str, year: str) -> int | None:
+    """`("December", "2026")` -> 202612, or None when the month cannot be read."""
+    ordinal = _month_ordinal(month)
+    if ordinal is None:
+        return None
+    return int(year) * 100 + ordinal
+
+
+@resolver("student_status", inputs=("education_timing",))
+def _resolve_student_status(
+    detection: Detection, facts: Facts, family: FamilySpec
+) -> Resolution:
+    """Student status and graduating cohort, against a posting that gates on either.
+
+    Two members answering different questions, so the branches share no state. Both abstain
+    on an absent bit rather than inferring it from the other: a graduate is not necessarily
+    outside a window, and someone inside a window is not necessarily still enrolled, so
+    either inference produces the backwards `met` the keystone forbids.
+
+    **Nothing here reads the clock.** The window is compared against a DECLARED graduation
+    date, never against today, so identical facts give an identical verdict on any day and
+    `build_identity` remains a complete description of the inputs.
+    """
+    timing = facts.education_timing
+    if timing is None:
+        return Resolution(UNKNOWN, "no education timing declared")
+    implies = detection.pattern.implies
+    if implies == "current_enrollment_required":
+        if timing.currently_enrolled is None:
+            return Resolution(UNKNOWN, "enrolment status not declared")
+        support = _fact_support("education_timing.currently_enrolled", timing.currently_enrolled)
+        if timing.currently_enrolled:
+            return Resolution(MET, "currently enrolled", support)
+        return Resolution(
+            UNMET, "posting requires current enrolment; not currently enrolled", support
+        )
+    # graduation_window_required
+    if timing.graduation_yyyymm is None:
+        return Resolution(UNKNOWN, "graduation date not declared")
+    low = _yyyymm(detection.values["from_month"], detection.values["from_year"])
+    high = _yyyymm(detection.values["to_month"], detection.values["to_year"])
+    if low is None or high is None:
+        return Resolution(UNKNOWN, "the stated window names a month this catalog cannot read")
+    if low > high:
+        # A posting that states its window backwards is not a window this can decide against.
+        return Resolution(UNKNOWN, "the stated window is inverted")
+    support = _fact_support("education_timing.graduation_yyyymm", timing.graduation_yyyymm)
+    if low <= timing.graduation_yyyymm <= high:
+        return Resolution(
+            MET, f"graduation {timing.graduation_yyyymm} within {low}-{high}", support
+        )
+    return Resolution(
+        UNMET, f"graduation {timing.graduation_yyyymm} outside the required {low}-{high}", support
+    )
+
+
 @resolver("internship", inputs=("internship_preference",))
 def _resolve_internship(detection: Detection, facts: Facts, family: FamilySpec) -> Resolution:
     """Whether the user wants internships, against a posting that declares itself one.

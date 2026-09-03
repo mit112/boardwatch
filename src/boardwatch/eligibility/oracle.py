@@ -44,7 +44,7 @@ PROMPT_VERSION = "p5-oracle-1"
 # the same prompt serves a citizen, a visa holder in another country, or an OPT candidate
 # without a code change (multi-tenancy invariant, CLAUDE.md).
 #
-# M3: the reference labeling policy treats all six catalog families as blockers, even
+# M3: the reference labeling policy treats all seven catalog families as blockers, even
 # though the engine's own `default_policy` treats several of them (experience_years,
 # clearance, degree, contract_not_fte, internship) as soft "preference" signals at
 # runtime. That split is deliberate: an answer key that never lets those families produce
@@ -72,9 +72,10 @@ For every requirement the JD states, first classify it as REQUIRED or PREFERRED.
 REQUIRED hard stop that the candidate's `facts` fail can produce `ineligible` — a PREFERRED /
 nice-to-have qualification the candidate lacks is never itself a hard stop.
 
-The reference policy for this labeling pass treats ALL SIX reason_catalog families as
-blockers: work_auth, experience_years, clearance, degree, contract_not_fte, internship. A
-REQUIRED hard stop in any of these six families, that the supplied `facts` fail, is eligible
+The reference policy for this labeling pass treats ALL SEVEN reason_catalog families as
+blockers: work_auth, experience_years, clearance, degree, contract_not_fte, internship,
+student_status. A REQUIRED hard stop in any of these seven families, that the supplied
+`facts` fail, is eligible
 to produce `ineligible` — regardless of whether the live engine treats that family as a soft
 preference at runtime; this judging pass is calibrating the answer key, not replaying engine
 policy.

@@ -44,7 +44,7 @@ def ground(jd_text: str, raw_output: str) -> list[GroundedSpan]:
     element; the rest of the payload is still evaluated. Pure: no network, no I/O.
     """
     coded_families = {
-        "work_auth", "experience_years", "clearance", "degree",
+        "work_auth", "experience_years", "clearance", "degree", "student_status",
         "contract_not_fte", "internship",
     }
 
