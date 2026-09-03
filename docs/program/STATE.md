@@ -29,81 +29,72 @@ Reasoning: **D-436**, **D-438**. Numbers: `METRICS.md` (Session 2026-09-03).
 Prior session (2026-09-02d) is settled and NOT restated here: **D-432**, **D-433**, **D-434**,
 **D-435**, **D-437**, with its numbers in `METRICS.md` (Session 2026-09-02d).
 
-### CORRECTION — "the catalog is 8% of the problem" was WRONG, and it was the session's headline
+### The 2026-09-03 queue audit — the waste is catalog COVERAGE, not routing
 
-**It read a verdict DISTRIBUTION as a defect ATTRIBUTION.** 8% of the apply lane carries an
-`eligible` verdict; that says where verdicts land, not where the defect lives. Measured
-independently by two sessions, the defect is **catalog COVERAGE**:
+Blind two-judge audits of what the owner actually opens, reproduced independently by two sessions.
+Mechanism: **D-436** (extraction) and **D-442** (the routing read). Full method in METRICS.
+
+**THE HEADLINE THIS SESSION FIRST PUBLISHED — "the catalog is 8% of the problem, routing is the
+rest" — WAS WRONG, and it was wrong by reading a verdict DISTRIBUTION as a defect ATTRIBUTION.**
+8% of the apply lane carries an `eligible` verdict; that says where verdicts land, not where the
+defect lives. Three sessions handed `review_gate.lane()` forward as *the lever* and **none had read
+it.**
 
 | | |
 |---|---|
-| apply lane | **597** |
-| of which `uncertain` | **526** |
-| **of those, with ZERO requirement rows** | **487** |
-| their JD bodies | median **4,636 chars**, only 4 under 200, **391 over 2,000** |
+| apply lane | **597** — 526 `uncertain`, 49 `eligible`, 22 unevaluated |
+| **of the 526, with ZERO requirement rows** | **481-487** (two independent counts) |
+| their JD bodies | median **4,636 chars**, only 4 under 200, **~390 over 2,000** |
+| `_review` | **1,007** — `experience_requirement` 497, `ineligible_verdict` 288, `role_unconfirmed` 175 |
 
-**The catalog extracts NOTHING from ~490 substantial job descriptions.** They reach the apply lane as
-blindly-appliable **because there is nothing unconfirmed to hold them for** — `_no_evaluable_requirement`
-makes them `uncertain`, and `review_gate.lane()` never reads WHY. The routing is deciding correctly on
-the information it is handed. **`experience_unconfirmed` fires 497 times in the review lane — the flag
-works.** All 597 apply-lane leads carry both flags False because nothing was extracted, not because
-nothing is wrong.
+**The routing is deciding CORRECTLY.** `experience_unconfirmed` fires **497** times, so the flag
+works; all 597 apply-lane leads carry both flags False **because nothing was extracted, not because
+nothing is wrong**. `_no_evaluable_requirement` makes them `uncertain` and `review_gate` never reads
+WHY. **So the ~36% unapplyable rate IS the extraction gap arriving from the other end** — the same
+finding as D-436's "every miss was a missing row", and the same reason the abstain report cannot see
+it: **a family that extracts nothing is silent, and silence is indistinguishable from "the JD says
+nothing".**
 
-**So the ~36% unapplyable rate IS the extraction gap, arriving from the other end** — the same finding
-as D-436's "every miss was a missing row", and the same reason the abstain report cannot see it: a
-family that extracts nothing is silent, and silence is indistinguishable from "the JD says nothing".
+**IT SPLITS, AND ONLY A QUARTER IS COVERAGE (D-442).** Probing the zero-row bodies: **128 (26.3%)
+carry a years bar in some form** (14 escaped punctuation, 24 spelled-out, 10 parenthesised), 55
+citizenship/LPR, 32 sponsorship, 6 clearance, 4 non-English, **0 degree-required**. The other **~74%
+trip none of those probes** — for those the JD may genuinely state no catalogued requirement, making
+`uncertain` correct and the only question what an apply lane should DO with it. **The negative half
+is bounded by those probes and nothing wider**: widening them can only move leads from the second
+population into the first, never the reverse.
 
-**THE GATE IS MEASURED, NOT ESTIMATED (2026-09-03).** 77 apply-lane leads, two independent judges,
-through the real schema, nothing applied: **15 demoted (19.5%), and 15 of 15 rejections survive
-`accept_oracle_verdict`'s keystone span guard — ZERO span failures.** Every rejection quotes the
-employer's own JD. Two are cases the catalog cannot reach at all (a French-language JD; one with
-markdown-escaped punctuation). Scaled to 597: ~**116 demoted, each with a checkable quote**. Judged
-verdicts saved at `{config_dir}/verdicts_a.json` / `verdicts_b.json` — **spot-check a sample, then
-`gate apply`**. The earlier "~50-100 wrongly removed" was an estimate that treated inter-rater
-disagreement as error-against-truth and ignored the span guard; it is retired.
+**THE GATE IS MEASURED, NOT ESTIMATED.** 77 apply-lane leads, two independent judges, real schema,
+nothing applied: **15 demoted (19.5%), and 15 of 15 rejections survive `accept_oracle_verdict`'s
+keystone span guard — ZERO span failures.** Every rejection quotes the employer's own JD, and two are
+cases no amount of pattern work reaches (a French-language JD; markdown-escaped punctuation). Scaled
+to 597: ~**116 demoted, each with a checkable quote**. Verdicts at `{config_dir}/verdicts_a.json` /
+`verdicts_b.json` — **spot-check, then `gate apply`**. The earlier "~50-100 wrongly removed" treated
+inter-rater disagreement as error-against-truth and ignored the guard; **retired**.
 
-**What this changes.** The `final_gate:` LLM lane is the TREATMENT — it reads the JD directly and
-catches what the patterns miss. **Catalog coverage is the CURE**, and the instrument for finding these
-490 is partial-match instrumentation of the patterns themselves (a family that ALMOST matched), which
-is the one design a cue vocabulary cannot substitute for — correct silence and a missed extraction
-look identical to a cue, and not to a near-miss. See D-442 for the routing question, which is a
-decision about what the apply lane MEANS and not a bug fix.
+**Treatment vs cure.** The `final_gate:` LLM lane is the TREATMENT — it reads the JD directly and
+catches what the patterns miss. **Catalog coverage is the CURE**, and the instrument is
+**partial-match instrumentation of the patterns themselves** (a family that ALMOST matched), which a
+cue vocabulary cannot substitute for: correct silence and a missed extraction look identical to a
+cue and different to a near-miss. **D-442 holds the routing question** — ~360 of the 481 have no
+detectable requirement at all, so it is "what should an apply lane do with a JD that states
+nothing?", a decision about what the lane MEANS rather than a bug fix. Priced: apply **597 → 116**.
 
-### The 2026-09-03 queue audit — the catalog is 8% of the problem
+**The queue's 219 redundant leads are MOSTLY NOT A DEFECT (D-439).** 127 duplicate
+`(company, normalised-title)` groups, but only **45 groups / 76 leads share one `content_hash`**;
+the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI ×9 is nine real
+reqs). An earlier reading called it identity resolution — **wrong**. The mechanism is D-345's cap
+DEFERRING rather than dropping while scoped to one run, so a one-JD group delivers one member per
+run forever. CGS Federal ×10 on a single hash is the shape that IS a defect.
 
-Blind two-judge audits of what the owner actually opens. Full numbers and method in METRICS
-(`Session — 2026-09-03`); the mechanism is D-436.
+**Sized and NOT built:** un-escaping markdown bodies 2.2% (owner-gated, re-versions postings);
+`role_gate` missing the inverted `Engineer, Software` form (5 leads — the class D-305 fixed in
+`seniority_gate` and never carried across); non-SWE residual in review only (apply-lane NOT_SWE was
+0 of 40); `classify_location` fails open on Nottingham.
 
-- **Apply lane: ~36% unapplyable** (n=80, two disjoint samples, 8/10 agreement) — ~175 dead leads,
-  and **every** unapplyable lead judged carried `uncertain`, none cleared by the engine.
-- **"ROUTING, NOT THE CATALOG" WAS THE WRONG READING AND IS CORRECTED BY D-442.** Three sessions
-  recorded "the catalog is 8% of the problem, routing is the rest" and handed `review_gate.lane()`
-  forward as the lever. **Nobody had read it.** Read: **the routing is deciding correctly.**
-  `experience_unconfirmed` fires **497** times, and **all 597 apply-lane leads carry BOTH flags
-  False** — because **481 of the 526 `uncertain` ones have ZERO requirement rows of any kind.**
-  They are `uncertain` via `_no_evaluable_requirement`, and **they are not stubs: median JD body
-  4,636 chars, 387 of them OVER 2,000.** **387 substantial JDs the catalog read nothing from.**
-  **The waste is EXTRACTION, and `review_gate` has no unconfirmed requirement to hold them for.**
-  "8% carry an `eligible` verdict" is a statement about verdict DISTRIBUTION, not about where the
-  defect lives — we read a distribution as an attribution.
-- **The queue carries 219 redundant leads, and MOST ARE NOT A DEFECT (corrected — see D-439).**
-  127 duplicate `(company, normalised-title)` groups, but only **45 groups / 76 leads share one
-  `content_hash`**; the other **82 groups / 143 leads are genuinely distinct requisitions** (Evlo AI
-  ×9 is nine real reqs, Haystack ×6 is six). An earlier reading of this called it an
-  identity-resolution failure — **that was wrong.** The real mechanism is D-345's cap DEFERRING
-  rather than dropping, scoped to one run while the queue is not, so a one-JD group delivers one
-  member per run forever. CGS Federal ×10 on a single hash is the shape that IS a defect.
-- Sized and NOT built: un-escaping markdown bodies 2.2% (owner-gated, re-versions postings);
-  `role_gate` missing the inverted `Engineer, Software` form (5 leads — the class D-305 fixed in
-  `seniority_gate` and never carried across); non-SWE residual in review only (apply-lane NOT_SWE
-  was 0 of 40, so D-305 holds where it matters); `classify_location` fails open on Nottingham.
-
-**The lever is the `final_gate:` LLM lane** — built, keystone-guarded, identity-keyed, read by the
-ranker, and **0 rows on the live store**. It only has to run over the ~8-10 leads/day delivered.
-**Request path VERIFIED on live data**: `build_gate_request` over the real apply lane produced **521
-judgeable items of 537**, independence preserved, read-only. **Ordering is forced** —
-`record_gate_verdict` keys on `build_identity(..., catalog, ...)`, so any catalog change invalidates
-gate rows written before it. Land the catalog PRs first, then arm ONCE.
+**`final_gate:` is built, keystone-guarded, identity-keyed, read by the ranker, and 0 rows on the
+live store.** Request path VERIFIED live: **521 judgeable items of 537**, independence preserved,
+read-only. **Ordering is forced** — `record_gate_verdict` keys on `build_identity(..., catalog, ...)`,
+so any catalog change invalidates gate rows written before it. Land catalog PRs first, then arm ONCE.
 
 ## Next action
 
