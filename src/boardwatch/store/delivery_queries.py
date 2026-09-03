@@ -49,6 +49,7 @@ from typing import Any
 from sqlalchemy import Connection, Row, Select, func, select
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
 from boardwatch.eligibility.catalog import load_rules
@@ -61,6 +62,7 @@ from boardwatch.eligibility.read import (
 )
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.tables import artifacts, companies, posting_versions, postings
 
@@ -88,6 +90,11 @@ STATUS_CLOSED = "closed"
 #: today, so `target_flag` is `None` for every company on the live store; it is tri-state so that
 #: "this company carries no tags at all" can never render as "this company is not a target".
 TARGET_TAG = "target"
+
+#: The digest of an empty JD body. DERIVED from `content_hash("")` rather than written down, so
+#: it cannot drift from the normalizer. 245 body-less postings share it, and a slate key built on
+#: it would collide every one of them at the same company and title.
+EMPTY_BODY_HASH = content_hash("")
 
 
 @dataclass(frozen=True)
@@ -334,6 +341,135 @@ def ineligible_job_ids(conn: Connection) -> dict[int, str]:
     }
 
 
+def standing_slate_keys(
+    conn: Connection, *, applied: dict[int, str] | None = None
+) -> dict[tuple[int, str, str], tuple[int, ...]]:
+    """`(company_id, normalized_title, content_hash)` -> posting ids STILL IN FRONT OF THE OWNER.
+
+    The delivery slate cap's key (`top_cmd.SLATE_CAP_PER_KEY`, D-345), read over the leads the owner
+    can still act on. It exists because that cap was scoped to one run and the queue is not (D-439):
+    the cap DEFERS rather than drops, so a group sharing one byte-identical JD delivered one member
+    per run forever. Measured: **49 exact-key groups holding 84 redundant standing leads**, one
+    delivering on six consecutive runs, every run respecting the cap.
+
+    **WHICH DRAINS DISQUALIFY A LEAD FROM HOLDING A SLOT, AND WHY THEY DIFFER — the first cut got
+    this wrong and it was D-295 by accident.** A slot may only be held by a lead the owner can still
+    act on, or the deferral never ends and a distinct posting is suppressed permanently:
+
+    * **`closed` is excluded** — via `postings.status`, not a job set. A closed lead is out of the
+      queue and can never be applied to or skipped, so it would hold its slot forever.
+    * **`applied` and `skipped` are excluded** — the owner acted, so a second copy is now useful.
+    * **`reported` is excluded** — a report says "hold this for investigation"; the owner will by
+      definition never apply to it and it is already out of the web queue, so neither release
+      condition could ever fire.
+    * **`ineligible` is KEPT, and this is the one that looks wrong and is not.** The slate keys on
+      the JD hash, so an ineligible lead's byte-identical twin has the same body, therefore the
+      same verdict under the same identity, and is ineligible too — **capping it loses nothing.**
+      `reconcile` pulls the folder straight back the moment the verdict clears, so this is a
+      deferral with a live end condition and not a hole.
+    * **`review` is KEPT** for the plainest reason of all: a lead awaiting the owner's look IS in
+      front of the owner. It is what the phrase means.
+
+    **That list is `delivery.names.DRAIN_DIRS`, and this is the SECOND place the program decides
+    what a drain means** — `queue._wanted_location` ranks the same six into folders. Two ladders
+    over one catalog drift silently, and a seventh drain added to one of them would be filed by the
+    queue and invisible here, holding a slot with no release condition at all. Rather than couple a
+    perf-sensitive ranking query to the queue module, the correspondence is pinned as a test:
+    `test_delivery_queries.py::test_every_drain_has_a_recorded_answer_on_whether_it_holds_a_slot`
+    enumerates `DRAIN_DIRS` and fails on any member this docstring has not decided.
+
+    **The rule underneath: liveness is a property of the POSTING; content is a property of the
+    JOB.** That is why `closed` must not hold a slot while `ineligible` may — a closed lead's twin
+    may be OPEN, same bytes and different liveness, which is exactly the buried-live-requisition bug
+    D-432 fixed, arriving from the other direction.
+
+    `status == 'open'` is the right filter and NOT `derived != closed`: `STATUS_UNVERIFIABLE` is
+    derived at the read boundary and the stored column is only `open`/`closed`, so an unverifiable
+    posting is stored `open` and correctly keeps its slot — it is live work (D-324).
+
+    **The hash is the FROZEN `posting_versions.content_hash` of the delivered version**, not
+    `postings.content_hash`, which `scan/apply.py` rewrites in place. The cap's claim is that a
+    byte-identical JD is *already in front of the owner*, and what the owner was given is the frozen
+    body; a mutable hash would make the claim about text they never saw.
+
+    An empty body is excluded by comparing against `EMPTY_BODY_HASH`, which is DERIVED from
+    `content_hash("")` rather than written down. That is a real guard where `content_hash != ""`
+    was a tautology — the column is NOT NULL and a hash is always 64 hex chars, so the earlier
+    filter excluded nothing. It is also stricter than `top_cmd`'s SQLite `trim`, which does not
+    strip U+00A0: a JD that is only `&nbsp;` after extraction hashes here to the empty digest and is
+    correctly refused a slot.
+
+    An empty `normalized_title` is excluded for the reason `top_cmd` excludes it: an empty component
+    collides unrelated postings, and the cost of firing wrongly is a real lead nobody ever sees.
+
+    **Ordered by DELIVERY RECENCY, most recent first, and that buys two things.** A posting with
+    MORE THAN ONE delivered version resolves to its most recent delivery — without a tie-break
+    SQLite may emit either, and the seed would hold a hash the owner no longer has, the exact
+    failure the frozen hash is here to prevent. This is the recency half of `_supersedes`; the
+    liveness half is the `status == 'open'` filter above.
+
+    And **each key's holder list comes out most-recently-delivered first**, so a caller reporting
+    `holders[0]` names the lead the owner saw MOST RECENTLY rather than whichever posting happened
+    to carry the lowest row id. `top_cmd` renders that id to the operator as "same JD as <id>", and
+    an arbitrary sibling out of a group of six would be untraceable in exactly the case the field
+    exists for. **Multi-holder keys are the ordinary case, and the count GROWS until this ships**:
+    49 exact-key groups when D-439 measured it, 53 a day later, because the mechanism it fixes is
+    still running. Do not re-pin the number here — it is a moving target by construction, and what
+    the ordering has to be right about is that the case exists at all.
+
+    **`ineligible` IS a releasable quarantine, and naming its drain is what keeps this inside the
+    rule that every quarantine needs one.** `applied`/`skipped`/`reported` can indeed never fire for
+    an ineligible lead — it is stripped from every surface the owner can act on. **Its drain is the
+    VERDICT CLEARING**: `reconcile_queue` pulls the folder back out of `_ineligible` the moment a
+    re-evaluation says so, and the lead returns to the queue where the owner can act on it. That is
+    the same re-entry path the `_ineligible` bucket relies on generally.
+
+    The residual exposure is an UNEVALUATED twin: `rank_open_postings` filters `ineligible`
+    *before* the cap, so an evaluated twin of an ineligible lead never reaches it at all, but a twin
+    with `verdict is None` would. **Measured on the live store 2026-09-03: 86 of 138,676 open
+    postings (0.1%) carry no verdict, and ZERO of them share a slate key with an ineligible
+    standing lead.** Bounded, not assumed.
+    """
+    # `applied` is accepted rather than read when the caller already holds it. `rank_open_postings`
+    # reads it for its own suppression, and two reads on SQLite are two snapshots — an application
+    # landing between them would leave this seed holding a slot the rest of the run has already
+    # released. One read, one snapshot, and one fewer full-table scan on the ranking path.
+    applied_ids = applied if applied is not None else applied_job_ids(conn)
+    skipped = skipped_job_ids(conn)
+    reported = reported_job_ids(conn)
+    rows = conn.execute(
+        select(
+            postings.c.id,
+            postings.c.job_id,
+            postings.c.company_id,
+            postings.c.normalized_title,
+            posting_versions.c.content_hash,
+        )
+        .join(posting_versions, posting_versions.c.posting_id == postings.c.id)
+        .join(artifacts, artifacts.c.posting_version_id == posting_versions.c.id)
+        .where(
+            artifacts.c.kind == TAILORED_KIND,
+            postings.c.job_id.is_not(None),
+            postings.c.status == "open",
+            postings.c.normalized_title != "",
+            posting_versions.c.content_hash != EMPTY_BODY_HASH,
+        )
+        .order_by(artifacts.c.created_at.desc(), artifacts.c.id.desc(), postings.c.id)
+    ).all()
+    held: dict[tuple[int, str, str], list[int]] = {}
+    emitted: set[int] = set()
+    for row in rows:
+        job_id = int(row.job_id)
+        if job_id in applied_ids or job_id in skipped or job_id in reported:
+            continue
+        if int(row.id) in emitted:
+            continue
+        emitted.add(int(row.id))
+        key = (int(row.company_id), str(row.normalized_title), str(row.content_hash))
+        held.setdefault(key, []).append(int(row.id))
+    return {key: tuple(ids) for key, ids in held.items()}
+
+
 def closed_job_ids(conn: Connection) -> set[int]:
     """`job_id` for every delivered lead whose posting the store now reports closed.
 
@@ -564,4 +700,5 @@ __all__ = [
     "delivered_unapplied",
     "ineligible_job_ids",
     "queue_detail",
+    "standing_slate_keys",
 ]
