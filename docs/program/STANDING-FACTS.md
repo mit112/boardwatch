@@ -561,6 +561,30 @@ Splitter fidelity was established first, because the whole finding rests on it: 
 engine and a punctuation splitter agree **302** times, disagree **4**, and the engine finds
 something the splitter misses **0** times.
 
+### Three times in one session the APPARATUS contaminated the measurement, not the sample — and none of the three looked like a tooling problem
+
+The four instances above are a *sample* being unrepresentative. These are a different family, and
+they are harder to catch because the number that comes out is clean, specific and confident:
+
+1. **Wrong scope.** A guard asserted that every sentence released from `ineligible` must contain a
+   degree token. `abstain_by` is DOCUMENT-scoped, so the disjunction sits elsewhere in the body and
+   the guard could not find it at any sample size. It nearly passed a change on false evidence,
+   then nearly rejected the same change on false evidence.
+2. **Wrong splitter.** A probe split bodies on `[.!?;:]` and reported patterns that "match but
+   write no row". `detect()` splits by the SCOPE a pattern declares. Fidelity had to be established
+   first — 400 bodies, agree 302, disagree 4, engine-only 0 — before any of those 4 meant anything.
+3. **Wrong `sys.path`.** A verification printed "what the primary checkout's venv would give" and
+   got a row identical to the branch under test, because `sys.path.insert` pointed at that same
+   branch's package and `bundled_rules_text()` read it. **A verification step that silently
+   verified itself**, and it was one message away from being reported as independent corroboration.
+
+**How to apply.** Before believing a measurement, ask what the apparatus would print **if the thing
+were not true** — the null control — and confirm it prints something different. (2) was caught by
+running the engine's own splitter beside the probe's; (3) by printing the catalog version and
+finding three distinct ones where a null control returns identical rows. **The tell they share is
+that all three produced a number, not an error.** A component's self-report is not verification;
+neither is a probe's.
+
 ### A control can be mis-specified in the SCOPE it asserts over — and then it fails in BOTH directions
 
 The four instances above are all a *sample* being wrong while the test was fine. This is the other
