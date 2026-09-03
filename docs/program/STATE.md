@@ -154,6 +154,35 @@ SHIPPED, D-434. The `perf` flaky bound — CHARACTERISED and FIXED, D-435.)*
   **Arming must wait for run 147** or it contaminates the board sample's reading — the two board
   levers cannot be read apart inside one window. Owner's call.
 - **Per-source thresholds are not set** — the owner's.
+- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION (D-436).** `reports/abstain.py`
+  aggregates per `rule_id` across the WHOLE corpus, so a pattern that matches most phrasings and
+  misses a near-miss variant is neither `never_fired` nor `fully_abstaining` — its rate looks
+  **healthy**. The keystone makes a rule that cannot resolve a profile FIELD visible as a 100%
+  abstain rate; it says nothing about an extractor that cannot find the requirement in the TEXT,
+  because the rule never got the chance to abstain. A blind two-judge audit put **24% of `eligible`
+  wrong (13 of 54)** and **every single miss was `no requirement row written`**, not a rule
+  deciding badly. **Unfixed.** The honest fix is a THIRD OUTCOME per family — "the extractor ran and
+  matched nothing" and "the JD is silent" are collapsed into one today and the second one clears —
+  not more patterns, which is whack-a-mole.
+- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES — the 24% is UNCHANGED.**
+  Measured, not assumed: the two fixed sentences came from the pre-correction 218-job sample and do
+  not survive into the real 144. The fixes are safe (0 regressions) and close real leaks, but the
+  delivered population's defect rate did not move. **The 13 have ~7 distinct root causes**, so more
+  patterns is whack-a-mole. **The unarmed answer is the two-stage shape already built:**
+  `boardwatch eligibility gate request`/`gate apply` (the `final_gate:` LLM lane — ineligible-capable,
+  keystone-guarded, identity-keyed, read by the ranker) over the **~8-10 leads/day delivered**, which
+  is the only population where zero-ineligible is reachable. **0 rows on the live store today.**
+  Owner-gated.
+- **`experience_years` MISSES SPELLED-OUT AND ESCAPED YEARS BARS, and it is a BODY-NORMALISATION
+  defect, not a regex one (D-436).** All eight patterns anchor on `\d{1,2}` adjacent to `years`, so
+  `Six to eight years`, `four (4) years` (the `)` breaks digit→`years` adjacency) and `5\+ years`
+  write zero rows. **477 open bodies carry markdown-escaped punctuation, 175 of them with a
+  `\+ years` bar.** **Owner-gated because un-escaping at ingest RE-VERSIONS POSTINGS** — that is the
+  sentence that stops someone doing it cheaply. Teaching eight regexes to tolerate stray backslashes
+  fixes the symptom at the wrong layer.
+- **`classify_location` FAILS OPEN on unrecognised cities**, so Nottingham (UK) postings reached a
+  US-only queue in the D-436 audit. Not fixed; the fail-open direction is deliberate (D-294) and
+  narrowing it is a precision/recall decision, not a bug fix.
 - **THE LIVE STORE HAS 0 REPORTED AND 0 SKIPPED JOBS**, so run 145 cannot exercise the new
   `_reported` drain (D-434) in either direction. **A clean live reconcile is NOT evidence it
   works** — the unit tests are the only thing that can catch it. Measured by a peer session.
