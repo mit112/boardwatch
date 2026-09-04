@@ -439,3 +439,50 @@ def test_post_json_sends_no_caller_headers_because_it_takes_none(tmp_path: Path)
     sent = route.calls[0].request.headers
     assert sent["User-Agent"].startswith("boardwatch/")
     assert "Sec-Fetch-Mode" not in sent
+
+
+def test_an_hour_long_retry_after_is_refused_rather_than_slept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T13. `Retry-After` was honoured uncapped, inside the per-host lock. One 429 carrying
+    `Retry-After: 3600` parked every board on that host for an HOUR — and the shared-host
+    providers are the ones where that matters: Greenhouse, Lever and SmartRecruiters each
+    serve their whole fleet from one host, so a single tenant's rate limit stalled the scan.
+
+    A wait longer than the cap is not a wait, it is an outage, so it is reported as one. It
+    reuses `FetchFailure` with `status_code=None`, which `providers.base.health_from_failure`
+    already maps to `BoardHealth.UNREACHABLE` — the typed outcome a dead host gets — rather
+    than adding a member to that closed catalog.
+    """
+    slept: list[float] = []
+    monkeypatch.setattr(politeness.time, "sleep", lambda seconds: slept.append(seconds))
+    with respx.mock:
+        route = respx.get("https://slow.example/x").mock(
+            return_value=httpx.Response(429, headers={"Retry-After": "3600"})
+        )
+        with pytest.raises(FetchFailure) as caught:
+            _fetcher(tmp_path).get("https://slow.example/x")
+
+    assert max(slept, default=0.0) <= politeness.RETRY_AFTER_CAP_SECONDS, slept
+    assert caught.value.status_code is None, "a capped Retry-After must read as unreachable"
+    assert "3600" in str(caught.value)
+    assert route.call_count == 1, "it must not keep retrying a host that asked for an hour"
+
+
+def test_a_retry_after_inside_the_cap_is_still_honoured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control. The cap must not turn every 429 into an outage — a host asking for a few
+    seconds is being polite, and that is the whole point of the header."""
+    slept: list[float] = []
+    monkeypatch.setattr(politeness.time, "sleep", lambda seconds: slept.append(seconds))
+    with respx.mock:
+        respx.get("https://ok.example/x").mock(
+            side_effect=[
+                httpx.Response(429, headers={"Retry-After": "5"}),
+                httpx.Response(200),
+            ]
+        )
+        result = _fetcher(tmp_path).get("https://ok.example/x")
+    assert result.status_code == 200
+    assert max(slept, default=0.0) >= 5.0, slept

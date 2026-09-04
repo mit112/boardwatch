@@ -71,6 +71,16 @@ class FetchFailure(Exception):
         self.final_url = final_url
 
 
+#: A `Retry-After` longer than this is not a wait, it is an outage, and is reported as one.
+#: The header was honoured uncapped INSIDE the per-host lock, so one 429 carrying
+#: `Retry-After: 3600` parked every board on that host for an hour — and the shared-host
+#: providers are exactly where it bites: Greenhouse, Lever and SmartRecruiters each serve
+#: their whole fleet from one host, so one tenant's rate limit stalled the scan. A minute is
+#: the longest pause a run whose scan already takes ~3 hours can absorb without the board
+#: budget becoming a fiction.
+RETRY_AFTER_CAP_SECONDS = 60.0
+
+
 class _RetryableStatus(Exception):
     def __init__(self, status_code: int, retry_after: float | None) -> None:
         super().__init__(f"retryable HTTP {status_code}")
@@ -237,6 +247,8 @@ class Fetcher:
             base = wait_exponential_jitter(initial=0.5, max=8.0)(retry_state)
             exc = retry_state.outcome.exception() if retry_state.outcome else None
             if isinstance(exc, _RetryableStatus) and exc.retry_after is not None:
+                # Bounded by construction: `_send_once` refuses anything over
+                # RETRY_AFTER_CAP_SECONDS before it can become a `_RetryableStatus`.
                 return max(base, exc.retry_after, floor)
             # A host that declares a crawl-delay is owed it between PHYSICAL attempts too, not
             # only between calls. Without this term the backoff starts at 0.5s and a declared
@@ -289,7 +301,22 @@ class Fetcher:
         if response.status_code == 304:
             return FetchResult(304, b"", True, None)
         if response.status_code in _RETRYABLE_STATUSES:
-            raise _RetryableStatus(response.status_code, _parse_retry_after(response))
+            retry_after = _parse_retry_after(response)
+            if retry_after is not None and retry_after > RETRY_AFTER_CAP_SECONDS:
+                # Refused HERE rather than capped in `_wait`, so the over-cap value never
+                # reaches the retry machinery at all and no sleep of any length is taken for
+                # it. `status_code=None` is not a loss of information: it is the transport-
+                # level shape `providers.base.health_from_failure` already maps to
+                # `BoardHealth.UNREACHABLE`, which is precisely what this host is for the
+                # rest of the run. Reusing it keeps that catalog closed.
+                raise FetchFailure(
+                    f"HTTP {response.status_code} for {url} with Retry-After: {retry_after:g}s, "
+                    f"beyond the {RETRY_AFTER_CAP_SECONDS:g}s cap — treating the host as "
+                    "unreachable for this run rather than holding its lock",
+                    status_code=None,
+                    final_url=str(response.url),
+                )
+            raise _RetryableStatus(response.status_code, retry_after)
         if response.status_code != 200:
             raise FetchFailure(
                 f"HTTP {response.status_code} for {url}",
