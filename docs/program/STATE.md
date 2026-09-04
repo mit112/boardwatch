@@ -20,113 +20,86 @@
 
 ## Current standing
 
-### Session 2026-09-03d: gate 1 moves 26.5% → 28.8% with dependency AND absence falling TOGETHER — the Indeed admission cap was the binder, the 50-board hiring.cafe sample is reverted, and every one of the nine owner decisions is now executed or closed
+### Session 2026-09-03e: the owed LEDGER DRAIN is REFUSED on measurement, the LLM FINAL GATE is ARMED for the first time and filters 38 of 95 delivered leads, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows
 
-Reasoning: **D-455** (A8, ruled and shipped), **D-456** (A7, ruled and reverted), **D-457** (the
-delivered PDF's name and metadata), **D-458** (A3, shipped), **D-459** (the Indeed uncap). Numbers:
-`METRICS.md`, `Session — 2026-09-03d`, which reads out **runs 148 and 149**. **Seven PRs merged** —
-#360, #361, #362, #364, #365, #366, #367 — each verified against `main`'s CONTENT, never a merge
-message.
+Reasoning: **D-460** (the drain), **D-461** (the gate + the owner's years ruling), **D-462** (the
+drought alarm), **D-463** (the aggregator refusal + the hiring.cafe ceiling correction). Numbers:
+`METRICS.md`, the `Session — 2026-09-03e` block. Shipped: **#369, #370, #371, #372**.
 
-**Gate 1, run 149 against run 147 — LIKE FOR LIKE**: same 14-day window (2026-08-21..09-03), same
-21,497-posting population, same instrument.
+**THE DRAIN D-455 LEFT OWED IS CLOSED BY REFUSAL, NOT BY DEFERRAL, AND THE OWNER RULED IT.** The
+re-key ran first and is the half that paid — **151,626 postings re-evaluated** under
+`1+bf844e01ebcb` (run 150). The drain itself relieves no scarcity: **83,168 open postings already
+flow unsuppressed against 1,489 the ledger withholds (~56x)**, the ledger is **100% `built` / zero
+`skipped`** so it can only re-deliver, and D-455's own win never needed it (those 996 postings were
+never built and carry no disposition row). **The inherited "they rank low anyway" premise was FALSE
+for this population** — p50 age **2 days**, so **1.41 score-points** lost, not the 9.7 the
+2026-08-27 reading assumed. Stale stamps fail nothing; the drain stays available on his word.
 
-| | run 147 | run 149 |
-|---|---|---|
-| independent recall (drawn-from) | 5,377/20,289 = **26.5%** | 5,838/20,289 = **28.8%** |
-| lane-only (dies at switch-off) | 8,244 (38.3%) | **7,984** (−260) |
-| absent | 7,719 (35.9%) | **7,508** (−211) |
-| whole population | 5,534/21,497 = 25.7% | 6,005/21,497 = **27.9%** |
-
-Per source: linkedin 34.8 → **37.0%**, indeed 15.5 → **17.2%**, hiringcafe 20.7 → **25.5%**, jobright
-14.3 → 15.1%, greenhouse 95.4 → 96.9%. Marginal day 2026-09-03: 34.0% → **42.2%**.
-
-**`lane-only` and `absent` fell TOGETHER**, which is the opposite of run 147's reading, where
-two-thirds of the gain went to lane-only. **That is what closes D-452's own honesty bound**: the
-uncap FIXED the gate rather than merely MATCHING more postings. **Read D-450 before treating any
-level here as posting-level recall** — for 87% of the population only the fuzzy `(company, title)`
-key can fire, so this measures equivalent-role coverage.
-
-**The honest residual is still LinkedIn, and the decision on it is ACCEPT THE LOSS (D-453): 395
-postings = 28/day**, at 318 employers. No track priced there changes its order of magnitude.
-
-### The nine owner decisions are CLOSED — the whole apparatus moved WHOLE into `STANDING-FACTS.md`
-
-A1/A5/A6/A9 were already done; **A3 and A8 shipped in session 2026-09-03d** (#367, #364); **A7 was ruled and
-executed the same day** (revert); A2 is answered and its artifacts turn out not to be gate verdicts; A4 is refused on
-measurement. Nothing in that table is still a question. Mechanisms: D-443, D-439/D-444, D-446,
-D-447, D-449, **D-455**, **D-456**, **D-458**.
+**THE FINAL GATE IS ARMED AND HAS ROWS FOR THE FIRST TIME (0 → 95).** D-436's own architectural
+answer, chosen by the owner over the deterministic topic net. **43 eligible / 38 ineligible / 14
+uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is a bar"** on the 28
+`experience_years` verdicts — **and that ruling is bounded to the GATE, not to
+`near_miss_years_ceiling`** (D-461, and see Owner-gated below).
 
 ## Next action
 
-**THE SEVEN THINGS OWED INTO THE NEXT SESSION. The drain is first, and it is first because the owner
-put it there.**
+**1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
+verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
+across **~78,615 open `uncertain` postings**. Different blast radius, different question, still his.
+D-449 governs: a ruling is only as wide as the question put.
 
-1. **THE LEDGER DRAIN — DEFERRED BY THE OWNER EXPLICITLY (2026-09-03 18:03, "next session").** #364
-   moved `engine_version` (now `1+bf844e01ebcb`), so a drain **is** owed; it releases ~99% of 1,703
-   dispositions ≈ **1,689 leads re-delivered**. A3 landed first, so they route correctly (D-458).
-   **Best order: let the 04:00 tick re-key first, THEN drain against fresh verdicts** — draining now
-   re-delivers leads judged under the old catalog. Stage it with `--job <id>`.
-2. **A TIER-AWARE INDEED CAP** (code). `lane_new_companies_per_run_overrides` is keyed by **lane, not
-   tier**, so refusing tier 2 freely while admitting tier 1 under its own bound needs a change. The
-   interim value is **50, restored at the end of this session** — the owner ruled *keep the 58
-   boards*, which is not *leave the cap off* (D-459).
-3. **D-436's THIRD OUTCOME per rule family — DEFERRED by the owner (2026-09-03 14:51).** Make "the
-   extractor found nothing in the TEXT" distinguishable from "a rule decided". It is the root cause
-   of the **43-48% requirement-row band across every secondhand lane** (jobapps 48.4%, jazzhr 47.4%,
-   hiringcafe 46.2%, workable 43.5%) against greenhouse 84.9% / linkedin 84.2%. The abstain report
-   cannot see an extraction gap by construction, and more catalog patterns measure at ZERO.
-4. **THE REFUSED-AGGREGATOR FILTER — DEFERRED by the owner (2026-09-03 14:51).** Should the jobapps
-   lane ingest records whose only URL is a refused aggregator? **186 jobright.ai-hosted records**: 70
-   caught by #331's body guard, 115 judged anyway, delivering a tailored résumé at **24.7%** against
-   13.4% for the rest of the lane — and **31 of those 46 delivered leads (67.4%) carried ZERO
-   requirement rows**. One-line filter; drops 186.
-5. **hiring.cafe LANE THROUGHPUT** — ceiling **1,331 postings (+6.19pp)** for zero vendor work
-   (D-451). Highest unstarted gate-1 lever now that Indeed is proven.
-6. **`projection/run.py:502`'s preview PDF still has no `/Title` or `/Author`.** One line; out of
-   scope for #366, which fixed the delivered PDF only (D-457).
-7. **The ~83 self-referential `indeed.com` seeds** — a genuine WRITE-TIME defect in
-   `lanes/indeed.py::tenant_seed_url` (D-454). It touches the armed Indeed lane, so it needs its own
-   review.
+**2. RE-READ THE GATE ON THE NEXT RUN, AND DECIDE WHETHER IT BECOMES ROUTINE.** The gate now filters
+38 postings from future shortlists. It is a **manual handshake** — `gate request` → judge →
+`gate apply` — and nothing schedules it. Whether it runs every day, and who judges, is undecided.
+**Its cost is the judging pass, not the CLI.**
+
+**3. THE DROUGHT ALARM'S LOW-VOLUME COVERAGE IS STILL PARTIAL.** #371 fixed the false-alarm
+direction and made the window grow to its population. What remains: the per-run `placeable == 0`
+abstain still silences **63 of 136 windows**, deliberately, because it is also the anti-double-report
+guard. Recovering those is a **detector-separation** question and was not folded in.
+
+**4. FOUR DELIVERY DEFECTS FOUND BY THE GATE JUDGES, NONE FIXED.** One lead's `jd_text` is **98 KB of
+Eightfold page-config JSON**; one is **entirely site chrome**; one says **"INDEED INTERNAL TEST JOB …
+NOT A REAL JOB"**; and one 95-lead shortlist carried **SpaceX ×3 identical plus NetJets, USAA, Wipro
+and Applied Materials pairs**. The last corroborates the standing 14-18% duplicate rate from a new
+direction.
+
+**5. THE TIER-AWARE INDEED CAP IS DESIGNED AND UNBUILT** (D-459 deferred it; the design is settled).
+The tier IS known before admission at zero extra requests — `CompanyAdmission` already carries the
+provider — so it is buildable as specified. **Two numbers are the owner's**: the tier-1 rate, and
+whether a per-run RATE is the right instrument at all, since the cost is `watched_boards × 9.33 s ×
+every future run` and any positive rate grows the fleet without bound. A fleet-size ceiling is the
+alternative that actually bounds it.
+
+**6. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
+`.agent/2026-09-02-session/per_source_recall.py`. Standing at **28.8%** (5,838/20,289), lane-only
+7,984, absent 7,508.
 
 ### Owed, and specifically NOT done
 
-- **`grnh.se` redirect-following is BUILT and SHIPPED (D-429), and deliberately NOT ARMED.**
-  `boardwatch companies discover-grnh` emits candidates; `companies import` is the arming act. The
-  board sample that made arming unreadable is gone, so the only thing holding it now is the owner's
-  call on ~90 boards at ~5 min/run.
-- **Per-source thresholds are not set** — the owner's, and the act that ends the retirement
-  programme.
-- **THE ABSTAIN REPORT CANNOT SEE AN EXTRACTION GAP, BY CONSTRUCTION — D-436, unfixed.** The keystone
-  makes a rule that cannot resolve a profile FIELD visible; it says nothing about an extractor that
-  cannot find the requirement in the TEXT. Reasoning whole in `STANDING-FACTS.md`. The honest fix is
-  next-action item 3, not more patterns.
-- **THE D-436 PATTERN FIXES CATCH *ZERO* OF THE 13 MEASURED FALSE POSITIVES (D-436).** The 13 have
-  ~7 distinct root causes, so more patterns is whack-a-mole; D-443 and D-447 are the first two fixed
-  at their actual layer.
-- **The 382-body repair CLOSED the escaped-body residual in the STORE, and 129 superseded rows are
-  still escaped ON PURPOSE.** Verified through a different path than the repair loop: **0 of 1,828**
-  lane-sourced postings carry an escaped current version; history is preserved because the store is
-  append-only (D-443's lane fix plus #365's writer).
-- **Unescaping is NECESSARY, NOT SUFFICIENT, and a test pins the residual.** `3+ years of
-  non-internship professional software development experience` writes zero rows even unescaped,
-  because no catalog arm allows four modifiers between `of` and `experience`. D-447 widened the
-  scoped run to four words; the residual class is wider than that one pattern.
-- **The spelled-out and parenthesised halves are REFUSED on measurement (D-443).** Over the whole
-  store `four (4) years` is **1,006 distinct sentences** dominated by DUI boilerplate and degree
-  names, and spelled-out numerals include **`Up to three years…` — a CEILING a minimum-bar pattern
-  would invert.** A class read as safe on a filtered sample was not safe on the population.
-- **`classify_location` FAILS OPEN on unrecognised cities**, so Nottingham (UK) postings reached a
-  US-only queue in the D-436 audit. Not fixed; the fail-open direction is deliberate (D-294) and
-  narrowing it is a precision/recall decision, not a bug fix.
-- **THE APPLY-LANE DROUGHT MARGIN HAS COLLAPSED AND NOTHING ALERTS ON IT YET.** A3 cut per-run apply
-  arrivals from **40-77 to 3-15** (D-458), which is the intended behaviour and also removes almost
-  all the headroom the D-384 detector was tuned against. It is silent as of 2026-09-03d; re-read
-  its threshold before the next drought, not after.
-- **No alert wiring for the seed leak.** `boardwatch seeds` is a command you must run. The
-  finalize-block alert-ordering invariant makes wiring it a separate change with its own review.
+- **`near_miss_years_ceiling` itself is untouched.** See item 1.
+- **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
+  takes `eligible` to **0**, and the `work_auth` form is worth **245 of 4,617 (5.3%)** — about a
+  quarter of the measured defect. **Do not re-derive it, and do not quote the naive 29.9%**, which is
+  EEO boilerplate contamination.
+- **The hiring.cafe +6.19pp / 1,331-posting ceiling is RETIRED as a fossil (D-463).** Its null
+  control rests on an endpoint PR #304 deleted on 2026-09-01, two days before D-451 was written.
+  Real value ~**+0.6pp**. **Do not re-size other work off the 1,331.** The lane's dominant problem is
+  **availability** — 2 total refusals and 2 near-total in the last 7 armed runs.
+- **The refused-aggregator filter is REFUSED (D-463)**, not deferred. Its premise inverts on the
+  actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
+- **A run was launched with the wrong flags this session.** `boardwatch run` defaults to `--top 10`
+  and no `--project`; the daily driver is **`run --project --top 100`**. Run 151 was killed ~17 min
+  in and relaunched as 152. **Never set `BOARDWATCH_HEARTBEAT_URL` on a manual run** — it would ping
+  the production healthcheck and mask a real 04:00 failure.
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+**0. WHETHER THE YEARS RULING PROPAGATES BEYOND THE GATE.** He ruled **"a stated bar is a bar"**
+on **28 final-gate verdicts over the delivered shortlist** (D-461). `near_miss_years_ceiling` in the
+DETERMINISTIC engine abstains on the same 2-3 year band across **~78,615 open `uncertain` postings**.
+**Do not move it on the strength of the gate ruling** — different population, different blast radius,
+and lowering the ceiling REJECTS rather than releases (D-440).
 
 **0-1. RETIRED / ANSWERED — held WHOLE in `STANDING-FACTS.md`.** Gate 1 is PER-SOURCE RECALL (D-421)
 and only the per-source THRESHOLD is still owed; job-apps keeps running until it is met
