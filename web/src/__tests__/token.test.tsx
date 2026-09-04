@@ -17,8 +17,14 @@ async function freshToken() {
 
 // jsdom starts at http://localhost/ with an empty fragment; each test sets its own hash and
 // history so the scrub target ("#/queue") is unambiguous.
+//
+// `localStorage` is cleared too, and that is load-bearing rather than tidiness: the token now
+// PERSISTS there, and jsdom shares one storage across every test in the file. Without this, a
+// capture in one test would satisfy `captureToken` in the next and the route-fragment tests below
+// would pass for the wrong reason.
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
+  window.localStorage.clear();
 });
 
 describe("captureToken", () => {
@@ -88,5 +94,95 @@ describe("captureToken", () => {
 
     expect(hasToken()).toBe(false);
     expect(authHeaders()).toEqual({});
+  });
+});
+
+describe("persistence — what makes the viewer's URL openable whenever", () => {
+  it("restores a stored token when the fragment is a ROUTE, not a credential", async () => {
+    // The exact shape the owner hit: the router owns the fragment after the first visit, so a
+    // reload or a bookmark of `#/queue` arrives with no credential in the URL at all.
+    window.localStorage.setItem("boardwatch.web-token", "stored-secret");
+    window.location.hash = "#/queue";
+    const { captureToken, hasToken, authHeaders } = await freshToken();
+
+    captureToken();
+
+    expect(hasToken()).toBe(true);
+    expect(authHeaders()).toEqual({ Authorization: "Bearer stored-secret" });
+    // The route is still the reader's; restoring a credential must not navigate them.
+    expect(window.location.hash).toBe("#/queue");
+  });
+
+  it("restores a stored token when the fragment is EMPTY", async () => {
+    window.localStorage.setItem("boardwatch.web-token", "stored-secret");
+    window.location.hash = "";
+    const { captureToken, authHeaders } = await freshToken();
+
+    captureToken();
+
+    expect(authHeaders()).toEqual({ Authorization: "Bearer stored-secret" });
+  });
+
+  it("persists a captured token so the NEXT page load needs no fragment", async () => {
+    window.location.hash = "#token=fresh-secret";
+    const first = await freshToken();
+    first.captureToken();
+    expect(window.localStorage.getItem("boardwatch.web-token")).toBe("fresh-secret");
+
+    // A second load, arriving on the scrubbed route with no credential in the URL.
+    const second = await freshToken();
+    second.captureToken();
+    expect(second.authHeaders()).toEqual({ Authorization: "Bearer fresh-secret" });
+  });
+
+  it("stores the DECODED token, not the percent-encoded fragment text", async () => {
+    window.location.hash = "#token=a%20b%2Bc";
+    const { captureToken } = await freshToken();
+
+    captureToken();
+
+    // Storing the raw fragment would double-decode on the next load and send a different secret.
+    expect(window.localStorage.getItem("boardwatch.web-token")).toBe("a b+c");
+  });
+
+  it("forgetToken drops the credential from memory AND from storage", async () => {
+    window.location.hash = "#token=stale-secret";
+    const { captureToken, forgetToken, hasToken, authHeaders } = await freshToken();
+    captureToken();
+    expect(hasToken()).toBe(true);
+
+    forgetToken();
+
+    // Both halves matter: leaving it in storage would replay the rejected secret on every reload
+    // and strand the reader, which is exactly what the 401 path calls this to prevent.
+    expect(hasToken()).toBe(false);
+    expect(authHeaders()).toEqual({});
+    expect(window.localStorage.getItem("boardwatch.web-token")).toBeNull();
+  });
+
+  it("still captures from the fragment when localStorage THROWS", async () => {
+    // Storage disabled: the viewer must degrade to the old per-page behaviour, never fail to load.
+    const spy = vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    try {
+      window.location.hash = "#token=abc123";
+      const { captureToken, authHeaders } = await freshToken();
+
+      captureToken();
+
+      expect(authHeaders()).toEqual({ Authorization: "Bearer abc123" });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("captures nothing when the fragment is empty and storage holds nothing", async () => {
+    window.location.hash = "";
+    const { captureToken, hasToken } = await freshToken();
+
+    captureToken();
+
+    expect(hasToken()).toBe(false);
   });
 });
