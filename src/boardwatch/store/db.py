@@ -2,6 +2,13 @@
 
 Every connection runs WAL journal mode, a busy_timeout, and
 PRAGMA foreign_keys=ON (D20 + round-1 finding 4) via a connect-event hook.
+
+Every connection also emits its own BEGIN, via the connect/begin listener pair SQLAlchemy
+documents for pysqlite. Left to the driver, pysqlite opens a transaction only on the first DML
+statement, so the reads of a read-then-write sequence run in autocommit and each one sees its
+own snapshot -- a concurrent writer can land between them and the second read disagrees with the
+first. D-426 met that as a wrong number in one report and answered it at that one site; this is
+the engine-level answer, and the two hand-written BEGIN IMMEDIATE sites were retired with it.
 """
 
 from __future__ import annotations
@@ -38,6 +45,59 @@ class WalUnsafeFilesystemError(RuntimeError):
         )
 
 
+#: The three modes SQLite's BEGIN accepts, as a closed catalog. The `begin` listener
+#: interpolates the chosen one into a statement, so nothing outside this set can reach the
+#: driver: an unknown mode is a typed refusal at the raise site, never a new bucket.
+BEGIN_MODES = frozenset({"DEFERRED", "IMMEDIATE", "EXCLUSIVE"})
+
+#: Execution-option name through which a caller chooses its transaction's begin mode. An
+#: execution option rather than a second engine factory, because the mode is a property of one
+#: unit of work and not of the store: the runner reads and writes through the same engine.
+BEGIN_MODE_OPTION = "boardwatch_begin_mode"
+
+
+class UnknownBeginModeError(ValueError):
+    """A caller asked for a begin mode outside `BEGIN_MODES`."""
+
+    def __init__(self, mode: object) -> None:
+        self.mode = mode
+        super().__init__(
+            f"{mode!r} is not a SQLite begin mode; expected one of {sorted(BEGIN_MODES)}"
+        )
+
+
+def _install_begin_hook(engine: Engine, *, writable: bool) -> None:
+    """Emit BEGIN ourselves on every transaction this engine opens.
+
+    `writable` decides whether the `BEGIN_MODE_OPTION` execution option is honoured at all. A
+    read-only engine opens its file with `mode=ro` and sets `query_only=ON`, so BEGIN IMMEDIATE
+    -- which takes SQLite's write lock up front -- could only ever fail there; refusing to read
+    the option keeps that failure from depending on which engine a caller happened to be handed.
+    """
+
+    @event.listens_for(engine, "begin")
+    def _emit_begin(conn: Connection) -> None:
+        mode = "DEFERRED"
+        if writable:
+            requested = conn.get_execution_options().get(BEGIN_MODE_OPTION, "DEFERRED")
+            if requested not in BEGIN_MODES:
+                raise UnknownBeginModeError(requested)
+            mode = str(requested)
+        conn.exec_driver_sql(f"BEGIN {mode}")
+
+
+def write_connection(engine: Engine) -> Connection:
+    """A connection whose transaction takes SQLite's write lock at BEGIN, not at first write.
+
+    Deferred is right for the common case -- a run's reads must not lock out the CLI or the web
+    viewer -- but it is wrong for a read-modify-write of a cursor or a counter: two of those
+    interleave their reads, then the second one's COMMIT fails with SQLITE_BUSY instead of
+    queueing on `busy_timeout`. Callers that read a value in order to replace it take this
+    instead, which is what the two hand-written `BEGIN IMMEDIATE` statements used to buy.
+    """
+    return engine.connect().execution_options(**{BEGIN_MODE_OPTION: "IMMEDIATE"})
+
+
 def get_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
     data_dir.mkdir(parents=True, exist_ok=True)
     if (fstype := unsafe_wal_filesystem(data_dir)) is not None:
@@ -46,12 +106,20 @@ def get_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
 
     @event.listens_for(engine, "connect")
     def _set_pragmas(dbapi_connection: Any, _record: Any) -> None:
+        # Hand the transaction to `_install_begin_hook`. Python's sqlite3 driver otherwise
+        # opens one implicitly before DML and never before a SELECT, which is the whole
+        # defect; `None` is its "issue no BEGIN of your own" setting, not "never transact".
+        # It also makes the WAL pragma below unconditionally safe: a journal-mode change is
+        # refused inside a transaction, and with the driver's implicit BEGIN disabled there
+        # can never be one open here.
+        dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
+    _install_begin_hook(engine, writable=True)
     return engine
 
 
@@ -77,6 +145,9 @@ def ensure_schema(engine: Engine) -> None:
     # cheap no-op it was always assumed to be.
     with engine.connect():
         pass
+    # Alembic's own engine carries neither listener, so migrations keep the driver's default
+    # transaction handling. That is deliberate: `command.upgrade` runs alone, one migration at a
+    # time, and owns its transactions -- there is no read-then-write to interleave with.
     command.upgrade(_alembic_config(engine), "head")
 
 
@@ -144,6 +215,10 @@ def get_readonly_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
 
     @event.listens_for(engine, "connect")
     def _set_readonly_pragmas(dbapi_connection: Any, _record: Any) -> None:
+        # Same reason as `get_engine`: without this the driver issues no BEGIN for a SELECT,
+        # so each read of a multi-read request answers from its own snapshot. The viewer reads
+        # a run's counts and its rows in one request, and they must agree.
+        dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         # NO `journal_mode=WAL`: that pragma is a write, and against an existing store it can be
         # a journal-mode CONVERSION, which is the one operation no other connection's lock
@@ -163,4 +238,5 @@ def get_readonly_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
         cursor.execute("PRAGMA query_only=ON")
         cursor.close()
 
+    _install_begin_hook(engine, writable=False)
     return engine

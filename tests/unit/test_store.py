@@ -3,11 +3,20 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Engine, func, insert, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from boardwatch.store import tables
-from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine, schema_revision
+from boardwatch.store.db import (
+    BEGIN_MODE_OPTION,
+    DB_FILENAME,
+    UnknownBeginModeError,
+    ensure_schema,
+    get_engine,
+    get_readonly_engine,
+    schema_revision,
+    write_connection,
+)
 
 
 @pytest.fixture()
@@ -278,3 +287,98 @@ def test_a_new_store_is_in_wal_from_the_moment_the_schema_exists(tmp_path: Path)
         assert raw.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     finally:
         raw.close()
+
+
+# --- the engine's own BEGIN (D-426's class, answered at the engine) ------------------------
+
+
+def _add_company(eng: Engine, slug: str) -> None:
+    with eng.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name=slug.title(), provider="greenhouse", slug=slug, source="user", watched=True
+            )
+        )
+
+
+def test_reads_inside_one_transaction_share_a_snapshot(tmp_path: Path) -> None:
+    """Two reads in ONE transaction must answer from ONE snapshot.
+
+    pysqlite opens a transaction on the first DML statement and never on a SELECT, so without
+    the `begin` listener each read of a read-then-write sequence runs in autocommit against
+    whatever is committed at that instant. D-426 met exactly this: a total and a breakdown read
+    inside `conn.begin()` disagreed, and the report published a NEGATIVE claimable count.
+    """
+    engine_a = get_engine(tmp_path)
+    ensure_schema(engine_a)
+    _add_company(engine_a, "acme")
+    engine_b = get_engine(tmp_path)
+
+    count = select(func.count()).select_from(tables.companies)
+    with engine_a.begin() as conn:
+        first = conn.execute(count).scalar_one()
+        _add_company(engine_b, "beta")  # a concurrent writer lands between the two reads
+        second = conn.execute(count).scalar_one()
+
+    assert (first, second) == (1, 1)
+    # The positive control: the write really did commit, so the test is not passing because
+    # nothing happened between the reads.
+    with engine_a.connect() as conn:
+        assert conn.execute(count).scalar_one() == 2
+
+
+def test_write_connection_takes_the_write_lock_at_begin(tmp_path: Path) -> None:
+    """`write_connection` must begin IMMEDIATE, so a second writer queues instead of racing.
+
+    Asserted by BEHAVIOUR, not by inspecting the emitted SQL: the second connection's first
+    READ is refused, which can only happen if the first connection already holds the write lock
+    without having written anything. A deferred transaction would let both reads through and
+    fail the loser at COMMIT instead — the upgrade deadlock this exists to prevent.
+    """
+    engine = get_engine(tmp_path, busy_timeout_ms=100)
+    ensure_schema(engine)
+    count = select(func.count()).select_from(tables.companies)
+
+    with write_connection(engine) as first:
+        first.execute(count)  # autobegins IMMEDIATE
+        with write_connection(engine) as second:
+            with pytest.raises(OperationalError, match="database is locked"):
+                second.execute(count)
+
+
+def test_a_deferred_reader_does_not_lock_out_a_writer(tmp_path: Path) -> None:
+    """The control for the test above: a plain connection must NOT take the write lock.
+
+    Without this, `_install_begin_hook` could emit IMMEDIATE for everything and both tests
+    would still pass, at the cost of serialising every read in the program against every write.
+    """
+    engine = get_engine(tmp_path, busy_timeout_ms=100)
+    ensure_schema(engine)
+    count = select(func.count()).select_from(tables.companies)
+
+    with engine.connect() as reader:
+        reader.execute(count)  # autobegins DEFERRED
+        _add_company(engine, "acme")  # must not raise
+
+
+def test_an_unknown_begin_mode_is_refused(tmp_path: Path) -> None:
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    conn = engine.connect().execution_options(**{BEGIN_MODE_OPTION: "IMMEDIATE; DROP TABLE jobs"})
+    with conn, pytest.raises(UnknownBeginModeError):
+        conn.execute(select(func.count()).select_from(tables.companies))
+
+
+def test_the_readonly_engine_ignores_the_immediate_option(tmp_path: Path) -> None:
+    """A read-only engine opens `mode=ro` and sets `query_only=ON`, so IMMEDIATE could only
+    fail there. The option is not honoured rather than being honoured and failing, so a caller
+    handed either engine behaves the same way."""
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    _add_company(engine, "acme")
+    engine.dispose()
+
+    ro = get_readonly_engine(tmp_path)
+    conn = ro.connect().execution_options(**{BEGIN_MODE_OPTION: "IMMEDIATE"})
+    with conn:
+        assert conn.execute(select(func.count()).select_from(tables.companies)).scalar_one() == 1

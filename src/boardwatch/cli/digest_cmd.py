@@ -1,8 +1,8 @@
 """digest: what changed since you last looked (D18).
 
 Reads the event window past the stored cursor, renders it, and advances the cursor.
-Issues BEGIN IMMEDIATE before the first cursor read so two concurrent digests cannot
-both read the same window (A1). --peek renders without advancing.
+Reads under an IMMEDIATE transaction, so two concurrent digests cannot both read the
+same window (A1). --peek renders without advancing.
 
 A crash after terminal output can still re-render a window. Exactly-once terminal
 rendering is not achievable transactionally, and claiming it would be false.
@@ -15,11 +15,11 @@ from collections.abc import Callable
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import text
 
 from boardwatch.cli.context import build_context
 from boardwatch.reports.digest import DigestEntry, DigestSummary, summarize_events
 from boardwatch.store.app_state import get_digest_cursor, set_digest_cursor
+from boardwatch.store.db import write_connection
 
 console = Console()
 
@@ -56,10 +56,9 @@ def digest(
 ) -> None:
     """New, reopened, updated and closed postings since your last digest."""
     app_ctx = build_context(ctx.obj)
-    with app_ctx.engine.connect() as conn:
-        # A1: BEGIN IMMEDIATE serializes before the first cursor read so two
-        # overlapping digests cannot read the same window.
-        conn.execute(text("BEGIN IMMEDIATE"))
+    # A1: `write_connection` begins IMMEDIATE, which serializes before the first cursor read,
+    # so two overlapping digests cannot read the same window.
+    with write_connection(app_ctx.engine) as conn:
         try:
             summary = summarize_events(conn, get_digest_cursor(conn))
             if summary.is_empty:

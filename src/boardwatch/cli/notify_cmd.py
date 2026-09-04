@@ -3,7 +3,7 @@
 Sibling of `digest`, but it does network I/O, so it must NEVER hold the SQLite write lock
 across delivery. Three phases: (1) READ matches on a short plain connection; (2) DELIVER with
 NO transaction open (a slow webhook can't block a concurrent scan/digest); (3) ADVANCE the
-cursor under a tiny own BEGIN IMMEDIATE. The cursor advances to max_event_id when at least one
+cursor under a tiny own IMMEDIATE transaction. The cursor advances to max_event_id when at least one
 channel delivered OR when there were new events but no matches (mark them seen so they are not
 re-scanned forever). It does NOT advance when matches exist but went undelivered (no channels /
 all failed), so the next run retries. No --peek (a deliver-but-don't-advance mode re-delivers
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import typer
 from rich.console import Console
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
@@ -26,6 +26,7 @@ from boardwatch.notify.webhook import WebhookChannel, build_payload
 from boardwatch.rank.heuristic import profile_view_from_row
 from boardwatch.reports.notify import NotifyResult, select_new_matches
 from boardwatch.store.app_state import get_notify_cursor, set_notify_cursor
+from boardwatch.store.db import write_connection
 from boardwatch.store.queries import get_profile
 
 console = Console()
@@ -50,8 +51,7 @@ def _build_channels(settings: Settings, result: NotifyResult) -> list[Channel]:
 
 def _advance(engine: Engine, event_id: int) -> None:
     """Advance the notify cursor under a tiny own transaction (no I/O held under the lock)."""
-    with engine.connect() as conn:
-        conn.execute(text("BEGIN IMMEDIATE"))
+    with write_connection(engine) as conn:
         try:
             set_notify_cursor(conn, event_id)  # monotonic guard re-reads current
             conn.commit()
