@@ -327,8 +327,8 @@ def test_load_labeled_set_raises_on_invalid_verdict(tmp_path) -> None:
 
 
 def test_load_labeled_set_raises_on_malformed_facts(tmp_path) -> None:
-    """A malformed labeled row is a curation bug and must fail LOUD, unlike the
-    fail-closed parse_facts used on stored production JSON."""
+    """A malformed labeled row is a curation bug and must fail LOUD, the same direction
+    `parse_facts` takes on a malformed stored profile row."""
     _write_jsonl(
         tmp_path / "a.jsonl",
         [{"label": "bad", "body_text": "x", "facts": {"nonsense": 1}, "expected_verdict": "eligible"}],

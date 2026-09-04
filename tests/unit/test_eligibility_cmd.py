@@ -413,3 +413,30 @@ def test_help_smoke(env: Path) -> None:
     assert runner.invoke(app, ["eligibility", "summary", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "abstain", "--help"]).exit_code == 0
     assert runner.invoke(app, ["eligibility", "extract", "--help"]).exit_code == 0
+
+
+def _corrupt_policy(data_dir: Path) -> None:
+    """The bare FAMILIES map stored where a Policy document belongs — the shape a hand edit
+    or an older writer produces, and the one the 2026-09-04 review's own probe hit."""
+    from boardwatch.store import tables
+
+    with get_engine(data_dir).begin() as conn:
+        conn.execute(
+            tables.profile.update()
+            .where(tables.profile.c.id == 1)
+            .values(eligibility_policy_json={"experience_years": "blocker"})
+        )
+
+
+def test_a_read_command_refuses_an_unusable_profile_row_by_name(env: Path) -> None:
+    """It exits 1 and NAMES the column, because the operator has to know which of the two
+    JSON columns to edit. Previously `summary` printed counts computed under the catalog
+    defaults, which is a different policy than the user set."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    _corrupt_policy(env)
+
+    result = _run(env, ["eligibility", "summary"])
+
+    assert result.exit_code == 1, result.output
+    assert "eligibility_policy_json" in result.output
+    assert "Traceback" not in result.output

@@ -129,24 +129,62 @@ class Policy(BaseModel):
     families: dict[str, PolicyChoice] = Field(default_factory=dict)
 
 
+class ProfileRowInvalid(ValueError):
+    """A stored profile column holds something that is not a valid document.
+
+    NOT the same as absent. An unset column is legitimate — a fresh install, a schema
+    upgraded before the facts were entered — and reads as the empty model. A column that
+    holds a MALFORMED document is a defect, and failing it closed to the empty model is
+    a CLEARING failure, not a conservative one: an empty `Policy` materialises the
+    catalog defaults, where only `work_auth` is a `blocker` and the other five families
+    fall back to `preference`, a severity that can never yield `ineligible` (D-P2-1). The
+    run would then report success while clearing postings the user's own policy rejects.
+    """
+
+    def __init__(self, column: str, reason: str) -> None:
+        self.column = column
+        self.reason = reason
+        super().__init__(f"{column}: {reason}")
+
+
+def _reason(exc: ValidationError) -> str:
+    """The pydantic errors as one line, naming every offending key.
+
+    `str(exc)` is multi-line and repeats the model name; the operator needs the key they
+    have to edit, which is the `loc`.
+    """
+    return "; ".join(
+        f"{'.'.join(str(part) for part in error['loc']) or '(root)'}: {error['msg']}"
+        for error in exc.errors()
+    )
+
+
 def parse_facts(raw: object) -> Facts:
-    """Stored JSON to Facts, failing closed to absent on anything unexpected."""
-    if not isinstance(raw, dict):
+    """Stored JSON to Facts. Absent reads as absent; malformed is REFUSED."""
+    if raw is None:
         return Facts()
+    if not isinstance(raw, dict):
+        raise ProfileRowInvalid(
+            "eligibility_facts_json", f"expected a JSON object, got {type(raw).__name__}"
+        )
     try:
         return Facts.model_validate(raw)
-    except ValidationError:
-        return Facts()
+    except ValidationError as exc:
+        raise ProfileRowInvalid("eligibility_facts_json", _reason(exc)) from exc
 
 
 def parse_policy(raw: object) -> Policy:
-    """Stored JSON to Policy, failing closed to no overrides on anything unexpected."""
-    if not isinstance(raw, dict):
+    """Stored JSON to Policy. Absent reads as no overrides; malformed is REFUSED."""
+    if raw is None:
         return Policy()
+    if not isinstance(raw, dict):
+        raise ProfileRowInvalid(
+            "eligibility_policy_json", f"expected a JSON object, got {type(raw).__name__}"
+        )
     try:
         return Policy.model_validate(raw)
-    except ValidationError:
-        return Policy()
+    except ValidationError as exc:
+        raise ProfileRowInvalid("eligibility_policy_json", _reason(exc)) from exc
 
 
 def facts_payload(facts: Facts) -> dict[str, object]:

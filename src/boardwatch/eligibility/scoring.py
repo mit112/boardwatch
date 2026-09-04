@@ -50,9 +50,9 @@ SHIP_AUDIT_COVERAGE_BAR: float = 0.20
 
 
 class LabeledSetError(ValueError):
-    """A curated labeled row is malformed. Fails LOUD on purpose: unlike stored
-    production JSON (parse_facts fails closed to empty facts), a bad row in the human
-    ground-truth set would silently mis-score the gate."""
+    """A curated labeled row is malformed. Fails LOUD, for the same reason `parse_facts`
+    now does on a stored profile row: a bad row read as empty facts would silently
+    mis-score the gate."""
 
 
 def reference_all_blocker_policy(catalog: RulesCatalog) -> Policy:

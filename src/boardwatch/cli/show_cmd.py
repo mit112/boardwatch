@@ -15,10 +15,12 @@ from rich.table import Table
 from sqlalchemy import select
 
 from boardwatch.cli._hints import print_next_step
+from boardwatch.cli._profile_row import refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.audit import AuditView, VerdictPresentation, load_audit, load_llm_audit
 from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
@@ -217,7 +219,10 @@ def show(
 
     catalog = load_rules(settings.config_dir)
     with engine.connect() as conn:
-        identity = current_identity(conn, settings)
+        try:
+            identity = current_identity(conn, settings)
+        except ProfileRowInvalid as exc:
+            refuse_unusable_profile_row(exc)
         profile_hash, rules_hash = identity if identity is not None else (None, None)
         audit = load_audit(
             conn,

@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from sqlalchemy import Engine
 
+from boardwatch.cli._profile_row import facts_of, policy_of
 from boardwatch.cli.context import build_context
 from boardwatch.cli.eligibility_cmd import (
     set_career_field,
@@ -22,7 +23,7 @@ from boardwatch.cli.eligibility_cmd import (
 )
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
-from boardwatch.eligibility.facts import facts_payload, parse_facts, parse_policy
+from boardwatch.eligibility.facts import facts_payload
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store.queries import get_profile, save_eligibility, save_profile
 
@@ -185,8 +186,8 @@ def edit(ctx: typer.Context) -> None:
     # install. Seeded from the stored facts and policy, so a skipped answer keeps the current
     # value rather than clearing it. persist_profile never touches the eligibility columns.
     catalog = load_rules(app_ctx.settings.config_dir)
-    facts = parse_facts(row.eligibility_facts_json)
-    policy = parse_policy(row.eligibility_policy_json)
+    facts = facts_of(row.eligibility_facts_json)
+    policy = policy_of(row.eligibility_policy_json)
     if typer.confirm("Update eligibility checks?", default=False):
         if catalog.career_fields:
             field_hint = ", ".join(sorted(catalog.career_fields))

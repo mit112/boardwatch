@@ -45,6 +45,7 @@ from boardwatch.delivery.api import resolve_owner_name
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT, reconcile_queue, sync_queue
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneContext, LaneResult
@@ -1663,6 +1664,19 @@ def run_pipeline(
             # nothing, which is exactly what the funnel should record — but it IS fatal,
             # because nothing downstream can run.
             summary.fatal = "no profile configured; nothing ranked or tailored"
+            stage_errors.append(f"eligibility: {summary.fatal}")
+            summary.errors.append(f"eligibility: {summary.fatal}")
+            return summary
+        except ProfileRowInvalid as exc:
+            # A stored profile column holds a document nothing can read. FATAL, and
+            # deliberately not the same shape as an absent profile: an empty `Policy`
+            # materialises the catalog defaults, where only work_auth is a `blocker` and
+            # the other five families fall back to `preference` — a severity that can never
+            # yield `ineligible` (D-P2-1). Continuing would clear postings the user's own
+            # policy rejects and report the run as successful. Systemic input outage ⇒
+            # fatal. Returning here also means no evaluation and no disposition is written
+            # under an identity computed from a policy nobody can read.
+            summary.fatal = f"profile row unusable: {exc}"
             stage_errors.append(f"eligibility: {summary.fatal}")
             summary.errors.append(f"eligibility: {summary.fatal}")
             return summary

@@ -1,6 +1,8 @@
-"""Facts and policy are frozen boundary models and every missing or malformed value
-fails closed to absent, so no resolver can read a semantically undefined value
-(D-P2-15)."""
+"""Facts and policy are frozen boundary models. An ABSENT value is legitimate and reads
+as absent, so no resolver can read a semantically undefined value (D-P2-15); a MALFORMED
+value is refused with `ProfileRowInvalid`, because a policy that fails closed to the
+catalog defaults drops five of six families to `preference` and clears postings the
+user's own policy rejects."""
 
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from boardwatch.eligibility.facts import (
     ClearanceFact,
     Facts,
     Policy,
+    ProfileRowInvalid,
     WorkAuthFact,
     facts_payload,
     parse_facts,
@@ -72,7 +75,8 @@ def test_absent_facts_render_as_null_not_missing_keys() -> None:
 @pytest.mark.parametrize(
     "raw",
     [
-        None,
+        # `None` is deliberately NOT here: an unset column is absent, not malformed. It has
+        # its own control, test_an_absent_column_still_reads_as_absent.
         "not a mapping",
         [],
         {"total_years_experience": "five"},
@@ -86,8 +90,10 @@ def test_absent_facts_render_as_null_not_missing_keys() -> None:
         {"highest_degree": ["bachelor"]},
     ],
 )
-def test_malformed_stored_facts_fail_closed_to_absent(raw: object) -> None:
-    assert parse_facts(raw) == Facts()
+def test_malformed_stored_facts_are_refused(raw: object) -> None:
+    with pytest.raises(ProfileRowInvalid) as caught:
+        parse_facts(raw)
+    assert caught.value.column == "eligibility_facts_json"
 
 
 def test_policy_defaults_to_no_overrides() -> None:
@@ -99,8 +105,45 @@ def test_policy_defaults_to_no_overrides() -> None:
     "raw",
     [{"families": {"degree": "sometimes"}}, {"families": "degree"}, {"families": ["degree"]}, 7],
 )
-def test_malformed_stored_policy_fails_closed_to_no_overrides(raw: object) -> None:
-    assert parse_policy(raw) == Policy()
+def test_malformed_stored_policy_is_refused(raw: object) -> None:
+    with pytest.raises(ProfileRowInvalid) as caught:
+        parse_policy(raw)
+    assert caught.value.column == "eligibility_policy_json"
+
+
+def test_an_unknown_facts_key_names_itself_in_the_refusal() -> None:
+    """The operator has to know WHICH key made the row unusable; a bare "invalid" leaves
+    them editing JSON blind."""
+    with pytest.raises(ProfileRowInvalid) as caught:
+        parse_facts({"years_experience": 1, "stray": 1})
+    assert caught.value.column == "eligibility_facts_json"
+    assert "stray" in str(caught.value)
+
+
+def test_a_bare_families_map_is_refused_not_read_as_no_overrides() -> None:
+    """The exact shape that fooled the 2026-09-04 review's own probe: the FAMILIES dict
+    stored where a Policy document belongs. Read as "no overrides" it materialises the
+    catalog defaults, where only work_auth is a blocker and the other five families drop
+    to `preference` — a severity that can never yield `ineligible`. That is a CLEARING
+    failure, so it must be loud."""
+    with pytest.raises(ProfileRowInvalid) as caught:
+        parse_policy({"experience_years": "blocker"})
+    assert caught.value.column == "eligibility_policy_json"
+    assert "experience_years" in str(caught.value)
+
+
+def test_a_non_json_object_payload_is_refused() -> None:
+    with pytest.raises(ProfileRowInvalid):
+        parse_policy("not json")
+    with pytest.raises(ProfileRowInvalid):
+        parse_facts("not json")
+
+
+def test_an_absent_column_still_reads_as_absent() -> None:
+    """The control, and the whole distinction this ticket draws: never SET is legitimate
+    (a fresh install, an upgraded schema); set to nonsense is not."""
+    assert parse_facts(None) == Facts()
+    assert parse_policy(None) == Policy()
 
 
 def _engine(tmp_path: Path):

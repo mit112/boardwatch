@@ -27,6 +27,7 @@ from boardwatch.scan.coordinator import ScanLockHeldError
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.queries import RUN_FAILED
 from tests.conftest import write_test_resume_template
 
 # The seeded company is a real watched greenhouse board, so any test that runs the scan stage
@@ -590,6 +591,57 @@ def test_no_profile_is_a_real_run_that_produced_nothing_not_a_crash(
     with get_engine(env).connect() as conn:
         finished = conn.execute(select(tables.runs.c.finished_at)).scalar_one()
     assert finished is not None
+
+
+def test_a_corrupt_policy_column_is_a_run_fatal_not_a_silent_fallback(
+    env: Path, tmp_path: Path
+) -> None:
+    """T7. An unreadable `eligibility_policy_json` used to parse down to an empty Policy,
+    which MATERIALISES the catalog defaults: only work_auth is a `blocker`, the other five
+    families fall back to `preference`, and `preference` can never yield `ineligible`. So
+    the run reported success while clearing postings the user's own policy rejects. The
+    row is written directly here because every CLI writer validates before storing — the
+    only way in is a hand edit or an older/newer schema, which is exactly the live case.
+    """
+    _ready(env)
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        conn.execute(
+            tables.profile.update()
+            .where(tables.profile.c.id == 1)
+            .values(eligibility_policy_json={"experience_years": "blocker"})
+        )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is not None, "a run under an unusable policy reported success"
+    assert "eligibility_policy_json" in summary.fatal
+    assert summary.tailored == []
+    with engine.connect() as conn:
+        assert (
+            conn.execute(select(tables.runs.c.status).where(tables.runs.c.id == summary.run_id))
+            .scalar_one()
+            == RUN_FAILED
+        )
+        # Nothing may be persisted under a policy nobody can read. The eligibility tables
+        # carry BEFORE UPDATE/DELETE RAISE(ABORT) triggers, so a row written here could
+        # only ever be superseded, never corrected.
+        assert (
+            conn.execute(
+                select(func.count())
+                .select_from(tables.eligibility_evaluations)
+                .where(tables.eligibility_evaluations.c.run_id == summary.run_id)
+            ).scalar_one()
+            == 0
+        )
+        assert (
+            conn.execute(
+                select(func.count())
+                .select_from(tables.job_dispositions)
+                .where(tables.job_dispositions.c.run_id == summary.run_id)
+            ).scalar_one()
+            == 0
+        )
 
 
 def test_cli_reports_the_run_id_and_exits_zero_on_a_clean_run(env: Path, tmp_path: Path) -> None:

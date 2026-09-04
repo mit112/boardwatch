@@ -22,6 +22,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from boardwatch.cli._profile_row import facts_of, policy_of, refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
@@ -31,9 +32,8 @@ from boardwatch.eligibility.facts import (
     Facts,
     Policy,
     PolicyChoice,
+    ProfileRowInvalid,
     facts_payload,
-    parse_facts,
-    parse_policy,
 )
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import (
@@ -237,7 +237,7 @@ def facts_root(ctx: typer.Context) -> None:
         row = get_profile(conn)
     if row is None:
         _no_profile()
-    facts = parse_facts(row.eligibility_facts_json)
+    facts = facts_of(row.eligibility_facts_json)
     for family in catalog.families:
         if family.answer_type == "structured":
             sub = getattr(facts, family.fact)
@@ -260,8 +260,8 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
         row = get_profile(conn)
         if row is None:
             _no_profile()
-        facts = parse_facts(row.eligibility_facts_json)
-        policy = parse_policy(row.eligibility_policy_json)
+        facts = facts_of(row.eligibility_facts_json)
+        policy = policy_of(row.eligibility_policy_json)
         try:
             if fact == "career_field":
                 new_facts = set_career_field(facts, catalog, value)
@@ -353,8 +353,8 @@ def extract_cmd(
         console.print("no open postings to extract")
         return
 
-    facts = parse_facts(profile_row.eligibility_facts_json)
-    policy = parse_policy(profile_row.eligibility_policy_json)
+    facts = facts_of(profile_row.eligibility_facts_json)
+    policy = policy_of(profile_row.eligibility_policy_json)
     catalog = load_rules(settings.config_dir)
     cache = ResponseCache(settings.data_dir / "llm-cache")
 
@@ -447,7 +447,10 @@ def summary_cmd(ctx: typer.Context) -> None:
     before trusting a hidden count."""
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
-        identity = current_identity(conn, app_ctx.settings)
+        try:
+            identity = current_identity(conn, app_ctx.settings)
+        except ProfileRowInvalid as exc:
+            refuse_unusable_profile_row(exc)
         versions = current_posting_versions(conn, None)
         version_ids = [cv.posting_version_id for cv in versions.values()]
         evals = (
@@ -497,7 +500,10 @@ def abstain_cmd(ctx: typer.Context) -> None:
     app_ctx = build_context(ctx.obj)
     catalog = load_rules(app_ctx.settings.config_dir)
     with app_ctx.engine.connect() as conn:
-        identity = current_identity(conn, app_ctx.settings)
+        try:
+            identity = current_identity(conn, app_ctx.settings)
+        except ProfileRowInvalid as exc:
+            refuse_unusable_profile_row(exc)
         versions = current_posting_versions(conn, None)
         version_ids = [cv.posting_version_id for cv in versions.values()]
         evals = (
@@ -509,7 +515,7 @@ def abstain_cmd(ctx: typer.Context) -> None:
         counts = count_requirement_dispositions(conn, eval_ids)
         profile_row = get_profile(conn)
     na = (
-        not_applicable_field_families(parse_facts(profile_row.eligibility_facts_json), catalog)
+        not_applicable_field_families(facts_of(profile_row.eligibility_facts_json), catalog)
         if profile_row is not None
         else frozenset()
     )
@@ -734,7 +740,7 @@ def gate_request_cmd(
         profile_row = get_profile(conn)
     if profile_row is None:
         _no_profile()
-    facts = parse_facts(profile_row.eligibility_facts_json)
+    facts = facts_of(profile_row.eligibility_facts_json)
     try:
         # `record_surfaced=False`: the request judges the shortlist and hands it straight back,
         # so it must not advance the queue. Consuming here suppressed every posting the gate had
@@ -788,8 +794,8 @@ def gate_apply_cmd(
         profile_row = get_profile(conn)
     if profile_row is None:
         _no_profile()
-    facts = parse_facts(profile_row.eligibility_facts_json)
-    policy = parse_policy(profile_row.eligibility_policy_json)
+    facts = facts_of(profile_row.eligibility_facts_json)
+    policy = policy_of(profile_row.eligibility_policy_json)
     raw_verdicts: list[dict[str, Any]] = json.loads(verdicts_path.read_text(encoding="utf-8"))
     truncated = len(raw_verdicts) - top
     if truncated > 0:
@@ -883,7 +889,7 @@ def policy_root(ctx: typer.Context) -> None:
         row = get_profile(conn)
     if row is None:
         _no_profile()
-    policy = parse_policy(row.eligibility_policy_json)
+    policy = policy_of(row.eligibility_policy_json)
     materialised = catalog.materialised_policy(policy)
     for family in catalog.families:
         console.print(f"{family.id}: {materialised[family.id]}")
@@ -898,8 +904,8 @@ def policy_set(ctx: typer.Context, family: str, choice: str) -> None:
         row = get_profile(conn)
         if row is None:
             _no_profile()
-        facts = parse_facts(row.eligibility_facts_json)
-        policy = parse_policy(row.eligibility_policy_json)
+        facts = facts_of(row.eligibility_facts_json)
+        policy = policy_of(row.eligibility_policy_json)
         try:
             new_policy = set_policy(policy, catalog, family, choice)
         except typer.BadParameter as exc:
