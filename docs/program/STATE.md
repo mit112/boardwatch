@@ -20,33 +20,31 @@
 
 ## Current standing
 
-### Session 2026-09-04b: the RUNTIME IS RESTORED and the CAREER-PROFILE BUNDLE IS REBUILT — revision 1 of a new lineage, owner-approved and promoted, projection re-stamped; the store is still EMPTY and nothing has run since run 152
+### Session 2026-09-04c: RUN 2, the first post-reset run, is CLEAN — the profile row and the board fleet turned out to be lost too, both are RECOVERED and RE-SEEDED, 288 boards scanned cold, 40 of 40 leads rendered one page against bundle revision 1, and a whole-tree ARCHITECTURE REVIEW records 26 findings for the next session
 
-**Read this before acting on anything below it.** Reasoning: **D-464** (what the reset destroyed)
-and **D-465** (what this session rebuilt, and the owner's content rulings). Numbers: `METRICS.md`,
-the `Session — 2026-09-04` and `Session — 2026-09-04b` blocks. No code changed, no PR, no run.
+**Read this before acting on anything below it.** Reasoning: **D-466** (recovery + run 2) and
+**D-467** (the review). Numbers: `METRICS.md`, the `Session — 2026-09-04c` block. Findings:
+**`docs/program/REVIEW-2026-09-04.md`**. No code changed, no PR.
 
-**THE PIPELINE HAS NOT RUN SINCE RUN 152 (2026-09-03).** `{config_dir}` exists again and holds
-`config.toml`, `resume_template.tex`, `projection.yaml` and a regenerated `resume.yaml`, and
-**`com.boardwatch.run` is loaded and will fire at 04:00** — but the store is empty, so the first
-tick is a cold full scan. Every number in the blocks below was measured against a store that is
-gone; they remain true as history and must not be re-read as live state.
+**THE PIPELINE IS RUNNING AGAIN.** The 06:00 tick (run 1) failed closed on the projection stamp AND
+reported **0 watched boards** — D-464 missed that the singleton `profile` row and the `companies`
+fleet live only in the store. Both were recovered from Bash tool-results in the transcript archive
+and re-seeded through the CLI's own functions: the profile row whole (14 target / 22 exclude titles,
+Houston/Remote/US, band `entry`, facts, six-family `blocker` policy, 52 skills from the rebuilt
+text) and a **288-board fleet** (301 offered from the union of every surviving list, 13 skipped by
+`--verify`). Lane rows were deliberately not restored; run 2's lanes re-discovered **265**. About 60
+one-off `companies add` boards are unrecoverable. **Run 2** (manual, daily-driver flags, heartbeat
+env unset, 06:32-09:52): `ok`, RECONCILES, **40 tailored / 40 PDFs / all one page**, header text
+identical to the approved Desktop preview; 61,927 evaluated; scan **178.6 min = 89.2%** of 3 h 20
+min; **74,596 Workday details still deferred**, so the 04:00 ticks stay scan-dominated. The store
+holds one full corpus and `~/boardwatch-applications/2026-09-04/` the delivered slate.
 
-**THE BUNDLE IS BACK, AND IT IS A NEW LINEAGE.** `career-profile/` revision 1 (bundle `4c8a7e65…`):
-16 entities (person, 2 education, 4 employment, **9 projects — Anghkooey and Gamified Learning are
-new**), 118 facts, 5 evidence records, 0 errors / 0 blockers at the completeness tier; the owner's
-TTY `approve`/`promote`/`approve-projection` all ran 2026-09-04 ~06:04. Every résumé now pins **4
-experience entries** (Nakshatra joins Saayam, NIO, SAKEC) and the static summary is **gone** from
-the personal template — measured: 4+4 fits one page only without it. The single content source is
-`.agent/2026-09-04-resume-profile-session/content.py` (gitignored, personal); `build_bundle.py`
-there rebuilds the bundle from it end to end. **Do not re-derive the content rulings — D-465 lists
-them.**
-
-**WHAT SURVIVED THE RESET** (unchanged from the morning session): git history and working tree, all
-docs, tests, tooling and the whole toolchain. **The global CLAUDE.md's "fresh machine, assume
-nothing installed" ritual is STALE for this repo — do not re-run it.** The wiki is back on live disk
-at `~/dev/portfolio-website/` (71 files, byte-identical to the backup); `~/dev/hookrail` is
-re-cloned; `~/cosmos` stays gone and is not needed (D-220 stands).
+**THE BUNDLE (revision 1, D-465) IS NOW EXERCISED END TO END.** 4 experience + 4 projects, no summary,
+eight distinct project quartets across the 40 leads. One layout item for the formatting session:
+experience follows declaration order, so SAKEC (Feb-Apr 2021) prints above Nakshatra (Mar 2021-Feb
+2022); reordering `projection.yaml` re-stales the stamp. Everything from 2026-09-04b stands: the
+runtime files in `{config_dir}`, the wiki at `~/dev/portfolio-website/`, the loaded `com.boardwatch.run`
+job. **The global CLAUDE.md's "fresh machine" ritual is STALE for this repo — do not re-run it.**
 
 ### Session 2026-09-03e: the owed LEDGER DRAIN is REFUSED on measurement, the LLM FINAL GATE is ARMED for the first time and filters 38 of 95 delivered leads, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows
 
@@ -71,14 +69,20 @@ uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is
 
 ## Next action
 
-**0. WATCH THE FIRST POST-RESET RUN, THEN THE FORMATTING SESSION.** The 04:00 tick is the first
-run against an empty store: expect a long cold scan and `--project` rendering against bundle
-revision 1 for the first time. Read `~/Library/Logs/boardwatch-run.log`, confirm the heartbeat
-pinged, and compare a delivered `tailored-*.pdf` against `~/Desktop/boardwatch-preview-2026-09-04/`.
-Then the owner's next résumé session is **formatting**: per-lens skills (the iOS list is in
-`content.py`), the dormant `projection.{sde,ios,data}.yaml` coverage declarations (lost in the
-reset, not yet re-authored), and how a JD picks its project set. **StreakSync's evidence is pinned
-to `overnight-2026-08-31` — merge it to `main`.**
+**0. THE NEXT SESSION WORKS `docs/program/TICKETS-2026-09-04.md` IN ORDER — the orchestrator drives cheaper
+agents one ticket at a time (owner's ruling, D-467); the top four first, each in a worktree with its own commit:** (1) the pysqlite `begin` hook in `store/db.py` — then retire the two
+hand `BEGIN IMMEDIATE`s; (2) the résumé renderer's silent fallback to the bundled placeholder
+template (`tailor/render/latex.py:93-107`) — fail closed; (3) `rules.yaml` `experience_years`: "no
+less than N years" and "N months" both evaluate `eligible` today; (4) an override for the delivery
+queue root on `run` (`delivery/queue.py:90`). Then the rest of `REVIEW-2026-09-04.md`'s confirmed
+list. **Behind them, the three run-speed items** (memory `run-speed-queue-workers-lanes-overlap-parallel-tailor`):
+`scan_workers` ceiling > 8 (local config value, never the code default), lanes overlapped with the
+scan, parallel tailoring. **Also owed:** the formatting session (per-lens skills, the SAKEC/Nakshatra
+order, `.agent/2026-09-04c-session/projection.{sde,ios}.yaml` drafts, how a JD picks its projects);
+review and import `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291
+human step); push `main` (`gh` still not installed) and StreakSync `main` (fast-forwarded locally to
+`6377723`, 6 ahead of origin). **Read the 04:00 tick of 2026-09-05 first** — the first WARM
+unattended run on the rebuilt store: `~/Library/Logs/boardwatch-run.log`, heartbeat pinged.
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -188,4 +192,4 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **`make check` is RED on `main` for TWO ENVIRONMENTAL tests, and the cause is an UNPINNED INTERPRETER (found 2026-09-04)** | Both fail at pristine `979ddcdf` with no working-tree changes, so this is not a code regression: `tests/unit/test_ground.py::test_fail_closed_on_deeply_nested_json` (its own precondition `pytest.raises(RecursionError)` on 20,000-deep JSON **DID NOT RAISE** — CPython 3.14 no longer recurses there, so the test can no longer prove the guard rather than the guard being broken) and `tests/profile_bundle/test_profile_bundle_cli_exit_codes.py::test_an_unreadable_drafts_directory_could_not_complete` (`chmod 0o000` no longer yields `PermissionError`/exit 3 on this macOS; the probe reports `draft_not_found`/exit 1). **The venv is now Python 3.14.7 because `pyproject.toml` says only `requires-python = ">=3.11"` and there is no `.python-version`, so the post-reset rebuild silently moved the interpreter forward** — the pre-reset venv was 3.12/3.13 (evidenced by the rehydrated transcripts: 872 `.venv/lib/python3.12` and 499 `python3.13` references against 31 for 3.14). **9,394 tests pass; only these two fail.** Every other gate target is green (`generalization`, `index-check`, `ruff`, `mypy --strict` 351 files, `web-test`). The fix is a choice — pin the interpreter, or rewrite both tests to assert the behaviour without depending on the old environment — and it is not obviously the former | **Mit** (chooses pin vs. rewrite) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **The unattended 04:00 tick is LOADED AGAIN (2026-09-04b) but has NOT YET FIRED on this machine** — the mechanism note is pre-reset history and still true of the mechanism | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |
+| **The unattended 04:00 tick FIRED ONCE on this machine (06:00 local 2026-09-04, run 1: failed closed by design) and the first CLEAN run (2) was MANUAL; the first warm unattended tick is 2026-09-05 04:00** — the mechanism note is still true| The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |
