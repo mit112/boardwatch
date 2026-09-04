@@ -23,6 +23,7 @@ from boardwatch.store.tables import companies, extractions, jobs, posting_versio
 from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.safety import TierASafetyError
+from tests.conftest import write_test_resume_template
 
 runner = CliRunner()
 NOW = datetime(2026, 8, 2, 12, 0, 0)
@@ -38,6 +39,11 @@ class Env:
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Env:
     cfg = tmp_path / "cfg"
     cfg.mkdir(parents=True, exist_ok=True)
+    # T2: `resolve_template` no longer falls back to the bundled default for a real config
+    # dir missing `resume_template.tex`, and CLI runs here reach the real
+    # `LatexRenderer(config_dir=settings.config_dir)` — so this environment needs one on
+    # disk, as a properly set-up user's config dir would.
+    write_test_resume_template(cfg)
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(cfg))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     return Env(data_dir=tmp_path / "data", config_dir=cfg)

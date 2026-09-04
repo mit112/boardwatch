@@ -28,13 +28,21 @@ from boardwatch.store.tables import (
     postings,
 )
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
+from tests.conftest import write_test_resume_template
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
 
 def _settings(tmp_path: Path) -> Settings:
-    return Settings(data_dir=tmp_path / "data", config_dir=tmp_path / "cfg")
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    # T2: `resolve_template` no longer falls back to the bundled default for a real config dir
+    # missing `resume_template.tex`, and `run_tailor` renders through the real
+    # `LatexRenderer(config_dir=settings.config_dir)` — so this environment needs one on disk, as
+    # a properly set-up user's config dir would.
+    write_test_resume_template(config_dir)
+    return Settings(data_dir=tmp_path / "data", config_dir=config_dir)
 
 
 def _engine(settings: Settings) -> Engine:
@@ -175,6 +183,10 @@ def _ready(data_dir: Path) -> int:
     posting_id = _seed_posting(data_dir)
     assert _cli(data_dir, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(data_dir, ["tailor", "init"]).exit_code == 0
+    # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
+    # falls back to the bundled default for a real config dir missing it — so a pipeline run that
+    # reaches tailoring/rendering needs one on disk, as a properly set-up user's config dir would.
+    write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
     return posting_id
 
 

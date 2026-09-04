@@ -57,6 +57,23 @@ _ALLOWED_MARKERS = frozenset({"TITLE", "SUMMARY", "SECTIONS"})
 # to carry — deliberately not a `%%..%%` marker, which a config-dir template would not have.
 _PREAMBLE_END = "\\begin{document}"
 
+# A sibling catalog to `_ARTIFACT_WORDS` (T2): the bundled `resume_base.tex` header/education is
+# literally "Your Name" / "555 555 5555" / "you@example.com" / "Example University" / "Example
+# Field" — placeholder identity, not a template mechanism. `emit()` never generates
+# `Resume.header`/`Resume.education`; they come ONLY from the template, so a config-dir template
+# that is a verbatim, never-edited copy of the bundled default would otherwise pass
+# `_validate_template` clean and deliver placeholder identity on a real résumé. These are
+# multi-word phrases, not single tokens, so they cannot share `_word_token_pattern`'s word-boundary
+# regex — a plain case-insensitive substring match is enough and does not risk a false positive
+# the way a single common word might.
+_PLACEHOLDER_PHRASES: tuple[str, ...] = (
+    "Your Name",
+    "you@example.com",
+    "555 555 5555",
+    "Example University",
+    "Example Field",
+)
+
 
 def _word_token_pattern(token: str) -> re.Pattern[str]:
     # Mirrors resume_gate._word_token_pattern: a hyphen does not count as a word boundary
@@ -66,13 +83,23 @@ def _word_token_pattern(token: str) -> re.Pattern[str]:
 
 class TemplateArtifactError(RuntimeError):
     """Raised when a resolved LaTeX template still carries a leftover authoring placeholder:
-    a standalone TODO/FIXME/lorem/ipsum/XXX token, a literal `<placeholder>`, or a `%%..%%`
-    marker outside the closed TITLE/SUMMARY/SECTIONS catalog. Deliberately does NOT scan for
-    `{{`/`}}` — real LaTeX macro bodies legitimately produce `}}` (e.g.
-    `\\hbox{\\tiny$\\bullet$}}`), so scanning them would false-positive on a valid template."""
+    a standalone TODO/FIXME/lorem/ipsum/XXX token, a literal `<placeholder>`, a `%%..%%`
+    marker outside the closed TITLE/SUMMARY/SECTIONS catalog, or (T2) one of the bundled
+    template's own header/education phrases copied verbatim into a config-dir template.
+    Deliberately does NOT scan for `{{`/`}}` — real LaTeX macro bodies legitimately produce `}}`
+    (e.g. `\\hbox{\\tiny$\\bullet$}}`), so scanning them would false-positive on a valid
+    template."""
 
 
-def _validate_template(text: str) -> None:
+class TemplateMissingError(TemplateArtifactError):
+    """Raised by `resolve_template` when `{config_dir}/resume_template.tex` does not exist and
+    the caller has not explicitly opted into the bundled default via `allow_bundled_default=True`
+    (T2). A subclass of `TemplateArtifactError` rather than a sibling: `run.py`'s
+    `FOREIGN_AVAILABILITY` matches `TemplateArtifactError` by `isinstance`, so this maps onto the
+    existing `ProjectionAvailability.TEMPLATE_INVALID` member with no new catalog entry."""
+
+
+def _validate_template(text: str, *, check_placeholder_phrases: bool = True) -> None:
     if _ARTIFACT_SYMBOL in text.lower():
         raise TemplateArtifactError(f"template contains leftover artifact {_ARTIFACT_SYMBOL!r}")
     for word in _ARTIFACT_WORDS:
@@ -88,22 +115,53 @@ def _validate_template(text: str) -> None:
         raise TemplateArtifactError(
             "template is missing required %%SECTIONS_START%%/%%SECTIONS_END%% markers"
         )
+    # `check_placeholder_phrases=False` is for the bundled default ITSELF (`resolve_template`'s
+    # own fallback branch): its header/education literally ARE "Your Name" / "Example
+    # University" / etc, so scanning it against its own catalog would make the bundled template
+    # permanently unloadable. The catalog exists to catch a CONFIG-DIR template that is an
+    # unedited copy of that same bundled text — never the bundled text loaded as itself.
+    if check_placeholder_phrases:
+        lowered = text.lower()
+        for phrase in _PLACEHOLDER_PHRASES:
+            if phrase.lower() in lowered:
+                raise TemplateArtifactError(
+                    f"template still carries the bundled placeholder {phrase!r} — edit "
+                    "the header/education before using this template"
+                )
 
 
-def resolve_template(config_dir: Path | None) -> str:
-    """`{config_dir}/resume_template.tex` when present, else the bundled default. Either way,
-    the resolved text is validated before it's handed back (Major-4 guard: the header/education
-    are template-hardcoded and never pass through the model's `layout_scan_fields`)."""
+def resolve_template(config_dir: Path | None, *, allow_bundled_default: bool = False) -> str:
+    """`{config_dir}/resume_template.tex` when present, validated and returned.
+
+    T2 (fail-closed default): when `config_dir` is given but carries no `resume_template.tex`,
+    this raises `TemplateMissingError` naming the missing path rather than silently falling back
+    to the bundled default — the bundled header/education are literally placeholder identity
+    ("Your Name", "you@example.com", ...), and `emit()` never generates a header/education of its
+    own, so a silent fallback in a real run means a delivered résumé carries someone else's name.
+    Pass `allow_bundled_default=True` to opt into the old fallback (tests, previews, examples —
+    never a run: both `LatexRenderer` call sites in `projection/run.py` and `reports/tailor.py`
+    leave this at its closed default).
+
+    `config_dir=None` (no config dir at all, as opposed to one missing the file) always uses the
+    bundled default regardless of `allow_bundled_default` — that is the pre-existing, documented
+    "standalone" mode `LatexRenderer()` offers for tests/examples, and no run ever constructs a
+    renderer this way.
+    """
     if config_dir is not None:
         candidate = config_dir / "resume_template.tex"
         if candidate.is_file():
             text = candidate.read_text(encoding="utf-8")
             _validate_template(text)
             return text
+        if not allow_bundled_default:
+            raise TemplateMissingError(
+                f"no résumé template at {candidate}; a run requires "
+                f"{candidate.name!r} in the config dir and never falls back silently"
+            )
     text = files("boardwatch.tailor.render.templates").joinpath("resume_base.tex").read_text(
         encoding="utf-8"
     )
-    _validate_template(text)
+    _validate_template(text, check_placeholder_phrases=False)
     return text
 
 

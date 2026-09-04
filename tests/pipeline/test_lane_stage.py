@@ -64,6 +64,7 @@ from boardwatch.store.queries import (
     upsert_lane_company,
 )
 from boardwatch.store.seed_queries import SeedReader, record_seeds, unresolved_seeds
+from tests.conftest import write_test_resume_template
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
 LANE_URL = "https://aggregator.test/search"
@@ -592,6 +593,10 @@ def _ready(data_dir: Path) -> int:
     posting_id = _seed_posting(data_dir)
     assert _cli(data_dir, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(data_dir, ["tailor", "init"]).exit_code == 0
+    # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
+    # falls back to the bundled default for a real config dir missing it — so a pipeline run that
+    # reaches tailoring/rendering needs one on disk, as a properly set-up user's config dir would.
+    write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
     return posting_id
 
 

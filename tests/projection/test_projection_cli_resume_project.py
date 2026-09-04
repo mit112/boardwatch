@@ -42,6 +42,7 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
 from boardwatch.tailor.load import load_resume
+from tests.conftest import write_test_resume_template
 from tests.profile_bundle.conftest import (
     PromotedRevisionTree,
     promote_example_tree,
@@ -159,6 +160,10 @@ def _make_env(
 
     tree = promote_example_tree(config_dir / BUNDLE_DIR_NAME)
     (config_dir / "master_resume.yaml").write_text(_SHELL_BODY, encoding="utf-8")
+    # T2: `resolve_template` fails closed on a config dir missing `resume_template.tex`, and
+    # `resume project` renders through the real `LatexRenderer(config_dir=settings.config_dir)`
+    # — so this environment needs one on disk, as a properly set-up user's config dir would.
+    write_test_resume_template(config_dir)
 
     traversable = resources.files("boardwatch.projection.examples").joinpath(
         "projection.example.yaml"

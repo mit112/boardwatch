@@ -297,8 +297,53 @@ def test_resolve_template_prefers_config_dir(tmp_path):
     (tmp_path / "resume_template.tex").write_text(
         "%%SECTIONS_START%%\n%%SECTIONS_END%%\nMY CUSTOM TEMPLATE\n")
     assert "MY CUSTOM TEMPLATE" in resolve_template(tmp_path)
-    # bundled default when absent
-    assert "%%SECTIONS_START%%" in resolve_template(tmp_path / "nonexistent")
+    # bundled default when absent, but only for a caller that explicitly opts in (T2: a run
+    # never opts in, so an absent config-dir template is a refusal, not a fallback).
+    assert "%%SECTIONS_START%%" in resolve_template(
+        tmp_path / "nonexistent", allow_bundled_default=True
+    )
+
+
+def test_resolve_template_run_mode_refuses_missing_config_template(tmp_path):
+    """T2: a RUN never passes `allow_bundled_default`, so an absent
+    `{config_dir}/resume_template.tex` (e.g. a machine reset that deleted exactly that file) must
+    be a typed refusal naming the missing path — never a silent fallback to the bundled template,
+    whose header/education are placeholder identity ("Your Name", "you@example.com", ...)."""
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+
+    missing = tmp_path / "resume_template.tex"
+    with pytest.raises(TemplateArtifactError) as excinfo:
+        resolve_template(tmp_path)
+    assert str(missing) in str(excinfo.value)
+
+
+def test_validate_template_rejects_bundled_placeholder_phrase(tmp_path):
+    """A config-dir template that is a verbatim, never-edited copy of the bundled default still
+    carries "Your Name" / "you@example.com" / etc — the existing TODO/FIXME/lorem/ipsum/XXX/
+    `<placeholder>` catalog does not catch these, so a copied-but-unedited template would
+    otherwise pass validation and render placeholder identity into a delivered résumé."""
+    from importlib.resources import files
+
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+
+    bundled = (
+        files("boardwatch.tailor.render.templates")
+        .joinpath("resume_base.tex")
+        .read_text(encoding="utf-8")
+    )
+    (tmp_path / "resume_template.tex").write_text(bundled, encoding="utf-8")
+    with pytest.raises(TemplateArtifactError):
+        resolve_template(tmp_path)
+
+
+def test_resolve_template_bundled_default_is_not_refused_by_the_phrase_catalog(tmp_path):
+    """The bundled default's own header/education literally ARE "Your Name" / "Example
+    University" / etc, so the phrase catalog must not fire when the caller has explicitly asked
+    for the bundled default (tests/examples), only when a config-dir file still carries them."""
+    from boardwatch.tailor.render.latex import resolve_template
+
+    assert "Your Name" in resolve_template(None)
+    assert "Your Name" in resolve_template(tmp_path, allow_bundled_default=True)
 
 
 def test_validate_template_rejects_leftover_artifact(tmp_path):

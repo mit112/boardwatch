@@ -355,12 +355,15 @@ pass — it does not rewrite your prose, invent new claims, or call any model. *
 résumé** — `tailor` reads only what you author in `resume.yaml`.
 
 **PDF output is a hard gate, not best-effort.** The renderer is
-[tectonic](https://tectonic-typesetting.github.io/), compiling a LaTeX template you can
-override at `{config_dir}/resume_template.tex`. A lead without a shippable PDF is refused
-rather than delivered as rendered source: a missing `tectonic` on `PATH` fails the run
-loudly, and a résumé that compiles to more pages than `resume_max_pages` (default 1) is
-rejected. **Two binaries are required, not one** — `tectonic` to compile and poppler's
-`pdfinfo` to count the pages; without `pdfinfo` the page-count gate cannot answer and every
+[tectonic](https://tectonic-typesetting.github.io/), compiling a LaTeX template at
+`{config_dir}/resume_template.tex` — **required, not optional**: a run refuses outright,
+naming the missing path, if that file is absent, rather than silently falling back to the
+bundled example template (whose header/education are placeholder text, e.g. "Your Name" /
+"you@example.com"). A copy of that bundled template that was never edited is refused too. A
+lead without a shippable PDF is refused rather than delivered as rendered source: a missing
+`tectonic` on `PATH` fails the run loudly, and a résumé that compiles to more pages than
+`resume_max_pages` (default 1) is rejected. **Two binaries are required, not one** — `tectonic`
+to compile and poppler's `pdfinfo` to count the pages; without `pdfinfo` the page-count gate cannot answer and every
 lead is refused. `boardwatch doctor` probes for both and exits non-zero if either is
 missing. Output lands at
 `{data_dir}/tailored/<Your Name>_<Company>_<Role>.{tex,pdf}` — named for the application, so

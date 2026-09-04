@@ -21,6 +21,7 @@ from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import ensure_run, finish_run, insert_run
+from tests.conftest import write_test_resume_template
 
 runner = CliRunner()
 
@@ -165,6 +166,11 @@ def test_standalone_tailor_mints_its_own_run_for_its_artifacts(env: Path) -> Non
     posting_id = _seed_posting(env)
     assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(env, ["tailor", "init"]).exit_code == 0
+    # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
+    # falls back to the bundled default for a real config dir missing it — so a standalone
+    # `tailor run` that reaches rendering needs one on disk, as a properly set-up user's config
+    # dir would.
+    write_test_resume_template(load_settings(data_dir=env).config_dir)
     out = env.parent / "out"
     out.mkdir()
 

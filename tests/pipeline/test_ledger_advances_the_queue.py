@@ -31,6 +31,7 @@ from boardwatch.store.ledger_queries import (
     load_dispositions,
     reopen_jobs,
 )
+from tests.conftest import write_test_resume_template
 
 runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
@@ -90,6 +91,10 @@ def _ready(data_dir: Path, count: int) -> list[int]:
     ids = [_seed_posting(data_dir, n) for n in range(count)]
     assert cli.invoke(app, ["--data-dir", str(data_dir), "init"], input=runner_input).exit_code == 0
     assert cli.invoke(app, ["--data-dir", str(data_dir), "tailor", "init"]).exit_code == 0
+    # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
+    # falls back to the bundled default for a real config dir missing it — so a pipeline run that
+    # reaches tailoring/rendering needs one on disk, as a properly set-up user's config dir would.
+    write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
     return ids
 
 

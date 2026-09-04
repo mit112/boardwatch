@@ -27,6 +27,7 @@ from boardwatch.scan.coordinator import ScanLockHeldError
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
+from tests.conftest import write_test_resume_template
 
 # The seeded company is a real watched greenhouse board, so any test that runs the scan stage
 # must mock it. Three of these tests previously reached boards-api.greenhouse.io for real,
@@ -109,6 +110,10 @@ def _ready(data_dir: Path) -> int:
     posting_id = _seed_posting(data_dir)
     assert _cli(data_dir, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(data_dir, ["tailor", "init"]).exit_code == 0
+    # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
+    # falls back to the bundled default for a real config dir missing it — so a pipeline run that
+    # reaches tailoring/rendering needs one on disk, as a properly set-up user's config dir would.
+    write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
     return posting_id
 
 

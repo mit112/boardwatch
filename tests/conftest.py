@@ -16,6 +16,41 @@ from sqlalchemy import Engine, insert
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
+from boardwatch.tailor.render.latex import resolve_template
+
+# ---------------------------------------------------------------------------------------
+# A real, tectonic-compileable `resume_template.tex` (the bundled default, minus its
+# placeholder identity) for any fixture standing in for a properly configured user's config
+# dir.
+#
+# T2 made `resolve_template` fail closed on a config dir that is missing this file rather
+# than silently falling back to the bundled placeholder header/education ("Your Name",
+# "you@example.com", "555 555 5555", "Example University", "Example Field") — and
+# `_validate_template`'s placeholder-phrase catalog then refuses a config-dir template that
+# is an unedited copy of the bundled one. Neither `boardwatch init` nor `tailor init` writes
+# this file, so every fixture that builds its own config dir and then reaches a real render
+# needs one written explicitly, exactly as a properly set-up user's config dir would carry.
+#
+# Centralised here rather than re-derived per module: it was the same six-line literal in
+# four test modules before this fixed it once.
+TEST_RESUME_TEMPLATE = (
+    resolve_template(None)
+    .replace("Your Name", "Test Person")
+    .replace("you@example.com", "test@example.org")
+    .replace("555 555 5555", "555 555 0000")
+    .replace("Example University", "Test University")
+    .replace("Example Field", "Test Field")
+)
+
+
+def write_test_resume_template(config_dir: Path) -> None:
+    """Write `TEST_RESUME_TEMPLATE` to `{config_dir}/resume_template.tex`, unless one is
+    already there. Idempotent so it composes with a caller that may have written its own
+    template earlier in the same fixture (or wants to opt out by writing first)."""
+    target = config_dir / "resume_template.tex"
+    if not target.is_file():
+        target.write_text(TEST_RESUME_TEMPLATE, encoding="utf-8")
+
 
 # ---------------------------------------------------------------------------------------
 # Make rich agree that captured test output is not a terminal.

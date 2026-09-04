@@ -42,6 +42,7 @@ from boardwatch.store.queries import RUN_FAILED, RUN_OK
 # reused rather than re-implemented: `tests/pipeline/test_ledger_advances_the_queue.py` already
 # assembles exactly the environment the ledger claims are made against, which is the environment
 # whose dispositions this test counts.
+from tests.conftest import write_test_resume_template
 from tests.pipeline.test_ledger_advances_the_queue import _ready
 from tests.profile_bundle.conftest import promote_example_tree
 
@@ -94,6 +95,11 @@ def _install_projection(config_dir: Path) -> str:
     """
     bundle_digest = promote_example_tree(config_dir / BUNDLE_DIR_NAME).bundle_digest
     (config_dir / "master_resume.yaml").write_text(_SHELL_BODY, encoding="utf-8")
+    # T2: `resolve_template` fails closed on a config dir missing `resume_template.tex`, and the
+    # pipeline's projection stage renders through the real
+    # `LatexRenderer(config_dir=settings.config_dir)` — so this environment needs one on disk, as
+    # a properly set-up user's config dir would.
+    write_test_resume_template(config_dir)
     traversable = resources.files("boardwatch.projection.examples").joinpath(
         "projection.example.yaml"
     )

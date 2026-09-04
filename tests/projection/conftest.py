@@ -17,6 +17,7 @@ from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
 from boardwatch.profile_bundle.validation.context import ValidationContext, context_from_documents
 from boardwatch.projection.declaration import load_declaration, projection_digest
 from boardwatch.projection.stamp import write_stamp
+from tests.conftest import write_test_resume_template
 from tests.profile_bundle.conftest import (
     SyntheticBundle,
     materialise,
@@ -113,6 +114,12 @@ def _build_projection_env(
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "master_resume.yaml").write_text(_SHELL_BODY, encoding="utf-8")
+    # T2: `resolve_template` no longer falls back to the bundled default for a real config dir
+    # missing this file, and `project_for_posting`/`select` render through the real
+    # `LatexRenderer(config_dir=settings.config_dir)` — so a projection env that is meant to
+    # reach a render (not just `resolve_projection_run`) needs its own template on disk, exactly
+    # as a properly set-up user's config dir would carry one.
+    write_test_resume_template(config_dir)
 
     traversable = resources.files("boardwatch.projection.examples").joinpath(
         "projection.example.yaml"

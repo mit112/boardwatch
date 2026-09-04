@@ -33,6 +33,7 @@ from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.plan import Rewrite
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.rewrite.lane import TierBResult
+from tests.conftest import write_test_resume_template
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
@@ -40,7 +41,14 @@ Runner = Callable[[Path, Path], CompileOutcome]
 
 
 def _settings(tmp_path: Path) -> Settings:
-    return Settings(data_dir=tmp_path / "data", config_dir=tmp_path / "cfg")
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    # T2: `resolve_template` no longer falls back to the bundled default for a real config
+    # dir missing `resume_template.tex`, and rendering here goes through the real
+    # `LatexRenderer(config_dir=settings.config_dir)` — so this environment needs one on
+    # disk, as a properly set-up user's config dir would.
+    write_test_resume_template(config_dir)
+    return Settings(data_dir=tmp_path / "data", config_dir=config_dir)
 
 
 def _engine(settings: Settings) -> Engine:
