@@ -21,6 +21,7 @@ the read would run against whatever `rules.yaml` override sits in the developer'
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -35,6 +36,8 @@ from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.notify.apply_lane_drought import (
+    APPLY_LANE_DROUGHT_MAX_WINDOW,
+    APPLY_LANE_DROUGHT_MIN_PLACEABLE,
     APPLY_LANE_DROUGHT_WINDOW,
     check_apply_lane_drought,
 )
@@ -188,7 +191,7 @@ def test_fires_when_every_run_placed_leads_and_none_reached_the_apply_lane(
     """The fault this detector exists for: leads keep being delivered — so `delivery_drought`
     abstains and the heartbeat stays green — and every one is routed to review."""
     ids = [_run(engine, review_lane=2) for _ in range(3)]
-    alert = check_apply_lane_drought(engine, window=3)
+    alert = check_apply_lane_drought(engine, window=3, min_placeable=1)
     assert alert is not None
     assert "0 of 6 placeable lead(s)" in alert
     for run_id in ids:
@@ -206,7 +209,7 @@ def test_fires_when_every_lead_was_held_for_stating_no_requirement(engine: Engin
     from `apply_lane_placements`' `lane(...)` call, which no other test in this file can see.
     """
     ids = [_run(engine, silent_lane=2) for _ in range(3)]
-    alert = check_apply_lane_drought(engine, window=3)
+    alert = check_apply_lane_drought(engine, window=3, min_placeable=1)
     assert alert is not None
     assert "0 of 6 placeable lead(s)" in alert
     for run_id in ids:
@@ -218,7 +221,7 @@ def test_the_same_leads_with_a_stated_requirement_DO_reach_the_apply_lane(
 ) -> None:
     """The control for the test above: same location, same title, only the body differs."""
     _run(engine, apply_lane=2)
-    assert check_apply_lane_drought(engine, window=3) is None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is None
 
 
 def test_silent_when_a_run_in_the_window_reached_the_apply_lane(engine: Engine) -> None:
@@ -227,7 +230,7 @@ def test_silent_when_a_run_in_the_window_reached_the_apply_lane(engine: Engine) 
     _run(engine, review_lane=2)
     _run(engine, review_lane=2)
     _run(engine, review_lane=2, apply_lane=1)  # newest placed one
-    assert check_apply_lane_drought(engine, window=3) is None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is None
 
 
 def test_silent_when_a_run_placed_nothing(engine: Engine) -> None:
@@ -238,7 +241,7 @@ def test_silent_when_a_run_placed_nothing(engine: Engine) -> None:
     _run(engine, review_lane=2)
     _run(engine, review_lane=2)
     _run(engine)  # delivered nothing at all
-    assert check_apply_lane_drought(engine, window=3) is None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is None
 
 
 def test_closed_leads_are_not_placeable(engine: Engine) -> None:
@@ -252,19 +255,19 @@ def test_closed_leads_are_not_placeable(engine: Engine) -> None:
     """
     for _ in range(3):
         _run(engine, closed=2)
-    assert check_apply_lane_drought(engine, window=3) is None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is None
     # Control: the same shape with OPEN postings in the review lane does fire, so the abstain
     # above is attributable to `closed` and not to leads the detector never saw. These three
     # become the newest clean runs, so they are the window.
     for _ in range(3):
         _run(engine, review_lane=2)
-    assert check_apply_lane_drought(engine, window=3) is not None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is not None
 
 
 def test_abstains_below_the_window(engine: Engine) -> None:
     _run(engine, review_lane=2)
     _run(engine, review_lane=2)
-    assert check_apply_lane_drought(engine, window=3) is None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is None
 
 
 def test_only_clean_runs_count(engine: Engine) -> None:
@@ -274,16 +277,16 @@ def test_only_clean_runs_count(engine: Engine) -> None:
     for _ in range(3):
         _run(engine, review_lane=2)
     _run(engine, apply_lane=5, status="running")  # newest, not ok
-    assert check_apply_lane_drought(engine, window=3) is not None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is not None
 
 
 def test_default_window_is_three(engine: Engine) -> None:
     assert APPLY_LANE_DROUGHT_WINDOW == 3
     _run(engine, review_lane=2)
     _run(engine, review_lane=2)
-    assert check_apply_lane_drought(engine) is None
+    assert check_apply_lane_drought(engine, min_placeable=1) is None
     _run(engine, review_lane=2)
-    assert check_apply_lane_drought(engine) is not None
+    assert check_apply_lane_drought(engine, min_placeable=1) is not None
 
 
 # ----------------------------------------------------------------------- the placeable-set fold
@@ -337,3 +340,136 @@ def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> 
     assert apply_lane_placements(conn, run_ids={7}) == {7: (1, 0)}
     injected[:] = [_row(1, "uncertain", ("Boston, MA",))]
     assert apply_lane_placements(conn, run_ids={7}) == {7: (1, 1)}
+
+
+# ------------------------------------------------------- the window population floor (D-458 fallout)
+
+
+def test_min_placeable_default_is_pinned_literally() -> None:
+    """Pinned as a LITERAL, not compared against an import of itself, which would assert nothing.
+
+    101 is `ceil(log(0.001) / log(1 - 0.0666))` at the measured post-D-458 apply rate — the
+    smallest window population whose all-zero outcome stays <= 0.1% likely on a healthy lane.
+    """
+    assert APPLY_LANE_DROUGHT_MIN_PLACEABLE == 101
+
+
+def test_a_starved_window_below_the_floor_stays_quiet(engine: Engine) -> None:
+    """THE regression this change exists for.
+
+    Three clean runs, every lead routed to review, zero arrivals — the exact shape the detector
+    fires on. At 2 placeable leads per run the window holds 6, and at a 6.66% conversion rate a
+    HEALTHY lane produces that zero about two times in three. Firing here is a false alarm.
+
+    This test FAILS against the unfloored implementation, which returns an alert.
+    """
+    for _ in range(3):
+        _run(engine, review_lane=2)
+    assert check_apply_lane_drought(engine, window=3) is None
+
+
+def test_it_still_fires_once_the_window_clears_the_floor(engine: Engine) -> None:
+    """The floor must not be a blanket mute: given a real population, the alarm still works.
+
+    Paired with the test above, this is what proves the floor SIZES the alarm rather than
+    disabling it — a mutation that returned `None` unconditionally would pass that one and fail
+    this one.
+    """
+    for _ in range(3):
+        _run(engine, review_lane=40)  # 120 placeable across the window, over the 101 floor
+    alert = check_apply_lane_drought(engine, window=3)
+    assert alert is not None
+    assert "0 of 120 placeable lead(s)" in alert
+
+
+def test_the_floor_is_exclusive_at_its_boundary(engine: Engine) -> None:
+    """`placeable < min_placeable` abstains; equality fires. Rejects a `<=` off-by-one, which
+    would silence the alarm on exactly the population it was sized to be trustworthy at."""
+    for _ in range(3):
+        _run(engine, review_lane=3)  # 9 placeable
+    assert check_apply_lane_drought(engine, window=3, min_placeable=10) is None
+    assert check_apply_lane_drought(engine, window=3, min_placeable=9) is not None
+
+
+def test_one_arrival_anywhere_in_the_window_keeps_it_quiet(engine: Engine) -> None:
+    """Arrivals are summed over the window too. A single lead reaching the apply lane in ANY run
+    of the window proves the gates still pass something, so the window is not a drought — even
+    when the other two runs are fully starved and the population is well over the floor."""
+    _run(engine, review_lane=40)
+    _run(engine, apply_lane=1, review_lane=39)
+    _run(engine, review_lane=40)
+    assert check_apply_lane_drought(engine, window=3, min_placeable=10) is None
+
+
+def test_the_production_defaults_ARE_the_constants() -> None:
+    """Pins the SIGNATURE bindings, which the constant assertions above cannot see.
+
+    `min_placeable: int = APPLY_LANE_DROUGHT_MIN_PLACEABLE + 1` leaves every other test in this
+    file green — the constant is still 101, the small fixtures still abstain, the large ones still
+    fire, and the boundary tests pass their own value explicitly — while production goes silent at
+    exactly the population the floor was sized to be trustworthy at. This is the test that kills it.
+    """
+    params = inspect.signature(check_apply_lane_drought).parameters
+    assert params["window"].default == APPLY_LANE_DROUGHT_WINDOW
+    assert params["min_placeable"].default == APPLY_LANE_DROUGHT_MIN_PLACEABLE
+    assert params["max_window"].default == APPLY_LANE_DROUGHT_MAX_WINDOW
+
+
+def test_max_window_default_is_pinned_literally() -> None:
+    assert APPLY_LANE_DROUGHT_MAX_WINDOW == 12
+
+
+def test_the_window_GROWS_until_the_population_is_decisive(engine: Engine) -> None:
+    """The alarm must stay armed at low delivery volume, not go quiet there.
+
+    Six starved runs of 2 placeable leads each. The minimum three-run window holds 6, under the
+    floor of 12 — a fixed window would abstain there FOREVER, which is the deterministic blind
+    regime the floor must not create. Growing to six runs reaches 12 and the drought is reported.
+
+    FAILS against a fixed-length window, which returns None.
+    """
+    for _ in range(6):
+        _run(engine, review_lane=2)
+    alert = check_apply_lane_drought(engine, window=3, min_placeable=12, max_window=12)
+    assert alert is not None
+    assert "0 of 12 placeable lead(s)" in alert
+    assert "across the last 6 clean runs" in alert
+
+
+def test_the_window_stops_growing_at_max_window(engine: Engine) -> None:
+    """`max_window` bounds the lookback, so an old, unrelated stretch of runs is never dragged in
+    to manufacture a population. Six runs of 2, a floor of 12, but a cap of 4 -> 8 placeable,
+    still under the floor, so it stays quiet.
+
+    Rejects ignoring `max_window` and scanning all history, which would fire here.
+    """
+    for _ in range(6):
+        _run(engine, review_lane=2)
+    assert check_apply_lane_drought(engine, window=3, min_placeable=12, max_window=4) is None
+
+
+def test_it_does_not_grow_when_the_minimum_window_already_decides(engine: Engine) -> None:
+    """Growth is need-driven. Three runs that already clear the floor are judged on their own, so
+    the message names three runs and an older run's routing never enters a verdict about today.
+
+    Rejects unconditionally taking `max_window` runs.
+    """
+    _run(engine, apply_lane=5)          # older, and it DID place into apply
+    for _ in range(3):
+        _run(engine, review_lane=6)     # newest three: 18 placeable, over the floor, none placed
+    alert = check_apply_lane_drought(engine, window=3, min_placeable=12, max_window=12)
+    assert alert is not None
+    assert "across the last 3 clean runs" in alert
+
+
+def test_the_message_says_CURRENTLY_CLASSIFY_not_reached(engine: Engine) -> None:
+    """`apply_lane_placements` re-runs `review_gate.lane` against TODAY's verdict and flags, so it
+    reports where leads land NOW, not where they landed on delivery day. A lead delivered into the
+    apply lane before D-458 and re-classified since is counted as review here, so a message
+    claiming it never "reached" the queue would assert a history the query did not read."""
+    for _ in range(3):
+        _run(engine, review_lane=6)
+    alert = check_apply_lane_drought(engine, window=3, min_placeable=12)
+    assert alert is not None
+    assert "currently classify into the blind-apply queue" in alert
+    assert "reached the blind-apply queue" not in alert
