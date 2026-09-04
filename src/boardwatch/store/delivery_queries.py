@@ -11,10 +11,12 @@ faked with a default instead:
   nullable `postings.posted_at` exactly as `rank/explain.why_summary` does; `first_seen_at` is a
   different quantity (when *we* first saw it, not when the employer posted it) and is returned
   beside it rather than substituted for it.
-- **`jd_body` is `None`, never `""`, when the posting has no current version.** An empty body and
-  an absent body are different claims. The two existing callers disagree — `eligibility/audit.py`
-  tolerates the case, `projection/posting.py` raises — and this module tolerates it, because a
-  detail request that raises would take a whole page down over one missing row.
+- **`jd_body` is `None`, never `""`, when the posting has no current version or its current
+  version is quarantined.** An empty body and an absent body are different claims, and
+  `jd_absent_reason` distinguishes the two absent cases. The two existing callers disagree —
+  `eligibility/audit.py` tolerates the case, `projection/posting.py` raises — and this module
+  tolerates it, because a detail request that raises would take a whole page down over one missing
+  row.
 - **`verdict` is `None` when nothing was evaluated.** It comes from
   `eligibility/read.current_verdicts`, the existing identity-scoped read, so a corrected fact or
   policy is reflected the moment its re-evaluation lands. No default is invented for the
@@ -61,6 +63,7 @@ from boardwatch.eligibility.read import (
     current_verdicts,
 )
 from boardwatch.store.applications import applied_job_ids
+from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
@@ -137,10 +140,19 @@ class QueueRow:
         return self.status == STATUS_CLOSED
 
 
+#: Why `QueueDetail.jd_body` is absent. A CLOSED set, declared where the value is produced so
+#: `delivery/queue.py` consumes it rather than restating it — two spellings of one catalog is
+#: how a consumer silently starts treating an unknown reason as a new bucket.
+JD_ABSENT_NO_CURRENT_VERSION = "no_current_version"
+JD_ABSENT_QUARANTINED = "quarantined_foreign_body"
+JD_ABSENT_REASONS = frozenset({JD_ABSENT_NO_CURRENT_VERSION, JD_ABSENT_QUARANTINED})
+
+
 @dataclass(frozen=True)
 class QueueDetail:
     row: QueueRow
     jd_body: str | None
+    jd_absent_reason: str | None
     requirements: list[RequirementView]
     board_target: str | None
 
@@ -648,8 +660,9 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
 
     `jd_body` comes from `posting_versions.body_text` via `current_posting_versions`, never from
     `postings.body_text`, which `scan/apply.py` rewrites in place — a stored span garbles the
-    instant it is sliced from the rewritten string. `requirements` come from `load_audit`, which
-    performs that slicing; it is not reimplemented here.
+    instant it is sliced from the rewritten string. A live lane-body quarantine suppresses that
+    current version's body, and `jd_absent_reason` records why. `requirements` come from
+    `load_audit`, which performs that slicing; it is not reimplemented here.
     """
     row = conn.execute(
         _delivered_select()
@@ -665,6 +678,10 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     profile_hash, rules_hash = identity if identity is not None else (None, None)
 
     version = current_posting_versions(conn, [posting_id]).get(posting_id)
+    # Keep this fact read on the same connection and in this detail read as the version lookup;
+    # opening a later connection would let the body and its quarantine status come from different
+    # SQLite snapshots.
+    quarantined = version is not None and is_quarantined(conn, version.posting_version_id)
     verdicts = current_verdicts(
         conn,
         [] if version is None else [version.posting_version_id],
@@ -681,7 +698,14 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     provenance = lead_provenance(conn, [posting_id]).get(posting_id)
     return QueueDetail(
         row=_queue_row(row, verdict=verdicts.get(posting_id), now=utcnow()),
-        jd_body=None if version is None else version.body_text,
+        jd_body=None if version is None or quarantined else version.body_text,
+        jd_absent_reason=(
+            JD_ABSENT_NO_CURRENT_VERSION
+            if version is None
+            else JD_ABSENT_QUARANTINED
+            if quarantined
+            else None
+        ),
         requirements=[] if audit is None else list(audit.requirements),
         board_target=(
             None

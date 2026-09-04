@@ -70,6 +70,8 @@ from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
 from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, lane
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
+    JD_ABSENT_NO_CURRENT_VERSION,
+    JD_ABSENT_REASONS,
     QueueRow,
     closed_job_ids,
     delivered_unapplied,
@@ -119,7 +121,6 @@ _LOCATIONS: tuple[str, ...] = ("", *DRAIN_DIRS)
 _NO_PDF_ARTIFACT = "no_pdf_artifact"
 _PDF_FILE_MISSING = "source_file_missing"
 _NO_APPLY_URL = "no_apply_url"
-_NO_CURRENT_VERSION = "no_current_version"
 
 
 class QueueLockHeldError(RuntimeError):
@@ -619,6 +620,15 @@ def _payload(
     """Resolve one lead's whole folder — every byte of it — before anything is written."""
     detail = queue_detail(conn, row.posting_id)
     jd = None if detail is None else detail.jd_body
+    # Out-of-catalog is a failure, never a new bucket: a reason this module does not know is a
+    # reason `details.json` would publish unexplained.
+    jd_absent_reason = (
+        JD_ABSENT_NO_CURRENT_VERSION if detail is None else detail.jd_absent_reason
+    )
+    if jd is None and jd_absent_reason not in JD_ABSENT_REASONS:
+        raise ValueError(f"unknown job-description absence reason: {jd_absent_reason!r}")
+    if jd is not None and jd_absent_reason is not None:
+        raise ValueError(f"job-description body has an absence reason: {jd_absent_reason!r}")
     board_target = None if detail is None else detail.board_target
     link = None if row.apply_url is None else _apply_link(row.apply_url, PLATFORM)
     pdf_source, pdf_sha256, pdf_absent = _pdf_source(row.pdf_uri)
@@ -654,7 +664,7 @@ def _payload(
         "apply_link_file": None if link is None else link[0],
         "apply_link_absent_reason": None if link is not None else _NO_APPLY_URL,
         "job_description_file": None if jd is None else JD_FILE,
-        "job_description_absent_reason": None if jd is not None else _NO_CURRENT_VERSION,
+        "job_description_absent_reason": None if jd is not None else jd_absent_reason,
     }
     return _Payload(
         names=names,

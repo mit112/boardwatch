@@ -124,6 +124,25 @@ def live_quarantine(conn: Connection) -> dict[int, tuple[str, ...]]:
     return {int(row.posting_version_id): tuple(row.markers_json or ()) for row in rows}
 
 
+def is_quarantined(conn: Connection, posting_version_id: int) -> bool:
+    """Whether ONE version is currently withheld.
+
+    Separate from `live_quarantine`, which materialises the whole bucket with its markers so a
+    suppression can be listed. Callers on a per-lead path want one row: `queue_detail` runs once
+    per delivered folder, and folding the entire table into a dict on each of those is quadratic
+    in a bucket that only grows.
+    """
+    return (
+        conn.execute(
+            select(quarantined_bodies.c.posting_version_id).where(
+                quarantined_bodies.c.posting_version_id == posting_version_id,
+                quarantined_bodies.c.reopened_at.is_(None),
+            )
+        ).first()
+        is not None
+    )
+
+
 def drain_quarantine(conn: Connection, *, now: datetime) -> int:
     """Release every held body that may re-enter. Returns the number released.
 

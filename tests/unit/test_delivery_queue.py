@@ -34,6 +34,7 @@ import plistlib
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from filelock import FileLock
@@ -68,6 +69,7 @@ from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application, set_application_status
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import QueueDetail, QueueRow
+from boardwatch.store.quarantine_queries import record_quarantine
 from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.queue_state import (
     mark_job_reported,
@@ -81,6 +83,7 @@ from boardwatch.store.tables import (
     jobs,
     posting_versions,
     postings,
+    quarantined_bodies,
     runs,
 )
 
@@ -321,6 +324,38 @@ def _deliver(
     _save_identity(conn)
     _judge_version(conn, version_id, body)
     return posting_id, job
+
+
+def _quarantine_version(
+    conn: Connection,
+    posting_id: int,
+    *,
+    version_id: int | None = None,
+    reopened_at: datetime | None = None,
+) -> int:
+    if version_id is None:
+        version_id = int(
+            conn.execute(
+                select(posting_versions.c.id)
+                .where(posting_versions.c.posting_id == posting_id)
+                .order_by(posting_versions.c.id.desc())
+                .limit(1)
+            ).scalar_one()
+        )
+    record_quarantine(
+        conn,
+        posting_version_id=version_id,
+        posting_id=posting_id,
+        markers=("apply on employer site", "sign in join now"),
+        now=NOW,
+    )
+    if reopened_at is not None:
+        conn.execute(
+            update(quarantined_bodies)
+            .where(quarantined_bodies.c.posting_version_id == version_id)
+            .values(reopened_at=reopened_at)
+        )
+    return version_id
 
 
 # ------------------------------------------------------------------------------------- assertions
@@ -684,6 +719,7 @@ def test_a_posting_with_no_jd_body_writes_no_description_file(
         return QueueDetail(
             row=detail.row,
             jd_body=None,
+            jd_absent_reason="no_current_version",
             requirements=detail.requirements,
             board_target=detail.board_target,
         )
@@ -699,6 +735,149 @@ def test_a_posting_with_no_jd_body_writes_no_description_file(
     details = _details(folder)
     assert details["job_description_file"] is None
     assert details["job_description_absent_reason"] == "no_current_version"
+
+
+def test_a_live_quarantine_withholds_only_the_job_description_file(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A live body quarantine is a JD absence, not a lead absence."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, apps, "quarantined")
+        _quarantine_version(conn, posting_id)
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failed) == (1, 0)
+    folder = _sole_folder(root)
+    assert not (folder / JD_FILE).exists()
+    details = _details(folder)
+    assert details["job_description_file"] is None
+    assert details["job_description_absent_reason"] == "quarantined_foreign_body"
+
+
+def test_a_quarantined_lead_still_has_its_pdf_and_apply_link(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Suppressing a quarantined body must not filter the delivered lead."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, apps, "quarantined-lead")
+        _quarantine_version(conn, posting_id)
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failed) == (1, 0)
+    folder = _sole_folder(root)
+    pdfs = list(folder.glob("*.pdf"))
+    assert len(pdfs) == 1
+    assert pdfs[0].read_bytes().startswith(b"%PDF-1.7\nquarantined-lead")
+    assert _link_url(folder) == APPLY_URL
+    details = _details(folder)
+    assert details["posting_id"] == posting_id
+    assert details["job_description_absent_reason"] == "quarantined_foreign_body"
+
+
+def test_a_reopened_quarantine_delivers_the_body_normally(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, apps, "reopened")
+        _quarantine_version(conn, posting_id, reopened_at=NOW + timedelta(minutes=1))
+
+    with engine.connect() as conn:
+        detail = queue.queue_detail(conn, posting_id)
+
+    assert detail is not None
+    assert detail.jd_body == JD
+    assert detail.jd_absent_reason is None
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failed) == (1, 0)
+    folder = _sole_folder(root)
+    assert (folder / JD_FILE).read_text(encoding="utf-8") == JD
+    details = _details(folder)
+    assert details["job_description_file"] == JD_FILE
+    assert details["job_description_absent_reason"] is None
+
+
+def test_a_quarantine_on_an_older_version_does_not_suppress_the_current_body(
+    engine: Engine, apps: Path
+) -> None:
+    current_body = "The employer's current description."
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, apps, "superseded", body="The older description.")
+        old_version_id = int(
+            conn.execute(
+                select(posting_versions.c.id)
+                .where(posting_versions.c.posting_id == posting_id)
+                .order_by(posting_versions.c.id)
+                .limit(1)
+            ).scalar_one()
+        )
+        conn.execute(
+            insert(posting_versions).values(
+                posting_id=posting_id,
+                content_hash="v-superseded-current",
+                body_text=current_body,
+                captured_at=NOW,
+                capture_reason="revised",
+            )
+        )
+        _quarantine_version(conn, posting_id, version_id=old_version_id)
+
+    with engine.connect() as conn:
+        detail = queue.queue_detail(conn, posting_id)
+
+    assert detail is not None
+    assert detail.jd_body == current_body
+    assert detail.jd_absent_reason is None
+
+
+def test_a_missing_current_version_keeps_the_no_current_version_reason(
+    engine: Engine, apps: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, apps, "no-current")
+
+    monkeypatch.setattr(
+        "boardwatch.store.delivery_queries.current_posting_versions",
+        lambda *args, **kwargs: {},
+    )
+    with engine.connect() as conn:
+        detail = queue.queue_detail(conn, posting_id)
+
+    assert detail is not None
+    assert detail.jd_body is None
+    assert detail.jd_absent_reason == "no_current_version"
+
+
+def test_an_unknown_job_description_absence_reason_fails_the_lead(
+    engine: Engine, root: Path, apps: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, apps, "unknown-reason")
+    real = queue.queue_detail
+
+    def invalid_detail(conn: Connection, posting_id: int) -> object:
+        detail = real(conn, posting_id)
+        assert detail is not None
+        return SimpleNamespace(
+            row=detail.row,
+            jd_body=None,
+            jd_absent_reason="invented_reason",
+            requirements=detail.requirements,
+            board_target=detail.board_target,
+        )
+
+    monkeypatch.setattr(queue, "queue_detail", invalid_detail)
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failed) == (0, 1)
+    assert _folders(root) == []
 
 
 # ------------------------------------------------------------------------- the apply-link format
