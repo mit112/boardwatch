@@ -121,6 +121,25 @@ class TestLocationFit:
         assert location_fit(["New York, NY"], "remote", profile) == 1.0
         assert location_fit(["New York, NY"], "unknown", profile) == 0.0
 
+    def test_a_wanted_location_does_not_match_inside_a_longer_word(self) -> None:
+        """Bare substring containment scored a German posting a perfect location fit for a
+        New York profile ("ny" inside "Germany") and Casablanca a perfect fit for California
+        ("ca" inside "Casablanca"). `location_fit` is a scoring input, so this quietly ranked
+        foreign postings above real local ones."""
+        assert location_fit(["Germany"], "unknown", _profile(locations=("NY",))) != 1.0
+        assert location_fit(["Casablanca"], "unknown", _profile(locations=("CA",))) != 1.0
+
+    def test_the_real_matches_it_has_to_keep(self) -> None:
+        """The controls. Word-bounded, not whole-string: a profile names a city and a posting
+        names the city with its state, or the other way round, and both are the same place.
+        Dots are why the boundary is `(?<![a-z])` and not `\b` — `U.S.` ends on one."""
+        assert location_fit(["New York, NY"], "unknown", _profile(locations=("New York",))) == 1.0
+        assert location_fit(["New York, NY"], "unknown", _profile(locations=("NY",))) == 1.0
+        assert location_fit(["Houston, TX"], "unknown", _profile(locations=("Houston",))) == 1.0
+        assert location_fit(["U.S. – Remote"], "unknown", _profile(locations=("U.S.",))) == 1.0
+        # The reverse direction: the POSTING names the shorter form.
+        assert location_fit(["New York"], "unknown", _profile(locations=("New York, NY",))) == 1.0
+
 
 class TestZeroSkillImputation:
     """§3.6 says the zero-skill case is 'neutral, never a punitive 0 or free 1'.

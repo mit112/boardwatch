@@ -141,6 +141,31 @@ def recency(posted_at: datetime | None, now: datetime, half_life_days: float) ->
     return math.exp(-math.log(2.0) * age_days / half_life_days)
 
 
+def _occurs_word_bounded(needle: str, haystack: str) -> bool:
+    """`needle` occurs in `haystack` without being glued to a neighbouring letter.
+
+    The same boundary `location_gate._alternation` uses — the character before and after the
+    match must not be a letter — and NOT `\b`, for the reason that docstring gives: location
+    strings carry dots ("u.s."), where `\b` asserts the opposite of what is wanted.
+
+    Written against `str.find` rather than as a compiled alternation because the needle comes
+    from BOTH sides: the profile's wanted locations are a short stable list a cache would
+    hold, but the posting's own locations are thousands of distinct strings per run and would
+    evict each other out of any `lru_cache` immediately. Both arguments are already casefolded
+    by the caller, so `isalpha` is the casefolded equivalent of `[a-z]` and additionally
+    covers non-ASCII letters, which the regex form does not.
+    """
+    at = haystack.find(needle)
+    while at != -1:
+        before = haystack[at - 1] if at else ""
+        end = at + len(needle)
+        after = haystack[end] if end < len(haystack) else ""
+        if not before.isalpha() and not after.isalpha():
+            return True
+        at = haystack.find(needle, at + 1)
+    return False
+
+
 def location_fit(
     posting_locations: Sequence[str], remote_policy: str, profile: ProfileView
 ) -> float | None:
@@ -151,7 +176,15 @@ def location_fit(
     folded = [loc.casefold() for loc in posting_locations]
     for want in profile.locations:
         w = want.casefold()
-        if any(w in loc or loc in w for loc in folded):
+        # Word-bounded both ways, where this was bare substring containment. Containment
+        # scored "Germany" a PERFECT location fit for a profile wanting "NY", and
+        # "Casablanca" a perfect fit for "CA" — silently ranking a foreign posting above a
+        # real local one, because this is a scoring input rather than a filter. Both
+        # directions are kept: the profile may name the city while the posting names
+        # "City, ST", or the reverse.
+        if any(
+            _occurs_word_bounded(w, loc) or _occurs_word_bounded(loc, w) for loc in folded
+        ):
             return 1.0
     if remote_policy == "remote":
         return 0.5
