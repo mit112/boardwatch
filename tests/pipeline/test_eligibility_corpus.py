@@ -29,6 +29,16 @@ from "still blocks" to "still FIRES", because that is what it now pins: the requ
 unsuppressed where its hedged twins m0053/m0054 are. The values were taken from production and
 each was cross-checked by hand (3 > 2, in band) before being written.
 
+FOUR rows were ADDED 2026-09-04 for the comparative-floor idiom `(no|not) (less|fewer) than`
+(m1035-m1038). NOTHING was re-baselined: every pre-existing row's verdict and rows are byte
+identical, because the idiom only makes a `no`/`not` cue invisible inside that fixed comparative
+and no existing case contains one. Measured over all 61,927 open bodies the idiom appears in 58,
+NONE of them a years bar, and an A/B of the engine over exactly those 58 moved ZERO verdicts and
+ZERO rows -- so this closes a class rather than reclassifying a population. m1035 and m1036 pin
+the two arms it reaches (scoped and total), m1037 pins that the floor RESOLVES rather than merely
+firing, and m1038 is the control that must never move: a real `without` negation still deletes
+the bar and writes no row at all.
+
 CAVEAT, stated because D-319's version of this note was stronger than the facts support: the
 ORACLE (`.agent/p2-catalog/proto.py`) was updated in step so a regeneration REPRODUCES these five
 rather than reverting them -- but `.agent/` is GITIGNORED and `scratchpad/gen_corpus.py` no longer
@@ -1110,6 +1120,10 @@ CASES: list[tuple] = [
     ('m1032:F86 b an ABOVE bound is not a floor and fires NOTHING', 'Up to 3 years web development is all we expect from a new graduate.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1033:F80 a a RANGE bar reaches the SCOPED tail, which is structurally undecidable (#278 control)', '3-6 years of professional software engineering experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
     ('m1034:F80 b a RANGE bar reaches the ACTIVITY tail (#278 control)', '2-5 years building and deploying web applications.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_range_years_activity', 'required', 'unknown']]),
+    ('m1035:T3 a `no less than N years` states the same floor as `at least` and DECIDES it', 'You must have no less than 5 years of professional software engineering experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('m1036:T3 b `not fewer than N years` is the same comparative floor on the TOTAL arm', 'Candidates must have not fewer than 5 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1037:T3 c the same comparative floor on the TOTAL arm CLEARS a candidate who meets it', 'Candidates must have not fewer than 5 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_minimum', 'required', 'met']]),
+    ('m1038:T3 d CONTROL: a REAL `without` negation still deletes the bar and fires nothing', 'We will consider candidates without 5 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
 ]
 
 
@@ -1129,4 +1143,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1034
+    assert len(CASES) == 1038

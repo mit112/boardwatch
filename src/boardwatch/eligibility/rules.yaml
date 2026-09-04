@@ -65,6 +65,16 @@ negation_cue_idioms:
   # cue instead of `without`, and it was measured failing the same way.
   - "without\\s+(?:(?:the|a|any)\\s+need\\s+(?:for|of)\\s+|requiring\\s+|needing\\s+|current\\s+or\\s+future\\s+)?(?:employer\\s+|company\\s+|visa\\s+|work\\s+visa\\s+|immigration\\s+|employment[\\s-]+based\\s+visa\\s+)?sponsorship"
   - "with\\s+no\\s+(?:need\\s+(?:for|of)\\s+)?(?:employer\\s+|company\\s+|visa\\s+)?sponsorship"
+  # A COMPARATIVE FLOOR, not a negation. "no less than 5 years" and "not fewer than 5 years"
+  # state the same bar as "at least 5 years", but the bare `no`/`not` cue sat outside the
+  # matched span and DROPPED the detection, so the posting carried no experience row at all
+  # and landed `uncertain` -- which routes to the apply lane as blindly-appliable. Measured
+  # against a one-year profile: "at least 5 years" resolved `ineligible`, all four comparative
+  # forms resolved `uncertain` with ZERO rows.
+  # Narrow on purpose, like the two idioms above: only the fixed comparative `(no|not) (less|
+  # fewer) than` loses its polarity. "We will consider candidates without 5 years of
+  # experience." keeps its cue -- `without` is not in this idiom and that case is the control.
+  - "(?:no|not)\\s+(?:less|fewer)\\s+than"
 
 families:
   - id: work_auth

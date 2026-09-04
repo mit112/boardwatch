@@ -171,7 +171,9 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
     }
     # The doc-level idioms are stamped identically onto every pattern (prototype's
     # split-brain note: they ride on the pattern, not a module global).
-    assert all(len(p.cue_idioms) == 3 for p in patterns)
+    # 2026-09-04: 3 -> 4. `(no|not) (less|fewer) than` is a comparative FLOOR, and the bare
+    # cue inside it used to delete the bar it introduces.
+    assert all(len(p.cue_idioms) == 4 for p in patterns)
 
 
 def test_an_override_wins_and_is_labelled(tmp_path: Path) -> None:
