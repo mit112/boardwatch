@@ -94,9 +94,13 @@ def build_identity(
     # regardless. Omitting it is the stale-verdict class this discipline exists to prevent.
     fields["career_field"] = payload.get("career_field")
     profile_snapshot: dict[str, object] = {"fields": fields}
+    # `catalog.source` ("bundled" | "override") is deliberately NOT hashed: catalog_version
+    # is a sha256 over the whole parsed document, so identical content already yields an
+    # identical version, and hashing provenance alongside it re-keyed the entire corpus the
+    # moment a user copied the bundled rules.yaml into their config dir unchanged. A verdict
+    # depends on what the rules SAY, never on which file they were read from.
     rules_snapshot: dict[str, object] = {
         "catalog_version": catalog.version,
-        "catalog_source": catalog.source,
         "policy": materialised,
     }
     profile_hash = digest(profile_snapshot)

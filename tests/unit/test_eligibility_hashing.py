@@ -230,9 +230,12 @@ def test_the_fingerprint_is_sensitive_to_catalog_content(tmp_path: Path) -> None
     ).rules_hash
 
 
-def test_catalog_source_is_part_of_the_rules_hash(tmp_path: Path) -> None:
-    """An override with IDENTICAL content is a different trust position and must not
-    collide with the bundled catalog (spec §4.5)."""
+def test_an_override_with_identical_content_does_not_re_key(tmp_path: Path) -> None:
+    """Where the catalog was READ FROM is not what the rules are. catalog_version is a
+    sha256 over the whole parsed document, so identical content already produces an
+    identical version; hashing `source` alongside it meant copying the bundled rules.yaml
+    into the config dir unchanged re-evaluated the entire corpus for no semantic change.
+    A verdict depends on the rules, never on their provenance."""
     override = tmp_path / "cfg"
     override.mkdir()
     (override / "rules.yaml").write_text(
@@ -241,10 +244,11 @@ def test_catalog_source_is_part_of_the_rules_hash(tmp_path: Path) -> None:
     )
     bundled, overridden = load_rules(tmp_path), load_rules(override)
     assert bundled.version == overridden.version  # identical content
-    assert bundled.source != overridden.source
-    assert _identity(tmp_path, catalog=bundled).rules_hash != _identity(
-        tmp_path, catalog=overridden
-    ).rules_hash
+    assert bundled.source != overridden.source  # different provenance
+    assert (
+        _identity(tmp_path, catalog=bundled).rules_hash
+        == _identity(tmp_path, catalog=overridden).rules_hash
+    )
 
 
 def test_a_statically_declared_but_unconsumed_field_still_re_keys(tmp_path: Path) -> None:
@@ -359,4 +363,4 @@ def test_the_snapshot_does_not_embed_the_catalog(tmp_path: Path) -> None:
     catalog exactly; copying it into every input row would be 10,000 copies at corpus
     scale to recover what the hash already carries."""
     snapshot = _identity(tmp_path).rules_snapshot
-    assert set(snapshot) == {"catalog_version", "catalog_source", "policy"}
+    assert set(snapshot) == {"catalog_version", "policy"}
