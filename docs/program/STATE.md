@@ -20,6 +20,34 @@
 
 ## Current standing
 
+### Session 2026-09-04b: the RUNTIME IS RESTORED and the CAREER-PROFILE BUNDLE IS REBUILT — revision 1 of a new lineage, owner-approved and promoted, projection re-stamped; the store is still EMPTY and nothing has run since run 152
+
+**Read this before acting on anything below it.** Reasoning: **D-464** (what the reset destroyed)
+and **D-465** (what this session rebuilt, and the owner's content rulings). Numbers: `METRICS.md`,
+the `Session — 2026-09-04` and `Session — 2026-09-04b` blocks. No code changed, no PR, no run.
+
+**THE PIPELINE HAS NOT RUN SINCE RUN 152 (2026-09-03).** `{config_dir}` exists again and holds
+`config.toml`, `resume_template.tex`, `projection.yaml` and a regenerated `resume.yaml`, and
+**`com.boardwatch.run` is loaded and will fire at 04:00** — but the store is empty, so the first
+tick is a cold full scan. Every number in the blocks below was measured against a store that is
+gone; they remain true as history and must not be re-read as live state.
+
+**THE BUNDLE IS BACK, AND IT IS A NEW LINEAGE.** `career-profile/` revision 1 (bundle `4c8a7e65…`):
+16 entities (person, 2 education, 4 employment, **9 projects — Anghkooey and Gamified Learning are
+new**), 118 facts, 5 evidence records, 0 errors / 0 blockers at the completeness tier; the owner's
+TTY `approve`/`promote`/`approve-projection` all ran 2026-09-04 ~06:04. Every résumé now pins **4
+experience entries** (Nakshatra joins Saayam, NIO, SAKEC) and the static summary is **gone** from
+the personal template — measured: 4+4 fits one page only without it. The single content source is
+`.agent/2026-09-04-resume-profile-session/content.py` (gitignored, personal); `build_bundle.py`
+there rebuilds the bundle from it end to end. **Do not re-derive the content rulings — D-465 lists
+them.**
+
+**WHAT SURVIVED THE RESET** (unchanged from the morning session): git history and working tree, all
+docs, tests, tooling and the whole toolchain. **The global CLAUDE.md's "fresh machine, assume
+nothing installed" ritual is STALE for this repo — do not re-run it.** The wiki is back on live disk
+at `~/dev/portfolio-website/` (71 files, byte-identical to the backup); `~/dev/hookrail` is
+re-cloned; `~/cosmos` stays gone and is not needed (D-220 stands).
+
 ### Session 2026-09-03e: the owed LEDGER DRAIN is REFUSED on measurement, the LLM FINAL GATE is ARMED for the first time and filters 38 of 95 delivered leads, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows
 
 Reasoning: **D-460** (the drain), **D-461** (the gate + the owner's years ruling), **D-462** (the
@@ -42,6 +70,15 @@ uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is
 `near_miss_years_ceiling`** (D-461, and see Owner-gated below).
 
 ## Next action
+
+**0. WATCH THE FIRST POST-RESET RUN, THEN THE FORMATTING SESSION.** The 04:00 tick is the first
+run against an empty store: expect a long cold scan and `--project` rendering against bundle
+revision 1 for the first time. Read `~/Library/Logs/boardwatch-run.log`, confirm the heartbeat
+pinged, and compare a delivered `tailored-*.pdf` against `~/Desktop/boardwatch-preview-2026-09-04/`.
+Then the owner's next résumé session is **formatting**: per-lens skills (the iOS list is in
+`content.py`), the dormant `projection.{sde,ios,data}.yaml` coverage declarations (lost in the
+reset, not yet re-authored), and how a JD picks its project set. **StreakSync's evidence is pinned
+to `overnight-2026-08-31` — merge it to `main`.**
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -112,7 +149,7 @@ re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
 2. **TRACK 1 — the already-admissible LinkedIn boards.** Re-sized by D-453 from 382 postings to
    **113 on the gate-survivor basis, 13 on the carried basis**, over **108 boards** at 3.2 s each ≈
    **5.8 min/run forever**. Still his; the board-sample confound that held it is gone.
-3. **Mit's two résumé content calls** — whether to send a document at all; the D-220 prose rewrites.
+3. **Mit's résumé calls** — whether to send a document at all; the D-220 prose rewrite of the submitted "sole iOS developer" answer (outside the bundle); the per-lens formatting session.
 4. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
    multi-tenancy gap of its kind; D-054 forbids us authoring non-tech field content.
 5. **`add-evidence` takes no bundle lock** (D-143) — raise before two authoring agents run against
@@ -149,5 +186,6 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 | Item | Detail | Owner |
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
+| **`make check` is RED on `main` for TWO ENVIRONMENTAL tests, and the cause is an UNPINNED INTERPRETER (found 2026-09-04)** | Both fail at pristine `979ddcdf` with no working-tree changes, so this is not a code regression: `tests/unit/test_ground.py::test_fail_closed_on_deeply_nested_json` (its own precondition `pytest.raises(RecursionError)` on 20,000-deep JSON **DID NOT RAISE** — CPython 3.14 no longer recurses there, so the test can no longer prove the guard rather than the guard being broken) and `tests/profile_bundle/test_profile_bundle_cli_exit_codes.py::test_an_unreadable_drafts_directory_could_not_complete` (`chmod 0o000` no longer yields `PermissionError`/exit 3 on this macOS; the probe reports `draft_not_found`/exit 1). **The venv is now Python 3.14.7 because `pyproject.toml` says only `requires-python = ">=3.11"` and there is no `.python-version`, so the post-reset rebuild silently moved the interpreter forward** — the pre-reset venv was 3.12/3.13 (evidenced by the rehydrated transcripts: 872 `.venv/lib/python3.12` and 499 `python3.13` references against 31 for 3.14). **9,394 tests pass; only these two fail.** Every other gate target is green (`generalization`, `index-check`, `ruff`, `mypy --strict` 351 files, `web-test`). The fix is a choice — pin the interpreter, or rewrite both tests to assert the behaviour without depending on the old environment — and it is not obviously the former | **Mit** (chooses pin vs. rewrite) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **The unattended 04:00 tick runs the PRIMARY checkout's branch — and it is PROVEN to fire** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; from ~2026-08-31 a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv | **Mit** (mechanism); every session (discipline) |
+| **The unattended 04:00 tick is LOADED AGAIN (2026-09-04b) but has NOT YET FIRED on this machine** — the mechanism note is pre-reset history and still true of the mechanism | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |
