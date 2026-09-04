@@ -2123,12 +2123,27 @@ def run_pipeline(
         # reader already treats as "this run did not deliver". Keeping the two in step means
         # `status == failed` and a FATAL line in the artifact can never disagree. The crash
         # path sets `summary.fatal` before re-raising, so an abort reaches here as `failed`.
-        finish_run(
-            engine,
-            run_id,
-            errors=stage_errors,
-            status=RUN_FAILED if summary.fatal is not None else RUN_OK,
-        )
+        # Guarded, and it is the FIRST link in the finally chain that made this necessary:
+        # everything after it — the funnel artifact, the delivery queue, the morning digest,
+        # the six soft detectors and the heartbeat — is unreachable if this raises. An
+        # unguarded raise here also REPLACES the run's own outcome with a store error while
+        # the exception from the try block is still propagating, so an operator would be told
+        # the database was locked and never told the résumé path was broken. Reported onto
+        # `summary.errors` rather than only printed, for the same reason the artifact writes
+        # below are: the row cannot record it (that is what just failed), so the artifact is
+        # the only place left that can. The row is then left `running` and the next run's
+        # reaper closes it — the safe direction, and visible.
+        try:
+            finish_run(
+                engine,
+                run_id,
+                errors=stage_errors,
+                status=RUN_FAILED if summary.fatal is not None else RUN_OK,
+            )
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"finish_run failed, run row left unfinished: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
         # After finish_run, so the artifact records a finished_at rather than reporting every
         # run as still in progress. Failure to write is reported and swallowed on purpose:
         # this block runs while an exception may be propagating, and raising here would

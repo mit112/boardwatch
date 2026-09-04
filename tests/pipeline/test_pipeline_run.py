@@ -507,6 +507,47 @@ def test_a_crashed_run_is_recorded_as_failed_not_left_reading_running(
     )
 
 
+def test_a_failing_finish_run_does_not_take_the_rest_of_the_finally_with_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T11. `finish_run` sits FIRST in the `finally` chain and was unguarded, so a raise there
+    replaced the run's own outcome with a store error and skipped everything after it: the
+    funnel artifact, the delivery queue, the morning digest, the soft detectors and the
+    heartbeat. The run row would then sit `running` until the next run reaped it, with no
+    artifact anywhere to say why.
+
+    What this proves is the SECOND half of the ticket's two readings. `finish_run` is patched
+    to raise unconditionally, so the row genuinely cannot be finished — the assertion is that
+    the FUNNEL is still written and the run's ORIGINAL fatal reason survives on the summary,
+    rather than being replaced by the store error.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def tailor_boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("tectonic is not installed")
+
+    def finish_boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", tailor_boom)
+    monkeypatch.setattr(runner_mod, "finish_run", finish_boom)
+    out_root = tmp_path / "apps"
+    summary = _pipeline(env, out_root)
+
+    assert summary.fatal is not None
+    assert "every lead failed to project or tailor" in summary.fatal, (
+        "the store error replaced the run's own reason"
+    )
+    assert "database is locked" not in summary.fatal
+    assert any("finish_run" in e for e in summary.errors), (
+        "a failure to close the run row was not recorded anywhere"
+    )
+    funnels = list(out_root.rglob(f"funnel-{summary.run_id}.md"))
+    assert funnels, "the funnel artifact was skipped because finish_run raised above it"
+
+
 def test_a_clean_run_is_recorded_as_ok(env: Path, tmp_path: Path) -> None:
     """The other side of the same column: `failed` means nothing if nothing is ever `ok`."""
     _ready(env)
