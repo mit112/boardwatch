@@ -110,8 +110,12 @@ uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is
 
 ## Next action
 
-**0. THE TOP FOUR ARE DONE (plus T5). THE NEXT SESSION CONTINUES `docs/program/TICKETS-2026-09-04.md`
-FROM T6, and should read `HANDOFF-REVIEW-2026-09-04d.md` first** — three of the tickets' stated
+**0. THE TOP FOUR ARE DONE (plus T5). THE NEXT SESSION EXECUTES `docs/program/HANDOFF-2026-09-04e.md`**
+— written 2026-09-04e by the planning session (personal subscription, Fable): ticket order, the
+rulings for T6/T7/T10/T15/T16, failing-test-first acceptance per ticket, and the report format to
+bring back. T14 is put to Mit there and is not started. **Then this paragraph's original reading
+still holds** — it continues `TICKETS-2026-09-04.md` from T7, reading `HANDOFF-REVIEW-2026-09-04d.md`
+first — three of the tickets' stated
 symptoms are corrected there by measurement, and the corrections change what two of the remaining
 tickets are worth. **Take T7 next, out of ticket order**: it is sized "S / cheap+spec" on the belief
 that a corrupt profile row makes everything abstain, and the measured behaviour for the POLICY half
