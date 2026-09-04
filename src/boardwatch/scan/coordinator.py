@@ -367,7 +367,20 @@ def _scan_body(
     summary.companies += len(work)
     summary.providers = len({row.provider for row, _, _ in work})
 
-    with ThreadPoolExecutor(max_workers=settings.scan_workers) as pool:
+    # Explicit lifecycle rather than `with ThreadPoolExecutor(...) as pool:`, and the ONLY
+    # reason is `cancel_futures`. The context manager shuts down with `wait=True` and no
+    # cancellation, so aborting out of the loop below left every QUEUED board still to be
+    # fetched — under the scan lock, for as long as the rest of the fleet takes. On the live
+    # 288-board fleet a Ctrl-C at board 3 meant waiting out 285 more, which is why an operator
+    # pressing it twice (and killing the process mid-write) was the realistic outcome.
+    #
+    # `BaseException`, not `Exception`: a per-board `Exception` is caught inside the loop and
+    # can never abort it, so the only things that reach here are `KeyboardInterrupt` and
+    # `SystemExit` — catching `Exception` would guard nothing at all. In-flight fetches are
+    # still waited for (`wait=True`): they hold a live HTTP connection, and abandoning one
+    # would leak it. Only the queue is dropped.
+    pool = ThreadPoolExecutor(max_workers=settings.scan_workers)
+    try:
         future_map = {
             pool.submit(fetch_board_job, prov, fetcher, request): (row, request)
             for row, prov, request in host_diverse(work)
@@ -414,6 +427,11 @@ def _scan_body(
             else:
                 summary.failed += 1
                 summary.errors.append(f"{row.slug}: {snapshot.error}")
+    except BaseException:
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
 
     with engine.connect() as conn:
         summary.open_postings = int(

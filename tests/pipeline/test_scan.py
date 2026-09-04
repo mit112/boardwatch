@@ -3,6 +3,7 @@
 import json
 from datetime import timedelta
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 import httpx
@@ -298,4 +299,49 @@ def test_a_systemic_outage_records_WHY_the_run_failed(  # noqa: N802
     assert row.status == "failed", "guard: the outage was not classified fatal"
     assert any("systemic scan outage" in note for note in (row.errors_json or [])), (
         f"the run recorded failed with no reason at all: {row.errors_json}"
+    )
+
+
+def test_an_abort_stops_the_queued_boards_instead_of_fetching_them_all(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T12. `with ThreadPoolExecutor` shuts down with `wait=True` and no `cancel_futures`, so
+    aborting out of the result loop left every QUEUED board still to be fetched — under the
+    scan lock, for as long as the rest of the fleet takes. On the live 288-board fleet a
+    Ctrl-C at board 3 meant waiting out 285 more.
+
+    `KeyboardInterrupt` and not `RuntimeError`, deliberately: a per-board `Exception` is caught
+    inside the loop and can never abort it, so an `Exception` here would prove nothing. One
+    worker, so the queue is real rather than four parallel fetches that were all going to run.
+    """
+    from boardwatch.scan import coordinator
+
+    for slug in ("acme", "globex", "initech", "umbrella"):
+        _add_company(engine, slug)
+    fetched: list[str] = []
+    real_fetch = coordinator.fetch_board_job
+
+    def slow_fetch(prov: Any, fetcher: Any, request: Any) -> Any:
+        fetched.append(request.slug)
+        # Long enough that the abort below lands while the queue is still queued, rather than
+        # after a worker has raced through it.
+        sleep(0.2)
+        return real_fetch(prov, fetcher, request)
+
+    def abort_apply(*_a: Any, **_k: Any) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(coordinator, "fetch_board_job", slow_fetch)
+    monkeypatch.setattr(coordinator, "apply_board", abort_apply)
+    settings = Settings(data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1)
+    with respx.mock:
+        respx.get(url__startswith="https://").mock(
+            return_value=httpx.Response(200, content=gh_jobs())
+        )
+        with pytest.raises(KeyboardInterrupt):
+            run_scan(engine, settings)
+
+    assert fetched, "no board was fetched at all, so this proves nothing"
+    assert len(fetched) < 4, (
+        f"every queued board kept fetching under the scan lock after the abort: {fetched}"
     )
