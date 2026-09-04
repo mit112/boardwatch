@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A résumé can no longer be delivered under the name "Your Name".** The renderer never produces
+  the header or education block itself — both come only from the LaTeX template at
+  `{config_dir}/resume_template.tex`. When that file was missing, it silently fell back to the
+  bundled example template, whose header reads "Your Name / 555 555 5555 / you@example.com /
+  Example University". A run in that state rendered, passed the one-page gate, passed the
+  no-fabrication check, and delivered PDFs addressed to nobody.
+
+  A run now refuses and names the missing file. A copy of the bundled template that was never
+  edited is refused too, so "copied it and forgot" fails the same way as "never made one". Note
+  that nothing writes this file for you yet: after upgrading, make sure it exists before your next
+  run.
+
 - **The review viewer stays authorised across reloads, bookmarks and restarts.** Its bearer token
   arrives in the URL fragment, but the router owns that same fragment — the moment the app navigated
   to `#/queue` the credential was gone from the URL, so every reload landed on "Not authorised". The
@@ -279,6 +291,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Every database transaction now begins explicitly.** SQLite's Python driver opens a transaction
+  only when something writes, never when something reads — so the reads and the write of a
+  read-then-write sequence were not one operation, and anything running alongside could land between
+  them. One reporting bug caused by this was fixed where it surfaced; this fixes the cause, so the
+  reads inside a transaction now always agree with one another. Writers that read a value in order
+  to replace it take the write lock up front and wait their turn, instead of failing at the end.
+
 - **The résumé you send now says whose it is, and what it is for.** Every delivered PDF was
   called `tailored-<posting id>.pdf` and carried no PDF title or author at all — its document
   properties read as an untitled file by an unknown author, and the filename told an employer
@@ -379,6 +398,37 @@ All notable changes to this project are documented here. The format follows
   increase how many leads reach the queue; only the delivery count does that (D-394).
 
 ### Fixed
+
+- **A bar written in months is now read as a bar.** "At least 18 months of professional experience"
+  matched nothing at all, because every experience pattern required the word *years* — so a posting
+  stating a real requirement carried no evidence about it and landed undecided.
+
+  What this can and cannot do is worth saying, because it is not symmetric. 18 months is a year and
+  a half, which sits inside the band that already refuses to reject you on a two-or-three year bar,
+  so **a bar under 36 months can only ever clear you or abstain — it can never reject you.** Across
+  61,927 open postings only "48 months" is high enough to reject, and it appears four times.
+  Measured over 3,668 affected postings: 26 move from undecided to eligible, one to ineligible on a
+  genuine four-year bar, two move the other way.
+
+  One thing that measurement caught and reading the code would not: ten postings say "(i.e., a
+  24-week course may count as 6 months of experience)". That is a conversion note, not a
+  requirement — and because a months bar shares a group with the years bars around it, reading it as
+  one **erased a genuine "7 years of experience" rejection in the next sentence**. Conversion notes
+  are now ignored.
+
+- **"No less than 5 years of experience" is read as the floor it is.** The bare word *no* was taken
+  as a negation, which deleted the requirement it introduces. It now reads exactly like "at least 5
+  years". Narrow on purpose: "we will consider candidates *without* 5 years of experience" keeps its
+  negation. Measured across every open posting, the phrase appears 58 times and never once in front
+  of a years bar — they are lifting weights, driving hours and a vision test — so this changes no
+  posting's verdict today and closes the hole for the day one does.
+
+- **A run can no longer reconcile your real delivery queue against a throwaway database.** The queue
+  root was fixed at `~/boardwatch-queue` with no way to override it on `run`, so a run pointed at a
+  scratch store still treated that store as the authority over your real queue — consolidating
+  folders and pulling applied jobs back out of `_applied`. `run --queue-root PATH` now points it
+  elsewhere, and a run whose store was moved by `BOARDWATCH_DATA_DIR` alone refuses outright rather
+  than guessing.
 
 - **A quarantined aggregator body is no longer delivered as the job description.** A posting body
   detected as an aggregator's page text rather than the employer's own is withheld from eligibility

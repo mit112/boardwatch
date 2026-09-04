@@ -20,6 +20,47 @@
 
 ## Current standing
 
+### Session 2026-09-04d: the owner-ruled TOP FOUR from the architecture review SHIP, plus T5 — five tickets, five worktrees, five gates, all merged to a local `main`; both eligibility changes were A/B'd over the live corpus first, and one of them turns out to move NOTHING
+
+**Read this before acting on anything below it.** Reasoning: **D-468**. Numbers: `METRICS.md`, the
+`Session — 2026-09-04d` block. **Written for a fresh reviewer: `docs/program/HANDOFF-REVIEW-2026-09-04d.md`.**
+
+**SHIPPED (local commits, unpushed — `gh` is still not installed):** T1 `db6807da` the pysqlite
+`begin` hook at the ENGINE, retiring the two hand `BEGIN IMMEDIATE`s; T3 `e88da1fd`
+`(no|not) (less|fewer) than` as a cue idiom; T5 `b63b3ee9` `run --queue-root` plus a refusal when
+`BOARDWATCH_DATA_DIR` alone moves the store; T4 `8c2b3ef2` bars stated in MONTHS; T2 `35ef0da1` the
+résumé renderer failing CLOSED without `{config_dir}/resume_template.tex`. Every gate was **exit 2
+with exactly the two known environmental failures** and was read from its own exit-code sentinel.
+
+**THE TICKETS WERE WRONG IN THREE PLACES AND THE CORRECTIONS ARE MEASURED.** (1) **Review finding 3
+does not reproduce** — "no less than 5 years" evaluates `uncertain` with ZERO rows, not `eligible`.
+(2) **Review finding 6's direction is inverted for the policy half**: a corrupt FACTS row abstains,
+but a corrupt POLICY row yields the CATALOG DEFAULTS, where only `work_auth` is `blocker` and the
+other five families drop to `preference` — which can never yield `ineligible`. **T7 is a CLEARING
+failure, not a conservative one, and is under-sized in the ticket list.** (3) **T4's stated
+acceptance is impossible**: 18 months is 1.5 years, inside `near_miss_years_ceiling: 3`, so a months
+bar under 36 months can only ever be `met` or `unknown`. Only 48 months (4 occurrences corpus-wide)
+can reject.
+
+**T3 CHANGES NO POSTING'S VERDICT TODAY, and that is the honest price of its re-key.** The idiom
+occurs in **58 of 61,927** open bodies and never in front of a years bar; an A/B over exactly those
+58 moved **0 verdicts and 0 rows**. **T4 does move**: over 3,668 pinned postings, 916 gain a row and
+**29 verdicts move** (26 `uncertain`→`eligible`). Both change `rules_hash`, so **the next tick
+re-evaluates the corpus once** — one re-key, not two, because both landed before it.
+
+**THE OWED DRAIN IS ANSWERED, MEASURED, AND OWES NOTHING.** `engine_version` moved
+`1+bf844e01ebcb` → **`1+d89b423701e5`**, which stales every permanent ledger stamp, and T4 moves
+verdicts in the LOOSENING direction (26 `uncertain`→`eligible`) — so the D-319 test does apply here
+rather than being waived by argument. It is answered by counting: the ledger holds **40 rows, all
+`built`, all from run 2, none reopened, zero `skipped`.** Nothing is suppressed, so no loosening can
+release anything and a drain could only re-deliver the same 40 leads. D-460's refusal stands, now on
+a starker number than the one it was written against.
+
+**THE NEXT 04:00 TICK IS THE FIRST UNATTENDED RUN OF ALL OF THIS.** It runs new transaction
+behaviour, a re-keyed catalog, a new run refusal and a fail-closed renderer, on the rebuilt store.
+`{config_dir}/resume_template.tex` must exist or **every lead is refused by design** — verify it
+before the tick if there is any doubt.
+
 ### Session 2026-09-04c: RUN 2, the first post-reset run, is CLEAN — the profile row and the board fleet turned out to be lost too, both are RECOVERED and RE-SEEDED, 288 boards scanned cold, 40 of 40 leads rendered one page against bundle revision 1, and a whole-tree ARCHITECTURE REVIEW records 26 findings for the next session
 
 **Read this before acting on anything below it.** Reasoning: **D-466** (recovery + run 2) and
@@ -69,20 +110,25 @@ uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is
 
 ## Next action
 
-**0. THE NEXT SESSION WORKS `docs/program/TICKETS-2026-09-04.md` IN ORDER — the orchestrator drives cheaper
-agents one ticket at a time (owner's ruling, D-467); the top four first, each in a worktree with its own commit:** (1) the pysqlite `begin` hook in `store/db.py` — then retire the two
-hand `BEGIN IMMEDIATE`s; (2) the résumé renderer's silent fallback to the bundled placeholder
-template (`tailor/render/latex.py:93-107`) — fail closed; (3) `rules.yaml` `experience_years`: "no
-less than N years" and "N months" both evaluate `eligible` today; (4) an override for the delivery
-queue root on `run` (`delivery/queue.py:90`). Then the rest of `REVIEW-2026-09-04.md`'s confirmed
-list. **Behind them, the three run-speed items** (memory `run-speed-queue-workers-lanes-overlap-parallel-tailor`):
-`scan_workers` ceiling > 8 (local config value, never the code default), lanes overlapped with the
-scan, parallel tailoring. **Also owed:** the formatting session (per-lens skills, the SAKEC/Nakshatra
-order, `.agent/2026-09-04c-session/projection.{sde,ios}.yaml` drafts, how a JD picks its projects);
-review and import `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291
-human step); push `main` (`gh` still not installed) and StreakSync `main` (fast-forwarded locally to
-`6377723`, 6 ahead of origin). **Read the 04:00 tick of 2026-09-05 first** — the first WARM
-unattended run on the rebuilt store: `~/Library/Logs/boardwatch-run.log`, heartbeat pinged.
+**0. THE TOP FOUR ARE DONE (plus T5). THE NEXT SESSION CONTINUES `docs/program/TICKETS-2026-09-04.md`
+FROM T6, and should read `HANDOFF-REVIEW-2026-09-04d.md` first** — three of the tickets' stated
+symptoms are corrected there by measurement, and the corrections change what two of the remaining
+tickets are worth. **Take T7 next, out of ticket order**: it is sized "S / cheap+spec" on the belief
+that a corrupt profile row makes everything abstain, and the measured behaviour for the POLICY half
+is the opposite — the catalog defaults materialise, five of six families fall back to `preference`,
+and postings they would have rejected read `eligible`. **First read the 2026-09-05 04:00 tick**
+(`~/Library/Logs/boardwatch-run.log`, heartbeat pinged): it is the first unattended run of the new
+transaction behaviour, the re-keyed catalog, the queue-root refusal and the fail-closed renderer, and
+it pays the one-off corpus re-evaluation both `rules.yaml` changes bought. **Then the rest of the
+confirmed list**, and behind it the three run-speed items (memory
+`run-speed-queue-workers-lanes-overlap-parallel-tailor`): `scan_workers` ceiling > 8 (local config
+value, never the code default), lanes overlapped with the scan, parallel tailoring. **Also owed, and
+untouched this session:** the formatting session (per-lens skills, the SAKEC/Nakshatra order,
+`.agent/2026-09-04c-session/projection.{sde,ios}.yaml` drafts, how a JD picks its projects); review
+and import `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291 human
+step); **push `main`, which is now 7 commits ahead of `origin` and has never been pushed** (`gh` is
+still not installed, so this is Mit's); StreakSync `main` (fast-forwarded locally to `6377723`, 6
+ahead of origin).
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -130,7 +176,8 @@ alternative that actually bounds it.
 - **The refused-aggregator filter is REFUSED (D-463)**, not deferred. Its premise inverts on the
   actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
 - **A run was launched with the wrong flags this session.** `boardwatch run` defaults to `--top 10`
-  and no `--project`; the daily driver is **`run --project --top 100`**. Run 151 was killed ~17 min
+  and no `--project`; the daily driver is **`run --project --top 40`** — CORRECTED 2026-09-04d from
+  `--top 100`, which this file and memory both carried; `plutil -p` on the live plist says 40. Run 151 was killed ~17 min
   in and relaunched as 152. **Never set `BOARDWATCH_HEARTBEAT_URL` on a manual run** — it would ping
   the production healthcheck and mask a real 04:00 failure.
 
@@ -169,6 +216,15 @@ re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
    open corpus. **Sized, not solved, and no budget can solve it.** See D-336.
 4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Role
    TAXONOMY, not dedup. D-345 bounds the delivery damage; it does not answer this.
+5. **NEW 2026-09-04d — whether a fresh install should be handed a `resume_template.tex` to edit.**
+   T2 made the renderer fail CLOSED when `{config_dir}/resume_template.tex` is absent, which is the
+   right direction: the bundled fallback's header is literally "Your Name / Example University", and
+   the 09-03 reset deleted exactly that file. But **nothing in the product writes it** — neither
+   `boardwatch init` nor `tailor init` — so a new user is now refused until they author one from
+   scratch. The alternative is for `init` to write the bundled template into the config dir, where
+   the new placeholder-phrase catalog would then refuse it until edited: same fail-closed guarantee,
+   an actionable file instead of an absent one. **Multi-tenancy question, so it is Mit's**, and it
+   is a new onboarding step either way.
 
 ## Phase status
 
