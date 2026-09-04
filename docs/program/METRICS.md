@@ -54,161 +54,162 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS-ARCHIVE.md | 1047 | Session — 2026-08-08 (P5 run #2 — disjunctive fix, Gate P5 MET at 100%; D-073) |
 | METRICS-ARCHIVE.md | 1084 | Session — 2026-08-08 (D-071b final eligibility gate build — no answer-key number changes) |
 | METRICS-ARCHIVE.md | 1120 | Gate P2 — 2026-08-08 · field-tier mechanism (P2 item 4, D-075). **MET AS RECONCILED** |
-| METRICS.md | 215 | Run log |
-| METRICS.md | 243 | Acceptance run |
-| METRICS.md | 254 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
-| METRICS.md | 280 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
-| METRICS.md | 490 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
-| METRICS.md | 529 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
-| METRICS.md | 622 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
-| METRICS.md | 663 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
-| METRICS.md | 753 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
-| METRICS.md | 866 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
-| METRICS.md | 917 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
-| METRICS.md | 1037 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
-| METRICS.md | 1126 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
-| METRICS.md | 1201 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
-| METRICS.md | 1382 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
-| METRICS.md | 1406 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
-| METRICS.md | 1444 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
-| METRICS.md | 1474 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
-| METRICS.md | 1535 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
-| METRICS.md | 1583 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
-| METRICS.md | 1638 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
-| METRICS.md | 1704 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
-| METRICS.md | 1776 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
-| METRICS.md | 1920 | Session — 2026-08-11 (later ×7) · The T14 and T15 FIX ROUNDS independently reviewed: REWORK. No phase gate moved. |
-| METRICS.md | 1986 | Session — 2026-08-11 (later ×8) · The T14/T15 fix-round findings FIXED; T16 reviewed by three lenses. No phase gate moved. |
-| METRICS.md | 2090 | Session 2026-08-12 (03:10 unattended) · the final Gate A integration gate — exit 0 · 5,906 passed · 95.63%. No phase gate moved. |
-| METRICS.md | 2122 | Session — 2026-08-12 (working session) · T18 reviewed by two lenses and fixed; all nineteen slices merged into one tree. No phase gate moved. |
-| METRICS.md | 2176 | Session — 2026-08-12 (later) · Gate A's review loop CLOSED at round five; all four gates green. No phase gate moved. |
-| METRICS.md | 2250 | Session — 2026-08-12 (bonus window) · Gate A MERGED into main; two silent-success defects found and fixed after it. No phase gate moved. |
-| METRICS.md | 2335 | Session — 2026-08-12 (continuation) · **Gate A MET.** Its last open question ruled and built (D-143), the track PUSHED, and the Windows matrix taken from never-ran to green (D-145). |
-| METRICS.md | 1509 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
-| METRICS.md | 2444 | Session — 2026-08-12 (P3 slice 5, task 7) · Records, retractions, and the gate — GATE_EXIT=0. No phase gate moved. |
-| METRICS.md | 2489 | Session — 2026-08-12 (later still ×2) · Slice 5 pushed (`8c1b78f`); `d147-residuals` built, gated, reviewed — unmerged. No phase gate moved. |
-| METRICS.md | 2542 | Session — 2026-08-12 (D-147 residuals) · R1, R2, R3 closed — GATE_EXIT=0 · 5,979 passed. No phase gate moved. |
-| METRICS.md | 2614 | Session — 2026-08-13 · `d147-residuals` MERGED (not a fast-forward) — GATE_EXIT=0 · 5,979 passed. No phase gate moved. |
-| METRICS.md | 2706 | Session — 2026-08-13 (later) · The gate parallelised: 16m13s → ~4m20s (D-150). No phase gate moved. |
-| METRICS.md | 2773 | Session — 2026-08-13 (close) · CI cadence (D-151) and the CGPA retraction (D-152). No phase gate moved. |
-| METRICS.md | 2826 | Session — 2026-08-13 (render + CI red) · First boardwatch résumé rendered; a red CI job fixed (D-153) and `top`'s 141 s floor removed (D-154). No phase gate moved. |
-| METRICS.md | 2901 | Session — 2026-08-13 (push) · D-153's first fix was WRONG and a review caught it pre-push; six commits pushed. No phase gate moved. |
-| METRICS.md | 2965 | Session — 2026-08-13 (roadmap review) · The program reorients onto the bundle path (D-155, D-156, D-157). No phase gate moved. |
-| METRICS.md | 3119 | Session — 2026-08-13 (projection plan preflight) · ubuntu/3.12 CI CONFIRMED GREEN, D-159 closed; the projection spec preflighted and 4 claims falsified. No phase gate moved. |
-| METRICS.md | 3298 | Session — 2026-08-13 (projection execution begins) · Tasks 1–3 of 23 built; a THIRD import wall found (D-161). No phase gate moved. |
-| METRICS.md | 3379 | Session — 2026-08-13 (projection execution, cont.) · 16 of 23 tasks complete; halted on a usage limit, not a defect. No phase gate moved. |
-| METRICS.md | 3443 | Session — 2026-08-13 (projection execution, final) · BUILD COMPLETE: 22 of 23 tasks, whole-branch review clean, gate exit 0. No phase gate moved. |
-| METRICS.md | 3493 | Session — 2026-08-14 (merge + Gate B's first command) · `projection-v1` MERGED AND PUSHED; `profile-bundle import` shipped (D-170). No phase gate moved. |
-| METRICS.md | 3558 | Session — 2026-08-14b (CI recovered + extraction designed) · the UNKNOWN run had FAILED (D-171); design to revision 4 (D-172/173/174); the 81-record denominator MEASURED. No phase gate moved. |
-| METRICS.md | 3654 | Session — 2026-08-14c (extraction SHIPPED end to end) · the number moved 0 → 78/81 records `imported` (D-181); interpreter + schema v2 + `extract`, gate green. |
-| METRICS.md | 3695 | Session — 2026-08-14d (promotion SHIPPED) · the imported candidates became the renderable graph — 6 entities, 47 facts, 10 grounded skills (D-182). No phase gate moved. |
-| METRICS.md | 3729 | Session — 2026-08-14e (two owed Gate B gates ship) · §5.2 invariant 4 + the drain reconciliation wired at the completeness tier (D-183). No phase gate moved. |
-| METRICS.md | 3741 | Session — 2026-08-14f (Gate B merged, and the first revision ever cut) · Merge review D-184; first promoted revision D-185. Gate B still NOT met. |
-| METRICS.md | 3763 | Session — 2026-08-14g (revision 2: the skills surface) · Root cause of the skill-surfacing gap; D-185's "not reachable" claim retracted (D-186). Gate B still NOT met. |
-| METRICS.md | 3776 | Session — 2026-08-14h (incremental fact edits SHIPPED) · `edit-fact`/`add-fact` end the full-rebuild-per-content-change loop (D-190). No phase gate moved. |
-| METRICS.md | 3792 | Session — 2026-08-15a (edit-fact merged; employer headings fixed) · The incremental path merged to `main` after two review rounds; revisions 2 and 3 fixed the headings. Gate B unchanged. |
-| METRICS.md | 3808 | Session — 2026-08-15b (Option B: the bullets meet the repositories) · Revision 5. Every one of five repos carried a false claim; 12 bullets corrected. `exclude-record` built and parked. Gate B unchanged. |
-| METRICS.md | 3831 | Session — 2026-08-15c (`exclude-record` merged; Task 20 half-built) · The parked branch merged after its owed review; Task 20's matrix recorded unlabeled, and Stage 2 found blocked upstream of it. Gate B unchanged. |
-| METRICS.md | 3854 | Session — 2026-08-15d (Stage 2 unblocked; Gate B 7 → 4) · The pinned/candidate split decided and applied (D-195); `exclude-record` run against the live bundle (D-196). **Gate B moved for the first time since it was defined.** |
-| METRICS.md | 3875 | Session — 2026-08-15e (Task 20 LABELED; scorer selection unblocked) · The owner's rankings + cut lines transcribed into the matrix and pushed (D-197). Docs-only; no phase gate moved. Task 23 is next. |
-| METRICS.md | 3888 | Session — 2026-08-15f (Task 23: `mean_per_bullet` adopted as the CLI scorer default) · The rank-agreement measurement showed no clean winner (tau-b ≤ 0.16); the owner adopted `mean_per_bullet`, `ADMISSION_FLOOR` stays `Decimal(0)` (D-198). |
-| METRICS.md | 3907 | Session — 2026-08-15g (first real emission: crash found + fixed) · `resume project` crashed on the live `bullet_predicates` declaration; root-caused and fixed (D-199). A real one-page PDF now emits. No phase gate moved; still 0 sent. |
-| METRICS.md | 3927 | Session — 2026-08-15h (résumé formatting fixed; project links shipped; Gate B 4 → 0, MET) · The owner rejected the emitted résumé's formatting; Experience/Projects reformatted (D-200), clickable links added (code), and the 4 org facts resolved → **Gate B reads 0 blockers for the first time** (D-201, revision 7). |
-| METRICS.md | 3943 | Session — 2026-08-15i (D-184 finding 3 fixed: the skill-slug collision is refused, not silently merged) · The owner chose "a deferred engineering item"; of the five listed, the `C++`/`C#` → `skill.c` collision was fixed (D-202). A latent-defect fix; no phase gate moved, still 0 sent. |
-| METRICS.md | 3956 | Session — 2026-08-15j (two more promotion slug-collision sites refused (D-203) + autonomous roadmap scoped) · A whole-tree sweep found `candidate_promotion.py` was the only lossy-id site in `src/`; entity_id + category_id collisions now refused (D-203). A 4-agent sweep scoped the remaining autonomous backlog. No phase gate moved, still 0 sent. |
-| METRICS.md | 3970 | Session — 2026-08-15k (autonomous backlog COMPLETE; a fourth slug-collision site found and closed) · The held D-203 push was independently reviewed, found to overclaim, corrected, and pushed with four more changes. §5.2 invariant 3 — the last owed audit invariant — ships. No phase gate moved, still 0 sent. |
-| METRICS.md | 3994 | Session — 2026-08-15l (the `STATE.md` trim: 231 → 194 lines) · D-149's last gated task, executed. Narration moved to the logs; three single-homed facts relocated, not deleted; **six stale figures the trim had carried forward corrected** (D-207). Docs-only; no phase gate moved, still 0 sent. |
-| METRICS.md | 4013 | Session — 2026-08-15m (dates are fact-grounded: D-200's owed month formatter, plus a declared two-fact range) · The last résumé field that could not reference a fact now does. All 11 live `projection.yaml` entries are fact-referenced; the projection digest moved, so the owner gate has reopened by design. No phase gate moved, still 0 sent. |
-| METRICS.md | 4044 | Session — 2026-08-16 (a skill listed under two skill groups is refused: D-210) · The last owner-gated ambiguity in `candidate_promotion.py`'s skill loop, ruled and closed. The defect was reachable from an ordinary résumé and produced a clean exit with zero diagnostics. No phase gate moved, still 0 sent. |
-| METRICS.md | 4069 | Session — 2026-08-16b (the D-211 Windows track: ruled best-effort, D-212) · The owner-gated question was asked first and answered; one deterministic test defect fixed, one Windows-only race marked, the `OS Independent` claim retired, and the nightly finally got a consumer. No phase gate moved, still 0 sent. |
-| METRICS.md | 4095 | Session — 2026-08-16c (FlickSwiper bullet refinement: the first entity through STATE item 2) · Attended, owner-ruled wording. Bundle revision 8 → 9. Repo-verification found one contradicted claim and two wrong numbers; the owner's voice ruling then cut the contradicted material anyway. No phase gate moved, still 0 sent. |
-| METRICS.md | 4122 | Session — 2026-08-16d (the FlickSwiper keyword regression: revision 9 → 10) · A follow-on to 2026-08-16c. The house style shipped at revision 9 cost the flagship iOS entity its iOS signal; caught by a peer session, confirmed on shipped text, fixed for 11 characters. No phase gate moved, still 0 sent. |
-| METRICS.md | 4139 | Session — 2026-08-16e (Hookrail bullet refinement: the second entity through STATE item 2, D-214) · Attended, read-only research then one batched edit. Bundle revision 10 → 11. The performance claim that was expected to be fabricated was substantiated; the real defects were selective quoting and a large body of CI-verified work claimed nowhere. No phase gate moved, still 0 sent. |
-| METRICS.md | 4166 | Session — 2026-08-16f (StreakSync bullet refinement: the third entity through STATE item 2, D-215) · Attended, read-only research then one batched edit. Bundle revision 11 → 12. The most expensive entity in the bundle, halved. A published "fabrication" finding was retracted mid-session as drift, and a keyword regression was caught only during the closing doc pass. No phase gate moved, still 0 sent. |
-| METRICS.md | 4193 | Session — 2026-08-16g (SAKEC bullet refinement: the fourth entity through STATE item 2, and the first PINNED one, D-216) · Attended. Research read-only, then authored on the owner's explicit instruction. The brief's "no source code" premise was false — the repo is private on GitHub — and every claimed feature turned out to be a teammate's commit, which the owner ruled acceptable. Bundle revision 13 -> 14. No phase gate moved, still 0 sent. |
-| METRICS.md | 4219 | Session — 2026-08-17 (crop-rf bullet refinement: the fifth entity through STATE item 2, D-217) · Attended. The only entity with a primary published source, and the outcome inverted: every technical number verified against the paper, while the award count, the hosting claim and the authorship all failed. Bundle revision 16 -> 17. No phase gate moved, still 0 sent. |
-| METRICS.md | 4247 | Session — 2026-08-17b (NIO + Saayam: the last two entities through STATE item 2, D-219/D-220/D-221) · Attended. The pinned pair, and the two hardest attribution calls in the bundle. Bundle revision 19 → 21, completing all eleven entities. The page budget was re-measured and two of D-195's conclusions retired. No phase gate moved, still 0 sent. |
-| METRICS.md | 4282 | Session — 2026-08-17c (verifying D-222 found a fourth instance of the same race, D-223) · Opened as a verification pass on an inherited handoff. The handoff's one owed item was already done; the real findings were 14 unpushed commits and a fourth unmarked test. No phase gate moved, still 0 sent. |
-| METRICS.md | 4306 | Session — 2026-08-17d (the root fix behind D-212/D-222/D-223: the Windows stale-lock race, D-224) · Attended, on worktree branch `windows-lock-portability` while a peer session held the main tree. Three decision entries had suppressed this race one test at a time; reading the dependency's source turned it into a named defect and all four markers came off together. No phase gate moved, still 0 sent. |
-| METRICS.md | 4352 | Session — 2026-08-17d (fixture + corpus drift detection, D-228) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent. |
-| METRICS.md | 4468 | Session — 2026-08-17d (D-221's item C: a bullet-less entry made representable, D-226) · Attended, on worktree branch `bulletless-entry-representable` beside three other live lanes. A design question, not a cleanup: the fix chosen is the OPPOSITE of the one STATE and D-221 had prescribed. No phase gate moved, still 0 sent. |
-| METRICS.md | 4493 | Session — 2026-08-17d (projection reaches the daily pipeline: `run --project`, slice P5a, D-225) · Eleven reviewed build tasks plus two fix batches, then a whole-branch review that returned DO NOT SHIP on four seam findings and SHIP after one fix wave. The compile budget was measured **before** merge, against a copy of the store. Projection-spec P5a shipped; **parent P5 still NOT met** (the default flip is P5b, owner-gated). No program phase gate moved, still 0 sent. |
-| METRICS.md | 4585 | Session — 2026-08-18 (P5b's criteria named and measured, D-229; the `runs` backfill repaired, D-230; D-225's residuals cleared, D-231) · Two owner decisions taken at session start, then everything downstream of them. The Windows evidence for D-224 was found to exist but be bound to a different run than the one STATE credited. No phase gate moved, still 0 sent. |
-| METRICS.md | 4638 | Session — 2026-08-18b (the independent repo audit: one false number found and repaired, D-232) · The first check of bundle content by a party that did not write it. It found a defect in one pass that eleven attended refinement sessions and a passing Gate B did not. P5b's fabrication clause failed, then was repaired at revision 22. No phase gate moved, still 0 sent. |
-| METRICS.md | 4714 | Session — 2026-08-18c (two owner decisions, then the last P3 build item — and a dry-run that proved the daily driver can't start yet) · Mit ruled Education Slice C and unfroze the roadmap; P3 item 8 shipped (D-241); the "stand up daily runs" workstream was verified against a live copy and found blocked on the owner. Three PRs merged, `make check` green (6680). No phase gate moved, still 0 sent. |
-| METRICS.md | 4753 | Session — 2026-08-19 (the daily driver goes LIVE: projection approved, launchd agent installed, run 61 is the first clean unattended run — D-244) · Attended. The one TTY action D-243 blocked on was taken by Mit at session start; everything downstream followed. **The headline "never run in anger" is now false** — boardwatch completed its first full unattended pipeline run. Gate P3 begins accruing. No gate MET yet (needs 7 consecutive clean runs); still 0 sent. |
-| METRICS.md | 4895 | Session — 2026-08-19b (the sister-project rebuttal, measured: the largest funnel bucket was undocumented, the 08:00 trigger never fired, and eligibility never decided because one field was unset — D-248, D-249) · Attended. Six parallel read-only investigations, then two fixes. Began as a rebuttal, became an audit of our own self-report — wrong in four places. No phase gate moved, still 0 sent. |
-| METRICS.md | 5034 | Session — 2026-08-19c (the eligibility-precision + US-location-gate run: three fixes shipped, the location filter armed, and an overnight analysis of the whole ranked pool — D-250…D-253) · Attended start, then autonomous overnight. Two owner decisions taken (flip the zero-evidence eligible; hard US-only location gate), three PRs merged, a review-caught US-drop bug fixed before it armed, and four parallel analyses that mapped where the eligible set actually comes from. No phase gate moved, still 0 sent. |
-| METRICS.md | 5066 | Session — 2026-08-20 (the schedule FIRES: first clean unattended run — D-254 — plus four owner decisions armed and a precision follow-up — D-255…D-259) · Attended. The 08:00 launchd trigger fired on its own for the first time (run 63, clean, exit 0); Gate P3 begins real accrual (1 of 7 unattended). Mit made four eligibility/role decisions; three PRs merged (#106/#107/#108), clearance armed as a blocker, and the run-63 ranked pool was analysed for precision. No phase gate MET yet (P3 needs 7 runs), still 0 sent. |
-| METRICS.md | 5109 | Session — 2026-08-20b (the missed-window alarm built, and a whole-branch review of the precision merges fixed two live false-drops — D-260, D-261) · Attended. Picked up the prior session's Bridge handoff: did Mit's pending TTY act (band=entry + interns) via a pipe (`profile edit` is not TTY-guarded), synced #108/#109, and pruned 12 stale agent worktrees. Built the dead-man's-switch heartbeat (#110). A whole-branch correctness review of #100–#108 found three false-drops; the two HIGH — location US+foreign (#111) and the seniority product-noun collision (#112) + `exclude_titles` refine — were fixed and merged. No phase gate MET yet (P3 still 1/7), still 0 sent. |
-| METRICS.md | 5123 | Session — 2026-08-20c (a manual verification run of the tightened gates — run 65 — exposed and fixed a `Lead` role-gate regression, and cleared the owed ledger re-key — D-262) · Attended. Ran `run --project` directly on the editable venv (identical to the launchd argv, but a MANUAL run — NOT a P3 tick) to watch #106/#108/#111/#112 + clearance/band fire together on live data before tomorrow's scheduled run. The run was clean, but precision regressed: 5 of 8 leads were non-software "Lead" business/ops roles. Fixed in #114 (merged). Ran the owed `ledger reopen --stale`. No phase gate moved, still 0 sent; Gate P3 still 1 of 7 unattended (a manual run does not count). |
-| METRICS.md | 5139 | Session — 2026-08-21 (Gate P3 reaches 2 of 7, and the location gate's word boundaries turn out to have never worked — D-263…D-266) · Attended. The 08:00 trigger fired unattended for the SECOND time (run 66, clean, all 8 leads software — #114's first scheduled exercise). Measuring the deferred Buc/France leak exposed a live, INTERMITTENT false-drop in `_alternation` that had been deleting real US postings; fixed, then the leak closed with three measured non-US signals. Two reporting/keying defects also fixed at Mit's direction. One PR (#116, 4 commits). No phase gate MET, still 0 sent. |
-| METRICS.md | 5165 | Session — 2026-08-21b (run 67 verified clean, the owed ledger re-key drained, and a "ranked pool" metric retracted as noise — D-267) · Attended. Verified the manual run queued at the previous session's close: exit 0, reconciles, all 8 leads US-located, and D-266's one-time full-corpus re-key paid (30,243 of 30,243 re-evaluated, so tomorrow's 08:00 tick does not pay it). Ran the owed `ledger reopen --stale` at Mit's direction — 16 released. The headline finding is a measurement defect, not a code defect: the check the previous session handed forward could not fail. No phase gate moved; Gate P3 still 2 of 7 unattended (a manual run does not count); still 0 sent. |
-| METRICS.md | 5183 | Session — 2026-08-21c (run 68 pre-verified before its tick: the six reopened leaks are blocked, and D-267's replacement denominator was itself unpinned — D-268) · Attended. Run 68's scheduled tick was ~19 h away, so its two verifications were *predicted* against the corpus it starts from rather than observed. All six known leaks are blocked by the current gates; the D-263 Wisconsin baseline reproduces exactly; and the metric D-267 shipped as the fix for a metric that could not fail turned out to carry an unpinned denominator of its own. No phase gate moved; Gate P3 still **2 of 7** unattended; still 0 sent. |
-| METRICS.md | 5257 | Session — 2026-08-21d (the nightly's three root causes found and fixed; the first fully green full-matrix run — D-269) · Attended. Continued from 2026-08-21c. The nightly was carried as "two intermittent flakes recoverable by re-running"; it had failed **7 of its last 8 scheduled runs**, there were **three** causes, and the dominant one was five Windows tests failing DETERMINISTICALLY on all three Windows jobs — never documented. One of the three is a production defect: every freshly created store was born in `delete` mode, not WAL. Two PRs merged (#120, #121). No phase gate moved; Gate P3 still **2 of 7** unattended; still 0 sent. |
-| METRICS.md | 5335 | Session — 2026-08-21e (a job-apps discovery comparison became an audit of our own discovery rate: the daily new-posting count is our fetch budget, and 15,535 listed postings are unmaterialised — D-270) · Attended, read-only: no source, test or config change, no run launched, no gate moved. Retracts this session's own caveat that the daily rate was inflated by re-keyed duplicates — ~92% of each day's rows are new to the store under every identity kind — and replaces it with the cause: `detail_fetch_budget` = 50 unseen postings per board per run, proved by 19 Workday boards holding exactly 600 rows and gaining exactly 50 × runs a day. Gate P3 still 2 of 7 unattended; still 0 sent. |
-| METRICS.md | 5436 | Session — 2026-08-22 (the replacement question answered: boardwatch cannot see 92% of what job-apps surfaces, and Workday's own total is censored at 2,000 — D-271) · Attended, read-only: no source, test or config change, no run launched, no gate moved. Two live probes to public job-board APIs. Reopens D-008, which retired comparative parity measurement. Gate P3 still 2 of 7 unattended; still 0 sent. |
-| METRICS.md | 5537 | Session — 2026-08-22b (the coverage instrument built and measured: 82.7% of what the boards say they hold, and Target's real board is 12,097 — D-271/D-272 implemented) · Attended overnight, owner asleep under a standing instruction to finish. 26 commits, squash-merged as PR #125; `make check` exit 0 (7,153 passed) and full CI green. Merged as #125 and **armed 08:17** (D-273). The 08:00 tick FAILED (exit 1) — a subagent had migrated the live store during the build while the checkout was pinned to older code. Re-run manually: exit 0, 40 leads, ~24 min, first live coverage **82.4%**. Gate P3 unchanged at 2 of 7; still 0 sent. |
-| METRICS.md | 5604 | Session — 2026-08-22c (the coverage instrument stops being mute: both per-run artifacts report it, D-274) |
-| METRICS.md | 5674 | Session — 2026-08-22d (the largest drop bucket gets a drain, and the JD-acquisition lane order reverses — D-277/D-278) |
-| METRICS.md | 5767 | Session — 2026-08-22e (the body-less suppression is fixed and lane phase 1 begins; JobSpy is uninstallable on a supported Python — D-279) |
-| METRICS.md | 5890 | Session — 2026-08-22f (the ASAP execution plan is set: finish line becomes a provisional pass + 14-day background confirm, breadth moves in now, work splits into sessionized parts — D-280) |
-| METRICS.md | 5904 | Session — 2026-08-22g (ASAP plan Part 1: two of D-280's premises measured false, Gate P6 becomes readable at 0.00%, and the zero-output "fix" is rejected because it deletes the alarm — D-281/D-282/D-283) |
-| METRICS.md | 6032 | Session — 2026-08-22h (ASAP plan Part 2: the lane groundwork lands, and the dereference utility turns out to serve neither provider that needs it — D-284) |
-| METRICS.md | 6110 | Session — 2026-08-23a (lane 1 reverses to hiring.cafe; four owner calls settled — D-285) |
-| METRICS.md | 6189 | Session — 2026-08-23b (ASAP plan Part 3: the hiring.cafe lane ships off-by-default, and the test suite is caught migrating production — D-286) |
-| METRICS.md | 6269 | Session — 2026-08-23c (the daily driver's blocker is fixed: six corpus-sized `IN` lists chunked, the fix kept out of the digested engine, and the launchd cadence found to be still daily — D-287) |
-| METRICS.md | 6377 | Session — 2026-08-23d (the cadence is applied at last, and the drain path's ~2-day fuse is closed — D-289/D-290/D-291) |
-| METRICS.md | 6532 | Session — 2026-08-23e (rulings 1-4 audited before merge: three land as ruled, ruling 3 gains a body-similarity floor, and a pre-rescue deny stage is deleted — D-294) |
-| METRICS.md | 6693 | Session — 2026-08-24 (round 3 finds a defect in each half; ruling 3 is dropped and rulings 1, 2 and 4 ship — D-295) |
-| METRICS.md | 6807 | Session — 2026-08-24 (Part 4a built: the GitHub-lists discovery client, and Gate P3 reaches 5 of 7 — D-296) |
-| METRICS.md | 6909 | Session — 2026-08-24 (Part 4b built: the LinkedIn guest lane, off by default — D-297) |
-| METRICS.md | 6936 | Session — 2026-08-24 (board-fleet cleanup + doctor migration suggestions — D-300/D-301) |
-| METRICS.md | 6954 | Session — 2026-08-25 (B5 armed: run-scoped rank attribution — D-302) |
-| METRICS.md | 6972 | Session — 2026-08-25 (P4 finish-line: under-fill fix, persona deferral, role/seniority precision — D-303/D-304/D-305) |
-| METRICS.md | 7002 | Session — 2026-08-26 (P4 gate MET, two scan-robustness fixes, lanes armed + leak found — D-306/D-307/D-308) |
-| METRICS.md | 7028 | Session — 2026-08-26 (the lane role facet: lanes now ask for the user's target roles — D-309) |
-| METRICS.md | 7171 | Session — 2026-08-26 (the years-of-experience gate had never fired — D-319/D-320) |
-| METRICS.md | 7367 | Session — 2026-08-27 (the provisional pass was already met; citizenship, dedup refuted, fleet ramp, and s/board refuted — D-322/D-324…D-331) |
-| METRICS.md | 7643 | Session — 2026-08-27b (the live write: migration, three owner facts, and the guard that would have straddled a run) |
-| METRICS.md | 7838 | Session — 2026-08-28 · run 127 confirms D-333; CI sharded (D-334); the probe was wrong (D-335) |
-| METRICS.md | 7922 | Session — 2026-08-28b · the job-apps comparison at posting level, dedup's real cost, and two fetch ceilings (D-336…D-338) |
-| METRICS.md | 8046 | Session — 2026-08-28c · run 128 validates all four merged changes; store four-way split (D-342) + D-339 loose ends merged |
-| METRICS.md | 8099 | Session — 2026-08-28d · run 129 measures the speed work and DECOMPOSES it (D-343/D-344, #212); queue UI a11y pass (#213) |
-| METRICS.md | 8212 | Session — 2026-08-28e · the delivery slate cap (§0 RULED, D-345, #215), per-lane cost (D-346, #217), lane fetch overlap (D-347, #219), detail-sheet focus containment (D-348, #216) |
-| METRICS.md | 8384 | Session — 2026-08-28f · the `degree` audit (D-352), the revert trigger's TWO wrong versions (D-353), Phase 1b complete (D-354), pacing disarmed and HELD (D-355), hiring.cafe down (D-356), `main` deflaked (D-357) |
-| METRICS.md | 8477 | Session — 2026-08-28g · the THIRD wall-clock flake (D-358), `main` confirmed green, the off-target chip narrowed (D-359), hiring.cafe re-probed and still down |
-| METRICS.md | 8613 | Session — 2026-08-28h · both unattended risks re-measured and CLOSED (D-362): the disk runway ~10x longer, the alerting path already existed and is now ARMED |
-| METRICS.md | 8715 | Session — 2026-08-29 · the heartbeat's first ping is NOT YET DUE, and the check route was wrong; web viewer error boundaries (D-363) |
-| METRICS.md | 8840 | Session — 2026-08-29b · breadth batch 1 applied, the delivery cap released to 40, the frontend gets a gate |
-| METRICS.md | 8910 | Session — 2026-08-29c · run 131 is the FIRST CLEAN UNATTENDED TICK; the slate cap FIRES; the hiring.cafe discriminator reads out (D-368) |
-| METRICS.md | 8984 | Session — 2026-08-29d · the hiring.cafe lever is PULLED and D-368's ranking corrected (D-369, #245); breadth batch 2 SPLIT on a measured cold scan (D-370), fleet 379 |
-| METRICS.md | 9046 | Session — 2026-08-29f · unattended observability COMPLETED (ten PRs, #247-#256); the alert channel to an absent owner is closed; `clearance_preferred` resolves and the drain is refused on measurement |
-| METRICS.md | 9109 | Session — 2026-08-31 · a quarter of the apply queue was DEAD: the closed-posting drain ships (D-383, #284); the seniority gate is measured at 5 postings and NOT built; job-apps ingestion designed, blocked on one owner question |
-| METRICS.md | 9408 | Session — 2026-08-31b · #284 VERIFIED against the live store before its first run; the apply lane gets its own drought detector (D-384); the seniority hold re-measured 5 -> 3 and NOT built; the escalation channel is ARMED, correcting this file and memory |
-| METRICS.md | 9546 | Session — 2026-08-31c · run 135 VERIFIED, the closed-posting drain fired exactly as predicted; the job-apps ingestion lane ships DISARMED with the lane-health guard D-385 asked for (D-386, #286) |
-| METRICS.md | 9687 | Session — 2026-08-31d · the word-gap audit worked, and the measurement underneath it is bigger than the audit: the engine reads a REFINEMENT as a CONTRADICTION, sized at 8,429 `uncertain` evaluations (D-387, #288) |
-| METRICS.md | 9870 | Session — 2026-08-31e · the owner ruled on the exclusive-group conflict; the first implementation of that ruling was WRONG and the CORPUS caught it, so what ships is a one-line catalog removal (D-388) |
-| METRICS.md | 9928 | Session — 2026-08-31e (part 2) · the 96%: `refinement_groups` ships as versioned catalog data, delegated to Codex and reviewed here (D-389) |
-| METRICS.md | 9964 | Session — 2026-08-31e (part 3) · run 136 verified clean, the job-apps lane ARMED and its first run reaches Apple/ByteDance/DeepMind/AWS, and the owed ledger drain is declined on measured evidence |
-| METRICS.md | 10017 | Session — 2026-08-31f · run 137 VERIFIED clean, and as the first production run at the new engine it reproduces #290+#291's pre-merge pricing to within 1%; the armed job-apps lane reaches DELIVERY, putting Apple and DeepMind in the shipped 40 (D-392) |
-| METRICS.md | 9191 | Session — 2026-08-30 · run 133 reads out: the digest half of the alert channel is ACCEPTED and hiring.cafe's header lever FAILED; the channel to an absent owner is closed but ships DISARMED (D-376, #258); company reach re-derived at 16.4% on a corrected method |
-| METRICS.md | 10115 | Session — 2026-09-01 · run 138 is the speed change AND the null control, both at production scale: 44m33s for a full re-judge, and ZERO verdict transitions over 113,178 evaluations |
-| METRICS.md | 10173 | Session — 2026-09-01b · six PRs merged and NO production run; Workday dereference lands at 896 convergences, a 589/307 figure is CORRECTED because a string join did not model the resolver, the Workday case migration is measured to ZERO benefit and refused (D-401), the `slug_from_path` chrome defect is fixed 157 -> 0 (D-400), and job-apps retirement gets its first reading against D-399 at 20.4% coverage |
-| METRICS.md | 10257 | Session — 2026-09-01c · run 139 read out: gate 1 UNMOVED at 20.4% while 38 postings shift absent -> lane-only exactly as D-399 predicted, the jobapps coupling nearly TRIPLES to 49% of delivery, and the read-out finds 3 delivered leads that never reached the queue (D-402) |
-| METRICS.md | 10446 | Session — 2026-09-01d · run 140 read out: the hiring.cafe cap drain lands 291 companies and gate 1 moves 20.4% -> 22.2% for the first time, the jobapps coupling COLLAPSES 49.0% -> 2.1%, SmartRecruiters is found storing raw HTML in 99.9% of its bodies and is drained across 3,307 postings, and `location=` on LinkedIn's guest endpoint is measured NOT inert against a shipped docstring that said it was |
-| METRICS.md | 10541 | Session — 2026-09-01e · NO RUN: gate 1 unchanged at 22.2%. The drop audit refutes its own hypothesis (0 of 216), the LinkedIn nets ship and are armed together with the admission cap that was silently capping them at zero, the native Indeed lane ships disarmed, and three separate sizings are found to have counted what a rule can MATCH rather than what it would FIX |
-| METRICS.md | 10666 | Session — 2026-09-01f · RUN 141: gate 1 moves for the second time ever, by ONE POSTING (22.2% -> 22.7%, 49 of 216). The LinkedIn cap was relieved 5x and refusals ROSE 344 -> 617, so admission binds and its sizing is refuted; 57 of the 77 LinkedIn misses are employers not in the store at all. The rotation contract holds at 98 of 98 cells. Priced end to end, every identified lever outside LinkedIn lands at 46.8% against a bar of 80% |
-| METRICS.md | 10807 | Session — 2026-09-02 · the five branches MERGE and Indeed is ARMED; run 142 is read out as the pre-arming BASELINE after the handoff's timing claim is refuted, and hiring.cafe is pinned to #304's merge date, which refutes BOTH of this session's earlier framings |
-| METRICS.md | 10893 | Session — 2026-09-02 (part 2) · RUN 143 is the FIRST ARMED RUN: the Indeed cap fires at 25/359, `lane_seeds` fills to 773 with 85.9% unreachable, #331 withholds 12 jobright bodies in production, and gate 1 is re-measured as per-source recall |
-| METRICS.md | 11009 | Run 144 — 2026-09-02 · the D-423 ONE-TIME HARVEST lands 1,495 new postings and 661 new companies, the D-422 SEED DRAIN is confirmed end to end at 37 attempted / 22 resolved with 10 of them handed across from `indeed`, and both temporary levers are reverted and verified byte-identical |
-| METRICS.md | 11095 | Session — 2026-09-02c · NO RUN: the hiring.cafe board sample is ADMITTED at 50 boards (watched 403 → 453), D-425's "471 boards" is corrected to 471 POSTINGS across 332 BOARDS, and `click.appcast.io` is refused as a resolver target at 1 of 40 |
-| METRICS.md | 11208 | Session — 2026-09-02d · NO RUN: the buried live requisition is fixed and measured at 1 job (not the 16 the handoff carried), LinkedIn gains a per-company axis whose planned shape is refuted at a 358-day rotation, and the `perf` CI bound is characterised as sitting inside a 0.92 s empty gap |
-| METRICS.md | 11278 | Session — 2026-09-03 · NO RUN: a blind two-judge audit measures the APPLY LANE at 32% UNAPPLYABLE — worse than the 24% on the `eligible` verdict, which is only 8% of what the owner sees — every miss is a MISSING REQUIREMENT ROW rather than a mis-decided rule, and the two pattern fixes that shipped move the measured rate by ZERO |
-| METRICS.md | 11571 | Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production |
-| METRICS.md | 11617 | Session — 2026-09-03b · RUN 146 is an ELIGIBILITY-ONLY pass that re-keys the whole corpus in 10 minutes (not the predicted hours), the `gh_jid` convergence item is REFUTED at 4 leads that are all ONE EMPLOYER TWICE, and the slate cap's three review findings are closed |
-| METRICS.md | 11689 | Session — 2026-09-03c · the owner's rulings EXECUTED: A1/A9 merged, A6 skipped 87 on the third apparatus after two returned confident wrong answers, A4 re-priced at 1,458 (not 505) and REFUSED, and A2's artifacts turn out not to be gate verdicts at all |
-| METRICS.md | 11797 | Session — 2026-09-03d · RUNS 148 AND 149: gate 1 moves 26.5% → 28.8% with lane-only AND absent falling TOGETHER, so the Indeed admission cap was the binder and the uncap FIXED the gate rather than matching it; the 50-board hiring.cafe sample yields 7 against a null control of 5 and is REVERTED; A3 cuts the apply lane 646 → 91 |
+| METRICS.md | 216 | Run log |
+| METRICS.md | 244 | Acceptance run |
+| METRICS.md | 255 | Session — 2026-08-09/10 · P6 Slice 1 design + plan. **No build, no gate movement.** |
+| METRICS.md | 281 | Session — 2026-08-10 · P6 Slice 1 BUILT (unattended run). Branch `p6-slice1`, not merged. |
+| METRICS.md | 491 | 2026-08-10 — P6 Slice 1 on the LIVE store (first real backfill) + Gate P6 clause 4 |
+| METRICS.md | 530 | Session 2026-08-10 (later) — P6 Slice 2: the durable decision ledger, its drain, and job regrouping |
+| METRICS.md | 623 | Session — 2026-08-10 (later) · D-109, the program-index gate. No phase gate moved. |
+| METRICS.md | 664 | Session — 2026-08-10 (later still) · The P6 Slice 2 review (D-110). No phase gate moved. |
+| METRICS.md | 754 | Session — 2026-08-10 (later still ×2) · P6 Slice 3, items 5 and 6 (D-111). Gate P6 unchanged: still 2 of 4. |
+| METRICS.md | 867 | Session — 2026-08-10 (later still ×3) · 0.3.0 cut and tagged (D-112). No phase gate moved. |
+| METRICS.md | 918 | Session — 2026-08-10 (later still ×4) · The Slice 3 external review (D-113) + the CI dependency fix (D-114). No phase gate moved. |
+| METRICS.md | 1038 | Session — 2026-08-10 (later still ×5) · Gate A career-profile bundle, slices T1–T9 (D-115). No phase gate moved. |
+| METRICS.md | 1127 | Session — 2026-08-10 (later still ×6) · The held commits are PUSHED; CI's first honest read (D-116, D-117). No phase gate moved. |
+| METRICS.md | 1202 | Session — 2026-08-10 (later still ×7) · Gate A slice T10, semantic validation (D-118). No phase gate moved. |
+| METRICS.md | 1383 | Session — 2026-08-10 · Gate A fix history reconciliation; independent T1–T10 review still owed. No phase gate moved. |
+| METRICS.md | 1407 | Session — 2026-08-10 · Independent Gate A T1–T10 review sign-off; T11 permitted. |
+| METRICS.md | 1445 | Session — 2026-08-11 · Gate A T11 implemented and reviewed. No phase gate moved. |
+| METRICS.md | 1475 | Session — 2026-08-11 (later) · Gate A T12 implemented, NOT independently reviewed. No phase gate moved. |
+| METRICS.md | 1536 | Session — 2026-08-11 (later ×2) · Gate A T12 reviewed TWICE, both REWORK, both rounds fixed. No phase gate moved. |
+| METRICS.md | 1584 | Session — 2026-08-11 (later ×3) · Gate A T12 reviewed a THIRD time, REWORK again. T13 partially built on a branch. No phase gate moved. |
+| METRICS.md | 1639 | Session — 2026-08-11 (later ×4) · T12 fixed through five reviews; T13 built. No phase gate moved. |
+| METRICS.md | 1705 | Session — 2026-08-11 (later ×5) · T13 merged; T14 reviewed and partly fixed; T15 and T17 built. No phase gate moved. |
+| METRICS.md | 1777 | Session — 2026-08-11 (later ×6) · T14 reviewed, fixed and MERGED; T15 reviewed twice and fixed; T17 reviewed. No phase gate moved. |
+| METRICS.md | 1921 | Session — 2026-08-11 (later ×7) · The T14 and T15 FIX ROUNDS independently reviewed: REWORK. No phase gate moved. |
+| METRICS.md | 1987 | Session — 2026-08-11 (later ×8) · The T14/T15 fix-round findings FIXED; T16 reviewed by three lenses. No phase gate moved. |
+| METRICS.md | 2091 | Session 2026-08-12 (03:10 unattended) · the final Gate A integration gate — exit 0 · 5,906 passed · 95.63%. No phase gate moved. |
+| METRICS.md | 2123 | Session — 2026-08-12 (working session) · T18 reviewed by two lenses and fixed; all nineteen slices merged into one tree. No phase gate moved. |
+| METRICS.md | 2177 | Session — 2026-08-12 (later) · Gate A's review loop CLOSED at round five; all four gates green. No phase gate moved. |
+| METRICS.md | 2251 | Session — 2026-08-12 (bonus window) · Gate A MERGED into main; two silent-success defects found and fixed after it. No phase gate moved. |
+| METRICS.md | 2336 | Session — 2026-08-12 (continuation) · **Gate A MET.** Its last open question ruled and built (D-143), the track PUSHED, and the Windows matrix taken from never-ran to green (D-145). |
+| METRICS.md | 1510 | Session — 2026-08-11 (later still) · The T12 independent review (D-121) and its fix. No phase gate moved. |
+| METRICS.md | 2445 | Session — 2026-08-12 (P3 slice 5, task 7) · Records, retractions, and the gate — GATE_EXIT=0. No phase gate moved. |
+| METRICS.md | 2490 | Session — 2026-08-12 (later still ×2) · Slice 5 pushed (`8c1b78f`); `d147-residuals` built, gated, reviewed — unmerged. No phase gate moved. |
+| METRICS.md | 2543 | Session — 2026-08-12 (D-147 residuals) · R1, R2, R3 closed — GATE_EXIT=0 · 5,979 passed. No phase gate moved. |
+| METRICS.md | 2615 | Session — 2026-08-13 · `d147-residuals` MERGED (not a fast-forward) — GATE_EXIT=0 · 5,979 passed. No phase gate moved. |
+| METRICS.md | 2707 | Session — 2026-08-13 (later) · The gate parallelised: 16m13s → ~4m20s (D-150). No phase gate moved. |
+| METRICS.md | 2774 | Session — 2026-08-13 (close) · CI cadence (D-151) and the CGPA retraction (D-152). No phase gate moved. |
+| METRICS.md | 2827 | Session — 2026-08-13 (render + CI red) · First boardwatch résumé rendered; a red CI job fixed (D-153) and `top`'s 141 s floor removed (D-154). No phase gate moved. |
+| METRICS.md | 2902 | Session — 2026-08-13 (push) · D-153's first fix was WRONG and a review caught it pre-push; six commits pushed. No phase gate moved. |
+| METRICS.md | 2966 | Session — 2026-08-13 (roadmap review) · The program reorients onto the bundle path (D-155, D-156, D-157). No phase gate moved. |
+| METRICS.md | 3120 | Session — 2026-08-13 (projection plan preflight) · ubuntu/3.12 CI CONFIRMED GREEN, D-159 closed; the projection spec preflighted and 4 claims falsified. No phase gate moved. |
+| METRICS.md | 3299 | Session — 2026-08-13 (projection execution begins) · Tasks 1–3 of 23 built; a THIRD import wall found (D-161). No phase gate moved. |
+| METRICS.md | 3380 | Session — 2026-08-13 (projection execution, cont.) · 16 of 23 tasks complete; halted on a usage limit, not a defect. No phase gate moved. |
+| METRICS.md | 3444 | Session — 2026-08-13 (projection execution, final) · BUILD COMPLETE: 22 of 23 tasks, whole-branch review clean, gate exit 0. No phase gate moved. |
+| METRICS.md | 3494 | Session — 2026-08-14 (merge + Gate B's first command) · `projection-v1` MERGED AND PUSHED; `profile-bundle import` shipped (D-170). No phase gate moved. |
+| METRICS.md | 3559 | Session — 2026-08-14b (CI recovered + extraction designed) · the UNKNOWN run had FAILED (D-171); design to revision 4 (D-172/173/174); the 81-record denominator MEASURED. No phase gate moved. |
+| METRICS.md | 3655 | Session — 2026-08-14c (extraction SHIPPED end to end) · the number moved 0 → 78/81 records `imported` (D-181); interpreter + schema v2 + `extract`, gate green. |
+| METRICS.md | 3696 | Session — 2026-08-14d (promotion SHIPPED) · the imported candidates became the renderable graph — 6 entities, 47 facts, 10 grounded skills (D-182). No phase gate moved. |
+| METRICS.md | 3730 | Session — 2026-08-14e (two owed Gate B gates ship) · §5.2 invariant 4 + the drain reconciliation wired at the completeness tier (D-183). No phase gate moved. |
+| METRICS.md | 3742 | Session — 2026-08-14f (Gate B merged, and the first revision ever cut) · Merge review D-184; first promoted revision D-185. Gate B still NOT met. |
+| METRICS.md | 3764 | Session — 2026-08-14g (revision 2: the skills surface) · Root cause of the skill-surfacing gap; D-185's "not reachable" claim retracted (D-186). Gate B still NOT met. |
+| METRICS.md | 3777 | Session — 2026-08-14h (incremental fact edits SHIPPED) · `edit-fact`/`add-fact` end the full-rebuild-per-content-change loop (D-190). No phase gate moved. |
+| METRICS.md | 3793 | Session — 2026-08-15a (edit-fact merged; employer headings fixed) · The incremental path merged to `main` after two review rounds; revisions 2 and 3 fixed the headings. Gate B unchanged. |
+| METRICS.md | 3809 | Session — 2026-08-15b (Option B: the bullets meet the repositories) · Revision 5. Every one of five repos carried a false claim; 12 bullets corrected. `exclude-record` built and parked. Gate B unchanged. |
+| METRICS.md | 3832 | Session — 2026-08-15c (`exclude-record` merged; Task 20 half-built) · The parked branch merged after its owed review; Task 20's matrix recorded unlabeled, and Stage 2 found blocked upstream of it. Gate B unchanged. |
+| METRICS.md | 3855 | Session — 2026-08-15d (Stage 2 unblocked; Gate B 7 → 4) · The pinned/candidate split decided and applied (D-195); `exclude-record` run against the live bundle (D-196). **Gate B moved for the first time since it was defined.** |
+| METRICS.md | 3876 | Session — 2026-08-15e (Task 20 LABELED; scorer selection unblocked) · The owner's rankings + cut lines transcribed into the matrix and pushed (D-197). Docs-only; no phase gate moved. Task 23 is next. |
+| METRICS.md | 3889 | Session — 2026-08-15f (Task 23: `mean_per_bullet` adopted as the CLI scorer default) · The rank-agreement measurement showed no clean winner (tau-b ≤ 0.16); the owner adopted `mean_per_bullet`, `ADMISSION_FLOOR` stays `Decimal(0)` (D-198). |
+| METRICS.md | 3908 | Session — 2026-08-15g (first real emission: crash found + fixed) · `resume project` crashed on the live `bullet_predicates` declaration; root-caused and fixed (D-199). A real one-page PDF now emits. No phase gate moved; still 0 sent. |
+| METRICS.md | 3928 | Session — 2026-08-15h (résumé formatting fixed; project links shipped; Gate B 4 → 0, MET) · The owner rejected the emitted résumé's formatting; Experience/Projects reformatted (D-200), clickable links added (code), and the 4 org facts resolved → **Gate B reads 0 blockers for the first time** (D-201, revision 7). |
+| METRICS.md | 3944 | Session — 2026-08-15i (D-184 finding 3 fixed: the skill-slug collision is refused, not silently merged) · The owner chose "a deferred engineering item"; of the five listed, the `C++`/`C#` → `skill.c` collision was fixed (D-202). A latent-defect fix; no phase gate moved, still 0 sent. |
+| METRICS.md | 3957 | Session — 2026-08-15j (two more promotion slug-collision sites refused (D-203) + autonomous roadmap scoped) · A whole-tree sweep found `candidate_promotion.py` was the only lossy-id site in `src/`; entity_id + category_id collisions now refused (D-203). A 4-agent sweep scoped the remaining autonomous backlog. No phase gate moved, still 0 sent. |
+| METRICS.md | 3971 | Session — 2026-08-15k (autonomous backlog COMPLETE; a fourth slug-collision site found and closed) · The held D-203 push was independently reviewed, found to overclaim, corrected, and pushed with four more changes. §5.2 invariant 3 — the last owed audit invariant — ships. No phase gate moved, still 0 sent. |
+| METRICS.md | 3995 | Session — 2026-08-15l (the `STATE.md` trim: 231 → 194 lines) · D-149's last gated task, executed. Narration moved to the logs; three single-homed facts relocated, not deleted; **six stale figures the trim had carried forward corrected** (D-207). Docs-only; no phase gate moved, still 0 sent. |
+| METRICS.md | 4014 | Session — 2026-08-15m (dates are fact-grounded: D-200's owed month formatter, plus a declared two-fact range) · The last résumé field that could not reference a fact now does. All 11 live `projection.yaml` entries are fact-referenced; the projection digest moved, so the owner gate has reopened by design. No phase gate moved, still 0 sent. |
+| METRICS.md | 4045 | Session — 2026-08-16 (a skill listed under two skill groups is refused: D-210) · The last owner-gated ambiguity in `candidate_promotion.py`'s skill loop, ruled and closed. The defect was reachable from an ordinary résumé and produced a clean exit with zero diagnostics. No phase gate moved, still 0 sent. |
+| METRICS.md | 4070 | Session — 2026-08-16b (the D-211 Windows track: ruled best-effort, D-212) · The owner-gated question was asked first and answered; one deterministic test defect fixed, one Windows-only race marked, the `OS Independent` claim retired, and the nightly finally got a consumer. No phase gate moved, still 0 sent. |
+| METRICS.md | 4096 | Session — 2026-08-16c (FlickSwiper bullet refinement: the first entity through STATE item 2) · Attended, owner-ruled wording. Bundle revision 8 → 9. Repo-verification found one contradicted claim and two wrong numbers; the owner's voice ruling then cut the contradicted material anyway. No phase gate moved, still 0 sent. |
+| METRICS.md | 4123 | Session — 2026-08-16d (the FlickSwiper keyword regression: revision 9 → 10) · A follow-on to 2026-08-16c. The house style shipped at revision 9 cost the flagship iOS entity its iOS signal; caught by a peer session, confirmed on shipped text, fixed for 11 characters. No phase gate moved, still 0 sent. |
+| METRICS.md | 4140 | Session — 2026-08-16e (Hookrail bullet refinement: the second entity through STATE item 2, D-214) · Attended, read-only research then one batched edit. Bundle revision 10 → 11. The performance claim that was expected to be fabricated was substantiated; the real defects were selective quoting and a large body of CI-verified work claimed nowhere. No phase gate moved, still 0 sent. |
+| METRICS.md | 4167 | Session — 2026-08-16f (StreakSync bullet refinement: the third entity through STATE item 2, D-215) · Attended, read-only research then one batched edit. Bundle revision 11 → 12. The most expensive entity in the bundle, halved. A published "fabrication" finding was retracted mid-session as drift, and a keyword regression was caught only during the closing doc pass. No phase gate moved, still 0 sent. |
+| METRICS.md | 4194 | Session — 2026-08-16g (SAKEC bullet refinement: the fourth entity through STATE item 2, and the first PINNED one, D-216) · Attended. Research read-only, then authored on the owner's explicit instruction. The brief's "no source code" premise was false — the repo is private on GitHub — and every claimed feature turned out to be a teammate's commit, which the owner ruled acceptable. Bundle revision 13 -> 14. No phase gate moved, still 0 sent. |
+| METRICS.md | 4220 | Session — 2026-08-17 (crop-rf bullet refinement: the fifth entity through STATE item 2, D-217) · Attended. The only entity with a primary published source, and the outcome inverted: every technical number verified against the paper, while the award count, the hosting claim and the authorship all failed. Bundle revision 16 -> 17. No phase gate moved, still 0 sent. |
+| METRICS.md | 4248 | Session — 2026-08-17b (NIO + Saayam: the last two entities through STATE item 2, D-219/D-220/D-221) · Attended. The pinned pair, and the two hardest attribution calls in the bundle. Bundle revision 19 → 21, completing all eleven entities. The page budget was re-measured and two of D-195's conclusions retired. No phase gate moved, still 0 sent. |
+| METRICS.md | 4283 | Session — 2026-08-17c (verifying D-222 found a fourth instance of the same race, D-223) · Opened as a verification pass on an inherited handoff. The handoff's one owed item was already done; the real findings were 14 unpushed commits and a fourth unmarked test. No phase gate moved, still 0 sent. |
+| METRICS.md | 4307 | Session — 2026-08-17d (the root fix behind D-212/D-222/D-223: the Windows stale-lock race, D-224) · Attended, on worktree branch `windows-lock-portability` while a peer session held the main tree. Three decision entries had suppressed this race one test at a time; reading the dependency's source turned it into a named defect and all four markers came off together. No phase gate moved, still 0 sent. |
+| METRICS.md | 4353 | Session — 2026-08-17d (fixture + corpus drift detection, D-228) · Attended, on the `fixture-drift-detection` worktree alongside three other live lanes. The brief's central premise was false and measuring it deleted a planned deliverable. No phase gate moved, still 0 sent. |
+| METRICS.md | 4469 | Session — 2026-08-17d (D-221's item C: a bullet-less entry made representable, D-226) · Attended, on worktree branch `bulletless-entry-representable` beside three other live lanes. A design question, not a cleanup: the fix chosen is the OPPOSITE of the one STATE and D-221 had prescribed. No phase gate moved, still 0 sent. |
+| METRICS.md | 4494 | Session — 2026-08-17d (projection reaches the daily pipeline: `run --project`, slice P5a, D-225) · Eleven reviewed build tasks plus two fix batches, then a whole-branch review that returned DO NOT SHIP on four seam findings and SHIP after one fix wave. The compile budget was measured **before** merge, against a copy of the store. Projection-spec P5a shipped; **parent P5 still NOT met** (the default flip is P5b, owner-gated). No program phase gate moved, still 0 sent. |
+| METRICS.md | 4586 | Session — 2026-08-18 (P5b's criteria named and measured, D-229; the `runs` backfill repaired, D-230; D-225's residuals cleared, D-231) · Two owner decisions taken at session start, then everything downstream of them. The Windows evidence for D-224 was found to exist but be bound to a different run than the one STATE credited. No phase gate moved, still 0 sent. |
+| METRICS.md | 4639 | Session — 2026-08-18b (the independent repo audit: one false number found and repaired, D-232) · The first check of bundle content by a party that did not write it. It found a defect in one pass that eleven attended refinement sessions and a passing Gate B did not. P5b's fabrication clause failed, then was repaired at revision 22. No phase gate moved, still 0 sent. |
+| METRICS.md | 4715 | Session — 2026-08-18c (two owner decisions, then the last P3 build item — and a dry-run that proved the daily driver can't start yet) · Mit ruled Education Slice C and unfroze the roadmap; P3 item 8 shipped (D-241); the "stand up daily runs" workstream was verified against a live copy and found blocked on the owner. Three PRs merged, `make check` green (6680). No phase gate moved, still 0 sent. |
+| METRICS.md | 4754 | Session — 2026-08-19 (the daily driver goes LIVE: projection approved, launchd agent installed, run 61 is the first clean unattended run — D-244) · Attended. The one TTY action D-243 blocked on was taken by Mit at session start; everything downstream followed. **The headline "never run in anger" is now false** — boardwatch completed its first full unattended pipeline run. Gate P3 begins accruing. No gate MET yet (needs 7 consecutive clean runs); still 0 sent. |
+| METRICS.md | 4896 | Session — 2026-08-19b (the sister-project rebuttal, measured: the largest funnel bucket was undocumented, the 08:00 trigger never fired, and eligibility never decided because one field was unset — D-248, D-249) · Attended. Six parallel read-only investigations, then two fixes. Began as a rebuttal, became an audit of our own self-report — wrong in four places. No phase gate moved, still 0 sent. |
+| METRICS.md | 5035 | Session — 2026-08-19c (the eligibility-precision + US-location-gate run: three fixes shipped, the location filter armed, and an overnight analysis of the whole ranked pool — D-250…D-253) · Attended start, then autonomous overnight. Two owner decisions taken (flip the zero-evidence eligible; hard US-only location gate), three PRs merged, a review-caught US-drop bug fixed before it armed, and four parallel analyses that mapped where the eligible set actually comes from. No phase gate moved, still 0 sent. |
+| METRICS.md | 5067 | Session — 2026-08-20 (the schedule FIRES: first clean unattended run — D-254 — plus four owner decisions armed and a precision follow-up — D-255…D-259) · Attended. The 08:00 launchd trigger fired on its own for the first time (run 63, clean, exit 0); Gate P3 begins real accrual (1 of 7 unattended). Mit made four eligibility/role decisions; three PRs merged (#106/#107/#108), clearance armed as a blocker, and the run-63 ranked pool was analysed for precision. No phase gate MET yet (P3 needs 7 runs), still 0 sent. |
+| METRICS.md | 5110 | Session — 2026-08-20b (the missed-window alarm built, and a whole-branch review of the precision merges fixed two live false-drops — D-260, D-261) · Attended. Picked up the prior session's Bridge handoff: did Mit's pending TTY act (band=entry + interns) via a pipe (`profile edit` is not TTY-guarded), synced #108/#109, and pruned 12 stale agent worktrees. Built the dead-man's-switch heartbeat (#110). A whole-branch correctness review of #100–#108 found three false-drops; the two HIGH — location US+foreign (#111) and the seniority product-noun collision (#112) + `exclude_titles` refine — were fixed and merged. No phase gate MET yet (P3 still 1/7), still 0 sent. |
+| METRICS.md | 5124 | Session — 2026-08-20c (a manual verification run of the tightened gates — run 65 — exposed and fixed a `Lead` role-gate regression, and cleared the owed ledger re-key — D-262) · Attended. Ran `run --project` directly on the editable venv (identical to the launchd argv, but a MANUAL run — NOT a P3 tick) to watch #106/#108/#111/#112 + clearance/band fire together on live data before tomorrow's scheduled run. The run was clean, but precision regressed: 5 of 8 leads were non-software "Lead" business/ops roles. Fixed in #114 (merged). Ran the owed `ledger reopen --stale`. No phase gate moved, still 0 sent; Gate P3 still 1 of 7 unattended (a manual run does not count). |
+| METRICS.md | 5140 | Session — 2026-08-21 (Gate P3 reaches 2 of 7, and the location gate's word boundaries turn out to have never worked — D-263…D-266) · Attended. The 08:00 trigger fired unattended for the SECOND time (run 66, clean, all 8 leads software — #114's first scheduled exercise). Measuring the deferred Buc/France leak exposed a live, INTERMITTENT false-drop in `_alternation` that had been deleting real US postings; fixed, then the leak closed with three measured non-US signals. Two reporting/keying defects also fixed at Mit's direction. One PR (#116, 4 commits). No phase gate MET, still 0 sent. |
+| METRICS.md | 5166 | Session — 2026-08-21b (run 67 verified clean, the owed ledger re-key drained, and a "ranked pool" metric retracted as noise — D-267) · Attended. Verified the manual run queued at the previous session's close: exit 0, reconciles, all 8 leads US-located, and D-266's one-time full-corpus re-key paid (30,243 of 30,243 re-evaluated, so tomorrow's 08:00 tick does not pay it). Ran the owed `ledger reopen --stale` at Mit's direction — 16 released. The headline finding is a measurement defect, not a code defect: the check the previous session handed forward could not fail. No phase gate moved; Gate P3 still 2 of 7 unattended (a manual run does not count); still 0 sent. |
+| METRICS.md | 5184 | Session — 2026-08-21c (run 68 pre-verified before its tick: the six reopened leaks are blocked, and D-267's replacement denominator was itself unpinned — D-268) · Attended. Run 68's scheduled tick was ~19 h away, so its two verifications were *predicted* against the corpus it starts from rather than observed. All six known leaks are blocked by the current gates; the D-263 Wisconsin baseline reproduces exactly; and the metric D-267 shipped as the fix for a metric that could not fail turned out to carry an unpinned denominator of its own. No phase gate moved; Gate P3 still **2 of 7** unattended; still 0 sent. |
+| METRICS.md | 5258 | Session — 2026-08-21d (the nightly's three root causes found and fixed; the first fully green full-matrix run — D-269) · Attended. Continued from 2026-08-21c. The nightly was carried as "two intermittent flakes recoverable by re-running"; it had failed **7 of its last 8 scheduled runs**, there were **three** causes, and the dominant one was five Windows tests failing DETERMINISTICALLY on all three Windows jobs — never documented. One of the three is a production defect: every freshly created store was born in `delete` mode, not WAL. Two PRs merged (#120, #121). No phase gate moved; Gate P3 still **2 of 7** unattended; still 0 sent. |
+| METRICS.md | 5336 | Session — 2026-08-21e (a job-apps discovery comparison became an audit of our own discovery rate: the daily new-posting count is our fetch budget, and 15,535 listed postings are unmaterialised — D-270) · Attended, read-only: no source, test or config change, no run launched, no gate moved. Retracts this session's own caveat that the daily rate was inflated by re-keyed duplicates — ~92% of each day's rows are new to the store under every identity kind — and replaces it with the cause: `detail_fetch_budget` = 50 unseen postings per board per run, proved by 19 Workday boards holding exactly 600 rows and gaining exactly 50 × runs a day. Gate P3 still 2 of 7 unattended; still 0 sent. |
+| METRICS.md | 5437 | Session — 2026-08-22 (the replacement question answered: boardwatch cannot see 92% of what job-apps surfaces, and Workday's own total is censored at 2,000 — D-271) · Attended, read-only: no source, test or config change, no run launched, no gate moved. Two live probes to public job-board APIs. Reopens D-008, which retired comparative parity measurement. Gate P3 still 2 of 7 unattended; still 0 sent. |
+| METRICS.md | 5538 | Session — 2026-08-22b (the coverage instrument built and measured: 82.7% of what the boards say they hold, and Target's real board is 12,097 — D-271/D-272 implemented) · Attended overnight, owner asleep under a standing instruction to finish. 26 commits, squash-merged as PR #125; `make check` exit 0 (7,153 passed) and full CI green. Merged as #125 and **armed 08:17** (D-273). The 08:00 tick FAILED (exit 1) — a subagent had migrated the live store during the build while the checkout was pinned to older code. Re-run manually: exit 0, 40 leads, ~24 min, first live coverage **82.4%**. Gate P3 unchanged at 2 of 7; still 0 sent. |
+| METRICS.md | 5605 | Session — 2026-08-22c (the coverage instrument stops being mute: both per-run artifacts report it, D-274) |
+| METRICS.md | 5675 | Session — 2026-08-22d (the largest drop bucket gets a drain, and the JD-acquisition lane order reverses — D-277/D-278) |
+| METRICS.md | 5768 | Session — 2026-08-22e (the body-less suppression is fixed and lane phase 1 begins; JobSpy is uninstallable on a supported Python — D-279) |
+| METRICS.md | 5891 | Session — 2026-08-22f (the ASAP execution plan is set: finish line becomes a provisional pass + 14-day background confirm, breadth moves in now, work splits into sessionized parts — D-280) |
+| METRICS.md | 5905 | Session — 2026-08-22g (ASAP plan Part 1: two of D-280's premises measured false, Gate P6 becomes readable at 0.00%, and the zero-output "fix" is rejected because it deletes the alarm — D-281/D-282/D-283) |
+| METRICS.md | 6033 | Session — 2026-08-22h (ASAP plan Part 2: the lane groundwork lands, and the dereference utility turns out to serve neither provider that needs it — D-284) |
+| METRICS.md | 6111 | Session — 2026-08-23a (lane 1 reverses to hiring.cafe; four owner calls settled — D-285) |
+| METRICS.md | 6190 | Session — 2026-08-23b (ASAP plan Part 3: the hiring.cafe lane ships off-by-default, and the test suite is caught migrating production — D-286) |
+| METRICS.md | 6270 | Session — 2026-08-23c (the daily driver's blocker is fixed: six corpus-sized `IN` lists chunked, the fix kept out of the digested engine, and the launchd cadence found to be still daily — D-287) |
+| METRICS.md | 6378 | Session — 2026-08-23d (the cadence is applied at last, and the drain path's ~2-day fuse is closed — D-289/D-290/D-291) |
+| METRICS.md | 6533 | Session — 2026-08-23e (rulings 1-4 audited before merge: three land as ruled, ruling 3 gains a body-similarity floor, and a pre-rescue deny stage is deleted — D-294) |
+| METRICS.md | 6694 | Session — 2026-08-24 (round 3 finds a defect in each half; ruling 3 is dropped and rulings 1, 2 and 4 ship — D-295) |
+| METRICS.md | 6808 | Session — 2026-08-24 (Part 4a built: the GitHub-lists discovery client, and Gate P3 reaches 5 of 7 — D-296) |
+| METRICS.md | 6910 | Session — 2026-08-24 (Part 4b built: the LinkedIn guest lane, off by default — D-297) |
+| METRICS.md | 6937 | Session — 2026-08-24 (board-fleet cleanup + doctor migration suggestions — D-300/D-301) |
+| METRICS.md | 6955 | Session — 2026-08-25 (B5 armed: run-scoped rank attribution — D-302) |
+| METRICS.md | 6973 | Session — 2026-08-25 (P4 finish-line: under-fill fix, persona deferral, role/seniority precision — D-303/D-304/D-305) |
+| METRICS.md | 7003 | Session — 2026-08-26 (P4 gate MET, two scan-robustness fixes, lanes armed + leak found — D-306/D-307/D-308) |
+| METRICS.md | 7029 | Session — 2026-08-26 (the lane role facet: lanes now ask for the user's target roles — D-309) |
+| METRICS.md | 7172 | Session — 2026-08-26 (the years-of-experience gate had never fired — D-319/D-320) |
+| METRICS.md | 7368 | Session — 2026-08-27 (the provisional pass was already met; citizenship, dedup refuted, fleet ramp, and s/board refuted — D-322/D-324…D-331) |
+| METRICS.md | 7644 | Session — 2026-08-27b (the live write: migration, three owner facts, and the guard that would have straddled a run) |
+| METRICS.md | 7839 | Session — 2026-08-28 · run 127 confirms D-333; CI sharded (D-334); the probe was wrong (D-335) |
+| METRICS.md | 7923 | Session — 2026-08-28b · the job-apps comparison at posting level, dedup's real cost, and two fetch ceilings (D-336…D-338) |
+| METRICS.md | 8047 | Session — 2026-08-28c · run 128 validates all four merged changes; store four-way split (D-342) + D-339 loose ends merged |
+| METRICS.md | 8100 | Session — 2026-08-28d · run 129 measures the speed work and DECOMPOSES it (D-343/D-344, #212); queue UI a11y pass (#213) |
+| METRICS.md | 8213 | Session — 2026-08-28e · the delivery slate cap (§0 RULED, D-345, #215), per-lane cost (D-346, #217), lane fetch overlap (D-347, #219), detail-sheet focus containment (D-348, #216) |
+| METRICS.md | 8385 | Session — 2026-08-28f · the `degree` audit (D-352), the revert trigger's TWO wrong versions (D-353), Phase 1b complete (D-354), pacing disarmed and HELD (D-355), hiring.cafe down (D-356), `main` deflaked (D-357) |
+| METRICS.md | 8478 | Session — 2026-08-28g · the THIRD wall-clock flake (D-358), `main` confirmed green, the off-target chip narrowed (D-359), hiring.cafe re-probed and still down |
+| METRICS.md | 8614 | Session — 2026-08-28h · both unattended risks re-measured and CLOSED (D-362): the disk runway ~10x longer, the alerting path already existed and is now ARMED |
+| METRICS.md | 8716 | Session — 2026-08-29 · the heartbeat's first ping is NOT YET DUE, and the check route was wrong; web viewer error boundaries (D-363) |
+| METRICS.md | 8841 | Session — 2026-08-29b · breadth batch 1 applied, the delivery cap released to 40, the frontend gets a gate |
+| METRICS.md | 8911 | Session — 2026-08-29c · run 131 is the FIRST CLEAN UNATTENDED TICK; the slate cap FIRES; the hiring.cafe discriminator reads out (D-368) |
+| METRICS.md | 8985 | Session — 2026-08-29d · the hiring.cafe lever is PULLED and D-368's ranking corrected (D-369, #245); breadth batch 2 SPLIT on a measured cold scan (D-370), fleet 379 |
+| METRICS.md | 9047 | Session — 2026-08-29f · unattended observability COMPLETED (ten PRs, #247-#256); the alert channel to an absent owner is closed; `clearance_preferred` resolves and the drain is refused on measurement |
+| METRICS.md | 9110 | Session — 2026-08-31 · a quarter of the apply queue was DEAD: the closed-posting drain ships (D-383, #284); the seniority gate is measured at 5 postings and NOT built; job-apps ingestion designed, blocked on one owner question |
+| METRICS.md | 9409 | Session — 2026-08-31b · #284 VERIFIED against the live store before its first run; the apply lane gets its own drought detector (D-384); the seniority hold re-measured 5 -> 3 and NOT built; the escalation channel is ARMED, correcting this file and memory |
+| METRICS.md | 9547 | Session — 2026-08-31c · run 135 VERIFIED, the closed-posting drain fired exactly as predicted; the job-apps ingestion lane ships DISARMED with the lane-health guard D-385 asked for (D-386, #286) |
+| METRICS.md | 9688 | Session — 2026-08-31d · the word-gap audit worked, and the measurement underneath it is bigger than the audit: the engine reads a REFINEMENT as a CONTRADICTION, sized at 8,429 `uncertain` evaluations (D-387, #288) |
+| METRICS.md | 9871 | Session — 2026-08-31e · the owner ruled on the exclusive-group conflict; the first implementation of that ruling was WRONG and the CORPUS caught it, so what ships is a one-line catalog removal (D-388) |
+| METRICS.md | 9929 | Session — 2026-08-31e (part 2) · the 96%: `refinement_groups` ships as versioned catalog data, delegated to Codex and reviewed here (D-389) |
+| METRICS.md | 9965 | Session — 2026-08-31e (part 3) · run 136 verified clean, the job-apps lane ARMED and its first run reaches Apple/ByteDance/DeepMind/AWS, and the owed ledger drain is declined on measured evidence |
+| METRICS.md | 10018 | Session — 2026-08-31f · run 137 VERIFIED clean, and as the first production run at the new engine it reproduces #290+#291's pre-merge pricing to within 1%; the armed job-apps lane reaches DELIVERY, putting Apple and DeepMind in the shipped 40 (D-392) |
+| METRICS.md | 9192 | Session — 2026-08-30 · run 133 reads out: the digest half of the alert channel is ACCEPTED and hiring.cafe's header lever FAILED; the channel to an absent owner is closed but ships DISARMED (D-376, #258); company reach re-derived at 16.4% on a corrected method |
+| METRICS.md | 10116 | Session — 2026-09-01 · run 138 is the speed change AND the null control, both at production scale: 44m33s for a full re-judge, and ZERO verdict transitions over 113,178 evaluations |
+| METRICS.md | 10174 | Session — 2026-09-01b · six PRs merged and NO production run; Workday dereference lands at 896 convergences, a 589/307 figure is CORRECTED because a string join did not model the resolver, the Workday case migration is measured to ZERO benefit and refused (D-401), the `slug_from_path` chrome defect is fixed 157 -> 0 (D-400), and job-apps retirement gets its first reading against D-399 at 20.4% coverage |
+| METRICS.md | 10258 | Session — 2026-09-01c · run 139 read out: gate 1 UNMOVED at 20.4% while 38 postings shift absent -> lane-only exactly as D-399 predicted, the jobapps coupling nearly TRIPLES to 49% of delivery, and the read-out finds 3 delivered leads that never reached the queue (D-402) |
+| METRICS.md | 10447 | Session — 2026-09-01d · run 140 read out: the hiring.cafe cap drain lands 291 companies and gate 1 moves 20.4% -> 22.2% for the first time, the jobapps coupling COLLAPSES 49.0% -> 2.1%, SmartRecruiters is found storing raw HTML in 99.9% of its bodies and is drained across 3,307 postings, and `location=` on LinkedIn's guest endpoint is measured NOT inert against a shipped docstring that said it was |
+| METRICS.md | 10542 | Session — 2026-09-01e · NO RUN: gate 1 unchanged at 22.2%. The drop audit refutes its own hypothesis (0 of 216), the LinkedIn nets ship and are armed together with the admission cap that was silently capping them at zero, the native Indeed lane ships disarmed, and three separate sizings are found to have counted what a rule can MATCH rather than what it would FIX |
+| METRICS.md | 10667 | Session — 2026-09-01f · RUN 141: gate 1 moves for the second time ever, by ONE POSTING (22.2% -> 22.7%, 49 of 216). The LinkedIn cap was relieved 5x and refusals ROSE 344 -> 617, so admission binds and its sizing is refuted; 57 of the 77 LinkedIn misses are employers not in the store at all. The rotation contract holds at 98 of 98 cells. Priced end to end, every identified lever outside LinkedIn lands at 46.8% against a bar of 80% |
+| METRICS.md | 10808 | Session — 2026-09-02 · the five branches MERGE and Indeed is ARMED; run 142 is read out as the pre-arming BASELINE after the handoff's timing claim is refuted, and hiring.cafe is pinned to #304's merge date, which refutes BOTH of this session's earlier framings |
+| METRICS.md | 10894 | Session — 2026-09-02 (part 2) · RUN 143 is the FIRST ARMED RUN: the Indeed cap fires at 25/359, `lane_seeds` fills to 773 with 85.9% unreachable, #331 withholds 12 jobright bodies in production, and gate 1 is re-measured as per-source recall |
+| METRICS.md | 11010 | Run 144 — 2026-09-02 · the D-423 ONE-TIME HARVEST lands 1,495 new postings and 661 new companies, the D-422 SEED DRAIN is confirmed end to end at 37 attempted / 22 resolved with 10 of them handed across from `indeed`, and both temporary levers are reverted and verified byte-identical |
+| METRICS.md | 11096 | Session — 2026-09-02c · NO RUN: the hiring.cafe board sample is ADMITTED at 50 boards (watched 403 → 453), D-425's "471 boards" is corrected to 471 POSTINGS across 332 BOARDS, and `click.appcast.io` is refused as a resolver target at 1 of 40 |
+| METRICS.md | 11209 | Session — 2026-09-02d · NO RUN: the buried live requisition is fixed and measured at 1 job (not the 16 the handoff carried), LinkedIn gains a per-company axis whose planned shape is refuted at a 358-day rotation, and the `perf` CI bound is characterised as sitting inside a 0.92 s empty gap |
+| METRICS.md | 11279 | Session — 2026-09-03 · NO RUN: a blind two-judge audit measures the APPLY LANE at 32% UNAPPLYABLE — worse than the 24% on the `eligible` verdict, which is only 8% of what the owner sees — every miss is a MISSING REQUIREMENT ROW rather than a mis-decided rule, and the two pattern fixes that shipped move the measured rate by ZERO |
+| METRICS.md | 11572 | Run 145 — 2026-09-03 · the first run reading the 50-board sample REFUTES its sizing by ~100x, and both of the 2026-09-02d queue fixes are confirmed in production |
+| METRICS.md | 11618 | Session — 2026-09-03b · RUN 146 is an ELIGIBILITY-ONLY pass that re-keys the whole corpus in 10 minutes (not the predicted hours), the `gh_jid` convergence item is REFUTED at 4 leads that are all ONE EMPLOYER TWICE, and the slate cap's three review findings are closed |
+| METRICS.md | 11690 | Session — 2026-09-03c · the owner's rulings EXECUTED: A1/A9 merged, A6 skipped 87 on the third apparatus after two returned confident wrong answers, A4 re-priced at 1,458 (not 505) and REFUSED, and A2's artifacts turn out not to be gate verdicts at all |
+| METRICS.md | 11798 | Session — 2026-09-03d · RUNS 148 AND 149: gate 1 moves 26.5% → 28.8% with lane-only AND absent falling TOGETHER, so the Indeed admission cap was the binder and the uncap FIXED the gate rather than matching it; the 50-board hiring.cafe sample yields 7 against a null control of 5 and is REVERTED; A3 cuts the apply lane 646 → 91 |
+| METRICS.md | 11982 | Session — 2026-09-03e · the LEDGER DRAIN is REFUSED on measurement (83,168 open postings already flow unsuppressed against 1,489 withheld), the LLM FINAL GATE is ARMED for the first time and filters 38 of 95, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows |
 
 ---
 
@@ -11977,3 +11978,115 @@ it to the next session (18:03)**.
 **CI failed twice on `test (3.12, shard 4/4)` with NO failed step and NO log blob** — a killed job,
 not a break. Re-run passed **24/24**. The local gate on the same tree: **exit 0, 9,379 passed, 4
 xfailed, 95.56% coverage**, log 17,071 lines with the coverage gate line present.
+
+## Session — 2026-09-03e · the LEDGER DRAIN is REFUSED on measurement (83,168 open postings already flow unsuppressed against 1,489 withheld), the LLM FINAL GATE is ARMED for the first time and filters 38 of 95, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows
+
+**Four merged PRs and one owner ruling.** Runs 150 (eligibility-only re-key) and 152 (full
+production run) are recorded here rather than in the run-log table at the top of this file, as with
+every session since run 139. **Run 151 does not exist as a delivery run** — it was launched with the
+CLI defaults (`--top 10`, no `--project`) instead of the daily driver's `run --project --top 100`,
+killed ~17 min in once that was noticed, and relaunched as run 152.
+
+### The ledger drain — REFUSED (D-460)
+
+Read-only on the live store (`sqlite3 ?mode=ro`); the stale count from the TOOL, never a raw
+`GROUP BY policy_version`.
+
+| quantity | value |
+|---|---:|
+| `ledger show --stale` | **1,874 — 100% of live+permanent** |
+| `job_dispositions` | 1,888 rows, **100% `built`, ZERO `skipped`** |
+| still-**open** jobs a drain releases | **1,750** |
+| …by current verdict | 1,376 uncertain · 276 ineligible · 65 eligible · 33 unevaluated |
+| **open postings already flowing UNSUPPRESSED** | **83,168** (4,553 eligible + 78,615 uncertain) |
+| …withheld by the ledger | **1,489 = 1.8%** |
+| observed delivery | 92-96 builds/run (runs 143-149), 92 on run 152 |
+
+**83,168 against 1,489 is ~56x, so the drain relieves no scarcity.** Age since decided: **p50 2 d**,
+p75 8 d, p90 10 d, p100 13 d — against `recency` weight **0.15** and half-life **14.0 d** (read from
+`load_settings()`, not from memory) that is **1.41 score-points lost at p50**, 5.86 at p90, 7.12 at
+max. The penalty model reproduces D-331's recorded **9.70 at 21 d** and **15.00 at 205 d** exactly,
+which is what licensed using it. **417 of the 1,750 carry `posted_at IS NULL`**, where the component
+renormalises away and the penalty is zero.
+
+### The re-key (run 150) and the run (run 152)
+
+| | run 150 | run 152 |
+|---|---|---|
+| kind | `eligibility run` only | `run --project --top 100` |
+| postings evaluated | **151,626** | 12,026 (+ 12,375 re-extracted) |
+| exit | 0 | 0 |
+| delivered | — | **92 tailored · 92 with PDF** |
+
+Verdict distribution over the 151,626 open postings under `1+bf844e01ebcb`: **80,038 uncertain /
+66,969 ineligible / 4,619 eligible**.
+
+### Per-family extractor silence, whole open population (D-461's sizing)
+
+| family | spoke | SILENT | silent % |
+|---|---:|---:|---:|
+| work_auth | 19,173 | 132,453 | **87.4%** |
+| experience_years | 81,242 | 70,384 | 46.4% |
+| clearance | 4,667 | 146,959 | 96.9% |
+| degree | 14,871 | 136,755 | 90.2% |
+| contract_not_fte | 1,072 | 150,554 | 99.3% |
+| internship | 834 | 150,792 | 99.4% |
+| student_status | 1,293 | 150,333 | 99.1% |
+
+**37.7% of open postings (57,151) have ZERO rows from ANY family.** Families speaking per posting:
+0 → 57,151 (37.7%) · 1 → 68,808 (45.4%) · 2 → 22,853 (15.1%) · 3 → 2,621 · 4 → 190 · 5 → 3.
+
+**On the 4,619 `eligible` postings specifically: ZERO have all 7 families speaking and 4,525 (98.0%)
+rest on exactly ONE.** `work_auth` is silent on **94.9%** of them (4,382 of 4,619).
+
+**The work_auth topic-net sizing, corrected in four stages** — 1,382 (29.9%) → 414 (9.0%) → 278
+(6.0%) → 252 (5.5%) → **245 (5.3%)**. Term decomposition of the naive figure: `citizenship` 889
+fires / 330 sole, `E-Verify` 650/197, `immigration` 465/0, `sponsor*` 221/75, `visa` 96/17.
+
+### The final gate — ARMED (D-461)
+
+95 items, 448,115 JD chars, median 3,661. Judged blind by five independent judges.
+
+| | count |
+|---|---:|
+| eligible | 43 |
+| ineligible | 45 (**38 at `high`**) |
+| uncertain | 7 |
+| high-confidence by family | experience_years **28** · work_auth 8 · clearance 1 · contract_not_fte 1 |
+
+**The 28 `experience_years`, by the LOWEST bar each JD states: 8 at two years, ~16 at three, 3 at
+four** — ~24 of 28 in the band the deterministic engine abstains on. Owner ruled **reject all 28**.
+
+**Store-verified after applying** (not the CLI echo): latest final-gate verdict per posting_version
+= **43 eligible / 38 ineligible / 14 uncertain**, with **48 requirement rows carrying a quoted span**.
+
+### The apply-lane drought alarm (D-462)
+
+| | value |
+|---|---:|
+| conversion post-D-458 | **98 / 1,472 = 6.66%** |
+| conversion pre-D-458 (null control, flag forced off) | **659 / 1,472 = 44.77%** |
+| fall | **6.7x** |
+| smallest safe population | **12 → 101 placeable leads (8.4x)** |
+| historical windows meeting the fire condition, unfloored | **40 of 136, every one healthy** |
+| windows silenced by the per-run `placeable == 0` abstain | 63 of 136 |
+
+Per-run apply arrivals, runs 138-149: 4, 10, 2, 11, 5, 5, 15, 10, 6, 8 (runs 146/147/150 delivered
+nothing and read 0 placeable).
+
+### The aggregator refusal (D-463)
+
+| group | n | delivered (thru run 149) |
+|---|---:|---:|
+| jobright-hosted | 186 | 90 (48.4%) |
+| — guard-caught | 72 | 29 (40.3%) |
+| — not caught | 114 | 61 (53.5%) |
+| aggregator-hosted (all) | 1,447 | **17.5%** |
+| non-aggregator-hosted | 381 | **32.8%** |
+
+The 114 have a **median body of 118 characters**, 79.8% below the 500-char floor, **zero** carrying
+any foreign marker, and **78.7% of the delivered ones carry zero requirement rows**.
+
+**hiring.cafe lane, per-run `not_attemptable` share:** run 145 **5,460 of 6,299 (86.7%)**, run 148
+**3,502 of 4,255 (82.3%)**. Availability over the last 7 armed runs: **2 total refusals (142, 149),
+2 at one search page of 70 (143, 144)**.

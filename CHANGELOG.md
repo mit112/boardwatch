@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The review viewer stays authorised across reloads, bookmarks and restarts.** Its bearer token
+  arrives in the URL fragment, but the router owns that same fragment — the moment the app navigated
+  to `#/queue` the credential was gone from the URL, so every reload landed on "Not authorised". The
+  token now persists in `localStorage` and is restored when the fragment carries a route or nothing.
+  Deliberately not a cookie: the token exists to defeat a cross-site form post, and a cookie is
+  attached to exactly those automatically. A 401 forgets the stored token, so a rotated server token
+  cannot strand the reader.
+
 - **LinkedIn can now be asked about a named employer, not only about a job title.** Every LinkedIn
   search boardwatch made asked *what* ("software engineer") and *where* ("in Austin"). It never
   asked *at whom*. So a job posted by a company you already watch, but listed on LinkedIn and not
@@ -371,6 +379,19 @@ All notable changes to this project are documented here. The format follows
   increase how many leads reach the queue; only the delivery count does that (D-394).
 
 ### Fixed
+
+- **A quarantined aggregator body is no longer delivered as the job description.** A posting body
+  detected as an aggregator's page text rather than the employer's own is withheld from eligibility
+  judging — but nothing in the delivery path honoured that, so the aggregator's text was written into
+  the queue folder as `job_description.txt` and served by the viewer as the job description. The body
+  is now suppressed at the single writer and the queue records why. The lead still arrives with its
+  folder, PDF and apply link.
+- **The apply-lane drought alarm no longer false-fires at low delivery volume.** Routing leads cleared
+  only by silence away from the apply lane cut the conversion rate 6.7x, which made its zero-arrival
+  threshold reachable by chance on a healthy lane — 40 of 136 historical windows met the fire
+  condition. The window now starts at three clean runs and grows toward twelve until it holds enough
+  placeable leads for a zero to mean something, so the alarm gains a population bar without going
+  deaf at low volume.
 
 - **A job description saying "5+ years of full stack software engineering experience" produced no
   requirement at all — one word too many for the rules to read.** `5+ years of software engineering
