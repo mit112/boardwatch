@@ -39,6 +39,21 @@ the two arms it reaches (scoped and total), m1037 pins that the floor RESOLVES r
 firing, and m1038 is the control that must never move: a real `without` negation still deletes
 the bar and writes no row at all.
 
+SEVEN rows were ADDED 2026-09-04 for the MONTHS forms (m1039-m1045), and again NOTHING was
+re-baselined: no pre-existing case states a bar in months. m1039 pins the consequence that
+decides what these patterns can do -- 18 months is 1.5 years, which is INSIDE
+`near_miss_years_ceiling: 3`, so a months bar under 36 months can only ever resolve `met` or
+`unknown`, never `unmet`. m1041 pins the one magnitude in the live corpus that CAN reject (48
+months, 4 occurrences). ONE pre-existing row was re-baselined: `a0017:B28`
+('18 months of relevant experience minimum.' against a four-year profile) asserted `uncertain`
+with NO ROWS AT ALL. That row WAS the defect -- an adversarial case pinning that the bar fired
+nothing -- so it now reads `eligible` with a `total_months_minimum` `met`, and its label was
+given the claim it actually pins. It is the only case in 1,038 that the months forms move.
+m1043 is the control the A/B bought: a `count as` conversion note is
+not a bar, and because these patterns imply the same vocabulary as their years twins, a
+spurious months row would have joined the refinement group and rewritten a genuine `7 years`
+rejection to `unknown` on 10 postings.
+
 CAVEAT, stated because D-319's version of this note was stronger than the facts support: the
 ORACLE (`.agent/p2-catalog/proto.py`) was updated in step so a regeneration REPRODUCES these five
 rather than reverting them -- but `.agent/` is GITIGNORED and `scratchpad/gen_corpus.py` no longer
@@ -1065,7 +1080,7 @@ CASES: list[tuple] = [
     ('a0014:B20', 'Our founding team brings over 40 years of combined experience in observability.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('a0015:B19', 'You will receive two years of structured mentorship from a staff engineer.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('a0016:B27', 'Six months of internship experience is sufficient preparation for this role.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
-    ('a0017:B28', '18 months of relevant experience minimum.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('a0017:B28 an 18-month bar is DETECTED and MET by a four-year candidate', '18 months of relevant experience minimum.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_months_minimum', 'required', 'met']]),
     ('a0018:B11', 'No prior experience required; we will train you on the job.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('a0019:B4', 'Minimum of 8 years of experience, of which at least 3 years must be in a technical leadership capacity.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('a0020:B5', 'At least 3 years of hands-on experience with Kubernetes.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
@@ -1124,6 +1139,13 @@ CASES: list[tuple] = [
     ('m1036:T3 b `not fewer than N years` is the same comparative floor on the TOTAL arm', 'Candidates must have not fewer than 5 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('m1037:T3 c the same comparative floor on the TOTAL arm CLEARS a candidate who meets it', 'Candidates must have not fewer than 5 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_minimum', 'required', 'met']]),
     ('m1038:T3 d CONTROL: a REAL `without` negation still deletes the bar and fires nothing', 'We will consider candidates without 5 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1039:T4 a an 18-month bar is 1.5 years, INSIDE the near-miss band, so it abstains not rejects', 'We require at least 18 months of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 0}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_months_minimum', 'required', 'unknown']]),
+    ('m1040:T4 b the same 18-month bar is MET by a two-year candidate', 'We require at least 18 months of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 2}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_months_minimum', 'required', 'met']]),
+    ('m1041:T4 c a 48-month bar is 4 years, PAST the band, and rejects', '48 months of professional experience is required.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_months_minimum', 'required', 'unmet']]),
+    ('m1042:T4 d a months bar scoped to a skill abstains, exactly as its years twin does', '24 months of professional software engineering experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_months_minimum', 'required', 'unknown']]),
+    ('m1043:T4 e CONTROL: a `count as` CONVERSION NOTE is not a bar and must not dissolve the real one', 'Completion of the 24-week JCAC course may count as 6 months of experience. Candidates must have 7 years of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1044:T4 f CONTROL: a HEDGED months bar is dropped, exactly as a hedged years bar is', '18 months of professional experience preferred.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 0}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1045:T4 g CONTROL: company-side months tenure fires nothing', 'Our team has 30 months of professional experience.', {'work_authorization': {'status': 'ead_or_similar', 'jurisdiction': 'us', 'needs_sponsorship': True}, 'security_clearance': {'level': 'none', 'state': 'none', 'obtainable': False}, 'total_years_experience': 0}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
 ]
 
 
@@ -1143,4 +1165,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1038
+    assert len(CASES) == 1045

@@ -31,7 +31,7 @@ def test_every_catalog_rule_appears_even_with_no_rows() -> None:
     report = build_abstain_report(cat, {})
 
     assert [rule.rule_id for rule in report.rules] == rule_ids(cat)
-    assert len(report.rules) == 57
+    assert len(report.rules) == 59  # 57 -> 59: the two months patterns (2026-09-04)
 
 
 def test_a_rule_that_never_fired_has_no_rate_rather_than_zero() -> None:
@@ -88,7 +88,7 @@ def test_never_fired_is_not_counted_as_fully_abstaining() -> None:
     report = build_abstain_report(cat, {})
 
     assert report.fully_abstaining == ()
-    assert len(report.never_fired) == 57
+    assert len(report.never_fired) == 59  # 57 -> 59: the two months patterns (2026-09-04)
 
 
 def test_a_structurally_undecidable_rule_is_reported_apart_from_the_fixable_ones() -> None:

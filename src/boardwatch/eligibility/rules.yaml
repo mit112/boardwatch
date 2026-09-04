@@ -535,6 +535,58 @@ families:
         # degree-vs-experience choice, and must not abstain a genuine floor elsewhere.
         abstain_by:
           - &degree_alternative_to_years "(?:(?:Bachelor['’‘]?s?|Master['’‘]?s?|Doctora\\w+|Ph\\.?D\\.?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?:Graduate|Advanced|Undergraduate)\\s+degree|degree\\s+in)[^.\\n]{0,80}?\\bor\\b\\s*(?:a\\s+minimum\\s+of\\s+|at\\s+least\\s+)?\\d{1,2}\\s*\\+?\\s*years?\\b[^.\\n]{0,25}?experience)|(?:\\d{1,2}\\s*\\+?\\s*years?\\b[^.\\n]{0,25}?experience[^.\\n]{0,40}?\\bor\\b[^.\\n]{0,40}?(?:Bachelor['’‘]?s?|Master['’‘]?s?|Doctora\\w+|Ph\\.?D\\.?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?:Graduate|Advanced|Undergraduate)\\s+degree|degree\\s+in))"
+      # A bar stated in MONTHS is the same bar. Every pattern above requires `years?`, so
+      # "at least 18 months of professional experience" wrote NO row at all and the posting
+      # carried nothing evaluable -- the shape the keystone treats as a monitoring failure.
+      # These two mirror `total_years_minimum` and `scoped_years_minimum` exactly, arm for arm
+      # and suppressor for suppressor, and imply the SAME vocabulary: the magnitude is what a
+      # bar is, the unit is only how it was written, so a months row and a years row belong in
+      # one refinement group rather than two. The resolver converts (`_need_in_years`).
+      #
+      # MEASURED OVER ALL 61,927 OPEN BODIES BEFORE SHIPPING. The form appears in 1,085, and
+      # the distribution decides what these can do: 1,653 occurrences state 12 months or fewer
+      # (6 months alone is 1,477) and resolve `met` against a one-year profile; 91 state 13-36
+      # months, ALL of which sit inside `near_miss_years_ceiling: 3` and can therefore only
+      # resolve `unknown`; and FOUR occurrences state 48 months, the only value in the corpus
+      # that can reach `unmet`. So these patterns are an EVIDENCE fix, not a rejection fix:
+      # they replace "no row, verdict uncertain" with a cited, resolved row on ~995 postings
+      # and a visible abstain on 90. Only 20 of those 90 carry an engineering title -- the
+      # population is overwhelmingly retail and warehouse.
+      #
+      # NO `months_preferred` ARM. A hedged months bar is DROPPED by the shared hedge list,
+      # exactly as it is today, so nothing regresses; what stays missing is that a hedged
+      # months bar is still invisible where a hedged YEARS bar is carried as `preferred`.
+      # Deliberate: the hedged forms in the measured spans are all 6-month retail bars, which
+      # would resolve `met` and change no verdict. Revisit with a measurement, not by symmetry.
+      #
+      # `\d{1,3}`, not `\d{1,2}`: the years patterns cap at 99 years, and 48 months is real.
+      # `count(s) as` is a CONVERSION NOTE, not a bar. Measured: 10 postings say "(i.e., 24-week
+      # JCAC course may count as 6 months of experience)" and the months pattern read the
+      # conversion as the requirement. That is not merely a spurious row -- these patterns imply
+      # the same vocabulary as their years twins, so the spurious row joined the refinement group
+      # and REWROTE a genuine "7 years of experience" `unmet` in the next sentence to `unknown`,
+      # turning a correct rejection into an abstain on all 10. UNIT-scoped, like the hedges: the
+      # conversion sits in its own parenthetical clause and must not reach the real bar beside it.
+      - id: total_months_minimum
+        requiredness: required
+        implies: total_years_minimum
+        scope: sentence
+        capture: months
+        requirement_text: "At least {months} months of total experience"
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
+        abstain_by: [*degree_alternative_to_years]
+      - id: scoped_months_minimum
+        requiredness: required
+        implies: scoped_years_minimum
+        scope: sentence
+        capture: months
+        requirement_text: "Months of experience scoped to a specific skill or domain"
+        pattern: '(?<![-–—\d])\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges, *months_conversion]
+        abstain_by_sentence: [*degree_alternative_to_years]
       - id: range_years_minimum
         requiredness: required
         implies: range_years_minimum

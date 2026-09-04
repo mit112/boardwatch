@@ -112,7 +112,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
         "contract_not_fte", "internship", "student_status",
     ]
     assert len(catalog.negation_cues) == 26
-    assert sum(len(f.patterns) for f in catalog.families) == 57
+    # 2026-09-04: 57 -> 59. `total_months_minimum` and `scoped_months_minimum`: every pattern
+    # above them requires `years?`, so a bar stated in months wrote no row at all.
+    assert sum(len(f.patterns) for f in catalog.families) == 59
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -141,7 +143,9 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # `domain_list_years_minimum` and `domain_years_minimum` each carry a hedge list, and
         # `us_citizen_standalone_required` carries the sentence-scoped stand-down that keeps the
         # `U.S. Citizenship and Immigration Services` E-Verify boilerplate out.
-        "suppressed_by_unit": 18,
+        # 2026-09-04: +2, one per months pattern. A months bar is exactly as vulnerable to a
+        # hedge as its years twin, and both also carry the `count as` conversion-note guard.
+        "suppressed_by_unit": 20,
         "suppressed_by_sentence": 5,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
@@ -153,19 +157,26 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-08-30 audit: +3, one per new pattern that can be fooled by company-side prose --
         # the two years siblings and the clearance one. A recall pattern inherits its twin's
         # exposure to "Our engineers have 30 years ..." the moment it widens the twin's reach.
-        "subject_suppressors": 25,
+        # 2026-09-04: +2, one per months pattern -- "Our team has 30 months of experience" is
+        # the same company-side prose the years twins are guarded against.
+        "subject_suppressors": 27,
         # 7 on the degree family (degree_equivalence) + 2 on the experience family
         # (degree_alternative_to_years, D-073): a degree-gated disjunctive alternative makes
         # the years bar abstain, not resolve unmet.
         #
-        "abstain_by": 9,
+        # 2026-09-04: +1, `total_months_minimum` inherits its years twin's degree-disjunction
+        # abstain. (The regex names `years?`, so it is inert on a months sentence today; it is
+        # carried so the two arms cannot drift when that regex is widened.)
+        "abstain_by": 10,
         # The SAME regex as two of those nine, at a different SCOPE, on the six
         # scoped/domain minimum patterns. The owner ruled that the `or` in
         # "a Bachelor's OR N years of X experience" clears the bar it joins, and the word
         # `or` is also what bounds the ruling -- a disjunction in ANOTHER sentence waives
         # nothing, which is his separate earlier ruling and 7 postings' worth of behaviour.
         # Two scopes because one cannot express both answers.
-        "abstain_by_sentence": 6,
+        # 2026-09-04: +1, `scoped_months_minimum`, same sentence-scoped form as the six
+        # scoped/domain years patterns it mirrors.
+        "abstain_by_sentence": 7,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
     }

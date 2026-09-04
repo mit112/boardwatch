@@ -236,7 +236,7 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
 _SCOPED_YEARS = frozenset({"scoped_years_minimum", "activity_years_minimum"})
 
 
-def _is_near_miss(need: int, family: FamilySpec, pattern: PatternSpec) -> bool:
+def _is_near_miss(need: float, family: FamilySpec, pattern: PatternSpec) -> bool:
     """Is this bar low enough that a miss says nothing reliable about the candidate?
 
     The reject pile is never inspected, so a wrong `unmet` on an early-career bar is
@@ -280,6 +280,38 @@ def _is_near_miss(need: int, family: FamilySpec, pattern: PatternSpec) -> bool:
     return ceiling > 0 and need <= ceiling and pattern.requiredness == "required"
 
 
+#: Months per year. The one place the conversion is spelled, so a bar stated in months and a
+#: bar stated in years are compared on the same axis rather than in two places that can drift.
+_MONTHS_PER_YEAR = 12
+
+
+def _need_in_years(detection: Detection) -> float:
+    """The bar this row captured, in years, whatever unit the posting stated it in.
+
+    `years_alt`/`months_alt` are the same magnitude captured by a pattern's SECOND
+    alternative: one regex cannot name the same group twice, and a hedge can sit either side
+    of the number. The UNIT is the group's identity rather than a separate catalog field, so
+    a pattern physically cannot declare one unit and capture the other.
+
+    Months are converted here rather than compared as months, because the near-miss band and
+    every existing reason string are stated in years. The conversion is deliberately NOT
+    `int(months / 12)`: that reads an 18-month bar as a 12-month one and CLEARS it.
+    """
+    values = detection.values
+    months = values.get("months") or values.get("months_alt")
+    if months is not None:
+        return int(months) / _MONTHS_PER_YEAR
+    return float(values.get("years") or values["years_alt"])
+
+
+def _bar(need: float) -> str:
+    """Render a bar for a reason string: `5`, not `5.0`, and `1.5` for an 18-month bar.
+
+    Keeps every years-stated reason byte-identical to what it was before months existed.
+    """
+    return str(int(need)) if need == int(need) else f"{need:g}"
+
+
 @resolver("experience_years", inputs=("total_years_experience",))
 def _resolve_experience_years(
     detection: Detection, facts: Facts, family: FamilySpec
@@ -288,9 +320,7 @@ def _resolve_experience_years(
     total = facts.total_years_experience
     if total is None:
         return Resolution(UNKNOWN, "total years of experience not declared")
-    # `years_alt` is the same magnitude captured by a pattern's second alternative: one regex
-    # cannot name the same group twice, and a hedge can sit either side of the number.
-    need = int(detection.values.get("years") or detection.values["years_alt"])
+    need = _need_in_years(detection)
     support = _fact_support("total_years_experience", total)
     if pattern.implies in _SCOPED_YEARS:
         # ONE direction is forced without any per-skill data: a duration scoped to a single
@@ -303,21 +333,21 @@ def _resolve_experience_years(
         if total < need:
             if _is_near_miss(need, family, pattern):
                 return Resolution(
-                    UNKNOWN, f"{total} total < {need} scoped to a skill, within the "
+                    UNKNOWN, f"{total} total < {_bar(need)} scoped to a skill, within the "
                     f"{family.near_miss_years_ceiling}-year near-miss band", support,
                 )
-            return Resolution(UNMET, f"{total} total < {need} scoped to a skill", support)
+            return Resolution(UNMET, f"{total} total < {_bar(need)} scoped to a skill", support)
         return Resolution(
             UNKNOWN, "requirement is scoped to a skill; no per-skill durations stored"
         )
     if total >= need:
-        return Resolution(MET, f"{total} >= {need}", support)
+        return Resolution(MET, f"{total} >= {_bar(need)}", support)
     if _is_near_miss(need, family, pattern):
         return Resolution(
-            UNKNOWN, f"{total} < {need}, within the "
+            UNKNOWN, f"{total} < {_bar(need)}, within the "
             f"{family.near_miss_years_ceiling}-year near-miss band", support,
         )
-    return Resolution(UNMET, f"{total} < {need}", support)
+    return Resolution(UNMET, f"{total} < {_bar(need)}", support)
 
 
 def _incoherent_clearance(clearance: ClearanceFact) -> str | None:

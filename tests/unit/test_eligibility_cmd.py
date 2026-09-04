@@ -265,7 +265,7 @@ def test_abstain_lists_every_catalog_rule_on_an_empty_database(env: Path) -> Non
     result = _run(env, ["eligibility", "abstain"])
 
     assert result.exit_code == 0
-    assert "57 rules · 57 never fired" in result.output
+    assert "59 rules · 59 never fired" in result.output  # 57 -> 59: the two months patterns (2026-09-04)
     assert "0 fire but never decide" in result.output
     # A rule with no rows is never reported as 0% — that would read as "never abstains".
     assert "0%" not in result.output
