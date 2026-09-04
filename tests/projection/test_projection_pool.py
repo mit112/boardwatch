@@ -570,3 +570,63 @@ def test_an_entry_that_declares_no_bullet_source_is_not_marked_bulletless(
     (entry,) = candidate.entries
     assert entry.bullets == []
     assert entry.bulletless is None
+
+
+def test_a_link_target_latex_cannot_carry_is_refused_at_pool_time(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """T10. A `{`, `}` or `\\` in a link target breaks the tectonic compile — and the compile
+    happens per LEAD, long after projection, where the failure surfaces as a run-fatal whose
+    guidance points at bullets. Refusing here makes it one entry's typed refusal.
+
+    The check is on the RESOLVED value, not the declared template: `link_url` is templated, so
+    a bad character can arrive from a bundle fact that no load-time check on the template text
+    would ever see.
+    """
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "project.packet-pantry",
+                "kind": "project",
+                "pinned": False,
+                "heading": "{@display_name}",
+                "link_url": "https://example.test/a{b",
+                "link_label": "repo",
+                "claims": [],
+            }
+        ],
+    )
+    with pytest.raises(ProjectionError) as exc:
+        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
+    assert "link_url" in exc.value.violation.where
+    assert "{" in exc.value.violation.message
+
+
+def test_a_query_string_link_target_is_NOT_refused(
+    projection_env,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """The control, and the reason the refusal is three characters wide rather than seven.
+    `&`, `#` and `%` are ordinary in a real GitHub or portfolio URL, and the emitter escapes
+    them; refusing them at load would refuse working links."""
+    decl = tmp_path / "projection.yaml"
+    _write_declaration(
+        decl,
+        [
+            {
+                "entity_id": "project.packet-pantry",
+                "kind": "project",
+                "pinned": False,
+                "heading": "{@display_name}",
+                "link_url": "https://example.test/a?x=1&y=2#top",
+                "link_label": "repo",
+                "claims": [],
+            }
+        ],
+    )
+    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    assert candidate.entries[0].link_url == "https://example.test/a?x=1&y=2#top"

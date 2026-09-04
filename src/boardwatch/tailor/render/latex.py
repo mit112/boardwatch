@@ -168,11 +168,32 @@ def resolve_template(config_dir: Path | None, *, allow_bundled_default: bool = F
 # --- section emitters ---------------------------------------------------------------------
 
 
+def _escape_url(url: str) -> str:
+    """Escape the three characters `\\href{}`'s target cannot carry raw, and only those.
+
+    `\\href` normally reads its target verbatim by changing catcodes, but this emitter puts it
+    inside `\\resumeProjectHeading{...}` — a macro ARGUMENT, already tokenized by the time
+    `\\href` runs — so `&`, `#` and `%` arrive as alignment tab, parameter and comment and kill
+    the compile. Killing it PER LEAD, which the tailor stage reports as a run-level fatal
+    whose guidance points at bullets.
+
+    Measured with tectonic 0.17 through this emitter, reading the target back out of the PDF:
+    `&`, `#`, `%` fail raw and round-trip byte-identical when backslash-escaped; `_`, `~`, `$`
+    and `^` round-trip raw, and escaping `$` corrupts it into `\\protect \\TU\\textdollar`. So
+    the set is exactly three, not the whole LaTeX-special class. `{`, `}` and `\\` cannot be
+    carried either way and are refused before they reach here (`projection/pool.py`).
+    """
+    for special in "&#%":
+        url = url.replace(special, "\\" + special)
+    return url
+
+
 def _href(url: str, label: str) -> str:
     """`\\href{<url>}{\\underline{<label>}}` — the one link rendering, shared by the project
-    heading and the first-bullet append. The URL is emitted VERBATIM (escaping would corrupt it);
-    the label is display text and is escaped."""
-    return f"\\href{{{url}}}{{\\underline{{{escape(label)}}}}}"
+    heading and the first-bullet append. The URL is escaped for the target position only
+    (`_escape_url`, which is NOT `escape()` — that would corrupt it); the label is display text
+    and is escaped as display text."""
+    return f"\\href{{{_escape_url(url)}}}{{\\underline{{{escape(label)}}}}}"
 
 
 def _subheading(e: Entry) -> str:
@@ -183,10 +204,8 @@ def _subheading(e: Entry) -> str:
     if e.kind == "project":
         # Compose arg 1 from only the non-empty segments, joined by ` $|$ `: the bold name, the
         # italic tech list (omitted when blank — an empty `\emph{}` would leave a stray `$|$`), and
-        # a clickable link when present. The URL is emitted VERBATIM (never escape()d — escaping
-        # would corrupt it); the label is display text and is escaped. URLs containing LaTeX
-        # specials (#, %, &, _, ~) are not handled — acceptable because the project URLs here
-        # (github.com/…, apps.apple.com/…) contain none.
+        # a clickable link when present. The URL goes through `_escape_url` (never escape()d —
+        # that would corrupt it); the label is display text and is escaped as display text.
         segments = [f"\\textbf{{{escape(e.title)}}}"]
         if e.subtitle:
             segments.append(f"\\emph{{{escape(e.subtitle)}}}")

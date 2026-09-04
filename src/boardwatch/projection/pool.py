@@ -351,6 +351,35 @@ def _build_entry(
     def render_optional(template: str | None, field_name: str) -> str | None:
         return None if template is None else render(template, field_name)
 
+    def render_link_url(template: str | None) -> str | None:
+        """The link target, refused HERE when LaTeX cannot carry it.
+
+        Checked on the RESOLVED value rather than the declared template, because `link_url` is
+        templated: a bad character can arrive from a bundle fact that no load-time check on the
+        template text would ever see.
+
+        The set is exactly the three characters measured to be uncarryable, not the LaTeX-special
+        class: `&`, `#` and `%` are ordinary in a real GitHub or portfolio URL and the emitter
+        escapes them (`tailor/render/latex._escape_url`), so refusing those would refuse working
+        links. `{`, `}` and `\\` break the tectonic compile raw AND escaped — escaping `{`
+        renders the backslash into the target rather than failing — so nothing downstream can
+        rescue them. Left to the renderer they cost the whole RUN, per lead, with guidance
+        pointing at bullets; refused here they cost one entry and name the field.
+        """
+        rendered = render_optional(template, "link_url")
+        if rendered is None:
+            return None
+        offending = sorted({ch for ch in rendered if ch in "{}\\"})
+        if offending:
+            raise_violation(
+                ProjectionIssue.MALFORMED_DECLARATION,
+                f"link_url resolves to {rendered!r}, which carries "
+                f"{', '.join(repr(ch) for ch in offending)} — LaTeX cannot carry those in a "
+                "link target, escaped or not, so the résumé would fail to compile",
+                where=f"entries: {entry_decl.entity_id}.link_url",
+            )
+        return rendered
+
     def range_fact(predicate: str) -> FactRecord:
         # Mirrors `resolve_template`'s unresolved-placeholder refusal, and for the same reason: a
         # declared range half that resolves to nothing must not quietly become an open range.
@@ -416,7 +445,7 @@ def _build_entry(
         dates=render_dates(entry_decl.dates),
         subtitle=render_optional(entry_decl.subtitle, "subtitle"),
         location=render_optional(entry_decl.location, "location"),
-        link_url=render_optional(entry_decl.link_url, "link_url"),
+        link_url=render_link_url(entry_decl.link_url),
         link_label=render_optional(entry_decl.link_label, "link_label"),
         # `None` rather than `False` when undeclared: the projected document drops None-valued
         # optionals, so this field's existence changes the bytes of no entry that does not use it.
