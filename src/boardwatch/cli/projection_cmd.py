@@ -89,7 +89,8 @@ JSON_OPTION = typer.Option(False, "--json", help="Emit the deterministic machine
 
 
 def _prompt_text(candidate: ProjectionCandidate) -> str:
-    """What the owner reads before answering: every declared entry's resolved template fields.
+    """What the owner reads before answering: every declared entry's resolved template fields
+    AND every bullet the résumé would carry.
 
     Prints the resolved value from `candidate.entries` — never the raw template string from
     `projection.yaml` — so the owner approves the literal text a résumé would carry.
@@ -114,6 +115,13 @@ def _prompt_text(candidate: ProjectionCandidate) -> str:
                 lines.append(f"    dates: {entry.dates}")
             if entry.location is not None:
                 lines.append(f"    location: {entry.location}")
+            # The bulk of the document, and the part a claim edit changes. Without it the
+            # owner approved the entry SCAFFOLDING — headings, titles, dates — while
+            # `stamp.py` states the gate guarantees no literal reaches a résumé the owner has
+            # not read. Every bullet, in render order, never truncated: an elided bullet is
+            # exactly the literal this screen exists to put in front of them.
+            for bullet in entry.bullets:
+                lines.append(f"    - {bullet.text}")
     else:
         lines.append("No entries declared; the stamp authorises the declaration itself.")
     lines.append("")

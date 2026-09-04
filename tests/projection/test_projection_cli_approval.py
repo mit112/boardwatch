@@ -236,3 +236,33 @@ def test_an_unresolvable_declaration_reference_refuses_without_writing_a_stamp(
     assert isinstance(result.exception, SystemExit)
     assert "unknown_bundle_id" in result.output
     assert "employment.does-not-exist" in result.output
+
+
+def test_the_owner_is_shown_every_bullet_the_resume_would_carry(
+    monkeypatch, example_declaration
+) -> None:
+    """T9. `stamp.py` states the gate guarantees no literal reaches a résumé the owner has not
+    read, and the screen printed headings, titles, subtitles, dates and locations — and not one
+    bullet. Bullets are the bulk of the document and the part a claim edit changes, so the
+    approval was being taken on the entry scaffolding rather than on the text.
+
+    Derived from the SAME candidate the command resolves, not from a literal pinned here: a
+    fixture-shaped expectation would keep passing if the resolver stopped emitting bullets.
+    """
+    from boardwatch.core.clock import utcnow
+    from boardwatch.projection.pool import projection_candidate
+
+    terminal = FakeTerminal()
+    result = _run(terminal, monkeypatch, example_declaration)
+    assert result.exit_code == 0
+
+    candidate = projection_candidate(
+        example_declaration.parent / BUNDLE_DIR_NAME,
+        example_declaration,
+        as_of=utcnow().date(),
+    )
+    texts = [bullet.text for entry in candidate.entries for bullet in entry.bullets]
+    assert texts, "the fixture declares no bullets, so this proves nothing"
+    shown = "\n".join(terminal.shown)
+    for text in texts:
+        assert text in shown, f"the owner never saw the bullet {text!r} they approved"
