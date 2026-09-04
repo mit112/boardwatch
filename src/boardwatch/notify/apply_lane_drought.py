@@ -68,10 +68,14 @@ and one cause never gets two diagnoses. It costs coverage — that abstain silen
 all windows — but recovering those is a detector-separation question, not a false-alarm one, and
 it is not folded in here.
 
-**The trade is deliberate and its direction is the module's own.** Below the floor the detector
-goes QUIET rather than guessing — a false negative, never a false positive, "the right direction
-for an alarm nobody is present to dismiss". At the 8-18 placeable/run volume of runs 119-131 that
-means silence; arming it there needs an adaptive window, which is a different change.
+**The window GROWS to reach that population rather than muting below it, and that distinction is
+the whole design.** A fixed three-run window plus a hard floor would be a permanent mute wherever
+delivery volume is low — 3 x 8-18 placeable never reaches 101 — so a genuine global misroute could
+sit unreported indefinitely while the sibling detectors and the heartbeat stayed green. That is a
+deterministic blind regime, not the bounded false negative this module accepts elsewhere (which is
+about one run's leads being credited to a sibling). So the window extends towards
+`APPLY_LANE_DROUGHT_MAX_WINDOW` until the population is decisive, and only a store that cannot
+reach it even then stays quiet.
 """
 
 from __future__ import annotations
@@ -85,9 +89,15 @@ from boardwatch.store.tables import runs
 
 APPLY_LANE_DROUGHT_WINDOW = 3
 # Derived, not chosen: ceil(log(0.001) / log(1 - 0.0666)) at the measured post-D-458 apply
-# rate, i.e. the smallest window population whose all-zero outcome is <= 0.1% likely when the
-# lane is healthy. Re-derive it if that rate moves; do not tune it by eye.
+# rate, i.e. the smallest population whose all-zero outcome is <= 0.1% likely (about one
+# window in a thousand) when the lane is healthy. Re-derive it if that rate moves; do not
+# tune it by eye.
 APPLY_LANE_DROUGHT_MIN_PLACEABLE = 101
+# How far back the window may GROW to reach that population. Without this the floor would be
+# a permanent mute at low delivery volume: 3 runs x 8-18 placeable never reaches 101, so a
+# genuine global misroute could sit unreported forever. 12 runs x 8 = 96, x 18 = 216, so the
+# low-volume regime becomes reportable again rather than merely quiet.
+APPLY_LANE_DROUGHT_MAX_WINDOW = 12
 
 
 def check_apply_lane_drought(
@@ -95,13 +105,18 @@ def check_apply_lane_drought(
     *,
     window: int = APPLY_LANE_DROUGHT_WINDOW,
     min_placeable: int = APPLY_LANE_DROUGHT_MIN_PLACEABLE,
+    max_window: int = APPLY_LANE_DROUGHT_MAX_WINDOW,
 ) -> str | None:
-    """Return a soft-alert string when the last `window` clean runs each delivered placeable
-    leads yet routed every one of them away from the apply lane, else ``None``.
+    """Return a soft-alert string when the newest clean runs each delivered placeable leads yet
+    every one of them now classifies away from the apply lane, else ``None``.
 
     Only `status = 'ok'` runs count, newest first — a crashed or in-flight run carries no
     delivery signal. Fewer than `window` clean runs of history abstains rather than firing on a
     fresh store, mirroring both sibling detectors.
+
+    The window is `window` runs AT MINIMUM and grows towards `max_window` until it holds
+    `min_placeable` placeable leads, so the evidence bar is a POPULATION and the run count is
+    only how that population is reached.
     """
     with engine.connect() as conn:
         run_ids = [
@@ -110,35 +125,46 @@ def check_apply_lane_drought(
                 select(runs.c.id)
                 .where(runs.c.status == RUN_OK)
                 .order_by(runs.c.id.desc())
-                .limit(window)
+                .limit(max(window, max_window))
             ).all()
         ]
         if len(run_ids) < window:
             return None
         placed = apply_lane_placements(conn, run_ids=set(run_ids))
-    # Abstain before firing, in three steps, and the ORDER is the precedence the docstring claims.
-    #
-    # 1. A run that placed nothing is the sibling detector's story — this is the anti-double-report
-    #    guard, not merely a false-positive guard, so it stays per-run and stays FIRST.
-    # 2. A window too small to tell a drought from chance is not evidence either way.
-    # 3. Only then do arrivals decide.
-    #
-    # Mutation-pinned, with ONE survivor proven unobservable: swapping 1 and 3 changes nothing,
-    # because arrivals are a subset of placeable leads, so `[0] == 0` implies `[1] == 0` and the
-    # arrival check is False wherever the first is True. Both orders return `None` on the same
-    # runs. It is written this way for the reader — do not "fix" it on a test that cannot see it.
-    # Step 2 is NOT in that class: it is observable, and moving it after step 3 would fire on an
-    # under-populated window.
-    if any(placed.get(rid, (0, 0))[0] == 0 for rid in run_ids):
-        return None
-    placeable = sum(placed[rid][0] for rid in run_ids)
+    # Grow the window from `window` towards `max_window` until it holds enough placeable leads to
+    # tell a drought from chance, and judge exactly the runs it stopped on. Taking the whole
+    # `max_window` unconditionally would be worse in the common case: today's ~90/run clears the
+    # floor in three, and a 12-run window would drag in older runs whose routing is not the
+    # question being asked.
+    chosen = run_ids[:window]
+    placeable = sum(placed.get(rid, (0, 0))[0] for rid in chosen)
+    while placeable < min_placeable and len(chosen) < len(run_ids):
+        chosen = run_ids[: len(chosen) + 1]
+        placeable = sum(placed.get(rid, (0, 0))[0] for rid in chosen)
     if placeable < min_placeable:
+        # Even the deepest window this will look through carries too little to distinguish a
+        # drought from an unlucky run of zeroes. Quiet, and deliberately so.
         return None
-    if any(placed.get(rid, (0, 0))[1] != 0 for rid in run_ids):
+    # A run that placed nothing is `check_delivery_drought`'s story — the anti-double-report
+    # guard, not merely a false-positive guard, so it stays per-run and it abstains rather than
+    # skipping. Skipping would let this detector report a second diagnosis for that one cause.
+    #
+    # Mutation-pinned, with ONE survivor proven unobservable: swapping this check and the arrival
+    # check below changes nothing, because arrivals are a subset of placeable leads, so
+    # `[0] == 0` implies `[1] == 0` and the arrival test is False wherever this one is True. It is
+    # written this way for the reader — do not "fix" it on a test that cannot see it.
+    if any(placed.get(rid, (0, 0))[0] == 0 for rid in chosen):
         return None
-    ids = ", ".join(str(rid) for rid in run_ids)
+    if any(placed.get(rid, (0, 0))[1] != 0 for rid in chosen):
+        return None
+    ids = ", ".join(str(rid) for rid in chosen)
+    # "currently classify into", not "reached": `apply_lane_placements` re-runs `review_gate.lane`
+    # against TODAY's verdict and flags, so it reports where these leads land now, not where they
+    # landed on delivery day. A lead delivered into the apply lane before D-458 and re-classified
+    # since is counted here as review, and the message must not claim it was routed there when it
+    # was delivered.
     return (
-        f"apply lane: 0 of {placeable} placeable lead(s) reached the blind-apply queue across "
-        f"the last {window} clean runs (runs {ids}) — every one was routed to review, so the "
-        f"location, role or requirement gate may be misclassifying globally"
+        f"apply lane: 0 of {placeable} placeable lead(s) currently classify into the blind-apply "
+        f"queue across the last {len(chosen)} clean runs (runs {ids}) — every one now routes to "
+        f"review, so the location, role or requirement gate may be misclassifying globally"
     )
