@@ -1972,24 +1972,6 @@ def run_pipeline(
                 stage_errors.append(message)
                 summary.errors.append(message)
 
-        # P6 slice 2 §5.3 — the whole ledger write, AFTER the loop, so every disposition names
-        # work that actually happened: `built` only for a lead whose artifact already exists, and
-        # `seen` only when the stage got far enough to have presented the shortlist at all. A
-        # crash between ranking and here leaves the job undisposed, which over-shows it next run.
-        # That is the safe direction; the opposite would suppress a job with no deliverable.
-        _record_shortlist_dispositions(
-            engine,
-            settings,
-            summary,
-            run_id,
-            # A job whose posting was withheld as gone is dropped from the `seen` tier for the
-            # same reason a fatal drops the whole tier: it was never presented to anybody.
-            surfaced_job_ids=tuple(
-                job_id for job_id in ranked.surfaced_job_ids if job_id not in dead_job_ids
-            ),
-            stage_completed=summary.fatal is None,
-        )
-
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
         # (missing resume.yaml, tectonic gone), not an honest empty day. Postings withheld as
@@ -2062,6 +2044,35 @@ def run_pipeline(
                     f"filesystem-truth: {folder_count} lead folder(s) on disk vs "
                     f"{artifact_rows} tailored artifact row(s) in the store for run {run_id}"
                 )
+
+        # P6 slice 2 §5.3 — the whole ledger write, AFTER the loop AND after all four late
+        # fatals, so every disposition names work that actually happened: `built` only for a
+        # lead whose artifact already exists, and `seen` only when the stage got far enough to
+        # have presented the shortlist at all. A crash between ranking and here leaves the job
+        # undisposed, which over-shows it next run. That is the safe direction; the opposite
+        # would suppress a job with no deliverable.
+        #
+        # BELOW the late fatals, not above them, and that placement is the whole guarantee:
+        # `stage_completed` gates the `seen` tier, and above this point `summary.fatal` could
+        # not yet see the all-leads-unrendered fatal, the zero-output guard, the cohort guard
+        # or the filesystem-truth guard. A run that ended in any of the four still banked
+        # `seen` for its whole shortlist and suppressed it for the TTL — on the strength of a
+        # broken résumé path, which is exactly what the tier is gated against and the same
+        # reason the ranker is called with `record_surfaced=False`. Nothing between the two
+        # positions reads `job_dispositions`: the two guards take values off `ranked`/`summary`
+        # and `folders_reconcile` counts `artifacts` rows against folders on disk.
+        _record_shortlist_dispositions(
+            engine,
+            settings,
+            summary,
+            run_id,
+            # A job whose posting was withheld as gone is dropped from the `seen` tier for the
+            # same reason a fatal drops the whole tier: it was never presented to anybody.
+            surfaced_job_ids=tuple(
+                job_id for job_id in ranked.surfaced_job_ids if job_id not in dead_job_ids
+            ),
+            stage_completed=summary.fatal is None,
+        )
 
         summary.evaluated = _count_evaluations(engine, run_id)
         clock.mark("tailor")

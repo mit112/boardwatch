@@ -367,6 +367,45 @@ def test_every_lead_failing_to_tailor_is_fatal(
     assert summary.fatal is not None, "a run that produced no lead at all reported success"
 
 
+def test_a_late_fatal_leaves_no_seen_disposition_behind(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T6. `seen` suppresses a job for its TTL on the strength of having presented it. The
+    disposition write sat ABOVE the four late fatals, so a run that ended in one still
+    banked `seen` for every surfaced job — the exact case the tier is gated against, and
+    the reason the ranker was told not to write `seen` itself (`record_surfaced=False`).
+    A broken résumé path would suppress tomorrow's shortlist too.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("tectonic is not installed")
+
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.shortlist.shortlisted > 0, "nothing was shortlisted, so this proves nothing"
+    assert summary.fatal is not None
+    assert "every lead failed to project or tailor" in summary.fatal
+    with get_engine(env).connect() as conn:
+        assert (
+            conn.execute(select(tables.runs.c.status).where(tables.runs.c.id == summary.run_id))
+            .scalar_one()
+            == RUN_FAILED
+        )
+        seen = conn.execute(
+            select(func.count())
+            .select_from(tables.job_dispositions)
+            .where(
+                tables.job_dispositions.c.run_id == summary.run_id,
+                tables.job_dispositions.c.disposition == "seen",
+            )
+        ).scalar_one()
+    assert seen == 0, "a run that ended in a late fatal suppressed its own shortlist"
+
+
 def test_cli_exits_one_when_the_run_is_fatally_broken(env: Path, tmp_path: Path) -> None:
     """The exit-1 side of the contract this change redefines; 0 and 2 are pinned elsewhere."""
     _seed_posting(env)  # no `init`, so no profile: fatal
