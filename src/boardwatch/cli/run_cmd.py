@@ -6,6 +6,7 @@ back as a summary dataclass. Replaces the core of the gitignored `bw-daily` shel
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import typer
@@ -13,6 +14,7 @@ from rich.console import Console
 
 from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
+from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT
 from boardwatch.pipeline.liveness import build_prober
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
 from boardwatch.scan.coordinator import ScanLockHeldError
@@ -154,6 +156,14 @@ def run(
         help="Re-fetch each shortlisted posting and withhold any that answers 404/410. "
         "Turning it off reports liveness as unmeasured, not as zero dead.",
     ),
+    queue_root: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--queue-root",
+        help="The delivery queue's own root (default: the delivery queue's own default root, "
+        f"{DEFAULT_QUEUE_ROOT}). Left as `None` rather than defaulting to that path here: "
+        "`_sync_queue` still resolves the default from `pipeline.runner`'s own module namespace "
+        "at call time when this is absent, which is the seam a test redirects by name (T5).",
+    ),
 ) -> None:
     """Run the whole pipeline once, attributing every row it writes to one run."""
     # BEFORE `build_context`, and before anything that could mint a `runs` row: both options
@@ -170,6 +180,25 @@ def run(
             "together should mean is not decided yet, so this refuses rather than silently "
             "ignoring --resume.",
             param_hint="--resume",
+        )
+    # ALSO before `build_context`, and before any queue I/O: `BOARDWATCH_DATA_DIR` is how a
+    # scratch store gets pointed at (`--data-dir` outranks it — core/settings.py's documented
+    # precedence — which is exactly why this checks `ctx.obj is None` rather than the env var
+    # alone; a caller that named `--data-dir` on the command line made a visible, deliberate
+    # choice, not one an invisible shell variable made for them). Without this, a run against a
+    # scratch store still defaults `_sync_queue` to the OWNER'S REAL `~/boardwatch-queue`, which
+    # a scratch store then treats as authoritative: consolidation rmtree, drains, and leads
+    # pulled back out of `_applied` (T5). Checked here, not inside `_sync_queue`, so the refusal
+    # fires before the scan, eligibility and tailor stages do any work at all — not after they
+    # have already spent the run's time and then discarded it.
+    if queue_root is None and ctx.obj is None and os.environ.get("BOARDWATCH_DATA_DIR"):
+        raise typer.BadParameter(
+            f"BOARDWATCH_DATA_DIR={os.environ['BOARDWATCH_DATA_DIR']} is set and no --queue-root "
+            f"was given; refusing rather than reconciling the real queue at {DEFAULT_QUEUE_ROOT} "
+            "against a store BOARDWATCH_DATA_DIR points elsewhere. Pass --queue-root to point the "
+            "queue at the same scratch location, or unset BOARDWATCH_DATA_DIR to use the real "
+            "store and its real queue together.",
+            param_hint="--queue-root",
         )
     # ensure=False mirrors scan_cmd: run_scan migrates INSIDE the scan lock, so a contended
     # run must not have migrated the live DB on its way to being rejected.
@@ -189,6 +218,9 @@ def run(
             # CLI's decision. Not an offline switch — the scan stage fetches every configured
             # board, and `--no-scan` is what makes a run offline.
             liveness_prober=build_prober(settings) if check_liveness else None,
+            # `None` unless given, same reasoning as `web_cmd`'s `--queue-root` resolution: a
+            # relative root would price a shorter destination than the one actually written.
+            queue_root=queue_root.expanduser().resolve() if queue_root is not None else None,
         )
     except ScanLockHeldError as exc:
         console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)

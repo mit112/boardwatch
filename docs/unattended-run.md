@@ -56,6 +56,12 @@ What to expect from an unattended run:
   **`--project`** to render each lead from the career-profile bundle's projection instead of the
   authored résumé; this needs a **current projection approval** (`profile-bundle
   approve-projection`), and without one the run refuses rather than silently falling back.
+- **The delivery queue's root can be overridden with `--queue-root PATH`**, the same option `web`
+  takes; omit it and the queue defaults to `~/boardwatch-queue`. If `BOARDWATCH_DATA_DIR` is set
+  (rather than `--data-dir`) and `--queue-root` is not, `run` refuses instead of reconciling the
+  real queue against whatever store the environment variable points at — pass `--queue-root` to
+  point both at the same scratch location, or unset the variable to use the real store and its
+  real queue together.
 
 **Alerting when a run never happens.** launchd, cron, and systemd timers share one blind spot:
 if the machine is off or asleep across the whole scheduled window, the job simply never runs —

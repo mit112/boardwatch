@@ -1425,8 +1425,13 @@ def run_pipeline(
     skip_scan: bool = False,
     project: bool = False,
     liveness_prober: LivenessProber | None = None,
+    queue_root: Path | None = None,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
+
+    `queue_root=None` (the default) leaves `_sync_queue` reading `DEFAULT_QUEUE_ROOT` from this
+    module's namespace at call time, exactly as before T5 (`run_cmd --queue-root` threads a value
+    here; nothing else needs to).
 
     Raises ScanLockHeldError if another scan holds the lock. Nothing is written in that case,
     because the row is created by the scan stage inside the lock it failed to acquire.
@@ -2156,7 +2161,9 @@ def run_pipeline(
         # `run_cmd` prints that list after the call returns and a silently unwritten queue is a
         # queue the owner will trust anyway.
         try:
-            lead_failures, folder_failures = _sync_queue(engine, settings, console)
+            lead_failures, folder_failures = _sync_queue(
+                engine, settings, console, queue_root=queue_root
+            )
             queue_failures = _interleave(lead_failures, folder_failures)
             # Per-lead failures used to stop at the log line above, which is defensible while
             # somebody is watching the run and is not defensible unattended: `run_cmd` prints that
@@ -2644,7 +2651,7 @@ def _interleave(first: list[str], second: list[str]) -> list[str]:
 
 
 def _sync_queue(
-    engine: Engine, settings: Settings, console: Console
+    engine: Engine, settings: Settings, console: Console, *, queue_root: Path | None = None
 ) -> tuple[list[str], list[str]]:
     """Drain, then rebuild, the delivery queue on disk from what the store says (design §4.3).
 
@@ -2678,11 +2685,12 @@ def _sync_queue(
     owner (`_index` supports exactly that), so its name is untrusted text that reaches a one-line
     console print and a Markdown bullet in the morning digest.
 
-    `DEFAULT_QUEUE_ROOT` is read from this module's namespace at call time rather than captured in
-    a default argument, so a test can redirect the root by name; a `Settings` field would add four
-    separately gated registration sites for a path no config file needs to carry.
+    `queue_root=None` (the default, when `run --queue-root` was not passed) falls back to
+    `DEFAULT_QUEUE_ROOT`, read from this module's namespace at call time rather than captured in a
+    default argument, so a test can still redirect the fallback by name; a `Settings` field would
+    add four separately gated registration sites for a path no config file needs to carry.
     """
-    root = DEFAULT_QUEUE_ROOT
+    root = queue_root if queue_root is not None else DEFAULT_QUEUE_ROOT
     with engine.connect() as conn:
         # The owner's name for the résumé filename, resolved by the one function that already
         # owns that question (`answers.yaml` first, the authored résumé's header second), on the

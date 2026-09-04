@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -143,13 +144,28 @@ def _ready(data_dir: Path, count: int) -> list[int]:
     return ids
 
 
-def _run(data_dir: Path, out_root: Path, *, top_n: int = 1) -> tuple[PipelineSummary, str]:
+def _run(
+    data_dir: Path,
+    out_root: Path,
+    *,
+    top_n: int = 1,
+    queue_root: Path | None = None,
+) -> tuple[PipelineSummary, str]:
     """One pipeline run and everything it printed. Width is pinned wide so the queue line, which
     carries the counts this hook exists to surface AND the queue root, is not folded mid-line.
     The root here is a pytest-xdist tmp path (~130 chars deep) whose length grows with the run
-    counter and worker id, so the pin must clear any tmp path, not merely a short production one."""
+    counter and worker id, so the pin must clear any tmp path, not merely a short production one.
+
+    `queue_root` is passed through only when given, so every caller that does not care about it
+    (every test in this file except the T5 override tests below) still calls `run_pipeline` with
+    exactly the signature it had before T5 — the override tests are the only ones that should fail
+    against a `run_pipeline` that does not yet accept the parameter.
+    """
     buffer = io.StringIO()
     settings = load_settings(data_dir=data_dir)
+    kwargs: dict[str, object] = {}
+    if queue_root is not None:
+        kwargs["queue_root"] = queue_root
     summary = run_pipeline(
         get_engine(data_dir),
         settings,
@@ -158,6 +174,7 @@ def _run(data_dir: Path, out_root: Path, *, top_n: int = 1) -> tuple[PipelineSum
         resume_path=settings.config_dir / "resume.yaml",
         skip_scan=True,
         top_n=top_n,
+        **kwargs,
     )
     return summary, buffer.getvalue()
 
@@ -438,3 +455,96 @@ def test_a_drain_failure_is_escalated_too(env: Path, tmp_path: Path, queue_root:
     assert "1 failed" in _queue_line(output)
     assert [note for note in summary.errors if "delivery queue" in note], summary.errors
     assert [note for note in _errors_json(env, summary.run_id) if "delivery queue" in note]
+
+
+# --- T5: queue root override on `run` -----------------------------------------------------
+#
+# The three tests below are T5's acceptance tests (docs/program/TICKETS-2026-09-04.md). They are
+# appended here rather than in a new file because this module already owns the seam
+# (`runner_module.DEFAULT_QUEUE_ROOT`) and the seeding helpers (`_ready`, `_folders`) T5 needs, and
+# duplicating a working `init` + `tailor init` + one-posting seed elsewhere would be the actual
+# hazard the ticket is about, not a saving.
+
+
+def test_run_pipeline_queue_root_param_overrides_the_module_default(
+    env: Path, tmp_path: Path, queue_root: Path
+) -> None:
+    """`run_pipeline(queue_root=...)` must win over `DEFAULT_QUEUE_ROOT` — the parameter
+    `--queue-root` threads through. The `queue_root` fixture leaves `runner_module.
+    DEFAULT_QUEUE_ROOT` pointed at a scratch decoy (never the owner's real home): if the explicit
+    parameter were ignored, the decoy — not `explicit_root` below — would receive the lead folder.
+    """
+    _ready(env, 1)
+    explicit_root = tmp_path / "explicit-queue"
+    summary, output = _run(env, tmp_path / "apps", queue_root=explicit_root)
+
+    assert len(summary.tailored) == 1, summary.errors
+    assert len(_folders(explicit_root)) == 1, f"{_folders(explicit_root)!r} under {explicit_root}"
+    assert _folders(queue_root) == [], "the decoy default must never be touched"
+    assert str(explicit_root) in _queue_line(output)
+
+
+def test_run_cli_queue_root_option_overrides_the_default(
+    env: Path, tmp_path: Path, queue_root: Path
+) -> None:
+    """`boardwatch run --queue-root PATH` must reach the same hook `run_pipeline(queue_root=...)`
+    does. Same decoy-default reasoning as the test above, but driven through the actual CLI
+    command (`run_cmd.run`) rather than by calling `run_pipeline` directly, so the option's
+    plumbing through `run_cmd` and into the pipeline is what is under test here."""
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    _ready(env, 1)
+    explicit_root = tmp_path / "cli-queue"
+    result = CliRunner().invoke(
+        app,
+        [
+            "--data-dir",
+            str(env),
+            "run",
+            "--no-scan",
+            "--out",
+            str(tmp_path / "apps"),
+            "--queue-root",
+            str(explicit_root),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(_folders(explicit_root)) == 1, f"{_folders(explicit_root)!r} under {explicit_root}"
+    assert _folders(queue_root) == [], "the decoy default must never be touched"
+
+
+def test_run_refuses_when_data_dir_env_drives_the_store_and_no_queue_root_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The case that actually bites (T5): `BOARDWATCH_DATA_DIR` silently points a run at a
+    scratch store while the queue hook still defaults to the owner's real `~/boardwatch-queue`.
+    `run` must refuse rather than reconcile the real queue against the scratch store's authority.
+
+    No extra environment setup for the precondition itself: `tests/conftest.py`'s autouse
+    `_never_reach_the_real_data_dir` fixture already sets `BOARDWATCH_DATA_DIR` to a scratch path
+    for every test in the suite, which is exactly the precondition this guards — the only thing
+    this test controls beyond `COLUMNS` (below) is NOT passing `--data-dir`, which is what makes
+    the env var the thing actually choosing the store (CLI `--data-dir` outranks it per
+    `core/settings.py`'s documented precedence, which is also why this guard must not fire for
+    every other CLI-driven test in this file: they all pass `--data-dir` explicitly).
+
+    `COLUMNS` is widened because Click/Rich wraps a `BadParameter` message's box to the terminal
+    width, and a pytest tmp path is long enough that the wrap can split the asserted path across
+    two lines — a test artifact of the error's presentation, not of the refusal itself.
+    """
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    monkeypatch.setenv("COLUMNS", "10000")
+    data_dir_env = os.environ["BOARDWATCH_DATA_DIR"]
+    result = CliRunner().invoke(app, ["run", "--no-scan"])
+
+    assert result.exit_code != 0, result.output
+    assert data_dir_env in result.output
+    # The refusal must fire before any store I/O — never mind the queue — so no `runs` row (and
+    # not even a schema) exists at the path the env var named.
+    assert not (Path(data_dir_env) / "boardwatch.db").exists()
