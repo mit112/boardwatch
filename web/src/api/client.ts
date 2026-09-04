@@ -17,7 +17,7 @@
  * a dynamic `import()` behind a literal `import.meta.env.DEV`, which Vite replaces with `false`
  * in a production build so the branch is provably dead and the module has no importer left.
  */
-import { authHeaders } from "./token";
+import { authHeaders, forgetToken } from "./token";
 import type {
   Answers,
   AppliedResponse,
@@ -69,6 +69,9 @@ async function request<T>(path: string, method: "GET" | "POST" = "GET"): Promise
     redirect: "error",
   });
   if (!response.ok) {
+    // A 401 means the stored credential is stale (the server rotated its token). Drop it, or the
+    // next reload replays the same rejected secret and the message below stops being actionable.
+    if (response.status === 401) forgetToken();
     throw new ApiError(
       response.status,
       response.status === 401
@@ -125,7 +128,10 @@ export async function openPdf(postingId: number): Promise<void> {
     mode: "same-origin",
     redirect: "error",
   });
-  if (!response.ok) throw new ApiError(response.status, `could not fetch the PDF`);
+  if (!response.ok) {
+    if (response.status === 401) forgetToken();
+    throw new ApiError(response.status, `could not fetch the PDF`);
+  }
   const url = URL.createObjectURL(await response.blob());
   window.open(url, "_blank", "noopener,noreferrer");
   // The tab has the bytes by the time the task queue drains; holding the URL leaks it.
