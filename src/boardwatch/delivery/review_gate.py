@@ -83,6 +83,12 @@ CLOSED_DIR = "_closed"
 #: the split the change is measured on (521 zero-row against 34 unevaluated on 2026-09-03).
 #: Neither is folded into the two flags above, which both presuppose a ROW the engine could not
 #: resolve; these two say there is no row, and no evaluation, respectively.
+#:
+#: ``seniority_above_band`` (T44) is TITLE-only, never a re-derivation over the JD body: D-477
+#: explicitly rejected a deterministic body-seniority verdict family. The caller derives it from
+#: `rank.seniority_gate.seniority_verdict` and passes the one bit that ever moves a lead —
+#: ``uncertain``/``in_band`` are indistinguishable to this gate on purpose, matching how the two
+#: requirement flags above already travel as a summary rather than a re-derivation.
 ReviewReason = Literal[
     "ineligible_verdict",
     "non_us_location",
@@ -92,6 +98,7 @@ ReviewReason = Literal[
     "no_requirements_found",
     "eligibility_unconfirmed",
     "experience_requirement",
+    "seniority_above_band",
 ]
 
 
@@ -117,8 +124,9 @@ def classify(
     eligibility_unconfirmed: bool = False,
     no_requirement_rows: bool = False,
     posting_closed: bool = False,
+    seniority_above_band: bool = False,
 ) -> LaneDecision:
-    """Decide the lane AND, in the same pass, which of the eight reasons held the lead.
+    """Decide the lane AND, in the same pass, which of the nine reasons held the lead.
 
     The single place either answer is computed. The reason is a by-product of the branch the
     lane decision already takes, never a re-derivation, which is why the two cannot disagree.
@@ -187,6 +195,16 @@ def classify(
         return LaneDecision(REVIEW_DIR, "role_vetoed")
     if role != "swe":
         return LaneDecision(REVIEW_DIR, "role_unconfirmed")
+    # T44. TITLE-only, like the two gates just above, and for the same reason it sits here rather
+    # than below the `eligible` short-circuit: eligibility answers the six blocker families and
+    # says nothing about whether the title is above the operator's target band, so an `eligible`
+    # verdict must not let a senior title ride straight into the blind-apply queue either. The
+    # caller derives the bit from `rank.seniority_gate.seniority_verdict` — never from the JD
+    # body (D-477 rejected a deterministic body-seniority family) — and this gate does not
+    # distinguish `uncertain` from `in_band`: both leave the lead exactly where every earlier
+    # gate already put it.
+    if seniority_above_band:
+        return LaneDecision(REVIEW_DIR, "seniority_above_band")
     # R1. `eligible` used to short-circuit ABOVE the two gates above, so an eligible posting was
     # blindly-appliable however foreign or however far from software it was — the 2026-08-30 audit
     # found a "Field Auto Adjuster" marked eligible sitting in the apply queue, and an independent
@@ -232,6 +250,7 @@ def lane(
     eligibility_unconfirmed: bool = False,
     no_requirement_rows: bool = False,
     posting_closed: bool = False,
+    seniority_above_band: bool = False,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -248,4 +267,5 @@ def lane(
         eligibility_unconfirmed=eligibility_unconfirmed,
         no_requirement_rows=no_requirement_rows,
         posting_closed=posting_closed,
+        seniority_above_band=seniority_above_band,
     ).lane
