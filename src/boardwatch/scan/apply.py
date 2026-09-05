@@ -34,6 +34,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot, RawPosting, SecondhandField
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.core.posting_identity import IdentityInputs, compute_identities
+from boardwatch.store.db import write_connection
 from boardwatch.store.events import append_event
 from boardwatch.store.identity_queries import write_identities
 from boardwatch.store.sources import record_version_source
@@ -76,9 +77,18 @@ def apply_board(
     IS a board scan, so `"board"` states that fact. A lane passes `"lane"` explicitly, which is
     what keeps `coverage_queries.load_board_coverage` from counting a company twice when a lane
     touches a board the scan already covered this run.
+
+    Takes SQLite's write lock at BEGIN (D-475): `_apply_listed` reads the existing postings
+    before it writes, and a DEFERRED transaction snapshots at that read, not at BEGIN, so a
+    concurrent commit landing in between fails the later write with SQLITE_BUSY_SNAPSHOT in
+    milliseconds -- the busy handler is never consulted, and no `busy_timeout` saves it (run 3
+    lost a board this way). BEGIN IMMEDIATE trades that for queueing: a CLI write (`top`, `web`,
+    `digest`...) arriving during one of the ~30 boards per run whose apply exceeds the 5 s
+    `busy_timeout` now waits up to 5 s and then fails with `database is locked` on the CLI side.
+    That is chosen: the interactive command loses, the unattended scan does not.
     """
     started_at = utcnow()
-    with engine.begin() as conn:
+    with write_connection(engine) as conn, conn.begin():
         if snapshot.status == "failed":
             _scan_row(
                 conn, run_id, company_id, started_at, "failed", 0, snapshot.error,
