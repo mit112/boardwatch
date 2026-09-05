@@ -306,6 +306,9 @@ export function QueuePage({
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
       // contradict the server.
       ineligible: data?.counts.ineligible ?? 0,
+      // Passed through for the same reason as `ineligible`: a closed posting is drained on disk,
+      // so it is never a row and no client-side filter can see one.
+      closed: data?.counts.closed ?? 0,
       // Recomputed against the active filter, unlike `ineligible`: a review lead IS in the
       // payload, so a client-side filter can see one and the cell must agree with the list the
       // reader is looking at.
@@ -508,6 +511,13 @@ export function QueuePage({
     [facet],
   );
 
+  /*
+   * The apply lane is off the page entirely — the `review` facet asks for that lane alone. The
+   * band's readout then describes the review lane, because describing a hidden list is describing
+   * nothing.
+   */
+  const laneOnly = facet === "review";
+
   // The empty grid must name the lever that emptied it. With a facet on, the two default
   // sentences point at the text box and the score floor — neither of which is what is filtering.
   const emptyHint =
@@ -548,8 +558,15 @@ export function QueuePage({
       <div className="flex flex-col gap-4" inert={sheetOpen}>
         <StatusBand
           counts={bandCounts}
-          showing={facet === "review" ? visibleReview.length : visible.length}
-          total={facet === "review" ? data.review.length : data.rows.length}
+          /*
+           * What is VISIBLE ON THE PAGE, which is both lanes whenever both are drawn. Counting the
+           * apply lane alone printed "Showing 0 of 0" above 149 listed review leads on the day the
+           * apply lane emptied — the one sentence that answers "did my filter match anything"
+           * contradicting the list directly under it. `laneOnly` is the case where the apply queue
+           * is genuinely off the page, so its zero belongs in neither figure.
+           */
+          showing={laneOnly ? visibleReview.length : visible.length + visibleReview.length}
+          total={laneOnly ? data.review.length : data.rows.length + data.review.length}
           activeFacet={facet}
           onToggleFacet={toggleFacet}
         />

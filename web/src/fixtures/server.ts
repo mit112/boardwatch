@@ -92,6 +92,9 @@ function counts(rows: QueueRow[]): QueueCounts {
     // can actually open. `in_queue` above is the apply lane alone, so the two together account
     // for every delivered lead.
     review: reviewRows().length,
+    // Drained like `ineligible` and counted for the same reason, but counted over the whole pool
+    // rather than the apply lane: a closed posting leaves the queue without any rule judging it.
+    closed: pool().filter((row) => row.status === "closed").length,
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     reported: reportedPostingIds.size,

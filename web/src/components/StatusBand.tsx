@@ -17,9 +17,10 @@ export type QueueFacet = "eligible" | "uncertain" | "review";
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones
  * beside it.
  *
- * `eligible` is the headline yield, and `uncertain`, `review` and `ineligible` each get their own
- * cell. `in_queue` counts the APPLY lane, so the band reconciles instead of leaving a remainder
- * nobody can name: a delivered lead is in the apply lane, held in `review`, or `ineligible`.
+ * `eligible` is the headline yield, and `uncertain`, `review`, `ineligible` and `closed` each get
+ * their own cell. `in_queue` counts the APPLY lane, so the band reconciles instead of leaving a
+ * remainder nobody can name: a delivered lead is in the apply lane, held in `review`, `ineligible`,
+ * or `closed` because the employer took the posting down.
  * `review` and `ineligible` fail differently and are never merged — an ineligible lead is
  * REJECTED and not listed anywhere, a review lead is UNVERIFIED and listed in its own section. They are never added together,
  * anywhere: the repository's rule is that an abstain is never folded into either neighbour in any
@@ -153,13 +154,19 @@ export function StatusBand({
         note="Rejected by the eligibility gate, so not in the queue. Folders drain to _ineligible."
         order={4}
       />
-      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={5} />
-      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={6} />
+      <Metric
+        label="closed"
+        value={counts.closed.toLocaleString()}
+        note="The employer took the posting down; drained to _closed, never judged."
+        order={5}
+      />
+      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={6} />
+      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={7} />
       <Metric
         label="reported"
         value={counts.reported.toLocaleString()}
         note="Flagged as wrongly-eligible and held for investigation. Its own cell, never folded into skipped, and taken out of the queue like a skip."
-        order={7}
+        order={8}
       />
       <Metric
         label="last run"
@@ -169,7 +176,7 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
-        order={8}
+        order={9}
       />
       {/*
         * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead
