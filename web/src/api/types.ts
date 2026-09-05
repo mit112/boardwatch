@@ -61,7 +61,8 @@ export type ReviewReason =
   | "unevaluated"
   | "no_requirements_found"
   | "eligibility_unconfirmed"
-  | "experience_requirement";
+  | "experience_requirement"
+  | "seniority_above_band";
 
 export interface QueueRow {
   posting_id: number;
