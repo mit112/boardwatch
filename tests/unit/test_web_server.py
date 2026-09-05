@@ -31,7 +31,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,7 @@ from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import server as server_mod
+from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
 from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
@@ -250,8 +251,11 @@ def _deliver(
     company_id = int(
         conn.execute(
             insert(companies).values(
-                name=f"Acme {key}", provider="greenhouse", slug=f"acme-{key}",
-                source="user", watched=watched,
+                name=f"Acme {key}",
+                provider="greenhouse",
+                slug=f"acme-{key}",
+                source="user",
+                watched=watched,
             )
         ).inserted_primary_key[0]
     )
@@ -261,29 +265,45 @@ def _deliver(
     posting_id = int(
         conn.execute(
             insert(postings).values(
-                company_id=company_id, job_id=job, provider_posting_id=key, title=title,
-                normalized_title=title.casefold(), url="https://boards.test/apply",
+                company_id=company_id,
+                job_id=job,
+                provider_posting_id=key,
+                title=title,
+                normalized_title=title.casefold(),
+                url="https://boards.test/apply",
                 locations_json=locations if locations is not None else ["Boston, MA"],
                 remote_policy="remote",
-                posted_at=NOW - timedelta(days=3), first_seen_at=NOW, last_seen_at=NOW,
-                status="open", consecutive_missing=0, content_hash=f"hash-{key}", body_text=body,
+                posted_at=NOW - timedelta(days=3),
+                first_seen_at=NOW,
+                last_seen_at=NOW,
+                status="open",
+                consecutive_missing=0,
+                content_hash=f"hash-{key}",
+                body_text=body,
             )
         ).inserted_primary_key[0]
     )
     version_id = int(
         conn.execute(
             insert(posting_versions).values(
-                posting_id=posting_id, content_hash=f"v-{key}", body_text=body,
-                captured_at=NOW, capture_reason="new",
+                posting_id=posting_id,
+                content_hash=f"v-{key}",
+                body_text=body,
+                captured_at=NOW,
+                capture_reason="new",
             )
         ).inserted_primary_key[0]
     )
     conn.execute(
         insert(artifacts).values(
-            posting_version_id=version_id, kind="resume_tailored",
-            uri=f"/out/{key}/tailored-{posting_id}.typ", generator="boardwatch.tailor",
-            media_type="text/x-tex", meta_json={"pdf_uri": pdf_uri},
-            created_at=delivered_at, run_id=run_id,
+            posting_version_id=version_id,
+            kind="resume_tailored",
+            uri=f"/out/{key}/tailored-{posting_id}.typ",
+            generator="boardwatch.tailor",
+            media_type="text/x-tex",
+            meta_json={"pdf_uri": pdf_uri},
+            created_at=delivered_at,
+            run_id=run_id,
         )
     )
     if judge:
@@ -323,24 +343,31 @@ def _judge(
         conn,
         posting_version_id=version_id,
         identity=build_identity(
-            posting_version_id=version_id, facts=used_facts, policy=used_policy,
-            catalog=catalog, declared_fields=declared_fields(),
+            posting_version_id=version_id,
+            facts=used_facts,
+            policy=used_policy,
+            catalog=catalog,
+            declared_fields=declared_fields(),
         ),
         result=result,
     )
     return result.verdict
 
 
-def _profile(
-    conn: Connection, *, facts: Facts | None = None, policy: Policy | None = None
-) -> None:
+def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | None = None) -> None:
     """The default pair is `None`/`None`, which leaves eligibility unsaved exactly as before —
     every existing caller keeps its current identity. Pass both to store a policy that can
     actually block."""
     save_profile(
-        conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
-        locations=["Boston, MA"], remote_only=False, skills=["python"],
-        taxonomy_version="v1", resume_max_pages=1,
+        conn,
+        text="resume",
+        target_titles=["software engineer"],
+        exclude_titles=[],
+        locations=["Boston, MA"],
+        remote_only=False,
+        skills=["python"],
+        taxonomy_version="v1",
+        resume_max_pages=1,
     )
     if facts is not None and policy is not None:
         save_eligibility(
@@ -440,9 +467,7 @@ def test_a_cross_origin_request_is_rejected_and_a_preflight_is_not_served(
     with engine.begin() as conn:
         _deliver(conn, "one")
 
-    foreign = call(
-        live, "/api/queue", bearer=live.token, extra={"Origin": "https://evil.test"}
-    )
+    foreign = call(live, "/api/queue", bearer=live.token, extra={"Origin": "https://evil.test"})
     assert foreign.status == 403
 
     preflight = call(live, "/api/queue", method="OPTIONS", bearer=None)
@@ -579,8 +604,7 @@ def test_a_pdf_path_outside_the_output_root_is_refused_and_never_read(
     assert allowed.body == PDF_BYTES
 
     rows = {
-        row["posting_id"]: row
-        for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
+        row["posting_id"]: row for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
     }
     # A row must not advertise a PDF the endpoint would refuse: that is a button that only fails.
     assert rows[escaped_id]["pdf_available"] is False
@@ -589,6 +613,7 @@ def test_a_pdf_path_outside_the_output_root_is_refused_and_never_read(
 
 
 # ------------------------------------------------------------------- live score, role, coverage
+
 
 def test_the_rows_arrive_ranked_and_carry_no_rank_field(live: Live, engine: Engine) -> None:
     """Rank is the array POSITION, so the array has to be ordered — and there must be no `rank`
@@ -609,9 +634,7 @@ def test_the_rows_arrive_ranked_and_carry_no_rank_field(live: Live, engine: Engi
         wanted, _ = _deliver(
             conn, "swe", title="Software Engineer", delivered_at=NOW - timedelta(days=2)
         )
-        unwanted, _ = _deliver(
-            conn, "swe2", title="Software Developer", delivered_at=NOW
-        )
+        unwanted, _ = _deliver(conn, "swe2", title="Software Developer", delivered_at=NOW)
 
     rows = call(live, "/api/queue", bearer=live.token).json()["rows"]
     assert [row["posting_id"] for row in rows] == [wanted, unwanted]
@@ -636,15 +659,13 @@ def test_the_queue_payload_reports_unverifiable_for_an_unenumerated_board(
         watched, _ = _deliver(conn, "watched", watched=True)
 
     rows = {
-        row["posting_id"]: row
-        for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
+        row["posting_id"]: row for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
     }
     assert rows[unwatched]["status"] == "unverifiable"
     assert rows[watched]["status"] == "open"
 
     pane = call(live, f"/api/queue/{unwatched}", bearer=live.token).json()
     assert pane["row"]["status"] == "unverifiable"
-
 
 
 def test_off_target_carries_the_role_gates_own_matched_text_and_uncertain_is_not_a_veto(
@@ -709,8 +730,9 @@ def test_every_review_row_names_which_reason_held_it_and_apply_rows_carry_none(
     rather than two that happen to agree.
     """
     with engine.begin() as conn:
-        foreign, _ = _deliver(conn, "vilnius", title="Software Engineer",
-                              locations=["Kaunas, Lithuania"])
+        foreign, _ = _deliver(
+            conn, "vilnius", title="Software Engineer", locations=["Kaunas, Lithuania"]
+        )
         vetoed, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner")
         unconfirmed, _ = _deliver(conn, "cpa", title="Tax CPA")
         software, _ = _deliver(conn, "swe", title="Software Engineer")
@@ -759,16 +781,28 @@ def test_a_review_lead_is_listed_not_dropped_and_the_band_reconciles(
         # holds a lead on its own — both leads would land in `review` and `in_queue` would be 0,
         # which is a true count of a fixture that no longer exercises the role gate.
         software, _ = _deliver(
-            conn, "swe", title="Software Engineer", body=JD_ELIGIBLE,
-            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+            conn,
+            "swe",
+            title="Software Engineer",
+            body=JD_ELIGIBLE,
+            facts=BLOCKING_FACTS,
+            policy=BLOCKING_POLICY,
         )
         held, _ = _deliver(
-            conn, "nurse", title="Registered Nurse Practitioner", body=JD_ELIGIBLE,
-            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+            conn,
+            "nurse",
+            title="Registered Nurse Practitioner",
+            body=JD_ELIGIBLE,
+            facts=BLOCKING_FACTS,
+            policy=BLOCKING_POLICY,
         )
         rejected, _ = _deliver(
-            conn, "noauth", title="Software Engineer", body=JD_INELIGIBLE,
-            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+            conn,
+            "noauth",
+            title="Software Engineer",
+            body=JD_INELIGIBLE,
+            facts=BLOCKING_FACTS,
+            policy=BLOCKING_POLICY,
         )
         # The premise, stated out loud rather than assumed: if the engine stops calling this
         # body ineligible, THIS fails instead of the counts passing vacuously.
@@ -855,9 +889,7 @@ def test_a_closed_lead_leaves_both_lists_and_is_counted_as_closed_not_ineligible
     with engine.begin() as conn:
         live_lead, _ = _deliver(conn, "live", title="Software Engineer")
         dead_lead, _ = _deliver(conn, "dead", title="Software Engineer")
-        conn.execute(
-            update(postings).where(postings.c.id == dead_lead).values(status="closed")
-        )
+        conn.execute(update(postings).where(postings.c.id == dead_lead).values(status="closed"))
 
     payload = call(live, "/api/queue", bearer=live.token).json()
     counts = payload["counts"]
@@ -993,9 +1025,7 @@ def test_a_locked_store_answers_503_without_stalling(
 # ------------------------------------------------------------------------------ applied and undo
 
 
-def test_marking_applied_twice_appends_exactly_one_event(
-    live: Live, engine: Engine
-) -> None:
+def test_marking_applied_twice_appends_exactly_one_event(live: Live, engine: Engine) -> None:
     """An endpoint a browser can re-POST must be idempotent in the LOG as well as in the state.
     An immutable event log is only readable if every row in it records something that happened,
     and a refresh is not an event."""
@@ -1033,7 +1063,9 @@ def test_unapplied_returns_the_lead_to_the_queue_and_keeps_the_applied_event(
     with engine.begin() as conn:
         posting_id, job = _deliver(conn, "one")
 
-    assert [row["posting_id"] for row in call(live, "/api/queue", bearer=live.token).json()["rows"]] == [posting_id]
+    assert [
+        row["posting_id"] for row in call(live, "/api/queue", bearer=live.token).json()["rows"]
+    ] == [posting_id]
 
     call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
     assert call(live, "/api/queue", bearer=live.token).json()["rows"] == []
@@ -1048,12 +1080,11 @@ def test_unapplied_returns_the_lead_to_the_queue_and_keeps_the_applied_event(
 
     with engine.connect() as conn:
         events = conn.execute(
-            select(application_events.c.event_type, application_events.c.to_status)
-            .order_by(application_events.c.id)
+            select(application_events.c.event_type, application_events.c.to_status).order_by(
+                application_events.c.id
+            )
         ).all()
-        rows = conn.execute(
-            select(applications.c.status, applications.c.submitted_at)
-        ).all()
+        rows = conn.execute(select(applications.c.status, applications.c.submitted_at)).all()
     assert [(event.event_type, event.to_status) for event in events] == [
         ("created", "applied"),
         ("status_change", "withdrawn"),
@@ -1112,9 +1143,7 @@ def test_report_removes_a_lead_and_unreport_restores_it(live: Live, engine: Engi
 def test_reporting_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engine) -> None:
     with engine.begin() as conn:
         posting_id, _job = _deliver(conn, "one")
-    assert (
-        call(live, "/api/queue/999999/reported", method="POST", bearer=live.token).status == 404
-    )
+    assert call(live, "/api/queue/999999/reported", method="POST", bearer=live.token).status == 404
     assert (
         call(live, f"/api/queue/{posting_id}/reported", method="POST", bearer=live.token).status
         == 200
@@ -1125,7 +1154,10 @@ def test_marking_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engi
     with engine.begin() as conn:
         posting_id, _job = _deliver(conn, "one")
     assert call(live, "/api/queue/999999/applied", method="POST", bearer=live.token).status == 404
-    assert call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token).status == 200
+    assert (
+        call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token).status
+        == 200
+    )
 
 
 # -------------------------------------------------------------------------------------- counts
@@ -1219,7 +1251,7 @@ def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None
 
     counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
     assert counts["delivered_last_run"] == 1
-    assert counts["last_run_finished"] == NOW.isoformat()
+    assert counts["last_run_finished"] == NOW.replace(tzinfo=UTC).isoformat()
 
 
 # -------------------------------------------------------------------------------------- details
@@ -1275,7 +1307,13 @@ def test_a_detail_carries_the_rule_that_fired_and_its_quoted_span(
     assert evidence, "the audit rows did not reach the payload"
     for entry in evidence:
         assert set(entry) == {
-            "requirement", "covered", "rule", "disposition", "profile_field", "quote", "rationale",
+            "requirement",
+            "covered",
+            "rule",
+            "disposition",
+            "profile_field",
+            "quote",
+            "rationale",
         }
         assert entry["disposition"] is not None
         if entry["quote"] is not None:
@@ -1301,7 +1339,9 @@ def test_reveal_is_post_only_and_reports_the_platforms_capability(
         posting_id, _job = _deliver(conn, "one")
 
     with serving(replace(ctx, platform="sunos5")) as live:
-        assert call(live, "/api/queue", bearer=live.token).json()["meta"]["reveal_supported"] is False
+        assert (
+            call(live, "/api/queue", bearer=live.token).json()["meta"]["reveal_supported"] is False
+        )
         unsupported = call(
             live, f"/api/queue/{posting_id}/reveal", method="POST", bearer=live.token
         ).json()
@@ -1309,7 +1349,9 @@ def test_reveal_is_post_only_and_reports_the_platforms_capability(
         assert "sunos5" in unsupported["reason"]
 
     with serving(replace(ctx, platform="darwin")) as live:
-        assert call(live, "/api/queue", bearer=live.token).json()["meta"]["reveal_supported"] is True
+        assert (
+            call(live, "/api/queue", bearer=live.token).json()["meta"]["reveal_supported"] is True
+        )
         # POST-only: a GET must not reach the handler at all, or a link or an <img> would fire it.
         assert call(live, f"/api/queue/{posting_id}/reveal", bearer=live.token).status == 404
         # No folder has been synced, so nothing is launched and no subprocess runs.
@@ -1338,9 +1380,7 @@ def test_the_runs_payload_counts_leads_from_the_artifacts_that_recorded_them(
     assert call(live, f"/api/runs/{run_id}", bearer=live.token).status == 404
 
 
-def test_the_runs_payload_carries_the_four_way_board_split(
-    live: Live, engine: Engine
-) -> None:
+def test_the_runs_payload_carries_the_four_way_board_split(live: Live, engine: Engine) -> None:
     """/api/runs must expose partial/unchanged/failed so the web run list can reconcile the
     total; a run that never measured them reports NULL, never a fabricated 0 (D-341)."""
     with engine.begin() as conn:
@@ -1446,3 +1486,203 @@ def test_an_unusable_profile_row_is_answered_not_dropped(
 
     assert response.status == 503, response.body[:400]
     assert b"eligibility_facts_json" in response.body
+
+
+# -------------------------------------------------------------- the web-viewer payload contract
+
+
+def test_every_queue_timestamp_carries_an_explicit_utc_offset(live: Live, engine: Engine) -> None:
+    """The store holds NAIVE UTC (`core/clock.utcnow` strips tzinfo). A zone-less ISO string is
+    parsed by the browser as LOCAL time, so an owner at UTC-5 read a run that finished at 12:56 PM
+    as 05:56 PM. The offset is the fix, and it belongs on the wire rather than in the client:
+    `new Date()` on an offset-carrying string is right in every locale.
+    """
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _deliver(conn, "one", run_id=run_id)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+
+    stamps = [payload["counts"]["last_run_finished"], payload["rows"][0]["first_seen"]]
+    assert all(stamp is not None for stamp in stamps), payload["counts"]
+    for stamp in stamps:
+        assert stamp.endswith("+00:00"), stamp
+        assert datetime.fromisoformat(stamp).tzinfo is not None, stamp
+    # The instant is unchanged: the offset is attached to the stored naive value, never shifted.
+    assert datetime.fromisoformat(payload["counts"]["last_run_finished"]) == NOW.replace(tzinfo=UTC)
+    assert datetime.fromisoformat(payload["rows"][0]["first_seen"]) == NOW.replace(tzinfo=UTC)
+
+
+def test_every_run_timestamp_carries_an_explicit_utc_offset(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        _run(conn)
+
+    run = call(live, "/api/runs", bearer=live.token).json()["runs"][0]
+
+    for name in ("started", "finished"):
+        assert run[name] is not None, run
+        assert run[name].endswith("+00:00"), run[name]
+    assert datetime.fromisoformat(run["finished"]) == NOW.replace(tzinfo=UTC)
+    assert datetime.fromisoformat(run["started"]) == (NOW - timedelta(minutes=20)).replace(
+        tzinfo=UTC
+    )
+
+
+def test_an_unfinished_run_still_reports_a_null_finished(live: Live, engine: Engine) -> None:
+    """The control for the two above: attaching an offset must not turn "not finished yet" into
+    a string. `_counts` reads only FINISHED runs, so this is the runs payload's case alone."""
+    with engine.begin() as conn:
+        _run(conn, finished=None)
+
+    run = call(live, "/api/runs", bearer=live.token).json()["runs"][0]
+
+    assert run["finished"] is None
+    assert run["started"].endswith("+00:00")
+
+
+def test_a_rows_locations_are_de_duplicated_and_location_is_the_first(
+    live: Live, engine: Engine
+) -> None:
+    """The live store served "Austin, Texas, United States; Bozeman, …; …, Austin, Bozeman, …" —
+    one list joined twice, with duplicates. `location` is now the PRIMARY location and `locations`
+    the de-duplicated list, so the client renders "Austin, TX +1" instead of a wall of text.
+
+    De-duplication is at the ENTRY level and case-insensitive on the trimmed entry; an entry is
+    never split on its internal commas, or "Austin, TX" becomes two places.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, "one", locations=["Austin, TX", "austin, tx ", "Remote"])
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+
+    assert row["location"] == "Austin, TX"
+    assert row["locations"] == ["Austin, TX", "Remote"]
+
+
+def test_a_row_with_no_locations_reports_none_and_an_empty_list(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        _deliver(conn, "one", locations=[])
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+
+    assert row["location"] is None
+    assert row["locations"] == []
+
+
+def test_the_answers_panel_serves_work_auth_words_not_enum_tokens(
+    live: Live, engine: Engine
+) -> None:
+    """The panel exists to be COPIED into an employer's form. `ead_or_similar` pasted into "what
+    is your work authorization status?" is a token from this program's catalog, not an answer a
+    human wrote, so the profile's stored value is restated in the words the form expects.
+    """
+    facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
+        )
+    )
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    work_auth = call(live, "/api/answers", bearer=live.token).json()["work_auth"]
+
+    assert work_auth["status"] == "EAD or similar (work authorization document)"
+    # Already true before this change, asserted so it stays true: a raw `True` on a form is not
+    # an answer to "do you need sponsorship".
+    assert work_auth["needs_sponsorship"] == "no"
+
+
+#: The catalog's own `work_auth.status` vocabulary, read from the BUNDLED rules rather than
+#: respelled here: the choice vocabulary belongs to the catalog (D-P2-4), and a list retyped in a
+#: test would go on passing after the catalog gained a sixth member.
+WORK_AUTH_STATUS_CHOICES: tuple[str, ...] = next(
+    field.choices
+    for field in load_rules(Path("/nonexistent")).family("work_auth").fields
+    if field.name == "status"
+)
+
+
+@pytest.mark.parametrize("status", WORK_AUTH_STATUS_CHOICES)
+def test_every_declared_work_auth_status_has_words(status: str) -> None:
+    """The mapping is CLOSED over the catalog's declared choices. Parametrised over the catalog so
+    a new member ships with words or fails here — a member with none would otherwise reach an
+    employer's form as a raw token, which is the bug this closes."""
+    assert status in WORK_AUTH_STATUS_WORDS
+    assert WORK_AUTH_STATUS_WORDS[status] != status
+
+
+def test_a_work_auth_status_outside_the_catalog_is_refused_not_copied(
+    live: Live, engine: Engine
+) -> None:
+    """Out-of-catalog is a failure, never a new bucket. Passing the unknown token through would
+    put it on the clipboard, which is exactly what the words mapping exists to prevent; answering
+    with a blank would hide a corrupt profile row behind an empty form field."""
+    facts = Facts(work_authorization=WorkAuthFact(status="not_a_catalog_status"))
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    response = call(live, "/api/answers", bearer=live.token)
+
+    assert response.status == 422, response.body[:400]
+    assert response.json()["issue"] == "unknown_work_auth_status"
+    # `AnswersViolation` carries no VALUE by construction; the field is named, its content is not.
+    assert b"not_a_catalog_status" not in response.body
+
+
+def test_the_favicon_is_served_and_the_ico_request_is_not_a_404(
+    live: Live, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every page load asked for `/favicon.ico` and got a 404 in the console. The bundle carries
+    `favicon.svg` (Vite copies `public/` to the static root), which is served here; `.ico` is what
+    a browser asks for unprompted and is answered without content rather than refused.
+
+    `static_root` is redirected because the favicon is added to the bundle by the client half of
+    this change, and the bundle is rebuilt once after both land.
+    """
+    bundle = tmp_path / "bundle"
+    (bundle / "assets").mkdir(parents=True)
+    (bundle / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf-8")
+    monkeypatch.setattr(server_mod, "static_root", lambda: bundle)
+
+    svg = call(live, "/favicon.svg", bearer=None)
+    assert svg.status == 200
+    assert svg.headers["content-type"] == "image/svg+xml"
+    assert svg.body.startswith(b"<svg")
+
+    ico = call(live, "/favicon.ico", bearer=None)
+    assert ico.status != 404, ico.body[:200]
+
+    # The control: the closed asset-name rule is untouched, so widening it is not what made the
+    # two requests above succeed.
+    assert call(live, "/assets/../../etc/passwd", bearer=None).status == 404
+
+
+def test_the_queue_payload_carries_the_fields_the_client_halves_are_built_against(
+    live: Live, engine: Engine
+) -> None:
+    """`counts.closed`, `meta.reveal_supported` and `row.why` were audited as already emitted and
+    are asserted here as ONE statement about a default payload, so the client halves that consume
+    them are not built against a field that only exists in a special-cased test."""
+    with engine.begin() as conn:
+        _deliver(conn, "one")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+
+    assert payload["counts"]["closed"] == 0
+    assert payload["meta"]["reveal_supported"] is True
+    assert "why" in payload["rows"][0]
+
+
+def test_a_semicolon_joined_location_entry_is_split_into_places(tmp_path: Path) -> None:
+    """The live store holds one "A; B; C" entry beside "A", "B", "C": the primary must be a place,
+    never the joined dump, and the split entries de-duplicate against the plain ones."""
+    from boardwatch.delivery.api import _unique_locations
+
+    joined = "Austin, Texas, United States; Bozeman, Montana, United States; Free Solo"
+    assert _unique_locations(
+        [joined, "Austin, Texas, United States", "bozeman, montana, united states"]
+    ) == [
+        "Austin, Texas, United States",
+        "Bozeman, Montana, United States",
+        "Free Solo",
+    ]

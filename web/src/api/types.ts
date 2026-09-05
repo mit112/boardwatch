@@ -69,7 +69,16 @@ export interface QueueRow {
   job_id: number;
   title: string;
   company: string;
+  /** The PRIMARY location: the first entry of `locations`, or `null` when the list is empty. */
   location: string | null;
+  /**
+   * Every location the posting lists, de-duplicated case-insensitively with the whitespace
+   * trimmed, in the board's original order; `[]` when it names none. This is the same list the
+   * store-level row carries, NOT a re-split of the joined `location` string above — a separator
+   * that appears inside a location ("Washington, D.C.") makes the two answers differ, and only
+   * one of them is what the board actually published.
+   */
+  locations: string[];
   remote_policy: string | null;
   /** From the nullable `postings.posted_at`. `null` renders as an em dash, NEVER as `0d`. */
   posted_days: number | null;
@@ -91,6 +100,13 @@ export interface QueueRow {
   score: number | null;
   /** Résumé keyword coverage as a fraction 0..1. `null` exactly when `thin_jd` is true. */
   coverage: number | null;
+  /**
+   * The server's own explanation of the score — which components contributed and by how much.
+   * `null` when the ranker recorded none. Rendered VERBATIM: the frontend never infers a reason
+   * from the score, because a hand-written explanation is a second, wrong opinion about a shipped
+   * ranker in exactly the way `off_target_reason` below is.
+   */
+  why: string | null;
   /**
    * Why the role gate vetoed the title, carrying the text it actually matched. Displayed beside
    * the badge so a veto is auditable. The frontend never re-derives this from the title: a
@@ -126,6 +142,13 @@ export interface QueueCounts {
    * this the difference between it and the delivered set is an unexplained remainder.
    */
   review: number;
+  /**
+   * Delivered leads whose posting the employer has since taken down. They are NOT in `rows` and
+   * NOT in `in_queue`: a closed posting is not work, and its folder is drained to `_closed`. Its
+   * own cell rather than folded into `ineligible` — nothing judged it, so calling it a rejection
+   * would assert a decision no rule made.
+   */
+  closed: number;
   applied_ever: number;
   skipped: number;
   /**
@@ -155,6 +178,13 @@ export interface QueueResponse {
    */
   review: QueueRow[];
   counts: QueueCounts;
+  /**
+   * What this SERVER can do, as distinct from what the data says. Optional because a viewer older
+   * than the field omits it entirely, and the honest default for an unknown capability here is
+   * "assume it works": hiding a control that would in fact have worked costs the reader the only
+   * route to the folder.
+   */
+  meta?: { reveal_supported: boolean };
 }
 
 export interface RequirementView {
@@ -260,6 +290,49 @@ export interface FunnelStage {
   run_scoped_attribution: Record<string, number> | null;
 }
 
+/**
+ * The final gate's readout (`gate_to_dict`). `instrumented: false` with every count `null` is a
+ * run whose gate was never armed — NOT a block of zeros, which would claim a measurement nobody
+ * took. `null` for the whole block is an artifact older than the gate, which says the same thing.
+ */
+export interface FunnelGate {
+  instrumented: boolean;
+  judged: number | null;
+  eligible: number | null;
+  ineligible: number | null;
+  uncertain: number | null;
+  /** Batches the judge could not reach, cleared fail-open. The one count that changes what the
+   * reader does with the leads, so it is never rendered in the same weight as the others. */
+  failed_open_batches: number | null;
+}
+
+/** Wall clock between two pipeline stage boundaries. The whole list is `null` on an artifact that
+ * predates the measurement; `[]` would claim a run that spent no time anywhere. */
+export interface FunnelStageDuration {
+  name: string;
+  seconds: number;
+}
+
+/**
+ * One JD-acquisition lane's work (`LaneReport`). `counts` carries all ten `AcquisitionOutcome`
+ * keys every time, so a 0 in it is MEASURED — the map is rendered whole rather than filtered to
+ * its non-zero members. `fetch_seconds`/`apply_seconds` are `null` for NOT MEASURED, never 0.0.
+ */
+export interface FunnelLane {
+  name: string;
+  counts: Record<string, number>;
+  attempted: number;
+  resolved: number;
+  /** Carried, never derived as `resolved === 0`: a lane with nothing to do is not an outage. */
+  is_silent_outage: boolean;
+  admitted: string[];
+  refused: string[];
+  search_pages: { url: string; pages: number }[];
+  fetch_seconds: number | null;
+  apply_seconds: number | null;
+  stage_elapsed_seconds: number | null;
+}
+
 export interface FunnelCoverage {
   leads_measured: number;
   leads_with_fraction: number;
@@ -286,8 +359,18 @@ export interface RunFunnel {
   started_at: string | null;
   finished_at: string | null;
   reconciles: boolean;
-  fatal: boolean;
+  /**
+   * The REASON the run ended fatally, not a flag: `fatal: str | None` in `reports/run_funnel.py`.
+   * Typed as a boolean it truth-tested correctly and printed nothing, which is the whole of the
+   * diagnostic thrown away.
+   */
+  fatal: string | null;
   errors: string[];
+  gate: FunnelGate | null;
+  /** `null` means the run predates the measurement, so no stage card shows a duration. */
+  stage_durations: FunnelStageDuration[] | null;
+  /** `[]` when no lane ran this run — a measured absence, unlike a missing key. */
+  lanes: FunnelLane[];
   stages: FunnelStage[];
   coverage: FunnelCoverage;
   scan: {

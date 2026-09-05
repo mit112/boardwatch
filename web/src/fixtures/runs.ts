@@ -53,7 +53,9 @@ export const RUNS: RunSummary[] = [
   {
     id: 111,
     started: "2026-08-25T15:00:05Z",
-    finished: null,
+    // A failed run is still a CLOSED one: `finish_run` stamps `finished_at` and the status
+    // together. `finished: null` belongs to run 110 below, which nothing ever closed.
+    finished: "2026-08-25T15:41:18Z",
     status: "failed",
     boards_attempted: 124,
     boards_complete: 63,
@@ -64,6 +66,23 @@ export const RUNS: RunSummary[] = [
     new_count: 84,
     leads: 0,
   },
+  {
+    // `status: running` with `finished_at` NULL means only that nothing ever closed this row —
+    // in flight, killed, or a lane that raised. It has no funnel artifact for the same reason,
+    // so selecting it is also the fixture's one "no artifact for that run" path.
+    id: 110,
+    started: "2026-08-25T12:00:02Z",
+    finished: null,
+    status: "running",
+    boards_attempted: 124,
+    boards_complete: 38,
+    boards_partial: 0,
+    boards_unchanged: 0,
+    boards_failed: 0,
+    postings_seen: 6104,
+    new_count: 41,
+    leads: 0,
+  },
 ];
 
 const FUNNEL_114: RunFunnel = {
@@ -72,8 +91,80 @@ const FUNNEL_114: RunFunnel = {
   started_at: "2026-08-26T06:00:04Z",
   finished_at: "2026-08-26T06:31:52Z",
   reconciles: true,
-  fatal: false,
+  fatal: null,
   errors: [],
+  gate: {
+    instrumented: true,
+    judged: 812,
+    eligible: 466,
+    ineligible: 291,
+    uncertain: 55,
+    // Non-zero on this run on purpose: it is the one count that changes what a reader does.
+    failed_open_batches: 2,
+  },
+  // Ordered as the stages RAN, so consecutive marks sum to the run's wall clock.
+  stage_durations: [
+    { name: "scan", seconds: 604.118 },
+    { name: "lanes", seconds: 27.404 },
+    { name: "liveness", seconds: 188.72 },
+    { name: "eligibility", seconds: 12.345 },
+    { name: "shortlist", seconds: 3.017 },
+    { name: "tailor", seconds: 1071.884 },
+    { name: "delivery", seconds: 4.596 },
+  ],
+  lanes: [
+    {
+      name: "hiringcafe",
+      // All ten `AcquisitionOutcome` keys, in catalog order, every time: a 0 here is measured.
+      counts: {
+        body_inline: 1902,
+        body_fetched: 0,
+        fetch_refused: 0,
+        fetch_gone: 0,
+        fetch_unavailable: 0,
+        dependency_missing: 0,
+        extracted_empty: 12,
+        rejected_login_wall: 0,
+        rejected_quality_gate: 41,
+        not_attemptable: 255,
+      },
+      attempted: 2210,
+      resolved: 1902,
+      is_silent_outage: false,
+      admitted: ["greenhouse:vercel", "lever:scale", "ashby:linear"],
+      refused: ["greenhouse:stripe"],
+      search_pages: [{ url: "https://hiring.cafe/api/search?q=software", pages: 4 }],
+      fetch_seconds: 18.203,
+      apply_seconds: 6.918,
+      stage_elapsed_seconds: 391.06,
+    },
+    {
+      name: "linkedin",
+      counts: {
+        body_inline: 0,
+        body_fetched: 0,
+        fetch_refused: 88,
+        fetch_gone: 0,
+        fetch_unavailable: 0,
+        dependency_missing: 0,
+        extracted_empty: 0,
+        rejected_login_wall: 61,
+        rejected_quality_gate: 0,
+        not_attemptable: 4,
+      },
+      attempted: 153,
+      resolved: 0,
+      // Attempted work and recovered nothing. Carried by the artifact, never derived here.
+      is_silent_outage: true,
+      admitted: [],
+      refused: [],
+      search_pages: [],
+      fetch_seconds: 209.44,
+      // Nothing resolved, so nothing was applied and the timer never ran. NOT 0.0.
+      apply_seconds: null,
+      stage_elapsed_seconds: 391.06,
+    },
+  ],
   scan: {
     ran: true,
     boards_attempted: 124,
@@ -156,7 +247,12 @@ const FUNNEL_114: RunFunnel = {
       instrumented: true,
       // The last bucket is the remainder of the others, so this stage balances by construction.
       derived: true,
-      note: "considered == shortlisted + every drop",
+      // Decision-log prose with a backtick span in it, which is what the artifact actually
+      // carries: the first sentence is the readout and the rest is the argument behind it.
+      note:
+        "considered == shortlisted + every drop. The `hidden_below_cutoff` bucket is the " +
+        "remainder of the others (D-016), so this stage reconciles by construction and its " +
+        "balance is bookkeeping rather than evidence.",
       run_scoped_attribution: {
         judged: 3771,
         handled: 61,
@@ -210,9 +306,21 @@ export const FUNNELS: Record<number, RunFunnel> = {
     ...FUNNEL_114,
     run_id: 111,
     started_at: RUNS[3]!.started,
-    finished_at: null,
+    finished_at: RUNS[3]!.finished,
     reconciles: false,
-    fatal: true,
+    // The scan died before the gate was armed, so its readout is an absence, not a row of zeros.
+    gate: {
+      instrumented: false,
+      judged: null,
+      eligible: null,
+      ineligible: null,
+      uncertain: null,
+      failed_open_batches: null,
+    },
+    lanes: [],
+    // A REASON, not a flag. This is the real one run 5 recorded, truncated the way the artifact
+    // truncates it: the ids are what a reader chases.
+    fatal: "cohort incomplete: 10 shortlisted candidates unaccounted: 4288, 20797, 20798, 20812, 20834, 20841, 20855, 20857, 20861, 20869",
     errors: ["scan aborted: 61 of 124 boards unreachable", "no leads emitted"],
   },
 };

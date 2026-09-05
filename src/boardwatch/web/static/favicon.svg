@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="boardwatch">
+  <!--
+    The application's own wordmark mark, and nothing else: the accent bar on the page's ground.
+    No letterform, because at 16px a glyph is a smudge, and no gradient, because the tab strip
+    renders this against both a light and a dark chrome. Two colours, both from index.css.
+  -->
+  <rect width="32" height="32" rx="7" fill="#08090c" />
+  <rect x="13" y="6" width="6" height="20" rx="3" fill="#5ec8f0" />
+</svg>

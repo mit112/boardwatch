@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { QueueRow } from "../api/types";
 import type { SortKey, SortState } from "../lib/sort";
-import { GRID_TEMPLATE, QueueRowItem, WIDE_ONLY } from "./QueueRowItem";
+import { GRID_TEMPLATE, MIDDLE_UP, QueueRowItem, SCORE_UP, WIDE_ONLY } from "./QueueRowItem";
 
 function SortButton({
   label,
@@ -225,7 +225,7 @@ export function QueueTable({
             </span>
             <SortButton label="company" sortKey="company" sort={sort} onSort={onSort} />
           </span>
-          <span role="columnheader" aria-sort={ariaSort(sort, "location")} className={WIDE_ONLY}>
+          <span role="columnheader" aria-sort={ariaSort(sort, "location")} className={MIDDLE_UP}>
             <SortButton label="location · remote" sortKey="location" sort={sort} onSort={onSort} />
           </span>
           <span
@@ -235,7 +235,11 @@ export function QueueTable({
           >
             <SortButton label="age" sortKey="age" sort={sort} onSort={onSort} />
           </span>
-          <span role="columnheader" aria-sort={ariaSort(sort, "score")} className="justify-self-end">
+          <span
+            role="columnheader"
+            aria-sort={ariaSort(sort, "score")}
+            className={`${SCORE_UP} justify-self-end`}
+          >
             <SortButton label="score" sortKey="score" sort={sort} onSort={onSort} />
           </span>
           <span role="columnheader" className="px-1 label-micro text-fg-3">
@@ -246,7 +250,7 @@ export function QueueTable({
           </span>
           <span
             role="columnheader"
-            className={`${WIDE_ONLY} px-1 text-right label-micro text-fg-3`}
+            className={`${MIDDLE_UP} px-1 text-right label-micro text-fg-3`}
           >
             actions
           </span>
@@ -258,7 +262,10 @@ export function QueueTable({
         // empty state that falls out of the accessibility tree is the one a reader most needs.
         <div role="rowgroup">
           <div role="row">
-            <p role="gridcell" className="px-4 py-10 text-center text-sm text-fg-2">
+            <p
+              role="gridcell"
+              className="mx-auto max-w-[68ch] px-4 py-10 text-center text-sm text-fg-2"
+            >
               No lead matches this filter. {emptyHint}
             </p>
           </div>

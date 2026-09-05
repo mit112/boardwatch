@@ -1,5 +1,17 @@
 import type { QueueCounts } from "../api/types";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { EM_DASH, formatTimestamp } from "../lib/format";
+
+/**
+ * Above this the band is one flat row; below it, six of the ten cells fold into a `<details>`.
+ *
+ * A VIEWPORT query driven through `useMediaQuery`, rather than a `max-sm:` class pair or a
+ * container query, and that is the trade being made: CSS can only hide a subtree it has already
+ * rendered, so a pure-CSS fold would put every foldable cell in the DOM TWICE — two buttons named
+ * "uncertain 3 — show only these", an ambiguous accessible name whichever copy is visible.
+ * Rendering one arrangement at a time keeps every control unique.
+ */
+export const BAND_WIDE = "(min-width: 40rem)";
 
 /**
  * The band cells a reader can click to see only that bucket. `eligible` and `uncertain` are
@@ -11,15 +23,17 @@ import { EM_DASH, formatTimestamp } from "../lib/format";
  * hides the apply queue, the way opening only that section would. `ineligible` is deliberately NOT a
  * facet: it is drained, never listed, so a toggle there could only ever show an empty list.
  */
-export type QueueFacet = "eligible" | "uncertain" | "review";
+export const QUEUE_FACETS = ["eligible", "uncertain", "review"] as const;
+export type QueueFacet = (typeof QUEUE_FACETS)[number];
 
 /*
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones
  * beside it.
  *
- * `eligible` is the headline yield, and `uncertain`, `review` and `ineligible` each get their own
- * cell. `in_queue` counts the APPLY lane, so the band reconciles instead of leaving a remainder
- * nobody can name: a delivered lead is in the apply lane, held in `review`, or `ineligible`.
+ * `eligible` is the headline yield, and `uncertain`, `review`, `ineligible` and `closed` each get
+ * their own cell. `in_queue` counts the APPLY lane, so the band reconciles instead of leaving a
+ * remainder nobody can name: a delivered lead is in the apply lane, held in `review`, `ineligible`,
+ * or `closed` because the employer took the posting down.
  * `review` and `ineligible` fail differently and are never merged — an ineligible lead is
  * REJECTED and not listed anywhere, a review lead is UNVERIFIED and listed in its own section. They are never added together,
  * anywhere: the repository's rule is that an abstain is never folded into either neighbour in any
@@ -101,65 +115,90 @@ export function StatusBand({
   counts,
   showing,
   total,
+  reviewNote,
   activeFacet,
   onToggleFacet,
 }: {
   counts: QueueCounts;
   showing: number;
   total: number;
+  /* The `review` cell's tooltip, GENERATED from the lane's own reason counts by the caller. It
+     used to hand-write two of the nine reasons here, which described none of the leads on the
+     measured day. */
+  reviewNote: string;
   activeFacet: QueueFacet | null;
   onToggleFacet: (facet: QueueFacet) => void;
 }) {
-  return (
-    <section
-      aria-label="Queue status"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
-    >
-      <Metric label="in queue" value={counts.in_queue.toLocaleString()} emphasis order={0} />
-      <Metric
-        label="eligible"
-        value={counts.eligible.toLocaleString()}
-        emphasis
-        note="Affirmatively eligible. Never includes uncertain. Click to show only these."
-        order={1}
-        active={activeFacet === "eligible"}
-        onToggle={() => {
-          onToggleFacet("eligible");
-        }}
-      />
-      <Metric
-        label="uncertain"
-        value={counts.uncertain.toLocaleString()}
-        note="Its own bucket: not yet known, and never added into eligible. Click to show only these."
-        order={2}
-        active={activeFacet === "uncertain"}
-        onToggle={() => {
-          onToggleFacet("uncertain");
-        }}
-      />
-      <Metric
-        label="review"
-        value={counts.review.toLocaleString()}
-        note="Held for a look, not blindly appliable: outside the US, or a title the role gate will not positively call software. Click to show only this lane."
-        order={3}
-        active={activeFacet === "review"}
-        onToggle={() => {
-          onToggleFacet("review");
-        }}
-      />
+  /*
+   * Ten cells at 44px-plus each stacked to a 496px band on a phone — the entire first screen was
+   * counters, and the reader had to scroll past all of it to reach a lead. The three that answer
+   * "is there work here" stay out with the readout; the rest fold into a `<details>`.
+   */
+  const wide = useMediaQuery(BAND_WIDE);
+
+  /* Named once and placed twice, so the wide row keeps its established order and the narrow one
+     is a rearrangement of the SAME cells rather than a second copy of them. */
+  const inQueue = (
+    <Metric label="in queue" value={counts.in_queue.toLocaleString()} emphasis order={0} />
+  );
+  const eligible = (
+    <Metric
+      label="eligible"
+      value={counts.eligible.toLocaleString()}
+      emphasis
+      note="Affirmatively eligible. Never includes uncertain. Click to show only these."
+      order={1}
+      active={activeFacet === "eligible"}
+      onToggle={() => {
+        onToggleFacet("eligible");
+      }}
+    />
+  );
+  const uncertain = (
+    <Metric
+      label="uncertain"
+      value={counts.uncertain.toLocaleString()}
+      note="Its own bucket: not yet known, and never added into eligible. Click to show only these."
+      order={2}
+      active={activeFacet === "uncertain"}
+      onToggle={() => {
+        onToggleFacet("uncertain");
+      }}
+    />
+  );
+  const review = (
+    <Metric
+      label="review"
+      value={counts.review.toLocaleString()}
+      note={reviewNote}
+      order={3}
+      active={activeFacet === "review"}
+      onToggle={() => {
+        onToggleFacet("review");
+      }}
+    />
+  );
+  const rest = (
+    <>
       <Metric
         label="ineligible"
         value={counts.ineligible.toLocaleString()}
         note="Rejected by the eligibility gate, so not in the queue. Folders drain to _ineligible."
         order={4}
       />
-      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={5} />
-      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={6} />
+      <Metric
+        label="closed"
+        value={counts.closed.toLocaleString()}
+        note="The employer took the posting down; drained to _closed, never judged."
+        order={5}
+      />
+      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={6} />
+      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={7} />
       <Metric
         label="reported"
         value={counts.reported.toLocaleString()}
         note="Flagged as wrongly-eligible and held for investigation. Its own cell, never folded into skipped, and taken out of the queue like a skip."
-        order={7}
+        order={8}
       />
       <Metric
         label="last run"
@@ -169,20 +208,48 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
-        order={8}
+        order={9}
       />
-      {/*
-        * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead
-        * space, leaving a hairline floating 600px from the nearest content. `role="status"` because
-        * this is the only readout that answers "did my filter match anything", and a count that
-        * changes silently is a change a screen-reader reader never learns about (SC 4.1.3).
-        */}
-      <div
-        role="status"
-        className="ml-auto flex items-center border-l-0 px-6 py-5 text-sm text-fg-2 tabular-nums"
-      >
-        Showing {showing.toLocaleString()} of {total.toLocaleString()}
-      </div>
+    </>
+  );
+
+  /*
+   * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead space,
+   * leaving a hairline floating 600px from the nearest content. `role="status"` because this is
+   * the only readout that answers "did my filter match anything", and a count that changes
+   * silently is a change a screen-reader reader never learns about (SC 4.1.3).
+   */
+  const readout = (
+    <div
+      role="status"
+      className="ml-auto flex items-center border-l-0 px-6 py-5 text-sm text-fg-2 tabular-nums"
+    >
+      Showing {showing.toLocaleString()} of {total.toLocaleString()}
+    </div>
+  );
+
+  return (
+    <section
+      aria-label="Queue status"
+      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
+    >
+      {inQueue}
+      {eligible}
+      {wide ? uncertain : null}
+      {review}
+      {wide ? rest : null}
+      {readout}
+      {wide ? null : (
+        <details className="w-full border-l-0 border-t border-divider">
+          <summary className="flex min-h-11 cursor-pointer items-center px-6 label-micro text-fg-3">
+            more
+          </summary>
+          <div className="flex flex-wrap items-stretch divide-x divide-divider">
+            {uncertain}
+            {rest}
+          </div>
+        </details>
+      )}
     </section>
   );
 }

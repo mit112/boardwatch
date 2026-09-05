@@ -65,13 +65,14 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, Row, and_, func, select
 
-from boardwatch.core.clock import utcnow
+from boardwatch.core.clock import to_naive_utc, utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.answers import (
     IDENTITY_FIELDS,
@@ -185,6 +186,18 @@ class PdfFile:
 
 
 # ------------------------------------------------------------------------------------- the queue
+
+
+def _iso_utc(dt: datetime | None) -> str | None:
+    """A stored datetime as ISO-8601 carrying an explicit `+00:00`, or None.
+
+    The store's convention is NAIVE UTC (`core/clock.utcnow` strips tzinfo), and `.isoformat()`
+    on such a value emits no offset — which the browser then parses as LOCAL time, so every time
+    on the page was wrong by the owner's UTC offset. The attach lives in ONE function because
+    four payload sites need it and four hand-written `.replace(tzinfo=UTC)` calls would drift.
+    `to_naive_utc` first so an already-aware value is converted rather than relabelled.
+    """
+    return None if dt is None else to_naive_utc(dt).replace(tzinfo=UTC).isoformat()
 
 
 def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
@@ -314,6 +327,32 @@ def detail_payload(conn: Connection, ctx: ApiContext, posting_id: int) -> dict[s
     }
 
 
+def _unique_locations(locations: Sequence[str]) -> list[str]:
+    """The posting's places, de-duplicated case-insensitively on the trimmed entry, in the order
+    the posting named them.
+
+    `QueueRow.locations` is the SAME list the store joined into `QueueRow.location`, so this reads
+    the list and never re-splits the joined string — splitting it would turn "Austin, TX" into two
+    places. De-duplication is at the ENTRY level for the same reason: the live store served one
+    list joined twice ("Austin, Texas, United States; …; …, Austin, Bozeman, …"), which is a
+    duplicate ENTRY, not a duplicate word.
+    """
+    seen: set[str] = set()
+    unique: list[str] = []
+    # An entry can itself be a semicolon-joined list: the live store holds "Austin, Texas, United
+    # States; Bozeman, Montana, United States; …" as ONE entry beside "Austin", "Bozeman", …, so
+    # without this split the primary location is the whole dump. A semicolon is never part of a
+    # place name the way a comma is, so splitting on it loses nothing.
+    for entry in (piece for raw in locations for piece in raw.split(";")):
+        trimmed = entry.strip()
+        key = trimmed.casefold()
+        if not trimmed or key in seen:
+            continue
+        seen.add(key)
+        unique.append(trimmed)
+    return unique
+
+
 def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any]:
     """One `QueueRow` as the frontend's `QueueRow` interface.
 
@@ -324,6 +363,10 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
     `thin_jd` is `fraction is None`, which is true both for a JD carrying no recognised
     requirement at all and for a store with no master résumé to measure against. Both are
     literally "no coverage fraction could be computed", which is what the badge says.
+
+    `location` is the PRIMARY location — the first entry of `locations` — and not the store's
+    joined display string. The full de-duplicated list travels beside it as `locations` so the
+    client can render "+N" and the rest in a tooltip rather than a wall of text in a table cell.
 
     `review_reason` is on EVERY row rather than only on the review list, because `detail_payload`
     serializes one row with no list around it — a field that existed only inside `review` would be
@@ -343,15 +386,17 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         no_requirement_rows=row.requirement_flags.no_requirement_rows,
     ).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
+    locations = _unique_locations(row.locations)
     return {
         "posting_id": row.posting_id,
         "job_id": row.job_id,
         "title": row.title,
         "company": row.company,
-        "location": row.location,
+        "location": locations[0] if locations else None,
+        "locations": locations,
         "remote_policy": row.remote_policy,
         "posted_days": row.posted_days,
-        "first_seen": row.first_seen.isoformat(),
+        "first_seen": _iso_utc(row.first_seen),
         "status": row.status,
         "verdict": row.verdict,
         "apply_url": row.apply_url,
@@ -472,22 +517,15 @@ def _counts(
         # cell of its own it would be an unexplained remainder against the delivered set.
         "reported": len(reported_job_ids(conn)),
         "delivered_last_run": (
-            0
-            if last is None
-            else sum(1 for row in rows if row.delivered_run_id == int(last.id))
+            0 if last is None else sum(1 for row in rows if row.delivered_run_id == int(last.id))
         ),
-        "last_run_finished": (
-            None if last is None or last.finished_at is None else last.finished_at.isoformat()
-        ),
+        "last_run_finished": (None if last is None else _iso_utc(last.finished_at)),
     }
 
 
 def _last_finished_run(conn: Connection) -> Row[Any] | None:
     return conn.execute(
-        select(runs)
-        .where(runs.c.finished_at.is_not(None))
-        .order_by(runs.c.id.desc())
-        .limit(1)
+        select(runs).where(runs.c.finished_at.is_not(None)).order_by(runs.c.id.desc()).limit(1)
     ).one_or_none()
 
 
@@ -930,8 +968,8 @@ def runs_payload(conn: Connection) -> dict[str, Any]:
         "runs": [
             {
                 "id": int(row.id),
-                "started": None if row.started_at is None else row.started_at.isoformat(),
-                "finished": None if row.finished_at is None else row.finished_at.isoformat(),
+                "started": _iso_utc(row.started_at),
+                "finished": _iso_utc(row.finished_at),
                 "status": row.status,
                 "boards_attempted": row.boards_attempted,
                 "boards_complete": row.boards_complete,

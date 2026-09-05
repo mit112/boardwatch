@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { openPdf, revealFolder } from "../api/client";
 import type { Answers, QueueDetail, RequirementView } from "../api/types";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   EM_DASH,
   formatAge,
@@ -26,11 +27,24 @@ import { VerdictChip } from "./VerdictChip";
  */
 export const SIDE_BY_SIDE = "(min-width: 64rem)";
 
-function Fact({ label, value }: { label: string; value: string }) {
+/**
+ * `note` is the server's own sentence about the number above it — the score's `why`, and nothing
+ * else so far. It is prose rather than an instrument reading, so it is NOT `tabular-nums`.
+ */
+function Fact({
+  label,
+  value,
+  note = null,
+}: {
+  label: string;
+  value: string;
+  note?: string | null;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="label-micro text-fg-3">{label}</span>
       <span className="text-sm text-fg tabular-nums">{value}</span>
+      {note === null ? null : <span className="text-xs leading-snug text-fg-2">{note}</span>}
     </div>
   );
 }
@@ -162,6 +176,7 @@ export function DetailPane({
   onSkip,
   onReport,
   onToast,
+  revealSupported = true,
 }: {
   detail: QueueDetail | null;
   loading: boolean;
@@ -172,8 +187,21 @@ export function DetailPane({
   onSkip: () => void;
   onReport: () => void;
   onToast: (message: string, tone: "info" | "error") => void;
+  /**
+   * Whether THIS server can open a file manager at all. `false` omits the button rather than
+   * leaving a control that can only ever answer with an error toast. Defaults to `true`, because
+   * a viewer older than `meta.reveal_supported` sends nothing and a hidden control that would
+   * have worked is the worse of the two mistakes.
+   */
+  revealSupported?: boolean;
 }) {
   const [shown, setShown] = useState(false);
+  /*
+   * The description box's height. Collapsed by default at 36rem, which is roughly a screen of
+   * prose on the pane's width — enough to see whether the JD is worth reading without the box
+   * owning the rest of the scroll.
+   */
+  const [jdExpanded, setJdExpanded] = useState(false);
   const pane = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -194,15 +222,22 @@ export function DetailPane({
    * focus in is worth nothing if Shift+Tab walks straight back out to a row behind the sheet.
    *
    * The trigger row is refocused on close so the cursor does not fall back to `<body>`.
+   *
+   * SUBSCRIBED, not sampled. This used to read `matchMedia(...).matches` once on mount, which
+   * answers for the tier the pane OPENED at and never again — so shrinking the window across the
+   * breakpoint with a lead open turned the column into a modal sheet while focus stayed on
+   * `<body>` behind it, exactly the state this effect exists to prevent, and now with the page
+   * behind it inert as well. `useMediaQuery` re-runs the effect on the transition instead.
    */
+  const sideBySide = useMediaQuery(SIDE_BY_SIDE);
   useEffect(() => {
-    if (window.matchMedia(SIDE_BY_SIDE).matches) return;
+    if (sideBySide) return;
     const opener = document.activeElement as HTMLElement | null;
     pane.current?.focus();
     return () => {
       opener?.focus();
     };
-  }, []);
+  }, [sideBySide]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -215,6 +250,16 @@ export function DetailPane({
   }, [onClose]);
 
   const row = detail?.row ?? null;
+  const requirements = detail?.requirements ?? [];
+  /*
+   * ONE fact, ONE place. `closed` and `unverifiable` each render a chip below with its reason
+   * beside it, and `thin_jd` renders the chip that says why there is no coverage fraction — so a
+   * `status` fact cell and a `coverage · —` fact cell above them were the same claim a second and
+   * a third time. The fact cell is what goes: the chip carries the visible REASON, which is the
+   * half a bare word cannot. Both cells stay wherever no chip renders.
+   */
+  const statusChipShown = row?.status === "closed" || row?.status === "unverifiable";
+  const coverageChipShown = row?.thin_jd === true;
   const pdfPath = pathFromFileUri(row?.pdf_uri ?? null);
   const folder = parentDirectory(pdfPath);
 
@@ -252,17 +297,24 @@ export function DetailPane({
           {/* THE DOMINANT CELL. Everything needed to decide, before any prose. */}
           <section className="rounded-md border border-divider bg-surface-2 shadow-[0_16px_40px_-24px_rgb(0_0_0/0.9)] p-4">
             <h2 className="text-lg leading-snug text-fg">{row.title}</h2>
-            <p className="mt-0.5 text-sm text-fg-2">
-              {row.company}
-              {row.location === null ? "" : ` · ${row.location}`}
-            </p>
+            <p className="mt-0.5 text-sm text-fg-2">{row.company}</p>
+            {/* Every location, comma-separated. The row can only afford the primary and a `+N`,
+                so the pane is where the rest of the list has to be readable — and `?? []` for the
+                usual reason: an older viewer omits the field (see `lib/format`'s header). */}
+            {(row.locations ?? []).length > 0 ? (
+              <p className="mt-0.5 text-sm text-fg-2">{(row.locations ?? []).join(", ")}</p>
+            ) : row.location === null ? null : (
+              <p className="mt-0.5 text-sm text-fg-2">{row.location}</p>
+            )}
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
               <Fact label="remote policy" value={row.remote_policy ?? EM_DASH} />
               <Fact label="age" value={formatAge(row.posted_days)} />
-              <Fact label="status" value={row.status} />
-              <Fact label="score · as of now" value={formatScore(row.score)} />
-              <Fact label="coverage · as of now" value={formatFraction(row.coverage)} />
+              {statusChipShown ? null : <Fact label="status" value={row.status} />}
+              <Fact label="score · as of now" value={formatScore(row.score)} note={row.why} />
+              {coverageChipShown ? null : (
+                <Fact label="coverage · as of now" value={formatFraction(row.coverage)} />
+              )}
               <Fact label="first seen" value={formatTimestamp(row.first_seen)} />
             </div>
 
@@ -273,6 +325,7 @@ export function DetailPane({
                   label="closed"
                   emphasis="strong"
                   reason="The posting is no longer open on the board."
+                  showReason
                 />
               ) : null}
               {/* The reason is VISIBLE here, not a tooltip: "unverifiable" is a claim about what
@@ -321,80 +374,92 @@ export function DetailPane({
             </p>
           </section>
 
-          {/* Actions. "Copy PDF path" is the highest-value control in the app: both the macOS and
-              the Windows file dialog accept a pasted absolute path. */}
-          <section className="flex flex-wrap gap-2">
-            <ApplyLink url={row.apply_url} />
+          {/*
+            * Actions, in TWO groups with a rule between them, exactly as the row separates them.
+            * The first group opens and copies and changes nothing; the second WRITES, and
+            * "Mark applied" writes an application record the contract has no route to reverse.
+            * One flat `flex-wrap` put "Mark applied" between "Reveal folder" and "Skip" as soon
+            * as the seven buttons wrapped, which is the arrangement most likely to be misclicked.
+            * Each group is its own flex box, so wrapping never interleaves them.
+            *
+            * "Copy PDF path" is the highest-value control in the app: both the macOS and the
+            * Windows file dialog accept a pasted absolute path.
+            */}
+          <section className="flex flex-wrap items-start gap-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <ApplyLink url={row.apply_url} />
 
-            {pdfPath === null ? (
-              <span className="inline-flex min-h-11 items-center rounded-sm border border-divider px-3 text-sm text-fg-3">
-                no PDF built
-              </span>
-            ) : (
-              <>
-                <CopyButton
-                  value={pdfPath}
-                  label="Copy PDF path"
-                  variant="primary"
-                  onError={(message) => {
-                    onToast(message, "error");
-                  }}
-                  title={`Paste this straight into the file dialog: ${pdfPath}`}
-                />
-                <ActionButton
-                  label="Open PDF"
-                  title="Opens inline, in a new tab."
-                  onClick={() => {
-                    void openPdf(row.posting_id).catch((caught: unknown) => {
-                      onToast(caught instanceof Error ? caught.message : "Could not open the PDF.", "error");
-                    });
-                  }}
-                />
-                <ActionButton
-                  label="Reveal folder"
-                  {...(folder === null ? {} : { title: folder })}
-                  onClick={() => {
-                    void revealFolder(row.posting_id)
-                      .then((result) => {
-                        if (!result.ok) {
-                          onToast(result.reason ?? "The folder could not be revealed.", "error");
-                        }
-                      })
-                      .catch((caught: unknown) => {
-                        onToast(
-                          caught instanceof Error ? caught.message : "Reveal failed.",
-                          "error",
-                        );
+              {pdfPath === null ? (
+                <span className="inline-flex min-h-11 items-center rounded-sm border border-divider px-3 text-sm text-fg-3">
+                  no PDF built
+                </span>
+              ) : (
+                <>
+                  <CopyButton
+                    value={pdfPath}
+                    label="Copy PDF path"
+                    variant="primary"
+                    onError={(message) => {
+                      onToast(message, "error");
+                    }}
+                    title={`Paste this straight into the file dialog: ${pdfPath}`}
+                  />
+                  <ActionButton
+                    label="Open PDF"
+                    title="Opens inline, in a new tab."
+                    onClick={() => {
+                      void openPdf(row.posting_id).catch((caught: unknown) => {
+                        onToast(caught instanceof Error ? caught.message : "Could not open the PDF.", "error");
                       });
-                  }}
-                />
-              </>
-            )}
+                    }}
+                  />
+                  {!revealSupported ? null : (
+                    <ActionButton
+                      label="Reveal folder"
+                      {...(folder === null ? {} : { title: folder })}
+                      onClick={() => {
+                        void revealFolder(row.posting_id)
+                          .then((result) => {
+                            if (!result.ok) {
+                              onToast(result.reason ?? "The folder could not be revealed.", "error");
+                            }
+                          })
+                          .catch((caught: unknown) => {
+                            onToast(
+                              caught instanceof Error ? caught.message : "Reveal failed.",
+                              "error",
+                            );
+                          });
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </span>
 
-            <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
-            <ActionButton label="Skip" onClick={onSkip} />
-            <ActionButton label="Report" onClick={onReport} />
+            <span className="flex flex-wrap items-center gap-2 border-l border-divider pl-2">
+              <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
+              <ActionButton label="Skip" onClick={onSkip} />
+              <ActionButton label="Report" onClick={onReport} />
+            </span>
           </section>
 
           <section>
             <h3 className="mb-2 label-micro text-fg-3">requirements</h3>
-            <Requirements requirements={detail?.requirements ?? []} />
+            <Requirements requirements={requirements} />
           </section>
 
           <section>
             <h3 className="mb-2 label-micro text-fg-3">evidence</h3>
-            <Evidence requirements={detail?.requirements ?? []} />
+            <Evidence requirements={requirements} />
           </section>
 
-          <AnswersPanel
-            answers={answers}
-            onError={(message) => {
-              onToast(message, "error");
-            }}
-          />
-
-          {/* Secondary. Roughly a thousand words, so it is what you read AFTER deciding. Rendered
-              as plain text: this is third-party content and never becomes markup. */}
+          {/* Roughly a thousand words, so it is what you read AFTER deciding — but BEFORE the
+              answers panel, which is a clipboard tool rather than something to read. The
+              requirements block above tells the reader to "read the description below" whenever
+              nothing was extracted, and until this moved that instruction pointed past 779px of
+              mostly-unset identity fields. Rendered as plain text: this is third-party content
+              and never becomes markup. */}
           <section>
             <h3 className="mb-2 label-micro text-fg-3">
               job description
@@ -405,13 +470,51 @@ export function DetailPane({
                 was read from it.
               </p>
             ) : (
-              <div className="max-h-96 overflow-y-auto rounded-md border border-divider bg-bg p-3">
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-fg-2">
-                  {detail.jd_body}
-                </p>
-              </div>
+              <>
+                {/*
+                  * The frozen body carries NO newlines, so `whitespace-pre-wrap` has nothing to
+                  * wrap and a 6,000-character JD renders as one unbroken paragraph. Nothing here
+                  * alters or infers structure in third-party text — the only honest fixes
+                  * available at render time are typographic: a 68ch measure so a line is a line
+                  * rather than a 1,900px scan, and `leading-relaxed` (1.625) so the reader can
+                  * find their way back to the start of the next one.
+                  */}
+                <div
+                  className={`overflow-y-auto rounded-md border border-divider bg-bg p-3 ${
+                    jdExpanded ? "" : "max-h-[36rem]"
+                  }`}
+                >
+                  <p className="max-w-[68ch] text-sm leading-relaxed whitespace-pre-wrap text-fg-2">
+                    {detail.jd_body}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-expanded={jdExpanded}
+                  aria-label={`${jdExpanded ? "Collapse" : "Expand"} the job description`}
+                  onClick={() => {
+                    setJdExpanded((current) => !current);
+                  }}
+                  className="mt-2 inline-flex min-h-11 items-center rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+                >
+                  {jdExpanded ? "Collapse" : "Expand"}
+                </button>
+              </>
             )}
           </section>
+
+          {/* COLLAPSED when nothing was extracted, because there the requirements block's own
+              copy sends the reader to the description above — and this panel, expanded, measured
+              779px of a 2,050px pane on the live store, so it would sit between the instruction
+              and the thing it points at. Expanded otherwise: the owner opened the pane on
+              purpose. */}
+          <AnswersPanel
+            answers={answers}
+            defaultOpen={requirements.length > 0}
+            onError={(message) => {
+              onToast(message, "error");
+            }}
+          />
         </div>
       )}
     </aside>

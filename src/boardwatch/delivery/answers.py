@@ -82,6 +82,24 @@ IDENTITY_FIELDS: tuple[str, ...] = (
 #: jurisdiction, and inferring it is what `WorkAuthFact` was built to stop.
 WORK_AUTH_FIELDS: tuple[str, ...] = ("status", "jurisdiction", "needs_sponsorship")
 
+#: Closed catalog over the eligibility catalog's declared `work_auth.status` choices
+#: (`eligibility/rules.yaml`), mapping each to the words an employer's form expects. The panel
+#: exists to be COPIED, and `ead_or_similar` pasted into "what is your work authorization status?"
+#: is a token from this program's vocabulary, not an answer a human wrote.
+#:
+#: Deliberately generic: `status` is jurisdiction-RELATIVE and `jurisdiction` is its own field, so
+#: nothing here names a country. A value the catalog does not declare is a failure, never a new
+#: bucket — `_status_words` refuses it rather than letting it reach the clipboard. Coverage of the
+#: catalog is asserted in `tests/unit/test_web_server.py`, against the catalog rather than a
+#: retyped list, so a sixth member cannot ship without words.
+WORK_AUTH_STATUS_WORDS: dict[str, str] = {
+    "citizen": "Citizen",
+    "ead_or_similar": "EAD or similar (work authorization document)",
+    "needs_sponsorship": "Requires visa sponsorship",
+    "permanent_resident": "Permanent resident",
+    "prefer_not_to_say": "Prefer not to say",
+}
+
 #: `missing` names `education` as a whole, not per line: the résumé is the unit that is present
 #: or absent.
 EDUCATION_FIELD = "education"
@@ -117,6 +135,10 @@ class AnswersIssue(StrEnum):
     #: A list or mapping where one copyable string belongs. Refused rather than stringified —
     #: `"['a@example.com']"` on an employer's form is worse than a blank.
     UNEXPECTED_VALUE_KIND = "unexpected_value_kind"
+    #: A stored `work_auth.status` the eligibility catalog does not declare. Refused rather than
+    #: copied through: the raw token is what this panel's words mapping exists to keep off an
+    #: employer's form, and a blank would hide a corrupt profile row behind an empty field.
+    UNKNOWN_WORK_AUTH_STATUS = "unknown_work_auth_status"
 
 
 @dataclass(frozen=True)
@@ -349,9 +371,24 @@ def _profile_work_auth(conn: Connection | None) -> dict[str, str]:
         ("needs_sponsorship", fact.needs_sponsorship),
     ):
         answer = _scalar(value, where=f"profile.work_authorization.{name}")
-        if answer is not None:
-            resolved[name] = answer
+        if answer is None:
+            continue
+        # `needs_sponsorship` is already "yes"/"no" out of `_scalar`; only `status` is a catalog
+        # token, and only it is restated.
+        resolved[name] = _status_words(answer) if name == "status" else answer
     return resolved
+
+
+def _status_words(status: str) -> str:
+    """One declared `work_auth.status` in the words a form expects. Closed over the catalog."""
+    words = WORK_AUTH_STATUS_WORDS.get(status)
+    if words is None:
+        _refuse(
+            AnswersIssue.UNKNOWN_WORK_AUTH_STATUS,
+            "is not a work-authorisation status this catalog declares",
+            where="profile.work_authorization.status",
+        )
+    return words
 
 
 def _education(config_dir: Path) -> list[str]:

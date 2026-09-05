@@ -1,12 +1,49 @@
 import type { QueueRow } from "../api/types";
 
-/** Only user-initiated sorting changes the order; a background refresh never does. */
-export type SortKey = "rank" | "title" | "company" | "location" | "age" | "score" | "coverage";
-export type SortDirection = "asc" | "desc";
+/** Only user-initiated sorting changes the order; a background refresh never does.
+ *
+ * The runtime lists are the source and the types are derived from them, rather than the other way
+ * round: a sort restored from `sessionStorage` has to be checked against the catalog at runtime,
+ * and a hand-written second copy of the members is exactly how the two drift apart. */
+export const SORT_KEYS = [
+  "rank",
+  "title",
+  "company",
+  "location",
+  "age",
+  "score",
+  "coverage",
+] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+
+export const SORT_DIRECTIONS = ["asc", "desc"] as const;
+export type SortDirection = (typeof SORT_DIRECTIONS)[number];
 
 export interface SortState {
   key: SortKey;
   direction: SortDirection;
+}
+
+/**
+ * A sort read back out of storage, or `null` when it is not one.
+ *
+ * The catalogs are CLOSED, so an out-of-catalog key is a failure and is discarded whole — never
+ * repaired into a partly-valid sort and never allowed through as a new key. Storage is untrusted
+ * input: it survives a bundle upgrade that removed a column.
+ */
+export function parseSortState(raw: string | null): SortState | null {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const { key, direction } = parsed as { key?: unknown; direction?: unknown };
+  if (!(SORT_KEYS as readonly unknown[]).includes(key)) return null;
+  if (!(SORT_DIRECTIONS as readonly unknown[]).includes(direction)) return null;
+  return { key: key as SortKey, direction: direction as SortDirection };
 }
 
 /** `null` always sorts last, in both directions: absence is not a low value. */
@@ -60,6 +97,10 @@ export function matchesQuery(row: QueueRow, query: string): boolean {
   return (
     row.company.toLowerCase().includes(needle) ||
     row.title.toLowerCase().includes(needle) ||
-    (row.location ?? "").toLowerCase().includes(needle)
+    (row.location ?? "").toLowerCase().includes(needle) ||
+    // Every location, not only the primary: `location` is now the first of `locations`, and a
+    // posting listed as "New York, NY / Boston, MA" must answer to "boston". `?? []` because an
+    // older server omits the list (see `format.ts`).
+    (row.locations ?? []).some((entry) => entry.toLowerCase().includes(needle))
   );
 }

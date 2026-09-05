@@ -38,7 +38,7 @@ export function VerdictChip({ verdict }: { verdict: Verdict | null }) {
   if (verdict == null) {
     return (
       <span
-        className="inline-flex min-h-5 items-center gap-1.5 rounded-sm border border-dashed border-control px-2 py-0.5 text-xs text-fg-3"
+        className="inline-flex min-h-5 items-center gap-1.5 rounded-sm border border-dashed border-control px-2 py-0.5 text-xs whitespace-nowrap text-fg-3"
         title="No eligibility verdict is recorded for this posting."
       >
         <span aria-hidden="true">{"–"}</span>
@@ -49,7 +49,7 @@ export function VerdictChip({ verdict }: { verdict: Verdict | null }) {
   const style = STYLES[verdict];
   return (
     <span
-      className={`inline-flex min-h-5 items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs ${style.className}`}
+      className={`inline-flex min-h-5 items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs whitespace-nowrap ${style.className}`}
       title={style.hint}
     >
       <span aria-hidden="true" className="no-underline">

@@ -94,3 +94,9 @@ describe("matchesQuery searches only what the reader can see on the row", () => 
     expect(matchesQuery(noWhere, "austin")).toBe(false);
   });
 });
+
+it("matches the text filter against a secondary location, not only the primary", () => {
+  const row = queueRow({ location: "New York, NY", locations: ["New York, NY", "Boston, MA"] });
+  expect(matchesQuery(row, "boston")).toBe(true);
+  expect(matchesQuery(row, "chicago")).toBe(false);
+});
