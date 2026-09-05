@@ -112,6 +112,7 @@ from boardwatch.profile_bundle.imports import (
     redispositioned_ledger,
 )
 from boardwatch.profile_bundle.index import build_index, record_id_of
+from boardwatch.profile_bundle.locking import BundleLockHeldError, bundle_lock
 from boardwatch.profile_bundle.models.base import (
     EFFECTIVE_STATES,
     VerificationBasis,
@@ -396,7 +397,47 @@ def add_evidence(
     parameter is not optional for the inline case because the secret scan has to run over real
     bytes: scanning the text a record claims, without ever seeing the file it came from, would
     approve a redaction nobody performed.
+
+    Takes the exclusive bundle lock, non-blocking, exactly as `rebase` and `promote` do (D-143
+    recorded the gap). This writes four documents in a deliberate order — evidence, then the
+    manifest that describes it, then the records that cite it — so a second writer interleaving
+    between any two of them leaves a state the ordering was designed to make unreachable. The
+    lock is not blocking: a second operator is told the bundle is busy rather than queued behind
+    a write they cannot see.
     """
+    # BEFORE the lock, because `filelock` CREATES the lockfile's parent directory: a mistyped
+    # `--bundle` would otherwise leave a new empty directory behind as the only trace of a
+    # failed command, and the answer would be `bundle_lock_held`-shaped rather than
+    # `bundle_not_found` (D-138). `rebase` orders it the same way, for the same reason.
+    if not bundle_root.is_dir():
+        return outcome_with(
+            None,
+            (
+                diagnostic(
+                    IssueCode.BUNDLE_NOT_FOUND,
+                    "there is no bundle at the requested path",
+                ),
+            ),
+        )
+    try:
+        with bundle_lock(bundle_root):
+            return _add_evidence_locked(
+                bundle_root,
+                draft_name=draft_name,
+                evidence_document=evidence_document,
+                capture=capture,
+            )
+    except BundleLockHeldError as exc:
+        return outcome_with(None, (diagnostic(IssueCode.BUNDLE_LOCK_HELD, str(exc)),))
+
+
+def _add_evidence_locked(
+    bundle_root: Path,
+    *,
+    draft_name: str,
+    evidence_document: bytes,
+    capture: bytes,
+) -> OperationOutcome[EvidenceAddition]:
     try:
         tree = _draft(bundle_root, draft_name)
         record = _parse(evidence_document, _EVIDENCE_ADAPTER, logical_path=EVIDENCE_INPUT)
@@ -457,7 +498,37 @@ def resolve_conflict(
 
     Nothing is deleted: prior rulings stay, every candidate stays, and the group keeps its history.
     A later ruling on the same group is how a reopened conflict is settled again.
+
+    Takes the exclusive bundle lock for the same reason `add_evidence` does: the ruling is
+    written before the group it rules on, and a second writer landing between the two leaves a
+    group whose recorded ruling and recorded state disagree.
     """
+    # BEFORE the lock, because `filelock` CREATES the lockfile's parent directory: a mistyped
+    # `--bundle` would otherwise leave a new empty directory behind as the only trace of a
+    # failed command, and the answer would be `bundle_lock_held`-shaped rather than
+    # `bundle_not_found` (D-138). `rebase` orders it the same way, for the same reason.
+    if not bundle_root.is_dir():
+        return outcome_with(
+            None,
+            (
+                diagnostic(
+                    IssueCode.BUNDLE_NOT_FOUND,
+                    "there is no bundle at the requested path",
+                ),
+            ),
+        )
+    try:
+        with bundle_lock(bundle_root):
+            return _resolve_conflict_locked(
+                bundle_root, draft_name=draft_name, ruling_document=ruling_document
+            )
+    except BundleLockHeldError as exc:
+        return outcome_with(None, (diagnostic(IssueCode.BUNDLE_LOCK_HELD, str(exc)),))
+
+
+def _resolve_conflict_locked(
+    bundle_root: Path, *, draft_name: str, ruling_document: bytes
+) -> OperationOutcome[ConflictResolution]:
     try:
         tree = _draft(bundle_root, draft_name)
         ruling = _parse(ruling_document, _RULING_ADAPTER, logical_path=RULING_INPUT)

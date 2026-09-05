@@ -1075,3 +1075,56 @@ def test_a_ruling_is_committed_before_the_group_that_names_it(
 
     assert outcome.exit_code == 0, _codes(outcome)
     assert renamed == ["rulings.yaml", "groups.yaml"], renamed
+
+
+# --------------------------------------------------------------------------------------
+# T21 — both writers take the exclusive bundle lock (D-143 recorded the gap)
+# --------------------------------------------------------------------------------------
+
+
+def test_add_evidence_refuses_a_bundle_another_writer_holds(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """T21. `add_evidence` writes FOUR documents in a deliberate order — evidence, then the
+    manifest that describes it, then the records that cite it — so a second writer interleaving
+    between any two of them leaves exactly the state that ordering was designed to make
+    unreachable. It took no lock at all, while `rebase` and `promote` both do.
+
+    Refused, not queued: a second operator is told the bundle is busy rather than waiting behind
+    a write they cannot see (§21).
+    """
+    from boardwatch.profile_bundle.locking import bundle_lock
+
+    before = _tree(synthetic_bundle)
+    text = "The owner attests to the professional name recorded in this bundle."
+    with bundle_lock(synthetic_bundle.root):
+        outcome = add_evidence(
+            synthetic_bundle.root,
+            draft_name=synthetic_bundle.draft_name,
+            evidence_document=_inline_record(text),
+            capture=text.encode("utf-8"),
+        )
+
+    assert [finding.code for finding in outcome.diagnostics] == [IssueCode.BUNDLE_LOCK_HELD]
+    assert outcome.value is None
+    assert _tree(synthetic_bundle) == before, "a refused write must not have touched the tree"
+
+
+def test_resolve_conflict_refuses_a_bundle_another_writer_holds(
+    synthetic_bundle: SyntheticBundle,
+) -> None:
+    """The ruling is written before the group it rules on, so a second writer landing between
+    the two leaves a group whose recorded ruling and recorded state disagree."""
+    from boardwatch.profile_bundle.locking import bundle_lock
+
+    before = _tree(synthetic_bundle)
+    with bundle_lock(synthetic_bundle.root):
+        outcome = resolve_conflict(
+            synthetic_bundle.root,
+            draft_name=synthetic_bundle.draft_name,
+            ruling_document=_ruling(),
+        )
+
+    assert [finding.code for finding in outcome.diagnostics] == [IssueCode.BUNDLE_LOCK_HELD]
+    assert outcome.value is None
+    assert _tree(synthetic_bundle) == before
