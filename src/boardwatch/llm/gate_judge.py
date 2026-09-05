@@ -119,6 +119,29 @@ def _call_claude(
     return result.stdout
 
 
+def _unfence(text: str) -> str:
+    """Strip ONE markdown code fence around the verdict array.
+
+    The output contract says "no code fences" and the model emits them anyway. Measured on
+    run 4, the first armed run: all four haiku batches returned ```json\n[...]\n``` and all
+    four failed open on a JSONDecodeError at character 0 — the backtick — so an armed judge
+    judged nothing and reported itself armed. The suite could not have caught it: the fake
+    `claude` returned `json.dumps(verdicts)` with no fence, a shape the real model does not
+    reliably produce.
+
+    NARROW on purpose. Only a leading fence line and a trailing fence line are removed, and
+    anything else still raises: a response this stage cannot read must fail OPEN rather than
+    be coerced towards a verdict, which is the direction that would silently drop a real job.
+    """
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.splitlines()
+    if len(lines) < 2 or not lines[-1].strip().startswith("```"):
+        return stripped
+    return "\n".join(lines[1:-1])
+
+
 def _parse_verdicts(stdout: str, expected_count: int) -> list[OracleVerdict]:
     """The two-stage envelope `--output-format json` wraps every headless response in: the
     outer JSON's `result` key holds the model's text, which is itself the JSON array this
@@ -132,7 +155,7 @@ def _parse_verdicts(stdout: str, expected_count: int) -> list[OracleVerdict]:
     result_text = envelope["result"]
     if not isinstance(result_text, str):
         raise TypeError(f"expected envelope['result'] to be a string, got {type(result_text)}")
-    parsed = json.loads(result_text)
+    parsed = json.loads(_unfence(result_text))
     if not isinstance(parsed, list) or len(parsed) != expected_count:
         raise ValueError(
             f"expected a JSON array of {expected_count} verdicts, got "
