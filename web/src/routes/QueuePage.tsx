@@ -958,7 +958,7 @@ export function QueuePage({
         className={
           selected === null
             ? ""
-            : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,32rem)] lg:items-start"
+            : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,30rem)] lg:items-start"
         }
       >
         {/* The triage grid, and the row `a`/`s` writes with it, behind the sheet at the narrow

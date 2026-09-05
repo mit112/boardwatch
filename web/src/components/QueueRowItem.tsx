@@ -40,11 +40,17 @@ import { VerdictChip } from "./VerdictChip";
  * every row reads "Software E…", which is where the tier stops. The wide tier's fixed tracks
  * total 45rem and it keeps its measured 78rem threshold for the same reason.
  */
+/*
+ * The actions track is 16rem in both tiers, MEASURED: Apply (58px) + Applied (63) + Skip (44) +
+ * Report (58) + three 6px gaps + the 8px rule = 250px. At 13rem the four buttons overflowed their
+ * cell leftward (a `justify-end` flex row overflows on the start side, where `scrollWidth` does
+ * not report it) and sat on top of the verdict chip in the middle tier.
+ */
 export const GRID_TEMPLATE =
   "grid-cols-[minmax(0,1fr)_7.5rem] " +
   "@min-[40rem]:grid-cols-[minmax(0,1fr)_4.5rem_7.5rem] " +
-  "@min-[52rem]:grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_4.5rem_7.5rem_12.5rem] " +
-  "@min-[78rem]:grid-cols-[3rem_minmax(0,2.4fr)_minmax(0,1.2fr)_4rem_4.5rem_7.5rem_13rem_13rem]";
+  "@min-[52rem]:grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_4.5rem_7.5rem_16rem] " +
+  "@min-[78rem]:grid-cols-[3rem_minmax(0,2.4fr)_minmax(0,1.2fr)_4rem_4.5rem_7.5rem_13rem_16rem]";
 
 /** Rank, age and coverage · flags: the wide tier alone. */
 export const WIDE_ONLY = "hidden @min-[78rem]:block";
