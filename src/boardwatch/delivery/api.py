@@ -65,13 +65,14 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, Row, and_, func, select
 
-from boardwatch.core.clock import utcnow
+from boardwatch.core.clock import to_naive_utc, utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.answers import (
     IDENTITY_FIELDS,
@@ -185,6 +186,18 @@ class PdfFile:
 
 
 # ------------------------------------------------------------------------------------- the queue
+
+
+def _iso_utc(dt: datetime | None) -> str | None:
+    """A stored datetime as ISO-8601 carrying an explicit `+00:00`, or None.
+
+    The store's convention is NAIVE UTC (`core/clock.utcnow` strips tzinfo), and `.isoformat()`
+    on such a value emits no offset — which the browser then parses as LOCAL time, so every time
+    on the page was wrong by the owner's UTC offset. The attach lives in ONE function because
+    four payload sites need it and four hand-written `.replace(tzinfo=UTC)` calls would drift.
+    `to_naive_utc` first so an already-aware value is converted rather than relabelled.
+    """
+    return None if dt is None else to_naive_utc(dt).replace(tzinfo=UTC).isoformat()
 
 
 def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
@@ -351,7 +364,7 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "location": row.location,
         "remote_policy": row.remote_policy,
         "posted_days": row.posted_days,
-        "first_seen": row.first_seen.isoformat(),
+        "first_seen": _iso_utc(row.first_seen),
         "status": row.status,
         "verdict": row.verdict,
         "apply_url": row.apply_url,
@@ -476,9 +489,7 @@ def _counts(
             if last is None
             else sum(1 for row in rows if row.delivered_run_id == int(last.id))
         ),
-        "last_run_finished": (
-            None if last is None or last.finished_at is None else last.finished_at.isoformat()
-        ),
+        "last_run_finished": (None if last is None else _iso_utc(last.finished_at)),
     }
 
 
@@ -930,8 +941,8 @@ def runs_payload(conn: Connection) -> dict[str, Any]:
         "runs": [
             {
                 "id": int(row.id),
-                "started": None if row.started_at is None else row.started_at.isoformat(),
-                "finished": None if row.finished_at is None else row.finished_at.isoformat(),
+                "started": _iso_utc(row.started_at),
+                "finished": _iso_utc(row.finished_at),
                 "status": row.status,
                 "boards_attempted": row.boards_attempted,
                 "boards_complete": row.boards_complete,

@@ -31,7 +31,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1219,7 +1219,7 @@ def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None
 
     counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
     assert counts["delivered_last_run"] == 1
-    assert counts["last_run_finished"] == NOW.isoformat()
+    assert counts["last_run_finished"] == NOW.replace(tzinfo=UTC).isoformat()
 
 
 # -------------------------------------------------------------------------------------- details
@@ -1446,3 +1446,57 @@ def test_an_unusable_profile_row_is_answered_not_dropped(
 
     assert response.status == 503, response.body[:400]
     assert b"eligibility_facts_json" in response.body
+
+
+# -------------------------------------------------------------- the web-viewer payload contract
+
+
+def test_every_queue_timestamp_carries_an_explicit_utc_offset(live: Live, engine: Engine) -> None:
+    """The store holds NAIVE UTC (`core/clock.utcnow` strips tzinfo). A zone-less ISO string is
+    parsed by the browser as LOCAL time, so an owner at UTC-5 read a run that finished at 12:56 PM
+    as 05:56 PM. The offset is the fix, and it belongs on the wire rather than in the client:
+    `new Date()` on an offset-carrying string is right in every locale.
+    """
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _deliver(conn, "one", run_id=run_id)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+
+    stamps = [payload["counts"]["last_run_finished"], payload["rows"][0]["first_seen"]]
+    assert all(stamp is not None for stamp in stamps), payload["counts"]
+    for stamp in stamps:
+        assert stamp.endswith("+00:00"), stamp
+        assert datetime.fromisoformat(stamp).tzinfo is not None, stamp
+    # The instant is unchanged: the offset is attached to the stored naive value, never shifted.
+    assert datetime.fromisoformat(payload["counts"]["last_run_finished"]) == NOW.replace(
+        tzinfo=UTC
+    )
+    assert datetime.fromisoformat(payload["rows"][0]["first_seen"]) == NOW.replace(tzinfo=UTC)
+
+
+def test_every_run_timestamp_carries_an_explicit_utc_offset(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        _run(conn)
+
+    run = call(live, "/api/runs", bearer=live.token).json()["runs"][0]
+
+    for name in ("started", "finished"):
+        assert run[name] is not None, run
+        assert run[name].endswith("+00:00"), run[name]
+    assert datetime.fromisoformat(run["finished"]) == NOW.replace(tzinfo=UTC)
+    assert datetime.fromisoformat(run["started"]) == (NOW - timedelta(minutes=20)).replace(
+        tzinfo=UTC
+    )
+
+
+def test_an_unfinished_run_still_reports_a_null_finished(live: Live, engine: Engine) -> None:
+    """The control for the two above: attaching an offset must not turn "not finished yet" into
+    a string. `_counts` reads only FINISHED runs, so this is the runs payload's case alone."""
+    with engine.begin() as conn:
+        _run(conn, finished=None)
+
+    run = call(live, "/api/runs", bearer=live.token).json()["runs"][0]
+
+    assert run["finished"] is None
+    assert run["started"].endswith("+00:00")
