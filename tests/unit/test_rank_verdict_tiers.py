@@ -44,10 +44,14 @@ def _settings(data_dir: Path) -> Settings:
     return Settings(data_dir=data_dir, config_dir=data_dir)
 
 
-def _seed(data_dir: Path, titles: list[str]) -> dict[str, int]:
+def _seed(
+    data_dir: Path, titles: list[str], bodies: dict[str, str] | None = None
+) -> dict[str, int]:
     """One company, one open SAFE_BODY posting per title, ALL posted at the same instant
     so recency cannot explain a score difference — only title_match against the single
-    seeded target title ("Software Engineer") can. Returns title -> posting_id."""
+    seeded target title ("Software Engineer") can. `bodies` overrides SAFE_BODY per title, for
+    a posting that must carry a recognised skill term or the zero-signal veto hides it.
+    Returns title -> posting_id."""
     engine = get_engine(data_dir)
     ensure_schema(engine)
     posting_ids: dict[str, int] = {}
@@ -62,6 +66,7 @@ def _seed(data_dir: Path, titles: list[str]) -> dict[str, int]:
             watched=True,
         )).inserted_primary_key[0])
         for offset, title in enumerate(titles):
+            body = (bodies or {}).get(title, SAFE_BODY)
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
             posting_id = int(conn.execute(insert(postings).values(
                 company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{offset}",
@@ -69,11 +74,11 @@ def _seed(data_dir: Path, titles: list[str]) -> dict[str, int]:
                 locations_json=["Remote"], remote_policy="remote",
                 posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=f"hh-{offset}",
-                body_text=SAFE_BODY,
+                body_text=body,
             )).inserted_primary_key[0])
             posting_ids[title] = posting_id
             conn.execute(insert(posting_versions).values(
-                posting_id=posting_id, content_hash=f"hh-{offset}", body_text=SAFE_BODY,
+                posting_id=posting_id, content_hash=f"hh-{offset}", body_text=body,
                 captured_at=NOW, capture_reason="new",
             ))
     return posting_ids
@@ -143,3 +148,34 @@ def test_two_eligible_leads_keep_score_order_inside_the_tier(tmp_path: Path) -> 
     assert by_id[high_id].score.total > by_id[low_id].score.total
 
     assert [p.posting_id for p in results.visible] == [high_id, low_id]
+
+
+def test_an_eligible_lead_with_no_role_signal_ranks_below_an_uncertain_swe_lead(
+    tmp_path: Path,
+) -> None:
+    """Run 5 (2026-09-05): 20 of the 30 delivered leads were titles like `Urban Park Ranger`,
+    `Pediatric Pulmonologist` and `WM Affluent Associate` — role `uncertain` (no role signal
+    in the title), verdict `eligible` because the body flagged nothing — and every one of
+    them outranked every `uncertain` software lead, because tier 0 was "decided `eligible`"
+    with no role term. Run 4 was 26 software titles of 40; run 5 was 10 of 30; and it worsens
+    each run because `built` retires the software leads. A decided `eligible` earns tier 0
+    only for the release population, role `swe`; an `eligible` lead with no role signal is
+    tier 2, below the undecided software leads it used to displace.
+    """
+    # The Ranger's body names one recognised skill, as the real ones did, so the zero-signal
+    # veto (title without role signal AND body without terms) does not hide it first.
+    posting_ids = _seed(
+        tmp_path, ["Urban Park Ranger", "Software Engineer"],
+        bodies={"Urban Park Ranger": SAFE_BODY + " Familiarity with Python is a plus."},
+    )
+    ranger_id, swe_id = posting_ids["Urban Park Ranger"], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=ranger_id)
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    by_id = {p.posting_id: p for p in results.visible}
+    assert by_id[ranger_id].role == "uncertain", by_id[ranger_id].role_reason
+    assert by_id[swe_id].role == "swe"
+    assert by_id[swe_id].verdict == "uncertain"
+
+    assert [p.posting_id for p in results.visible] == [swe_id, ranger_id]

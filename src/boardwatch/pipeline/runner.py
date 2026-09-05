@@ -484,6 +484,14 @@ class PipelineSummary:
     # bundle or the machine, and burying the lead for it would delete an opportunity that
     # tomorrow's run would have built.
     projection_failed_ids: list[int] = field(default_factory=list)
+    # Posting ids the final-eligibility judge persisted `ineligible` for this run and the
+    # stage therefore removed from the slate (`GateStageResult.excluded_ids`). A FIFTH terminal
+    # state beside lead / render failure / withheld-dead / projection-refused: the lead never
+    # entered the tailor loop, so it is subtracted from the cohort and from `renderable`, never
+    # folded into either of those counts. Run 5 (2026-09-05), the first run on which the judge
+    # worked, went fatal — "cohort incomplete: 10 shortlisted candidates unaccounted" — because
+    # its 10 rejections were in no terminal state the guard knew.
+    gate_excluded_ids: list[int] = field(default_factory=list)
     # One entry per enabled lane that RETURNED a result (JD-acquisition spec §4). Empty is the
     # default and means no lane ran — `settings.lanes_enabled` ships `()`. A lane that RAISED is
     # absent here and named in `errors` instead, which is the honest pair: it produced no counts,
@@ -2078,6 +2086,7 @@ def run_pipeline(
         summary.gate_ineligible = gate_result.ineligible
         summary.gate_uncertain = gate_result.uncertain
         summary.gate_failed_open = gate_result.failed_open_batches
+        summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
         if gate_result.judged or gate_result.failed_open_batches:
             console.print(
                 f"gate: {gate_result.judged} judged ({gate_result.eligible} eligible, "
@@ -2331,7 +2340,10 @@ def run_pipeline(
         # gone are subtracted first: they never entered the tailor loop, so counting them as
         # render failures would report a dead board as a broken résumé path.
         shortlisted = summary.shortlist.shortlisted if summary.shortlist else 0
-        renderable = shortlisted - len(summary.dead_lead_ids)
+        # A lead the judge rejected is subtracted for the same reason a dead one is: it never
+        # entered the tailor loop, so counting it as a render failure would report a working
+        # judge as a broken résumé path.
+        renderable = shortlisted - len(summary.dead_lead_ids) - len(summary.gate_excluded_ids)
         # A projected lead that never reached `run_tailor` is counted here and NOT subtracted from
         # `renderable`, deliberately: it was renderable, and a run that produced nothing from a
         # non-empty shortlist must stay fatal. Subtracting them would leave the zero-output guard
@@ -2375,11 +2387,14 @@ def run_pipeline(
             # accounted set: they are a THIRD terminal state, not a lead and not a render
             # failure, and folding them into either would make one of those counts a lie. A lead
             # whose PROJECTION refused is removed for exactly that reason — a fourth terminal
-            # state, and the tailor stage never ran for it.
+            # state, and the tailor stage never ran for it. A lead the final-eligibility judge
+            # persisted `ineligible` for is the FIFTH: removed from the slate before tailoring,
+            # persisted as a gate row, reported under `gate_ineligible` — decided, not lost.
             visible_ids = (
                 frozenset(posting.posting_id for posting in ranked.visible)
                 - frozenset(summary.dead_lead_ids)
                 - frozenset(summary.projection_failed_ids)
+                - frozenset(summary.gate_excluded_ids)
             )
             lead_ids = frozenset(lead.posting_id for lead in summary.tailored)
             failed_ids = frozenset(summary.tailor_failed_ids)

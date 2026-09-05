@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### Session 2026-09-05 (review + closure): the 09-09 execution REVIEWED and its four judgment calls HOLD under mutation; run 4 is DISQUALIFIED and not re-judged (owner); Track 1 CLOSED and the threshold STRUCTURE set (owner); T49 shipped; the zero-row class MEASURED. The count starts at run 5 — the first scheduled run on a working configuration — and the tick fires 06:00 CDT, not 04:00.
+### Session 2026-09-05 (review + closure + run 5): the 09-09 execution REVIEWED and HOLDS; run 4 DISQUALIFIED; Track 1 CLOSED and the threshold STRUCTURE set; T49 shipped; the zero-row class MEASURED. Then **run 5 — the first launchd run on the armed configuration — FAILED (exit 1) while the judge WORKED for the first time**, exposing two defects in T42/T45's integration, both fixed (T54, T55). **The count starts at run 6.** Runs 6, 7, 8 are chained back to back on the owner's instruction.
 
 **Read this before acting.** Decision: **D-482** (the rulings, the measurement, and three
 corrections to D-481). Numbers: `METRICS.md`, `Session — 2026-09-05 · review`. D-481 and
@@ -63,8 +63,25 @@ detection gaps: adjective-laden "0-1 years of professional software development 
 en-dash/plus ranges "2–12+ years", "Experience Required: 3 to 5 years". **Rules are not touched —
 that restarts the count.** Ticketed as **T51** for M3's window, corpus rows first.
 
-**Next action.** Nothing eligibility-side. Wait for run 5 and read it as above. The one machine
-action is Mit's and optional: a reboot moves the tick to 04:00.
+**RUN 5 (D-483) — kickstarted under launchd 11:57 CDT, `runs = 1`, exit 1 after 59.3 min.** The
+judge WORKED: 40 judged · 16 eligible · **10 ineligible** · 14 uncertain · 0 failed open · 241 s.
+The PATH fix held. The FATAL was the cohort guard: a judge rejection was not a terminal state it
+knew, so the 10 rejections read as "10 shortlisted candidates unaccounted". 30 leads were
+delivered before the fatal (dispositions run 5 = 30 `built`), **20 of them non-software** — Urban
+Park Ranger, Pediatric Pulmonologist, WM Affluent Associate — because T45's tier 0 was ANY
+`eligible` verdict regardless of role; run 4 was already 14 of 40. Fixed on `main`:
+- **T54** — a judge rejection is the fifth terminal state (`summary.gate_excluded_ids`), subtracted
+  from the cohort and the render denominator; the gate test now seeds TWO postings and asserts
+  `summary.fatal is None`, which it never did.
+- **T55** — tier 0 requires role `swe` (both decided tiers do); an `eligible` lead with no role
+  signal ranks in tier 2. **Taken in the owner's absence on the recommended option (no answer in
+  300 s); CONFIRMED by Mit 13:43 CDT ("if you feel good about them, confirm"). A ranker change,
+  not eligibility, so the freeze holds.**
+
+**Next action.** Read runs 6, 7, 8 as they land (the chain kickstarts each when the
+previous exits 0; `launchctl print` `runs = N`, `judged > 0`, `fatal` absent, the lead titles
+software). Three clean ⇒ provisional pass. Mit's optional machine action: a reboot moves the
+06:00 tick to 04:00 — not before the chain is done.
 
 ### Owed, and specifically NOT done
 
@@ -144,7 +161,7 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
   armed and WORKING**, and its 50-board sample is **reverted** (D-456) — watched boards 482 → 432,
   then 490 after run 149's Indeed convergences. Remaining tier-D lanes are **DECIDED AGAINST**, not
   deferred (D-451).
-- **Provisional pass: the count starts at run 5 (D-482), 0 of 3.** 14-day acceptance not started.
+- **Provisional pass: the count starts at run 6 (D-483; run 5 failed), 0 of 3.** 14-day acceptance not started.
   Not chased (D-351 item 2: work comes first), and every `rules_hash` bump restarts the count.
 
 ## Live blockers and carried gaps
@@ -153,4 +170,4 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **No run has been tick-fired on a valid configuration; run 5 at 06:00 CDT on 2026-09-06 is the first** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run. The tick fires **06:00 CDT until a reboot** — launchd keeps its boot zone, and the zone was set five minutes after the 09-03 boot — so a reboot moves it to 04:00. Verify a tick by `runs = N` in `launchctl print` and the log mtime, never by the run row alone: a hand run proves the code, only a tick proves the plist | **Mit** (reboot); every session (discipline) |
+| **Run 5 was the first launchd run on a valid configuration and FAILED on a T42 integration defect (fixed); runs 6–8 are chained** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run. The tick fires **06:00 CDT until a reboot** — launchd keeps its boot zone, and the zone was set five minutes after the 09-03 boot — so a reboot moves it to 04:00. Verify a tick by `runs = N` in `launchctl print` and the log mtime, never by the run row alone: a hand run proves the code, only a tick proves the plist | **Mit** (reboot); every session (discipline) |
