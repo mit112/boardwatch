@@ -45,12 +45,31 @@ def reword_is_provenanced(
     swap = {p.from_phrase.lower(): p.to_phrase for p in table.as_pairs()}
     images = {swap[s] for s in source if s in swap}
     images |= {img.lower() for img in images}
+    tokens = toks(b_text)
+    lowered = [tok.lower() for tok in tokens]
+    # A multi-word image can never match token by token: `ML -> machine learning` puts the whole
+    # phrase in `images` and the loop below then asks whether the token "machine" is in it. Both
+    # words came back offending and the reword was vetoed — the equivalence table's own approved
+    # substitution rejected by the check that exists to authorise it.
+    #
+    # Matched as a CONTIGUOUS token run, never as a set of extra allowed words: half an approved
+    # image is not an approved image, and authorising "machine" on its own would let a reword
+    # introduce "machine operator" from an `ML` source. Punctuation between the words breaks the
+    # run, which is right — "machine, learning" is not the phrase the table approved.
+    phrased: set[int] = set()
+    for phrase in {tuple(img.lower().split()) for img in images if len(img.split()) > 1}:
+        span = len(phrase)
+        for start in range(len(lowered) - span + 1):
+            if tuple(lowered[start : start + span]) == phrase:
+                phrased.update(range(start, start + span))
     offending: list[str] = []
-    for tok in toks(b_text):
+    for index, tok in enumerate(tokens):
         if not _is_word(tok):
             continue  # punctuation / structural char
         low = tok.lower()
         if low in source or low in connectives or tok in images or low in images:
+            continue
+        if index in phrased:
             continue
         offending.append(tok)
     return ProvenanceResult(ok=not offending, offending=tuple(offending))

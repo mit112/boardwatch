@@ -129,3 +129,36 @@ def test_b_side_punctuation_only_allowed():
     result = reword_is_provenanced("Built the service", "Built, the service!", table=table)
     assert result.ok is True
     assert result.offending == ()
+
+
+def test_a_multi_word_equivalence_image_is_matched_as_a_phrase():
+    """T25. The image set held whole PHRASES while the check ran token by token, so a two-word
+    image could never match: `ML -> machine learning` put "machine learning" in the image set
+    and then asked whether the token "machine" was in it. Both words were reported offending
+    and the reword was vetoed — the equivalence table's own approved substitution rejected by
+    the check that is supposed to authorise it.
+    """
+    table = _make_table(("ML", "machine learning"))
+    result = reword_is_provenanced("Built ML pipeline", "Built machine learning pipeline",
+                                   table=table)
+    assert result.ok is True, result.offending
+    assert result.offending == ()
+
+
+def test_only_the_whole_phrase_is_matched_not_its_words():
+    """The control, and the reason this is a phrase match rather than a set of extra tokens.
+    Half an approved image is not an approved image: authorising "machine" on its own would let
+    a reword introduce "machine operator" from an `ML` source."""
+    table = _make_table(("ML", "machine learning"))
+    result = reword_is_provenanced("Built ML pipeline", "Built machine pipeline", table=table)
+    assert result.ok is False
+    assert "machine" in result.offending
+
+
+def test_a_phrase_image_split_across_punctuation_is_not_matched():
+    """"machine, learning" is not the phrase "machine learning"; a match that ignored the comma
+    would authorise text the table never approved."""
+    table = _make_table(("ML", "machine learning"))
+    result = reword_is_provenanced("Built ML pipeline", "Built machine, learning pipeline",
+                                   table=table)
+    assert result.ok is False
