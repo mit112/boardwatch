@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { waitFor, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { QueueDetail, QueueRow } from "../api/types";
@@ -88,8 +88,12 @@ describe("#/queue?run=&lead=", () => {
     render(<App />);
     await screen.findByRole("grid", { name: "Queue" });
 
-    // The lead the URL names is open, fetched by id — not merely highlighted.
-    expect(vi.mocked(getDetail)).toHaveBeenCalledWith(61310);
+    // The lead the URL names is open, fetched by id — not merely highlighted. Awaited: the
+    // detail fetch is an effect keyed on `selected`, which lands a render after the grid does,
+    // so a synchronous assertion here raced it under a loaded worker and failed one run in three.
+    await waitFor(() => {
+      expect(vi.mocked(getDetail)).toHaveBeenCalledWith(61310);
+    });
     // Both lanes are narrowed: the review lead belongs to run 4 and is gone with the apply one.
     expect(queueTitles()).toEqual(["RUN-5-LEAD", "RUN-5-OTHER"]);
     expect(screen.queryByText("RUN-4-REVIEW")).toBeNull();
