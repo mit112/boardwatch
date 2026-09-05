@@ -172,29 +172,38 @@ def _never_reach_the_real_data_dir(
     store. Any fixture that sets the variable itself still wins — it runs after this one and its
     `monkeypatch.setenv` overwrites this.
 
-    **This closes the env-var route, not every route.** `load_settings` prefers a `data_dir` key
-    in the real `config.toml` over this variable (`settings.py`: `data_dir or file_data_dir or
-    default_data_dir()`), and this fixture deliberately does not pin `BOARDWATCH_CONFIG_DIR`, so
-    a machine whose config pins `data_dir` would still resolve to that path. Nothing in the
-    codebase ever WRITES that key and Mit's config does not carry one, so the hole is not open
-    today — but do not read this fixture as a proof that no test can reach a real store.
+    Also pins `BOARDWATCH_CONFIG_DIR` to its own empty scratch dir, no opt-out, closing the same
+    shape of hazard one root over (D-281: a run isolated only by `DATA_DIR` still reads the live
+    `resume.yaml` and career-profile bundle) — this was tracked here as a known gap until T17.
+    Packaged defaults (the bundled `rules.yaml` and friends) are still read from the package when
+    the config dir lacks a file, so tests that read real packaged config on purpose are
+    unaffected. What breaks is a test that silently read Mit's live `resume.yaml`, career-profile
+    bundle, or `resume_template.tex`; the fix in each case is a fixture that builds a properly
+    configured user (`boardwatch init` + `tailor init` + `write_test_resume_template`), never an
+    opt-out from this pin.
 
-    Deliberately NOT extended to `BOARDWATCH_CONFIG_DIR`. That variable has the same shape of
-    hazard (D-281: a run isolated only by `DATA_DIR` still reads the live `resume.yaml` and
-    career-profile bundle), but many tests read real packaged config on purpose, so pinning it
-    here would be a much larger behavioural change than this fix should carry. It remains a
-    known gap.
+    Pinning the config dir also closes the `data_dir`-in-`config.toml` hole for free
+    (`settings.py`: `load_settings` prefers a `data_dir` key in `config.toml` over
+    `BOARDWATCH_DATA_DIR`) — the scratch config dir this fixture hands out has no `config.toml`,
+    so that key can never be present.
     """
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path_factory.mktemp("bw-data")))
     # T16. `ensure_schema` replays the 27-migration chain on every fresh store the suite builds,
     # at ~93 ms each. With the switch on it replays the DDL that same chain produces instead,
     # at ~2.9 ms, and the resulting schema is byte-identical — triggers, indexes and the alembic
-    # stamp included (`test_the_fast_schema_path_is_byte_identical_to_the_migration_chain`).
+    # stamp included (`test_the_fast_schema_path_produces_the_same_schema_as_the_migration_chain`).
     #
     # Set HERE and nowhere else: no CLI path reads this variable, and `ensure_schema` additionally
     # refuses the shortcut on any database that is not completely empty, so a real store migrates
     # whatever the environment says.
     monkeypatch.setenv(FAST_SCHEMA_ENV, "1")
+    # T17. The config dir, pinned the same way and for the same reason, closing the gap this
+    # fixture's docstring named and left open: a run isolated only by the data dir still reads the
+    # live `resume.yaml`, career-profile bundle and `resume_template.tex`. Packaged defaults are
+    # read from the PACKAGE when the config dir lacks a file, so tests that read real packaged
+    # config on purpose are unaffected. This also closes the `data_dir`-in-`config.toml` hole for
+    # free — an empty scratch dir has no `config.toml` for `load_settings` to prefer.
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path_factory.mktemp("bw-config")))
 
 
 @pytest.fixture(autouse=True)

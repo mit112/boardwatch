@@ -3,7 +3,21 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from boardwatch.core.settings import Settings, load_settings
+from boardwatch.core.settings import Settings, default_config_dir, load_settings
+
+
+def test_config_dir_is_pinned_to_scratch_by_the_autouse_fixture(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """`_never_reach_the_real_data_dir` (tests/conftest.py) pins `BOARDWATCH_CONFIG_DIR` for
+    every test, no opt-out — the same shape as its `BOARDWATCH_DATA_DIR` pin. A test that sets
+    neither variable itself must still never resolve to Mit's real user config dir; today it
+    does, because only the data dir is pinned (T17)."""
+    base = tmp_path_factory.getbasetemp()
+    config_dir = default_config_dir()
+    assert base in config_dir.parents or base == config_dir
+    settings = load_settings()
+    assert settings.config_dir == config_dir
 
 
 def test_defaults_load_without_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
