@@ -68,7 +68,8 @@ runs T37, T38 and T39**, and the next `--project` run is M1's first acceptance r
 `HANDOFF-2026-09-07.md`). **The formatting session is DONE (D-476), 04:45–05:00 CDT:** Nakshatra
 now sits above SAKEC, the skills block is kept as shell-authored, `projection.{sde,ios}.yaml` exist;
 `projection.yaml` re-approved at **04:59:45 CDT**, both lens files at 04:59:52 and 05:00:01, all three
-`content_digest`s verified read-only — **MATCH**. The stamp is fresh for the 06:00 tick.
+`content_digest`s verified read-only — **MATCH**. The stamp is fresh for the 06:00 tick. The template's
+spacing was then evened out (D-476 addendum; outside the stamp, re-verified MATCH).
 
 **0-0. OWNER RULINGS 2026-09-05 04:13 (D-475): T40 — YES, build. T41 — FIX, build.** Both are
 now plain tickets for the next execution session, in that order, after R2.

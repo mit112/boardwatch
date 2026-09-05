@@ -12823,3 +12823,4 @@ The count matches the 09-06 post-review gate exactly: no test was added or chang
 | `approve-projection` × 3 | 04:59:45 / 04:59:52 / 05:00:01 CDT, `controlling_terminal` |
 | read-only verification | all three `content_digest` + `bundle_digest` **MATCH**; pre-approval control reported NO STAMP × 3 |
 | stamps on disk | 4 (the 04:14 stamp is superseded and inert) |
+| template pass (05:00–05:07) | section gaps Edu→Skills / Skills→Exp / Exp→Proj **4.4 / 12.9 / 7.9pt → 7.8 / 7.9 / 7.9pt**; heading→bullet **0.5–2.3 → 2.1–2.5pt**; page slack measured **< 8pt**; four `resume_template.tex` values; both lens sets 1 page; stamps unchanged (re-verified MATCH × 3) |
