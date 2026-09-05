@@ -106,6 +106,12 @@ the formatting session (with the re-approval, above); **the rest of the smartrec
 abbvie (1,074, 0) remain at ~400 host-seconds each per run, now overlapped by T38 rather than
 serialised behind the fleet; StreakSync `main`.
 
+**0-5. A PRODUCT-LEVEL ARCHITECTURE REVIEW WAS WRITTEN 2026-09-05c — `REVIEW-2026-09-05.md`.**
+It does not re-open D-467. Its finding: the D-071/D-074 second stage (the LLM final gate) is not on
+the daily path, nothing reads seniority from a JD body, tailoring runs before the lane split, and the
+ranker ignores the verdict. It tables **four owner decisions** (its last section) and proposes a **B8**
+completion bar. Nothing is ruled; nothing is ticketed until Mit reads it.
+
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
 across **~78,615 open `uncertain` postings**. Different blast radius, different question, still his.
