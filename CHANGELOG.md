@@ -4,27 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Fixed
-
-- **A lead the final-eligibility judge rejects no longer makes the run fatal.** The cohort guard
-  requires every shortlisted candidate to reach a terminal state, and a judge rejection was not
-  one it knew: on the first run where the judge worked, its 10 rejections read as "10 shortlisted
-  candidates unaccounted" and the run exited 1 after delivering everything else. A rejection is
-  now a terminal state of its own, subtracted from the cohort and from the render denominator,
-  and reported under the gate's `ineligible` count as before.
-
-### Changed
-
-- **A decided `eligible` lead earns the top rank tier only when its title reads as a software
-  role.** Ranking tiered any `eligible` verdict first, so postings whose titles carried no role
-  signal at all — and whose bodies flagged nothing, hence `eligible` — outranked every undecided
-  software lead and filled two thirds of a slate. Both decided tiers now require role `swe`; an
-  `eligible` lead with no role signal ranks with everything else, below the undecided software
-  leads it used to displace. Score still orders within a tier.
-
 ## [Unreleased]
 
 ### Added
+
+- **Each queue folder's `details.json` now records why the review lane holds the lead.** A new
+  `review_reason` key carries the same decision that chose the folder, `null` in the apply lane,
+  so a run's review composition can be read from the queue tree. `details.json`'s `schema` is now
+  2; the first sync after upgrading rewrites every folder once.
+
+- **Indeed's tier-1 admissions can be bounded separately from the lane's new-company cap.** A hit
+  that dereferences to a supported employer board you do not yet watch is a different kind of
+  admission from an aggregator row, and one cap could not tell them apart. An `"indeed.tier1"` key
+  in `[lane_new_companies_per_run_overrides]` (an integer or `"unlimited"`) gives tier 1 its own
+  per-run bound; with the key absent, nothing changes.
 
 - **`boardwatch config show` now prints the five `gate.*` keys** — `enabled`, `claude_config_dir`,
   `model`, `batch_size`, `call_timeout_s` — with their defaults, beside `llm.*`. The judge is the one
@@ -349,6 +342,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An "18 years or older" age floor no longer rejects a posting.** `domain_years_minimum` read
+  "18 years or older" as an eighteen-year experience bar; `or` and `older` join the words that
+  stop that pattern, so an age requirement writes no experience row.
+
+- **A lead the final-eligibility judge rejects no longer makes the run fatal.** The cohort guard
+  requires every shortlisted candidate to reach a terminal state, and a judge rejection was not
+  one it knew: on the first run where the judge worked, its 10 rejections read as "10 shortlisted
+  candidates unaccounted" and the run exited 1 after delivering everything else. A rejection is
+  now a terminal state of its own, subtracted from the cohort and from the render denominator,
+  and reported under the gate's `ineligible` count as before.
+
 - **The eligibility gate judge no longer discards every verdict it is given.** The judge asks for a
   bare JSON array and the model routinely returns it wrapped in a ```` ```json ```` markdown fence
   anyway. Parsing died on the leading backtick, so every batch failed open: on the first armed run
@@ -370,6 +374,23 @@ All notable changes to this project are documented here. The format follows
   "database is locked" — the interactive command loses so the unattended scan does not.
 
 ### Changed
+
+- **More ways of stating an experience bar are now detected.** `Yrs` reads as years; a run of
+  adjectives may carry commas ("2-4 years of professional, post University experience"); a bar
+  stated noun-first ("Experience Required: 3 to 5 years", "Experience: 7+ years in …") is a new
+  pattern, `labeled_years_minimum`, that implies the total-years bar and takes the low end of a
+  range; and a parenthetical that states its own duration ("… experience (1+ years of internship
+  experience desirable)") keeps its hedge to itself instead of standing down the bar outside it.
+  This moves `engine_version`, so the next run re-evaluates every open posting once. Measured on
+  4,000 live postings before shipping: 64 gain a requirement row, 13 turn ineligible, every one of
+  them quoting a real bar above the profile's years.
+
+- **A decided `eligible` lead earns the top rank tier only when its title reads as a software
+  role.** Ranking tiered any `eligible` verdict first, so postings whose titles carried no role
+  signal at all — and whose bodies flagged nothing, hence `eligible` — outranked every undecided
+  software lead and filled two thirds of a slate. Both decided tiers now require role `swe`; an
+  `eligible` lead with no role signal ranks with everything else, below the undecided software
+  leads it used to displace. Score still orders within a tier.
 
 - **`top` now ranks a decided lead above one nobody has judged yet.** Score used to be the whole
   sort key, so an `eligible` posting (deterministic or a persisted final-gate verdict) could rank

@@ -78,15 +78,28 @@ Park Ranger, Pediatric Pulmonologist, WM Affluent Associate — because T45's ti
   300 s); CONFIRMED by Mit 13:43 CDT ("if you feel good about them, confirm"). A ranker change,
   not eligibility, so the freeze holds.**
 
-**Next action.** Read runs 6, 7, 8 as they land (the chain kickstarts each when the
+**THE AFTERNOON (D-484): the first enterprise-executor fan-out, owner-approved 13:51 CDT.** Three
+headless Opus executors on the enterprise seat (`CLAUDE_CONFIG_DIR=<home>/.claude-boardwatch`, one
+worktree each) built **T52** (`review_reason` persisted in `details.json`, schema 2), **T53** (a
+nested tier-1 admission budget for Indeed, keyed `"indeed.tier1"` in the overrides table — **INERT
+until a value is set; owner to choose, 25/run recommended**) and **T51** (years detections widened:
+`Yrs`, comma adjectives, new `labeled_years_minimum`, aside-owned hedges, an "18 years or older"
+false rejection fixed). This session reviewed, re-ran, mutated and gated each sequentially. **T51
+A/B on 4,000 pinned live postings:** 64 gain a row, 13 turn ineligible, every one quoting a real
+bar; 3 false rejections removed; zero-row 1,373 → 1,361 (~0.9% of the class — D-482's 5.5% was an
+upper bound). `engine_version` moved again; run 6 re-evaluates ~103k postings once. All three are on
+`main` before the freeze. **Runs 6, 7, 8 are scheduled for 20:00 CDT** (owner: "so we dont waste
+daylight"), kickstarted under launchd by a detached scheduler that waits out any gate.
+
+**Next action.** Set `"indeed.tier1"` (owner). Read runs 6, 7, 8 as they land (the chain kickstarts each when the
 previous exits 0; `launchctl print` `runs = N`, `judged > 0`, `fatal` absent, the lead titles
 software). Three clean ⇒ provisional pass. Mit's optional machine action: a reboot moves the
 06:00 tick to 04:00 — not before the chain is done.
 
 ### Owed, and specifically NOT done
 
-- **T51 — widen the years detections the zero-row measurement exposed (D-482).** M3's window
-  only: it moves `engine_version`, so not before the third clean run. Corpus rows first.
+- **T51 SHIPPED (D-484) before the freeze.** Its residual: a hedged bar carrying a domain noun has no
+  `*_preferred` sibling to land in and writes no row; a recall change for M3's window.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
   takes `eligible` to **0**, and the `work_auth` form is worth **245 of 4,617 (5.3%)** — about a
   quarter of the measured defect. **Do not re-derive it, and do not quote the naive 29.9%**, which is

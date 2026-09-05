@@ -92,15 +92,15 @@ hidden as ineligible.**
 
 **Still open:** **no requirement rows — MEASURED (D-482):** 33 of 120 delivered, 0 of run 4's 40
 (verdict tiering displaces them); 32,602 of 96,266 evaluations (33.9%) at the population, half
-with a lexical cue, "N years … experience" phrasings 5.5%. Real detection gaps, ticketed **T51**
-for this window. **Role-unconfirmed (6 of 80)** — title taxonomy, small, unchanged.
+with a lexical cue, "N years … experience" phrasings 5.5%. Real detection gaps: **T51 SHIPPED 2026-09-05 before the freeze (D-484)**, reaching ~0.9% of
+the class — the rest is genuinely requirement-free by the catalog's standard. **Role-unconfirmed (6 of 80)** — title taxonomy, small, unchanged.
 
 **Exit:** apply lane >= 10 per run on three consecutive runs, with the review lane's composition in
 METRICS. **This restarts the freeze**, which is why it is after M2's provisional pass and before
 the 14-day confirm is relied on. All five D-477 tickets restart the provisional-pass count, so the
 count begins from run 6 (run 4 disqualified, D-482; run 5 failed, D-483).
 
-### M4 — Find what job-apps finds. **Threshold STRUCTURE ruled and Track 1 CLOSED (D-482); the Indeed/hiring.cafe numbers are owed at the first post-reset reading (~2026-09-17).**
+### M4 — Find what job-apps finds. **Threshold STRUCTURE ruled and Track 1 CLOSED (D-482); the Indeed/hiring.cafe numbers are owed at the first post-reset reading (~2026-09-17). The tier-aware Indeed cap is BUILT (T53, D-484) and inert until `"indeed.tier1"` is set.**
 `RETIREMENT-PLAN.md` holds the finished analysis; do not re-derive it. In order: **set the
 per-source thresholds** (owner; D-450 on the page); **Track 1** — the 108 already-admissible
 LinkedIn boards, 113 postings on the gate-survivor basis, ~5.8 min per run forever (owner's
