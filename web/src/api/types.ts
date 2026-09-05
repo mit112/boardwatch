@@ -171,6 +171,13 @@ export interface QueueResponse {
    */
   review: QueueRow[];
   counts: QueueCounts;
+  /**
+   * What this SERVER can do, as distinct from what the data says. Optional because a viewer older
+   * than the field omits it entirely, and the honest default for an unknown capability here is
+   * "assume it works": hiding a control that would in fact have worked costs the reader the only
+   * route to the folder.
+   */
+  meta?: { reveal_supported: boolean };
 }
 
 export interface RequirementView {

@@ -175,6 +175,7 @@ export function DetailPane({
   onSkip,
   onReport,
   onToast,
+  revealSupported = true,
 }: {
   detail: QueueDetail | null;
   loading: boolean;
@@ -185,6 +186,13 @@ export function DetailPane({
   onSkip: () => void;
   onReport: () => void;
   onToast: (message: string, tone: "info" | "error") => void;
+  /**
+   * Whether THIS server can open a file manager at all. `false` omits the button rather than
+   * leaving a control that can only ever answer with an error toast. Defaults to `true`, because
+   * a viewer older than `meta.reveal_supported` sends nothing and a hidden control that would
+   * have worked is the worse of the two mistakes.
+   */
+  revealSupported?: boolean;
 }) {
   const [shown, setShown] = useState(false);
   /*
@@ -387,24 +395,26 @@ export function DetailPane({
                     });
                   }}
                 />
-                <ActionButton
-                  label="Reveal folder"
-                  {...(folder === null ? {} : { title: folder })}
-                  onClick={() => {
-                    void revealFolder(row.posting_id)
-                      .then((result) => {
-                        if (!result.ok) {
-                          onToast(result.reason ?? "The folder could not be revealed.", "error");
-                        }
-                      })
-                      .catch((caught: unknown) => {
-                        onToast(
-                          caught instanceof Error ? caught.message : "Reveal failed.",
-                          "error",
-                        );
-                      });
-                  }}
-                />
+                {!revealSupported ? null : (
+                  <ActionButton
+                    label="Reveal folder"
+                    {...(folder === null ? {} : { title: folder })}
+                    onClick={() => {
+                      void revealFolder(row.posting_id)
+                        .then((result) => {
+                          if (!result.ok) {
+                            onToast(result.reason ?? "The folder could not be revealed.", "error");
+                          }
+                        })
+                        .catch((caught: unknown) => {
+                          onToast(
+                            caught instanceof Error ? caught.message : "Reveal failed.",
+                            "error",
+                          );
+                        });
+                    }}
+                  />
+                )}
               </>
             )}
 
