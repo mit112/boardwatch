@@ -2388,3 +2388,145 @@ answer, chosen by the owner over the deterministic topic net. **43 eligible / 38
 uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is a bar"** on the 28
 `experience_years` verdicts — **and that ruling is bounded to the GATE, not to
 `near_miss_years_ceiling`** (D-461, and see Owner-gated below).
+
+## Sessions 2026-09-04d and 2026-09-04c, moved WHOLE out of `STATE.md` on 2026-09-05
+
+Both blocks are settled: 04d's five tickets and 04c's run 2 are merged and recorded in
+`CHANGELOG.md`, `D-466`, `D-467` and `D-468`. Moved verbatim, nothing summarised away, because
+`STATE.md` was 311 lines against its own ~250 ceiling and the fix for that is to move settled
+blocks out (D-139).
+
+### Session 2026-09-04d: the owner-ruled TOP FOUR from the architecture review SHIP, plus T5 — five tickets, five worktrees, five gates, all merged to a local `main`; both eligibility changes were A/B'd over the live corpus first, and one of them turns out to move NOTHING
+
+**Read this before acting on anything below it.** Reasoning: **D-468**. Numbers: `METRICS.md`, the
+`Session — 2026-09-04d` block. **Written for a fresh reviewer: `docs/program/HANDOFF-REVIEW-2026-09-04d.md`.**
+
+**SHIPPED (local commits, unpushed — `gh` is still not installed):** T1 `db6807da` the pysqlite
+`begin` hook at the ENGINE, retiring the two hand `BEGIN IMMEDIATE`s; T3 `e88da1fd`
+`(no|not) (less|fewer) than` as a cue idiom; T5 `b63b3ee9` `run --queue-root` plus a refusal when
+`BOARDWATCH_DATA_DIR` alone moves the store; T4 `8c2b3ef2` bars stated in MONTHS; T2 `35ef0da1` the
+résumé renderer failing CLOSED without `{config_dir}/resume_template.tex`. Every gate was **exit 2
+with exactly the two known environmental failures** and was read from its own exit-code sentinel.
+
+**THE TICKETS WERE WRONG IN THREE PLACES AND THE CORRECTIONS ARE MEASURED.** (1) **Review finding 3
+does not reproduce** — "no less than 5 years" evaluates `uncertain` with ZERO rows, not `eligible`.
+(2) **Review finding 6's direction is inverted for the policy half**: a corrupt FACTS row abstains,
+but a corrupt POLICY row yields the CATALOG DEFAULTS, where only `work_auth` is `blocker` and the
+other five families drop to `preference` — which can never yield `ineligible`. **T7 is a CLEARING
+failure, not a conservative one, and is under-sized in the ticket list.** (3) **T4's stated
+acceptance is impossible**: 18 months is 1.5 years, inside `near_miss_years_ceiling: 3`, so a months
+bar under 36 months can only ever be `met` or `unknown`. Only 48 months (4 occurrences corpus-wide)
+can reject.
+
+**T3 CHANGES NO POSTING'S VERDICT TODAY, and that is the honest price of its re-key.** The idiom
+occurs in **58 of 61,927** open bodies and never in front of a years bar; an A/B over exactly those
+58 moved **0 verdicts and 0 rows**. **T4 does move**: over 3,668 pinned postings, 916 gain a row and
+**29 verdicts move** (26 `uncertain`→`eligible`). Both change `rules_hash`, so **the next tick
+re-evaluates the corpus once** — one re-key, not two, because both landed before it.
+
+**THE OWED DRAIN IS ANSWERED, MEASURED, AND OWES NOTHING.** `engine_version` moved
+`1+bf844e01ebcb` → **`1+d89b423701e5`**, which stales every permanent ledger stamp, and T4 moves
+verdicts in the LOOSENING direction (26 `uncertain`→`eligible`) — so the D-319 test does apply here
+rather than being waived by argument. It is answered by counting: the ledger holds **40 rows, all
+`built`, all from run 2, none reopened, zero `skipped`.** Nothing is suppressed, so no loosening can
+release anything and a drain could only re-deliver the same 40 leads. D-460's refusal stands, now on
+a starker number than the one it was written against.
+
+**THE NEXT 04:00 TICK IS THE FIRST UNATTENDED RUN OF ALL OF THIS.** It runs new transaction
+behaviour, a re-keyed catalog, a new run refusal and a fail-closed renderer, on the rebuilt store.
+`{config_dir}/resume_template.tex` must exist or **every lead is refused by design** — verify it
+before the tick if there is any doubt.
+
+
+### Session 2026-09-04c: RUN 2, the first post-reset run, is CLEAN — the profile row and the board fleet turned out to be lost too, both are RECOVERED and RE-SEEDED, 288 boards scanned cold, 40 of 40 leads rendered one page against bundle revision 1, and a whole-tree ARCHITECTURE REVIEW records 26 findings for the next session
+
+**Read this before acting on anything below it.** Reasoning: **D-466** (recovery + run 2) and
+**D-467** (the review). Numbers: `METRICS.md`, the `Session — 2026-09-04c` block. Findings:
+**`docs/program/REVIEW-2026-09-04.md`**. No code changed, no PR.
+
+**THE PIPELINE IS RUNNING AGAIN.** The 06:00 tick (run 1) failed closed on the projection stamp AND
+reported **0 watched boards** — D-464 missed that the singleton `profile` row and the `companies`
+fleet live only in the store. Both were recovered from Bash tool-results in the transcript archive
+and re-seeded through the CLI's own functions: the profile row whole (14 target / 22 exclude titles,
+Houston/Remote/US, band `entry`, facts, six-family `blocker` policy, 52 skills from the rebuilt
+text) and a **288-board fleet** (301 offered from the union of every surviving list, 13 skipped by
+`--verify`). Lane rows were deliberately not restored; run 2's lanes re-discovered **265**. About 60
+one-off `companies add` boards are unrecoverable. **Run 2** (manual, daily-driver flags, heartbeat
+env unset, 06:32-09:52): `ok`, RECONCILES, **40 tailored / 40 PDFs / all one page**, header text
+identical to the approved Desktop preview; 61,927 evaluated; scan **178.6 min = 89.2%** of 3 h 20
+min; **74,596 Workday details still deferred**, so the 04:00 ticks stay scan-dominated. The store
+holds one full corpus and `~/boardwatch-applications/2026-09-04/` the delivered slate.
+
+**THE BUNDLE (revision 1, D-465) IS NOW EXERCISED END TO END.** 4 experience + 4 projects, no summary,
+eight distinct project quartets across the 40 leads. One layout item for the formatting session:
+experience follows declaration order, so SAKEC (Feb-Apr 2021) prints above Nakshatra (Mar 2021-Feb
+2022); reordering `projection.yaml` re-stales the stamp. Everything from 2026-09-04b stands: the
+runtime files in `{config_dir}`, the wiki at `~/dev/portfolio-website/`, the loaded `com.boardwatch.run`
+job. **The global CLAUDE.md's "fresh machine" ritual is STALE for this repo — do not re-run it.**
+
+## Session 2026-09-04e, moved WHOLE out of `STATE.md` on 2026-09-05
+
+Settled: all 23 tickets merged, recorded in `CHANGELOG.md` and `D-469`, and reviewed line by
+line against the code by the 2026-09-04f planning session, which found the report accurate on
+every claim it checked. Moved verbatim on the same rule as 04c/04d above — `STATE.md` was over
+its ~250 ceiling and the fix is to move settled blocks out, never to summarise them away.
+**One statement in it is now SUPERSEDED and is kept only as the record of what was true then:**
+its warning that the 09-05 tick would deliver nothing until Mit re-approved. He re-approved at
+21:08 on 09-04; T32 then re-stales it, and the current standing is in `STATE.md`'s head block.
+
+### Session 2026-09-04e: the WHOLE 2026-09-04 ticket list is EXECUTED from a written handoff — 19 tickets merged, one worktree and one gate each, every gate exit 2 with exactly the two known environmental failures; THREE of the planning session's rulings were overturned on measurement, and FOUR tickets are blocked because the population they were written against died with the reset
+
+**Read this before acting on anything below it.** Reasoning: **D-469**. Numbers: `METRICS.md`, the
+`Session — 2026-09-04e` block. **Written for the planning session:
+`docs/program/REPORT-2026-09-04e.md`** — it carries the ticket table, every place the spec was wrong,
+and what is left.
+
+**⚠ THE 2026-09-05 04:00 TICK WILL DELIVER NOTHING UNTIL MIT RE-APPROVES THE PROJECTION.** T22 gates
+the approval on a digest of the resolved content, and a stamp without it fails CLOSED — the ruled
+upgrade path. **Verified by reading the file**: the one live stamp
+(`projection-approvals/sha256-3a292ad2…ce0ba.yaml`) carries no `content_digest`, so the `--project`
+preflight refuses. Approval needs a controlling TTY, so it is his and cannot be done from a session:
+`boardwatch profile-bundle approve-projection`, review the screen (it now prints every bullet AND
+the resolved skills section), type `approve`.
+
+**SHIPPED (local commits, unpushed — `gh` is still not installed):** T20 `a4f6c4de`, T7 `d8201f59`,
+T6 `66d7c81d`, T8 `04211e1e`, T10 `e1dfa73c`, T9 `ab73046c`, T11 `891c030f`, T12 `5c29bd73`,
+T13 `a90e993e`, T22 `81cfa093`, T27 `25e32dce`, T18 `78a43eec`, SP1 `49558a9d`, T25 `d9544125`,
+T19 `db0c9b91`, T21 `ae64c0ee`, T16 `3abd92f8`, T26 `21c38b57`, T15 `4cb3679c`, T14 `43c7f1c6`,
+T7b `e803c6a1`, SP2 `d22db2a2`, T17 `dd2db832` — **23 tickets**. One line each is in
+`CHANGELOG.md` for the first 19; SP2 and T17 landed after that entry and are described in
+`REPORT-2026-09-04e.md`.
+
+**SP2 CHANGES THE UNATTENDED RUN'S SHAPE and lands the night before a tick**: the lanes now run on
+one daemon thread overlapping the board scan. It is contract-bound never to fail the run, 2,327
+pipeline tests pass and `test_two_writer_concurrency` ran 11/11 — but the first unattended exercise
+of it is the 2026-09-05 04:00 tick. **Read `stage_durations` on that run**: `lanes` becomes the
+residual join wait and the lane's own elapsed moves onto `LaneReport`. The stated prize is 6-13 min.
+
+**THREE RULINGS WERE OVERTURNED, EACH ON A MEASUREMENT THE RULING DID NOT HAVE.** (1) **T16's ruled
+`metadata.create_all` emits 0 of the schema's 20 triggers** — the ten append-only `RAISE(ABORT)`
+pairs the keystone rests on among them — and `compare_metadata` cannot see triggers, so the ruling's
+own safety argument was false. A DDL-template replay of the real chain ships instead: **92.9 ms →
+2.9 ms (32x)**, schema identical. (2) **T18 ships 4 of its 6 words**: over 47,295 open titles the
+four move 166 titles, while `data` adds 321 and `ai` 187, both dominated by business roles, and
+`data` un-vetoes a title the repo's own suite pins as `not_swe`. (3) **T26 ships 1 of its 2 classes**:
+chrome-only holds **4.81%** of open bodies against its own ~1% stop condition, on real JDs condemned
+for non-English or off-catalog headings.
+
+**THE PRE-RESET STORE IS GONE AND IT BLOCKED FOUR TICKETS.** `eligibility_evaluations` holds only
+`('deterministic','1+bf844e01ebcb', 61927)` — **no final-gate rows at all**. M1's required null
+control returned **0/0/0** against D-461's 43/38/14; T28 found **0 duplicate groups in 40 delivered
+leads** against a 14-18% headline, so no identity change was taken; T27's markers hold 0; T26(b) has
+no Eightfold body to fix against. **D-461's 43/38/14 describe a store that no longer exists — do not
+re-quote them as live.**
+
+**THE DELIVERED QUEUE CURRENTLY READS 0 APPLY / 40 REVIEW**, every lead `verdict=None`, because the
+stored corpus is at `engine_version 1+bf844e01ebcb` while `current_identity` computes
+`1+d89b423701e5`. That is the one-off re-evaluation the tick owes (T3+T4, now also T20), not a
+defect; confirmed identical against pre-T20 code. The live profile row strict-validates.
+
+**A READ-ONLY REVIEW OF THE SESSION'S OWN 19 COMMITS FOUND TWO REAL DEFECTS, BOTH FROM T7** — fixed
+in-session as T7b. `GET /api/answers` crashed uncaught and DROPPED the connection (the web dispatcher
+catches three types and `ProfileRowInvalid` is none of them); `top`/`export`/`eligibility run`/`stats`
+tracebacked instead of naming the column. Every gate had been green.
+
