@@ -47,12 +47,22 @@ acceptance table. T34 was executed read-only, including its blind two-judge step
    above-band leads before any lane sees them. `moved = 0` was never "no lead is above band".
    A guard test pins this. See D-478 §2.
 
-**The arming preconditions for T42 are NOT met, and one instruction is wrong.**
-`~/.claude-boardwatch` does not exist; the plist carries no `CLAUDE_CONFIG_DIR` (that IS the
-right variable — confirmed in the installed binary; there is no `--config-dir` flag). And the
-gate block must go in **`~/Library/Application Support/boardwatch/config.toml`**, which is what
-`Settings` reads (`BOARDWATCH_CONFIG_DIR` > platformdirs) — **not** `~/.config/boardwatch/`,
-which does not exist and would arm nothing silently.
+**T42's arming: two preconditions are DONE, the third is deliberately WITHHELD (2026-09-05).**
+The dedicated config dir `~/.claude-boardwatch` is logged in and verified answering
+(`is_error: False`) on an **enterprise** seat, so the unattended judge cannot bill the personal
+sub; and the plist now carries `CLAUDE_CONFIG_DIR` under `EnvironmentVariables` (added textually
+so its comments survive, `plutil -lint` OK, backup beside it). `CLAUDE_CONFIG_DIR` IS the right
+variable — confirmed in the installed binary; there is no `--config-dir` flag.
+
+**NOT done, on the owner's explicit call: the `[gate]` block itself.** `gate.enabled` is still
+`False` and the tick is still unloaded, so nothing judges and nothing runs unattended. Writing
+that block IS the decision to settle the near-miss band in the reject direction at LLM cost per
+run — hold it until P1 is planned. When it is written it goes in
+**`~/Library/Application Support/boardwatch/config.toml`**, which is what `Settings` reads
+(`BOARDWATCH_CONFIG_DIR` > platformdirs) — **not** `~/.config/boardwatch/`, which does not exist
+and would arm nothing silently. `model` defaults to `sonnet`, so it must say `haiku` explicitly or
+the run silently uses the 2.04x costlier model. Read it back through `Settings` and assert: unknown
+keys are ignored silently, so a typo looks identical to success.
 
 ## Next action
 
