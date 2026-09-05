@@ -39,7 +39,15 @@ the resolved skills section), type `approve`.
 T6 `66d7c81d`, T8 `04211e1e`, T10 `e1dfa73c`, T9 `ab73046c`, T11 `891c030f`, T12 `5c29bd73`,
 T13 `a90e993e`, T22 `81cfa093`, T27 `25e32dce`, T18 `78a43eec`, SP1 `49558a9d`, T25 `d9544125`,
 T19 `db0c9b91`, T21 `ae64c0ee`, T16 `3abd92f8`, T26 `21c38b57`, T15 `4cb3679c`, T14 `43c7f1c6`,
-T7b `e803c6a1` — **21 tickets**. One line each is in `CHANGELOG.md`.
+T7b `e803c6a1`, SP2 `d22db2a2`, T17 `dd2db832` — **23 tickets**. One line each is in
+`CHANGELOG.md` for the first 19; SP2 and T17 landed after that entry and are described in
+`REPORT-2026-09-04e.md`.
+
+**SP2 CHANGES THE UNATTENDED RUN'S SHAPE and lands the night before a tick**: the lanes now run on
+one daemon thread overlapping the board scan. It is contract-bound never to fail the run, 2,327
+pipeline tests pass and `test_two_writer_concurrency` ran 11/11 — but the first unattended exercise
+of it is the 2026-09-05 04:00 tick. **Read `stage_durations` on that run**: `lanes` becomes the
+residual join wait and the lane's own elapsed moves onto `LaneReport`. The stated prize is 6-13 min.
 
 **THREE RULINGS WERE OVERTURNED, EACH ON A MEASUREMENT THE RULING DID NOT HAVE.** (1) **T16's ruled
 `metadata.create_all` emits 0 of the schema's 20 triggers** — the ten append-only `RAISE(ABORT)`
@@ -162,9 +170,7 @@ whether SP3 is worth its risk now that SP2 has taken the same file.
   (both mutation-checked). Merge it, run `uv sync` in the primary checkout when no run is in flight
   and not within the hour before 04:00, verify `.venv/bin/python -V` is 3.13.x and
   `.venv/bin/boardwatch --help` runs. **After that, green is exit 0** and the blocker row below goes.
-- **`SP2`** — lanes on one daemon thread from a new `on_run_started` callback. 2,327 pipeline tests
-  pass, two-writer concurrency ran 11/11. Prize is 6-13 min per run.
-- **`T17`** — `BOARDWATCH_CONFIG_DIR` pinned with no opt-out; **zero tests broke**.
+SP2 and T17 both MERGED after this list was first written; only `T30` remains unmerged.
 
 **0-4. SP3 (+T23) IS NOT STARTED.** It rewrites `run_pipeline`'s tailor loop and SP2 rewrote the same
 file's lanes stage; running both at once is the conflict the handoff's ordering exists to prevent.
