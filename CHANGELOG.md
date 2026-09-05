@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch config show` now prints the five `gate.*` keys** — `enabled`, `claude_config_dir`,
+  `model`, `batch_size`, `call_timeout_s` — with their defaults, beside `llm.*`. The judge is the one
+  setting that spends money while on, and the loader ignores an unknown key under `[gate]`
+  silently, so until now a misspelt key read exactly like success from the file. The CLI read-back
+  is the check; the key table is in `docs/configuration.md`.
+
 - **How far the near-miss experience band stretches is now yours to set.** A `required` years bar
   at or under the catalog's ceiling abstains rather than rejecting, because one declared total
   cannot represent the internships, co-ops and project work that clear an early-career bar. That
