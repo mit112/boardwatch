@@ -1,5 +1,17 @@
 import type { QueueCounts } from "../api/types";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { EM_DASH, formatTimestamp } from "../lib/format";
+
+/**
+ * Above this the band is one flat row; below it, six of the ten cells fold into a `<details>`.
+ *
+ * A VIEWPORT query driven through `useMediaQuery`, rather than a `max-sm:` class pair or a
+ * container query, and that is the trade being made: CSS can only hide a subtree it has already
+ * rendered, so a pure-CSS fold would put every foldable cell in the DOM TWICE — two buttons named
+ * "uncertain 3 — show only these", an ambiguous accessible name whichever copy is visible.
+ * Rendering one arrangement at a time keeps every control unique.
+ */
+export const BAND_WIDE = "(min-width: 40rem)";
 
 /**
  * The band cells a reader can click to see only that bucket. `eligible` and `uncertain` are
@@ -117,43 +129,57 @@ export function StatusBand({
   activeFacet: QueueFacet | null;
   onToggleFacet: (facet: QueueFacet) => void;
 }) {
-  return (
-    <section
-      aria-label="Queue status"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
-    >
-      <Metric label="in queue" value={counts.in_queue.toLocaleString()} emphasis order={0} />
-      <Metric
-        label="eligible"
-        value={counts.eligible.toLocaleString()}
-        emphasis
-        note="Affirmatively eligible. Never includes uncertain. Click to show only these."
-        order={1}
-        active={activeFacet === "eligible"}
-        onToggle={() => {
-          onToggleFacet("eligible");
-        }}
-      />
-      <Metric
-        label="uncertain"
-        value={counts.uncertain.toLocaleString()}
-        note="Its own bucket: not yet known, and never added into eligible. Click to show only these."
-        order={2}
-        active={activeFacet === "uncertain"}
-        onToggle={() => {
-          onToggleFacet("uncertain");
-        }}
-      />
-      <Metric
-        label="review"
-        value={counts.review.toLocaleString()}
-        note={reviewNote}
-        order={3}
-        active={activeFacet === "review"}
-        onToggle={() => {
-          onToggleFacet("review");
-        }}
-      />
+  /*
+   * Ten cells at 44px-plus each stacked to a 496px band on a phone — the entire first screen was
+   * counters, and the reader had to scroll past all of it to reach a lead. The three that answer
+   * "is there work here" stay out with the readout; the rest fold into a `<details>`.
+   */
+  const wide = useMediaQuery(BAND_WIDE);
+
+  /* Named once and placed twice, so the wide row keeps its established order and the narrow one
+     is a rearrangement of the SAME cells rather than a second copy of them. */
+  const inQueue = (
+    <Metric label="in queue" value={counts.in_queue.toLocaleString()} emphasis order={0} />
+  );
+  const eligible = (
+    <Metric
+      label="eligible"
+      value={counts.eligible.toLocaleString()}
+      emphasis
+      note="Affirmatively eligible. Never includes uncertain. Click to show only these."
+      order={1}
+      active={activeFacet === "eligible"}
+      onToggle={() => {
+        onToggleFacet("eligible");
+      }}
+    />
+  );
+  const uncertain = (
+    <Metric
+      label="uncertain"
+      value={counts.uncertain.toLocaleString()}
+      note="Its own bucket: not yet known, and never added into eligible. Click to show only these."
+      order={2}
+      active={activeFacet === "uncertain"}
+      onToggle={() => {
+        onToggleFacet("uncertain");
+      }}
+    />
+  );
+  const review = (
+    <Metric
+      label="review"
+      value={counts.review.toLocaleString()}
+      note={reviewNote}
+      order={3}
+      active={activeFacet === "review"}
+      onToggle={() => {
+        onToggleFacet("review");
+      }}
+    />
+  );
+  const rest = (
+    <>
       <Metric
         label="ineligible"
         value={counts.ineligible.toLocaleString()}
@@ -184,18 +210,46 @@ export function StatusBand({
         note="When the most recent run finished, and how many of its leads are still in the queue."
         order={9}
       />
-      {/*
-        * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead
-        * space, leaving a hairline floating 600px from the nearest content. `role="status"` because
-        * this is the only readout that answers "did my filter match anything", and a count that
-        * changes silently is a change a screen-reader reader never learns about (SC 4.1.3).
-        */}
-      <div
-        role="status"
-        className="ml-auto flex items-center border-l-0 px-6 py-5 text-sm text-fg-2 tabular-nums"
-      >
-        Showing {showing.toLocaleString()} of {total.toLocaleString()}
-      </div>
+    </>
+  );
+
+  /*
+   * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead space,
+   * leaving a hairline floating 600px from the nearest content. `role="status"` because this is
+   * the only readout that answers "did my filter match anything", and a count that changes
+   * silently is a change a screen-reader reader never learns about (SC 4.1.3).
+   */
+  const readout = (
+    <div
+      role="status"
+      className="ml-auto flex items-center border-l-0 px-6 py-5 text-sm text-fg-2 tabular-nums"
+    >
+      Showing {showing.toLocaleString()} of {total.toLocaleString()}
+    </div>
+  );
+
+  return (
+    <section
+      aria-label="Queue status"
+      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
+    >
+      {inQueue}
+      {eligible}
+      {wide ? uncertain : null}
+      {review}
+      {wide ? rest : null}
+      {readout}
+      {wide ? null : (
+        <details className="w-full border-l-0 border-t border-divider">
+          <summary className="flex min-h-11 cursor-pointer items-center px-6 label-micro text-fg-3">
+            more
+          </summary>
+          <div className="flex flex-wrap items-stretch divide-x divide-divider">
+            {uncertain}
+            {rest}
+          </div>
+        </details>
+      )}
     </section>
   );
 }
