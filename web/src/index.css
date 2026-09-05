@@ -105,25 +105,19 @@
   }
 
   /*
-   * ATMOSPHERE, painted onto the body's own background rather than into an overlay element.
-   *
-   * A fixed `::after` grain layer is the usual recipe and it is wrong here: this application has a
-   * full-screen detail SHEET and a toaster that must draw above everything, so any overlay high
-   * enough in the stack to be felt is also high enough to sit over the sheet, and any overlay low
-   * enough to be safe is covered by the first opaque surface. Painting both the warm radial and
-   * the grain into `background-image` gives the depth with no stacking context and no
-   * pointer-events surface to get wrong.
-   *
-   * The radial is anchored top-left, behind the header, so the page has a light source. The grain
-   * is at 3.5% and is felt rather than seen; at higher opacity it fights the tabular numerals.
+   * ATMOSPHERE: one warm radial anchored top-left, behind the header, so the page has a light
+   * source. It is painted onto the body's own background rather than into an overlay element,
+   * because this application has a full-screen detail SHEET and a toaster that must draw above
+   * everything, and any overlay high enough in the stack to be felt is also high enough to sit over
+   * the sheet. A grain layer used to sit beside it as a `data:` SVG; the server's CSP (`img-src
+   * 'self'`) refused that URI on every load, so it never rendered and only logged an error. It is
+   * gone rather than allow-listed: the radial gives the depth, and a CSP source is not a style knob.
    */
   body {
     margin: 0;
     background-color: var(--color-bg);
-    background-image:
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E"),
-      radial-gradient(60rem 32rem at 12% -8%, color-mix(in oklab, var(--color-accent) 9%, transparent) 0%, transparent 70%);
-    background-attachment: fixed, fixed;
+    background-image: radial-gradient(60rem 32rem at 12% -8%, color-mix(in oklab, var(--color-accent) 9%, transparent) 0%, transparent 70%);
+    background-attachment: fixed;
     color: var(--color-fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;

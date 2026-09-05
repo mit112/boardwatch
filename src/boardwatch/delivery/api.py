@@ -339,7 +339,11 @@ def _unique_locations(locations: Sequence[str]) -> list[str]:
     """
     seen: set[str] = set()
     unique: list[str] = []
-    for entry in locations:
+    # An entry can itself be a semicolon-joined list: the live store holds "Austin, Texas, United
+    # States; Bozeman, Montana, United States; …" as ONE entry beside "Austin", "Bozeman", …, so
+    # without this split the primary location is the whole dump. A semicolon is never part of a
+    # place name the way a comma is, so splitting on it loses nothing.
+    for entry in (piece for raw in locations for piece in raw.split(";")):
         trimmed = entry.strip()
         key = trimmed.casefold()
         if not trimmed or key in seen:
@@ -513,9 +517,7 @@ def _counts(
         # cell of its own it would be an unexplained remainder against the delivered set.
         "reported": len(reported_job_ids(conn)),
         "delivered_last_run": (
-            0
-            if last is None
-            else sum(1 for row in rows if row.delivered_run_id == int(last.id))
+            0 if last is None else sum(1 for row in rows if row.delivered_run_id == int(last.id))
         ),
         "last_run_finished": (None if last is None else _iso_utc(last.finished_at)),
     }
@@ -523,10 +525,7 @@ def _counts(
 
 def _last_finished_run(conn: Connection) -> Row[Any] | None:
     return conn.execute(
-        select(runs)
-        .where(runs.c.finished_at.is_not(None))
-        .order_by(runs.c.id.desc())
-        .limit(1)
+        select(runs).where(runs.c.finished_at.is_not(None)).order_by(runs.c.id.desc()).limit(1)
     ).one_or_none()
 
 

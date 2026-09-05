@@ -22,7 +22,7 @@ vi.mock("../api/client", () => ({
 }));
 
 const ANSWERS: Answers = {
-  identity: { full_name: "Example Person", email: "person@example.invalid", phone: null },
+  identity: { full_name: "Example Person", email: "person@example.com", phone: null },
   work_auth: { status: "EAD or similar (work authorization document)", sponsorship: null },
   education: [],
   questions: [],

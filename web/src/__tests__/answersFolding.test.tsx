@@ -14,7 +14,7 @@ import { AnswersPanel } from "../components/AnswersPanel";
 const ANSWERS: Answers = {
   identity: {
     full_name: "Example Person",
-    email: "person@example.invalid",
+    email: "person@example.com",
     phone: null,
     city: null,
     linkedin: null,
