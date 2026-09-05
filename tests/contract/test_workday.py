@@ -374,29 +374,25 @@ def test_duplicate_external_path_rows_are_deduped(tmp_path: Path) -> None:
 
 def test_parse_posting_raises_on_missing_external_path() -> None:
     with pytest.raises(ValueError, match="externalPath"):
-        parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", {}, None, None)
+        parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", {}, None)
 
 
 def test_parse_posting_raises_on_empty_title() -> None:
     listed = {"externalPath": "/job/x/Role_JR1", "title": ""}
     with pytest.raises(ValueError, match="empty title"):
-        parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, None, None)
+        parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, None)
 
 
-def test_parse_posting_captures_detail_and_worker_subtype() -> None:
-    # the CAPTURE contract at the parse_posting seam, in isolation: raw_json["detail"],
-    # ["timeType"] and ["workerSubType"] are populated from arguments handed straight in.
-    # The fetch_board wiring that produces those arguments is covered end-to-end by
-    # test_detail_fetch_fills_body_text_and_captures_time_type and
-    # test_intern_bucket_is_queried_and_stamped_on_raw_json.
+def test_parse_posting_captures_detail_and_time_type() -> None:
+    # the CAPTURE contract at the parse_posting seam, in isolation: raw_json["detail"] and
+    # ["timeType"] are populated from arguments handed straight in. The fetch_board wiring
+    # that produces those arguments is covered end-to-end by
+    # test_detail_fetch_fills_body_text_and_captures_time_type.
     listed = _fx("list_normal.json")["jobPostings"][0]
     detail = _fx("detail_normal.json")
-    posting = parse_posting(
-        "acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail, "Regular Employee"
-    )
+    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail)
     assert posting.raw_json["detail"] == detail
     assert posting.raw_json["timeType"] == "Full time"
-    assert posting.raw_json["workerSubType"] == "Regular Employee"
     assert posting.remote_policy == "remote"  # detail's remoteType: "Fully Remote" wins
     assert posting.posted_at is not None
 
@@ -414,14 +410,14 @@ def test_remote_policy_onsite_branch(remote_type: str, expected: str) -> None:
         "title": "Role",
         "remoteType": remote_type,
     }
-    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, None, None)
+    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, None)
     assert posting.remote_policy == expected
 
 
 def test_posted_at_is_none_for_an_unparseable_start_date() -> None:
     listed = {"externalPath": "/job/x/Role_JR1", "title": "Role"}
     detail = {"jobPostingInfo": {"startDate": "not-a-date"}}
-    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail, None)
+    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail)
     assert posting.posted_at is None
 
 
@@ -434,7 +430,7 @@ def test_remote_policy_falls_back_to_location_text_for_an_unrecognized_remote_ty
         "locationsText": "Remote, USA",
         "remoteType": "Flexible",
     }
-    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, None, None)
+    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, None)
     assert posting.remote_policy == "remote"
 
 
@@ -443,7 +439,7 @@ def test_posted_at_handles_a_timezone_aware_timestamp() -> None:
     # inverted conversion (15:00) or a dropped tzinfo (10:00) both survive `is not None`.
     listed = {"externalPath": "/job/x/Role_JR1", "title": "Role"}
     detail = {"jobPostingInfo": {"startDate": "2026-08-04T10:00:00+05:00"}}
-    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail, None)
+    posting = parse_posting("acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail)
     assert posting.posted_at == datetime(2026, 8, 4, 5, 0)
     assert posting.posted_at is not None and posting.posted_at.tzinfo is None
 
@@ -643,6 +639,20 @@ def _mock_all_details() -> None:
 
 
 @respx.mock
+def test_fetch_board_issues_no_facet_filtered_post(tmp_path: Path) -> None:
+    # T14: the workerSubType facet probe is DELETED. list_normal.json's facets block
+    # carries an intern-shaped bucket ("Intern (Fixed Term)"); a board fetch must not
+    # issue any extra facet-filtered POST for it. call_count must equal the plain
+    # pagination requests only (1, for this single short page).
+    route = respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_normal.json"))
+    )
+    _mock_all_details()
+    provider.fetch_board(_fetcher(tmp_path), _request())
+    assert route.call_count == 1  # board page only; zero extra facet-filtered POSTs
+
+
+@respx.mock
 def test_detail_fetch_fills_body_text_and_captures_time_type(tmp_path: Path) -> None:
     respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
     _mock_all_details()
@@ -836,10 +846,10 @@ def test_remote_policy_prefers_the_structured_remote_type() -> None:
     from boardwatch.providers.workday import parse_posting
 
     rows = _fx("list_normal.json")["jobPostings"]
-    assert parse_posting("h", "S", rows[0], None, None).remote_policy == "remote"
+    assert parse_posting("h", "S", rows[0], None).remote_policy == "remote"
     # "Partially Remote" is HYBRID, not remote — the location text says "Santa Clara, CA",
     # so a text-only heuristic would have returned "unknown" here
-    assert parse_posting("h", "S", rows[1], None, None).remote_policy == "hybrid"
+    assert parse_posting("h", "S", rows[1], None).remote_policy == "hybrid"
 
 
 def test_remote_policy_falls_back_to_location_text_without_remote_type() -> None:
@@ -848,199 +858,7 @@ def test_remote_policy_falls_back_to_location_text_without_remote_type() -> None
 
     rows = _fx("list_normal.json")["jobPostings"]
     assert "remoteType" not in rows[2]
-    assert parse_posting("h", "S", rows[2], None, None).remote_policy == "unknown"
-
-
-# ---------------------------------------------------------------- employment type
-
-def _intern_facet_id() -> str:
-    group = next(
-        g for g in _fx("list_normal.json")["facets"] if g["facetParameter"] == "workerSubType"
-    )
-    return next(v["id"] for v in group["values"] if "Intern" in v["descriptor"])
-
-
-@respx.mock
-def test_intern_bucket_is_queried_and_stamped_on_raw_json(tmp_path: Path) -> None:
-    route = respx.post(LIST_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=_fx("list_normal.json")),
-            httpx.Response(200, json=_fx("list_facet_intern.json")),
-        ]
-    )
-    _mock_all_details()
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    by_id = {p.provider_posting_id: p for p in snapshot.postings}
-    assert by_id["JR1000002"].raw_json["workerSubType"] == "Intern (Fixed Term)"
-    assert "workerSubType" not in by_id["JR1000001-1"].raw_json
-    # the facet query used the TENANT'S OWN id, read from the facets block
-    facet_call = json.loads(route.calls[1].request.content)
-    assert facet_call["appliedFacets"] == {"workerSubType": [_intern_facet_id()]}
-    assert facet_call["limit"] == 20
-
-
-@respx.mock
-def test_regular_employee_bucket_is_not_queried(tmp_path: Path) -> None:
-    # descriptor matching is conservative: only intern/new-grad-shaped buckets are worth a
-    # request, and "Regular Employee" (the 2354-count bucket) must never be paged
-    route = respx.post(LIST_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=_fx("list_normal.json")),
-            httpx.Response(200, json=_fx("list_facet_intern.json")),
-        ]
-    )
-    _mock_all_details()
-    provider.fetch_board(_fetcher(tmp_path), _request())
-    assert route.call_count == 2  # the board page + ONE facet query, not two
-
-
-@respx.mock
-def test_no_matching_bucket_costs_no_extra_request(tmp_path: Path) -> None:
-    # a tenant with different vocabulary must cost ZERO extra requests
-    payload = _fx("list_normal.json")
-    for group in payload["facets"]:
-        if group["facetParameter"] == "workerSubType":
-            group["values"] = [
-                {"descriptor": "Regular Employee", "id": "x1", "count": 3},
-                {"descriptor": "Management", "id": "x2", "count": 1},
-            ]
-    route = respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
-    _mock_all_details()
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    assert route.call_count == 1
-    assert all("workerSubType" not in p.raw_json for p in snapshot.postings)
-
-
-@respx.mock
-def test_absent_facets_block_is_not_an_error(tmp_path: Path) -> None:
-    payload = {k: v for k, v in _fx("list_normal.json").items() if k != "facets"}
-    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
-    _mock_all_details()
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    assert snapshot.status == "complete"
-
-
-@respx.mock
-def test_a_failed_facet_query_is_partial_not_failed(tmp_path: Path) -> None:
-    respx.post(LIST_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=_fx("list_normal.json")),
-            httpx.Response(500),
-        ]
-    )
-    _mock_all_details()
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    assert snapshot.status == "partial"
-    assert len(snapshot.postings) == 3  # the board itself still applied
-
-
-def test_facet_buckets_are_matched_on_descriptor_never_on_a_hardcoded_wid() -> None:
-    from boardwatch.providers.workday import _worker_subtype_buckets
-
-    facets = [
-        {
-            "facetParameter": "workerSubType",
-            "descriptor": "Job Type",
-            "values": [
-                {"descriptor": "Regular Employee", "id": "a", "count": 2354},
-                {"descriptor": "Intern (Fixed Term)", "id": "b", "count": 11},
-                {"descriptor": "New College Graduate", "id": "c", "count": 80},
-                {"descriptor": "Management", "id": "d", "count": 197},
-            ],
-        },
-        {"facetParameter": "locations", "descriptor": "Location", "values": [
-            {"descriptor": "Intern City", "id": "e", "count": 1}
-        ]},
-    ]
-    assert _worker_subtype_buckets(facets) == [
-        ("Intern (Fixed Term)", "b"),
-        ("New College Graduate", "c"),
-    ]
-
-
-@respx.mock
-def test_a_facet_bucket_pages_until_a_short_page(tmp_path: Path) -> None:
-    # _FACET_MAX_PAGES exists because a bucket can exceed one page. A FULL facet page must
-    # advance the offset and only a SHORT page terminates the bucket — trap 2 applies to the
-    # facet-filtered query exactly as it does to the unfiltered board.
-    route = respx.post(LIST_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=_fx("list_normal.json")),
-            httpx.Response(200, json=_fx("list_page_full.json")),
-            httpx.Response(200, json=_fx("list_page_short.json")),
-        ]
-    )
-    _mock_all_details()
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    assert route.call_count == 3  # board page + two pages of the ONE intern bucket
-    assert [json.loads(c.request.content)["offset"] for c in route.calls] == [0, 0, 20]
-    assert snapshot.status == "complete"
-
-
-@respx.mock
-def test_a_malformed_facet_page_is_partial_not_failed(tmp_path: Path) -> None:
-    # a facet query can answer 200 with an HTML maintenance page just as the board POST can
-    # (observed on Walmart); that costs the workerSubType stamp, never the board
-    respx.post(LIST_URL).mock(
-        side_effect=[
-            httpx.Response(200, json=_fx("list_normal.json")),
-            httpx.Response(200, content=b"<html>maintenance</html>"),
-        ]
-    )
-    _mock_all_details()
-    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    assert snapshot.status == "partial"
-    assert "invalid payload" in (snapshot.error or "")
-    assert len(snapshot.postings) == 3
-    assert all("workerSubType" not in p.raw_json for p in snapshot.postings)
-
-
-@pytest.mark.parametrize(
-    "descriptor",
-    [
-        "Intern", "Intern (Fixed Term)", "Internship", "Interns", "Summer Intern",
-        "Co-op", "Coop", "Co-Op Student", "Apprentice", "Apprenticeship", "Trainee",
-        "New College Graduate", "New Grad",
-    ],
-)
-def test_a_real_early_career_descriptor_is_matched(descriptor: str) -> None:
-    from boardwatch.providers.workday import _worker_subtype_buckets
-
-    facets = [{
-        "facetParameter": "workerSubType",
-        "values": [{"descriptor": descriptor, "id": "x"}],
-    }]
-    assert _worker_subtype_buckets(facets) == [(descriptor, "x")]
-
-
-@pytest.mark.parametrize(
-    "descriptor", ["Internal Employee", "International Assignee", "Cooperative Education"]
-)
-def test_a_lookalike_descriptor_is_not_matched(descriptor: str) -> None:
-    # SUBSTRING matching accepted all three: "intern" is inside Internal/International and
-    # "coop" is inside Cooperative. Each false positive costs up to _FACET_MAX_PAGES extra
-    # POSTs and stamps a bogus workerSubType on up to 400 unrelated postings — which a future
-    # intern-detection consumer would read as an intern signal. Note that \bintern\b alone
-    # would fix these while REGRESSING on "Internship" (pinned by the sibling test above).
-    from boardwatch.providers.workday import _worker_subtype_buckets
-
-    facets = [{
-        "facetParameter": "workerSubType",
-        "values": [{"descriptor": descriptor, "id": "x"}],
-    }]
-    assert _worker_subtype_buckets(facets) == []
-
-
-def test_worker_subtype_buckets_tolerates_a_ragged_facets_block() -> None:
-    from boardwatch.providers.workday import _worker_subtype_buckets
-
-    # live payloads are not schema-validated, and this runs before any of them is trusted
-    assert _worker_subtype_buckets(["not a dict", 7]) == []
-    assert _worker_subtype_buckets([{"facetParameter": "workerSubType", "values": "nope"}]) == []
-    # a non-dict value is skipped, and a matching descriptor with no id is unusable
-    assert _worker_subtype_buckets(
-        [{"facetParameter": "workerSubType", "values": ["nope", {"descriptor": "Intern"}]}]
-    ) == []
+    assert parse_posting("h", "S", rows[2], None).remote_policy == "unknown"
 
 
 def test_facet_sum_beats_the_2000_censor() -> None:
@@ -1146,10 +964,10 @@ def test_a_non_numeric_total_yields_none_not_a_crash() -> None:
 
 
 def test_ragged_facets_never_raise() -> None:
-    """Live payloads are not schema-validated (same premise as `_worker_subtype_buckets`'s own
-    ragged-input test). Every one of these shapes was observed to raise before this fix, which
-    turns the whole board `status="failed"` via coordinator.py's belt-and-braces except —
-    for precisely the large, censored tenants this instrument exists to measure."""
+    """Live payloads are not schema-validated. Every one of these shapes was observed to raise
+    before this fix, which turns the whole board `status="failed"` via coordinator.py's
+    belt-and-braces except — for precisely the large, censored tenants this instrument exists
+    to measure."""
     # facets is not a list at all (unusable => no total recovered, NOT the censor value)
     assert _uncapped_total({"total": 2000, "facets": {"not": "a list"}}) == (None, True)
     # a facet in the list is not a dict

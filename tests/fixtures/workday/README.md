@@ -72,7 +72,6 @@ A retired or mistyped site slug answers **HTTP 404** with body `{"errorCode": "S
 | `list_page_full.json` | A full page of exactly 20 postings (the pager's page limit) with `total: 2000`, forcing the pager to fetch another page. `facets: []` here — facet shape is pinned separately by `list_normal.json`, so this fixture stays focused on pagination mechanics. |
 | `list_page_short.json` | A subsequent page with 5 postings, `total: 2000`, `facets: []` — a short page that ends the pager. |
 | `list_empty.json` | A live but vacant board: `{"total": 0, "jobPostings": [], "facets": []}` — a *complete, empty* inventory (a 200, not a 304). |
-| `list_facet_intern.json` | The `appliedFacets: {"workerSubType": [<intern id>]}` response: `total: 1` with the Compiler Intern row from `list_normal.json`, verbatim, and `facets: []`. |
 | `detail_normal.json` | A detail payload for the Senior Platform Engineer posting: full `jobPostingInfo` including `remoteType: "Fully Remote"`, `jobReqId: "JR1000001"` (bare), and `jobPostingId: "JR1000001-1"` (carries the instance suffix). |
 | `dead_s21.json` | The wrong-site-slug signature: HTTP 404 with `errorCode: "S21"`. |
 | `normal_response_headers.json` | `{"etag": null, "last_modified": null}` — Workday sends **neither** validator on the list endpoint; recorded explicitly so the absence is deliberate, not an oversight. |
@@ -101,9 +100,10 @@ the inventory question for no benefit.
    `externalPath`, not from `bulletFields[0]`, and the two deliberately differ here.
 6. Row 3's `locationsText` is the count string `"6 Locations"`, not a place name — pins
    that `locationsText` cannot be trusted as a location unconditionally.
-7. The `facets` list contains a `workerSubType` group with exactly one intern-shaped
-   bucket (`"Intern (Fixed Term)"`) and one that must not match (`"Regular Employee"`),
-   plus a second, non-`workerSubType` group (`locations`) that must be ignored.
+7. The `facets` list carries two dimensions of the same 3-posting corpus — `workerSubType`
+   summing to 3, `locations` summing to 1 — which is what
+   `test_facet_sum_agrees_with_an_uncensored_boards_total` uses as its known-positive
+   control (the largest-non-zero-dimension rule against a smaller sibling).
 8. Every `externalPath`'s last `_`-delimited token contains a digit, so `_posting_id`
    never takes its fallback branch here.
 

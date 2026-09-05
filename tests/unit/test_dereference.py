@@ -133,7 +133,7 @@ def test_workday_round_trip() -> None:
     listed = _fixture_json("workday", "list_normal.json")["jobPostings"][0]
     detail = _fixture_json("workday", "detail_normal.json")
     posting = workday.parse_posting(
-        "acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail, None
+        "acme.wd5.myworkdayjobs.com", "AcmeCareers", listed, detail
     )
     target = parse_posting_target(posting.url)
     assert target.provider == "workday"
