@@ -26749,7 +26749,7 @@ was itself a semicolon-joined list, so the primary was still the dump — entrie
 `;` first (red-then-green). T58's 12.5rem actions track was arithmetic on button widths that
 measured 250px in a browser, spilling over the verdict chip; the track is 16rem in both tiers and
 the pane yields 2rem (`minmax(26rem,30rem)`). The generalization checker refused
-`person@example.invalid` in two new tests (`example.com`). Two cross-ticket nits landed too:
+an address on the reserved `.invalid` domain in two new tests (`example.com`). Two cross-ticket nits landed too:
 `whitespace-nowrap` on the verdict chip and the text filter matching secondary locations.
 
 **Rulings taken here, not to be re-asked.** The page cap is 160rem (effectively uncapped on the
