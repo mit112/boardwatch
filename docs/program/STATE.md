@@ -20,52 +20,40 @@
 
 ## Current standing
 
-### Session 2026-09-06 (execution): T37, T38 and T39 SHIP — and T37's diagnosis was WRONG: the lost board is a WAL snapshot-upgrade conflict, not a `busy_timeout` starvation, so the prescribed fallback could never have worked; T28 is CLOSED on a positive control; dominos is UNWATCHED; `main` is still UNMOVED by Mit's ruling
+### Session 2026-09-06b (planning review): the 2026-09-06 report HOLDS; the lane-pacing exposure is RE-SIZED to ~90 s on one host per run and the review's shared-`Fetcher` claim was WRONG, so the fix is T41; T40 is RECOMMENDED on run 3's apply distribution; T34's read-only form is APPROVED with a planted control and the gate's cadence is a RULE; T36 is a RULE; the fleet call is 0 wall minutes — next list `HANDOFF-2026-09-07.md`
 
-**Read this before acting on anything below it.** Reasoning: **D-473**. Numbers: `METRICS.md`,
-the `Session — 2026-09-06` block. Report: `REPORT-2026-09-06.md`. **`main` is still `84671523`.**
-`close-2026-09-06` now carries SEVEN commits over it (T31, T32, the two 09-05 closes, then T37,
-T39, T38 and this close) and **one `--ff-only` merge still lands them all**.
+**Read this before acting on anything below it.** Reasoning: **D-474**. Numbers: `METRICS.md`,
+the `Session — 2026-09-06b` block. The 2026-09-06 execution block moved WHOLE into
+`STANDING-FACTS.md`; D-473 holds its reasoning. **`main` is still `84671523`.**
+`close-2026-09-06` carries FOURTEEN commits over it and **one `--ff-only` merge lands them all.**
 
-**MIT RULED TWICE AT THE TOP OF THE SESSION.** (a) **Do not merge** — `main` stays parked on the
-T30 state so the 04:00 tick delivers with a valid projection stamp and pays SP3 its second warm
-tailor measurement. The merge is still one step with the re-approval, in his sitting; §0 below is
-unchanged. (b) **Drop dominos only** of the four smartrecruiters boards: `companies remove
-smartrecruiters:dominos` is an UNWATCH, verified before and after — **288 → 287 watched**, its 800
-open postings still held and now in the death-probe population (D-314), not in silence.
+**The five decisions the 09-06 session left are all ruled or sized (D-474):**
+- **(a) Lane pacing (§0-A below).** Real, owner's, and **~90 s on `boards-api.greenhouse.io`
+  per run**, seconds on ashby and lever — not 352 s: only hiringcafe's 94 per-board GETs reach
+  scan hosts. The review's "a shared `Fetcher` re-serialises the lanes" was false (the lock is
+  per HOST); the real coupling is the client's default UA. **Fix = T41**, a per-process pacing
+  registry, two clients kept, SP2 untouched. Recommended; Mit's word.
+- **(b) T40 RECOMMENDED.** Run 3 applies: p50 0.26 s, p90 5.15 s, max 16.4 s, **30 of 287 past
+  the 5 s `busy_timeout`**. `BEGIN IMMEDIATE` makes a CLI write during one of those fail loudly
+  instead of the scan losing a board. Mit's yes.
+- **(c) T34 APPROVED read-only** (`HANDOFF-2026-09-07.md` §4) with a planted item that MUST
+  come back `ineligible`. **Cadence rule:** apply lane is 5 of 80; ≥ 1 apply-lane
+  gate-`ineligible` ⇒ per-run gate over the apply lane only; 0 ⇒ stays manual.
+- **(d) T36 by rule** on the first post-merge run, against run 4 as the same-fleet pre-T38
+  baseline: tail ≤ 3 min and `boards_failed` 0 ⇒ `scan_workers` 16 (model 83.8 → 45.2 min).
+- **(e) Fleet: 0 wall minutes either way** — the 9-board chain (≈ 31 min) is under the Workday
+  span at 8 or 16 workers. Dropping the three saves ~1,200 host-s/run and removes 97 `eligible`
+  postings with 0 leads. Mit's.
 
-**T37 — THE HANDOFF'S MECHANISM WAS WRONG AND ITS FALLBACK IS IMPOSSIBLE.** D-472 read the lost
-`FidelityCareers` apply as starvation past `busy_timeout` 5 s. **Starvation does not reproduce**:
-a back-to-back stream of short transactions on one thread let a 200 / 2,000 / 20,000-insert writer
-on another in after **0.003 / 0.039 / 0.160 s**. The real fault is a **WAL snapshot upgrade** —
-`apply_board` opens a DEFERRED transaction and READS before it writes, so **ONE** commit from any
-other connection in that gap fails the write with `SQLITE_BUSY_SNAPSHOT` (517), rendered as
-`database is locked`, in **0.0006 s against a 5,000 ms timeout**. The busy handler is never
-invoked, so **no value of `busy_timeout` changes the outcome** — pinned as a test on ELAPSED TIME
-so it is not re-proposed. Fixed by the split the handoff preferred: the lane thread FETCHES only,
-the join site applies. **Chosen consequence:** a run returning before the join lands NO lane rows
-(pre-SP2 behaviour) — a shipped test asserted the opposite and was rewritten.
+**`ROADMAP.md` is NEW, at Mit's request** — five milestones with exit criteria; **M1 (land the merge, run
+it once) is the open one.** Work only what moves its exit criterion.
 
-**T38 — THE READY QUEUE, because the static fix is a REGRESSION.** `host_diverse` is gone,
-replaced by `host_queues` + `take_ready` and a `wait(FIRST_COMPLETED)` dispatch loop bounded at
-`scan_workers`. Sized on the model D-344 was fitted to, recalibrated against run 3: today 95.0 min,
-**static chain-first 105.5 (worse than doing nothing)**, ready queue **83.8**. Null control, both
-arms on ONE fleet (287 boards, 131 hosts): the smartrecruiters chain moves from positions
-3, 134, 147, 153… to **3, 11, 19, 27…** — the gap is now exactly `scan_workers` — with **0 of 131
-hosts' own board order changed**. **This supersedes D-344's "not built (the model already prices
-the loss)".** T36 is re-decided on the next tick's tail, not before.
-
-**T39** — `scan.empty_complete_guarded` in the funnel and one run-log line; `ARTIFACT_VERSION`
-deliberately not bumped (additive key, `fetch_cost` precedent).
-
-**T28 — CLOSED, and the zero is STRUCTURAL.** The probe reaches the funnel's 40 for each run and
-still finds 0 duplicate groups at every scope. The control that establishes it is a POSITIVE one:
-the identical grouping over the 83,308 open postings finds **7,093 groups**. The cause is in run 3's
-own funnel — the shortlist drops **46 `hidden_duplicate` + 5 `hidden_slate_cap`** and holds run 2's
-40 as `hidden_handled` before the slate is cut, over a corpus-wide `dedup` that already suppressed
-**1,498 / 83,308 (1.80%)**. The delivered set is the one population where this is zero by
-construction; the 14-18% headline is **retired, not refuted**, and its replacement is already in
-every funnel. No successor ticket.
+**Run 4 is the launchd tick of 2026-09-05 on `main` UNCHANGED** (287 boards, no T37/T38/T39),
+deliberately not postponed: SP3 measurement 2 of 3 and T38's baseline. **It did not fire at
+04:00 CDT: launchd computes the calendar interval in the zone it BOOTED with, and the system
+zone was set to Chicago five minutes after boot — so the tick fires at 06:00 CDT** (as 09-04's
+did, 06:00:05) until a reboot or a plist edit, Mit's. Verify on run 4's `started_at`; read it
+first (R2).
 
 ## Next action
 
@@ -83,49 +71,30 @@ SEVEN: `../bw-close`, `../bw-t31`, `../bw-t32`, `../bw-t37`, `../bw-t38`, `../bw
 mechanical: the tick runs the editable venv from `main`, and a stale stamp costs a ~107-min scan,
 a P5a refusal, exit 1 and a withheld heartbeat — a false alert for a condition we chose.
 
-**0-1. T34 (M1) IS RESPECIFIED — DO NOT RUN IT AS WRITTEN; ITS APPARATUS CANNOT WORK.** Verified
-read-only in the code and the store, not inferred: `gate request` builds its population from
-`rank_open_postings(..., record_surfaced=False)`, which leaves `include_handled=False`, and
-`cli/top_cmd.py` skips any posting whose job carries a live disposition. **All 80 delivered leads
-carry `built`, permanently** — `job_dispositions` is 80/80 with `expires_at` and `reopened_at`
-both NULL, and `core/ledger.py` calls that live forever. **So the judged population and
-`delivered_unapplied` are DISJOINT BY CONSTRUCTION**, and every gate row would land in the probe's
-"no longer in the queue" bucket. **It fails silently**: `m1_probe.py`'s null control checks only
-the gate pass's OWN totals, computed before the lane join, so it PASSES while the lane join is
-empty — the third apparatus zero of this kind in two sessions. `cli/top_cmd.py` also hides
-gate-`ineligible` before the limit, so even a non-empty intersection could hold no
-gate-`ineligible` row. There are **0 `llm` eligibility rows** in the store; D-461's 95 died with
-the reset.
-**The measurement is still reachable, and READ-ONLY.** `build_gate_request` is a pure function
-over anything carrying `.posting_id`, so build the request directly over `delivered_unapplied()`'s
-ids — never the `gate request` CLI, which is a write path AND the wrong population. Proven against
-the live store on a `mode=ro` URI: 80 leads → 80 items, 0 dropped, 415,302 jd chars, the same order
-as D-461's 95 items / 448,115. Precedent is in `METRICS.md` (the pre-reset lane-measured final
-gate: leads sampled from the apply lane, two blind judges, verdicts to files, **nothing applied**).
-Then: pin the posting-id set BEFORE judging (a two-arm read over a live store needs pinned ids);
-judge blind on `jd_text` + `facts`; assert every `ineligible` evidence string is a RAW substring of
-its own `jd_text`, because `accept_oracle_verdict` normalises and `record_gate_verdict`'s `span_of`
-does not — a normalised-only match silently downgrades to `uncertain`. `gate apply` is a POLICY
-action, not part of M1. Two probe fixes owed: its null control is hardcoded to D-461's totals and
-must be re-pinned per pass, and its gate-side join does not scope by `profile_hash`/`rules_hash`,
-which is wrong the moment a second pass exists. **T35** (gate 1 re-measure, D-424) is gated on
-reaching 09-09; `.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
+**0-1. T34 (M1) IS RESPECIFIED AND ITS READ-ONLY FORM IS APPROVED (D-474 choice 4).** The
+apparatus as written cannot work — `gate request` ranks with `include_handled=False` and all 80
+delivered leads carry `built` permanently, so the judged population and `delivered_unapplied`
+are DISJOINT BY CONSTRUCTION, and `m1_probe.py`'s null control passes on the gate pass's own
+totals while the lane join is empty (D-473 choice 8). **Run it ONLY as `HANDOFF-2026-09-07.md`
+§4 says**: pin ids first, `build_gate_request` on a `mode=ro` engine, a PLANTED item that must
+return `ineligible`, two blind judges, raw-substring `span_of` as the persisted-equivalent,
+nothing written. Only with no run in flight. **T35** (D-424) is gated on 09-09;
+`.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
 
-**0-2. T40 IS PROPOSED AND NOT BUILT — the same defect class, one process wider.** T37 removed the
-in-process second writer. It did NOT close the cross-process case: **every default-context CLI
-command in this repo is a write path**, so anything run against the live store during a scan —
-`top`, `doctor`, a `digest` — can kill a board through the identical snapshot upgrade. The
-one-line hardening is `apply_board` taking `write_connection` (`BEGIN IMMEDIATE`), which makes a
-contended apply QUEUE on `busy_timeout` instead of failing instantly. It is deliberately not
-shipped inside a bug fix: it changes the scan's locking discipline for every board, holds the
-write lock for a whole board apply, and is **Mit's call**.
+**0-2. T40 AND T41 ARE TICKETED AND OWNER-GATED — Mit's yes at the top of the session.** T40:
+`apply_board` on `write_connection` (`BEGIN IMMEDIATE`), one line; the stated consequence is a
+CLI write failing loudly during one of the ~30 boards whose apply exceeds 5 s. T41: one
+per-process per-host pacing registry shared by every `Fetcher`, two clients kept; priced at 94
+waits of ≤ 1 s per run. Specs, red-first tests and blast radius in the handoff §3.
 
 **0-3. CLOSED, BY RULING:** T28 (this session — structurally zero, no successor). T33 and its
 residual-zero successor, T36 as specified, T18 `data`/`ai`, T24, T26 (D-472 and earlier). **T36 is
 re-decided only on the first tick after T38 lands**, on that tick's own smartrecruiters tail —
 and `config.toml`'s comment still claims `le=8` against `Field(default=4, ge=1, le=32)`, to be
 corrected in the next change that touches Mit's config, with his OK. SP3 (+T23) stays deferred
-until three warm ticks report the tailor stage; run 3 is the first at 5.16 s/lead.
+until three warm ticks report the tailor stage; run 3 is the first at 5.16 s/lead. **T36's rule is
+
+in the handoff §5**; the `le=8` comment is corrected in that same config change.
 
 **0-4. STILL OWED AND UNTOUCHED — MIT'S:** `git push origin main` after the merge (nothing to push
 before it); `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291);
@@ -182,20 +151,18 @@ alternative that actually bounds it.
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-**0-A. SP2 TOOK THE LANE STAGE'S THIRD-PARTY PACING FROM A BOUNDARY TO A WINDOW, AND IT IS LIVE
-NOW.** Found by review this session, verified in the code, **not introduced by anything shipped
-this session** — SP2 is already on `main` and has run in production twice. `Fetcher._host_locks`
-and `_last_request_at` are PER INSTANCE, and the lane stage runs its own `Fetcher` on a background
-thread that overlaps the whole board scan. So for any host BOTH reach, the two per-host locks are
-independent and up to **2 req/s** can go to that third party for the lane stage's entire duration
-(run 3: ~352 s) — not the "one boundary request" `_lane_fetcher`'s docstring claimed, which was
-true only while the stages were strictly sequential. The lane does reach provider hosts:
-`lanes/hiringcafe.py` fetches a provider board directly, and `lanes/grnh_seeds.py` and
-`lanes/jsonld.py` dereference ATS hosts. The docstring is corrected to state what is true; **the
-behaviour is deliberately NOT changed**, because both fixes are owner questions: one shared
-`Fetcher` re-serialises the lanes against the scan and hands back SP2's entire prize, and a
-cross-instance per-host lock is new machinery on the politeness path. **Mit's call, and it is a
-pacing promise to third parties, not a performance knob.**
+**0-A. THE LANE STAGE'S THIRD-PARTY PACING IS WEAKENED ON THREE SCAN HOSTS, AND IT IS LIVE
+NOW.** Found by the 09-06 review, re-sized by D-474 choice 1 from run 3's funnel, **not
+introduced by anything shipped since SP2** (already on `main`, run in production twice).
+`Fetcher._host_locks` and `_last_request_at` are PER INSTANCE and the lane stage's own instance
+overlaps the scan, so a host both reach can see 2 in flight and 2 req/s. **The only such
+traffic is hiringcafe's one GET per admitted board** — 94 in run 3: 40 to
+`boards-api.greenhouse.io` (the scan spends 90.0 s there), 44 to `api.ashbyhq.com` (10.1 s),
+10 to `api.lever.co` (12.0 s) — so the exposure is ≤ ~90 s on one host per run, not the lane
+stage's 352 s. `grnh_seeds` is a CLI command and `jsonld`'s hosts are not scan hosts. **The
+fix is T41** (shared pacing STATE, not a shared client — the client's default UA is what
+linkedin and github_lists rely on). **Mit's call, and it is a pacing promise to third parties,
+not a performance knob.**
 
 **0. WHETHER THE YEARS RULING PROPAGATES BEYOND THE GATE.** He ruled **"a stated bar is a bar"**
 on **28 final-gate verdicts over the delivered shortlist** (D-461). `near_miss_years_ceiling` in the
@@ -255,4 +222,4 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **Runs 1–3 were all launched by hand or failed closed; the first warm UNATTENDED tick is 2026-09-05 04:00, which runs whatever `main` is parked on** — the mechanism note is still true | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |
+| **Runs 1–3 were all launched by hand or failed closed; the first warm UNATTENDED tick is 2026-09-05 04:00, which runs whatever `main` is parked on** — the mechanism note is still true | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`). **The 04:00 schedule fires at 06:00 CDT** until the next reboot: launchd started five minutes before the timezone was set (2026-09-06b) | **Mit** (mechanism); every session (discipline) |

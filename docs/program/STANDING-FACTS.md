@@ -2656,3 +2656,55 @@ per round behind 135 Workday singletons — the lever is ORDER (**T38**), and `s
 only after it. T15's guard never reaches the funnel (**T39**). T28, T34 carried unchanged; T35
 gated on 09-09.
 
+
+## Session 2026-09-06 (execution), moved WHOLE out of `STATE.md` on 2026-09-06b
+
+Moved verbatim by the 2026-09-06b planning session so `STATE.md` stays under its ceiling; its
+reasoning is D-473 and its numbers are `METRICS.md`, the `Session — 2026-09-06` block.
+
+### Session 2026-09-06 (execution): T37, T38 and T39 SHIP — and T37's diagnosis was WRONG: the lost board is a WAL snapshot-upgrade conflict, not a `busy_timeout` starvation, so the prescribed fallback could never have worked; T28 is CLOSED on a positive control; dominos is UNWATCHED; `main` is still UNMOVED by Mit's ruling
+
+**Read this before acting on anything below it.** Reasoning: **D-473**. Numbers: `METRICS.md`,
+the `Session — 2026-09-06` block. Report: `REPORT-2026-09-06.md`. **`main` is still `84671523`.**
+`close-2026-09-06` now carries SEVEN commits over it (T31, T32, the two 09-05 closes, then T37,
+T39, T38 and this close) and **one `--ff-only` merge still lands them all**.
+
+**MIT RULED TWICE AT THE TOP OF THE SESSION.** (a) **Do not merge** — `main` stays parked on the
+T30 state so the 04:00 tick delivers with a valid projection stamp and pays SP3 its second warm
+tailor measurement. The merge is still one step with the re-approval, in his sitting; §0 below is
+unchanged. (b) **Drop dominos only** of the four smartrecruiters boards: `companies remove
+smartrecruiters:dominos` is an UNWATCH, verified before and after — **288 → 287 watched**, its 800
+open postings still held and now in the death-probe population (D-314), not in silence.
+
+**T37 — THE HANDOFF'S MECHANISM WAS WRONG AND ITS FALLBACK IS IMPOSSIBLE.** D-472 read the lost
+`FidelityCareers` apply as starvation past `busy_timeout` 5 s. **Starvation does not reproduce**:
+a back-to-back stream of short transactions on one thread let a 200 / 2,000 / 20,000-insert writer
+on another in after **0.003 / 0.039 / 0.160 s**. The real fault is a **WAL snapshot upgrade** —
+`apply_board` opens a DEFERRED transaction and READS before it writes, so **ONE** commit from any
+other connection in that gap fails the write with `SQLITE_BUSY_SNAPSHOT` (517), rendered as
+`database is locked`, in **0.0006 s against a 5,000 ms timeout**. The busy handler is never
+invoked, so **no value of `busy_timeout` changes the outcome** — pinned as a test on ELAPSED TIME
+so it is not re-proposed. Fixed by the split the handoff preferred: the lane thread FETCHES only,
+the join site applies. **Chosen consequence:** a run returning before the join lands NO lane rows
+(pre-SP2 behaviour) — a shipped test asserted the opposite and was rewritten.
+
+**T38 — THE READY QUEUE, because the static fix is a REGRESSION.** `host_diverse` is gone,
+replaced by `host_queues` + `take_ready` and a `wait(FIRST_COMPLETED)` dispatch loop bounded at
+`scan_workers`. Sized on the model D-344 was fitted to, recalibrated against run 3: today 95.0 min,
+**static chain-first 105.5 (worse than doing nothing)**, ready queue **83.8**. Null control, both
+arms on ONE fleet (287 boards, 131 hosts): the smartrecruiters chain moves from positions
+3, 134, 147, 153… to **3, 11, 19, 27…** — the gap is now exactly `scan_workers` — with **0 of 131
+hosts' own board order changed**. **This supersedes D-344's "not built (the model already prices
+the loss)".** T36 is re-decided on the next tick's tail, not before.
+
+**T39** — `scan.empty_complete_guarded` in the funnel and one run-log line; `ARTIFACT_VERSION`
+deliberately not bumped (additive key, `fetch_cost` precedent).
+
+**T28 — CLOSED, and the zero is STRUCTURAL.** The probe reaches the funnel's 40 for each run and
+still finds 0 duplicate groups at every scope. The control that establishes it is a POSITIVE one:
+the identical grouping over the 83,308 open postings finds **7,093 groups**. The cause is in run 3's
+own funnel — the shortlist drops **46 `hidden_duplicate` + 5 `hidden_slate_cap`** and holds run 2's
+40 as `hidden_handled` before the slate is cut, over a corpus-wide `dedup` that already suppressed
+**1,498 / 83,308 (1.80%)**. The delivered set is the one population where this is zero by
+construction; the 14-18% headline is **retired, not refuted**, and its replacement is already in
+every funnel. No successor ticket.
