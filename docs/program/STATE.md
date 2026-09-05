@@ -20,6 +20,30 @@
 
 ## Current standing
 
+### Session 2026-09-04f (planning review): the 2026-09-04e report HOLDS on every claim checked against the code; T30 is MERGED and the venv rebuilt on 3.13 — **green is now `make check` exit 0** (9,457 passed, 0 failed); the five open questions are ruled in D-470 and the next execution list is `HANDOFF-2026-09-05.md`
+
+**Read this before acting on anything below it.** Reasoning: **D-470**. Numbers: `METRICS.md`, the
+`Session — 2026-09-04f` block. The planning session read T22, SP2, T16, T13, T15, T6 and T30 line by
+line against the code and found the report accurate on each. **One correction to the report's
+framing:** the `--project` preflight sits AFTER the scan (`runner.py`, "P5a"), so an unapproved
+tick scans for ~3 h, refuses, exits 1 and **never reaches eligibility — the owed corpus re-key does
+NOT land on a refused tick.** As of 20:55 on 09-04 the stamp still carries no `content_digest`.
+
+**T30 LANDED `8f44a3d3`** (rebased onto `main` first; it was 7 commits behind). `uv sync --frozen`
+rebuilt the primary venv on **CPython 3.13.15**; `boardwatch --help` runs, `tectonic` 0.17.0
+resolves, the plist is unchanged. Full gate on `main` after that: **exit 0, 9,457 passed / 0
+failed / 1 skipped / 4 xfailed, 655.9 s.** The "exit 2 with two known failures" convention is
+RETIRED everywhere; any failure is a real one. `make check` runs via `uv run`, which honours
+`.python-version`, so every worktree's first gate builds a 3.13 venv.
+
+**RULED (D-470):** T18 `data`/`ai` — NO, closed. T26 chrome-only — rebuild as a BOARD-SCOPED
+boilerplate detector, measured first (T33). M1 and T28 — re-run after the first delivery under
+`1+d89b423701e5`; M1 takes one gate pass (T34). **SP3 (+T23) — DEFERRED on measurement, not
+refused**: run 2's tailor stage was 162 s (4.06 s/lead, 1.35% of a cold run), but the per-lead
+cost is a 4-64 s range set by the slate, so the prize is 2-30 min/run; the first three warm ticks
+decide it. The LLM gate's cadence waits on M1. **The real run-time lever is `scan_workers`, still
+8 in Mit's `config.toml` against a ceiling of 32** — T36, only after the first warm scan is read.
+
 ### Session 2026-09-04e: the WHOLE 2026-09-04 ticket list is EXECUTED from a written handoff — 19 tickets merged, one worktree and one gate each, every gate exit 2 with exactly the two known environmental failures; THREE of the planning session's rulings were overturned on measurement, and FOUR tickets are blocked because the population they were written against died with the reset
 
 **Read this before acting on anything below it.** Reasoning: **D-469**. Numbers: `METRICS.md`, the
@@ -150,36 +174,22 @@ job. **The global CLAUDE.md's "fresh machine" ritual is STALE for this repo — 
 predates it, so the `--project` preflight refuses and the run delivers nothing. Verified by reading
 the stamp file. Needs a controlling TTY; no session can do it.
 
-**0-1. READ THE 2026-09-05 04:00 TICK** (`~/Library/Logs/boardwatch-run.log`, heartbeat pinged).
-It is the first unattended run of **nineteen** merged tickets, not five, and it pays the one-off
-corpus re-evaluation that T3+T4+T20 bought. Until it lands, the delivered queue reads **0 apply /
-40 review** with every lead `verdict=None` — that is the owed re-key, not a defect. Record status,
-scan minutes, evaluated count, tailored/PDF count, whether the renderer refused anything, whether
-the heartbeat pinged. If it failed, that is the next session's first ticket.
+**0-1. THE EXECUTION SESSION RUNS `docs/program/HANDOFF-2026-09-05.md`**, in its order: R1 (the
+09-05 tick readout, including `stage_durations` and each `LaneReport.stage_elapsed_seconds`) →
+T28 → T33 → T34 → T31 → T32 → T36 → T35. **If the tick refused on the stamp, the readout covers
+the scan and lane stages only and the re-key is still owed** — the next `--project` run after
+approval pays it, and that run is Mit's to launch. Until then the delivered queue reads **0 apply
+/ 40 review** with every lead `verdict=None`.
 
-**0-2. THE PLANNING SESSION REVIEWS `docs/program/REPORT-2026-09-04e.md`.** Three of its rulings were
-overturned on measurement and two of its factual claims about the code were wrong; the report says
-which and why, and it is the input to whatever it plans next. **Four questions are open for it**:
-whether T18 should also take `data`/`ai` (measured cost: 508 more titles into the review lane);
-whether T26's chrome-only class is worth rebuilding on a real chrome detector rather than
-`count_section_markers`; whether M1 and T28 are re-run once the corpus and a gate pass exist; and
-whether SP3 is worth its risk now that SP2 has taken the same file.
+**0-2. NOT STARTED, BY RULING:** SP3 (+T23) is deferred on measurement (D-470) until three warm
+ticks have reported the tailor stage; T18's `data`/`ai` and T24 are closed.
 
-**0-3. THREE BRANCHES ARE READY AND UNMERGED**, each green in its own worktree:
-- **`T30`** — `.python-version` = 3.13 plus both environmental tests rewritten to patch the fault in
-  (both mutation-checked). Merge it, run `uv sync` in the primary checkout when no run is in flight
-  and not within the hour before 04:00, verify `.venv/bin/python -V` is 3.13.x and
-  `.venv/bin/boardwatch --help` runs. **After that, green is exit 0** and the blocker row below goes.
-SP2 and T17 both MERGED after this list was first written; only `T30` remains unmerged.
-
-**0-4. SP3 (+T23) IS NOT STARTED.** It rewrites `run_pipeline`'s tailor loop and SP2 rewrote the same
-file's lanes stage; running both at once is the conflict the handoff's ordering exists to prevent.
-
-**0-5. STILL OWED AND UNTOUCHED THIS SESSION:** the formatting session (per-lens skills, the
-SAKEC/Nakshatra order, the `projection.{sde,ios}.yaml` drafts, how a JD picks its projects); review
-and import `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291 human
-step); **push `main`, now 29+ commits ahead of `origin` and never pushed** (`gh` is still not
-installed, so this is Mit's); StreakSync `main`.
+**0-3. STILL OWED AND UNTOUCHED — MIT'S:** **push `main`** (36 commits ahead of `origin`, the
+whole post-reset rebuild on one machine; SSH to `origin` works: `git push origin main`); review
+and import `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291
+human step); the formatting session (per-lens skills, the SAKEC/Nakshatra order, the
+`projection.{sde,ios}.yaml` drafts — do it in the same sitting as T32's re-approval, since both
+re-stale the stamp); StreakSync `main`.
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -297,6 +307,5 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 | Item | Detail | Owner |
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
-| **`make check` is RED on `main` for TWO ENVIRONMENTAL tests — SOLVED on branch `T30`, NOT YET MERGED (2026-09-04e)** | Both fail at pristine `main` with no working-tree changes, so it was never a code regression: `tests/unit/test_ground.py::test_fail_closed_on_deeply_nested_json` (its own precondition `pytest.raises(RecursionError)` on 20,000-deep JSON DID NOT RAISE — CPython 3.14 no longer recurses there) and `tests/profile_bundle/test_profile_bundle_cli_exit_codes.py::test_an_unreadable_drafts_directory_could_not_complete` (`chmod 0o000` no longer yields `PermissionError` on this macOS). The venv is 3.14.7 because `pyproject.toml` says only `requires-python = ">=3.11"` and there was no `.python-version`. **Branch `T30` does BOTH halves the owner's choice was between**: `.python-version` = 3.13, AND both tests rewritten to patch the fault in — `json.loads` raising `RecursionError` as seen by `ground`, and `Path.is_dir` raising `PermissionError` for the drafts path — so each proves its guard on ANY interpreter, and each is MUTATION-CHECKED against the code it guards. The old drafts test also `skip`ped itself under root, which is a test that silently does not run; that is gone. **Not merged only because `uv sync` would change the interpreter under the first unattended run.** Merge it, `uv sync`, and green becomes **exit 0** — then delete this row | **Mit** (merge + `uv sync`) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **The unattended 04:00 tick FIRED ONCE on this machine (06:00 local 2026-09-04, run 1: failed closed by design) and the first CLEAN run (2) was MANUAL; the first warm unattended tick is 2026-09-05 04:00** — the mechanism note is still true| The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |

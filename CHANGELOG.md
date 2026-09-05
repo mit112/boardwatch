@@ -291,6 +291,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The project pins CPython 3.13, and two tests no longer depend on the machine they run on.**
+  `.python-version` now says 3.13, so `uv` builds every environment on the interpreter the suite
+  is run against. The test that proves grounding fails closed on a parser recursion error, and the
+  test that proves an unreadable drafts directory is reported as an I/O failure, each used to
+  provoke the fault from the environment (20,000 nested brackets; `chmod 000`) — CPython 3.14 and
+  this macOS stopped producing either, so both tests failed while the guards they defend were
+  fine. Each now injects the fault directly and proves its guard on any interpreter.
+
 - **The test suite builds a fresh database schema without replaying every migration.** Every test
   that needs an empty store paid the cost of the full 27-migration chain, at about 93 ms each. A
   test-only fast path now replays a template captured once per process instead, and the schema comes
