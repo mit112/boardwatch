@@ -102,12 +102,17 @@ export function StatusBand({
   counts,
   showing,
   total,
+  reviewNote,
   activeFacet,
   onToggleFacet,
 }: {
   counts: QueueCounts;
   showing: number;
   total: number;
+  /* The `review` cell's tooltip, GENERATED from the lane's own reason counts by the caller. It
+     used to hand-write two of the nine reasons here, which described none of the leads on the
+     measured day. */
+  reviewNote: string;
   activeFacet: QueueFacet | null;
   onToggleFacet: (facet: QueueFacet) => void;
 }) {
@@ -141,7 +146,7 @@ export function StatusBand({
       <Metric
         label="review"
         value={counts.review.toLocaleString()}
-        note="Held for a look, not blindly appliable: outside the US, or a title the role gate will not positively call software. Click to show only this lane."
+        note={reviewNote}
         order={3}
         active={activeFacet === "review"}
         onToggle={() => {

@@ -21,6 +21,7 @@ import { StatusBand } from "../components/StatusBand";
 import type { QueueFacet } from "../components/StatusBand";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ToastRequest } from "../hooks/useToasts";
+import { reviewBreakdown, reviewLaneSentence } from "../lib/reviewReasons";
 import { matchesQuery, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
 
@@ -518,6 +519,18 @@ export function QueuePage({
    */
   const laneOnly = facet === "review";
 
+  /*
+   * The lane's copy, GENERATED from the lane. Both sentences below used to name two of the nine
+   * reasons by hand and described none of the 149 leads on the measured day, which is what copy
+   * that enumerates a closed catalog eventually does.
+   */
+  const reviewSentence = reviewLaneSentence(data?.review ?? []);
+  const reviewNote = (() => {
+    const breakdown = reviewBreakdown(data?.review ?? []);
+    const lead = "Held for a look, not blindly appliable";
+    return `${breakdown === "" ? `${lead}.` : `${lead} — ${breakdown}.`} Click to show only this lane.`;
+  })();
+
   // The empty grid must name the lever that emptied it. With a facet on, the two default
   // sentences point at the text box and the score floor — neither of which is what is filtering.
   const emptyHint =
@@ -565,6 +578,7 @@ export function QueuePage({
            * contradicting the list directly under it. `laneOnly` is the case where the apply queue
            * is genuinely off the page, so its zero belongs in neither figure.
            */
+          reviewNote={reviewNote}
           showing={laneOnly ? visibleReview.length : visible.length + visibleReview.length}
           total={laneOnly ? data.review.length : data.rows.length + data.review.length}
           activeFacet={facet}
@@ -728,9 +742,7 @@ export function QueuePage({
                       * split; if they ever disagree, the folder tree wins.
                       */}
                     <p className="w-full text-sm text-fg-2">
-                      Open these before applying. Each one is either outside the US, or carries a
-                      title the role gate will not positively call software — so it is not
-                      blindly appliable. Same split as the{" "}
+                      Open these before applying. {reviewSentence} Same split as the{" "}
                       <code className="text-fg-3">_review</code> folder.
                     </p>
                   </header>
