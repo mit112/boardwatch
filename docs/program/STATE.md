@@ -106,11 +106,14 @@ the formatting session (with the re-approval, above); **the rest of the smartrec
 abbvie (1,074, 0) remain at ~400 host-seconds each per run, now overlapped by T38 rather than
 serialised behind the fleet; StreakSync `main`.
 
-**0-5. A PRODUCT-LEVEL ARCHITECTURE REVIEW WAS WRITTEN 2026-09-05c — `REVIEW-2026-09-05.md`.**
-It does not re-open D-467. Its finding: the D-071/D-074 second stage (the LLM final gate) is not on
-the daily path, nothing reads seniority from a JD body, tailoring runs before the lane split, and the
-ranker ignores the verdict. It tables **four owner decisions** (its last section) and proposes a **B8**
-completion bar. Nothing is ruled; nothing is ticketed until Mit reads it.
+**0-5. THE PRODUCT REVIEW IS RULED (D-477) AND TICKETED — `REVIEW-2026-09-05.md`, `HANDOFF-2026-09-08.md`.**
+Mit agreed all six findings 05:39–05:45 CDT: the LLM judge goes on the daily path over the delivered slate
+(enterprise sub, headless, fail-open, cost bounded by `--top`), tailor the apply lane only, B8 joins the bar,
+Gate 1 thresholds are fixed, done = single-tenant. Execution order: the 09-07 handoff's T40/T41 first, then
+09-08's T45, T44, T43, T42, T46. **THE 06:00 TICK OF 2026-09-05 IS UNLOADED (05:47 CDT, his request) so the
+execution session can merge without a live run.** Run 4 is therefore NOT today's tick: re-load the plist
+(`launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist`) or run by hand when the
+merges are on `main`; the heartbeat will alert on the missed ping unless paused in its dashboard.
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band

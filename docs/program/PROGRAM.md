@@ -19,6 +19,7 @@ boardwatch replaces job-apps when, for **14 consecutive unattended days**, one c
 | B5 | Silent empty days (run "succeeds", produces nothing) | **0** |
 | B6 | Funnel reconciliation | **100%** to a terminal state or explicit `pending` |
 | B7 | Work authorization resolved **decisively** for a declared profile | required |
+| B8 | Apply-lane leads/day **and** blind-audited unapplyable rate (added 2026-09-05, D-477) | **≥ 20** at **≤ 16%** on n ≥ 100 |
 
 **Scheduling consequence, stated up front:** the 14-day clock measures a *frozen* system. Any change to
 eligibility, profile, or the résumé gate resets it. So the clock starts **after** P6, not during. Starting

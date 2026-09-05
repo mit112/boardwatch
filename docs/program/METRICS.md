@@ -12851,3 +12851,18 @@ lines (25% of `src`), `extract/` 273. job-apps: 39,646 source lines in 117 files
 - Leads tailored per run: **40** (plist `--top 40`), all before the apply/review split; apply
   lane 3–5 of those on runs 1–3.
 - Rank weights: skill 0.50 · title 0.25 · recency 0.15 · location 0.10; verdict weight **0**.
+
+### The judge's cost, sized for D-477 (tokens from the 09-06 gate pass: 415,302 JD chars / 80 items)
+
+| quantity | value |
+|---|---:|
+| JD tokens per lead (≈ chars / 4) | ~1,300 |
+| leads judged per run (`--top 40`, both lanes) | 40 |
+| batches per run at 13/batch | 3 |
+| content tokens per run (JD + facts + JSON out) | ~60k |
+| API-equivalent, Sonnet 5 at $2/$10 per MTok | ~$0.18/day; ~$5.30/month; half via Batch |
+| API-equivalent, Haiku 4.5 at $1/$5 | ~$0.09/day |
+| actual cost (no API key) | enterprise-subscription window at 04:00, idle |
+
+Scales with `--top`, not the corpus; a lead with a current identity-keyed gate row is never re-judged.
+**The 06:00 tick was unloaded at 05:47 CDT** (`launchctl bootout`, no run in flight); heartbeat `/pause` via ping URL → HTTP 400.
