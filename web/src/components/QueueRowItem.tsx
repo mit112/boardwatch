@@ -251,10 +251,12 @@ export function QueueRowItem({
             {formatAge(row.posted_days)}
           </span>
 
+          {/* The tooltip is the server's OWN explanation when it sent one. Nothing here infers a
+              reason from the number: the ranker is the only thing that knows what it weighed. */}
           <span
             role="gridcell"
             className={`${SCORE_UP} text-right text-sm text-fg tabular-nums`}
-            title="Score, as of now."
+            title={row.why ?? "Score, as of now."}
           >
             {formatScore(row.score)}
           </span>

@@ -42,6 +42,7 @@ export function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     pdf_available: true,
     score: 7.5,
     coverage: 0.62,
+    why: null,
     off_target_reason: null,
     review_reason: null,
     ...overrides,

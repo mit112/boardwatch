@@ -101,6 +101,13 @@ export interface QueueRow {
   /** Résumé keyword coverage as a fraction 0..1. `null` exactly when `thin_jd` is true. */
   coverage: number | null;
   /**
+   * The server's own explanation of the score — which components contributed and by how much.
+   * `null` when the ranker recorded none. Rendered VERBATIM: the frontend never infers a reason
+   * from the score, because a hand-written explanation is a second, wrong opinion about a shipped
+   * ranker in exactly the way `off_target_reason` below is.
+   */
+  why: string | null;
+  /**
    * Why the role gate vetoed the title, carrying the text it actually matched. Displayed beside
    * the badge so a veto is auditable. The frontend never re-derives this from the title: a
    * hand-written title pattern is a second, wrong opinion about a shipped gate.

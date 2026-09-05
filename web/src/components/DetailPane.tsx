@@ -26,11 +26,24 @@ import { VerdictChip } from "./VerdictChip";
  */
 export const SIDE_BY_SIDE = "(min-width: 64rem)";
 
-function Fact({ label, value }: { label: string; value: string }) {
+/**
+ * `note` is the server's own sentence about the number above it — the score's `why`, and nothing
+ * else so far. It is prose rather than an instrument reading, so it is NOT `tabular-nums`.
+ */
+function Fact({
+  label,
+  value,
+  note = null,
+}: {
+  label: string;
+  value: string;
+  note?: string | null;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="label-micro text-fg-3">{label}</span>
       <span className="text-sm text-fg tabular-nums">{value}</span>
+      {note === null ? null : <span className="text-xs leading-snug text-fg-2">{note}</span>}
     </div>
   );
 }
@@ -266,7 +279,7 @@ export function DetailPane({
               <Fact label="remote policy" value={row.remote_policy ?? EM_DASH} />
               <Fact label="age" value={formatAge(row.posted_days)} />
               <Fact label="status" value={row.status} />
-              <Fact label="score · as of now" value={formatScore(row.score)} />
+              <Fact label="score · as of now" value={formatScore(row.score)} note={row.why} />
               <Fact label="coverage · as of now" value={formatFraction(row.coverage)} />
               <Fact label="first seen" value={formatTimestamp(row.first_seen)} />
             </div>
