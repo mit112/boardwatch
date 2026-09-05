@@ -20,7 +20,38 @@
 
 ## Current standing
 
-### Session 2026-09-05 (execution): the 04:00 tick was NOT waited for — **run 3 was launched by hand at 22:39 and is STILL IN FLIGHT**; T31 and T32 are gate-green but **NOTHING IS MERGED**, and T33 is REFUSED on inspection at 0.701% held
+### Session 2026-09-05b (planning review): the 2026-09-05 report HOLDS; run 3 is READ (106.8-min warm scan, SP2 paid in full, 35 verdict moves, 3 apply / 37 review); T33's residual-zero successor is REFUSED on consequence, T36 is CLOSED on the smartrecruiters critical path, and the merge of `close-2026-09-05` is BOUND to Mit's re-approval — next list `HANDOFF-2026-09-06.md`
+
+**Read this before acting on anything below it.** Reasoning: **D-472**. Numbers: `METRICS.md`,
+the `Session — 2026-09-05b` block. R1 is DONE — do not redo it. **`main` is still `84671523`;
+`close-2026-09-05` now carries FOUR commits** (T31, T32, the execution close, this planning
+close) and one `--ff-only` merge lands them all.
+
+**THE MERGE IS ONE STEP WITH THE RE-APPROVAL, IN MIT'S SITTING.** The launchd tick runs the
+editable venv from `main`; merging T32 stales the projection stamp; a `--project` run with a
+stale stamp scans ~107 min, refuses at P5a, exits 1 and withholds the heartbeat — a false alert
+for a chosen condition. Until Mit can type `approve` right after the merge, `main` stays on the
+T30 state and the tick delivers.
+
+**RUN 3, READ.** Scan **6,418.6 s = 106.8 min, 1.67x faster than cold** (the 79.3 min quoted at
+283/288 hid a 27.6-min tail); `lanes` join wait **0.001 s** against 363.8 s serial; eligibility
+**648.4 s over 83,308** (cheaper than 665.5 s over 61,927, not dearer); tailor 5.16 s/lead (SP3
+measurement 1 of 3); **3 apply / 37 review**. **The readout's move count was an apparatus zero**
+(`input_id` is the inputs ROW id); resolved through `eligibility_inputs`, the shared 61,927
+postings moved **35** against T4's predicted 29. **One board FAILED — SP2's first production
+defect**: FidelityCareers' apply lost the write lock to the lane thread's back-to-back short
+writes at `busy_timeout` 5 s and the whole fetched snapshot was discarded (**T37**: fetch
+concurrently, apply serially).
+
+**RULED (D-472):** `residual_chars == 0` — **NO**: 128 bodies, 120 `uncertain` + 8
+`ineligible`, ZERO eligible, zero leads, zero ever tailored; no chrome class is open. **T36 —
+CLOSED as specified**: both runs end on the smartrecruiters host ALONE (47.9 min of run 2, 27.6
+of run 3), 1,931 detail requests on one host that `host_diverse` emits one board per round
+behind 135 Workday singletons — the lever is ORDER (**T38**), and `scan_workers` is re-decided
+only after it. T15's guard never reaches the funnel (**T39**). T28, T34 carried unchanged; T35
+gated on 09-09.
+
+### Session 2026-09-05 (execution): the 04:00 tick was NOT waited for — **run 3 was launched by hand at 22:39; it FINISHED 00:43 exit 0 and is read in 2026-09-05b**; T31 and T32 are gate-green but **NOTHING IS MERGED**, and T33 is REFUSED on inspection at 0.701% held
 
 **Read this before acting on anything below it.** Reasoning: **D-471**. Numbers: `METRICS.md`, the
 `Session — 2026-09-05` block. **Written for the planning session:
@@ -59,62 +90,32 @@ the corpus warming up may already have paid the lever. `board_scans` cannot mode
 same-host blocking, so every projection from it is an UPPER bound. smartrecruiters is 24.0% of run
 2's fetch cost on ONE host over 10 boards.
 
-### Session 2026-09-04f (planning review): the 2026-09-04e report HOLDS on every claim checked against the code; T30 is MERGED and the venv rebuilt on 3.13 — **green is now `make check` exit 0** (9,457 passed, 0 failed); the five open questions are ruled in D-470 and the next execution list is `HANDOFF-2026-09-05.md`
-
-**Read this before acting on anything below it.** Reasoning: **D-470**. Numbers: `METRICS.md`, the
-`Session — 2026-09-04f` block. The planning session read T22, SP2, T16, T13, T15, T6 and T30 line by
-line against the code and found the report accurate on each. **One correction to the report's
-framing:** the `--project` preflight sits AFTER the scan (`runner.py`, "P5a"), so an unapproved
-tick scans for ~3 h, refuses, exits 1 and **never reaches eligibility — the owed corpus re-key does
-NOT land on a refused tick.** **Mit re-approved at 21:08 on 09-04** — the stamp now carries
-`content_digest`, so the 09-05 tick is expected to deliver and to pay the re-key.
-
-**T30 LANDED `8f44a3d3`** (rebased onto `main` first; it was 7 commits behind). `uv sync --frozen`
-rebuilt the primary venv on **CPython 3.13.15**; `boardwatch --help` runs, `tectonic` 0.17.0
-resolves, the plist is unchanged. Full gate on `main` after that: **exit 0, 9,457 passed / 0
-failed / 1 skipped / 4 xfailed, 655.9 s.** The "exit 2 with two known failures" convention is
-RETIRED everywhere; any failure is a real one. `make check` runs via `uv run`, which honours
-`.python-version`, so every worktree's first gate builds a 3.13 venv.
-
-**RULED (D-470):** T18 `data`/`ai` — NO, closed. T26 chrome-only — rebuild as a BOARD-SCOPED
-boilerplate detector, measured first (T33). M1 and T28 — re-run after the first delivery under
-`1+d89b423701e5`; M1 takes one gate pass (T34). **SP3 (+T23) — DEFERRED on measurement, not
-refused**: run 2's tailor stage was 162 s (4.06 s/lead, 1.35% of a cold run), but the per-lead
-cost is a 4-64 s range set by the slate, so the prize is 2-30 min/run; the first three warm ticks
-decide it. The LLM gate's cadence waits on M1. **The real run-time lever is `scan_workers`, still
-8 in Mit's `config.toml` against a ceiling of 32** — T36, only after the first warm scan is read.
-
 ## Next action
 
-**0. THE NEXT THREE THINGS, IN THIS ORDER — `docs/program/HANDOFF-2026-09-05-POSTRUN.md` §1.**
-(a) **Wait for run 3**: `pgrep -fl "boardwatch run"` must find nothing. Do not merge, do not switch
-`main`'s branch, do not touch `{config_dir}` until it does. (b) **R1 — read run 3**:
-`.venv/bin/python .agent/2026-09-05-session/r1_readout.py 3` prints the run row, all eight
-`stage_durations` against run 2's pinned baseline, each lane's own scalars (SP2's
-`stage_elapsed_seconds` vs the residual `lanes` join wait), and the verdict distribution at BOTH
-engine keys with the per-posting move count. **It carries its own null control: run against run 2
-it reproduces the pinned baseline exactly.** (c) **`git merge --ff-only close-2026-09-05`**, then
-**Mit re-approves the projection** — T32 stales it and he chose that at 23:26 on 09-04 on exactly
-that condition.
+**0. THE NEXT THINGS, IN THIS ORDER — `docs/program/HANDOFF-2026-09-06.md`.** (a) **With Mit
+at the keyboard and no run in flight**: `git merge --ff-only close-2026-09-05`, then
+`boardwatch profile-bundle approve-projection` (the screen now prints the shell's header and
+education), the formatting session in the same sitting, verify the gate read-only, delete the
+three worktrees, push. **Without Mit: do not merge; do not move `main`.** (b) **T37** — the lost
+apply, reproduced red first, fixed by applying the lanes serially after the scan's join.
+(c) **T38** — the scan order: emit the smartrecruiters chain from round 0. (d) **T39** — T15's
+guard into the funnel. Each in a worktree off `close-2026-09-05`, one gate each.
 
-**0-1. CARRIED, ALL THREE BLOCKED ON RUN 3 FINISHING:** R1, **T28** (the probe unchanged, null
-control first: it must find the funnel's own delivered count before grouping) and **T34** (M1 —
-`gate request` → two blind judges → `gate apply` → the m1 probe; the judging pass is the cost, and
-the **planning session** rules on the cadence). **T36 is re-opened, not carried**: the warm scan is
-2.25x faster at `scan_workers` unchanged, so re-decide it on run 3's own numbers. **T35** is still
-gated on reaching 09-09.
+**0-1. CARRIED, UNCHANGED:** **T28** (the probe, null control first: it must find the 40 before
+grouping) and **T34** (M1 — `gate request` → two blind judges → `gate apply` → the m1 probe; the
+planning session rules on the cadence). **T35** is gated on reaching 09-09.
 
-**0-2. NOT STARTED, BY RULING:** SP3 (+T23) is deferred on measurement (D-470) until three warm
-ticks have reported the tailor stage; T18's `data`/`ai` and T24 are closed. **T33 is closed NO**
-(D-471); its survivor `residual_chars == 0` is an open question for the planning session, not work.
+**0-2. CLOSED, BY RULING (D-472):** T33 and its residual-zero successor; T36 as specified
+(`scan_workers` is re-decided only after T38, on a tick whose smartrecruiters tail is gone —
+and the config comment's `le=8` claim is stale against `le=32`). Still closed: T18 `data`/`ai`,
+T24, T26. SP3 (+T23) stays deferred until three warm ticks report the tailor stage — run 3 is
+the first at 5.16 s/lead.
 
-**0-3. STILL OWED AND UNTOUCHED — MIT'S:** **push `main`** — but only AFTER the merge above;
-`main` has not moved this session, so there is nothing new to push before it (SSH to `origin`
-works: `git push origin main`). Review and import
-`.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291 human step);
-the formatting session (per-lens skills, the SAKEC/Nakshatra order, the `projection.{sde,ios}.yaml`
-drafts — **do it in the same sitting as T32's re-approval, since both re-stale the stamp**);
-StreakSync `main`.
+**0-3. STILL OWED AND UNTOUCHED — MIT'S:** push `main` after the merge (nothing to push before
+it); `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291); the
+formatting session (with the re-approval, above); **a fleet call sized in the handoff §5** —
+dominos (23,875 deferred, 0 leads ever), boschgroup, cityofnewyork and abbvie carry the
+smartrecruiters chain at ~400 host-seconds each per run; StreakSync `main`.
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -202,15 +203,9 @@ re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
    open corpus. **Sized, not solved, and no budget can solve it.** See D-336.
 4. **Whether `ServiceNow Developer` should rank at all against a new-grad SWE target.** Role
    TAXONOMY, not dedup. D-345 bounds the delivery damage; it does not answer this.
-5. **NEW 2026-09-04d — whether a fresh install should be handed a `resume_template.tex` to edit.**
-   T2 made the renderer fail CLOSED when `{config_dir}/resume_template.tex` is absent, which is the
-   right direction: the bundled fallback's header is literally "Your Name / Example University", and
-   the 09-03 reset deleted exactly that file. But **nothing in the product writes it** — neither
-   `boardwatch init` nor `tailor init` — so a new user is now refused until they author one from
-   scratch. The alternative is for `init` to write the bundled template into the config dir, where
-   the new placeholder-phrase catalog would then refuse it until edited: same fail-closed guarantee,
-   an actionable file instead of an absent one. **Multi-tenancy question, so it is Mit's**, and it
-   is a new onboarding step either way.
+5. **ANSWERED 2026-09-05 — T31 (`1fc61596`, on `close-2026-09-05`): `boardwatch init` seeds the
+   bundled `resume_template.tex` when absent and never overwrites; the placeholder-phrase catalog
+   still refuses the unedited copy, so the fail-closed guarantee is unchanged.**
 
 ## Phase status
 
@@ -233,4 +228,4 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **The unattended 04:00 tick FIRED ONCE on this machine (06:00 local 2026-09-04, run 1: failed closed by design) and the first CLEAN run (2) was MANUAL; the first warm unattended tick is 2026-09-05 04:00** — the mechanism note is still true| The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |
+| **Runs 1–3 were all launched by hand or failed closed; the first warm UNATTENDED tick is 2026-09-05 04:00, which runs whatever `main` is parked on** — the mechanism note is still true | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |

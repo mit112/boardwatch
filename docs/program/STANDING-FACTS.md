@@ -2530,3 +2530,32 @@ in-session as T7b. `GET /api/answers` crashed uncaught and DROPPED the connectio
 catches three types and `ProfileRowInvalid` is none of them); `top`/`export`/`eligibility run`/`stats`
 tracebacked instead of naming the column. Every gate had been green.
 
+## Session 2026-09-04f, moved WHOLE out of `STATE.md` on 2026-09-05b
+
+Moved verbatim by the planning session of 2026-09-05b to keep `STATE.md` under its ceiling. Its
+rulings are D-470; nothing below was edited.
+
+### Session 2026-09-04f (planning review): the 2026-09-04e report HOLDS on every claim checked against the code; T30 is MERGED and the venv rebuilt on 3.13 — **green is now `make check` exit 0** (9,457 passed, 0 failed); the five open questions are ruled in D-470 and the next execution list is `HANDOFF-2026-09-05.md`
+
+**Read this before acting on anything below it.** Reasoning: **D-470**. Numbers: `METRICS.md`, the
+`Session — 2026-09-04f` block. The planning session read T22, SP2, T16, T13, T15, T6 and T30 line by
+line against the code and found the report accurate on each. **One correction to the report's
+framing:** the `--project` preflight sits AFTER the scan (`runner.py`, "P5a"), so an unapproved
+tick scans for ~3 h, refuses, exits 1 and **never reaches eligibility — the owed corpus re-key does
+NOT land on a refused tick.** **Mit re-approved at 21:08 on 09-04** — the stamp now carries
+`content_digest`, so the 09-05 tick is expected to deliver and to pay the re-key.
+
+**T30 LANDED `8f44a3d3`** (rebased onto `main` first; it was 7 commits behind). `uv sync --frozen`
+rebuilt the primary venv on **CPython 3.13.15**; `boardwatch --help` runs, `tectonic` 0.17.0
+resolves, the plist is unchanged. Full gate on `main` after that: **exit 0, 9,457 passed / 0
+failed / 1 skipped / 4 xfailed, 655.9 s.** The "exit 2 with two known failures" convention is
+RETIRED everywhere; any failure is a real one. `make check` runs via `uv run`, which honours
+`.python-version`, so every worktree's first gate builds a 3.13 venv.
+
+**RULED (D-470):** T18 `data`/`ai` — NO, closed. T26 chrome-only — rebuild as a BOARD-SCOPED
+boilerplate detector, measured first (T33). M1 and T28 — re-run after the first delivery under
+`1+d89b423701e5`; M1 takes one gate pass (T34). **SP3 (+T23) — DEFERRED on measurement, not
+refused**: run 2's tailor stage was 162 s (4.06 s/lead, 1.35% of a cold run), but the per-lead
+cost is a 4-64 s range set by the slate, so the prize is 2-30 min/run; the first three warm ticks
+decide it. The LLM gate's cadence waits on M1. **The real run-time lever is `scan_workers`, still
+8 in Mit's `config.toml` against a ceiling of 32** — T36, only after the first warm scan is read.
