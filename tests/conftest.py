@@ -44,12 +44,22 @@ TEST_RESUME_TEMPLATE = (
 
 
 def write_test_resume_template(config_dir: Path) -> None:
-    """Write `TEST_RESUME_TEMPLATE` to `{config_dir}/resume_template.tex`, unless one is
-    already there. Idempotent so it composes with a caller that may have written its own
-    template earlier in the same fixture (or wants to opt out by writing first)."""
+    """Write `TEST_RESUME_TEMPLATE` to `{config_dir}/resume_template.tex`, unless a template
+    that is not the bundled placeholder is already there. Idempotent so it composes with a
+    caller that may have written its own template earlier in the same fixture (or wants to opt
+    out by writing first).
+
+    The placeholder exception is T31: `boardwatch init` now SEEDS the bundled template into the
+    config dir, so a fixture that builds a properly configured user (`init` + `tailor init` +
+    this) finds a file already present and would otherwise be left holding the unedited
+    placeholder identity — which `_validate_template` then refuses, exactly as it should for a
+    real user who has not edited it yet. A test user IS edited, so the seed is overwritten and a
+    caller's own template still wins.
+    """
     target = config_dir / "resume_template.tex"
-    if not target.is_file():
-        target.write_text(TEST_RESUME_TEMPLATE, encoding="utf-8")
+    if target.is_file() and target.read_text(encoding="utf-8") != resolve_template(None):
+        return
+    target.write_text(TEST_RESUME_TEMPLATE, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------------------

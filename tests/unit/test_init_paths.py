@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import func, select
 from typer.testing import CliRunner
@@ -6,6 +8,7 @@ from boardwatch.cli.app import app
 from boardwatch.registry.validate import CompanyEntry
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
+from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
 
 runner = CliRunner()
 CATALOG = [
@@ -95,3 +98,45 @@ def test_zero_skill_warning_fires_for_skilless_profile(tmp_path) -> None:
     normalized = " ".join(result.stdout.split())
     assert " ".join(ZERO_SKILL_WARNING.split()) in normalized
     assert "Recognized" not in normalized  # and NOT the positive branch
+
+
+# --- T31: `init` seeds the résumé template ------------------------------------------------
+#
+# T2 made a run refuse when `{config_dir}/resume_template.tex` is absent, which left a fresh
+# install with nothing to edit. `init` now writes the bundled template there when the file is
+# absent. The refusal is NOT relaxed: the bundled header/education are placeholder identity and
+# `_PLACEHOLDER_PHRASES` still refuses them, so the guarantee is unchanged and only the
+# actionability moves — an editable file instead of an absent one.
+
+
+def _template_path(tmp_path) -> Path:
+    return tmp_path / "cfg" / "resume_template.tex"
+
+
+def test_init_writes_the_bundled_template_when_absent(tmp_path) -> None:
+    assert not _template_path(tmp_path).exists()
+    result = runner.invoke(app, [*_base(tmp_path), "init"], input="1\n" + _PROFILE)
+    assert result.exit_code == 0
+    assert _template_path(tmp_path).read_text(encoding="utf-8") == resolve_template(None)
+
+
+def test_init_never_overwrites_an_existing_template(tmp_path) -> None:
+    # An edited template is the whole point of the file; `init` re-run must not clobber it.
+    edited = resolve_template(None).replace("Your Name", "Ada Lovelace")
+    _template_path(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    _template_path(tmp_path).write_text(edited, encoding="utf-8")
+    result = runner.invoke(app, [*_base(tmp_path), "init"], input="1\n" + _PROFILE)
+    assert result.exit_code == 0
+    assert _template_path(tmp_path).read_text(encoding="utf-8") == edited
+
+
+def test_the_seeded_template_is_still_refused_until_it_is_edited(tmp_path) -> None:
+    # The fail-closed guarantee T2 shipped, restated against the seeded file: writing it does
+    # NOT make a run render placeholder identity. The refusal moves from "no such file" to
+    # "still carries the bundled placeholder", and both are TemplateArtifactError, which is
+    # what `run.py`'s FOREIGN_AVAILABILITY matches by isinstance.
+    result = runner.invoke(app, [*_base(tmp_path), "init"], input="1\n" + _PROFILE)
+    assert result.exit_code == 0
+    with pytest.raises(TemplateArtifactError) as excinfo:
+        resolve_template(tmp_path / "cfg")
+    assert "Your Name" in str(excinfo.value)

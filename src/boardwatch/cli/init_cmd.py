@@ -3,6 +3,8 @@ search / paste, then the P0 profile + filter flow (unchanged)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 
@@ -20,6 +22,7 @@ from boardwatch.eligibility.facts import Facts, Policy, facts_payload
 from boardwatch.registry.loader import load_catalog, starter_entries
 from boardwatch.registry.validate import CompanyEntry
 from boardwatch.store.queries import save_eligibility, upsert_watch
+from boardwatch.tailor.render.latex import resolve_template
 
 console = Console()
 
@@ -31,9 +34,36 @@ def _paste_target(token: str) -> tuple[str, str]:
     return parse_board_target(token)
 
 
+def _seed_resume_template(config_dir: Path) -> bool:
+    """Write the bundled LaTeX template into the config dir when it is not already there.
+
+    T2 made a run refuse rather than fall back to the bundled default, because that default's
+    header and education are placeholder identity and a silent fallback delivers a résumé
+    addressed to nobody. That refusal stands; what it left behind was a fresh install with
+    nothing to edit. Seeding the file changes only that: the same bundled text is now on disk
+    where the user can edit it, and `_validate_template`'s placeholder-phrase catalog goes on
+    refusing it verbatim until they do.
+
+    NEVER overwrites: the edited file is the deliverable, and `init` is re-runnable.
+    """
+    candidate = config_dir / "resume_template.tex"
+    if candidate.exists():
+        return False
+    config_dir.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(resolve_template(None), encoding="utf-8")
+    return True
+
+
 def init(ctx: typer.Context) -> None:
     """Interactive first-run: companies (3 paths), profile, filters."""
     app_ctx = build_context(ctx.obj)
+    template_path = app_ctx.settings.config_dir / "resume_template.tex"
+    if _seed_resume_template(app_ctx.settings.config_dir):
+        console.print(
+            f"Wrote a starter résumé template to {template_path}. "
+            "Edit its header and education before your first run — a run refuses the "
+            "unedited placeholder identity."
+        )
     catalog = load_catalog()
     catalog_index: dict[tuple[str, str], CompanyEntry] = {
         (str(e.provider), e.slug): e for e in catalog

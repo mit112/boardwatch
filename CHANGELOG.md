@@ -16,9 +16,12 @@ All notable changes to this project are documented here. The format follows
   no-fabrication check, and delivered PDFs addressed to nobody.
 
   A run now refuses and names the missing file. A copy of the bundled template that was never
-  edited is refused too, so "copied it and forgot" fails the same way as "never made one". Note
-  that nothing writes this file for you yet: after upgrading, make sure it exists before your next
-  run.
+  edited is refused too, so "copied it and forgot" fails the same way as "never made one".
+  `boardwatch init` writes a starter copy of the bundled template into the config dir when none is
+  there, so a fresh install has a file to edit rather than one to invent — and because that copy
+  is unedited, a run still refuses it by name until you change the header and education. An
+  existing template is never overwritten. If you upgraded rather than ran `init`, make sure the
+  file exists before your next run.
 
 - **The review viewer stays authorised across reloads, bookmarks and restarts.** Its bearer token
   arrives in the URL fragment, but the router owns that same fragment — the moment the app navigated
