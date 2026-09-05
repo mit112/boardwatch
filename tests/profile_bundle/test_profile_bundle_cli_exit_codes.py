@@ -21,6 +21,7 @@ is the part of §21 a usage error could quietly violate.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 from dataclasses import dataclass
@@ -247,7 +248,10 @@ def test_lock_contention_could_not_complete(
 
 @pytest.mark.skipif(os.name != "posix", reason="mode bits do not deny directory reads on Windows")
 def test_an_unreadable_drafts_directory_could_not_complete(
-    env: Env, synthetic_bundle: SyntheticBundle, tmp_path: Path
+    env: Env,
+    synthetic_bundle: SyntheticBundle,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`validate --draft` has to probe the draft directory, and that probe is I/O.
 
@@ -259,8 +263,6 @@ def test_an_unreadable_drafts_directory_could_not_complete(
     Both arms are asserted, because the fix strengthens the boundary rather than the input: a
     genuinely absent draft is still a finding about the bundle, not an I/O failure.
     """
-    if os.geteuid() == 0:  # pragma: no cover - root ignores the mode bits entirely
-        pytest.skip("running as root, so an unreadable directory is still readable")
     bundle = ["--bundle", str(synthetic_bundle.root)]
 
     absent = run(env, ["validate", *bundle, "--draft", "no-such-draft", "--json"])
@@ -269,12 +271,24 @@ def test_an_unreadable_drafts_directory_could_not_complete(
         "draft_not_found"
     }
 
+    # The fault is PATCHED IN rather than provoked with `chmod 0o000`. That was the original
+    # probe and it stopped working: on this macOS the mode bits no longer yield `PermissionError`
+    # for this probe, so the command answered `draft_not_found`/exit 1 and the test reported a
+    # broken boundary when the boundary was fine. It also had to skip itself under root, which is
+    # a test that silently does not run. Injecting the `OSError` directly exercises the same arm
+    # — the command layer's `except OSError -> IO_ERROR` mapping — on every platform and every
+    # user. Mutation-checked: removing that mapping makes this fail.
     drafts = synthetic_bundle.draft.parent
-    drafts.chmod(0o000)
-    try:
-        result = run(env, ["validate", *bundle, "--draft", synthetic_bundle.draft_name, "--json"])
-    finally:
-        drafts.chmod(0o755)
+    real_is_dir = Path.is_dir
+
+    def unreadable(self: Path, *args: object, **kwargs: object) -> bool:
+        if self == drafts or drafts in self.parents:
+            raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), str(self))
+        return bool(real_is_dir(self, *args, **kwargs))
+
+    monkeypatch.setattr(Path, "is_dir", unreadable)
+    result = run(env, ["validate", *bundle, "--draft", synthetic_bundle.draft_name, "--json"])
+    monkeypatch.undo()
 
     assert result.exit_code == 3, result.output
     body = payload(result)

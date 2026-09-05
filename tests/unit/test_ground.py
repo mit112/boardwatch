@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+import boardwatch.eligibility.ground as ground_module
 from boardwatch.eligibility.ground import ground
 
 JD = "We require a minimum of 5 years of experience. Security clearance is a plus."
@@ -74,18 +75,27 @@ def test_first_occurrence_offsets_used_for_duplicate_substring() -> None:
     assert out[0].span == (0, 7)
 
 
-def test_fail_closed_on_deeply_nested_json() -> None:
-    # Syntactically valid but pathologically deep JSON must not raise RecursionError
-    # out of ground(); the fail-closed contract covers this the same as malformed JSON.
-    deep = "[" * 20000 + "]" * 20000
-    # Precondition: this input genuinely makes json.loads raise, so the assertion below
-    # actually exercises the RecursionError branch of ground()'s guard. Without this
-    # check, the test would pass even if RecursionError were dropped from the except
-    # tuple, because a shallower depth just parses into a (non-dict) list element that
-    # takes the ordinary per-element-drop path instead.
-    with pytest.raises(RecursionError):
-        json.loads(deep)
-    assert ground(JD, deep) == []
+def test_fail_closed_on_a_recursion_error_from_the_parser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ground()` must fail closed on `RecursionError`, exactly as it does on malformed JSON.
+
+    The fault is PATCHED IN rather than provoked with 20,000 nested brackets. That input was the
+    original probe and it stopped working: CPython 3.14 no longer recurses in `json.loads` there,
+    so the test's own precondition (`pytest.raises(RecursionError)`) failed and the test reported
+    a broken guard when the guard was fine. A test that can only run on one interpreter is an
+    environment check wearing an assertion's clothes.
+
+    Patching `json.loads` AS SEEN BY `ground` keeps what the old test was actually for — that
+    `RecursionError` is in the except tuple — on every interpreter. Mutation-checked: removing
+    `RecursionError` from the tuple at `ground.py` makes this raise.
+    """
+
+    def raiser(_payload: str) -> object:
+        raise RecursionError("maximum recursion depth exceeded while decoding a JSON object")
+
+    monkeypatch.setattr(ground_module.json, "loads", raiser)
+    assert ground(JD, "[]") == []
 
 
 def test_broken_element_drops_only_itself() -> None:
