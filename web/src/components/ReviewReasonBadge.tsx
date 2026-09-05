@@ -65,6 +65,14 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: the eligibility catalog found no requirement in this job description, so no rule cleared anything. Read the JD before applying.",
   },
+  seniority_above_band: {
+    label: "above the target band",
+    // States what the TITLE said, never what the candidate is: the verdict is title-only by
+    // construction (D-477 refused a body-seniority family), so wording this as "you are not
+    // senior enough" would assert a reading of the candidate that nothing here supports.
+    reason:
+      "Held for review: the title alone levels above the target seniority band. That is a title-only reading, not a judgement on the job description.",
+  },
   unevaluated: {
     label: "not evaluated",
     reason:

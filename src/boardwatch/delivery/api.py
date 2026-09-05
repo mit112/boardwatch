@@ -36,7 +36,7 @@ would assert a decision the gate declined to make, which is the same error as fo
 into a neighbour.
 
 `review_reason` is therefore a SEPARATE field and `off_target` must never be stretched to stand in
-for it. It names which of `review_gate.ReviewReason`'s eight members held the lead, and it comes
+for it. It names which of `review_gate.ReviewReason`'s nine members held the lead, and it comes
 from `review_gate.classify` — the same call `lane` projects, so the reason on a row and the lane
 the row arrived in are one decision and cannot disagree (D-332). It is `None` for every apply-lane
 row, which makes `review_reason is not None` and "this row came in `review`" the same statement.
