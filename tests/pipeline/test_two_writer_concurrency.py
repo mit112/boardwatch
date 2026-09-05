@@ -15,14 +15,21 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from time import perf_counter
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import insert, text
 from sqlalchemy.exc import OperationalError
 
+from boardwatch.core.models import BoardSnapshot, RawPosting
+from boardwatch.scan import apply as apply_module
+from boardwatch.scan.apply import ApplyResult, apply_board
+from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import insert_run
 
 #: Open the store as a fresh process and append `count` run rows, each its own transaction —
 #: the smallest realistic write path (what every scan mints). Two of these racing is the test.
@@ -117,3 +124,90 @@ def test_a_deferred_read_then_write_loses_its_snapshot_the_moment_another_connec
         f"the write failed after {elapsed:.2f}s against a 5.0s busy_timeout -- if it ever does "
         "queue, this is a starvation failure and raising the timeout becomes a real option"
     )
+
+
+def _insert_company(engine) -> int:
+    with engine.begin() as conn:
+        result = conn.execute(
+            insert(tables.companies).values(
+                name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
+            )
+        )
+        return int(result.inserted_primary_key[0])
+
+
+def _posting(pid: str, body: str = "b") -> RawPosting:
+    return RawPosting(
+        provider_posting_id=pid, title=f"Job {pid}", url=f"https://x/{pid}",
+        locations=[], body_text=body, raw_json={"id": pid},
+    )
+
+
+def test_a_deferred_apply_loses_a_board_when_a_concurrent_write_lands_mid_apply(
+    tmp_path: Path,
+) -> None:
+    """D-475's fix, pinned against the REAL `apply_board` rather than the bare probe above.
+
+    Unfixed, `apply_board` opens its DEFERRED transaction, reads inside `_apply_listed` (the
+    `existing` postings query), and only then writes. If a second connection commits in that
+    window, the write fails with SQLITE_BUSY_SNAPSHOT within milliseconds -- run 3's lost board.
+    Fixed, `apply_board` takes the write lock at BEGIN (`write_connection` + `conn.begin()`), so
+    the second connection's commit cannot land until the apply's transaction is done: it queues
+    on the write lock instead of racing the snapshot, and the second writer's commit timestamp
+    lands AFTER the apply has already returned.
+
+    The second writer runs on its own thread and is never joined until after `apply_board`
+    returns: under the fix, its commit blocks on the write lock the whole time `apply_board`
+    holds it, so joining it first would deadlock the test against itself.
+    """
+    engine = get_engine(tmp_path / "store", busy_timeout_ms=5000)
+    ensure_schema(engine)
+    company_id = _insert_company(engine)
+    run_id = insert_run(engine)
+    snap = BoardSnapshot(
+        status="complete",
+        postings=[_posting("A"), _posting("B")],
+        url="https://x/y",
+        listed_ids=frozenset({"A", "B"}),
+    )
+
+    real_apply_listed = apply_module._apply_listed
+    second_commit_at: list[float] = []
+    second_writer_thread = threading.Thread(target=lambda: _second_writer(engine, second_commit_at))
+
+    def wrapper(conn, raw_postings, company_id_, run_id_, source_url):
+        # The read half of a read-modify-write: this is what takes the snapshot.
+        conn.execute(text("SELECT count(*) FROM postings")).one()
+        # Started on its own thread, and deliberately NOT joined here: under the fix its commit
+        # blocks on the write lock this connection already holds, so joining now would deadlock.
+        second_writer_thread.start()
+        time.sleep(0.5)
+        return real_apply_listed(conn, raw_postings, company_id_, run_id_, source_url)
+
+    apply_module._apply_listed = wrapper  # type: ignore[assignment]
+    try:
+        result: ApplyResult = apply_board(engine, snap, company_id, run_id)
+    finally:
+        apply_module._apply_listed = real_apply_listed
+    apply_returned_at = time.monotonic()
+
+    second_writer_thread.join(timeout=10)
+    assert not second_writer_thread.is_alive(), "second writer never finished -- deadlock"
+
+    assert result.status != "failed"
+    assert second_commit_at, "second writer thread never recorded a commit"
+    assert second_commit_at[0] > apply_returned_at, (
+        "the second writer's commit landed BEFORE apply_board returned -- it never queued on "
+        "the write lock, so this run did not exercise the fix"
+    )
+
+    with engine.connect() as conn:
+        posting_count = conn.execute(text("SELECT count(*) FROM postings")).scalar_one()
+        run_count = conn.execute(text("SELECT count(*) FROM runs")).scalar_one()
+    assert posting_count == 2  # both postings from the apply landed
+    assert run_count == 2  # the setup run plus the second writer's run both landed
+
+
+def _second_writer(engine, commit_times: list[float]) -> None:
+    insert_run(engine)  # its own connection and transaction; commits internally
+    commit_times.append(time.monotonic())
