@@ -190,3 +190,49 @@ def test_notify_tier_defaults_off(tmp_path: Path) -> None:
     s = Settings(data_dir=tmp_path, config_dir=tmp_path)
     assert s.notify.desktop_enabled is False
     assert s.notify.webhook_enabled is False
+
+
+def test_gate_tier_defaults_off_and_unconfigured(tmp_path, monkeypatch) -> None:
+    # T42, published default OFF (multi-tenancy) — arming the gate is the operator's own act,
+    # never something a fresh install or a new tenant inherits.
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path))
+    settings = load_settings()
+    assert settings.gate.enabled is False
+    assert settings.gate.claude_config_dir is None
+    assert settings.gate.model == "sonnet"
+    assert settings.gate.batch_size == 13
+    assert settings.gate.call_timeout_s == 300
+
+
+def test_gate_section_loads_from_config(tmp_path, monkeypatch) -> None:
+    # The trap this guards: `Settings` silently ignores unknown config keys, so a key that
+    # never reaches a declared field looks byte-identical to a working feature. Reading the
+    # live value back through `Settings` after a hand-written config.toml is the check.
+    (tmp_path / "config.toml").write_text(
+        '[gate]\nenabled = true\nclaude_config_dir = "/tmp/claude-boardwatch"\n'
+        'model = "haiku"\nbatch_size = 5\ncall_timeout_s = 60\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    settings = load_settings(data_dir=tmp_path)
+    assert settings.gate.enabled is True
+    assert settings.gate.claude_config_dir == Path("/tmp/claude-boardwatch")
+    assert settings.gate.model == "haiku"
+    assert settings.gate.batch_size == 5
+    assert settings.gate.call_timeout_s == 60
+
+
+def test_gate_tier_is_frozen(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path))
+    settings = load_settings()
+    with pytest.raises(ValidationError):
+        settings.gate.enabled = True  # type: ignore[misc]
+
+
+def test_gate_batch_size_and_timeout_floors(tmp_path) -> None:
+    with pytest.raises(ValidationError):
+        Settings(data_dir=tmp_path, config_dir=tmp_path, gate={"batch_size": 0})
+    with pytest.raises(ValidationError):
+        Settings(data_dir=tmp_path, config_dir=tmp_path, gate={"call_timeout_s": 0})

@@ -545,6 +545,52 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
     }
 
 
+@dataclass(frozen=True)
+class GateCounters:
+    """T42: the headless final-eligibility-gate judge stage's per-run tally.
+
+    `None` at the `RunFunnel.gate` field means the gate was NOT armed this run
+    (`settings.gate.enabled` was False) — never a block of zeros, the same omission
+    direction `DeathProbeReport` uses above: a disarmed gate and an armed one that judged
+    nothing (every lead already carried a current gate row) are different facts and must
+    read differently.
+
+    `judged`/`eligible`/`ineligible`/`uncertain` are PERSISTED counts — what
+    `apply_gate_verdicts` actually wrote through the keystone-span gate, never the judge's
+    raw `decision` — so `eligible + ineligible + uncertain == judged` always holds.
+    `failed_open_batches` counts BATCHES, not leads: a batch of `gate.batch_size` that fails
+    open costs at most that many unjudged leads, left unchanged on the slate, never dropped.
+    """
+
+    judged: int
+    eligible: int
+    ineligible: int
+    uncertain: int
+    failed_open_batches: int
+
+
+def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
+    """The `gate` block. `instrumented: false` and nulls when the gate was not armed this
+    run — never a block of zeros, which would claim a measurement nobody took."""
+    if gate is None:
+        return {
+            "instrumented": False,
+            "judged": None,
+            "eligible": None,
+            "ineligible": None,
+            "uncertain": None,
+            "failed_open_batches": None,
+        }
+    return {
+        "instrumented": True,
+        "judged": gate.judged,
+        "eligible": gate.eligible,
+        "ineligible": gate.ineligible,
+        "uncertain": gate.uncertain,
+        "failed_open_batches": gate.failed_open_batches,
+    }
+
+
 # The closed catalog of Tier-B rewrite outcomes. `drop_reason` is an untyped string at the
 # raise site (`tailor/rewrite/lane.py`), so it is mapped here into named buckets; anything the
 # catalog does not name lands in `other`, which is a FAILURE signal (CLAUDE.md: out-of-catalog
@@ -990,6 +1036,10 @@ class RunFunnel:
     # supplied — which is not the same as a sweep that found nothing. A block of zeros would
     # claim a measurement nobody took, the same rule `LivenessCheck` applies above.
     death_probe: DeathProbeReport | None = None
+    # T42. `None` means the gate was NOT armed this run (`settings.gate.enabled` False) —
+    # not the same as an armed run that judged nothing, the same omission direction
+    # `death_probe` above uses.
+    gate: GateCounters | None = None
     # Wall clock per pipeline stage, in the order the stages ran. `None` means NOT MEASURED —
     # a stored funnel written before this shipped, or a caller that did not time the run —
     # which is a different statement from `()`, "timed, and no stage boundary was reached".
@@ -1169,6 +1219,9 @@ def build_run_funnel(
     # A sweep that ran over an incomplete backfill is a DIFFERENT state and carries
     # `complete=False`, which the stage also reports as unmeasured but for a stated reason.
     dedup: DedupSweep | None = None,
+    # T42. Omitted means the gate was not armed this run, and the section says so rather than
+    # reporting zero judged — the same omission direction as `death_probe` above.
+    gate: GateCounters | None = None,
     # Omitted means the run was NOT timed, and the section says so rather than reporting a
     # stageless run — the same omission direction as `liveness` and `death_probe` above.
     stage_durations: Sequence[StageDuration] | None = None,
@@ -1610,6 +1663,7 @@ def build_run_funnel(
         board_coverage=board_coverage,
         lanes=tuple(lanes),
         death_probe=death_probe,
+        gate=gate,
         stage_durations=None if stage_durations is None else tuple(stage_durations),
     )
 
@@ -1721,6 +1775,10 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # D-325. Its own section, NOT more keys under `liveness`: different population, and this
         # one WRITES. Summing the two probe counts would be summing two questions.
         "death_probe": death_probe_to_dict(funnel.death_probe),
+        # T42. Its own section: a different judge, over a different population (the whole
+        # delivered slate, not the shortlist re-fetch), that also WRITES (a persisted
+        # `final_gate:` row).
+        "gate": gate_to_dict(funnel.gate),
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
             "stubs": funnel.stub_rate.stubs,
@@ -2408,6 +2466,25 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "200 (0 of 37). It returned 0 false deaths against 90 live postings. `closed` staying "
         "at 0 is the expected reading, not evidence the class is healthy.*",
         "",
+        "## Gate",
+        "",
+        (
+            "not armed — `gate.enabled` was false this run, which is NOT the same as a run "
+            "that judged nothing"
+            if funnel.gate is None
+            else f"{funnel.gate.judged} judged ({funnel.gate.eligible} eligible, "
+            f"{funnel.gate.ineligible} ineligible, {funnel.gate.uncertain} uncertain) · "
+            f"{funnel.gate.failed_open_batches} batch(es) failed open"
+        ),
+        "",
+        "*T42 (D-477's \"lever\"): a headless final-eligibility-gate judge over the whole "
+        "delivered slate, JD-and-facts-only (never a prior engine verdict), routed through "
+        "the same handshake `eligibility gate request`/`apply` uses. Never re-judges a lead "
+        "with a current gate row. Fails OPEN at every seam (D-074) — a missing binary, a "
+        "non-zero exit, a timeout, unparseable JSON, or a wrong item count all leave that "
+        "batch's leads unjudged, never dropped, and `failed_open_batches` climbing with "
+        "`judged` at 0 is the signature of the judge being entirely unreachable.*",
+        "",
         "## Stub rate",
         "",
         f"{stub.stubs} of {stub.open_postings} open postings have an empty JD body · "
@@ -2532,6 +2609,7 @@ __all__ = [
     "DeathProbeReport",
     "Drop",
     "FabricationCounters",
+    "GateCounters",
     "Lead",
     "LivenessCheck",
     "ProjectionCounters",
@@ -2550,5 +2628,6 @@ __all__ = [
     "death_probe_to_dict",
     "funnel_to_dict",
     "funnel_to_markdown",
+    "gate_to_dict",
     "write_run_funnel",
 ]

@@ -1387,6 +1387,7 @@ def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
         "death_probe",
         "eligibility",
         "liveness",
+        "gate",
         "tailor",
         "finalize",
     ]

@@ -57,6 +57,26 @@ class LLMTier(BaseModel):
     max_calls_per_run: int = Field(default=50, ge=1)
 
 
+class GateTier(BaseModel):
+    """T42: the headless final-eligibility-gate judge stage (D-477's "lever"). Off by
+    default (multi-tenancy) — arming it is the operator's own decision, never this repo's.
+
+    `claude_config_dir` names the `CLAUDE_CONFIG_DIR` the headless call runs under (the
+    operator logs in once, interactively, under that directory — never a secret and never
+    read from here: the credential lives wherever `claude` itself keeps it). `model`/
+    `batch_size`/`call_timeout_s` are cost knobs, not correctness knobs — every seam around
+    the call fails open regardless of their values (D-074).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+    claude_config_dir: Path | None = None
+    model: str = "sonnet"
+    batch_size: int = Field(default=13, ge=1)
+    call_timeout_s: int = Field(default=300, ge=1)
+
+
 class NotifyTier(BaseModel):
     """Delivery channels for `boardwatch notify` (P5). Off by default; enabling a
     channel is the user's explicit opt-in to outbound delivery. The webhook URL is
@@ -296,6 +316,7 @@ class Settings(BaseModel):
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)
+    gate: GateTier = Field(default_factory=GateTier)
 
     @field_validator("lane_new_companies_per_run_overrides")
     @classmethod

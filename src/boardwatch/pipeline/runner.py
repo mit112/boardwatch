@@ -64,6 +64,7 @@ from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
+from boardwatch.llm.gate_judge import run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.corpus_regression import check_corpus_regression
@@ -96,6 +97,7 @@ from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
     DeathProbeReport,
+    GateCounters,
     LaneReport,
     LivenessCheck,
     ProviderFetchCost,
@@ -482,6 +484,16 @@ class PipelineSummary:
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
     stage_durations: list[StageDuration] = field(default_factory=list)
+    # T42 — the headless final-eligibility-gate judge stage. All-zero is the honest reading
+    # both when `gate.enabled` is False and when it is True but nothing needed judging; which
+    # of those it was is `settings.gate.enabled` itself, read separately by whatever renders
+    # this (mirrors `death_probe`'s `None`-means-unmeasured split living one level up).
+    gate_judged: int = 0
+    gate_eligible: int = 0
+    gate_ineligible: int = 0
+    gate_uncertain: int = 0
+    # BATCHES that failed open (D-074), not items — see `llm.gate_judge.GateStageResult`.
+    gate_failed_open: int = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -1951,6 +1963,32 @@ def run_pipeline(
 
         clock.mark("liveness")
 
+        # T42 — the headless final-eligibility-gate judge stage. HERE: after liveness (so a
+        # dead lead is never sent for judging) and before the tailor loop, over the WHOLE
+        # slate `leads` holds at this point — there is no apply/review split in this tree yet
+        # (T43), so "the whole delivered slate" and "the one lane there is" are the same list.
+        # `gate.enabled` defaults False; every seam below fails open (D-074) rather than ever
+        # dropping a real job, and is counted rather than silently swallowed.
+        if settings.gate.enabled:
+            console.print("[bold]gate[/bold]")
+        leads, gate_result = run_gate_stage(engine, settings, leads, run_id=run_id)
+        summary.gate_judged = gate_result.judged
+        summary.gate_eligible = gate_result.eligible
+        summary.gate_ineligible = gate_result.ineligible
+        summary.gate_uncertain = gate_result.uncertain
+        summary.gate_failed_open = gate_result.failed_open_batches
+        if gate_result.judged or gate_result.failed_open_batches:
+            console.print(
+                f"gate: {gate_result.judged} judged ({gate_result.eligible} eligible, "
+                f"{gate_result.ineligible} ineligible, {gate_result.uncertain} uncertain), "
+                f"{gate_result.failed_open_batches} batch(es) failed open"
+            )
+        for note in gate_result.errors:
+            console.print(f"  ! {note}", markup=False)
+            stage_errors.append(note)
+            summary.errors.append(note)
+        clock.mark("gate")
+
         # Names the résumé source in the log, so a projected run is distinguishable from an
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
         # passed; `projection_ctx` itself stays in scope for the loop below.
@@ -2538,6 +2576,22 @@ def run_pipeline(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
+        # T42 gate-failed-open soft alert. The gate stage itself never raises — every seam
+        # fails open and is tallied on `summary` — so this is not a try/except like its
+        # siblings above, only the read of a count the stage already produced. ABOVE
+        # `_emit_morning` like every soft alert here (D-477 point 7): below it the alert
+        # still fires and is still recorded, but is invisible in the one artifact an
+        # unattended owner reads. `gate_failed_open` counts BATCHES, not leads — see
+        # `llm.gate_judge.GateStageResult`.
+        if summary.gate_failed_open:
+            gate_alert = (
+                f"gate: {summary.gate_failed_open} batch(es) failed open this run "
+                f"({summary.gate_judged} judged clean) — the judge did not run for those "
+                "leads; they were left unchanged, never dropped"
+            )
+            console.print(f"  ! {gate_alert}", markup=False)
+            summary.errors.append(gate_alert)
+            append_run_error(engine, run_id, gate_alert)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
@@ -2742,6 +2796,19 @@ def _emit_funnel(
         ),
         # D-325. `None` when the sweep did not run — never a block of zeros.
         death_probe=summary.death_probe,
+        # T42. `None` when `gate.enabled` was False this run — never a block of zeros, which
+        # would claim a measurement nobody took.
+        gate=(
+            GateCounters(
+                judged=summary.gate_judged,
+                eligible=summary.gate_eligible,
+                ineligible=summary.gate_ineligible,
+                uncertain=summary.gate_uncertain,
+                failed_open_batches=summary.gate_failed_open,
+            )
+            if settings.gate.enabled
+            else None
+        ),
         stage_durations=summary.stage_durations,
         tailored=[
             (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
