@@ -7,6 +7,7 @@ import {
   markApplied,
   markSkipped,
   report,
+  unapply,
   unreport,
   unskip,
 } from "../api/client";
@@ -415,15 +416,24 @@ export function QueuePage({
           }
           push({
             /*
-             * The contract has no un-apply route, so this Undo puts the ROW back and says so. It
-             * does not claim to reverse the application record — a false claim there would be
-             * worse than no undo at all.
+             * Says what the button DOES, now that there is an inverse route to call: the undo
+             * withdraws the application record and only then puts the row back — the same
+             * write-then-restore order as skip and report, so a failed withdrawal leaves the row
+             * out rather than showing a lead the store still counts as applied.
              */
-            message: `Marked applied: ${row.company} — ${row.title}. Undo puts the row back; the application record stays until it is withdrawn.`,
+            message: `Marked applied: ${row.company} — ${row.title}. Undo withdraws it and puts the row back.`,
             undo: () => {
-              restore(row.posting_id);
+              void unapply(row.posting_id)
+                .then(() => {
+                  restore(row.posting_id);
+                })
+                .catch((caught: unknown) => {
+                  push({
+                    message: errorMessage(caught, "Could not withdraw that application."),
+                    tone: "error",
+                  });
+                });
             },
-            undoLabel: "Put the row back",
           });
         })
         .catch((caught: unknown) => {
