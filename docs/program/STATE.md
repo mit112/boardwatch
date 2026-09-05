@@ -67,37 +67,6 @@ own funnel — the shortlist drops **46 `hidden_duplicate` + 5 `hidden_slate_cap
 construction; the 14-18% headline is **retired, not refuted**, and its replacement is already in
 every funnel. No successor ticket.
 
-### Session 2026-09-05b (planning review): the 2026-09-05 report HOLDS; run 3 is READ (106.8-min warm scan, SP2 paid in full, 35 verdict moves, 3 apply / 37 review); T33's residual-zero successor is REFUSED on consequence, T36 is CLOSED on the smartrecruiters critical path, and the merge of `close-2026-09-05` is BOUND to Mit's re-approval — next list `HANDOFF-2026-09-06.md`
-
-**Read this before acting on anything below it.** Reasoning: **D-472**. Numbers: `METRICS.md`,
-the `Session — 2026-09-05b` block. R1 is DONE — do not redo it. **`main` is still `84671523`;
-`close-2026-09-05` now carries FOUR commits** (T31, T32, the execution close, this planning
-close) and one `--ff-only` merge lands them all.
-
-**THE MERGE IS ONE STEP WITH THE RE-APPROVAL, IN MIT'S SITTING.** The launchd tick runs the
-editable venv from `main`; merging T32 stales the projection stamp; a `--project` run with a
-stale stamp scans ~107 min, refuses at P5a, exits 1 and withholds the heartbeat — a false alert
-for a chosen condition. Until Mit can type `approve` right after the merge, `main` stays on the
-T30 state and the tick delivers.
-
-**RUN 3, READ.** Scan **6,418.6 s = 106.8 min, 1.67x faster than cold** (the 79.3 min quoted at
-283/288 hid a 27.6-min tail); `lanes` join wait **0.001 s** against 363.8 s serial; eligibility
-**648.4 s over 83,308** (cheaper than 665.5 s over 61,927, not dearer); tailor 5.16 s/lead (SP3
-measurement 1 of 3); **3 apply / 37 review**. **The readout's move count was an apparatus zero**
-(`input_id` is the inputs ROW id); resolved through `eligibility_inputs`, the shared 61,927
-postings moved **35** against T4's predicted 29. **One board FAILED — SP2's first production
-defect**: FidelityCareers' apply lost the write lock to the lane thread's back-to-back short
-writes at `busy_timeout` 5 s and the whole fetched snapshot was discarded (**T37**: fetch
-concurrently, apply serially).
-
-**RULED (D-472):** `residual_chars == 0` — **NO**: 128 bodies, 120 `uncertain` + 8
-`ineligible`, ZERO eligible, zero leads, zero ever tailored; no chrome class is open. **T36 —
-CLOSED as specified**: both runs end on the smartrecruiters host ALONE (47.9 min of run 2, 27.6
-of run 3), 1,931 detail requests on one host that the ordering then in force emitted one board
-per round behind 135 Workday singletons — the lever is ORDER (**T38**), and `scan_workers` is re-decided
-only after it. T15's guard never reaches the funnel (**T39**). T28, T34 carried unchanged; T35
-gated on 09-09.
-
 ## Next action
 
 **0. THE MERGE, AND IT IS STILL ONE STEP WITH THE RE-APPROVAL, IN MIT'S SITTING.** With Mit at
