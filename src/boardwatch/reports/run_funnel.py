@@ -825,6 +825,16 @@ class LaneReport:
 
     `None` means NOT MEASURED, never zero — the same convention `stage_durations` uses, and it is
     load-bearing here: a lane that raised before it was timed must not report 0.0 s of work.
+
+    `stage_elapsed_seconds` is a THIRD, later number (SP2), and answers a different question
+    than the two above: not what THIS lane cost, but how long the whole lane STAGE's background
+    thread ran, wall clock. Before SP2 that number was exactly `stage_durations["lanes"]`; once
+    the stage's thread starts as soon as the run row exists and overlaps the board scan, that
+    stage duration collapses to the residual join wait, and this is what still answers "how
+    long did the lanes actually take" -- the same value on every `LaneReport` the stage
+    produced that run, because it is a property of the STAGE, not of any one lane. `None` when
+    the stage ran inline rather than on the background thread (`skip_scan=True`, where there is
+    no scan to overlap and the run's own `stage_durations["lanes"]` already answers this).
     """
 
     name: str
@@ -837,6 +847,7 @@ class LaneReport:
     search_pages: tuple[tuple[str, int], ...] = ()
     fetch_seconds: float | None = None
     apply_seconds: float | None = None
+    stage_elapsed_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1805,6 +1816,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 # absence rather than a free lane.
                 "fetch_seconds": lane.fetch_seconds,
                 "apply_seconds": lane.apply_seconds,
+                # The STAGE's own wall clock (SP2), same value on every lane this run --
+                # `null` when the stage ran inline (`skip_scan=True`) rather than overlapped.
+                "stage_elapsed_seconds": lane.stage_elapsed_seconds,
             }
             for lane in funnel.lanes
         ],
@@ -1938,10 +1952,16 @@ def _lane_cost_line(lane: LaneReport) -> str:
         return "Cost: **NOT MEASURED**"
     total = lane.fetch_seconds + lane.apply_seconds
     share = f"{100 * lane.fetch_seconds / total:.0f}% fetch" if total > 0 else "no measurable cost"
-    return (
+    line = (
         f"Cost: {total:.1f}s total — {lane.fetch_seconds:.1f}s paced fetching, "
         f"{lane.apply_seconds:.1f}s applying ({share})"
     )
+    # The STAGE's own wall clock (SP2) -- absent when the stage ran inline (`skip_scan=True`)
+    # rather than on the overlapped background thread, which already has its cost in
+    # `stage_durations["lanes"]` and needs no second number here.
+    if lane.stage_elapsed_seconds is not None:
+        line += f" · lane stage ran {lane.stage_elapsed_seconds:.1f}s (background, overlapped)"
+    return line
 
 
 def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:

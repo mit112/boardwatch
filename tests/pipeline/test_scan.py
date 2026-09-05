@@ -351,3 +351,28 @@ def test_an_abort_stops_the_queued_boards_instead_of_fetching_them_all(
     assert len(fetched) < 4, (
         f"every queued board kept fetching under the scan lock after the abort: {fetched}"
     )
+
+
+def test_on_run_started_fires_with_the_minted_id_before_any_board_is_fetched(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """SP2: the pipeline starts the lane stage's background thread from this callback, so it
+    must fire with a REAL row already committed to `runs` -- INSIDE the scan lock -- or a lane
+    started from it could write rows against an id nothing durable backs yet.
+    """
+    _add_company(engine, "acme", "greenhouse")
+    seen: list[int] = []
+
+    def on_run_started(run_id: int) -> None:
+        with engine.connect() as conn:
+            row = conn.execute(
+                select(tables.runs.c.id).where(tables.runs.c.id == run_id)
+            ).one_or_none()
+        assert row is not None, "on_run_started fired before the run row was committed"
+        seen.append(run_id)
+
+    with respx.mock:
+        respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=gh_jobs()))
+        summary = run_scan(engine, _settings(tmp_path), on_run_started=on_run_started)
+
+    assert seen == [summary.run_id]

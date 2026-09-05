@@ -28,6 +28,7 @@ from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from itertools import zip_longest
 from pathlib import Path
+from threading import Thread
 from time import perf_counter
 from typing import TYPE_CHECKING
 
@@ -719,6 +720,34 @@ def _run_lanes(
     # artifact for no reason, and a fixture that passes or fails by race.
     reports.extend(by_name[name] for name, _ in resolved if name in by_name)
     return reports, errors
+
+
+def _run_lanes_stage(
+    engine: Engine, settings: Settings, run_id: int
+) -> tuple[list[LaneReport], list[str], float]:
+    """Entry point for the lane stage's ONE background thread (SP2), started as soon as the
+    run row exists so its network work overlaps the board scan instead of paying for both
+    serially — the lanes touch hosts the scan never does.
+
+    `_run_lanes` already turns a per-lane failure into a returned error string and never raises
+    for one; what it does NOT guard is its own setup (`_lane_facets`, `watched_company_names`,
+    building the lane `Fetcher`) — on the main thread an exception there would abort the run
+    like any other stage's, but here it would run on a background thread and vanish silently
+    unless caught. So it is caught here and turned into a lane error like any other, which is
+    the same "a lane may never fail the run" contract extended to cover the stage's own setup.
+
+    Timed independently of `_StageClock`: once this overlaps the scan, `stage_durations["lanes"]`
+    is only the residual join wait, and the elapsed time returned here is what still answers
+    "how long did the lane stage actually take" — carried onto every `LaneReport` this run
+    produced (`PipelineSummary.lanes`), since a stage-level number has nowhere else to live
+    without a second, parallel bookkeeping structure.
+    """
+    started = perf_counter()
+    try:
+        reports, errors = _run_lanes(engine, settings, run_id)
+    except Exception as exc:  # noqa: BLE001 - the lane stage may never fail the run
+        return [], [f"lanes: stage failed: {exc!r}"], perf_counter() - started
+    return reports, errors, perf_counter() - started
 
 
 def _lane_facets(engine: Engine) -> LaneFacets:
@@ -1473,11 +1502,41 @@ def run_pipeline(
     # run's own artifact cannot see.
     clock = _StageClock()
     scan_summary = None
+    # SP2: the lane stage's ONE background thread, started as soon as the run row exists (from
+    # `on_run_started`, called by the scan INSIDE its lock) so its network work overlaps the
+    # scan instead of paying for both serially. `None` on `skip_scan` — there is no scan to
+    # overlap, so that branch keeps calling `_run_lanes` inline where it always has. Joined
+    # below at the point the lane stage has always sat: after the `--project` preflight, before
+    # the death-probe sweep that depends on its sightings.
+    #
+    # A run that returns BEFORE that join point (a systemic scan outage, or a refused `--project`
+    # preflight) never joins this thread at all — joining there would spend the wall clock this
+    # whole change exists to buy back. `daemon=True` is what makes that free: the thread, and the
+    # company/posting rows it is still writing, outlive the function call rather than blocking the
+    # process on it. This is the ONE visible change from "a refusing run pays nothing" — it still
+    # pays nothing in WALL CLOCK, but it now spends network in the background, and the rows land
+    # attributed to THIS run's id because that id was already fixed when the thread started.
+    lane_thread: Thread | None = None
+    lane_stage_result: list[tuple[list[LaneReport], list[str], float]] = []
     if not skip_scan:
         console.print("[bold]scan[/bold]")
+
+        def _start_lane_stage(started_run_id: int) -> None:
+            nonlocal lane_thread
+            if not settings.lanes_enabled:
+                return
+            console.print("[bold]lanes[/bold]")
+            lane_thread = Thread(
+                target=lambda: lane_stage_result.append(
+                    _run_lanes_stage(engine, settings, started_run_id)
+                ),
+                daemon=True,
+            )
+            lane_thread.start()
+
         # Not wrapped: a contended scan must leave the DB untouched, and it does — the run
         # insert and ensure_schema both live inside the lock it never acquired.
-        scan_summary = run_scan(engine, settings, finish=False)
+        scan_summary = run_scan(engine, settings, finish=False, on_run_started=_start_lane_stage)
         run_id = scan_summary.run_id
     else:
         ensure_schema(engine)
@@ -1586,20 +1645,38 @@ def run_pipeline(
         # `apply_board` every provider uses, so every persistence invariant is inherited rather
         # than restated.
         #
-        # Placed after the `--project` preflight rather than immediately after the scan, and
-        # deliberately: a refused projection returns before the ranker, while a lane's cost is
-        # minutes of politeness-paced network, so paying it on a run that is about to refuse
-        # buys nothing. The preflight's own guarantee is untouched — it is that no LEAD
-        # DISPOSITION is written before it, and this stage writes companies and postings, the
-        # two tables the scan stage already wrote before the preflight ran.
+        # SP2: unless `skip_scan`, the stage's own network work already STARTED back when the
+        # scan minted the run row (`lane_thread`, above) — this is only the JOIN, at the point
+        # the stage has always sat: after the `--project` preflight (so a refused projection
+        # never has to wait on it) and before the death-probe sweep, which depends on the
+        # lanes having re-sighted whatever they could find. `stage_durations["lanes"]` below is
+        # therefore no longer the stage's own cost — it is the residual wait for a thread that
+        # may already be done — and `lane_elapsed`, carried onto every `LaneReport`
+        # (`stage_elapsed_seconds`), is what still answers "how long did the lane stage take".
         #
-        # No `fatal` arm. `_run_lanes` catches per lane and returns what went wrong, because a
-        # lane is additive: the corpus without it is exactly the corpus this pipeline has always
-        # ranked, so a dead aggregator costs the run its extra reach and nothing else.
-        if settings.lanes_enabled:
-            console.print("[bold]lanes[/bold]")
-        lane_reports, lane_errors = _run_lanes(engine, settings, run_id)
-        summary.lanes.extend(lane_reports)
+        # `skip_scan` has no scan to overlap and keeps the original inline call.
+        #
+        # No `fatal` path either way. `_run_lanes` catches per lane and returns what went
+        # wrong, because a lane is additive: the corpus without it is exactly the corpus this
+        # pipeline has always ranked, so a dead aggregator costs the run its extra reach and
+        # nothing else.
+        lane_reports: list[LaneReport]
+        lane_errors: list[str]
+        lane_elapsed: float | None
+        if not skip_scan:
+            if lane_thread is not None:
+                lane_thread.join()
+                lane_reports, lane_errors, lane_elapsed = lane_stage_result[0]
+            else:
+                lane_reports, lane_errors, lane_elapsed = [], [], None
+        else:
+            if settings.lanes_enabled:
+                console.print("[bold]lanes[/bold]")
+            lane_reports, lane_errors = _run_lanes(engine, settings, run_id)
+            lane_elapsed = None
+        summary.lanes.extend(
+            replace(report, stage_elapsed_seconds=lane_elapsed) for report in lane_reports
+        )
         stage_errors.extend(lane_errors)
         summary.errors.extend(lane_errors)
         clock.mark("lanes")

@@ -14,7 +14,7 @@ import os
 import socket
 import time
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -236,7 +236,13 @@ def run_scan(
     company: str | None = None,
     provider: str | None = None,
     finish: bool = True,
+    on_run_started: Callable[[int], None] | None = None,
 ) -> ScanSummary:
+    """`on_run_started`, if given, fires with the run id right after it is minted (SP2) --
+    INSIDE this lock, before any board is fetched. It exists so a caller can start work that
+    should overlap the scan (the pipeline's lane stage) as early as the id it needs is real,
+    without that work ever taking this lock itself or seeing a row that does not exist yet.
+    """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     lock_path = settings.data_dir / "scan.lock"
     meta_path = _lock_meta_path(lock_path)
@@ -268,6 +274,7 @@ def run_scan(
             company,
             provider,
             finish,
+            on_run_started,
         )
     finally:
         _remove_lock_meta(meta_path)
@@ -282,6 +289,7 @@ def _run_scan_locked(
     company: str | None,
     provider: str | None,
     finish: bool = True,
+    on_run_started: Callable[[int], None] | None = None,
 ) -> ScanSummary:
     ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
@@ -293,6 +301,8 @@ def _run_scan_locked(
     # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
     active_run_id = insert_run(engine)
     summary.run_id = active_run_id
+    if on_run_started is not None:
+        on_run_started(active_run_id)
     try:
         return _scan_body(
             engine, settings, fetcher, providers, company, provider,

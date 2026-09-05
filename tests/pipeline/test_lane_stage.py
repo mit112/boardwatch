@@ -22,14 +22,18 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 from threading import Barrier
-from time import sleep
+from time import monotonic, sleep
+from typing import Any
 
+import httpx
 import pytest
+import respx
 from rich.console import Console
 from sqlalchemy import Engine, insert, select
 
 from boardwatch.cli.run_cmd import _lane_lines
 from boardwatch.core.clock import utcnow
+from boardwatch.core.liveness import Liveness
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings, load_settings
@@ -54,6 +58,7 @@ from boardwatch.pipeline.runner import (
 )
 from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 from boardwatch.scan.apply import apply_board
+from boardwatch.scan.coordinator import ScanSummary
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
@@ -65,7 +70,8 @@ from boardwatch.store.queries import (
 )
 from boardwatch.store.seed_queries import SeedReader, record_seeds, unresolved_seeds
 from tests.conftest import write_test_resume_template
-from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
+from tests.pipeline.test_death_probe_stage import _seed_posting as _seed_death_probe_posting
+from tests.pipeline.test_pipeline_run import _GH, HEALTHY_BODY, INIT_INPUT, _cli, _seed_posting
 
 LANE_URL = "https://aggregator.test/search"
 
@@ -1825,3 +1831,244 @@ def _bind(lane: SeedLane, reader: SeedReader) -> SeedLane:
     """What a real lane's factory does with `ctx.pending_seeds`: capture it."""
     lane._pending = reader  # type: ignore[attr-defined]
     return lane
+
+
+# --------------------------------------------------------------------------------------
+# SP2 — the lane stage runs on a background thread, overlapping the board scan
+# --------------------------------------------------------------------------------------
+
+# Fake, not the real coordinator: this isolates the runner's threading wiring (start-on-
+# `on_run_started`, join at the old stage boundary) from whether the real scan's HTTP fetch
+# happens to overlap. `run_scan`'s own contract for `on_run_started` -- fired with the run id
+# right after it is minted, INSIDE the lock -- is exercised separately in
+# `tests/pipeline/test_scan.py`.
+def _fake_run_scan_that_sleeps(delay: float) -> Callable[..., ScanSummary]:
+    def fake(
+        engine: Engine,
+        settings: Settings,
+        *,
+        fetcher: object | None = None,
+        providers: object | None = None,
+        company: str | None = None,
+        provider: str | None = None,
+        finish: bool = True,
+        on_run_started: Callable[[int], None] | None = None,
+    ) -> ScanSummary:
+        run_id = insert_run(engine)
+        if on_run_started is not None:
+            on_run_started(run_id)
+        sleep(delay)
+        # `companies=0`: an outage-free, genuinely empty scan, so nothing downstream refuses.
+        return ScanSummary(run_id=run_id)
+
+    return fake
+
+
+def test_the_lane_stage_overlaps_the_board_scan_instead_of_serializing_after_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of SP2, measured rather than inferred from the wiring: a fake scan and a
+    fake lane each sleep a fixed amount, so the run's wall clock landing well under their SUM is
+    only possible if they overlapped.
+
+    The run's own non-scan, non-lane cost (DB setup, an empty ranker pass) is measured directly,
+    right before the delayed run, rather than assumed as a constant -- this machine's own
+    baseline swung from ~0.5s to ~3s across this session depending on what else was running, and
+    a hard-coded margin against that would flake either direction. Both runs happen back to back
+    so they see roughly the same load, and what is asserted is the DELTA the delays add.
+    """
+    assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _cli(env, ["tailor", "init"]).exit_code == 0
+    write_test_resume_template(load_settings(data_dir=env).config_dir)
+    settings = load_settings(data_dir=env).model_copy(update={"lanes_enabled": ("stub",)})
+
+    def _run(out_name: str) -> PipelineSummary:
+        return run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / out_name,
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    # Baseline: same run shape, both delays ~0 -- this run's own cost with nothing to overlap.
+    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(0.0))
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([], delay=0.0)})
+    baseline_started = monotonic()
+    baseline_summary = _run("baseline")
+    baseline_elapsed = monotonic() - baseline_started
+    assert baseline_summary.fatal is None, baseline_summary.errors
+
+    SCAN_DELAY = 3.0
+    LANE_DELAY = 3.0
+    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(SCAN_DELAY))
+    monkeypatch.setattr(
+        runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([], delay=LANE_DELAY)}
+    )
+    started = monotonic()
+    summary = _run("apps")
+    elapsed = monotonic() - started
+
+    assert summary.fatal is None, summary.errors
+    added = elapsed - baseline_elapsed
+    # Overlapped: added ~= max(SCAN_DELAY, LANE_DELAY) = 3.0s. Serial: added ~= their SUM = 6.0s.
+    # The threshold sits at the midpoint, generously clear of both.
+    assert added < (SCAN_DELAY + LANE_DELAY) * 0.75, (
+        f"the delays added {added:.2f}s of wall clock on top of this run's own {baseline_elapsed:.2f}s "
+        f"baseline -- scan ({SCAN_DELAY}s) and lanes ({LANE_DELAY}s) did not overlap"
+    )
+
+    # The stage's own cost survives the move to a background thread -- it is just no longer
+    # measured by `stage_durations["lanes"]`, which collapses to the residual join wait.
+    assert len(summary.lanes) == 1
+    lane_report = summary.lanes[0]
+    assert lane_report.stage_elapsed_seconds is not None
+    assert lane_report.stage_elapsed_seconds >= LANE_DELAY
+    lanes_stage_duration = next(s.seconds for s in summary.stage_durations if s.name == "lanes")
+    assert lanes_stage_duration < lane_report.stage_elapsed_seconds, (
+        "stage_durations['lanes'] should be the residual JOIN WAIT, not the lane's own cost"
+    )
+
+
+def test_the_death_probe_still_runs_after_the_lane_thread_is_joined(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SP2 moved the lane stage's network work onto a background thread, but the death-probe
+    sweep (D-325) still depends on the lanes having re-sighted whatever they could find, so the
+    JOIN has to stay exactly where the stage sat before: ahead of the sweep.
+
+    Proven by ORDER rather than by the sighting mechanic itself (`tests/unit/test_death_probe.py`
+    and `tests/pipeline/test_death_probe_stage.py` own that): the lane sleeps a known amount and
+    the injected prober records when it is first called. A probe called before that sleep
+    elapsed would mean the sweep ran while the lane's write was still in flight -- exactly the
+    race a dropped or misplaced `.join()` would produce.
+    """
+    _seed_death_probe_posting(env, 0, watched=False)
+    assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _cli(env, ["tailor", "init"]).exit_code == 0
+    write_test_resume_template(load_settings(data_dir=env).config_dir)
+
+    LANE_DELAY = 0.4
+    monkeypatch.setattr(
+        runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([], delay=LANE_DELAY)}
+    )
+    settings = load_settings(data_dir=env).model_copy(update={"lanes_enabled": ("stub",)})
+
+    probe_calls: list[float] = []
+
+    def prober(posting_id: int, url: str) -> Liveness:
+        probe_calls.append(monotonic())
+        return Liveness(posting_id, "alive", "refetch_ok", "HTTP 200")
+
+    started = monotonic()
+    with respx.mock:
+        respx.get(_GH.board_url("acme")).mock(return_value=httpx.Response(200, content=HEALTHY_BODY))
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+            liveness_prober=prober,
+        )
+
+    assert summary.fatal is None, summary.errors
+    assert probe_calls, "the prober was never called, so this proves nothing"
+    assert probe_calls[0] - started >= LANE_DELAY, (
+        "the death probe ran before the lane thread was joined"
+    )
+
+
+def test_a_fatally_refusing_run_still_lets_the_lane_thread_land_its_rows(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SP2's one visible change from "a refusing run pays nothing": the lane thread starts as
+    soon as the run row exists (from the scan's `on_run_started`), before any later check can
+    refuse the run -- so a run that turns out fatal (here, a systemic scan outage) still costs
+    network in the background even though it costs no wall clock. The lane's rows land
+    attributed to THIS run's id regardless, because that id was fixed before the fatal check
+    ever ran. `daemon=True` is what keeps the wall-clock claim true: joining here would spend
+    exactly the time this test proves the run does not spend.
+    """
+    assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _cli(env, ["tailor", "init"]).exit_code == 0
+    write_test_resume_template(load_settings(data_dir=env).config_dir)
+
+    LANE_DELAY = 6.0
+
+    def _fake_run_scan_outage(
+        engine: Engine,
+        settings: Settings,
+        *,
+        fetcher: object | None = None,
+        providers: object | None = None,
+        company: str | None = None,
+        provider: str | None = None,
+        finish: bool = True,
+        on_run_started: Callable[[int], None] | None = None,
+    ) -> ScanSummary:
+        run_id = insert_run(engine)
+        if on_run_started is not None:
+            on_run_started(run_id)
+        # A systemic outage: one board attempted, none completed or unchanged (D-037).
+        return ScanSummary(run_id=run_id, companies=1, complete=0, unchanged=0)
+
+    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_outage)
+    settings = load_settings(data_dir=env).model_copy(update={"lanes_enabled": ("stub",)})
+
+    def _run(out_name: str) -> tuple[PipelineSummary, float]:
+        started = monotonic()
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / out_name,
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+        return summary, monotonic() - started
+
+    # Baseline: the SAME fatal outage, but no lane work to wait on -- this run's own cost with
+    # nothing to overlap. Measured directly rather than assumed: this machine's baseline swung
+    # from ~0.5s to ~3s across this session depending on what else was running.
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([], delay=0.0)})
+    baseline_summary, baseline_elapsed = _run("baseline")
+    assert baseline_summary.fatal is not None, "the fake outage did not refuse the baseline run"
+
+    monkeypatch.setattr(
+        runner_mod,
+        "LANE_FACTORIES",
+        {"stub": lambda _ctx: StubLane([("hiringcafe", "src:sp2")], delay=LANE_DELAY)},
+    )
+    summary, elapsed = _run("apps")
+
+    assert summary.fatal is not None, "the fake outage did not refuse the run"
+    added = elapsed - baseline_elapsed
+    # A correct (daemon, unjoined) implementation adds ~0s here; one that joins before
+    # returning adds the full LANE_DELAY. The threshold sits well below that.
+    assert added < LANE_DELAY / 2, (
+        f"a refusing run added {added:.2f}s of wall clock beyond its own {baseline_elapsed:.2f}s "
+        f"baseline -- it waited on the {LANE_DELAY}s lane thread"
+    )
+
+    engine = get_engine(env)
+    def _board_scan_row() -> Any:
+        with engine.connect() as conn:
+            return conn.execute(
+                select(tables.board_scans.c.run_id, tables.board_scans.c.scan_kind)
+                .join(tables.companies, tables.companies.c.id == tables.board_scans.c.company_id)
+                .where(tables.companies.c.slug == "src:sp2")
+            ).one_or_none()
+
+    # Polls the SAME row this test needs, rather than a company-existence check followed by a
+    # separate query -- the company and its `board_scans` row commit in different transactions
+    # (`upsert_lane_company`, then `apply_board`), so stopping on the company alone raced the
+    # second write on a loaded machine.
+    deadline = monotonic() + LANE_DELAY + 5.0
+    scan_row = _board_scan_row()
+    while scan_row is None and monotonic() < deadline:
+        sleep(0.02)
+        scan_row = _board_scan_row()
+
+    assert scan_row is not None, "the lane's company never landed after a refusing run"
+    assert scan_row.scan_kind == "lane"
+    assert scan_row.run_id == summary.run_id, "the lane's row was not attributed to the refused run"
