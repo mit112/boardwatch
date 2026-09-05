@@ -18,7 +18,7 @@ def fetch_board_job(provider: Provider, fetcher: Fetcher, request: BoardRequest)
     """Fetch one board, and record how long the FETCH took.
 
     Timed here rather than in the coordinator because this is the one seam every scanned
-    board passes through, and because the coordinator sees boards through `as_completed`,
+    board passes through, and because the coordinator sees boards only as they complete,
     where the gap between two completions is a function of `scan_workers`, not of either
     board. `perf_counter` rather than `utcnow`: this is a duration, and a wall-clock
     subtraction is wrong across an NTP step.
