@@ -15,7 +15,7 @@ boardwatch finds what it found.** Two bars measure that, and they are different:
 
 | bar | what it measures | where it is written | standing |
 |---|---|---|---|
-| **B1–B7, 14 frozen days** (`PROGRAM.md` §1) | boardwatch WORKS unattended | provisional pass = 3 frozen clean runs, then a 14-day background confirm | **0 of 3** — the count starts at run 5, 06:00 CDT 2026-09-06 (D-482); every `rules_hash` bump restarts it |
+| **B1–B7, 14 frozen days** (`PROGRAM.md` §1) | boardwatch WORKS unattended | provisional pass = 3 frozen clean runs, then a 14-day background confirm | **0 of 3** — the count starts at run 6 (D-483; run 5 failed on a fixed integration defect); every `rules_hash` bump restarts it |
 | **Gate 1, per-source recall** (`RETIREMENT-PLAN.md` §1) | boardwatch FINDS what job-apps finds | the owner sets a per-source threshold; job-apps runs until it is met | **28.8%** (5,838 / 20,289, pre-reset). Structure RULED (D-482): employer boards ≥ 85%, LinkedIn no bar; Indeed/hiring.cafe numbers at the first post-reset reading (~09-17) |
 
 Applying is Mit's own work and is deliberately not chased by the program (D-351). The program's
@@ -30,7 +30,7 @@ job is to make the queue worth his morning.
 - **What has not happened is a scheduled run on that configuration.** Run 4 (hand-launched)
   showed the floor working — 4,254 hidden as ineligible — and the judge judging NOTHING (fixed,
   T50). No run in the post-reset store has been tick-fired on a valid configuration. **Run 5 at
-  06:00 CDT on 2026-09-06 is the first counted run; the provisional pass is 0 of 3.**
+  06:00 CDT on 2026-09-06 is the first counted run; the provisional pass is 0 of 3** — run 5 then FAILED on a T42 integration defect while the judge worked, fixed as T54/T55 (D-483); runs 6–8 are chained.
 - **The product numbers: run 4 delivered 40 leads, all `eligible`**, against 3–5 apply-lane leads
   per run before T43/T45. The apply lane is CUMULATIVE 36; run-scoped apply/review is what run 5
   must report. The 33-of-120 "no requirement rows" class is displaced from the slate by verdict
@@ -48,7 +48,7 @@ then one `--project` run on the merged code, read against run 4 (the last pre-me
 in the funnel; the T36 rule applied (`HANDOFF-2026-09-07.md` §5). **Why first:** nothing after
 this is measurable on unmerged code, and the tick runs whatever `main` is parked on.
 
-### M2 — Close the store-contention class and freeze. **Build DONE (T40, T41 on `main`); the freeze holds from run 5; provisional pass 0 of 3 (D-482).**
+### M2 — Close the store-contention class and freeze. **Build DONE (T40, T41 on `main`); the freeze holds from run 6; provisional pass 0 of 3 (D-483).**
 T40 (`apply_board` on the write lock) and, on Mit's word, T41 (one per-host pacing clock per
 process). Then **stop changing eligibility, the profile and the résumé gate**, and let the
 launchd cadence deliver the **provisional pass: 3 consecutive frozen clean runs**, each meeting
@@ -98,7 +98,7 @@ for this window. **Role-unconfirmed (6 of 80)** — title taxonomy, small, uncha
 **Exit:** apply lane >= 10 per run on three consecutive runs, with the review lane's composition in
 METRICS. **This restarts the freeze**, which is why it is after M2's provisional pass and before
 the 14-day confirm is relied on. All five D-477 tickets restart the provisional-pass count, so the
-count begins from run 5 (run 4 was disqualified, D-482).
+count begins from run 6 (run 4 disqualified, D-482; run 5 failed, D-483).
 
 ### M4 — Find what job-apps finds. **Threshold STRUCTURE ruled and Track 1 CLOSED (D-482); the Indeed/hiring.cafe numbers are owed at the first post-reset reading (~2026-09-17).**
 `RETIREMENT-PLAN.md` holds the finished analysis; do not re-derive it. In order: **set the
