@@ -184,7 +184,10 @@ def _make_env(
             digest=digest,
             bundle_digest=tree.bundle_digest,
             content_digest=projection_candidate(
-                config_dir / BUNDLE_DIR_NAME, declaration_path, as_of=utcnow().date()
+                config_dir / BUNDLE_DIR_NAME,
+                declaration_path,
+                config_dir=config_dir,
+                as_of=utcnow().date(),
             ).content_digest,
             approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
         )

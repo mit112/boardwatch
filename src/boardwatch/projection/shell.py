@@ -15,13 +15,15 @@ The shell is therefore copied verbatim from the owner's existing authored résum
 - part of `ProjectionPool.resume` itself, so a shell change IS visible in the projected document
   (`pool.resume.header`/`.education`) and in `resume_document_bytes`'s serialized YAML.
 
-**But `shell_source`'s CONTENT is not covered by any digest in v1.** `projection_digest` hashes
-the parsed `ProjectionDeclaration`, which carries `shell_source` as a `Path` — the filename it was
-declared with, not the bytes at that path — and `shell_source` lives in `config_dir`, outside the
-bundle, so `bundle_digest` cannot see it either. Editing `{config_dir}/master_resume.yaml` changes
-`pool.resume.header`/`.education` with no digest moving and no re-approval required. Blast radius
-is small — the renderer ignores both fields, so the PDF is unaffected — but `load_resume`'s
-validation and the serialized YAML both see whatever the shell says today, unpinned.
+**`shell_source`'s CONTENT is covered by `projection_content_digest` (T32).** It is not covered by
+the other two digests and cannot be: `projection_digest` hashes the parsed `ProjectionDeclaration`,
+which carries `shell_source` as a `Path` — the filename it was declared with, not the bytes at that
+path — and `shell_source` lives in `config_dir`, outside the bundle, so `bundle_digest` cannot see
+it either. Until T32 that left it bound by nothing, and editing `{config_dir}/master_resume.yaml`
+changed `pool.resume.header`/`.education` with no digest moving and no re-approval required.
+`pool.projection_content_digest` now folds `header` and `education` into its payload and
+`projection_candidate` prints them on the approval screen, so a shell edit stales the approval
+exactly as a bullet edit does. This closes the carried gap D-167 recorded here.
 
 This is the one place v1 reads the file it is replacing, and it is transitional: when renderer
 ownership of header/education lands, the shell goes.

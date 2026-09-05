@@ -101,6 +101,17 @@ def _prompt_text(candidate: ProjectionCandidate) -> str:
         f"Bundle digest: {candidate.bundle_digest}",
         "",
     ]
+    # ABOVE the entries, because it is the top of the rendered page and because it is the
+    # owner's own identity: `shell_source` supplies the header and education verbatim, and until
+    # T32 it was the one rendered part of the document that no digest bound and no screen
+    # printed. It is inside `content_digest` now, so it has to be readable here.
+    if candidate.header or candidate.education:
+        lines.append("Résumé shell, as it would render:")
+        for line in candidate.header:
+            lines.append(f"  header: {line}")
+        for line in candidate.education:
+            lines.append(f"  education: {line}")
+        lines.append("")
     if candidate.entries:
         noun = "entry" if len(candidate.entries) == 1 else "entries"
         lines.append(f"{len(candidate.entries)} declared {noun} with resolved template values:")
@@ -167,7 +178,9 @@ def approve_projection(
     from boardwatch.projection.pool import projection_candidate
 
     try:
-        candidate = projection_candidate(bundle_root, declaration_path, as_of=utcnow().date())
+        candidate = projection_candidate(
+            bundle_root, declaration_path, config_dir=config_dir, as_of=utcnow().date()
+        )
     except (ProjectionError, ProfileBundleError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc

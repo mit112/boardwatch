@@ -130,6 +130,7 @@ def _approve(config_dir: Path, bundle_digest: str, *, content_digest: str | None
         content_digest = projection_candidate(
             config_dir / BUNDLE_DIR_NAME,
             config_dir / "projection.yaml",
+            config_dir=config_dir,
             as_of=utcnow().date(),
         ).content_digest
     write_stamp(

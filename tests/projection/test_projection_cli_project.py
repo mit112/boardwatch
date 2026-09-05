@@ -115,7 +115,10 @@ def _make_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, approve: bool)
             digest=digest,
             bundle_digest=tree.bundle_digest,
             content_digest=projection_candidate(
-                config_dir / BUNDLE_DIR_NAME, declaration_path, as_of=utcnow().date()
+                config_dir / BUNDLE_DIR_NAME,
+                declaration_path,
+                config_dir=config_dir,
+                as_of=utcnow().date(),
             ).content_digest,
             approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
         )
@@ -292,7 +295,10 @@ def test_plain_text_output_never_leaks_an_absolute_bundle_path(unapproved_env: E
         digest=digest,
         bundle_digest=unapproved_env.tree.bundle_digest,
         content_digest=projection_candidate(
-            unapproved_env.bundle_root, unapproved_env.declaration, as_of=utcnow().date()
+            unapproved_env.bundle_root,
+            unapproved_env.declaration,
+            config_dir=unapproved_env.config_dir,
+            as_of=utcnow().date(),
         ).content_digest,
         approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
     )

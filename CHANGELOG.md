@@ -292,6 +292,14 @@ All notable changes to this project are documented here. The format follows
   run and the cap is yours to set; any board added this way can be dropped again with
   `companies unwatch`.
 
+- **Your own name and university are now part of what you approve.** The approval screen printed
+  every entry and every bullet a résumé would carry, but not the header and education — those come
+  from `master_resume.yaml`, which lives outside the profile bundle, so no digest bound them
+  either. They could be rewritten between approval and render with nothing asking you again. The
+  screen now prints them above the entries and the approval is bound to them, so editing that file
+  asks for a fresh approval exactly as editing a bullet does. **Existing approvals are staled by
+  this change: approve once more after upgrading.**
+
 ### Changed
 
 - **The project pins CPython 3.13, and two tests no longer depend on the machine they run on.**

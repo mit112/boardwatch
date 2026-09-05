@@ -235,7 +235,7 @@ def project_pool(
     #
     # A stamp written before this field existed carries `None` and is treated as stale: fail
     # closed. The owner re-approves once, and every subsequent approval is scoped correctly.
-    if stamp.content_digest != projection_content_digest(entries, skill_groups):
+    if stamp.content_digest != projection_content_digest(entries, skill_groups, header, education):
         raise_violation(
             ProjectionIssue.STALE_PROJECTION_APPROVAL,
             "the résumé text this declaration resolves to is not the text the owner approved"
@@ -274,7 +274,10 @@ def project_pool(
 
 
 def projection_content_digest(
-    entries: Sequence[Entry], skill_groups: Sequence[SkillGroup]
+    entries: Sequence[Entry],
+    skill_groups: Sequence[SkillGroup],
+    header: Sequence[str],
+    education: Sequence[str],
 ) -> str:
     """`sha256:<hex>` over the RESOLVED entries — the text the approval screen prints.
 
@@ -293,9 +296,14 @@ def projection_content_digest(
     entity's field the projection does not render, changes nothing here. Any edit that changes
     one rendered character changes it.
 
-    NOT covered, and it never was: the résumé SHELL (`master_resume.yaml`'s header and
-    education). It lives outside the bundle, so `bundle_digest` never bound it either — this
-    narrows nothing, but it is the remaining gap in "the owner saw every literal".
+    The résumé SHELL (`master_resume.yaml`'s header and education) is in it too, and closing
+    that was T32. The shell lives OUTSIDE the bundle, so `bundle_digest` never bound it, and
+    `projection_digest` hashes the parsed declaration, which carries `shell_source` as a
+    filename rather than as bytes — so the owner's own name, email and university were the one
+    part of the projected document that could be rewritten between approval and render with no
+    digest moving. They are rendered onto the résumé (`ProjectionPool.resume.header`/
+    `.education`, and `resume_document_bytes` serializes them), so they belong here for exactly
+    the reason the skills section does, and the approval screen prints them for the same reason.
 
     `sort_keys` is pydantic's declaration order via `model_dump`, which is stable for a frozen
     model; the list order is the declaration's own entry order, which is itself part of what was
@@ -304,6 +312,8 @@ def projection_content_digest(
     payload = {
         "entries": [entry.model_dump(mode="json") for entry in entries],
         "skill_groups": [group.model_dump(mode="json") for group in skill_groups],
+        "header": list(header),
+        "education": list(education),
     }
     return (
         "sha256:"
@@ -337,6 +347,10 @@ class ProjectionCandidate:
     #: The resolved skills section — rendered onto the résumé, so shown and digested with the
     #: entries rather than left outside the gate.
     skill_groups: tuple[SkillGroup, ...]
+    #: The résumé shell read from `{config_dir}/<shell_source>` (T32) — same argument as
+    #: `skill_groups`: it is rendered onto the document, so it is shown and digested.
+    header: tuple[str, ...]
+    education: tuple[str, ...]
     #: The digest of the resolved text above — what `project_pool` compares the stamp against.
     #: Carried on the candidate so the approving command binds the stamp to the very bytes it
     #: printed, rather than recomputing them from a second traversal that could drift.
@@ -344,22 +358,24 @@ class ProjectionCandidate:
 
 
 def projection_candidate(
-    bundle_root: Path, declaration_path: Path, *, as_of: date
+    bundle_root: Path, declaration_path: Path, *, config_dir: Path, as_of: date
 ) -> ProjectionCandidate:
     """Resolve `declaration_path`'s entries against the bundle's CURRENT revision, for the owner
     to review before approving.
 
-    No `config_dir` parameter: unlike `project_pool`, this never resolves `shell_source` (it has
-    no template to show) and never checks a stamp (`stamp_exists`/`write_stamp` are the only
-    `config_dir`-keyed operations in this package), so there is nothing here that would use it.
+    `config_dir` is here for `shell_source` alone (T32) — it still checks no stamp, so it stays
+    reachable before the first approval exists; `stamp_exists`/`write_stamp` remain the only
+    other `config_dir`-keyed operations in this package and neither is called here.
 
     Shares every resolution step with `project_pool` — the same bundle revision, the same
-    `check_references`, the same per-entry `resolve_template` call through `_build_entry` — so
-    what the owner is shown is the identical rendering `project_pool` would later produce for this
-    same digest, not a second, drifting rendering path. Deliberately does not resolve
-    `shell_source` or `skill_groups`: neither carries a template placeholder
+    `check_references`, the same per-entry `resolve_template` call through `_build_entry`, and
+    now the same `load_shell` — so what the owner is shown is the identical rendering
+    `project_pool` would later produce for this same digest, not a second, drifting rendering
+    path. Neither the shell nor `skill_groups` carries a template placeholder
     (`SkillGroupDeclaration.label` is a plain string), so neither is part of the template hole
-    this candidate exists to show.
+    this candidate was first written to show; both are resolved anyway because both are RENDERED
+    onto the résumé and the content digest has to cover every literal the owner is asked to
+    approve.
 
     Raises the same typed `ProjectionError`s `project_pool` would for a malformed declaration or
     an unresolvable reference. Unlike `project_pool`, this function still lets a bundle-selection
@@ -370,6 +386,7 @@ def projection_candidate(
     """
     declaration = load_declaration(declaration_path)
     digest = projection_digest(declaration)
+    header, education = load_shell(config_dir / declaration.shell_source)
 
     selection = read_current_once(bundle_root)
     documents = selected_documents(selection)
@@ -396,7 +413,9 @@ def projection_candidate(
         bundle_digest=selection.bundle_digest,
         entries=entries,
         skill_groups=skill_groups,
-        content_digest=projection_content_digest(entries, skill_groups),
+        header=header,
+        education=education,
+        content_digest=projection_content_digest(entries, skill_groups, header, education),
     )
 
 

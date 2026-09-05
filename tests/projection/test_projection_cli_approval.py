@@ -259,6 +259,7 @@ def test_the_owner_is_shown_every_bullet_the_resume_would_carry(
     candidate = projection_candidate(
         example_declaration.parent / BUNDLE_DIR_NAME,
         example_declaration,
+        config_dir=example_declaration.parent,
         as_of=utcnow().date(),
     )
     texts = [bullet.text for entry in candidate.entries for bullet in entry.bullets]
@@ -266,3 +267,36 @@ def test_the_owner_is_shown_every_bullet_the_resume_would_carry(
     shown = "\n".join(terminal.shown)
     for text in texts:
         assert text in shown, f"the owner never saw the bullet {text!r} they approved"
+
+
+def test_the_owner_is_shown_the_resume_shell(monkeypatch, example_declaration) -> None:
+    """T32. The shell's header and education are rendered onto the projected résumé and are now
+    inside the approval's content digest, so they have to be on the screen: a gate that stales on
+    text the owner was never shown is a gate they cannot act on (the same argument the skills
+    section is on screen for).
+
+    Sentinel values, not the fixture's own "Example …" strings: the packaged bundle's entries
+    legitimately mention an example university, so asserting the fixture's default text would
+    pass on output that never printed the shell at all.
+    """
+    from boardwatch.projection.shell import load_shell
+
+    shell_path = example_declaration.parent / "master_resume.yaml"
+    shell_path.write_text(
+        "header:\n"
+        "  - Zzyzx Candidate\n"
+        "  - zzyzx@example.com\n"
+        "education:\n"
+        "  - University of Zzyzx\n",
+        encoding="utf-8",
+    )
+
+    terminal = FakeTerminal()
+    result = _run(terminal, monkeypatch, example_declaration)
+    assert result.exit_code == 0
+
+    header, education = load_shell(shell_path)
+    assert header and education, "the fixture declares no shell, so this proves nothing"
+    shown = "\n".join(terminal.shown)
+    for line in (*header, *education):
+        assert line in shown, f"the owner never saw the shell line {line!r} they approved"

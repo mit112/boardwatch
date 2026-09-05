@@ -178,7 +178,10 @@ def test_omitting_skill_groups_synthesizes_them_from_the_bundle_catalog(
         digest=digest,
         bundle_digest=bundle_digest,
         content_digest=projection_candidate(
-            projection_env.bundle_root, projection_env.declaration, as_of=AS_OF
+            projection_env.bundle_root,
+            projection_env.declaration,
+            config_dir=projection_env.config_dir,
+            as_of=AS_OF,
         ).content_digest,
         approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
     )
@@ -393,7 +396,9 @@ def test_bullet_predicates_render_entity_facts_in_predicate_then_index_order(
             }
         ],
     )
-    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    candidate = projection_candidate(
+        projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+    )
 
     (entry,) = candidate.entries
     assert [b.bullet_id for b in entry.bullets] == [
@@ -428,7 +433,9 @@ def test_a_bullet_predicate_the_entity_has_no_fact_for_is_refused(
         ],
     )
     with pytest.raises(ProjectionError) as exc:
-        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+        projection_candidate(
+            projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+        )
     assert exc.value.violation.issue is ProjectionIssue.BULLET_PREDICATE_NO_FACTS
 
 
@@ -453,7 +460,9 @@ def test_a_skill_ref_bullet_predicate_is_refused_as_unrenderable(
         ],
     )
     with pytest.raises(ProjectionError) as exc:
-        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+        projection_candidate(
+            projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+        )
     assert exc.value.violation.issue is ProjectionIssue.FACT_VALUE_KIND_NOT_ADMITTED
 
 
@@ -479,7 +488,9 @@ def test_a_declared_range_with_no_end_renders_the_open_label_end_to_end(
             }
         ],
     )
-    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    candidate = projection_candidate(
+        projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+    )
 
     (entry,) = candidate.entries
     # `start-date.001` (2025-01) is `rejected`; `.002` (2025-04) is the owner-confirmed one, so
@@ -510,7 +521,9 @@ def test_a_named_range_end_with_no_fact_is_fatal_not_silently_open(
         ],
     )
     with pytest.raises(ProjectionError) as exc:
-        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+        projection_candidate(
+            projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+        )
     assert exc.value.violation.issue is ProjectionIssue.UNRESOLVED_PLACEHOLDER
     assert "certification.expiry" in exc.value.violation.message
 
@@ -538,7 +551,9 @@ def test_a_bulletless_declaration_yields_an_entry_with_no_bullets(
             }
         ],
     )
-    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    candidate = projection_candidate(
+        projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+    )
 
     (entry,) = candidate.entries
     assert entry.bullets == []
@@ -569,7 +584,9 @@ def test_an_entry_that_declares_no_bullet_source_is_not_marked_bulletless(
             }
         ],
     )
-    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    candidate = projection_candidate(
+        projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+    )
 
     (entry,) = candidate.entries
     assert entry.bullets == []
@@ -604,7 +621,9 @@ def test_a_link_target_latex_cannot_carry_is_refused_at_pool_time(
         ],
     )
     with pytest.raises(ProjectionError) as exc:
-        projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+        projection_candidate(
+            projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+        )
     assert exc.value.violation.issue is ProjectionIssue.MALFORMED_DECLARATION
     assert "link_url" in exc.value.violation.where
     assert "{" in exc.value.violation.message
@@ -632,7 +651,9 @@ def test_a_query_string_link_target_is_NOT_refused(
             }
         ],
     )
-    candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
+    candidate = projection_candidate(
+        projection_env.bundle_root, decl, config_dir=projection_env.config_dir, as_of=AS_OF
+    )
     assert candidate.entries[0].link_url == "https://example.test/a?x=1&y=2#top"
 
 
@@ -647,7 +668,10 @@ def test_the_content_digest_moves_on_a_single_bullet_character(
     character of one bullet, so nothing else can account for the difference.
     """
     candidate = projection_candidate(
-        projection_env.bundle_root, projection_env.declaration, as_of=AS_OF
+        projection_env.bundle_root,
+        projection_env.declaration,
+        config_dir=projection_env.config_dir,
+        as_of=AS_OF,
     )
     entries = candidate.entries
     assert any(entry.bullets for entry in entries), "no bullets, so this proves nothing"
@@ -662,8 +686,9 @@ def test_the_content_digest_moves_on_a_single_bullet_character(
         else:
             edited.append(entry)
     assert changed
-    assert projection_content_digest(entries, candidate.skill_groups) != (
-        projection_content_digest(tuple(edited), candidate.skill_groups)
+    shell = (candidate.header, candidate.education)
+    assert projection_content_digest(entries, candidate.skill_groups, *shell) != (
+        projection_content_digest(tuple(edited), candidate.skill_groups, *shell)
     )
 
 
@@ -695,3 +720,40 @@ def test_a_stamp_written_before_content_scoping_is_stale_not_accepted(
     assert exc.value.violation.issue is ProjectionIssue.STALE_PROJECTION_APPROVAL
     assert "predates" in exc.value.violation.message
     assert bundle_digest  # the bundle itself never moved; only the stamp's scope did
+
+
+def test_a_shell_edit_stales_the_approval(
+    projection_env,  # noqa: F811
+) -> None:
+    """T32. `master_resume.yaml`'s header and education ARE part of the projected document —
+    `ProjectionPool.resume.header`/`.education` carry them and `resume_document_bytes`
+    serializes them — but they sat outside every digest the gate reads.
+    `projection_digest` hashes the parsed declaration, which carries `shell_source` as a
+    filename rather than as bytes, and `bundle_digest` cannot see a file that lives outside the
+    bundle. So the owner's name, email and university could be rewritten between approval and
+    render with nothing moving and no re-approval asked for.
+
+    The first call is the control: the environment is approved and resolves, so the refusal
+    below is caused by the shell edit and by nothing else.
+    """
+    project_pool(
+        projection_env.bundle_root,
+        projection_env.declaration,
+        config_dir=projection_env.config_dir,
+        as_of=AS_OF,
+    )
+
+    shell = projection_env.config_dir / "master_resume.yaml"
+    shell.write_text(
+        shell.read_text(encoding="utf-8").replace("Example Candidate", "Someone Else Entirely"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectionError) as exc:
+        project_pool(
+            projection_env.bundle_root,
+            projection_env.declaration,
+            config_dir=projection_env.config_dir,
+            as_of=AS_OF,
+        )
+    assert exc.value.violation.issue is ProjectionIssue.STALE_PROJECTION_APPROVAL

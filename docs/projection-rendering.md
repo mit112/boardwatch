@@ -18,7 +18,8 @@ two files under your config directory, outside the bundle:
 - **`{config_dir}/projection.yaml`** — the editorial declaration (below).
 - **A shell document** (named by `shell_source`) — the header and education lines. The LaTeX renderer
   never reads `Resume.header` or `Resume.education`, so the bundle is deliberately *not* authoritative
-  for your name, contacts, or education; the shell is.
+  for your name, contacts, or education; the shell is. Because the shell IS authoritative for them, it
+  is printed on the approval screen and bound into the approval — editing it asks you to approve again.
 
 ## 2. `projection.yaml`
 
@@ -112,9 +113,12 @@ boardwatch resume project --posting <id> --scorer <name> --out <dir>
 boardwatch tailor run <id> --resume <path>
 ```
 
-`approve-projection` binds the approval to the bundle digest it was made against. If the bundle moves
-(a new revision), projection refuses the stale approval rather than emit résumé text you never
-reviewed — re-approve after reviewing.
+`approve-projection` binds the approval to the exact résumé TEXT it printed — every entry field,
+every bullet, the resolved skills section, and the shell's header and education — not to the bundle
+revision it was read against (D-167). Any edit that changes one rendered character stales the
+approval, and projection then refuses rather than emit text you never reviewed; an edit the
+projection does not render (a fact it never cites, an unrelated revision promotion) does not. The
+bundle revision is still recorded on the stamp as provenance. Re-approve after reviewing.
 
 `--scorer` defaults to `mean_per_bullet`, adopted from the owner-labeled selection matrix (D-198): it
 had the highest rank agreement with the matrix, though the margin over the alternatives is thin and all

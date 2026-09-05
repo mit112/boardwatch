@@ -137,7 +137,12 @@ def _build_projection_env(
         from boardwatch.projection.pool import projection_candidate
 
         content_digest = (
-            projection_candidate(bundle_root, declaration_path, as_of=date(2026, 8, 13))
+            projection_candidate(
+                bundle_root,
+                declaration_path,
+                config_dir=config_dir,
+                as_of=date(2026, 8, 13),
+            )
             .content_digest
             if promote_bundle
             else "sha256:" + "0" * 64
