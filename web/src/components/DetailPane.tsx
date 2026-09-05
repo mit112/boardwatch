@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { openPdf, revealFolder } from "../api/client";
 import type { Answers, QueueDetail, RequirementView } from "../api/types";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   EM_DASH,
   formatAge,
@@ -221,15 +222,22 @@ export function DetailPane({
    * focus in is worth nothing if Shift+Tab walks straight back out to a row behind the sheet.
    *
    * The trigger row is refocused on close so the cursor does not fall back to `<body>`.
+   *
+   * SUBSCRIBED, not sampled. This used to read `matchMedia(...).matches` once on mount, which
+   * answers for the tier the pane OPENED at and never again — so shrinking the window across the
+   * breakpoint with a lead open turned the column into a modal sheet while focus stayed on
+   * `<body>` behind it, exactly the state this effect exists to prevent, and now with the page
+   * behind it inert as well. `useMediaQuery` re-runs the effect on the transition instead.
    */
+  const sideBySide = useMediaQuery(SIDE_BY_SIDE);
   useEffect(() => {
-    if (window.matchMedia(SIDE_BY_SIDE).matches) return;
+    if (sideBySide) return;
     const opener = document.activeElement as HTMLElement | null;
     pane.current?.focus();
     return () => {
       opener?.focus();
     };
-  }, []);
+  }, [sideBySide]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
