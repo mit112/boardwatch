@@ -28,6 +28,40 @@ import type { SortKey, SortState } from "../lib/sort";
 const COLLAPSE_MS = 200;
 const POLL_MS = 30_000;
 
+/*
+ * Working state kept across a tab switch and a reload, in `sessionStorage` and never in
+ * `localStorage`: this is what the reader is doing RIGHT NOW, so it should die with the tab rather
+ * than greet them a week later with a filter they have forgotten setting.
+ *
+ * Every access is wrapped, exactly as `api/token.ts` wraps its own: storage throws outright when
+ * it is disabled or the quota is gone, and a viewer that cannot remember a filter must still be a
+ * viewer that runs.
+ */
+const REVIEW_OPEN_KEY = "boardwatch.review-open";
+
+function readSession(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(key: string, value: string): void {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    /* Remembering is a convenience; failing to remember is never a page failure. */
+  }
+}
+
+/** A stored flag, or `null` when nothing is stored — which is NOT the same as `false`, because a
+ *  default only applies while the reader has expressed no preference. */
+function readStoredFlag(key: string): boolean | null {
+  const stored = readSession(key);
+  return stored === "true" ? true : stored === "false" ? false : null;
+}
+
 type Removal = "applied" | "skipped" | "reported";
 
 function errorMessage(caught: unknown, fallback: string): string {
@@ -49,11 +83,22 @@ export function QueuePage({
   const [newCount, setNewCount] = useState(0);
 
   /*
-   * Collapsed by default, and that IS the feature: the top of the page has to be the list you can
-   * work through without re-deriving anything. Open is one click and the count is always visible,
-   * so the lane is never hidden — only folded.
+   * Collapsed by default while there is an apply queue to work down, and that IS the feature: the
+   * top of the page has to be the list you can work through without re-deriving anything. Open is
+   * one click and the count is always visible, so the lane is never hidden — only folded.
+   *
+   * With an EMPTY apply lane the default flips, because then the fold hides the only work on the
+   * page: the reader met a placeholder above a closed section and had to click "show" every day
+   * the engine version moved. A stored preference outranks both — the reader who folded it did so
+   * on purpose.
    */
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewOpenPref, setReviewOpenPref] = useState<boolean | null>(() =>
+    readStoredFlag(REVIEW_OPEN_KEY),
+  );
+  const setReviewOpen = useCallback((next: boolean) => {
+    setReviewOpenPref(next);
+    writeSession(REVIEW_OPEN_KEY, String(next));
+  }, []);
 
   const [query, setQuery] = useState("");
   const [minScore, setMinScore] = useState("");
@@ -87,6 +132,9 @@ export function QueuePage({
   const [detail, setDetail] = useState<QueueDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers | null>(null);
+
+  const reviewOpen =
+    reviewOpenPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0);
 
   const knownIds = useRef<Set<number>>(new Set());
 
@@ -509,7 +557,7 @@ export function QueuePage({
        */
       if (!clearing && next === "review") setReviewOpen(true);
     },
-    [facet],
+    [facet, setReviewOpen],
   );
 
   /*
@@ -728,7 +776,7 @@ export function QueuePage({
                       aria-expanded={reviewOpen}
                       aria-controls="review-list"
                       onClick={() => {
-                        setReviewOpen((open) => !open);
+                        setReviewOpen(!reviewOpen);
                       }}
                       className="min-h-11 rounded-sm px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
                     >

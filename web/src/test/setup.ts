@@ -27,6 +27,12 @@ function stubMediaQueryList(query: string): MediaQueryList {
 window.matchMedia = stubMediaQueryList;
 
 // `globals` is off, so React Testing Library cannot register this for itself.
+//
+// `sessionStorage` is cleared with it, and that is isolation rather than tidiness: the queue page
+// now remembers its filters, its sorts and the review lane's fold there, and jsdom shares one
+// storage across every test in a file — so without this one test's click would silently satisfy
+// (or contradict) the next one's arrange step.
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
 });
