@@ -40,6 +40,7 @@ from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import server as server_mod
+from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
 from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
@@ -1531,3 +1532,63 @@ def test_a_row_with_no_locations_reports_none_and_an_empty_list(
 
     assert row["location"] is None
     assert row["locations"] == []
+
+
+def test_the_answers_panel_serves_work_auth_words_not_enum_tokens(
+    live: Live, engine: Engine
+) -> None:
+    """The panel exists to be COPIED into an employer's form. `ead_or_similar` pasted into "what
+    is your work authorization status?" is a token from this program's catalog, not an answer a
+    human wrote, so the profile's stored value is restated in the words the form expects.
+    """
+    facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
+        )
+    )
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    work_auth = call(live, "/api/answers", bearer=live.token).json()["work_auth"]
+
+    assert work_auth["status"] == "EAD or similar (work authorization document)"
+    # Already true before this change, asserted so it stays true: a raw `True` on a form is not
+    # an answer to "do you need sponsorship".
+    assert work_auth["needs_sponsorship"] == "no"
+
+
+#: The catalog's own `work_auth.status` vocabulary, read from the BUNDLED rules rather than
+#: respelled here: the choice vocabulary belongs to the catalog (D-P2-4), and a list retyped in a
+#: test would go on passing after the catalog gained a sixth member.
+WORK_AUTH_STATUS_CHOICES: tuple[str, ...] = next(
+    field.choices
+    for field in load_rules(Path("/nonexistent")).family("work_auth").fields
+    if field.name == "status"
+)
+
+
+@pytest.mark.parametrize("status", WORK_AUTH_STATUS_CHOICES)
+def test_every_declared_work_auth_status_has_words(status: str) -> None:
+    """The mapping is CLOSED over the catalog's declared choices. Parametrised over the catalog so
+    a new member ships with words or fails here — a member with none would otherwise reach an
+    employer's form as a raw token, which is the bug this closes."""
+    assert status in WORK_AUTH_STATUS_WORDS
+    assert WORK_AUTH_STATUS_WORDS[status] != status
+
+
+def test_a_work_auth_status_outside_the_catalog_is_refused_not_copied(
+    live: Live, engine: Engine
+) -> None:
+    """Out-of-catalog is a failure, never a new bucket. Passing the unknown token through would
+    put it on the clipboard, which is exactly what the words mapping exists to prevent; answering
+    with a blank would hide a corrupt profile row behind an empty form field."""
+    facts = Facts(work_authorization=WorkAuthFact(status="not_a_catalog_status"))
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    response = call(live, "/api/answers", bearer=live.token)
+
+    assert response.status == 422, response.body[:400]
+    assert response.json()["issue"] == "unknown_work_auth_status"
+    # `AnswersViolation` carries no VALUE by construction; the field is named, its content is not.
+    assert b"not_a_catalog_status" not in response.body

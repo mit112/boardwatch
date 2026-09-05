@@ -251,8 +251,10 @@ work_auth:
     with engine.connect() as conn:
         panel = load_answers(config_dir=tmp_path, conn=conn)
 
+    # `status` is restated in the words an employer's form expects; `jurisdiction` is passed
+    # through, and `needs_sponsorship` is a bool rendered "yes"/"no".
     assert panel.work_auth == {
-        "status": "permanent_resident",
+        "status": "Permanent resident",
         "jurisdiction": "US",
         "needs_sponsorship": "no",
     }
@@ -261,7 +263,7 @@ work_auth:
 
 def test_a_fact_the_profile_does_not_answer_falls_back_to_the_file(tmp_path: Path) -> None:
     engine = store(tmp_path)
-    seed_profile(engine, Facts(work_authorization=WorkAuthFact(status="student_visa")))
+    seed_profile(engine, Facts(work_authorization=WorkAuthFact(status="ead_or_similar")))
     write_answers(
         tmp_path,
         """
@@ -274,7 +276,10 @@ work_auth:
     with engine.connect() as conn:
         panel = load_answers(config_dir=tmp_path, conn=conn)
 
-    assert panel.work_auth == {"status": "student_visa", "jurisdiction": "US"}
+    assert panel.work_auth == {
+        "status": "EAD or similar (work authorization document)",
+        "jurisdiction": "US",
+    }
     # Answered by neither source. Never defaulted: a wrong work-authorisation answer on a
     # real application is worse than a blank one.
     assert "work_auth.needs_sponsorship" in panel.missing
@@ -628,5 +633,5 @@ def test_the_panel_loads_over_a_read_only_connection(tmp_path: Path) -> None:
     with get_readonly_engine(tmp_path / "store").connect() as conn:
         panel = load_answers(config_dir=tmp_path, conn=conn)
 
-    assert panel.work_auth == {"status": "citizen"}
+    assert panel.work_auth == {"status": "Citizen"}
     writer.dispose()
