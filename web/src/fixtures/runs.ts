@@ -72,7 +72,7 @@ const FUNNEL_114: RunFunnel = {
   started_at: "2026-08-26T06:00:04Z",
   finished_at: "2026-08-26T06:31:52Z",
   reconciles: true,
-  fatal: false,
+  fatal: null,
   errors: [],
   scan: {
     ran: true,
@@ -212,7 +212,9 @@ export const FUNNELS: Record<number, RunFunnel> = {
     started_at: RUNS[3]!.started,
     finished_at: null,
     reconciles: false,
-    fatal: true,
+    // A REASON, not a flag. This is the real one run 5 recorded, truncated the way the artifact
+    // truncates it: the ids are what a reader chases.
+    fatal: "cohort incomplete: 10 shortlisted candidates unaccounted: 4288, 20797, 20798, 20812, 20834, 20841, 20855, 20857, 20861, 20869",
     errors: ["scan aborted: 61 of 124 boards unreachable", "no leads emitted"],
   },
 };

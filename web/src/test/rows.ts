@@ -1,4 +1,11 @@
-import type { QueueCounts, QueueResponse, QueueRow } from "../api/types";
+import type {
+  FunnelStage,
+  QueueCounts,
+  QueueResponse,
+  QueueRow,
+  RunFunnel,
+  RunSummary,
+} from "../api/types";
 
 /*
  * Queue rows for the frontend tests, built here rather than imported from `src/fixtures/`.
@@ -84,4 +91,74 @@ export function withoutFields(row: QueueRow, fields: readonly (keyof QueueRow)[]
   const copy: Record<string, unknown> = { ...row };
   for (const field of fields) delete copy[field];
   return copy as unknown as QueueRow;
+}
+
+/*
+ * Run fixtures for the runs page, built here for the same two reasons the rows above are: no test
+ * may import `src/fixtures/`, and typing them as the wire contract makes a field that moves a
+ * `tsc --noEmit` failure rather than a silently-skipped assertion.
+ */
+
+export function runSummary(overrides: Partial<RunSummary> = {}): RunSummary {
+  return {
+    id: 5,
+    started: "2026-09-05T06:00:04+00:00",
+    finished: "2026-09-05T06:31:52+00:00",
+    status: "complete",
+    boards_attempted: 124,
+    boards_complete: 121,
+    boards_partial: 0,
+    boards_unchanged: 0,
+    boards_failed: 3,
+    postings_seen: 19844,
+    new_count: 231,
+    leads: 8,
+    ...overrides,
+  };
+}
+
+export function funnelStage(overrides: Partial<FunnelStage> = {}): FunnelStage {
+  return {
+    name: "scan",
+    entered: 19844,
+    advanced: 19617,
+    drops: [],
+    reconciled: true,
+    instrumented: true,
+    derived: false,
+    note: "",
+    run_scoped_attribution: null,
+    ...overrides,
+  };
+}
+
+export function runFunnel(overrides: Partial<RunFunnel> = {}): RunFunnel {
+  return {
+    artifact_version: 6,
+    run_id: 5,
+    started_at: "2026-09-05T06:00:04+00:00",
+    finished_at: "2026-09-05T06:31:52+00:00",
+    reconciles: true,
+    fatal: null,
+    errors: [],
+    stages: [funnelStage()],
+    coverage: {
+      leads_measured: 8,
+      leads_with_fraction: 5,
+      mean_fraction: 0.61,
+      median_fraction: 0.64,
+      top_missing: [],
+    },
+    scan: {
+      ran: true,
+      boards_attempted: 124,
+      boards_complete: 121,
+      boards_partial: 0,
+      boards_unchanged: 0,
+      boards_failed: 3,
+      postings_seen: 19844,
+    },
+    sources: [],
+    ...overrides,
+  };
 }

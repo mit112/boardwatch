@@ -286,7 +286,12 @@ export interface RunFunnel {
   started_at: string | null;
   finished_at: string | null;
   reconciles: boolean;
-  fatal: boolean;
+  /**
+   * The REASON the run ended fatally, not a flag: `fatal: str | None` in `reports/run_funnel.py`.
+   * Typed as a boolean it truth-tested correctly and printed nothing, which is the whole of the
+   * diagnostic thrown away.
+   */
+  fatal: string | null;
   errors: string[];
   stages: FunnelStage[];
   coverage: FunnelCoverage;

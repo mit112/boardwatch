@@ -266,14 +266,22 @@ export function RunsPage() {
         </p>
       ) : (
         <>
-          {funnel.fatal || funnel.errors.length > 0 ? (
+          {funnel.fatal !== null || funnel.errors.length > 0 ? (
             <section className="rounded-md border border-fg-2 bg-surface p-4">
               <h2 className="text-sm text-fg">
-                {funnel.fatal ? "This run ended fatally." : "This run recorded errors."}
+                {funnel.fatal === null ? "This run recorded errors." : "This run ended fatally."}
               </h2>
+              {/* The reason, verbatim and selectable: it names the unaccounted posting ids, which
+                  is the only part of a fatal a reader can act on. Mono because it is an artifact
+                  string, not prose. */}
+              {funnel.fatal === null ? null : (
+                <p className="mt-2 font-display text-sm break-words text-fg">{funnel.fatal}</p>
+              )}
               <ul className="mt-2 flex flex-col gap-1">
-                {funnel.errors.map((message) => (
-                  <li key={message} className="text-sm text-fg-2">
+                {funnel.errors.map((message, index) => (
+                  // Keyed on position AND text: two identical errors are two errors, and a
+                  // message-keyed list silently renders one of them.
+                  <li key={`${String(index)}:${message}`} className="text-sm text-fg-2">
                     {message}
                   </li>
                 ))}
