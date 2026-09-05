@@ -35,6 +35,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import get_args
 
 import pytest
 from filelock import FileLock
@@ -61,6 +62,7 @@ from boardwatch.delivery.queue import (
     reconcile_queue,
     sync_queue,
 )
+from boardwatch.delivery.review_gate import LaneDecision, ReviewReason, classify
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
 from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
@@ -68,7 +70,7 @@ from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application, set_application_status
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.delivery_queries import QueueDetail, QueueRow
+from boardwatch.store.delivery_queries import QueueDetail, QueueRow, delivered_unapplied
 from boardwatch.store.quarantine_queries import record_quarantine
 from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.queue_state import (
@@ -1139,6 +1141,78 @@ def test_a_lead_whose_JD_states_no_requirement_is_filed_under_review(
 
     assert _folders(root) == ["Stated_Co_Software_Engineer"]
     assert _folders(root / REVIEW_DIR) == ["Silent_Co_Software_Engineer"]
+
+
+def test_details_json_records_why_the_review_lane_holds_the_lead(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The reason travels to disk, so a run's review composition is readable without the web API.
+
+    Asserted against `classify` itself rather than against a hand-written string: the persisted
+    reason and the folder the lead sits in must be the SAME decision (D-332), so a re-derivation
+    that agreed today and drifted tomorrow would pass a literal-only assertion. The literal is
+    pinned too, so a `classify` that started returning the wrong member for this lead cannot make
+    both sides of the comparison wrong together.
+    """
+    with engine.begin() as conn:
+        silent_id, _ = _deliver(conn, apps, "silent", company="Silent Co", body=SILENT_JD)
+        _deliver(conn, apps, "stated", company="Stated Co")
+    with engine.connect() as conn:
+        rows = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    silent = rows[silent_id]
+    expected = classify(
+        verdict=silent.verdict,
+        locations=silent.locations,
+        title=silent.title,
+        experience_unconfirmed=silent.requirement_flags.experience_unconfirmed,
+        eligibility_unconfirmed=silent.requirement_flags.eligibility_unconfirmed,
+        no_requirement_rows=silent.requirement_flags.no_requirement_rows,
+        posting_closed=silent.closed,
+    ).reason
+    assert expected == "no_requirements_found"
+
+    held = _details(root / REVIEW_DIR / "Silent_Co_Software_Engineer")["review_reason"]
+    assert held == expected
+    assert held in get_args(ReviewReason)
+
+
+def test_details_json_records_no_review_reason_for_an_apply_lane_lead(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`null`, not an empty string and not an absent key. A lead in the apply queue is held for no
+    reason at all, and folding that into a review member would corrupt the composition the field
+    exists to report."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    details = _details(_sole_folder(root))
+    assert "review_reason" in details
+    assert details["review_reason"] is None
+
+
+def test_an_unknown_review_reason_fails_the_lead(
+    engine: Engine, root: Path, apps: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Out-of-catalog is a failure, never a new bucket: a reason this module cannot name is one
+    `details.json` would publish unexplained, and a folder written under it would be read by the
+    composition report as a tenth member that does not exist."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "invented-reason")
+
+    def invented(**kwargs: object) -> LaneDecision:
+        return LaneDecision(REVIEW_DIR, "invented_reason")  # type: ignore[arg-type]
+
+    monkeypatch.setattr(queue, "classify", invented)
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    monkeypatch.undo()
+
+    assert (report.created, report.failed) == (0, 1)
+    assert _folders(root / REVIEW_DIR) == []
 
 
 INELIGIBLE_JD = "Applicants must be authorized to work in the United States."

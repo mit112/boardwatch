@@ -67,7 +67,13 @@ from sqlalchemy import Connection, select
 
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
-from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, lane
+from boardwatch.delivery.review_gate import (
+    CLOSED_DIR,
+    REVIEW_DIR,
+    REVIEW_REASONS,
+    ReviewReason,
+    classify,
+)
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     JD_ABSENT_NO_CURRENT_VERSION,
@@ -103,7 +109,7 @@ STAGING_PREFIX = ".staging-"
 
 #: Bumped when `details.json`'s shape changes. A reader that finds a schema it does not know is
 #: reading a projection, not a source of truth, and the next sync rewrites it.
-DETAILS_SCHEMA = 1
+DETAILS_SCHEMA = 2
 
 #: Bound at import so a test can choose a platform without touching `sys`. The apply-link file's
 #: format is a property of the machine the owner clicks on, and it does not change mid-process.
@@ -388,9 +394,10 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # The reverse direction still works — if the verdict later clears, the row reappears here and
     # the folder is drawn back, so the drain self-heals exactly as `_applied` and `_skipped` do.
     #
-    # A REVIEW lead, by contrast, IS work to look at, so it STAYS in `rows`: `lane_of` routes it to
-    # the `_review` subdir rather than excluding it, and `_index` scans `_review`, so a lead is
-    # created wherever it belongs and moves between the apply queue and review as its class changes.
+    # A REVIEW lead, by contrast, IS work to look at, so it STAYS in `rows`: `decision_of` routes
+    # it to the `_review` subdir rather than excluding it, and `_index` scans `_review`, so a lead
+    # is created wherever it belongs and moves between the apply queue and review as its class
+    # changes.
     # A REPORTED lead is excluded on the same footing as a skipped one, and through the same
     # parameter, because `delivered_unapplied` asks its caller for the job-keyed set to withhold
     # rather than deciding what withholding means. `delivery/api.py` already unions the two for
@@ -406,8 +413,11 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         for row in delivered_unapplied(conn, skipped=withheld)
         if row.verdict != "ineligible"
     ]
-    lane_of = {
-        row.posting_id: lane(
+    # `classify`, not `lane`: the folder a lead lands in and the reason `details.json` publishes
+    # for it are ONE decision here, so neither can be re-derived into disagreement with the other
+    # (D-332, and the same rule `delivery/api.py` follows for the page).
+    decision_of = {
+        row.posting_id: classify(
             verdict=row.verdict,
             locations=row.locations,
             title=row.title,
@@ -434,7 +444,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         entry = _entry_for(row, entries, by_job)
         if names is None or entry is None:
             continue
-        target = _dest(root, lane_of[row.posting_id], names.folder)
+        target = _dest(root, decision_of[row.posting_id].lane, names.folder)
         if entry.path == target:
             continue
         try:
@@ -456,13 +466,19 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                 # `entry.path` is stale after the relocation pass; only its existence and its
                 # recorded hash are read here, and neither moved.
                 entry = _entry_for(row, entries, by_job)
-                target = _dest(root, lane_of[row.posting_id], names.folder)
+                target = _dest(root, decision_of[row.posting_id].lane, names.folder)
                 if entry is None and target.exists():
                     raise QueueConflictError(
                         f"{names.folder} already exists and does not identify posting "
                         f"{row.posting_id}"
                     )
-                payload = _payload(conn, row, names=names, artifact_ids=artifact_ids)
+                payload = _payload(
+                    conn,
+                    row,
+                    names=names,
+                    artifact_ids=artifact_ids,
+                    review_reason=decision_of[row.posting_id].reason,
+                )
                 if entry is not None and entry.content_hash == payload.content_hash:
                     unchanged += 1
                     continue
@@ -615,9 +631,18 @@ def _identity_hash(row: QueueRow) -> str:
 
 
 def _payload(
-    conn: Connection, row: QueueRow, *, names: LeadNames, artifact_ids: dict[str, int]
+    conn: Connection,
+    row: QueueRow,
+    *,
+    names: LeadNames,
+    artifact_ids: dict[str, int],
+    review_reason: ReviewReason | None,
 ) -> _Payload:
-    """Resolve one lead's whole folder — every byte of it — before anything is written."""
+    """Resolve one lead's whole folder — every byte of it — before anything is written.
+
+    `review_reason` arrives from the caller's own :func:`classify` call rather than being computed
+    here, so the reason written into `details.json` is the same decision that chose the folder.
+    """
     detail = queue_detail(conn, row.posting_id)
     jd = None if detail is None else detail.jd_body
     # Out-of-catalog is a failure, never a new bucket: a reason this module does not know is a
@@ -629,6 +654,10 @@ def _payload(
         raise ValueError(f"unknown job-description absence reason: {jd_absent_reason!r}")
     if jd is not None and jd_absent_reason is not None:
         raise ValueError(f"job-description body has an absence reason: {jd_absent_reason!r}")
+    # Same rule one line up, applied to the lane catalog: a reason outside `ReviewReason` is a bug
+    # in the caller, never a new bucket to publish under.
+    if review_reason is not None and review_reason not in REVIEW_REASONS:
+        raise ValueError(f"unknown review reason: {review_reason!r}")
     board_target = None if detail is None else detail.board_target
     link = None if row.apply_url is None else _apply_link(row.apply_url, PLATFORM)
     pdf_source, pdf_sha256, pdf_absent = _pdf_source(row.pdf_uri)
@@ -646,6 +675,10 @@ def _payload(
         "remote_policy": row.remote_policy,
         "status": row.status,
         "verdict": row.verdict,
+        # Which of `ReviewReason`'s members holds this lead, `null` in the apply and closed lanes.
+        # On disk because the run's review composition is read from the queue tree (M3), where the
+        # web API is not available.
+        "review_reason": review_reason,
         "first_seen": row.first_seen.isoformat(),
         "apply_url": row.apply_url,
         "board_target": board_target,
