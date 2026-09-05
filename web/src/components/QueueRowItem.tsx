@@ -210,7 +210,6 @@ export function QueueRowItem({
                 {row.company}
               </span>
             </button>
-            {/* Narrow tier only: everything the collapsed columns were carrying. */}
             {/* Everything the tier above this row's own has as a column. Each item hides at the
                 width where it becomes one, so a fact is never shown twice and never lost. */}
             <span className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3 @min-[78rem]:hidden">
@@ -220,7 +219,14 @@ export function QueueRowItem({
                 {alsoWhere > 0 ? ` +${String(alsoWhere)}` : ""}
               </span>
               <span className="@min-[52rem]:hidden">{row.remote_policy ?? EM_DASH}</span>
-              <span className="tabular-nums @min-[40rem]:hidden">{formatScore(row.score)}</span>
+              {/* Labelled, unlike the location and the age beside it: a bare `0.90` next to
+                  `cov 62%` is two unlabelled fractions and no way to tell which is which. */}
+              <span
+                className="tabular-nums @min-[40rem]:hidden"
+                title={row.why ?? "Score, as of now."}
+              >
+                score {formatScore(row.score)}
+              </span>
               <span className="tabular-nums @min-[78rem]:hidden">{formatAge(row.posted_days)}</span>
               <span className="tabular-nums @min-[78rem]:hidden">
                 cov {formatFraction(row.coverage)}
