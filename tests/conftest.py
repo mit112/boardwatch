@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, insert
 
-from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.db import FAST_SCHEMA_ENV, ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
 from boardwatch.tailor.render.latex import resolve_template
@@ -186,6 +186,15 @@ def _never_reach_the_real_data_dir(
     known gap.
     """
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path_factory.mktemp("bw-data")))
+    # T16. `ensure_schema` replays the 27-migration chain on every fresh store the suite builds,
+    # at ~93 ms each. With the switch on it replays the DDL that same chain produces instead,
+    # at ~2.9 ms, and the resulting schema is byte-identical — triggers, indexes and the alembic
+    # stamp included (`test_the_fast_schema_path_is_byte_identical_to_the_migration_chain`).
+    #
+    # Set HERE and nowhere else: no CLI path reads this variable, and `ensure_schema` additionally
+    # refuses the shortcut on any database that is not completely empty, so a real store migrates
+    # whatever the environment says.
+    monkeypatch.setenv(FAST_SCHEMA_ENV, "1")
 
 
 @pytest.fixture(autouse=True)

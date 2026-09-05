@@ -11,6 +11,7 @@ from boardwatch.store.db import (
     BEGIN_MODE_OPTION,
     DB_FILENAME,
     UnknownBeginModeError,
+    db_revision,
     ensure_schema,
     get_engine,
     get_readonly_engine,
@@ -382,3 +383,106 @@ def test_the_readonly_engine_ignores_the_immediate_option(tmp_path: Path) -> Non
     conn = ro.connect().execution_options(**{BEGIN_MODE_OPTION: "IMMEDIATE"})
     with conn:
         assert conn.execute(select(func.count()).select_from(tables.companies)).scalar_one() == 1
+
+
+def test_the_fast_schema_path_produces_the_same_schema_as_the_migration_chain(
+    tmp_path: Path,
+) -> None:
+    """T16. The shortcut is only safe if it produces the SAME schema, and
+    `test_migrations_match_metadata` cannot establish that: alembic's `compare_metadata`
+    compares tables, columns, indexes and types, and does not see TRIGGERS at all. This schema
+    has 20 of them — the ten append-only `RAISE(ABORT)` pairs the eligibility keystone rests on,
+    and both `postings_job_required_*`. That gap is why the shortcut replays the migrated
+    schema's own DDL rather than `metadata.create_all`, which was measured to emit zero of the 20.
+
+    Triggers and indexes are compared as EXACT DDL TEXT, because that text is the whole of their
+    behaviour and there is no PRAGMA that reflects a trigger body. Tables are compared through
+    PRAGMA plus an ORDER-INSENSITIVE constraint-name set, because the migration chain itself is
+    not byte-deterministic: two `command.upgrade` runs in one process emit `companies` and
+    `board_scans` with their CONSTRAINT clauses in different orders (alembic's batch rebuild
+    reflects them into an unordered collection). Asserting on the text there would pin alembic's
+    iteration order, not this repository's schema.
+    """
+    import os
+    import re
+
+    from boardwatch.store.db import FAST_SCHEMA_ENV
+
+    def _schema(path: Path, fast: bool) -> dict[str, object]:
+        previous = os.environ.get(FAST_SCHEMA_ENV)
+        if fast:
+            os.environ[FAST_SCHEMA_ENV] = "1"
+        else:
+            os.environ.pop(FAST_SCHEMA_ENV, None)
+        try:
+            eng = get_engine(path)
+            ensure_schema(eng)
+            with eng.connect() as conn:
+                rows = conn.execute(
+                    text(
+                        "SELECT type, name, sql FROM sqlite_master "
+                        "WHERE name NOT LIKE 'sqlite_%'"
+                    )
+                ).all()
+                names = {(str(r[0]), str(r[1])) for r in rows}
+                ddl = {
+                    (str(r[0]), str(r[1])): " ".join(str(r[2]).split())
+                    for r in rows
+                    if r[2] is not None and str(r[0]) in ("trigger", "index")
+                }
+                constraints = {}
+                columns = {}
+                foreign_keys = {}
+                for kind, name, sql in rows:
+                    if kind != "table":
+                        continue
+                    constraints[name] = frozenset(
+                        re.findall(r"CONSTRAINT (\w+)", " ".join(str(sql).split()))
+                    )
+                    columns[name] = tuple(
+                        (r[1], r[2], r[3], r[5])  # name, type, notnull, pk
+                        for r in conn.execute(text(f'PRAGMA table_info("{name}")'))
+                    )
+                    foreign_keys[name] = frozenset(
+                        (r[2], r[3], r[4])  # referenced table, from, to
+                        for r in conn.execute(text(f'PRAGMA foreign_key_list("{name}")'))
+                    )
+                revision = db_revision(conn)
+            return {
+                "names": names, "ddl": ddl, "constraints": constraints,
+                "columns": columns, "foreign_keys": foreign_keys, "revision": revision,
+            }
+        finally:
+            if previous is None:
+                os.environ.pop(FAST_SCHEMA_ENV, None)
+            else:
+                os.environ[FAST_SCHEMA_ENV] = previous
+
+    migrated = _schema(tmp_path / "migrated", fast=False)
+    fast = _schema(tmp_path / "fast", fast=True)
+
+    triggers = {name for kind, name in migrated["names"] if kind == "trigger"}  # type: ignore[union-attr]
+    assert len(triggers) == 20, sorted(triggers)
+    assert fast["names"] == migrated["names"]
+    assert fast["ddl"] == migrated["ddl"]  # every trigger BODY and every index, verbatim
+    assert fast["constraints"] == migrated["constraints"]
+    assert fast["columns"] == migrated["columns"]
+    assert fast["foreign_keys"] == migrated["foreign_keys"]
+    assert fast["revision"] == migrated["revision"] == schema_revision()
+
+
+def test_the_fast_schema_path_refuses_a_database_that_is_not_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second guard, and the one that makes a leaked environment variable harmless: the
+    shortcut only ever applies to a file with nothing in it, so a real store migrates."""
+    from boardwatch.store.db import FAST_SCHEMA_ENV, _is_empty_database
+
+    monkeypatch.setenv(FAST_SCHEMA_ENV, "1")
+    eng = get_engine(tmp_path / "store")
+    assert _is_empty_database(eng) is True
+    ensure_schema(eng)
+    assert _is_empty_database(eng) is False
+    ensure_schema(eng)  # idempotent, and now goes through alembic
+    with eng.connect() as conn:
+        assert db_revision(conn) == schema_revision()
