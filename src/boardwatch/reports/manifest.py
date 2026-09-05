@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from boardwatch.core.settings import LLMTier, Settings
+from boardwatch.core.settings import GateTier, LLMTier, Settings
 from boardwatch.eligibility.hashing import digest
 
 # The closed classification from METRICS.md §"Session 7". Every top-level Settings field is in
@@ -146,6 +146,23 @@ _LLM_IRRELEVANT: frozenset[str] = frozenset(
     {"max_calls_per_run"}  # a pure cap; excluded deliberately (revisit if coverage is reported)
 )
 
+# T42. `gate` gets the SAME nested-tier treatment `llm` does, for the same reason: whether it
+# is armed and which judge answers can change which postings become leads, but a run/cost knob
+# cannot.
+_GATE_RELEVANT: frozenset[str] = frozenset(
+    {
+        "enabled",  # whether the stage runs at all — the whole point of this hash
+        "model",  # a different judge can return a different verdict for the same JD
+    }
+)
+_GATE_IRRELEVANT: frozenset[str] = frozenset(
+    {
+        "claude_config_dir",  # machine-local — which login answers, not which verdict
+        "batch_size",  # pure batching, like max_calls_per_run
+        "call_timeout_s",  # throughput, same class as retry_attempts/scan_workers
+    }
+)
+
 
 class UnclassifiedSettingError(ValueError):
     """A Settings/LLMTier field is in neither the IN nor the OUT set for the config hash.
@@ -158,7 +175,7 @@ class UnclassifiedSettingError(ValueError):
 
 def _assert_exhaustive() -> None:
     settings_fields = set(Settings.model_fields)
-    expected_settings = _CONFIG_RELEVANT | _CONFIG_IRRELEVANT | {"llm"}
+    expected_settings = _CONFIG_RELEVANT | _CONFIG_IRRELEVANT | {"llm", "gate"}
     if settings_fields != expected_settings:
         missing = settings_fields - expected_settings
         extra = expected_settings - settings_fields
@@ -175,6 +192,15 @@ def _assert_exhaustive() -> None:
             f"LLMTier fields not classified for config_hash: missing={sorted(missing)} "
             f"stale={sorted(extra)}"
         )
+    gate_fields = set(GateTier.model_fields)
+    expected_gate = _GATE_RELEVANT | _GATE_IRRELEVANT
+    if gate_fields != expected_gate:
+        missing = gate_fields - expected_gate
+        extra = expected_gate - gate_fields
+        raise UnclassifiedSettingError(
+            f"GateTier fields not classified for config_hash: missing={sorted(missing)} "
+            f"stale={sorted(extra)}"
+        )
 
 
 def config_hash(settings: Settings) -> str:
@@ -189,6 +215,7 @@ def config_hash(settings: Settings) -> str:
             name: _jsonable(getattr(settings, name)) for name in sorted(_CONFIG_RELEVANT)
         },
         "llm": {name: getattr(settings.llm, name) for name in sorted(_LLM_RELEVANT)},
+        "gate": {name: getattr(settings.gate, name) for name in sorted(_GATE_RELEVANT)},
     }
     return digest(payload)
 

@@ -302,9 +302,9 @@ def test_every_scalar_setting_is_reachable_from_the_cli() -> None:
     from boardwatch.cli.config_cmd import _SCALAR_KEYS
     from boardwatch.core.settings import Settings
 
-    # data_dir/config_dir are CLI/env-level paths, and the three nested models have their own
-    # surfaces (weights.*, llm.*, notify.*).
-    nested = {"weights", "llm", "notify"}
+    # data_dir/config_dir are CLI/env-level paths, and the four nested models have their own
+    # surfaces (weights.*, llm.*, notify.*, gate.*).
+    nested = {"weights", "llm", "notify", "gate"}
     paths = {"data_dir", "config_dir"}
     # A per-lane MAPPING, not a scalar `_SCALAR_KEYS` can cast: `config set`'s casters each
     # parse one string into one value, and a lane name isn't known ahead of time to give one a

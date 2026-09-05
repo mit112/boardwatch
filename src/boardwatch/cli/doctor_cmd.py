@@ -242,12 +242,29 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
             "gate and no leads are built[/red]"
         )
 
+    # T42. Off by default, so a report with `gate.enabled = False` prints nothing and cannot
+    # fail doctor — checking a binary the pipeline will never invoke would be a false alarm.
+    # When armed, a missing `claude` is an actionable failure the same way a missing tectonic
+    # is: the gate stage would fail open on every batch (D-074) rather than crash, but a
+    # doctor run that stayed silent about it would let that ship unnoticed.
+    claude_gate_ok = True
+    if app_ctx.settings.gate.enabled:
+        claude_gate_ok = shutil.which("claude") is not None
+        console.print(f"claude (gate): {'found' if claude_gate_ok else 'NOT FOUND'}")
+        if not claude_gate_ok:
+            console.print(
+                "[red]gate.enabled is true but `claude` is not on PATH; the gate stage will "
+                "fail open on every batch until it is installed and logged in under "
+                "gate.claude_config_dir[/red]"
+            )
+
     failed = (
         report.actionable
         or not integrity_ok
         or not schema_ok
         or tectonic_check.failed
         or not pdfinfo_ok
+        or not claude_gate_ok
         or bool(unreachable)
     )
     raise typer.Exit(code=1 if failed else 0)

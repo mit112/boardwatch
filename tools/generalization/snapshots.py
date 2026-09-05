@@ -128,6 +128,23 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     },
     "NotifyTier.desktop_enabled": False,
     "NotifyTier.webhook_enabled": False,
+    # T42. Off by default (multi-tenancy) — arming the headless final-eligibility-gate judge
+    # is the operator's own act, never something a fresh install or a new tenant inherits.
+    # `claude_config_dir` is machine-local (None ships inert, same reasoning as
+    # jobapps_discovery_dir); `model`/`batch_size`/`call_timeout_s` are cost knobs that say
+    # nothing about roles, seniority, geography or field.
+    "Settings.gate": {
+        "enabled": False,
+        "claude_config_dir": None,
+        "model": "sonnet",
+        "batch_size": 13,
+        "call_timeout_s": 300,
+    },
+    "GateTier.enabled": False,
+    "GateTier.claude_config_dir": None,
+    "GateTier.model": "sonnet",
+    "GateTier.batch_size": 13,
+    "GateTier.call_timeout_s": 300,
 }
 
 SETTINGS_FIELD_CLASS: dict[str, str] = {
@@ -177,6 +194,12 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.notify": "capability",
     "NotifyTier.desktop_enabled": "capability",
     "NotifyTier.webhook_enabled": "capability",
+    "Settings.gate": "capability",
+    "GateTier.enabled": "capability",
+    "GateTier.claude_config_dir": "path",
+    "GateTier.model": "capability",
+    "GateTier.batch_size": "operational",
+    "GateTier.call_timeout_s": "operational",
 }
 
 # Preference-bearing parameter defaults, which live outside the settings models.

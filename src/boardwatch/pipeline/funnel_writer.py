@@ -36,6 +36,7 @@ from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
     BoardCoverageReport,
     DeathProbeReport,
+    GateCounters,
     LaneReport,
     Lead,
     LivenessCheck,
@@ -100,6 +101,10 @@ def collect_run_funnel(
     liveness: LivenessCheck | None = None,
     # D-325. `None` means the measured-death sweep did NOT run, never that it found nothing.
     death_probe: DeathProbeReport | None = None,
+    # T42. `None` means the gate was NOT armed this run (`settings.gate.enabled` False),
+    # never that it judged nothing.
+    gate: GateCounters | None = None,
+    # T43 appended `pending_tailor`: a review-lane lead delivered with no PDF.
     tailored: list[tuple[int, str, str, Path, bool, bool]],
     tailor_failed: int,
     # P5a. `projection_ran` is the ONLY thing that decides whether the artifact carries a
@@ -303,6 +308,7 @@ def collect_run_funnel(
         shortlist=shortlist,
         liveness=liveness,
         death_probe=death_probe,
+        gate=gate,
         dedup=dedup,
         sources=sources,
         leads=leads,

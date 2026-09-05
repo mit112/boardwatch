@@ -321,7 +321,7 @@ def _param_defaults(source: str) -> dict[str, object]:
 
 def check_defaults_snapshot(repo: Repo) -> list[Violation]:
     """R10: every settings default and preference-bearing parameter default is pinned."""
-    from boardwatch.core.settings import LLMTier, NotifyTier, RankWeights, Settings
+    from boardwatch.core.settings import GateTier, LLMTier, NotifyTier, RankWeights, Settings
 
     violations: list[Violation] = []
     if set(snap.SETTINGS_FIELD_CLASS) != set(snap.EXPECTED_SETTINGS_DEFAULTS):
@@ -336,7 +336,7 @@ def check_defaults_snapshot(repo: Repo) -> list[Violation]:
         )
 
     actual: dict[str, object] = {}
-    for model in (Settings, RankWeights, LLMTier, NotifyTier):
+    for model in (Settings, RankWeights, LLMTier, NotifyTier, GateTier):
         for name, field in model.model_fields.items():
             key = f"{model.__name__}.{name}"
             factory = field.default_factory
