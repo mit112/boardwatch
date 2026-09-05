@@ -1092,3 +1092,47 @@ def test_field_abstain_wins_a_genuine_collision_with_posting_waive(tmp_path) -> 
     row = next(r for r in result.requirements if r.rule_id == "degree:bachelor_required")
     assert row.disposition == "unknown"
     assert row.rationale == "missing_profile_field:career_field"
+
+
+# ---- the per-user near-miss floor, end to end (T47, D-480)
+
+def test_a_near_miss_bar_becomes_ineligible_under_a_per_user_floor(tmp_path: Path) -> None:
+    """The whole point of T47, asserted where the verdict is actually produced.
+
+    Both arms run, because only the pair is evidence: the `uncertain` arm is the no-op
+    control proving the body really does detect a 2-3 year bar, so a floored `ineligible`
+    reached for some unrelated reason could not read as a pass.
+
+    The `ineligible` arm also pins the keystone: an `unmet` blocking row must carry a span
+    QUOTED from the frozen JD, or the verdict has no evidence chain and is downgraded.
+    """
+    body = "We require 2-3 years of experience."
+    facts = Facts(total_years_experience=1)
+    catalog = load_rules(tmp_path)
+
+    assert evaluate(body, facts, BLOCK_ALL, catalog).verdict == "uncertain"
+
+    floored = BLOCK_ALL.model_copy(
+        update={"near_miss_years_ceilings": {"experience_years": 1}}
+    )
+    result = evaluate(body, facts, floored, catalog)
+    assert result.verdict == "ineligible"
+    unmet = [r for r in result.requirements if r.disposition == "unmet"]
+    assert unmet, "the floor must produce the blocking row, not merely a verdict"
+    for row in unmet:
+        start, end = row.jd_locator["span"]
+        assert end > start
+        assert "2-3 years" in body[start:end], body[start:end]
+
+
+def test_the_floor_does_not_reach_a_bar_the_profile_already_clears(tmp_path: Path) -> None:
+    """Strictly narrowing. The floor may only ever turn `unknown` into `unmet`; a `met` row
+    that started clearing must keep clearing, or the change costs recall in the direction
+    nobody is watching."""
+    facts = Facts(total_years_experience=1)
+    catalog = load_rules(tmp_path)
+    floored = BLOCK_ALL.model_copy(
+        update={"near_miss_years_ceilings": {"experience_years": 1}}
+    )
+    result = evaluate("We require 1+ years of experience.", facts, floored, catalog)
+    assert result.verdict != "ineligible"

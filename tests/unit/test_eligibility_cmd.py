@@ -4,10 +4,13 @@ against the CATALOG's declared choices, never against a source literal."""
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
-from boardwatch.eligibility.facts import parse_facts, parse_policy
+from boardwatch.cli.eligibility_cmd import set_ceiling
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.facts import Policy, parse_facts, parse_policy
 from boardwatch.store.db import get_engine
 from boardwatch.store.queries import get_profile
 
@@ -473,3 +476,74 @@ def test_every_command_that_reads_the_profile_refuses_an_unusable_row_cleanly(
     assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
     assert "eligibility_policy_json" in result.output
     assert "Traceback" not in result.output
+
+
+# ---- the near-miss ceiling is per-user policy data (T47, D-480)
+
+def test_setting_a_near_miss_ceiling(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "policy", "ceiling", "experience_years", "1"])
+    assert result.exit_code == 0, result.output
+    _, policy = _facts(env)
+    assert policy.near_miss_years_ceilings == {"experience_years": 1}
+
+
+def test_setting_a_ceiling_preserves_the_severity_map(env: Path) -> None:
+    """The two live on ONE stored document, so a writer that rebuilt the model from the new
+    value alone would silently clear the severities the user set first."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "set", "experience_years", "blocker"]).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "ceiling", "experience_years", "1"]).exit_code == 0
+    _, policy = _facts(env)
+    assert policy.families["experience_years"] == "blocker"
+    assert policy.near_miss_years_ceilings == {"experience_years": 1}
+
+
+def test_setting_a_severity_preserves_the_ceiling(env: Path) -> None:
+    """The REVERSE order, and the one that actually regressed: both values live on one stored
+    document, so a writer that rebuilds `Policy` from its own field alone silently discards
+    the other. Harmless while `families` was the only field; a wiped floor once it is not."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "ceiling", "experience_years", "1"]).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "set", "experience_years", "blocker"]).exit_code == 0
+    _, policy = _facts(env)
+    assert policy.near_miss_years_ceilings == {"experience_years": 1}
+    assert policy.families["experience_years"] == "blocker"
+
+
+def test_a_family_declaring_no_ceiling_is_refused(env: Path) -> None:
+    """`work_auth` is a real catalog family, so this cannot be caught by the family check
+    `policy set` already does -- it is refused because no ceiling applies to it, and the
+    message has to name the families where one does."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "policy", "ceiling", "work_auth", "1"])
+    assert result.exit_code != 0
+    assert "experience_years" in result.output
+    _, policy = _facts(env)
+    assert policy.near_miss_years_ceilings == {}
+
+
+def test_a_negative_ceiling_is_refused_by_the_pure_writer() -> None:
+    """Asserted on the pure writer, not through the CLI. A negative literal on the command
+    line is refused by the option parser before the writer is ever reached, so a CLI-only
+    test would pass with no validation in this function at all -- it would be green against
+    a writer that stored -1 happily."""
+    catalog = load_rules(Path("/nonexistent-override"))
+    with pytest.raises(typer.BadParameter, match="0 or more"):
+        set_ceiling(Policy(), catalog, "experience_years", -1)
+
+
+def test_a_negative_ceiling_never_reaches_the_store(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "ceiling", "experience_years", "-1"]).exit_code != 0
+    _, policy = _facts(env)
+    assert policy.near_miss_years_ceilings == {}
+
+
+def test_a_non_integer_ceiling_is_refused(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "policy", "ceiling", "experience_years", "1.5"])
+    assert result.exit_code != 0
+    assert "1.5" in result.output
+    _, policy = _facts(env)
+    assert policy.near_miss_years_ceilings == {}

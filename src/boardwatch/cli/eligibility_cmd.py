@@ -215,7 +215,33 @@ def set_policy(policy: Policy, catalog: RulesCatalog, family_id: str, choice: st
     severities = get_args(PolicyChoice)
     if choice not in severities:
         raise typer.BadParameter(f"unknown severity {choice!r}. Valid: {', '.join(severities)}")
-    return Policy(families={**policy.families, family_id: choice})
+    return policy.model_copy(update={"families": {**policy.families, family_id: choice}})
+
+
+def set_ceiling(policy: Policy, catalog: RulesCatalog, family_id: str, years: int) -> Policy:
+    """Apply one family's near-miss ceiling, returning a new Policy. Pure and CLI-free.
+
+    The family must be one the catalog declares a band on. That is a NARROWER test than
+    `set_policy`'s: `work_auth` is a real family and would pass a family-id check, but it
+    declares no band, so a ceiling on it is inert — it would be stored, hashed, and would
+    re-key the ledger while changing no verdict. Refuse it and name the families where a
+    ceiling means something, which comes from the catalog and is never a literal here.
+    """
+    declared = sorted(
+        family.id for family in catalog.families if family.near_miss_years_ceiling > 0
+    )
+    if family_id not in declared:
+        raise typer.BadParameter(
+            f"family {family_id!r} declares no near-miss band, so a ceiling on it would "
+            f"change no verdict. Families with one: {', '.join(declared) or '(none)'}"
+        )
+    if years < 0:
+        raise typer.BadParameter(f"ceiling must be 0 or more, got {years}")
+    return policy.model_copy(
+        update={
+            "near_miss_years_ceilings": {**policy.near_miss_years_ceilings, family_id: years}
+        }
+    )
 
 
 def _render_value(value: object) -> str:
@@ -920,3 +946,32 @@ def policy_set(ctx: typer.Context, family: str, choice: str) -> None:
             policy_json=new_policy.model_dump(mode="json"),
         )
     console.print(f"set policy {family} = {choice}")
+
+
+@policy_app.command("ceiling")
+def policy_ceiling(ctx: typer.Context, family: str, years: int) -> None:
+    """Set one family's near-miss ceiling: the highest `required` years bar that abstains.
+
+    Stretch tolerance is a per-user preference (D-480 D1), so it is stored on the profile
+    beside severity rather than as a `rules.yaml` override — an override replaces the whole
+    catalog and nothing would detect it drifting from the bundled one.
+    """
+    app_ctx = build_context(ctx.obj)
+    catalog = load_rules(app_ctx.settings.config_dir)
+    with app_ctx.engine.begin() as conn:
+        row = get_profile(conn)
+        if row is None:
+            _no_profile()
+        facts = facts_of(row.eligibility_facts_json)
+        policy = policy_of(row.eligibility_policy_json)
+        try:
+            new_policy = set_ceiling(policy, catalog, family, years)
+        except typer.BadParameter as exc:
+            typer.echo(exc.message)
+            raise typer.Exit(code=1) from exc
+        save_eligibility(
+            conn,
+            facts_json=facts_payload(facts),
+            policy_json=new_policy.model_dump(mode="json"),
+        )
+    console.print(f"set near-miss ceiling {family} = {years}")

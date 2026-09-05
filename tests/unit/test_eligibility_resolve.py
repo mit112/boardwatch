@@ -8,7 +8,7 @@ import pytest
 
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.detect import detect
-from boardwatch.eligibility.facts import ClearanceFact, Facts, WorkAuthFact
+from boardwatch.eligibility.facts import ClearanceFact, Facts, Policy, WorkAuthFact
 from boardwatch.eligibility.resolve import (
     RegistryError,
     ResolverEntry,
@@ -402,6 +402,85 @@ def test_the_near_miss_band_does_not_fire_when_the_total_already_clears(catalog)
     """
     assert _one(catalog, "3+ years of experience required.",
                 Facts(total_years_experience=5), "total_years_minimum") == "met"
+
+
+# ---- the ceiling is PER-USER policy data (T47, D-480 D1)
+
+def _one_under(catalog, body: str, facts: Facts, pattern_id: str, policy: Policy) -> str:
+    """`_one`, but through the catalog's EFFECTIVE spec for the user's policy.
+
+    The resolver is handed a FamilySpec and nothing else, so the per-user ceiling has to
+    reach it as a spec, never as a second resolver argument.
+    """
+    dets = [d for d in detect(body, catalog, enabled_families=ALL) if d.pattern.id == pattern_id]
+    assert len(dets) == 1, f"expected exactly one {pattern_id}, got {len(dets)}"
+    family = catalog.effective_family(dets[0].family, policy)
+    return resolve(dets[0], facts, family).disposition
+
+
+@pytest.mark.parametrize(("body", "pattern_id", "bundled", "floored"), [
+    # Narrowed by the floor: a bar above one year is no longer a near miss.
+    ("2+ years of experience required.", "total_years_minimum", "unknown", "unmet"),
+    ("2-3 years of experience.", "range_years_minimum", "unknown", "unmet"),
+    # Stated in MONTHS. 18 months is 1.5 years, so it moves too -- the reach a ceiling
+    # expressed in years has over a bar expressed in months is the one consequence of this
+    # band nobody reads off the number (D-480, put to the owner explicitly).
+    ("18 months of experience required.", "total_months_minimum", "unknown", "unmet"),
+    # SCOPED to a skill: only the forced direction ever decided, and it decides here.
+    ("2+ years of experience with Python.", "scoped_years_minimum", "unknown", "unmet"),
+    # Unmoved: the profile already clears these, so the band was never consulted.
+    ("1+ years of experience required.", "total_years_minimum", "met", "met"),
+    ("0-3 years of experience.", "range_years_minimum", "met", "met"),
+    # Unmoved: the band is scoped to `required` rows, so a hedge never entered it. This row
+    # can still never reject -- `experience_years` severity decides that, not the band.
+    ("Preferred: 3+ years of experience.", "total_years_preferred", "unmet", "unmet"),
+])
+def test_a_per_user_ceiling_narrows_the_band_without_touching_the_rest(
+    catalog, body: str, pattern_id: str, bundled: str, floored: str
+) -> None:
+    """One integer of stretch tolerance is a PER-USER preference, not a catalog property.
+
+    Both columns are asserted on purpose. The `bundled` column is the no-op control: without
+    it a parametrisation that silently stopped detecting, or that resolved `unmet` for some
+    unrelated reason, would still show the floored answer and read as a pass.
+    """
+    facts = Facts(total_years_experience=1)
+    assert _one_under(catalog, body, facts, pattern_id, Policy()) == bundled
+    assert _one_under(
+        catalog, body, facts, pattern_id,
+        Policy(near_miss_years_ceilings={"experience_years": 1}),
+    ) == floored
+
+
+def test_a_ceiling_equal_to_the_declared_one_changes_nothing(catalog) -> None:
+    """Setting a family to the value it already has is not a second behaviour, and
+    `effective_family` must hand back a spec that resolves identically (D-P2-2)."""
+    assert _one_under(
+        catalog, "2+ years of experience required.", Facts(total_years_experience=1),
+        "total_years_minimum", Policy(near_miss_years_ceilings={"experience_years": 3}),
+    ) == "unknown"
+
+
+def test_the_effective_ceilings_cover_every_declared_family(catalog) -> None:
+    """Every family, always -- the same materialisation rule severity follows. A partial map
+    would let a family the user never named fall out of the hashed snapshot silently."""
+    ceilings = catalog.effective_ceilings(
+        Policy(near_miss_years_ceilings={"experience_years": 1})
+    )
+    assert set(ceilings) == {family.id for family in catalog.families}
+    assert ceilings["experience_years"] == 1
+    for family in catalog.families:
+        if family.id != "experience_years":
+            assert ceilings[family.id] == family.near_miss_years_ceiling, family.id
+
+
+def test_a_policy_naming_an_absent_family_is_dropped(catalog) -> None:
+    """A family the catalog no longer declares must not survive as a phantom ceiling, the
+    same way `materialised_policy` drops a phantom severity."""
+    ceilings = catalog.effective_ceilings(
+        Policy(near_miss_years_ceilings={"no_such_family": 7})
+    )
+    assert "no_such_family" not in ceilings
 
 
 def test_a_family_declaring_no_ceiling_is_unchanged(catalog) -> None:

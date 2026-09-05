@@ -226,7 +226,9 @@ def evaluate(
                 )
             )
         else:
-            resolution = resolve(detection, facts, catalog.family(detection.family))
+            resolution = resolve(
+                detection, facts, catalog.effective_family(detection.family, policy)
+            )
             staged.append(
                 _Staged(
                     detection, resolution.disposition, resolution.rationale, resolution.support
