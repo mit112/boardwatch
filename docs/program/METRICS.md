@@ -12423,7 +12423,7 @@ range (64 s/lead on run 130; tailor 7-21 min of 70-96 min on warm runs 145/148/1
 
 | what | value |
 |---|---|
-| projection stamp `content_digest` | **absent** — the tick will refuse after the scan unless re-approved |
+| projection stamp `content_digest` | absent at 20:55; **re-approved by Mit at 21:08** (`approved_at` 2026-09-05T02:08:45Z), so the tick is expected to deliver |
 | `scan_workers` in `config.toml` | 8 (ceiling now 32) |
 | run in flight | none |
 | `main` vs `origin/main` | 36 ahead, unpushed |

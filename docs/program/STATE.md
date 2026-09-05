@@ -27,7 +27,8 @@
 line against the code and found the report accurate on each. **One correction to the report's
 framing:** the `--project` preflight sits AFTER the scan (`runner.py`, "P5a"), so an unapproved
 tick scans for ~3 h, refuses, exits 1 and **never reaches eligibility — the owed corpus re-key does
-NOT land on a refused tick.** As of 20:55 on 09-04 the stamp still carries no `content_digest`.
+NOT land on a refused tick.** **Mit re-approved at 21:08 on 09-04** — the stamp now carries
+`content_digest`, so the 09-05 tick is expected to deliver and to pay the re-key.
 
 **T30 LANDED `8f44a3d3`** (rebased onto `main` first; it was 7 commits behind). `uv sync --frozen`
 rebuilt the primary venv on **CPython 3.13.15**; `boardwatch --help` runs, `tectonic` 0.17.0
@@ -169,10 +170,9 @@ job. **The global CLAUDE.md's "fresh machine" ritual is STALE for this repo — 
 
 ## Next action
 
-**0. RE-APPROVE THE PROJECTION — MIT, IN A REAL TERMINAL, BEFORE ANY RUN DELIVERS AGAIN.**
-`boardwatch profile-bundle approve-projection`. T22 gates on a content digest and the one live stamp
-predates it, so the `--project` preflight refuses and the run delivers nothing. Verified by reading
-the stamp file. Needs a controlling TTY; no session can do it.
+**0. DONE 2026-09-04 21:08 — the projection is RE-APPROVED** under T22's content digest (stamp read
+back). Any future change to the digest's scope (T32) or to `projection.yaml` re-stales it; approval
+needs a controlling TTY and is always Mit's.
 
 **0-1. THE EXECUTION SESSION RUNS `docs/program/HANDOFF-2026-09-05.md`**, in its order: R1 (the
 09-05 tick readout, including `stage_durations` and each `LaneReport.stage_elapsed_seconds`) →
