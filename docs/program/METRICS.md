@@ -13175,3 +13175,36 @@ gated on the merged tree before pushing; result recorded by the next session.
 
 **Runs.** None this afternoon by the owner's instruction; runs 6–8 scheduled 20:00 CDT.
 
+
+## Session — 2026-09-05 · the web viewer audited in a browser and fixed the same afternoon: 25 findings closed by four headless Opus executors (T56–T59), integrated, gated, merged, CI green
+
+**Audit apparatus.** `boardwatch web --port 8798 --queue-root <scratch>` from the primary venv,
+read-only against the live store; Playwright at 390×844, 1000×800, 1440×900, 2560×1440. Live
+state: `rows` 0, `review` 149 (`unevaluated` 108, `role_unconfirmed` 41), `counts.closed` 1.
+Findings: 25 (7 high · 10 medium · 8 low after one withdrawal). Decision D-485.
+
+**Measured defects (before → after, merged bundle on the live store):**
+
+| quantity | before | after |
+|---|---:|---:|
+| run 5 finish time shown (actual 12:56 PM CDT) | 05:56 PM | 12:56 PM |
+| console errors per page load | 2 (CSP grain, favicon 404) | 0 |
+| list width beside the pane at 2560 | 1,184 px (folded tier) | 1,984 px (8 columns) |
+| list width beside the pane at 1440 | 864 px (folded tier) | 896 px (middle tier: title · location · score · verdict · actions) |
+| status readout with 149 review leads | "Showing 0 of 0" | "Showing 149 of 149" |
+| row-action buttons vs their track | 250 px in 208 px | 250 px in 256 px |
+| Runs page: fatal reason / judge band | absent / absent | shown / 40 · 16 · 10 · 14 · 0 |
+
+**Executors** (enterprise seat, `claude -p --model opus`, launched 17:09 after a 17:04 OAuth
+expiry Mit re-logged at 17:08): T59 11 min $5.40 · T56 12 min $4.64 · T58 15 min $9.44 · T57 26 min
+$15.31; 30 commits; merge of the four branches: 0 conflicts. Defects surviving four green reports: 3
+(a test racing an effect, 1-in-3 under load, fixed with `waitFor` and ×6 clean; a semicolon-joined
+location entry; a 12.5rem actions track). One finding (#7, CSP grain) was in no ticket.
+
+**Gates.** `web-audit` worktree: launch 1 exit 2 (generalization: `.invalid` addresses in two new
+tests); launch 2 killed stale; launch 3 **exit 0, 9,586 passed, 1 skipped, 4 xfailed, 7m37s**
+pytest. Vitest 122 (23 files). Merged to `main` `3df9ce1f`. CI on the docs push **FAILED**
+(D-485 quoted the refused address); reworded `e43b7caa` → CI **green** (run 33998072598).
+
+**Runs.** None; runs 6–8 remain scheduled 20:00 CDT. Nothing merged touches eligibility,
+`rules.yaml`, `engine_version` or `delivery/queue.py`.
