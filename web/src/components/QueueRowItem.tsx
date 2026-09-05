@@ -153,7 +153,17 @@ export function QueueRowItem({
   onSkip: () => void;
   onReport: () => void;
 }) {
+  /*
+   * `location` is the PRIMARY location and `locations` is the whole list, so the cell reads
+   * "Austin, TX +2" rather than a joined string that truncates into "Austin, TX; Hillsboro, O…".
+   * `?? []` because an older viewer omits the field entirely (see `lib/format`'s header).
+   */
+  const locations = row.locations ?? [];
   const where = row.location ?? EM_DASH;
+  const alsoWhere = locations.length - 1;
+  // The tooltip is the ONLY place the reader can recover a truncated list, so it carries all of
+  // them whenever there is more than one and the primary alone otherwise.
+  const whereTitle = locations.length > 1 ? locations.join(", ") : where;
   const named = `${row.title} at ${row.company}`;
   return (
     <div
@@ -205,7 +215,10 @@ export function QueueRowItem({
                 width where it becomes one, so a fact is never shown twice and never lost. */}
             <span className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3 @min-[78rem]:hidden">
               <span className="tabular-nums @min-[78rem]:hidden">#{rank}</span>
-              <span className="@min-[52rem]:hidden">{where}</span>
+              <span className="@min-[52rem]:hidden" title={whereTitle}>
+                {where}
+                {alsoWhere > 0 ? ` +${String(alsoWhere)}` : ""}
+              </span>
               <span className="@min-[52rem]:hidden">{row.remote_policy ?? EM_DASH}</span>
               <span className="tabular-nums @min-[40rem]:hidden">{formatScore(row.score)}</span>
               <span className="tabular-nums @min-[78rem]:hidden">{formatAge(row.posted_days)}</span>
@@ -219,8 +232,11 @@ export function QueueRowItem({
           </div>
 
           <div role="gridcell" className={`${MIDDLE_UP} min-w-0 leading-tight`}>
-            <span className="block truncate text-sm text-fg-2" title={where}>
+            <span className="block truncate text-sm text-fg-2" title={whereTitle}>
               {where}
+              {alsoWhere > 0 ? (
+                <span className="ml-1 text-fg-3">{`+${String(alsoWhere)}`}</span>
+              ) : null}
             </span>
             <span className="block truncate text-xs text-fg-3">
               {row.remote_policy ?? EM_DASH}

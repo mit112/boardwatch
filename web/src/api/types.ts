@@ -69,7 +69,16 @@ export interface QueueRow {
   job_id: number;
   title: string;
   company: string;
+  /** The PRIMARY location: the first entry of `locations`, or `null` when the list is empty. */
   location: string | null;
+  /**
+   * Every location the posting lists, de-duplicated case-insensitively with the whitespace
+   * trimmed, in the board's original order; `[]` when it names none. This is the same list the
+   * store-level row carries, NOT a re-split of the joined `location` string above — a separator
+   * that appears inside a location ("Washington, D.C.") makes the two answers differ, and only
+   * one of them is what the board actually published.
+   */
+  locations: string[];
   remote_policy: string | null;
   /** From the nullable `postings.posted_at`. `null` renders as an em dash, NEVER as `0d`. */
   posted_days: number | null;

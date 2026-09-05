@@ -252,10 +252,15 @@ export function DetailPane({
           {/* THE DOMINANT CELL. Everything needed to decide, before any prose. */}
           <section className="rounded-md border border-divider bg-surface-2 shadow-[0_16px_40px_-24px_rgb(0_0_0/0.9)] p-4">
             <h2 className="text-lg leading-snug text-fg">{row.title}</h2>
-            <p className="mt-0.5 text-sm text-fg-2">
-              {row.company}
-              {row.location === null ? "" : ` · ${row.location}`}
-            </p>
+            <p className="mt-0.5 text-sm text-fg-2">{row.company}</p>
+            {/* Every location, comma-separated. The row can only afford the primary and a `+N`,
+                so the pane is where the rest of the list has to be readable — and `?? []` for the
+                usual reason: an older viewer omits the field (see `lib/format`'s header). */}
+            {(row.locations ?? []).length > 0 ? (
+              <p className="mt-0.5 text-sm text-fg-2">{(row.locations ?? []).join(", ")}</p>
+            ) : row.location === null ? null : (
+              <p className="mt-0.5 text-sm text-fg-2">{row.location}</p>
+            )}
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
               <Fact label="remote policy" value={row.remote_policy ?? EM_DASH} />

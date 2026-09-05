@@ -24,6 +24,9 @@ export function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     title: `Software Engineer ${String(id)}`,
     company: `Example Company ${String(id)}`,
     location: "Remote",
+    // `[]`, deliberately: an older server sends no `locations` at all, so the default row is the
+    // one that has to render without a `+N` rather than the one that exercises it.
+    locations: [],
     remote_policy: "remote",
     posted_days: 3,
     first_seen: "2026-08-20T12:00:00Z",
