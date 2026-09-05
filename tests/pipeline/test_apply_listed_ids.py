@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import insert, select
 
-from boardwatch.core.models import BoardSnapshot, RawPosting
+from boardwatch.core.models import BoardSnapshot, RawPosting, ResponseValidators
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
@@ -136,3 +136,89 @@ def test_partial_snapshot_resets_listed_skipped_miss_counter(tmp_path: Path) -> 
     # Scan 4 (complete): A omitted again. If scan 3 had NOT reset, A would hit 2 misses and close.
     apply_board(engine, _complete(url, [], frozenset({"B"})), company_id, insert_run(engine))
     assert _open_ids(engine, company_id) == {"A", "B"}  # A survived (reset made it 1 miss, not 2)
+
+
+def _validators(engine, url: str):
+    with engine.connect() as conn:
+        return conn.execute(
+            select(tables.http_cache.c.etag).where(tables.http_cache.c.url == url)
+        ).all()
+
+
+def test_two_empty_complete_snapshots_do_not_close_a_whole_board(tmp_path: Path) -> None:
+    """T15. `CLOSE_AFTER_MISSES` is 2, so two consecutive `200 {"jobs": []}` answers closed an
+    entire board's inventory. The two commonest causes of that answer are not closure at all: a
+    provider serving an empty list while degraded, and a tenant renaming its board so the old
+    slug still resolves and returns nothing. Either way boardwatch deleted a live board from
+    its own corpus on the strength of two empty responses.
+
+    ZERO ONLY, never a ratio: a ratio guard on a legitimately shrinking board is a quarantine
+    with no drain, because the board never rises back above the ratio. This guard drains itself
+    — see the control below, where one listed posting restores normal miss counting at once.
+    """
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    company_id = _insert_company(engine)
+    url = "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100&offset=0"
+    apply_board(
+        engine,
+        _complete(url, [_posting("A"), _posting("B"), _posting("C")], frozenset({"A", "B", "C"})),
+        company_id,
+        insert_run(engine),
+    )
+    assert _open_ids(engine, company_id) == {"A", "B", "C"}
+
+    empty = BoardSnapshot(
+        status="complete", postings=[], url=url,
+        observed_validators=ResponseValidators(etag="W/\"empty\"", last_modified=None),
+        error=None, listed_ids=frozenset(),
+    )
+    first = apply_board(engine, empty, company_id, insert_run(engine))
+    second = apply_board(engine, empty, company_id, insert_run(engine))
+
+    assert _open_ids(engine, company_id) == {"A", "B", "C"}, "an empty answer closed the board"
+    assert (first.closed, second.closed) == (0, 0)
+    assert first.empty_complete_guarded and second.empty_complete_guarded
+    # No miss counted at all — not merely "not closed yet". A counter left walking upward would
+    # close the board on the first non-guarded scan that happened to miss one posting.
+    with engine.connect() as conn:
+        misses = conn.execute(
+            select(tables.postings.c.consecutive_missing).where(
+                tables.postings.c.company_id == company_id
+            )
+        ).scalars().all()
+    assert set(misses) == {0}, misses
+    # The validator is NOT cached. Caching the ETag of an empty answer makes the next scan a
+    # 304, which is `unchanged`, which skips this board's inventory — the board would be frozen
+    # at empty for as long as the provider served the same validator.
+    assert _validators(engine, url) == []
+
+
+def test_a_complete_snapshot_that_lists_some_postings_still_counts_a_miss(tmp_path: Path) -> None:
+    """The control, and the drain. The guard is about ZERO, so a board that lists 2 of its 3
+    postings is ordinary evidence and the third counts a miss exactly as before."""
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    company_id = _insert_company(engine)
+    url = "https://api.smartrecruiters.com/v1/companies/acme/postings?limit=100&offset=0"
+    apply_board(
+        engine,
+        _complete(url, [_posting("A"), _posting("B"), _posting("C")], frozenset({"A", "B", "C"})),
+        company_id,
+        insert_run(engine),
+    )
+
+    partial_inventory = _complete(url, [_posting("A"), _posting("B")], frozenset({"A", "B"}))
+    result = apply_board(engine, partial_inventory, company_id, insert_run(engine))
+
+    assert result.empty_complete_guarded is False
+    with engine.connect() as conn:
+        misses = dict(
+            conn.execute(
+                select(
+                    tables.postings.c.provider_posting_id, tables.postings.c.consecutive_missing
+                ).where(tables.postings.c.company_id == company_id)
+            ).all()
+        )
+    assert misses["C"] == 1, misses
+    assert misses["A"] == 0 and misses["B"] == 0

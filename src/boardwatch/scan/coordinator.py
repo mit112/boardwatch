@@ -156,6 +156,11 @@ class ScanSummary:
     reopened: int = 0
     postings_seen: int = 0
     open_postings: int = 0
+    #: Boards whose `complete` snapshot listed ZERO postings while the board still held open
+    #: ones, so its closures were refused (`scan/apply._empty_complete_is_evidence_of_nothing`).
+    #: Slugs, not a count, because "which board" is the operator's first question and a bare
+    #: number cannot answer it.
+    empty_complete_guarded: list[str] = field(default_factory=list)
     # FETCH wall clock per provider (D-330). Keyed by `BoardRequest.provider`, so a provider
     # that contributed no work is absent rather than present at zero.
     fetch_cost: dict[str, ProviderFetchCost] = field(default_factory=dict)
@@ -414,6 +419,8 @@ def _scan_body(
                 summary.failed += 1
                 summary.errors.append(f"{row.slug}: apply failed: {exc!r}")
                 continue
+            if result.empty_complete_guarded:
+                summary.empty_complete_guarded.append(row.slug)
             summary.postings_seen += result.listed
             summary.new += result.new
             summary.closed += result.closed

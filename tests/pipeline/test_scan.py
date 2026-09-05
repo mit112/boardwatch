@@ -50,11 +50,12 @@ def _scan_rows(engine: Engine, company_id: int) -> list[Any]:
         )
 
 
-def _posting(engine: Engine, company_id: int) -> Any:
+def _posting(engine: Engine, company_id: int, pid: str | None = None) -> Any:
     with engine.connect() as conn:
-        return conn.execute(
-            select(tables.postings).where(tables.postings.c.company_id == company_id)
-        ).one()
+        stmt = select(tables.postings).where(tables.postings.c.company_id == company_id)
+        if pid is not None:
+            stmt = stmt.where(tables.postings.c.provider_posting_id == pid)
+        return conn.execute(stmt).one()
 
 
 def test_validator_round_trip_across_scans(
@@ -123,25 +124,30 @@ def test_d_company_filtered_scan_touches_only_that_board(
     acme_id = _add_company(engine, "acme", case.name)
     globex_id = _add_company(engine, "globex", case.name)
     settings = _settings(tmp_path)
+    tracked = case.jobs()[:1]
+    tracked_pid = str(tracked[0][case.id_key])
+    # Kept listed through scans 2-3 so the board is never a zero-listing `complete` snapshot —
+    # the empty-complete guard (T15) refuses to count a miss for a board it believes is empty.
+    other = case.jobs()[1:2]
     with respx.mock:  # scan 1: one posting on each board
-        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.wrap(case.jobs()[:1])))
-        respx.get(globex_url).mock(return_value=httpx.Response(200, content=case.wrap(case.jobs()[:1])))
+        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.wrap(tracked)))
+        respx.get(globex_url).mock(return_value=httpx.Response(200, content=case.wrap(tracked)))
         run_scan(engine, settings)
-    with respx.mock:  # scan 2: both boards empty -> both postings at miss 1
-        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.empty_body()))
-        respx.get(globex_url).mock(return_value=httpx.Response(200, content=case.empty_body()))
+    with respx.mock:  # scan 2: both boards list a DIFFERENT posting -> tracked posting miss 1
+        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.wrap(other)))
+        respx.get(globex_url).mock(return_value=httpx.Response(200, content=case.wrap(other)))
         run_scan(engine, settings)
-    assert _posting(engine, acme_id).consecutive_missing == 1
-    assert _posting(engine, globex_id).consecutive_missing == 1
+    assert _posting(engine, acme_id, tracked_pid).consecutive_missing == 1
+    assert _posting(engine, globex_id, tracked_pid).consecutive_missing == 1
 
     with respx.mock:  # scan 3: --company acme ONLY; globex route unmocked on purpose:
-        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.empty_body()))
+        respx.get(acme_url).mock(return_value=httpx.Response(200, content=case.wrap(other)))
         summary = run_scan(engine, settings, company="acme")
         # respx raises on any unmocked request, so touching globex fails loudly
 
     assert summary.companies == 1
-    assert _posting(engine, acme_id).status == "closed"
-    globex_posting = _posting(engine, globex_id)
+    assert _posting(engine, acme_id, tracked_pid).status == "closed"
+    globex_posting = _posting(engine, globex_id, tracked_pid)
     assert globex_posting.status == "open"  # no closure side effects on other boards
     assert globex_posting.consecutive_missing == 1  # no counter side effects either
     assert len(_scan_rows(engine, globex_id)) == 2  # no third scan row for globex

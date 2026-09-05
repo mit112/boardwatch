@@ -151,7 +151,10 @@ def test_top_excludes_closed_postings(
 ) -> None:
     ids = _seed_postings(engine, company_id, run_id)
     _seed_profile(engine, env / "cfg")
-    apply_board(engine, snapshot_for([]), company_id, run_id)  # miss 1 for both
+    # A third posting stays listed so this complete snapshot isn't zero-listing — the
+    # empty-complete guard (T15) would otherwise refuse to count a miss for 111/222 here.
+    other = gh_jobs()[2:3]
+    apply_board(engine, snapshot_for(other), company_id, run_id)  # miss 1 for both
     jobs = gh_jobs()[:1]
     strong = set_body(clone_with_id(jobs[0], 111), "<p>Python, Go, and PostgreSQL daily.</p>")
     strong["title"] = "Backend Engineer"
@@ -191,8 +194,12 @@ def test_show_closed_posting_banner_no_score_no_extraction(
 ) -> None:
     ids = _seed_postings(engine, company_id, run_id)
     _seed_profile(engine, env / "cfg")
-    apply_board(engine, snapshot_for([]), company_id, run_id)
-    apply_board(engine, snapshot_for([]), company_id, run_id)  # both closed
+    # 111 stays listed across both scans so the snapshot is never zero-listing — the
+    # empty-complete guard (T15) would otherwise refuse to count a miss for 222 here. 111 itself
+    # is not used by this test.
+    still_listed = clone_with_id(gh_jobs()[0], 111)
+    apply_board(engine, snapshot_for([still_listed]), company_id, run_id)
+    apply_board(engine, snapshot_for([still_listed]), company_id, run_id)  # 222 closes
 
     def forbidden(*args: object, **kwargs: object) -> None:
         raise AssertionError("preflight must not run for closed postings")

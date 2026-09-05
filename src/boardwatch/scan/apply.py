@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Engine, insert, select, update
+from sqlalchemy import Connection, Engine, func, insert, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
@@ -57,6 +57,10 @@ class ApplyResult:
     revised: int = 0
     reopened: int = 0
     closed: int = 0
+    #: A `complete` snapshot listing ZERO postings for a board that still holds open ones was
+    #: refused as evidence of closure (`_empty_complete_is_evidence_of_nothing`). Reported so
+    #: the guard is visible per board rather than being a silent no-op.
+    empty_complete_guarded: bool = False
 
 
 def apply_board(
@@ -94,10 +98,35 @@ def apply_board(
                 conn, snapshot.postings, snapshot.listed_ids, company_id
             )
         if snapshot.status == "complete":
-            result.closed = _process_missing(
-                conn, snapshot.postings, snapshot.listed_ids, company_id, run_id
-            )
-            _persist_validators(conn, snapshot)
+            if _empty_complete_is_evidence_of_nothing(conn, snapshot, company_id):
+                # A `complete` snapshot listing ZERO postings for a board that currently holds
+                # open ones. `CLOSE_AFTER_MISSES` is 2, so two of these in a row closed the whole
+                # board — and the two most common causes are not closure at all: a provider
+                # answering `200 {"jobs": []}` while it is degraded, and a tenant renaming its
+                # board so the old slug still resolves and returns nothing. Treated as UNCHANGED:
+                # no miss counted, so nothing walks toward closure on this evidence.
+                #
+                # ZERO ONLY, never a ratio, and that is the whole design. A ratio guard on a
+                # legitimately shrinking board is a quarantine with no drain — the board never
+                # comes back above the ratio, so its postings never close and nothing reopens
+                # them. This one drains itself: the moment the board lists ONE posting again,
+                # normal miss counting resumes on the very next scan.
+                #
+                # The validators are deliberately NOT persisted either. Caching the ETag of an
+                # empty answer makes the next scan a 304, which is `unchanged`, which skips this
+                # board's inventory entirely — the board would be frozen at empty for as long as
+                # the provider kept serving the same validator.
+                #
+                # KNOWN RESIDUAL: a small board that genuinely empties now never closes its
+                # postings in the store. The liveness probe withholds them at delivery, so the
+                # cost is store hygiene rather than a dead lead reaching the owner. The
+                # fleet-level guard in the runner took the same trade.
+                result.empty_complete_guarded = True
+            else:
+                result.closed = _process_missing(
+                    conn, snapshot.postings, snapshot.listed_ids, company_id, run_id
+                )
+                _persist_validators(conn, snapshot)
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
             len(snapshot.postings), snapshot.error, snapshot=snapshot, scan_kind=scan_kind,
@@ -460,6 +489,25 @@ def _reset_listed_but_unrefreshed(
         )
         .values(consecutive_missing=0)
     )
+
+
+def _empty_complete_is_evidence_of_nothing(
+    conn: Connection, snapshot: BoardSnapshot, company_id: int
+) -> bool:
+    """Is this a `complete` snapshot listing NOTHING for a board that still holds open postings?
+
+    `listed_ids` is consulted as well as `postings`: a multi-request provider fetches details
+    only for unseen postings, so an empty `postings` list with a non-empty `listed_ids` is a
+    board where every posting was already known — a normal, fully-listed board, not an empty one.
+    """
+    if snapshot.postings or snapshot.listed_ids:
+        return False
+    open_now = conn.execute(
+        select(func.count())
+        .select_from(postings)
+        .where(postings.c.company_id == company_id, postings.c.status == "open")
+    ).scalar_one()
+    return int(open_now) > 0
 
 
 def _process_missing(

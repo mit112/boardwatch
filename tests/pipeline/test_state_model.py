@@ -99,7 +99,10 @@ def test_b_partial_upserts_resets_and_never_closes(
 ) -> None:
     jobs = case.jobs()[:2]
     apply_board(engine, case.snapshot_for(jobs, validators=_validators(V1)), company_id, run_id)
-    apply_board(engine, case.snapshot_for([], status="complete"), company_id, run_id)  # both miss 1
+    # A different posting stays listed so this complete snapshot isn't zero-listing — the
+    # empty-complete guard (T15) would otherwise refuse to count a miss for either job here.
+    other = case.jobs()[2:3]
+    apply_board(engine, case.snapshot_for(other, status="complete"), company_id, run_id)  # both miss 1
     assert _posting_by_pid(engine, str(jobs[0][case.id_key])).consecutive_missing == 1
     before_cache = _dump(engine, tables.http_cache)
 

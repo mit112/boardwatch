@@ -32,6 +32,14 @@ def scan(
         f"complete {summary.complete} · partial {summary.partial} · failed {summary.failed} · "
         f"unchanged {summary.unchanged} · {summary.open_postings} open postings"
     )
+    if summary.empty_complete_guarded:
+        # Named, not counted: an operator seeing this needs to know WHICH board answered empty,
+        # because the two causes — a degraded provider and a renamed slug — are told apart by
+        # looking at that board.
+        line += (
+            f" · {len(summary.empty_complete_guarded)} empty-complete guarded "
+            f"({', '.join(sorted(summary.empty_complete_guarded))})"
+        )
     matches = count_filter_matches(app_ctx.engine, app_ctx.settings)
     if matches is not None:
         # "ranking filters", not "your filters": this count comes from the ranker and would
