@@ -558,7 +558,21 @@ def rank_open_postings(
             hard_filter=veto.clause if veto is not None else None,
             hard_filter_reason=veto.detail if veto is not None else "",
         ))
-    scored.sort(key=lambda r: r.score.total, reverse=True)
+    # Score alone used to be the whole key, so a decided lead could rank below one nobody
+    # has judged yet. Tier first, score second (D-477): tier 0 is a DECIDED `eligible` — the
+    # deterministic verdict on the row, or a persisted final-gate `eligible` read the same
+    # way the ineligible hide below reads `gate_verdicts`; tier 1 is `uncertain` + role
+    # `swe`, the release population everything else is drawn from; tier 2 is everything
+    # else still visible (uncertain non-swe, unevaluated, ...). Score still orders WITHIN a
+    # tier — this re-orders tiers, it does not re-weigh the score.
+    def _rank_tier(posting: RankedPosting) -> int:
+        if posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible":
+            return 0
+        if posting.verdict == "uncertain" and posting.role == "swe":
+            return 1
+        return 2
+
+    scored.sort(key=lambda r: (_rank_tier(r), -r.score.total))
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
     # rows instead of losing an eligible posting that ranks just below an ineligible one. An
     # unevaluated posting (verdict None) is never hidden (D-P2-10). The hidden count spans the
