@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The review page now carries the fixes from the 2026-09-05 audit.** Every timestamp the
+  page shows is in your local zone (the API serialises UTC with an explicit offset, where before a
+  zone-less string was read as local time). Undo after *Mark applied* now withdraws the application
+  through the existing `unapplied` route instead of only restoring the row. The Runs page prints a
+  fatal run's reason, the final-gate judge readout (judged, eligible, ineligible, uncertain, failed
+  open), per-stage timings and the lane block, folds each stage's long note behind a disclosure, and
+  links a run's leads to the queue. The queue page opens the review lane automatically when the
+  apply lane is empty, counts both lanes in its readout, generates the lane's explanation from the
+  actual reason counts, offers a per-reason filter row, adds a `closed` cell, keeps the open lead and
+  a run filter in the URL (`#/queue?run=5&lead=61310`) and the rest of your working state across
+  tab switches, and captures a token pasted into an already-open tab. Rows show a primary location
+  plus a count (with semicolon-joined lists split), two-decimal scores with the ranker's own
+  explanation as the tooltip, a middle column tier so the list keeps its columns beside the detail
+  pane at 1440px, and the full eight columns beside it on a 2560px display. The detail pane puts
+  the description above the answers, folds unset answers, says each fact once, gates the Reveal
+  button on the platform, and the answers panel renders work-authorisation status as words. The
+  page also stops logging a CSP violation and a favicon 404 on every load.
+
 - **Each queue folder's `details.json` now records why the review lane holds the lead.** A new
   `review_reason` key carries the same decision that chose the folder, `null` in the apply lane,
   so a run's review composition can be read from the queue tree. `details.json`'s `schema` is now
