@@ -19,6 +19,7 @@ import type {
   QueueRow,
   ReviewReason,
 } from "../api/types";
+import { TOKEN_EVENT } from "../api/token";
 import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -218,11 +219,31 @@ export function QueuePage({
     setRemoved(new Map());
   }, []);
 
+  /*
+   * Bumped when a credential is captured after load — the CLI's URL pasted into this open tab
+   * (`api/token.ts`). The load below is keyed on it, so the page that is currently showing "Not
+   * authorised. Re-open the URL the CLI printed" retries with the new bearer instead of asking
+   * the reader to do again what they just did.
+   */
+  const [tokenNonce, setTokenNonce] = useState(0);
+  useEffect(() => {
+    const onToken = () => {
+      setTokenNonce((current) => current + 1);
+    };
+    window.addEventListener(TOKEN_EVENT, onToken);
+    return () => {
+      window.removeEventListener(TOKEN_EVENT, onToken);
+    };
+  }, []);
+
   useEffect(() => {
     let live = true;
     void getQueue()
       .then((response) => {
-        if (live) adopt(response);
+        if (!live) return;
+        // Cleared on success, not only set on failure: a retry that works must take the card down.
+        setLoadError(null);
+        adopt(response);
       })
       .catch((caught: unknown) => {
         if (live) setLoadError(errorMessage(caught, "Could not load the queue."));
@@ -230,7 +251,7 @@ export function QueuePage({
     return () => {
       live = false;
     };
-  }, [adopt]);
+  }, [adopt, tokenNonce]);
 
   /*
    * A background refresh NEVER re-orders the list or moves a row under the pointer. It stashes the

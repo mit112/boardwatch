@@ -30,11 +30,10 @@ beforeEach(() => {
 describe("captureToken", () => {
   it("reads a bare `#<token>` fragment and sends it as a Bearer header", async () => {
     window.location.hash = "#abc123";
-    const { captureToken, hasToken, authHeaders } = await freshToken();
+    const { captureToken, authHeaders } = await freshToken();
 
     captureToken();
 
-    expect(hasToken()).toBe(true);
     expect(authHeaders()).toEqual({ Authorization: "Bearer abc123" });
   });
 
@@ -73,13 +72,12 @@ describe("captureToken", () => {
     "treats a route fragment %s as a route, never as a token",
     async (route) => {
       window.location.hash = route;
-      const { captureToken, hasToken, authHeaders } = await freshToken();
+      const { captureToken, authHeaders } = await freshToken();
 
       captureToken();
 
       // A fragment beginning with `/` is the router's, so nothing is captured and no
       // `Authorization: Bearer /queue` is ever assembled from a route the user navigated to.
-      expect(hasToken()).toBe(false);
       expect(authHeaders()).toEqual({});
       // And because nothing was captured, the route the reader is on is left untouched.
       expect(window.location.hash).toBe(route);
@@ -88,11 +86,10 @@ describe("captureToken", () => {
 
   it("captures nothing from an empty fragment", async () => {
     window.location.hash = "";
-    const { captureToken, hasToken, authHeaders } = await freshToken();
+    const { captureToken, authHeaders } = await freshToken();
 
     captureToken();
 
-    expect(hasToken()).toBe(false);
     expect(authHeaders()).toEqual({});
   });
 });
@@ -103,11 +100,10 @@ describe("persistence — what makes the viewer's URL openable whenever", () => 
     // reload or a bookmark of `#/queue` arrives with no credential in the URL at all.
     window.localStorage.setItem("boardwatch.web-token", "stored-secret");
     window.location.hash = "#/queue";
-    const { captureToken, hasToken, authHeaders } = await freshToken();
+    const { captureToken, authHeaders } = await freshToken();
 
     captureToken();
 
-    expect(hasToken()).toBe(true);
     expect(authHeaders()).toEqual({ Authorization: "Bearer stored-secret" });
     // The route is still the reader's; restoring a credential must not navigate them.
     expect(window.location.hash).toBe("#/queue");
@@ -147,15 +143,14 @@ describe("persistence — what makes the viewer's URL openable whenever", () => 
 
   it("forgetToken drops the credential from memory AND from storage", async () => {
     window.location.hash = "#token=stale-secret";
-    const { captureToken, forgetToken, hasToken, authHeaders } = await freshToken();
+    const { captureToken, forgetToken, authHeaders } = await freshToken();
     captureToken();
-    expect(hasToken()).toBe(true);
+    expect(authHeaders()).toEqual({ Authorization: "Bearer stale-secret" });
 
     forgetToken();
 
     // Both halves matter: leaving it in storage would replay the rejected secret on every reload
     // and strand the reader, which is exactly what the 401 path calls this to prevent.
-    expect(hasToken()).toBe(false);
     expect(authHeaders()).toEqual({});
     expect(window.localStorage.getItem("boardwatch.web-token")).toBeNull();
   });
@@ -179,10 +174,10 @@ describe("persistence — what makes the viewer's URL openable whenever", () => 
 
   it("captures nothing when the fragment is empty and storage holds nothing", async () => {
     window.location.hash = "";
-    const { captureToken, hasToken } = await freshToken();
+    const { captureToken, authHeaders } = await freshToken();
 
     captureToken();
 
-    expect(hasToken()).toBe(false);
+    expect(authHeaders()).toEqual({});
   });
 });
