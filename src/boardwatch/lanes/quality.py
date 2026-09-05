@@ -20,6 +20,7 @@ matches unbounded.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 
@@ -242,7 +243,7 @@ def assess_body(html: str, *, title: str) -> tuple[str, BodyRejection | None]:
 # body is the fingerprint (`catalog_fingerprint`, which moves on any marker edit) keying the
 # corpus re-sweep, and the drain re-running this current detector against each held body.
 
-FOREIGN_BODY_CATALOG_VERSION = 2
+FOREIGN_BODY_CATALOG_VERSION = 3
 
 # Page furniture and derived labels that only an aggregator's own UI emits. Every member is
 # measured against the live corpus (2026-09-01), not imagined: the first five are jobright's
@@ -288,6 +289,75 @@ _FOREIGN_BODY_MARKERS: tuple[str, ...] = (
 # that fixture for a measured case.
 MIN_FOREIGN_MARKERS = 2
 
+# ---------------------------------------------------------------------------
+# T26(a): STRUCTURAL foreign-body classes. Unlike the phrase catalog above, these do not name
+# an aggregator's UI string — they name a SHAPE no employer JD ever takes. A body earning one of
+# these is condemned on its own; it is not weighed against MIN_FOREIGN_MARKERS.
+# ---------------------------------------------------------------------------
+#
+# machine-shaped: the body is data, not prose. Two blind gate judges (2026-09-04) found a lead
+# whose `jd_text` was 98KB of an ATS's page-config JSON. That exact body no longer exists in the
+# live store (the pre-reset corpus that held it was destroyed 2026-09-03 and rebuilt cold), so
+# the threshold below is set from the corpus that DOES exist, not tuned to catch a ghost.
+#
+# Measured against every current OPEN body in the live store (61,927 bodies, 2026-09-04): the
+# density of `{}[]":` characters has p50 0.0011, p99 0.0045, p99.9 0.0088, p99.99 0.0248, and a
+# MAXIMUM of 0.0495 — no real JD anywhere in the corpus reaches even a tenth of that ceiling
+# doubled. Zero bodies parse as JSON. The threshold below sits at more than 3x the observed
+# maximum, so it holds nothing today and is headroom against the next machine-shaped body, not a
+# discriminator tuned to the corpus.
+MACHINE_SHAPED_DENSITY_THRESHOLD = 0.15
+
+_MACHINE_SHAPED_MARKER = "structural:machine_shaped"
+
+# A second structural class ("chrome-only": `count_section_markers(text) == 0` and the body
+# clears `MIN_BODY_CHARS` — `meets_body_floor` inverted) was measured and NOT shipped. Over the
+# same 61,927-body corpus it holds 2,979 bodies (4.81%) — Palantir, Toyota, TransPerfect and
+# Veeva JDs among them, condemned only because they use heading vocabulary
+# (`"The Role"`, `"What We're About"`) or a non-English language outside `_SECTION_MARKERS`,
+# not because they are chrome. Per the stop condition this predicate was measured against
+# (>1% of open bodies), it is wrong to ship, and it is wrong to fix by widening
+# `_SECTION_MARKERS` to chase this corpus's phrasing — see the T26 session report.
+
+# Structural characters counted for the machine-shaped density check: JSON's own punctuation.
+_STRUCTURAL_CHARS = frozenset('{}[]":')
+
+
+def _structural_char_density(text: str) -> float:
+    if not text:
+        return 0.0
+    hits = sum(1 for ch in text if ch in _STRUCTURAL_CHARS)
+    return hits / len(text)
+
+
+def _parses_as_json(stripped_text: str) -> bool:
+    try:
+        json.loads(stripped_text)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _is_machine_shaped(text: str) -> bool:
+    """Data, not prose: valid JSON once stripped, or punctuation-dense past the measured
+    ceiling no real JD reaches (see `MACHINE_SHAPED_DENSITY_THRESHOLD` above)."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _parses_as_json(stripped):
+        return True
+    return _structural_char_density(text) >= MACHINE_SHAPED_DENSITY_THRESHOLD
+
+
+# The closed set of markers a structural (non-phrase) class may add to `foreign_body_markers`.
+# Each one condemns a body ALONE — unlike the phrase catalog, there is no two-marker floor,
+# because a structural class is not a short token a real JD could plausibly say once.
+_STRUCTURAL_MARKERS: tuple[str, ...] = (_MACHINE_SHAPED_MARKER,)
+
+
+def _structural_body_markers(text: str) -> tuple[str, ...]:
+    return (_MACHINE_SHAPED_MARKER,) if _is_machine_shaped(text) else ()
+
 
 class ForeignBodyText(ValueError):
     """A body that is not the employer's own text, raised at the site that detects it.
@@ -304,38 +374,57 @@ class ForeignBodyText(ValueError):
 
 
 def foreign_body_markers(text: str) -> tuple[str, ...]:
-    """The DISTINCT aggregator markers this body carries, sorted. Empty for employer text.
+    """The DISTINCT foreign-body markers this body carries: the phrase catalog PLUS any
+    structural class. Empty for employer text.
 
-    Substring rather than word-bounded, unlike the two catalogs above, and the reason is the
-    inverse of theirs: every member here is a multi-word phrase from a specific site's chrome,
-    so there is no short token for a longer word to swallow. Case- and whitespace-folded,
-    because the same phrase reaches us across a line break from one lane and inline from
-    another.
+    The phrase half is substring rather than word-bounded, unlike the two catalogs above, and
+    the reason is the inverse of theirs: every member here is a multi-word phrase from a
+    specific site's chrome, so there is no short token for a longer word to swallow. Case- and
+    whitespace-folded, because the same phrase reaches us across a line break from one lane and
+    inline from another. The structural half (`_structural_body_markers`) matches on SHAPE, not
+    text, so it is computed independently and appended rather than folded into the same scan.
     """
     folded = " ".join(_normalized(text).casefold().split())
-    return tuple(marker for marker in _FOREIGN_BODY_MARKERS if marker in folded)
+    catalog_hits = tuple(marker for marker in _FOREIGN_BODY_MARKERS if marker in folded)
+    return catalog_hits + _structural_body_markers(text)
 
 
 def catalog_fingerprint() -> str:
     """A digest of the catalog AND the threshold — the EXECUTABLE identity of this detector.
 
     `FOREIGN_BODY_CATALOG_VERSION` is a human-facing label and a human can forget to bump it.
-    This cannot be forgotten: it is computed from the markers themselves, so adding, removing or
-    editing one changes it whether or not anybody touched the version. `body_precondition_checks`
-    stores THIS, which is what makes a catalog edit re-check every stored body instead of leaving
-    them governed by the semantics of whatever catalog happened to run first.
+    This cannot be forgotten: it is computed from the markers AND the structural thresholds, so
+    editing either changes it whether or not anybody touched the version.
+    `body_precondition_checks` stores THIS, which is what makes a catalog edit re-check every
+    stored body instead of leaving them governed by the semantics of whatever detector happened
+    to run first.
     """
-    material = "\u0000".join((str(MIN_FOREIGN_MARKERS), *sorted(_FOREIGN_BODY_MARKERS)))
+    material = "\u0000".join(
+        (
+            str(MIN_FOREIGN_MARKERS),
+            *sorted(_FOREIGN_BODY_MARKERS),
+            *_STRUCTURAL_MARKERS,
+            str(MACHINE_SHAPED_DENSITY_THRESHOLD),
+        )
+    )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
 def is_employer_body(text: str) -> bool:
-    """Does this body satisfy the precondition — is it the employer's own text?"""
-    return len(foreign_body_markers(text)) < MIN_FOREIGN_MARKERS
+    """Does this body satisfy the precondition — is it the employer's own text?
+
+    A structural marker condemns a body alone; the phrase catalog still needs
+    `MIN_FOREIGN_MARKERS` of its own members before it does.
+    """
+    markers = foreign_body_markers(text)
+    if any(marker in _STRUCTURAL_MARKERS for marker in markers):
+        return False
+    return len(markers) < MIN_FOREIGN_MARKERS
 
 
 def require_employer_body(text: str) -> None:
     """Raise `ForeignBodyText` unless the body is the employer's own text."""
     markers = foreign_body_markers(text)
-    if len(markers) >= MIN_FOREIGN_MARKERS:
+    condemned = any(marker in _STRUCTURAL_MARKERS for marker in markers)
+    if condemned or len(markers) >= MIN_FOREIGN_MARKERS:
         raise ForeignBodyText(markers)
