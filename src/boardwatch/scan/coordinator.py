@@ -15,7 +15,7 @@ import socket
 import time
 from collections import defaultdict
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -170,14 +170,15 @@ class ScanSummary:
     run_id: int = 0
 
 
-def host_diverse(
+def host_queues(
     work: list[tuple[Any, Provider, BoardRequest]],
-) -> list[tuple[Any, Provider, BoardRequest]]:
-    """Reorder the boards so consecutive submissions target DIFFERENT hosts.
+) -> list[list[tuple[Any, Provider, BoardRequest]]]:
+    """Split the boards into ONE QUEUE PER HOST, deepest queue first.
 
     `Fetcher` serializes same-host requests for their full duration, so two boards on one host
     can never overlap however many workers are running. Every worker that picks up the second
-    one blocks doing nothing — it is not slow work, it is no work.
+    one blocks doing nothing — it is not slow work, it is no work. A host is therefore a serial
+    channel, and the only schedulable unit is "this host's next board".
 
     The stored order is company rowid, which is the order boards were ADDED, and boards are
     added in per-provider batches. Five of the six providers serve every board from a single
@@ -187,26 +188,18 @@ def host_diverse(
     so a `scan_workers = 4` pool starts with three workers idle and an eight-wide pool with
     seven.
 
-    Round-robin across hosts, largest bucket first. That both puts distinct hosts at the head
-    and spreads each shared-host provider as thinly as its bucket allows, which is the most
-    diversity any order can extract from this fleet.
-
     Grouping is by `politeness.host_key`, the same key the lock uses — never by provider name,
-    which would put Workday's 105 distinct hosts in one bucket and serialize what already runs
+    which would put Workday's 135 distinct hosts in one bucket and serialize what already runs
     in parallel.
 
-    Stable within a host, so a fleet whose hosts do not collide keeps its stored order and a
-    single-board scan is untouched.
+    Deepest queue first, because the deepest queue is the longest SERIAL chain and therefore the
+    run's critical path: run 3's ten smartrecruiters boards are 2,309 requests on one host, ≥ 38
+    minutes end to end at the 1.0 s pacing floor, so any slot they do not get is a slot the run
+    ends late by. `sorted` is stable, so equal-depth hosts keep their stored order and a fleet
+    with no host collision at all is untouched.
 
-    **A static order, and a heuristic — not a guarantee.** Once a worker finishes a fast board
-    it takes whatever is next in the queue, which may be a host that is still busy, while an
-    idle host waits further down. A host-aware ready queue — submit a host's next board only
-    when its previous future completes — would dominate any static order and is deliberately
-    not built here. The measured value of this change already prices that loss in: the model
-    it was sized against simulates the locks themselves, workers blocking included.
-
-    **The reorder cannot change what a completed run persists.** `known_posting_ids` and
-    `detail_budget` are built for every board before this runs; the return is a permutation, so
+    **The split cannot change what a completed run persists.** `known_posting_ids` and
+    `detail_budget` are built for every board before this runs; the queues partition the work, so
     the set of boards and their per-board closure sets are identical. Suppression is unaffected
     because `exact_quad` — the only suppressing kind — keys on `company_id`, and two boards are
     two `companies` rows, so no cross-host pair can ever collide. What DOES move is which
@@ -216,11 +209,48 @@ def host_diverse(
     buckets: dict[str, list[tuple[Any, Provider, BoardRequest]]] = defaultdict(list)
     for item in work:
         buckets[host_key(item[2].url)].append(item)
-    queues = sorted(buckets.values(), key=len, reverse=True)
-    ordered: list[tuple[Any, Provider, BoardRequest]] = []
-    for index in range(max((len(q) for q in queues), default=0)):
-        ordered.extend(queue[index] for queue in queues if index < len(queue))
-    return ordered
+    return sorted(buckets.values(), key=len, reverse=True)
+
+
+def take_ready(
+    queues: list[list[tuple[Any, Provider, BoardRequest]]],
+    busy: set[str],
+    slots: int,
+) -> list[tuple[Any, Provider, BoardRequest]]:
+    """Pop the next board off up to `slots` hosts that are not already in flight.
+
+    This is the whole of the host-aware ready queue (D-344 sized it and declined to build it;
+    T38 built it). The pool's queue is FIFO and unbounded, so submitting every board up front
+    made the SUBMISSION order the schedule: a round-robin gave each host one slot per round, and
+    on the live 288-board fleet a round is 131 hosts wide, so the deepest host's second board sat
+    behind 130 others and was not reached until ~72 minutes in. Its chain then ran alone past the
+    end of every other provider — 27.6 minutes of run 3 with one worker busy and seven idle. No
+    static order can fix that: pulling the chain forward instead parks workers on a host that is
+    already busy, which the calibrated model prices at 105.5 min against today's 95.0.
+
+    Submitting lazily makes the schedule a function of COMPLETIONS instead. A host's next board
+    is offered the moment its previous one finishes, so every chain starts at round 0 and runs
+    back to back, and `busy` guarantees a worker is never handed a board whose host is locked —
+    the blocking this module's ordering has always been trying to avoid, now by construction
+    rather than by heuristic. Same model, same fleet: 83.8 min.
+
+    Mutates both `queues` (pops the boards it hands out) and `busy` (adds the hosts it commits),
+    because the caller's next call must not re-offer either; the caller releases a host when its
+    future is collected. Deepest-queue-first is `host_queues`' order and is preserved by the
+    scan, which is what keeps the critical path from being starved by 130 singletons.
+    """
+    taken: list[tuple[Any, Provider, BoardRequest]] = []
+    for queue in queues:
+        if len(taken) >= slots:
+            break
+        if not queue:
+            continue
+        host = host_key(queue[0][2].url)
+        if host in busy:
+            continue
+        busy.add(host)
+        taken.append(queue.pop(0))
+    return taken
 
 
 def default_providers() -> dict[str, Provider]:
@@ -387,7 +417,9 @@ def _scan_body(
     # cancellation, so aborting out of the loop below left every QUEUED board still to be
     # fetched — under the scan lock, for as long as the rest of the fleet takes. On the live
     # 288-board fleet a Ctrl-C at board 3 meant waiting out 285 more, which is why an operator
-    # pressing it twice (and killing the process mid-write) was the realistic outcome.
+    # pressing it twice (and killing the process mid-write) was the realistic outcome. The
+    # ready queue below now caps the pool's backlog at `scan_workers`, so what this cancels is
+    # small — but it is still the difference between dropping the backlog and fetching it.
     #
     # `BaseException`, not `Exception`: a per-board `Exception` is caught inside the loop and
     # can never abort it, so the only things that reach here are `KeyboardInterrupt` and
@@ -396,54 +428,75 @@ def _scan_body(
     # would leak it. Only the queue is dropped.
     pool = ThreadPoolExecutor(max_workers=settings.scan_workers)
     try:
-        future_map = {
-            pool.submit(fetch_board_job, prov, fetcher, request): (row, request)
-            for row, prov, request in host_diverse(work)
-        }
-        for future in as_completed(future_map):
-            row, request = future_map[future]
-            try:
-                snapshot = future.result()
-            except Exception as exc:  # providers map failures themselves; belt-and-braces
-                snapshot = BoardSnapshot(
-                    status="failed", postings=[], url=request.url,
-                    observed_validators=None, error=f"unexpected worker error: {exc}",
+        queues = host_queues(work)
+        busy: set[str] = set()
+        future_map: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, str]] = {}
+
+        def _submit_ready() -> None:
+            for row, prov, request in take_ready(
+                queues, busy, settings.scan_workers - len(future_map)
+            ):
+                future_map[pool.submit(fetch_board_job, prov, fetcher, request)] = (
+                    row, request, host_key(request.url),
                 )
-            # Accounted BEFORE the apply, and outside its try: the fetch already cost the run
-            # its seconds whether or not the apply then succeeds, and attributing cost only to
-            # boards that applied cleanly would hide the expensive failures.
-            cost = summary.fetch_cost.setdefault(request.provider, ProviderFetchCost())
-            cost.boards += 1
-            if snapshot.fetch_seconds is None:
-                cost.untimed += 1
-            else:
-                cost.seconds += snapshot.fetch_seconds
-            try:
-                result = apply_board(engine, snapshot, row.id, active_run_id)
-            except Exception as exc:  # noqa: BLE001 - one board's apply must not abort the scan
-                # A single board's apply failing — a data quirk tripping a DB constraint, as a
-                # duplicate Workable shortcode did — must cost that board its reach and nothing
-                # else, the same isolation the fetch path above already gives and the "additive
-                # breadth never fails the run" rule the lanes follow. apply_board's transaction has
-                # rolled back, so no partial rows survive; the next board opens a fresh one.
-                summary.failed += 1
-                summary.errors.append(f"{row.slug}: apply failed: {exc!r}")
-                continue
-            if result.empty_complete_guarded:
-                summary.empty_complete_guarded.append(row.slug)
-            summary.postings_seen += result.listed
-            summary.new += result.new
-            summary.closed += result.closed
-            summary.reopened += result.reopened
-            if result.status == "complete":
-                summary.complete += 1
-            elif result.status == "partial":
-                summary.partial += 1
-            elif result.status == "unchanged":
-                summary.unchanged += 1
-            else:
-                summary.failed += 1
-                summary.errors.append(f"{row.slug}: {snapshot.error}")
+
+        # Never empty while work remains: a host is in `busy` only while one of its boards is in
+        # flight, so an empty `future_map` means an empty `busy`, which means every non-empty
+        # queue is offerable. That is what makes the loop below terminate having submitted each
+        # board exactly once, without a separate "anything left?" condition.
+        _submit_ready()
+        while future_map:
+            done, _ = wait(future_map.keys(), return_when=FIRST_COMPLETED)
+            for future in done:
+                row, request, host = future_map.pop(future)
+                # Released and refilled BEFORE the apply, which is serial and holds the writer:
+                # the pool used to carry the whole fleet as backlog, so a worker never idled
+                # while the coordinator wrote. Refilling only after the batch applied would hand
+                # that back and idle a worker for every apply.
+                busy.discard(host)
+                _submit_ready()
+                try:
+                    snapshot = future.result()
+                except Exception as exc:  # providers map failures themselves; belt-and-braces
+                    snapshot = BoardSnapshot(
+                        status="failed", postings=[], url=request.url,
+                        observed_validators=None, error=f"unexpected worker error: {exc}",
+                    )
+                # Accounted BEFORE the apply, and outside its try: the fetch already cost the run
+                # its seconds whether or not the apply then succeeds, and attributing cost only to
+                # boards that applied cleanly would hide the expensive failures.
+                cost = summary.fetch_cost.setdefault(request.provider, ProviderFetchCost())
+                cost.boards += 1
+                if snapshot.fetch_seconds is None:
+                    cost.untimed += 1
+                else:
+                    cost.seconds += snapshot.fetch_seconds
+                try:
+                    result = apply_board(engine, snapshot, row.id, active_run_id)
+                except Exception as exc:  # noqa: BLE001 - one board's apply must not abort the scan
+                    # A single board's apply failing — a data quirk tripping a DB constraint, as a
+                    # duplicate Workable shortcode did — must cost that board its reach and nothing
+                    # else, the same isolation the fetch path above already gives and the "additive
+                    # breadth never fails the run" rule the lanes follow. apply_board's transaction
+                    # has rolled back, so no partial rows survive; the next board opens a fresh one.
+                    summary.failed += 1
+                    summary.errors.append(f"{row.slug}: apply failed: {exc!r}")
+                    continue
+                if result.empty_complete_guarded:
+                    summary.empty_complete_guarded.append(row.slug)
+                summary.postings_seen += result.listed
+                summary.new += result.new
+                summary.closed += result.closed
+                summary.reopened += result.reopened
+                if result.status == "complete":
+                    summary.complete += 1
+                elif result.status == "partial":
+                    summary.partial += 1
+                elif result.status == "unchanged":
+                    summary.unchanged += 1
+                else:
+                    summary.failed += 1
+                    summary.errors.append(f"{row.slug}: {snapshot.error}")
     except BaseException:
         pool.shutdown(wait=True, cancel_futures=True)
         raise

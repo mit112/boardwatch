@@ -302,6 +302,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The board scan no longer ends with one host running alone.** Boards were all handed to the
+  worker pool up front, so the submission order *was* the schedule — and that order gave every host
+  one slot per round. A round is as wide as the fleet has hosts (131 of them), so a host with ten
+  boards did not reach its second until ~72 minutes into the scan, and its chain then ran on past
+  the end of every other provider: 27.6 minutes of the last run with one worker busy and seven
+  idle, 47.9 minutes of the run before it.
+
+  The scan now submits a host's next board when its previous one completes, and never hands a
+  worker a board whose host is already busy. A deep host's chain therefore starts immediately and
+  runs back to back — measured on the live 287-board fleet, the smartrecruiters boards move from
+  positions 3, 134, 147, 153 … to 3, 11, 19, 27 …, one every `scan_workers` boards. Against the
+  same calibrated model the previous ordering was sized on, the run's board scan goes from 95.0 to
+  83.8 simulated minutes at 8 workers.
+
+  Pulling the chain forward *without* the busy-host rule is worse than doing nothing — it parks
+  workers on a locked host, and the same model prices it at 105.5 minutes. Nothing about a
+  completed run changes: the same boards are fetched with the same budgets, and only the order they
+  are applied in moves, so an interrupted run leaves a different (still individually correct)
+  subset applied.
+
 - **The project pins CPython 3.13, and two tests no longer depend on the machine they run on.**
   `.python-version` now says 3.13, so `uv` builds every environment on the interpreter the suite
   is run against. The test that proves grounding fails closed on a parser recursion error, and the
