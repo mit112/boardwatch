@@ -2104,6 +2104,18 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             "*Throughput, not a funnel edge: an unchanged board lists nothing, so this is a "
             "different population from the corpus below.*"
         )
+        if funnel.scan.empty_complete_guarded:
+            # The operator follows the run log's link to THIS file, so the JSON key alone would
+            # leave the guard invisible on the surface the log actually points at. Named, not
+            # counted, for the same reason the JSON and the run log name them.
+            lines.append(
+                f"**{len(funnel.scan.empty_complete_guarded)} board(s) answered `complete` with "
+                "ZERO postings while still holding open ones, and were treated as `unchanged` "
+                "rather than closed: "
+                f"{', '.join(sorted(funnel.scan.empty_complete_guarded))}.** *Counted inside "
+                "`complete` above — the guard refuses the closure, not the scan.*"
+            )
+            lines.append("")
         lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")

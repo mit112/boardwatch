@@ -180,6 +180,35 @@ def test_boards_on_one_host_keep_their_relative_order() -> None:
     assert [row for row, _, _ in host_queues(work)[0]] == [0, 1, 2, 3]
 
 
+def test_a_hosts_boards_are_DISPATCHED_in_their_stored_order_not_just_QUEUED_in_it() -> None:  # noqa: N802
+    """The one above asserts what `host_queues` BUILDS; this asserts what `take_ready` HANDS OUT.
+
+    They are not the same claim, and only this one is load-bearing. `take_ready` pops from a
+    queue, so the queue being in stored order says nothing about which END it is served from —
+    with the other tests alone, changing `queue.pop(0)` to `queue.pop()` leaves every one of them
+    green while the deepest chain runs newest-rowid-first. That silently breaks the "stable
+    within a host, so a scan stays comparable with the run before it" claim `host_queues`' own
+    docstring makes, and changes which subset an interrupted run leaves applied.
+
+    Drained the way `_scan_body` drains it: take, then release the host as its future completes.
+    """
+    work = _work(*[_SHARED.format(i) for i in range(4)])
+    queues = host_queues(work)
+    busy: set[str] = set()
+
+    dispatched: list[int] = []
+    while any(queues):
+        taken = take_ready(queues, busy, 8)
+        assert taken, "the drain stalled with boards still queued"
+        for row, _, request in taken:
+            dispatched.append(row)
+            busy.discard(host_key(request.url))  # the future completed
+
+    assert dispatched == [0, 1, 2, 3], (
+        f"one host's boards were dispatched as {dispatched}, not in their stored order"
+    )
+
+
 def test_take_ready_never_hands_out_more_than_the_free_slots() -> None:
     """`slots` is `scan_workers` minus what is already in flight. Overshooting would rebuild the
     unbounded backlog the ready queue exists to remove — and with it the Ctrl-C that has to wait

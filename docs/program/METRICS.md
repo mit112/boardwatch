@@ -12703,6 +12703,22 @@ Why, from run 3's own funnel rather than inferred:
 | smartrecruiters boards watched | 10 | **9** |
 | dominos open postings held | 800 | **800** — unwatched, NOT deleted |
 
+### T34 — read-only feasibility, and why its apparatus cannot work as specified
+
+| probe | value |
+|---|---|
+| `eligibility_evaluations` rows, `engine_kind='llm'` | **0** — D-461's 95 died with the reset |
+| deterministic rows, `1+d89b423701e5` (run 3) / `1+bf844e01ebcb` (run 2) | 83,308 / 61,927 |
+| `job_dispositions`, delivered leads | **80 of 80 `built`, `expires_at` NULL, `reopened_at` NULL** |
+| `m1_probe.py` null control | `control reproduces D-461: False` — the apparatus correctly refuses |
+| delivered queue by lane (`classify()` over `delivered_unapplied`) | **apply 5** (3 `eligible` + 2 `uncertain`), **review 75** (39 experience, 30 no-requirements, 6 role-unconfirmed) |
+| `build_gate_request` over the delivered ids, read-only | 80 leads → **80 items, 0 dropped**, 415,302 jd chars (D-461: 95 / 448,115) |
+
+The disjointness is the finding: `gate request` ranks with `include_handled=False`, and every
+delivered lead is permanently `built`, so the judged population and the delivered queue cannot
+intersect. The probe's null control checks the gate pass's own totals **before** the lane join, so
+it passes while that join is empty.
+
 ### Gates — each detached, each read from its own exit sentinel, never through `head`/`tail`
 
 | gate | result |

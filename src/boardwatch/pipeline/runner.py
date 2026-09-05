@@ -529,14 +529,22 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
       per request for a provider board (`Fetcher.get(headers=...)`), so a board that answers us
       honestly still gets the honest UA. D22 is unweakened; only the aggregator sees the
       browser UA, which is what D-369 bought it.
-    * PACING is weakened in one narrow way, and it is bounded rather than argued away: the two
-      instances keep separate per-host state, so the lane's first request to a provider host is
-      not spaced against the scan's last one. Nothing CONCURRENT results — `run()` runs the
-      scan stage, then the projection preflight, then this stage, strictly in that order, so
-      the two never have a request in flight at the same time. What remains is that one
-      boundary request can fall inside the >=1.0s window. Within the lane stage the contract
-      holds unchanged, because one `Fetcher` serves every lane and its per-host lock is held
-      for each request's full duration.
+    * PACING is weakened, and **SP2 widened that weakening from a boundary to a WINDOW**. The
+      two instances keep separate per-host state (`Fetcher._host_locks` and `_last_request_at`
+      are per instance), so the lane's requests are not spaced against the scan's at all. The
+      old bound here — "nothing CONCURRENT results, because `run()` runs the scan stage then
+      this one, strictly in that order" — **stopped being true when SP2 put the lane stage on a
+      background thread that overlaps the whole board scan**, and T37 keeps it that way
+      deliberately: the fetch overlap is the entire prize. So for any host BOTH reach, the two
+      per-host locks are independent and up to 2 req/s can go to that third party for the
+      lane stage's whole duration (run 3: ~352 s), not for one boundary request. The lane does
+      reach provider hosts — `lanes/hiringcafe.py` fetches a provider board directly, and
+      `lanes/grnh_seeds.py` and `lanes/jsonld.py` dereference ATS hosts.
+      **This is a live third-party pacing question and it is the OWNER'S** — it is recorded
+      rather than silently fixed, because the fix is either one shared `Fetcher` (which
+      re-serialises the lanes against the scan and gives back SP2's prize) or a cross-instance
+      per-host lock. Within the lane stage the contract holds unchanged, because one `Fetcher`
+      serves every lane and its per-host lock is held for each request's full duration.
     """
     return Fetcher(
         settings,
@@ -866,7 +874,7 @@ def _collect_lane(
     concurrency argument, `_apply_lane` owns the single-writer rule.
     """
     fetched = _fetch_lane(engine, settings, lane, fetcher)
-    # The single-lane seam drops the seed-refusal note: `_run_lanes` is the operator-visible path
+    # The single-lane seam drops the seed-refusal note: `_apply_lanes` is the operator-visible path
     # that surfaces it. This function stays `-> LaneReport` for its one-lane callers and the tests.
     report, _seed_refusal = _apply_lane(engine, lane, fetched, run_id)
     return report
@@ -876,7 +884,7 @@ def _collect_lane(
 class _FetchedLane:
     """One lane's network half, carried from the fetch phase to the serial apply phase.
 
-    A frozen carrier rather than a tuple because `_run_lanes` holds one per lane across a thread
+    A frozen carrier rather than a tuple because `_fetch_lanes` holds one per lane across a thread
     boundary and the apply half reads all three fields; a positional tuple there is the shape
     that silently transposes `budget` and `result` on the next edit.
     """
@@ -904,7 +912,7 @@ def _fetch_lane(
 ) -> _FetchedLane:
     """A lane's PACED NETWORK half — everything before the first write. Runs off the main thread.
 
-    Split from the apply half so `_run_lanes` can overlap lanes on DIFFERENT hosts while
+    Split from the apply half so `_fetch_lanes` can overlap lanes on DIFFERENT hosts while
     `apply_board`, the pipeline's single writer, stays serial. Safe to run concurrently for two
     reasons that are properties of code this function does not own, so both are stated here:
 
@@ -960,9 +968,9 @@ class _LaneApplyFailed(Exception):
         self.cause = cause
         # The unroutable-seed refusal note `_persist_seed_work` RETURNED even though the apply
         # failed. Carried here because the failed apply raises before `_apply_lane` can return it,
-        # and `_run_lanes` appends a returned note only on a clean apply -- so without this a drain
-        # goes quiet about its refusals exactly on the runs already in trouble. None when the seed
-        # persistence itself also failed (it returns nothing then) or when there was no refusal.
+        # and `_apply_lanes` appends a returned note only on a clean apply -- so without this a
+        # drain goes quiet about its refusals exactly on the runs already in trouble. None when
+        # the seed persistence itself also failed (it returns nothing) or when there was no refusal.
         self.seed_refusal = seed_refusal
 
 
@@ -989,7 +997,7 @@ def _apply_lane(
     lanes applying concurrently would put two writers on one SQLite store.
 
     Returns the lane's report AND the seed-refusal note from `_persist_seed_work` (or `None`), so
-    `_run_lanes` can put the refusal in its RETURNED errors. The note is RETURNED on a clean apply
+    `_apply_lanes` can put the refusal in its RETURNED errors. The note is RETURNED on a clean apply
     and carried on `_LaneApplyFailed` when the apply raises below, so the refusal survives and is
     surfaced either way.
     """
@@ -1025,8 +1033,8 @@ def _apply_lane(
         # raised, so it returned nothing.
         raise _LaneApplyFailed(apply_error) from persist_exc
     # Apply failed but the seed drain SUCCEEDED, so it may have RETURNED a refusal note. Carry it on
-    # the exception -- `_run_lanes` cannot reach the normal-return path that would otherwise append
-    # it, and a refused seed is still a real lane defect on a failed-apply run.
+    # the exception -- `_apply_lanes` cannot reach the normal-return path that would otherwise
+    # append it, and a refused seed is still a real lane defect on a failed-apply run.
     if apply_error is not None:
         raise _LaneApplyFailed(apply_error, seed_refusal=seed_refusal) from apply_error
 
@@ -1108,7 +1116,7 @@ def _persist_seed_work(
 
     **Returns a one-line refusal note** when any discovered seed URL was not safely seedable, else
     `None`. It is RETURNED, not written to `runs.errors_json` here, so the caller can thread it to
-    `_run_lanes`' returned errors -- the path an operator actually reads (see the block comment at
+    `_apply_lanes`' returned errors -- the path an operator actually reads (see the block comment at
     the return, and `_resolver_error_note` for the same pattern).
 
     **IT RUNS EVEN WHEN THE APPLY FAILED, AND THAT IS THE WHOLE POINT.** Before this, the
@@ -1139,7 +1147,7 @@ def _persist_seed_work(
     charging a resolved-but-unapplied seed means a DETERMINISTIC per-company apply failure would
     re-fetch that company's seeds every run. That is acceptable ONLY because it is LOUD: the apply
     exception propagates from `_apply_lane` (which re-raises it as the primary cause) to
-    `_run_lanes`, which reports it every such run. This is a VISIBLE retry chosen over silently
+    `_apply_lanes`, which reports it every such run. This is a VISIBLE retry chosen over silently
     aging a real posting out of the queue. If that report ever stops firing, this trade is a leak.
 
     The attempts are charged BEFORE the discoveries are recorded, and the order is deliberate:
@@ -1184,7 +1192,7 @@ def _persist_seed_work(
     # RETURNED, not written to `runs.errors_json` here — mirroring the resolver-crash path
     # (`_resolver_error_note`), whose direct `append_run_error` was removed because no operator
     # surface queries that column, so a refusal was durable and INVISIBLE at once. `_apply_lane`
-    # threads this up to `_run_lanes`, which appends it to its RETURNED errors — reaching
+    # threads this up to `_apply_lanes`, which appends it to its RETURNED errors — reaching
     # `summary.errors` (the morning digest, the console) and `runs.errors_json` (via `finish_run`),
     # recorded exactly once. A lane emitting URLs nothing can route is a real defect in that lane;
     # swallowing it would make the lane look like one that simply found nothing — the
@@ -1197,7 +1205,7 @@ def _persist_seed_work(
             f"{written.unroutable[0]!r}"
         )
     # `result.resolver_errors` is NOT persisted here either. It was, straight to `runs.errors_json`
-    # via `append_run_error` — but nothing an operator reads queries that column. `_run_lanes`
+    # via `append_run_error` — but nothing an operator reads queries that column. `_apply_lanes`
     # surfaces it through `_resolver_error_note` into its RETURNED errors instead. Writing it here
     # as well would double-record it.
     return None
@@ -1206,7 +1214,7 @@ def _persist_seed_work(
 def _resolver_error_note(lane_name: str, result: LaneResult) -> str | None:
     """The one visible line for a run in which a resolver crashed on a seed, or `None`.
 
-    Built from the returned `LaneResult` so `_run_lanes` can put it in its RETURNED errors — the
+    Built from the returned `LaneResult` so `_apply_lanes` can put it in its RETURNED errors — the
     list that becomes `summary.errors` (the morning digest, the console) and `stage_errors`
     (`runs.errors_json`, via `finish_run`). `_persist_seed_work` used to write this straight to
     `errors_json`, where no operator surface ever read it; that direct write is gone, so the crash
@@ -1231,9 +1239,10 @@ def _refused_seed_note(lane_name: str, result: LaneResult) -> str | None:
     defect is invisible past the write path -- the absent-versus-zero confusion the acquisition
     tally exists to prevent. The ordinary "resolves to a known board / names no vendor" case is NOT
     carried in `refused_seeds`, so this never turns a quiet no-vendor day into noise. Built from the
-    returned `LaneResult` so `_run_lanes` can put it in its RETURNED errors -- the list that becomes
-    `summary.errors` and `runs.errors_json` (via `finish_run`) -- matching how a resolver crash and
-    a write-point refusal are each reported: one summary line names the count and the first.
+    returned `LaneResult` so `_apply_lanes` can put it in its RETURNED errors -- the list that
+    becomes `summary.errors` and `runs.errors_json` (via `finish_run`) -- matching how a resolver
+    crash and a write-point refusal are each reported: one summary line names the count and the
+    first.
     """
     if not result.refused_seeds:
         return None
@@ -1582,10 +1591,16 @@ def run_pipeline(
     # below at the point the lane stage has always sat: after the `--project` preflight, before
     # the death-probe sweep that depends on its sightings.
     #
-    # A run that returns BEFORE that join point (a systemic scan outage, or a refused `--project`
-    # preflight) never joins this thread at all — joining there would spend the wall clock this
-    # whole change exists to buy back. `daemon=True` is what makes that free: the thread outlives
-    # the function call rather than blocking the process on it.
+    # A run that returns BEFORE that join point never joins this thread at all. FOUR ways to get
+    # there, not the two originally named: a systemic scan outage; a refused `--project`
+    # preflight; `run_scan` itself RAISING after `on_run_started` already fired (its call sits
+    # outside the try below and `scan/coordinator.py` re-raises — a Ctrl-C during the ~107-minute
+    # scan is the realistic one); and any exception between the scan and the join reaching the
+    # `except BaseException` handler, which also re-raises. All four now land no lane rows, which
+    # is the chosen consequence below; only the outage case has a test. Joining at any of them
+    # would spend the wall clock this whole change exists to buy back. `daemon=True` is what
+    # makes not joining free: the thread outlives the function call rather than blocking the
+    # process on it.
     #
     # T37: the thread FETCHES ONLY, so what it outlives with is paced network work and no store
     # write at all — `_apply_lanes` runs at the join, on this thread. The stated consequence, and

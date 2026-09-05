@@ -25976,6 +25976,25 @@ instead of failing instantly. **Deliberately not shipped inside a bug fix**: it 
 locking discipline for every board and holds the write lock for a whole board apply, so it is Mit's
 call, not a reviewer's.
 
+**Choice 8 — T34's APPARATUS is broken independently of its missing input, and that is why it is
+respecified rather than merely carried.** Verified in the code and read-only in the store, not
+inferred. `gate request` builds its population from `rank_open_postings(..., record_surfaced=False)`,
+which leaves `include_handled=False`; `cli/top_cmd.py` skips any posting whose job carries a live
+disposition; and **all 80 delivered leads carry `built` permanently** (`job_dispositions` 80/80 with
+`expires_at` and `reopened_at` NULL, which `core/ledger.py` treats as live forever). **The judged
+population and `delivered_unapplied` are therefore disjoint by construction** — every gate row would
+land in the probe's "no longer in the queue" bucket. **And it fails SILENTLY**: `m1_probe.py`'s null
+control reproduces the gate pass's OWN totals, computed before the lane join, so it passes while the
+lane join is empty. That is the same shape as the two apparatus zeros this program has already paid
+for, and it was masked until now only because the store loss left the join with nothing on either
+side. `cli/top_cmd.py` additionally hides gate-`ineligible` before the limit, so even a non-empty
+intersection could contain no gate-`ineligible` row — the one thing M1 exists to count. **Rejected:
+running T34 as written after the tick** — it would have produced a confident zero with a passing
+control. The measurement is still reachable read-only, because `build_gate_request` is a pure
+function over anything carrying `.posting_id`: built over `delivered_unapplied()`'s ids on a
+`mode=ro` URI it yields 80 items, 0 dropped, 415,302 jd chars, against D-461's 95 / 448,115. `gate
+apply` is a policy action and is not part of the measurement.
+
 **Consequence, and what generalises.** *A plausible mechanism that matches the timing is still a
 hypothesis* — the starvation story fitted every timestamp in run 3 and was wrong, and only running
 it as an experiment separated it from the mechanism that actually fires in 0.0006 s. *When a fix is

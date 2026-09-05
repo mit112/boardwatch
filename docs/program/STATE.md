@@ -111,14 +111,33 @@ worktrees, `git push origin main`. **Without Mit: do not merge; do not move `mai
 mechanical: the tick runs the editable venv from `main`, and a stale stamp costs a ~107-min scan,
 a P5a refusal, exit 1 and a withheld heartbeat — a false alert for a condition we chose.
 
-**0-1. CARRIED — T34 (M1), NOT STARTED, AND DELIBERATELY.** `gate request` → two blind judges →
-`gate apply` → `.agent/2026-09-04e-session/m1_probe.py`, with the null control that the join
-reproduces the gate pass's own totals before the lane column is added. **It was not started
-because the gate pass is a WRITE path and the 04:00 tick was inside its window** — and T37's
-finding makes that sharper than it was: it takes ONE concurrent commit to kill a board mid-scan,
-so a CLI write during a run is no longer a theoretical risk. Run it with no run in flight and no
-tick due. **T35** (gate 1 re-measure, D-424) is gated on reaching 09-09;
-`.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
+**0-1. T34 (M1) IS RESPECIFIED — DO NOT RUN IT AS WRITTEN; ITS APPARATUS CANNOT WORK.** Verified
+read-only in the code and the store, not inferred: `gate request` builds its population from
+`rank_open_postings(..., record_surfaced=False)`, which leaves `include_handled=False`, and
+`cli/top_cmd.py` skips any posting whose job carries a live disposition. **All 80 delivered leads
+carry `built`, permanently** — `job_dispositions` is 80/80 with `expires_at` and `reopened_at`
+both NULL, and `core/ledger.py` calls that live forever. **So the judged population and
+`delivered_unapplied` are DISJOINT BY CONSTRUCTION**, and every gate row would land in the probe's
+"no longer in the queue" bucket. **It fails silently**: `m1_probe.py`'s null control checks only
+the gate pass's OWN totals, computed before the lane join, so it PASSES while the lane join is
+empty — the third apparatus zero of this kind in two sessions. `cli/top_cmd.py` also hides
+gate-`ineligible` before the limit, so even a non-empty intersection could hold no
+gate-`ineligible` row. There are **0 `llm` eligibility rows** in the store; D-461's 95 died with
+the reset.
+**The measurement is still reachable, and READ-ONLY.** `build_gate_request` is a pure function
+over anything carrying `.posting_id`, so build the request directly over `delivered_unapplied()`'s
+ids — never the `gate request` CLI, which is a write path AND the wrong population. Proven against
+the live store on a `mode=ro` URI: 80 leads → 80 items, 0 dropped, 415,302 jd chars, the same order
+as D-461's 95 items / 448,115. Precedent is in `METRICS.md` (the pre-reset lane-measured final
+gate: leads sampled from the apply lane, two blind judges, verdicts to files, **nothing applied**).
+Then: pin the posting-id set BEFORE judging (a two-arm read over a live store needs pinned ids);
+judge blind on `jd_text` + `facts`; assert every `ineligible` evidence string is a RAW substring of
+its own `jd_text`, because `accept_oracle_verdict` normalises and `record_gate_verdict`'s `span_of`
+does not — a normalised-only match silently downgrades to `uncertain`. `gate apply` is a POLICY
+action, not part of M1. Two probe fixes owed: its null control is hardcoded to D-461's totals and
+must be re-pinned per pass, and its gate-side join does not scope by `profile_hash`/`rules_hash`,
+which is wrong the moment a second pass exists. **T35** (gate 1 re-measure, D-424) is gated on
+reaching 09-09; `.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
 
 **0-2. T40 IS PROPOSED AND NOT BUILT — the same defect class, one process wider.** T37 removed the
 in-process second writer. It did NOT close the cross-process case: **every default-context CLI
@@ -190,6 +209,21 @@ alternative that actually bounds it.
   actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+**0-A. SP2 TOOK THE LANE STAGE'S THIRD-PARTY PACING FROM A BOUNDARY TO A WINDOW, AND IT IS LIVE
+NOW.** Found by review this session, verified in the code, **not introduced by anything shipped
+this session** — SP2 is already on `main` and has run in production twice. `Fetcher._host_locks`
+and `_last_request_at` are PER INSTANCE, and the lane stage runs its own `Fetcher` on a background
+thread that overlaps the whole board scan. So for any host BOTH reach, the two per-host locks are
+independent and up to **2 req/s** can go to that third party for the lane stage's entire duration
+(run 3: ~352 s) — not the "one boundary request" `_lane_fetcher`'s docstring claimed, which was
+true only while the stages were strictly sequential. The lane does reach provider hosts:
+`lanes/hiringcafe.py` fetches a provider board directly, and `lanes/grnh_seeds.py` and
+`lanes/jsonld.py` dereference ATS hosts. The docstring is corrected to state what is true; **the
+behaviour is deliberately NOT changed**, because both fixes are owner questions: one shared
+`Fetcher` re-serialises the lanes against the scan and hands back SP2's entire prize, and a
+cross-instance per-host lock is new machinery on the politeness path. **Mit's call, and it is a
+pacing promise to third parties, not a performance knob.**
 
 **0. WHETHER THE YEARS RULING PROPAGATES BEYOND THE GATE.** He ruled **"a stated bar is a bar"**
 on **28 final-gate verdicts over the delivered shortlist** (D-461). `near_miss_years_ceiling` in the
