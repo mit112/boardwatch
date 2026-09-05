@@ -228,6 +228,7 @@ export function DetailPane({
   }, [onClose]);
 
   const row = detail?.row ?? null;
+  const requirements = detail?.requirements ?? [];
   const pdfPath = pathFromFileUri(row?.pdf_uri ?? null);
   const folder = parentDirectory(pdfPath);
 
@@ -396,23 +397,20 @@ export function DetailPane({
 
           <section>
             <h3 className="mb-2 label-micro text-fg-3">requirements</h3>
-            <Requirements requirements={detail?.requirements ?? []} />
+            <Requirements requirements={requirements} />
           </section>
 
           <section>
             <h3 className="mb-2 label-micro text-fg-3">evidence</h3>
-            <Evidence requirements={detail?.requirements ?? []} />
+            <Evidence requirements={requirements} />
           </section>
 
-          <AnswersPanel
-            answers={answers}
-            onError={(message) => {
-              onToast(message, "error");
-            }}
-          />
-
-          {/* Secondary. Roughly a thousand words, so it is what you read AFTER deciding. Rendered
-              as plain text: this is third-party content and never becomes markup. */}
+          {/* Roughly a thousand words, so it is what you read AFTER deciding — but BEFORE the
+              answers panel, which is a clipboard tool rather than something to read. The
+              requirements block above tells the reader to "read the description below" whenever
+              nothing was extracted, and until this moved that instruction pointed past 779px of
+              mostly-unset identity fields. Rendered as plain text: this is third-party content
+              and never becomes markup. */}
           <section>
             <h3 className="mb-2 label-micro text-fg-3">
               job description
@@ -430,6 +428,19 @@ export function DetailPane({
               </div>
             )}
           </section>
+
+          {/* COLLAPSED when nothing was extracted, because there the requirements block's own
+              copy sends the reader to the description above — and this panel, expanded, measured
+              779px of a 2,050px pane on the live store, so it would sit between the instruction
+              and the thing it points at. Expanded otherwise: the owner opened the pane on
+              purpose. */}
+          <AnswersPanel
+            answers={answers}
+            defaultOpen={requirements.length > 0}
+            onError={(message) => {
+              onToast(message, "error");
+            }}
+          />
         </div>
       )}
     </aside>
