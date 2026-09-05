@@ -1416,3 +1416,33 @@ def test_a_missing_bundle_is_refused_with_a_named_error(
     )
     with pytest.raises(BundleMissingError):
         build_server(ctx=ctx, token="t", host="127.0.0.1", port=0)
+
+
+def test_an_unusable_profile_row_is_answered_not_dropped(
+    live: Live, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T7 follow-up, found by review. `answers.py` reads the stored facts to prefill the
+    work-authorisation answers, and T7 made that read RAISE on a malformed row instead of failing
+    closed to an empty model. `ProfileRowInvalid` is a plain `ValueError`, so it matched none of
+    the dispatcher's three handled types: it escaped to `ThreadingHTTPServer`'s default path,
+    which prints a traceback to stderr and DROPS THE CONNECTION without a response. The browser
+    then shows a bare network error for a condition that has a precise explanation.
+
+    Answered as 503 with the COLUMN named, and deliberately not degraded to an empty prefill —
+    that would hide a corrupt profile row behind a blank form field.
+    """
+    from boardwatch.eligibility.facts import ProfileRowInvalid
+
+    # A real profile row has to exist, or `_profile_work_auth` returns early and never parses.
+    with engine.begin() as conn:
+        _profile(conn)
+
+    def raiser(_raw: object) -> object:
+        raise ProfileRowInvalid("eligibility_facts_json", "stray: Extra inputs are not permitted")
+
+    monkeypatch.setattr("boardwatch.delivery.answers.parse_facts", raiser)
+
+    response = call(live, "/api/answers", bearer=live.token)
+
+    assert response.status == 503, response.body[:400]
+    assert b"eligibility_facts_json" in response.body

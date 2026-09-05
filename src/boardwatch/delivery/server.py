@@ -77,6 +77,7 @@ from boardwatch.delivery.api import (
     runs_payload,
 )
 from boardwatch.delivery.queue import reconcile_queue, sync_queue
+from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.store.applications import (
     MarkOutcome,
     MarkResult,
@@ -326,6 +327,17 @@ class ReviewHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             # `get_readonly_engine` refuses to invent a store it was asked only to read.
             self._error(HTTPStatus.SERVICE_UNAVAILABLE, "no store yet; run boardwatch first")
+        except ProfileRowInvalid as exc:
+            # T7 made the profile parsers RAISE rather than fail closed to an empty model, and
+            # `answers.py` reads them for the work-authorisation prefill. Answered here for the
+            # same reason the WAL check below is: an escaping exception resets the connection and
+            # the browser shows a bare network error, where this condition has a precise
+            # explanation the owner needs — WHICH column of their profile row is unreadable.
+            # Deliberately not degraded to an empty prefill: that would hide a corrupt row behind
+            # a blank form field.
+            self._error(
+                HTTPStatus.SERVICE_UNAVAILABLE, f"profile row unusable — {exc.column}: {exc.reason}"
+            )
         except WalUnsafeFilesystemError as exc:
             # The read-only opener KEEPS this check, so it fires per request rather than at
             # start-up. Answered rather than allowed to escape: an escaping exception resets the

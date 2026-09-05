@@ -284,7 +284,10 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
 def run_cmd(ctx: typer.Context) -> None:
     """Evaluate every open posting that has no current-version verdict yet."""
     app_ctx = build_context(ctx.obj)
-    stats = run_eligibility(app_ctx.engine, app_ctx.settings, console)
+    try:
+        stats = run_eligibility(app_ctx.engine, app_ctx.settings, console)
+    except ProfileRowInvalid as exc:
+        refuse_unusable_profile_row(exc)
     if stats.skipped_no_profile:
         console.print("no profile yet, run `boardwatch init` first")
         raise typer.Exit(code=1)

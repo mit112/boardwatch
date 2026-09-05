@@ -20,12 +20,14 @@ from rich.table import Table
 from sqlalchemy import Connection, Engine, select
 
 from boardwatch.cli._hints import print_next_step
+from boardwatch.cli._profile_row import refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression, resolve_duplicates
 from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
+from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
@@ -1176,6 +1178,12 @@ def top(
     except NoProfileError:
         output_console.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1) from None
+    except ProfileRowInvalid as exc:
+        # Beside NoProfileError because they are the same class of answer: the profile cannot
+        # be used. T7 made the parsers raise rather than fail closed, and without this the
+        # operator gets a pydantic traceback naming a line in a library instead of the column
+        # of their own profile row that needs editing.
+        refuse_unusable_profile_row(exc)
     if json_output:
         # Printed to stderr, BEFORE the JSON: a script whose ranked array came back empty would
         # otherwise get `[]` with no reason at all, which is indistinguishable from "no matches

@@ -440,3 +440,36 @@ def test_a_read_command_refuses_an_unusable_profile_row_by_name(env: Path) -> No
     assert result.exit_code == 1, result.output
     assert "eligibility_policy_json" in result.output
     assert "Traceback" not in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["top"],
+        ["export", "--format", "jsonl"],
+        ["eligibility", "run"],
+        ["stats"],
+    ],
+    ids=["top", "export", "eligibility-run", "stats"],
+)
+def test_every_command_that_reads_the_profile_refuses_an_unusable_row_cleanly(
+    env: Path, args: list[str]
+) -> None:
+    """T7 follow-up, found by review. `_profile_row.py`'s own docstring says the CLI's job is to
+    name the column and exit 1, because "a traceback names a line in pydantic, which is not the
+    thing the operator has to edit" — but four commands reached `run_eligibility` / `compute_stats`
+    with no handler at all, so they crashed with exactly that traceback. They are also the four an
+    operator runs most.
+
+    The run still REFUSED in every case, so the keystone was never at risk; what was wrong was
+    that the refusal was unreadable.
+    """
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    _corrupt_policy(env)
+
+    result = _run(env, args)
+
+    assert result.exit_code == 1, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    assert "eligibility_policy_json" in result.output
+    assert "Traceback" not in result.output

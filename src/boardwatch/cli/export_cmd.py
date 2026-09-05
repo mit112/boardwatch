@@ -18,7 +18,9 @@ from typing import IO, Annotated, Any
 import typer
 from rich.console import Console
 
+from boardwatch.cli._profile_row import refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
+from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.reports.export import export_rows, write_csv, write_jsonl
@@ -78,7 +80,10 @@ def export(
             f"{format_!r} is not a format. Choose jsonl or csv.", param_hint="--format"
         )
     app_ctx = build_context(ctx.obj)
-    stats = run_eligibility(app_ctx.engine, app_ctx.settings, console)
+    try:
+        stats = run_eligibility(app_ctx.engine, app_ctx.settings, console)
+    except ProfileRowInvalid as exc:
+        refuse_unusable_profile_row(exc)
     with app_ctx.engine.connect() as conn:
         # Verdict scope: every open posting plus every tracked posting, closed or not, so a
         # closed tracked row carries the identity it was computed under (A6).
