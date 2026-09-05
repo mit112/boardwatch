@@ -940,6 +940,35 @@ def _lane_company_cap(settings: Settings, lane_name: str) -> int | None:
     return None if override == "unlimited" else override
 
 
+# The override-table key that bounds a lane's TIER-1 admissions separately: `"<lane>.tier1"`.
+# The table's declared type is `dict[str, int | "unlimited"]`, so it carries this key and its
+# non-negative validator applies to it unchanged — which is why no new `Settings` field was
+# added. D-459 recorded the table as "keyed by LANE, not tier" and deferred the work for that
+# reason; a suffixed key is the smallest thing that makes the tier addressable without a second
+# knob to keep in sync with the first, and it keeps the two bounds of one lane side by side in
+# `config.toml` where an operator reads them together.
+_TIER1_KEY_SUFFIX = ".tier1"
+
+
+def _lane_tier1_budget(settings: Settings, lane_name: str) -> CompanyBudget | None:
+    """A SEPARATE budget for this lane's tier-1 admissions, or None when none is configured.
+
+    None — the shipped state, since no `"<lane>.tier1"` key ships — means tier 1 goes on charging
+    the lane's own cap exactly as it did before the tier existed, so an upgrade moves no tenant's
+    admissions. A key present means the tier is bounded independently: refuse tier 2 freely, admit
+    tier 1 under its own bound (D-452's recommended shape, D-459's deferred item).
+
+    `"unlimited"` becomes `CompanyBudget(None)` by the same translation `_lane_company_cap` makes
+    and for the same reason — an uncapped tier is still a budget that reports what it admitted.
+    """
+    override = settings.lane_new_companies_per_run_overrides.get(
+        f"{lane_name}{_TIER1_KEY_SUFFIX}"
+    )
+    if override is None:
+        return None
+    return CompanyBudget(None if override == "unlimited" else override)
+
+
 def _fetch_lane(
     engine: Engine, settings: Settings, lane: Lane, fetcher: Fetcher
 ) -> _FetchedLane:
@@ -972,13 +1001,15 @@ def _fetch_lane(
     concurrency those are SQLite READERS, which WAL permits alongside each other and alongside
     the single writer.
     """
-    budget = CompanyBudget(_lane_company_cap(settings, lane.name))
+    budget = CompanyBudget(
+        _lane_company_cap(settings, lane.name), tier1=_lane_tier1_budget(settings, lane.name)
+    )
 
-    def admits(provider: str, slug: str) -> bool:
+    def admits(provider: str, slug: str, *, tier1: bool = False) -> bool:
         with engine.connect() as conn:
             if company_exists(conn, provider=provider, slug=slug):
                 return True
-        return budget.admit(provider, slug)
+        return budget.admit(provider, slug, tier1=tier1)
 
     # `perf_counter` for the same reason `_StageClock` uses it: these are durations, and a
     # wall-clock subtraction is wrong across an NTP step.

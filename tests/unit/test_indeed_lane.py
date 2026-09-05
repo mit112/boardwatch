@@ -130,7 +130,9 @@ def _mock_one(hits: list[Hit], *, next_cursor: str | None = None) -> respx.Route
 
 
 def _collect(lane: IndeedLane, tmp_path: Path, admits: bool = True):
-    return lane.collect(_fetcher(tmp_path), lambda provider, slug: admits)
+    # `tier1` is accepted and ignored: this helper answers the same way for both tiers, so a test
+    # using it is asserting something other than the cap. The tier-aware cap has its own tests.
+    return lane.collect(_fetcher(tmp_path), lambda provider, slug, *, tier1=False: admits)
 
 
 # ---------------------------------------------------------------------------------------
@@ -445,6 +447,149 @@ def test_a_tier2_hit_lands_unwatched_after_the_lane_applies_end_to_end(tmp_path)
         total = len(conn.execute(select(tables.companies)).all())
     assert watched == []
     assert total == 2
+
+
+# ---------------------------------------------------------------------------------------
+# The TIER-AWARE admission cap (D-452, D-459).
+# ---------------------------------------------------------------------------------------
+#
+# The lane's binder is the per-run NEW-company cap, not any request budget: at the cap the lane
+# `continue`s over a refused company's whole hit list, and 24-51% of every fetched hit set is
+# discarded that way. Tier 1 and tier 2 are opposite in kind and the cap could not tell them
+# apart. A tier-2 refusal costs a permanently-secondhand `indeed`-keyed row nothing recurring; a
+# tier-1 refusal turns away a SUPPORTED employer board that would join the scan fleet and carry
+# that employer's whole board on every later run. So tier 1 gets its own bound and tier 2 keeps
+# the lane's.
+#
+# The bound is configured as `lane_new_companies_per_run_overrides["indeed.tier1"]`, and its
+# ABSENCE is today's behaviour exactly — the upgrade-neutrality control is the last test here.
+
+
+def _tiered_settings(tmp_path, *, lane, tier1=None) -> Settings:
+    """A `Settings` whose Indeed lane cap is `lane`, and whose tier-1 bound is `tier1`.
+
+    `tier1=None` means the key is ABSENT, which is what every existing tenant's config carries.
+    """
+    overrides: dict[str, object] = {LANE_PROVIDER: lane}
+    if tier1 is not None:
+        overrides[f"{LANE_PROVIDER}.tier1"] = tier1
+    return Settings(
+        data_dir=tmp_path / "store",
+        config_dir=tmp_path / "cfg",
+        lane_new_companies_per_run_overrides=overrides,
+    )
+
+
+def _tiered_engine(tmp_path):
+    engine = get_engine(tmp_path / "store")
+    ensure_schema(engine)
+    return engine
+
+
+@respx.mock
+def test_a_tier1_hit_is_admitted_under_its_own_bound_once_the_lane_cap_is_spent(tmp_path):
+    """THE POINT OF THE CHANGE. The lane cap is 1 and the first tier-2 company spends it, so
+    every later tier-2 company is refused — and all three tier-1 convergences are admitted
+    anyway, because they are charged against their OWN bound and not against the spent one.
+
+    The watched read-back is the half that matters: a tier-1 admission turns watching ON, so the
+    employer's board joins the scan fleet and boardwatch holds it on every later run
+    independently of Indeed. That is the compounding lever the shared cap was spending its slots
+    not to buy (D-452), and it is unreachable if the admission is refused.
+    """
+    engine = _tiered_engine(tmp_path)
+    _mock_one(search_hits(2, companies=2) + DEREFERENCE_HITS)
+
+    report = _collect_lane(
+        engine,
+        _tiered_settings(tmp_path, lane=1, tier1=3),
+        IndeedLane(),
+        _fetcher(tmp_path),
+        insert_run(engine),
+    )
+
+    assert report.admitted == (
+        (LANE_PROVIDER, "Acme-00"),
+        ("greenhouse", "vertexsystems"),
+        ("lever", "beaconlabs"),
+        ("ashby", "halcyonworks"),
+    )
+    assert report.refused == ((LANE_PROVIDER, "Acme-01"),)
+    with engine.connect() as conn:
+        watched = {(r.provider, r.slug) for r in get_watched_companies(conn)}
+    assert watched == {
+        ("greenhouse", "vertexsystems"),
+        ("lever", "beaconlabs"),
+        ("ashby", "halcyonworks"),
+    }
+
+
+@respx.mock
+def test_a_tier1_hit_beyond_the_tier1_bound_is_refused(tmp_path):
+    """The other direction: the tier-1 bound is a BOUND, not an uncap. D-459 refused leaving the
+    override at `"unlimited"` because Indeed is a stream, not a pool — ~58 new boards a run at
+    9.33 s of scan time each, compounding forever — so a fourth tier-1 board must be turned away
+    the same way a tier-2 one is.
+
+    The lane cap is 0, so a bug that charged tier 1 against the lane cap admits NOTHING here and
+    a bug that left tier 1 uncapped admits all three.
+    """
+    engine = _tiered_engine(tmp_path)
+    _mock_one(DEREFERENCE_HITS)
+
+    report = _collect_lane(
+        engine,
+        _tiered_settings(tmp_path, lane=0, tier1=1),
+        IndeedLane(),
+        _fetcher(tmp_path),
+        insert_run(engine),
+    )
+
+    assert report.admitted == (("greenhouse", "vertexsystems"),)
+    assert report.refused == (("lever", "beaconlabs"), ("ashby", "halcyonworks"))
+
+
+@respx.mock
+def test_a_tier2_hit_at_the_lane_cap_stays_refused_however_large_the_tier1_bound(tmp_path):
+    """CONTROL, and it must stay green. The tier-1 bound is `"unlimited"` and tier 2 must not
+    reach it: an `indeed`-keyed company is permanently secondhand — nothing will ever scan it —
+    so it is exactly the half D-452 said to refuse freely.
+    """
+    engine = _tiered_engine(tmp_path)
+    _mock_one(search_hits(3, companies=3))
+
+    report = _collect_lane(
+        engine,
+        _tiered_settings(tmp_path, lane=1, tier1="unlimited"),
+        IndeedLane(),
+        _fetcher(tmp_path),
+        insert_run(engine),
+    )
+
+    assert report.admitted == ((LANE_PROVIDER, "Acme-00"),)
+    assert report.refused == ((LANE_PROVIDER, "Acme-01"), (LANE_PROVIDER, "Acme-02"))
+
+
+@respx.mock
+def test_without_the_tier1_key_a_tier1_hit_still_charges_the_lane_cap(tmp_path):
+    """UPGRADE NEUTRALITY, as a control. No tenant's `config.toml` carries `indeed.tier1` today,
+    and with the key absent tier 1 must go on charging the lane cap exactly as it did before this
+    change: one admitted against a cap of one, the other two refused. A default that separated the
+    two bounds silently would change every existing tenant's admissions on upgrade.
+    """
+    engine = _tiered_engine(tmp_path)
+    _mock_one(DEREFERENCE_HITS)
+
+    report = _collect_lane(
+        engine,
+        _tiered_settings(tmp_path, lane=1),
+        IndeedLane(),
+        _fetcher(tmp_path),
+        insert_run(engine),
+    )
+
+    assert report.admitted == (("greenhouse", "vertexsystems"),)
+    assert report.refused == (("lever", "beaconlabs"), ("ashby", "halcyonworks"))
 
 
 @respx.mock
@@ -880,7 +1025,7 @@ def test_admits_is_asked_once_per_distinct_company_never_once_per_posting(tmp_pa
     route = _mock_one(search_hits())
     asked: list[tuple[str, str]] = []
 
-    def _admits(provider: str, slug: str) -> bool:
+    def _admits(provider: str, slug: str, *, tier1: bool = False) -> bool:
         asked.append((provider, slug))
         return False
 

@@ -13,7 +13,6 @@ restating them.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -179,10 +178,23 @@ def _no_seeds(
     return ()
 
 
-# (provider, slug) -> may this lane spend requests on that company. The runner supplies it:
-# the decision needs a store connection to tell an already-known company from a new one, and
-# `admission.CompanyBudget` says in its own docstring that it cannot make that call.
-CompanyAdmission = Callable[[str, str], bool]
+class CompanyAdmission(Protocol):
+    """(provider, slug) -> may this lane spend requests on that company.
+
+    The runner supplies it: the decision needs a store connection to tell an already-known
+    company from a new one, and `admission.CompanyBudget` says in its own docstring that it
+    cannot make that call.
+
+    `tier1` is the one thing only the LANE knows, which is why it is passed IN rather than
+    inferred. A lane whose admissions are opposite in kind — Indeed's tier-1 convergence onto a
+    supported employer board against its tier-2 aggregator row (D-452) — declares which it is
+    asking about, and the runner charges it against whichever bound that tier has. Defaulted
+    `False`, so every single-tier lane goes on calling `admits(provider, slug)` unchanged and
+    lands on the lane's own cap exactly as before. A `Protocol` rather than a `Callable` alias
+    only because a keyword argument cannot be spelled in one.
+    """
+
+    def __call__(self, provider: str, slug: str, *, tier1: bool = False) -> bool: ...
 
 
 class Lane(Protocol):

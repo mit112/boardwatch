@@ -387,6 +387,19 @@ class HitIdentity:
     posting_id: str
     secondhand: frozenset[SecondhandField] = frozenset()
 
+    @property
+    def converged(self) -> bool:
+        """Is this TIER 1 — a hit that dereferenced onto a board this repo can scan?
+
+        Read off `secondhand`, which is the same fact under its other name: tier 1 declares every
+        declarable field `CONVERGED_SECONDHAND` precisely because a board scan is the record of
+        truth for that row, and tier 2 declares nothing because this lane is its only observer.
+        Not re-derived from `provider == LANE_PROVIDER` -- a string comparison against a lane
+        name, which is the classification this repo refuses and which this class's own docstring
+        says the declaration exists to replace.
+        """
+        return bool(self.secondhand)
+
 
 @dataclass(frozen=True)
 class SearchPage:
@@ -414,6 +427,14 @@ class _CompanyHits:
 
     url: str
     hits: list[tuple[HitIdentity, dict[str, Any]]]
+
+    @property
+    def converged(self) -> bool:
+        """This group's tier. Every hit in a group shares its `(provider, slug)`, and the tier is
+        a property of the provider the group is keyed under, so the first hit decides for all of
+        them -- the same reason `company_name` reads the display name off `hits[0]`.
+        """
+        return self.hits[0][0].converged
 
 
 def _graphql_string(value: str) -> str:
@@ -771,7 +792,11 @@ class IndeedLane:
         by_company = _group_by_company(entries, tally)
         snapshots: list[LaneCompanySnapshot] = []
         for (provider, slug), company in by_company.items():
-            if not admits(provider, slug):
+            # The tier travels INTO the admission decision: a tier-1 convergence is a supported
+            # employer board joining the scan fleet and compounding on every later run, while a
+            # tier-2 row is permanently secondhand, so the runner charges them against separate
+            # bounds when one is configured (D-452 the sizing, D-459 the measurement).
+            if not admits(provider, slug, tier1=company.converged):
                 # Nothing tallied for a refused company: no request was attempted, and an outcome
                 # here would inflate `attempted` with non-attempts. Refusals are reported by name
                 # through `admission.CompanyBudget.refused`.
@@ -795,14 +820,14 @@ class IndeedLane:
                         slug=slug,
                         name=company_name(company.hits[0][1]),
                         snapshot=lane_snapshot(postings, company.url),
-                        # A tier-1 convergence (`provider != LANE_PROVIDER`) sits on a board the
-                        # scanner can parse -- `hit_identity` only assigns a real provider when
+                        # A tier-1 convergence sits on a board the scanner can parse --
+                        # `hit_identity` only assigns a real provider when
                         # `parse_posting_target` recovered one -- so watching it is safe (no
                         # `unknown provider` line) and is the DRAIN for the secondhand body this
                         # hit wrote: the next scan replaces JD v1 with the employer's own text and
                         # its real `remote_policy`/location (D-414(a)). Tier 2 is keyed under
                         # `indeed`, has no board to scan, and stays unwatched.
-                        watch=provider != LANE_PROVIDER,
+                        watch=company.converged,
                     )
                 )
         return LaneResult(
