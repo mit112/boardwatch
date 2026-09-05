@@ -20,148 +20,50 @@
 
 ## Current standing
 
-### Session 2026-09-09 (planning): P1 IS PLANNED AND RULED — the ≤ 1-YoE floor lands as PER-USER POLICY DATA (T47), the judge is armed AFTER it, above-band stays hidden, the drain is declined; ALL FOUR owner decisions are TAKEN (D-480) and NOTHING has been executed
+### Session 2026-09-09 (execution): THE FLOOR SHIPPED AND IS LIVE at the predicted `rules_hash`, THE JUDGE IS ARMED — and run 4, the first armed run, JUDGED NOTHING because the model fences its JSON. T47 and T50 merged, both gated exit 0. Two owner calls are OPEN.
 
-**Read this before acting.** Reasoning: **D-479**; rulings: **D-480** (08:33 CDT, all as
-recommended, reach confirmed including 13–36-month bars). Numbers: `METRICS.md`, the
-`Session — 2026-09-09` block. The execution session works `HANDOFF-2026-09-09.md` §2–§4 without
-asking anything: T47
-(`Policy.near_miss_years_ceilings`, `effective_family`, differing-only snapshot key, `eligibility
-policy ceiling`), then his `policy ceiling experience_years 1`, then the `[gate]` block with
-`model = "haiku"` read back through `Settings`, then the tick. **Two claims in
-`REPORT-2026-09-08.md` P1 are corrected (D-479 §2):** the R7 pin is of the BUNDLED file and the
-corpus runs on it, so a per-user change moves neither; the 91 months bars DO turn over live. The
-ledger drain is declined on the standing test (80 `built`, 0 `skipped`); the eligibility re-key is
-83,308 postings pending at run 4's preflight, ~8–12 min, not pre-run. Run 3 dropped 973
-above-band postings while 3,270 in-band lost on rank — surfacing them displaces, never adds.
+**Read this before acting.** Decision: **D-481**. Report: **`REPORT-2026-09-09.md`**. Numbers:
+`METRICS.md`, `Session — 2026-09-09` (the execution block, not the planning one above it).
+D-480's four rulings were executed in D2's order and none was re-asked.
 
-### Session 2026-09-08 (execution): ALL SIX D-477 TICKETS LANDED on `main`, each gated exit 0 plus a final integration gate (9,497 passed); the judge model is RULED HAIKU; T42 is built but OFF and its arming is BLOCKED on an owner decision
+**Live configuration now — all of it verified through a second path, not by eye:**
 
-**Read this before acting on anything below it.** Reasoning: **D-478**. Numbers: `METRICS.md`,
-the `Session — 2026-09-08` block. Report: **`REPORT-2026-09-08.md`**.
+- `profile.eligibility_policy_json` carries `near_miss_years_ceilings: {"experience_years": 1}`
+  and all six families are still `blocker` (read back via Python `?mode=ro`).
+- The live `rules_hash` is **`033ea489f254`**, which is exactly what was PREDICTED before the
+  write; `engine_version` is `1+8c8694b96ca8`. Both were confirmed in run 4's manifest.
+- `<config_dir>/config.toml` carries a `[gate]` block: `enabled = true`, `model = "haiku"`,
+  `claude_config_dir` as an EXPANDED absolute path. Appended, never overwritten — the file
+  already held six live settings. Read back through `load_settings()`, which is the ONLY check
+  that distinguishes a typo from success.
+- The launchd tick is loaded and fires **04:00** (not 06:00, which the handoff stated wrongly).
 
-T40, T41, T45, T44, T43, T42 are on `main`. T46 needed no code — B8's daily instrument is the
-funnel's `pdf` stage `entered`, which T43 made apply-lane-only; its column is now on the
-acceptance table. T34 was executed read-only, including its blind two-judge steps.
+**THE OPEN FINDING — do not read run 4's gate as healthy.** Run 4 was exit 0 in 80.7 min, and its
+gate was `instrumented: true`, `judged: 0`, `failed_open_batches: 4`. Real headless haiku returns
+the verdict array wrapped in a ```json fence despite the output contract forbidding fences, so the
+parse died on the backtick at character 0. **Fail-open held: nothing was dropped and all 40 leads
+were delivered — unjudged.** T50 fixes the parser and the fixture; it merged AFTER the run, so
+**no run has yet exercised a working judge.**
 
-**Three things a fresh session must not re-derive:**
+**TWO OWNER CALLS ARE OPEN. They were deliberately not assumed:**
 
-1. **The judge model is ruled: HAIKU** — 92.6% head-to-head with sonnet on the ineligible axis,
-   kappa 0.847, planted control caught by both, 2.04x cheaper ($0.0086 vs $0.0176 per lead).
-   §4's own bar could not be scored: there are **0 stored `final_gate:` verdicts** (the 95 died
-   with the 09-03 reset), and the substituted slate has **no `ineligible` in its truth column**,
-   which makes an agreement bar maximal for a judge that never decides. See D-478 §1.
-2. **T42 is built, gated, and OFF by default — but arming it is an OPEN OWNER DECISION**, not a
-   mechanical step. Under the owner's own 2026-09-05 ruling (bar floor <= 1 YOE) the judge is
-   RIGHT to reject 2-3 year bars, but the engine abstains on them by policy
-   (`near_miss_years_ceiling = 3`), so arming rejects **31-35% of the delivered slate** and
-   settles that lever by fiat. The cheaper locus is a personal `rules.yaml` override, which owes
-   a ledger drain. Left to planning — see `REPORT-2026-09-08.md` P1.
-3. **T44 cannot fire on the pipeline path.** Its verdict is now computed for real (it defaulted
-   `False` at every caller), but `runner.py` omits `include_over_seniority`, so the ranker drops
-   above-band leads before any lane sees them. `moved = 0` was never "no lead is above band".
-   A guard test pins this. See D-478 §2.
+1. **Re-judge run 4's 40 unjudged leads now that T50 has landed?** ~$0.35, ~4.5 min.
+2. **Does run 4 count toward the three frozen clean runs?** It exited 0, but the judge was inert
+   for all of it. The recommendation is NO — the configuration under test was never exercised —
+   but the call belongs to the owner.
 
-**T42's arming: two preconditions are DONE, the third is deliberately WITHHELD (2026-09-05).**
-The dedicated config dir `~/.claude-boardwatch` is logged in and verified answering
-(`is_error: False`) on an **enterprise** seat, so the unattended judge cannot bill the personal
-sub; and the plist now carries `CLAUDE_CONFIG_DIR` under `EnvironmentVariables` (added textually
-so its comments survive, `plutil -lint` OK, backup beside it). `CLAUDE_CONFIG_DIR` IS the right
-variable — confirmed in the installed binary; there is no `--config-dir` flag.
+**Next action.** Answer the two calls above. Then T49 (`config show` learning the five `gate.*`
+keys) is the one named leftover: the operator still has NO CLI read-back for the only setting that
+spends money. The ledger drain stays DECLINED (D-479 §4), re-verified on the live store before the
+write: 80 dispositions, all `built`, zero `skipped`. `ledger reopen --stale` was NOT run.
 
-**NOT done, on the owner's explicit call: the `[gate]` block itself.** `gate.enabled` is still
-`False` and the tick is still unloaded, so nothing judges and nothing runs unattended. Writing
-that block IS the decision to settle the near-miss band in the reject direction at LLM cost per
-run — hold it until P1 is planned. When it is written it goes in
-**`~/Library/Application Support/boardwatch/config.toml`**, which is what `Settings` reads
-(`BOARDWATCH_CONFIG_DIR` > platformdirs) — **not** `~/.config/boardwatch/`, which does not exist
-and would arm nothing silently. `model` defaults to `sonnet`, so it must say `haiku` explicitly or
-the run silently uses the 2.04x costlier model. Read it back through `Settings` and assert: unknown
-keys are ignored silently, so a typo looks identical to success.
-
-## Next action
-
-**0. THE 06:00 TICK IS STILL UNLOADED, AND RUN 4 HAS NOT HAPPENED — ON PURPOSE, until
-`HANDOFF-2026-09-09.md` §4's sequence has run: T47 merged → `policy ceiling experience_years 1` →
-`[gate]` block verified → tick.** Run 4 is the first COUNTED run of the provisional pass and must
-reflect the ≤ 1-YoE ruling; an eligibility change after it restarts the count. `launchctl bootout`
-was run at 05:47 CDT on 2026-09-05 so merges never landed under a live run of the editable venv.
-`main` holds all six D-477 tickets and the primary checkout is parked on `main`, so once the
-sequence is done the re-load is:
-
-```
-launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist
-launchctl print gui/$UID/com.boardwatch.run     # `list` shows 0 for a NEVER-RUN job; use print
-```
-
-It fires at **06:00 CDT, not 04:00**, until a reboot (launchd computes the interval in its
-boot-time zone), or run `boardwatch run --project --top 40` by hand. Then take run 4's reading per
-`HANDOFF-2026-09-07.md` §5. The healthchecks heartbeat (period 1 d, grace 2 h) will alert on the
-missed ping unless paused in its dashboard; the ping-URL `/pause` returned 400 — do not retry it.
-
-**Expect run 4's ledger-drift report to show EVERY permanent disposition stale.** That is landing
-T42's new IN-classified `gate` setting re-stamping `run_policy_version` (`config_hash`
-`f56a0166` -> `200396b9`), armed or not. It is not an eligibility re-key and nothing auto-reopens
-(D-478 §3). Read cold on the first run after a long gap it looks like an incident; it is not.
-
-**0-1. T34 (M1) IS EXECUTED, read-only, blind two-judge steps included (D-478; METRICS `Session — 2026-09-08`).**
-T35 (D-424) is gated on 09-09; `.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
-
-**0-3. CLOSED, BY RULING:** T28 (this session — structurally zero, no successor). T33 and its
-residual-zero successor, T36 as specified, T18 `data`/`ai`, T24, T26 (D-472 and earlier). **T36 is
-re-decided only on the first tick after T38 lands**, on that tick's own smartrecruiters tail —
-and `config.toml`'s comment still claims `le=8` against `Field(default=4, ge=1, le=32)`, to be
-corrected in the next change that touches Mit's config, with his OK. SP3 (+T23) stays deferred
-until three warm ticks report the tailor stage; run 3 is the first at 5.16 s/lead. **T36's rule is
-
-in the handoff §5**; the `le=8` comment is corrected in that same config change.
-
-**0-4. STILL OWED AND UNTOUCHED — MIT'S:** `git push origin main` after the merge (nothing to push
-before it); `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291);
-the formatting session (with the re-approval, above); **the rest of the smartrecruiters fleet call**
-— dominos is dropped, and boschgroup (4,018 deferred, 0 leads), cityofnewyork (1,084, 0) and
-abbvie (1,074, 0) remain at ~400 host-seconds each per run, now overlapped by T38 rather than
-serialised behind the fleet; StreakSync `main`.
-
-**0-5. THE PRODUCT REVIEW IS RULED (D-477) AND TICKETED — `REVIEW-2026-09-05.md`, `HANDOFF-2026-09-08.md`.**
-Mit agreed all six findings 05:39–05:45 CDT: the LLM judge goes on the daily path over the delivered slate
-(enterprise sub, headless, fail-open, cost bounded by `--top`), tailor the apply lane only, B8 joins the bar,
-Gate 1 thresholds are fixed, done = single-tenant. Execution order: the 09-07 handoff's T40/T41 first, then
-09-08's T45, T44, T43, T42, T46. **THE 06:00 TICK OF 2026-09-05 IS UNLOADED (05:47 CDT, his request) so the
-execution session can merge without a live run.** Run 4 is therefore NOT today's tick: re-load the plist
-(`launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist`) or run by hand when the
-merges are on `main`; the heartbeat will alert on the missed ping unless paused in its dashboard.
-
-**1. THE YEARS RULING HAS PROPAGATED — RULED (D-478 §5), PLANNED (D-479), DECIDED (D-480), NOT
-EXECUTED.** "I dont want jobs which have more than 1 YOE" is an instruction, not a fact, so A4's
-distinction is satisfied. Nothing is left to ask: T47, the value, the gate block, the tick.
-
-**2. RE-READ THE GATE ON THE NEXT RUN, AND DECIDE WHETHER IT BECOMES ROUTINE.** The gate now filters
-38 postings from future shortlists. It is a **manual handshake** — `gate request` → judge →
-`gate apply` — and nothing schedules it. Whether it runs every day, and who judges, is undecided.
-**Its cost is the judging pass, not the CLI.**
-
-**3. THE DROUGHT ALARM'S LOW-VOLUME COVERAGE IS STILL PARTIAL.** #371 fixed the false-alarm
-direction and made the window grow to its population. What remains: the per-run `placeable == 0`
-abstain still silences **63 of 136 windows**, deliberately, because it is also the anti-double-report
-guard. Recovering those is a **detector-separation** question and was not folded in.
-
-**4. FOUR DELIVERY DEFECTS FOUND BY THE GATE JUDGES, NONE FIXED.** One lead's `jd_text` is **98 KB of
-Eightfold page-config JSON**; one is **entirely site chrome**; one says **"INDEED INTERNAL TEST JOB …
-NOT A REAL JOB"**; and one 95-lead shortlist carried **SpaceX ×3 identical plus NetJets, USAA, Wipro
-and Applied Materials pairs**. The last corroborates the standing 14-18% duplicate rate from a new
-direction.
-
-**5. THE TIER-AWARE INDEED CAP IS DESIGNED AND UNBUILT** (D-459 deferred it; the design is settled).
-The tier IS known before admission at zero extra requests — `CompanyAdmission` already carries the
-provider — so it is buildable as specified. **Two numbers are the owner's**: the tier-1 rate, and
-whether a per-run RATE is the right instrument at all, since the cost is `watched_boards × 9.33 s ×
-every future run` and any positive rate grows the fleet without bound. A fleet-size ceiling is the
-alternative that actually bounds it.
-
-**6. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
-`.agent/2026-09-02-session/per_source_recall.py`. Standing at **28.8%** (5,838/20,289), lane-only
-7,984, absent 7,508.
+**Three things a fresh session must not re-derive.** (1) `catalog.py` and `engine.py` are DIGESTED,
+so any edit to them moves `engine_version` and makes every open posting pending — "T47 re-keys
+nobody" was only ever true of `rules_hash`. (2) The plist's PATH did not reach `claude` and every
+unattended judge batch would have failed open; this is invisible from a manual run because the
+interactive shell supplies the directory. Fixed. (3) `experience_unconfirmed` is not persisted in
+any artifact — the queue's `details.json` carries only `verdict` and `target_flag` — so the
+handoff's "39 of 80" cannot be reproduced from disk.
 
 ### Owed, and specifically NOT done
 

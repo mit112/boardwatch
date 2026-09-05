@@ -2752,3 +2752,140 @@ deliberately not postponed: SP3 measurement 2 of 3 and T38's baseline. **It did 
 zone was set to Chicago five minutes after boot — so the tick fires at 06:00 CDT** (as 09-04's
 did, 06:00:05) until a reboot or a plist edit, Mit's. Verify on run 4's `started_at`; read it
 first (R2).
+
+## Session 2026-09-08 (execution), moved WHOLE out of `STATE.md` on 2026-09-09
+
+> **Superseded in one respect, and it is the headline.** This block says T42 "is built but
+> OFF and its arming is BLOCKED on an owner decision". That decision was taken (D-480) and
+> the judge WAS armed on 2026-09-05; see **D-481**. Everything else here — the six tickets,
+> the haiku ruling and its numbers, the T44 unreachability finding — stands as written.
+> Nothing was deleted in the move.
+
+### Session 2026-09-08 (execution): ALL SIX D-477 TICKETS LANDED on `main`, each gated exit 0 plus a final integration gate (9,497 passed); the judge model is RULED HAIKU; T42 is built but OFF and its arming is BLOCKED on an owner decision
+
+**Read this before acting on anything below it.** Reasoning: **D-478**. Numbers: `METRICS.md`,
+the `Session — 2026-09-08` block. Report: **`REPORT-2026-09-08.md`**.
+
+T40, T41, T45, T44, T43, T42 are on `main`. T46 needed no code — B8's daily instrument is the
+funnel's `pdf` stage `entered`, which T43 made apply-lane-only; its column is now on the
+acceptance table. T34 was executed read-only, including its blind two-judge steps.
+
+**Three things a fresh session must not re-derive:**
+
+1. **The judge model is ruled: HAIKU** — 92.6% head-to-head with sonnet on the ineligible axis,
+   kappa 0.847, planted control caught by both, 2.04x cheaper ($0.0086 vs $0.0176 per lead).
+   §4's own bar could not be scored: there are **0 stored `final_gate:` verdicts** (the 95 died
+   with the 09-03 reset), and the substituted slate has **no `ineligible` in its truth column**,
+   which makes an agreement bar maximal for a judge that never decides. See D-478 §1.
+2. **T42 is built, gated, and OFF by default — but arming it is an OPEN OWNER DECISION**, not a
+   mechanical step. Under the owner's own 2026-09-05 ruling (bar floor <= 1 YOE) the judge is
+   RIGHT to reject 2-3 year bars, but the engine abstains on them by policy
+   (`near_miss_years_ceiling = 3`), so arming rejects **31-35% of the delivered slate** and
+   settles that lever by fiat. The cheaper locus is a personal `rules.yaml` override, which owes
+   a ledger drain. Left to planning — see `REPORT-2026-09-08.md` P1.
+3. **T44 cannot fire on the pipeline path.** Its verdict is now computed for real (it defaulted
+   `False` at every caller), but `runner.py` omits `include_over_seniority`, so the ranker drops
+   above-band leads before any lane sees them. `moved = 0` was never "no lead is above band".
+   A guard test pins this. See D-478 §2.
+
+**T42's arming: two preconditions are DONE, the third is deliberately WITHHELD (2026-09-05).**
+The dedicated config dir `~/.claude-boardwatch` is logged in and verified answering
+(`is_error: False`) on an **enterprise** seat, so the unattended judge cannot bill the personal
+sub; and the plist now carries `CLAUDE_CONFIG_DIR` under `EnvironmentVariables` (added textually
+so its comments survive, `plutil -lint` OK, backup beside it). `CLAUDE_CONFIG_DIR` IS the right
+variable — confirmed in the installed binary; there is no `--config-dir` flag.
+
+**NOT done, on the owner's explicit call: the `[gate]` block itself.** `gate.enabled` is still
+`False` and the tick is still unloaded, so nothing judges and nothing runs unattended. Writing
+that block IS the decision to settle the near-miss band in the reject direction at LLM cost per
+run — hold it until P1 is planned. When it is written it goes in
+**`~/Library/Application Support/boardwatch/config.toml`**, which is what `Settings` reads
+(`BOARDWATCH_CONFIG_DIR` > platformdirs) — **not** `~/.config/boardwatch/`, which does not exist
+and would arm nothing silently. `model` defaults to `sonnet`, so it must say `haiku` explicitly or
+the run silently uses the 2.04x costlier model. Read it back through `Settings` and assert: unknown
+keys are ignored silently, so a typo looks identical to success.
+
+## Next action
+
+**0. THE 06:00 TICK IS STILL UNLOADED, AND RUN 4 HAS NOT HAPPENED — ON PURPOSE, until
+`HANDOFF-2026-09-09.md` §4's sequence has run: T47 merged → `policy ceiling experience_years 1` →
+`[gate]` block verified → tick.** Run 4 is the first COUNTED run of the provisional pass and must
+reflect the ≤ 1-YoE ruling; an eligibility change after it restarts the count. `launchctl bootout`
+was run at 05:47 CDT on 2026-09-05 so merges never landed under a live run of the editable venv.
+`main` holds all six D-477 tickets and the primary checkout is parked on `main`, so once the
+sequence is done the re-load is:
+
+```
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist
+launchctl print gui/$UID/com.boardwatch.run     # `list` shows 0 for a NEVER-RUN job; use print
+```
+
+It fires at **06:00 CDT, not 04:00**, until a reboot (launchd computes the interval in its
+boot-time zone), or run `boardwatch run --project --top 40` by hand. Then take run 4's reading per
+`HANDOFF-2026-09-07.md` §5. The healthchecks heartbeat (period 1 d, grace 2 h) will alert on the
+missed ping unless paused in its dashboard; the ping-URL `/pause` returned 400 — do not retry it.
+
+**Expect run 4's ledger-drift report to show EVERY permanent disposition stale.** That is landing
+T42's new IN-classified `gate` setting re-stamping `run_policy_version` (`config_hash`
+`f56a0166` -> `200396b9`), armed or not. It is not an eligibility re-key and nothing auto-reopens
+(D-478 §3). Read cold on the first run after a long gap it looks like an incident; it is not.
+
+**0-1. T34 (M1) IS EXECUTED, read-only, blind two-judge steps included (D-478; METRICS `Session — 2026-09-08`).**
+T35 (D-424) is gated on 09-09; `.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
+
+**0-3. CLOSED, BY RULING:** T28 (this session — structurally zero, no successor). T33 and its
+residual-zero successor, T36 as specified, T18 `data`/`ai`, T24, T26 (D-472 and earlier). **T36 is
+re-decided only on the first tick after T38 lands**, on that tick's own smartrecruiters tail —
+and `config.toml`'s comment still claims `le=8` against `Field(default=4, ge=1, le=32)`, to be
+corrected in the next change that touches Mit's config, with his OK. SP3 (+T23) stays deferred
+until three warm ticks report the tailor stage; run 3 is the first at 5.16 s/lead. **T36's rule is
+
+in the handoff §5**; the `le=8` comment is corrected in that same config change.
+
+**0-4. STILL OWED AND UNTOUCHED — MIT'S:** `git push origin main` after the merge (nothing to push
+before it); `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291);
+the formatting session (with the re-approval, above); **the rest of the smartrecruiters fleet call**
+— dominos is dropped, and boschgroup (4,018 deferred, 0 leads), cityofnewyork (1,084, 0) and
+abbvie (1,074, 0) remain at ~400 host-seconds each per run, now overlapped by T38 rather than
+serialised behind the fleet; StreakSync `main`.
+
+**0-5. THE PRODUCT REVIEW IS RULED (D-477) AND TICKETED — `REVIEW-2026-09-05.md`, `HANDOFF-2026-09-08.md`.**
+Mit agreed all six findings 05:39–05:45 CDT: the LLM judge goes on the daily path over the delivered slate
+(enterprise sub, headless, fail-open, cost bounded by `--top`), tailor the apply lane only, B8 joins the bar,
+Gate 1 thresholds are fixed, done = single-tenant. Execution order: the 09-07 handoff's T40/T41 first, then
+09-08's T45, T44, T43, T42, T46. **THE 06:00 TICK OF 2026-09-05 IS UNLOADED (05:47 CDT, his request) so the
+execution session can merge without a live run.** Run 4 is therefore NOT today's tick: re-load the plist
+(`launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist`) or run by hand when the
+merges are on `main`; the heartbeat will alert on the missed ping unless paused in its dashboard.
+
+**1. THE YEARS RULING HAS PROPAGATED — RULED (D-478 §5), PLANNED (D-479), DECIDED (D-480), NOT
+EXECUTED.** "I dont want jobs which have more than 1 YOE" is an instruction, not a fact, so A4's
+distinction is satisfied. Nothing is left to ask: T47, the value, the gate block, the tick.
+
+**2. RE-READ THE GATE ON THE NEXT RUN, AND DECIDE WHETHER IT BECOMES ROUTINE.** The gate now filters
+38 postings from future shortlists. It is a **manual handshake** — `gate request` → judge →
+`gate apply` — and nothing schedules it. Whether it runs every day, and who judges, is undecided.
+**Its cost is the judging pass, not the CLI.**
+
+**3. THE DROUGHT ALARM'S LOW-VOLUME COVERAGE IS STILL PARTIAL.** #371 fixed the false-alarm
+direction and made the window grow to its population. What remains: the per-run `placeable == 0`
+abstain still silences **63 of 136 windows**, deliberately, because it is also the anti-double-report
+guard. Recovering those is a **detector-separation** question and was not folded in.
+
+**4. FOUR DELIVERY DEFECTS FOUND BY THE GATE JUDGES, NONE FIXED.** One lead's `jd_text` is **98 KB of
+Eightfold page-config JSON**; one is **entirely site chrome**; one says **"INDEED INTERNAL TEST JOB …
+NOT A REAL JOB"**; and one 95-lead shortlist carried **SpaceX ×3 identical plus NetJets, USAA, Wipro
+and Applied Materials pairs**. The last corroborates the standing 14-18% duplicate rate from a new
+direction.
+
+**5. THE TIER-AWARE INDEED CAP IS DESIGNED AND UNBUILT** (D-459 deferred it; the design is settled).
+The tier IS known before admission at zero extra requests — `CompanyAdmission` already carries the
+provider — so it is buildable as specified. **Two numbers are the owner's**: the tier-1 rate, and
+whether a per-run RATE is the right instrument at all, since the cost is `watched_boards × 9.33 s ×
+every future run` and any positive rate grows the fleet without bound. A fleet-size ceiling is the
+alternative that actually bounds it.
+
+**6. RE-MEASURE GATE 1 AROUND 2026-09-09** (D-424) with
+`.agent/2026-09-02-session/per_source_recall.py`. Standing at **28.8%** (5,838/20,289), lane-only
+7,984, absent 7,508.
+

@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **How far the near-miss experience band stretches is now yours to set.** A `required` years bar
+  at or under the catalog's ceiling abstains rather than rejecting, because one declared total
+  cannot represent the internships, co-ops and project work that clear an early-career bar. That
+  ceiling was a property of the bundled catalog; it is now a per-user preference:
+  `boardwatch eligibility policy ceiling experience_years 1`. Families the catalog declares no
+  band on are refused by name, as are negative values.
+
+  Setting a family to the ceiling it already has changes nothing and re-keys nothing — only a
+  value that actually changes a verdict moves your `rules_hash`, so upgrading to this release on
+  its own re-judges nothing. The alternative, a whole-file `rules.yaml` override, replaces the
+  bundled catalog outright and nothing detects it drifting, which would silently freeze your rules
+  at the day you copied them.
+
 - **A run now says when the empty-board guard fired.** A board answering "complete, zero postings"
   while it still holds open ones is not treated as closure — the two usual causes are a degraded
   provider and a renamed board, neither of which is evidence that the jobs are gone. That guard
@@ -311,6 +324,17 @@ All notable changes to this project are documented here. The format follows
   this change: approve once more after upgrading.**
 
 ### Fixed
+
+- **The eligibility gate judge no longer discards every verdict it is given.** The judge asks for a
+  bare JSON array and the model routinely returns it wrapped in a ```` ```json ```` markdown fence
+  anyway. Parsing died on the leading backtick, so every batch failed open: on the first armed run
+  all four batches were rejected, the stage reported itself armed, spent four and a half minutes,
+  and produced no verdict at all. Fail-open meant no job was ever dropped — the leads were
+  delivered unjudged — but the gate was doing nothing while looking healthy.
+
+  One fence around the array is now stripped before parsing. Anything else still fails open rather
+  than being coerced towards a verdict, since that is the direction that would drop a real job.
+
 
 - **A board is no longer lost to a concurrent CLI write.** Applying a board's scan results read
   the existing postings before writing, in a transaction that only took SQLite's write lock at the
