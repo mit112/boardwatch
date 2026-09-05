@@ -91,6 +91,14 @@ hiringcafe 459. See §6's re-scoping note before quoting D-417 at it.
 an unsolved one, which is precisely how the 80% bar concealed that the direct-ATS half was already
 at ~100%. The threshold is the owner's to set **per source**.
 
+**STRUCTURE RULED 2026-09-05 (D-482), with D-450 on the page:** employer-board sources
+(lever/ashby/greenhouse/workday) must hold **≥ 85% independent recall**; **LinkedIn carries NO
+bar** — the loss is accepted (D-453) and Track 1 is closed. **The Indeed and hiring.cafe numbers
+are set at the FIRST POST-RESET reading (~2026-09-17)**: the 09-03 reset emptied boardwatch's
+store, so no 14-day window exists before then, and the instrument's job-apps ledger path still
+names the old account home (one-line fix). Setting a number that cannot be measured for twelve
+days was refused as an invitation to re-litigate it.
+
 Gate 3 (anti-degradation, independent count must not fall) **HELD at 49**, baseline 44.
 
 ---
