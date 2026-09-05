@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 import type { RunFunnel, RunSummary } from "../api/types";
-import { runFunnel, runSummary } from "../test/rows";
+import { funnelStage, runFunnel, runSummary } from "../test/rows";
 
 /*
  * The runs page against its own artifact. Every finding here is the same shape: the funnel
@@ -29,6 +29,15 @@ async function renderRuns(funnel: RunFunnel, runs: RunSummary[] = [runSummary()]
   await screen.findByText(/^funnel · artifact/);
 }
 
+function gateBand(): HTMLElement {
+  return screen.getByRole("region", { name: "Final eligibility gate" });
+}
+
+/** The value beside a `<dt>`, which is how every metric pair on this page is built. */
+function valueFor(scope: HTMLElement, label: string): string {
+  return within(scope).getByText(label).nextElementSibling?.textContent ?? "";
+}
+
 it("prints the run's fatal reason, not just that it was fatal", async () => {
   await renderRuns(
     runFunnel({
@@ -42,4 +51,52 @@ it("prints the run's fatal reason, not just that it was fatal", async () => {
     screen.getByText(/cohort incomplete: 10 shortlisted candidates unaccounted/),
   ).toBeDefined();
   expect(screen.getByText("no leads emitted")).toBeDefined();
+});
+
+it("renders the gate's five numbers and says in words when batches failed open", async () => {
+  await renderRuns(
+    runFunnel({
+      gate: {
+        instrumented: true,
+        judged: 812,
+        eligible: 466,
+        ineligible: 291,
+        uncertain: 55,
+        failed_open_batches: 2,
+      },
+    }),
+  );
+
+  const band = gateBand();
+  expect(valueFor(band, "judged")).toBe("812");
+  expect(valueFor(band, "eligible")).toBe("466");
+  expect(valueFor(band, "ineligible")).toBe("291");
+  expect(valueFor(band, "uncertain")).toBe("55");
+  expect(valueFor(band, "failed open")).toBe("2");
+  // The one number that changes what the reader does, so it is said in words as well as weighted:
+  // colour alone would carry the whole signal.
+  expect(within(band).getByText(/2 batches failed open/)).toBeDefined();
+});
+
+it("says a missing gate was not instrumented, and never prints it as zero", async () => {
+  await renderRuns(runFunnel({ gate: null }));
+
+  const band = gateBand();
+  expect(band.textContent).toContain("not instrumented");
+  // `gate_to_dict` emits nulls, never zeros, for exactly this reason: nobody took the measurement.
+  expect(band.textContent).not.toContain("0");
+});
+
+it("shows a stage's wall clock beside its name", async () => {
+  await renderRuns(
+    runFunnel({
+      stages: [funnelStage({ name: "eligibility" })],
+      stage_durations: [
+        { name: "eligibility", seconds: 12.345 },
+        { name: "lanes", seconds: 390.2 },
+      ],
+    }),
+  );
+
+  expect(screen.getByText("12.3 s")).toBeDefined();
 });

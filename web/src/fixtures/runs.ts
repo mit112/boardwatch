@@ -74,6 +74,78 @@ const FUNNEL_114: RunFunnel = {
   reconciles: true,
   fatal: null,
   errors: [],
+  gate: {
+    instrumented: true,
+    judged: 812,
+    eligible: 466,
+    ineligible: 291,
+    uncertain: 55,
+    // Non-zero on this run on purpose: it is the one count that changes what a reader does.
+    failed_open_batches: 2,
+  },
+  // Ordered as the stages RAN, so consecutive marks sum to the run's wall clock.
+  stage_durations: [
+    { name: "scan", seconds: 604.118 },
+    { name: "lanes", seconds: 27.404 },
+    { name: "liveness", seconds: 188.72 },
+    { name: "eligibility", seconds: 12.345 },
+    { name: "shortlist", seconds: 3.017 },
+    { name: "tailor", seconds: 1071.884 },
+    { name: "delivery", seconds: 4.596 },
+  ],
+  lanes: [
+    {
+      name: "hiringcafe",
+      // All ten `AcquisitionOutcome` keys, in catalog order, every time: a 0 here is measured.
+      counts: {
+        body_inline: 1902,
+        body_fetched: 0,
+        fetch_refused: 0,
+        fetch_gone: 0,
+        fetch_unavailable: 0,
+        dependency_missing: 0,
+        extracted_empty: 12,
+        rejected_login_wall: 0,
+        rejected_quality_gate: 41,
+        not_attemptable: 255,
+      },
+      attempted: 2210,
+      resolved: 1902,
+      is_silent_outage: false,
+      admitted: ["greenhouse:vercel", "lever:scale", "ashby:linear"],
+      refused: ["greenhouse:stripe"],
+      search_pages: [{ url: "https://hiring.cafe/api/search?q=software", pages: 4 }],
+      fetch_seconds: 18.203,
+      apply_seconds: 6.918,
+      stage_elapsed_seconds: 391.06,
+    },
+    {
+      name: "linkedin",
+      counts: {
+        body_inline: 0,
+        body_fetched: 0,
+        fetch_refused: 88,
+        fetch_gone: 0,
+        fetch_unavailable: 0,
+        dependency_missing: 0,
+        extracted_empty: 0,
+        rejected_login_wall: 61,
+        rejected_quality_gate: 0,
+        not_attemptable: 4,
+      },
+      attempted: 153,
+      resolved: 0,
+      // Attempted work and recovered nothing. Carried by the artifact, never derived here.
+      is_silent_outage: true,
+      admitted: [],
+      refused: [],
+      search_pages: [],
+      fetch_seconds: 209.44,
+      // Nothing resolved, so nothing was applied and the timer never ran. NOT 0.0.
+      apply_seconds: null,
+      stage_elapsed_seconds: 391.06,
+    },
+  ],
   scan: {
     ran: true,
     boards_attempted: 124,
@@ -212,6 +284,16 @@ export const FUNNELS: Record<number, RunFunnel> = {
     started_at: RUNS[3]!.started,
     finished_at: null,
     reconciles: false,
+    // The scan died before the gate was armed, so its readout is an absence, not a row of zeros.
+    gate: {
+      instrumented: false,
+      judged: null,
+      eligible: null,
+      ineligible: null,
+      uncertain: null,
+      failed_open_batches: null,
+    },
+    lanes: [],
     // A REASON, not a flag. This is the real one run 5 recorded, truncated the way the artifact
     // truncates it: the ids are what a reader chases.
     fatal: "cohort incomplete: 10 shortlisted candidates unaccounted: 4288, 20797, 20798, 20812, 20834, 20841, 20855, 20857, 20861, 20869",

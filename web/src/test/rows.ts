@@ -141,6 +141,16 @@ export function runFunnel(overrides: Partial<RunFunnel> = {}): RunFunnel {
     reconciles: true,
     fatal: null,
     errors: [],
+    gate: {
+      instrumented: true,
+      judged: 8,
+      eligible: 5,
+      ineligible: 2,
+      uncertain: 1,
+      failed_open_batches: 0,
+    },
+    stage_durations: null,
+    lanes: [],
     stages: [funnelStage()],
     coverage: {
       leads_measured: 8,

@@ -260,6 +260,49 @@ export interface FunnelStage {
   run_scoped_attribution: Record<string, number> | null;
 }
 
+/**
+ * The final gate's readout (`gate_to_dict`). `instrumented: false` with every count `null` is a
+ * run whose gate was never armed — NOT a block of zeros, which would claim a measurement nobody
+ * took. `null` for the whole block is an artifact older than the gate, which says the same thing.
+ */
+export interface FunnelGate {
+  instrumented: boolean;
+  judged: number | null;
+  eligible: number | null;
+  ineligible: number | null;
+  uncertain: number | null;
+  /** Batches the judge could not reach, cleared fail-open. The one count that changes what the
+   * reader does with the leads, so it is never rendered in the same weight as the others. */
+  failed_open_batches: number | null;
+}
+
+/** Wall clock between two pipeline stage boundaries. The whole list is `null` on an artifact that
+ * predates the measurement; `[]` would claim a run that spent no time anywhere. */
+export interface FunnelStageDuration {
+  name: string;
+  seconds: number;
+}
+
+/**
+ * One JD-acquisition lane's work (`LaneReport`). `counts` carries all ten `AcquisitionOutcome`
+ * keys every time, so a 0 in it is MEASURED — the map is rendered whole rather than filtered to
+ * its non-zero members. `fetch_seconds`/`apply_seconds` are `null` for NOT MEASURED, never 0.0.
+ */
+export interface FunnelLane {
+  name: string;
+  counts: Record<string, number>;
+  attempted: number;
+  resolved: number;
+  /** Carried, never derived as `resolved === 0`: a lane with nothing to do is not an outage. */
+  is_silent_outage: boolean;
+  admitted: string[];
+  refused: string[];
+  search_pages: { url: string; pages: number }[];
+  fetch_seconds: number | null;
+  apply_seconds: number | null;
+  stage_elapsed_seconds: number | null;
+}
+
 export interface FunnelCoverage {
   leads_measured: number;
   leads_with_fraction: number;
@@ -293,6 +336,11 @@ export interface RunFunnel {
    */
   fatal: string | null;
   errors: string[];
+  gate: FunnelGate | null;
+  /** `null` means the run predates the measurement, so no stage card shows a duration. */
+  stage_durations: FunnelStageDuration[] | null;
+  /** `[]` when no lane ran this run — a measured absence, unlike a missing key. */
+  lanes: FunnelLane[];
   stages: FunnelStage[];
   coverage: FunnelCoverage;
   scan: {

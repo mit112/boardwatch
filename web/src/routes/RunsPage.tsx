@@ -4,7 +4,21 @@ import { getFunnel, getRuns } from "../api/client";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
 
-function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
+/** A stage's wall clock. One decimal, tabular, in seconds throughout — the durations run from
+ * fractions of a second to tens of minutes and a mixed unit makes two of them incomparable. */
+function formatSeconds(seconds: number): string {
+  return `${seconds.toFixed(1)} s`;
+}
+
+function StageCard({
+  stage,
+  last,
+  seconds,
+}: {
+  stage: FunnelStage;
+  last: boolean;
+  seconds: number | undefined;
+}) {
   return (
     <li className="relative pl-6">
       {/* The connector. Decorative only: it carries no meaning that is not also in the text. */}
@@ -22,6 +36,9 @@ function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
       <div className="rounded-md border border-divider bg-surface p-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h3 className="text-sm text-fg">{stage.name}</h3>
+          {seconds === undefined ? null : (
+            <p className="text-sm text-fg-2 tabular-nums">{formatSeconds(seconds)}</p>
+          )}
           {stage.instrumented ? (
             <p className="text-sm text-fg-2 tabular-nums">
               {formatCount(stage.entered)} entered {"→"} {formatCount(stage.advanced)} advanced
@@ -80,6 +97,63 @@ function StageCard({ stage, last }: { stage: FunnelStage; last: boolean }) {
   );
 }
 
+function GateBand({ funnel }: { funnel: RunFunnel }) {
+  /*
+   * The T42 final gate: the only thing on this page that says whether the delivered slate was
+   * judged at all, and STATE's own check for a run ("judged > 0, fatal absent") could not be read
+   * off this page before it existed.
+   *
+   * An artifact older than the gate omits the key entirely, which is the same statement as a run
+   * whose gate was never armed — both are answered in words rather than as a block of zeros, the
+   * convention `gate_to_dict` goes out of its way to keep on the wire.
+   */
+  const gate = funnel.gate as RunFunnel["gate"] | undefined;
+  if (gate == null || !gate.instrumented) {
+    return (
+      <section
+        aria-label="Final eligibility gate"
+        className="rounded-md border border-divider bg-surface px-4 py-3"
+      >
+        <span className="label-micro text-fg-3">final gate</span>
+        <p className="mt-1 text-sm text-fg-2">
+          not instrumented — no judge ran over this run&apos;s slate, which is not the same as
+          judging nothing
+        </p>
+      </section>
+    );
+  }
+  const failedOpen = gate.failed_open_batches ?? 0;
+  const cells: [string, string, boolean][] = [
+    ["judged", formatCount(gate.judged), false],
+    ["eligible", formatCount(gate.eligible), false],
+    ["ineligible", formatCount(gate.ineligible), false],
+    ["uncertain", formatCount(gate.uncertain), false],
+    ["failed open", formatCount(gate.failed_open_batches), failedOpen > 0],
+  ];
+  return (
+    <section aria-label="Final eligibility gate" className="flex flex-col">
+      <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
+        {cells.map(([label, value, emphasis]) => (
+          <div key={label} className="flex min-w-32 flex-col gap-1 px-4 py-3">
+            <dt className="label-micro text-fg-3">{label}</dt>
+            <dd className={`text-lg tabular-nums ${emphasis ? "text-fg" : "text-fg-2"}`}>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {/* Said in words as well as weighted. A fail-open batch is the one number here that changes
+          what the reader does with the leads, and weight alone would carry the whole signal. */}
+      {failedOpen > 0 ? (
+        <p className="mt-1.5 text-sm text-fg-2">
+          {formatCount(failedOpen)} {failedOpen === 1 ? "batch" : "batches"} failed open — those
+          leads were delivered without a judge verdict.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function CoverageBand({ funnel }: { funnel: RunFunnel }) {
   /*
    * Unlike every other payload on this page, a funnel is read straight off DISK and passed through
@@ -117,6 +191,81 @@ function CoverageBand({ funnel }: { funnel: RunFunnel }) {
         </span>
       </div>
     </section>
+  );
+}
+
+function LanesAccordion({ funnel }: { funnel: RunFunnel }) {
+  /*
+   * The JD-acquisition lanes. Deliberately not a funnel stage — a lane ADDS to the corpus, so its
+   * attempts enter no stage's `entered` — which is exactly why nothing on this page showed them.
+   *
+   * `[]` is a run with no lane and renders nothing; `undefined` is an artifact older than the
+   * block. The ten `counts` keys are printed WHOLE, zeros included: dropping the empty ones turns
+   * a measured zero back into an absence, which is the confusion the catalog exists to end.
+   */
+  const lanes = funnel.lanes as RunFunnel["lanes"] | undefined;
+  if (lanes == null || lanes.length === 0) return null;
+  const headings = ["lane", "attempted", "resolved", "admitted", "refused", "fetch", "apply"];
+  return (
+    <details className="rounded-md border border-divider bg-surface">
+      <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface-2">
+        Lanes ({lanes.length.toLocaleString()})
+      </summary>
+      <div className="overflow-x-auto border-t border-divider">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="label-micro text-fg-3">
+              {headings.map((heading) => (
+                <th key={heading} className="px-3 py-2 text-left font-normal">
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          {lanes.map((lane) => (
+            // One `tbody` per lane, so the outcome catalog stays attached to the row it belongs to
+            // and the divider falls between lanes rather than between a lane and its own counts.
+            <tbody key={lane.name} className="divide-y divide-divider border-t border-divider">
+              <tr>
+                <td className="px-3 py-1.5 text-fg">
+                  {lane.name}
+                  {lane.is_silent_outage ? (
+                    <span className="ml-2 rounded-sm border border-fg-2 px-1.5 py-0.5 label-micro text-fg">
+                      silent outage
+                    </span>
+                  ) : null}
+                </td>
+                <td className="px-3 py-1.5 text-fg-2 tabular-nums">
+                  {lane.attempted.toLocaleString()}
+                </td>
+                <td className="px-3 py-1.5 text-fg tabular-nums">
+                  {lane.resolved.toLocaleString()}
+                </td>
+                <td className="px-3 py-1.5 text-fg-2 tabular-nums">
+                  {lane.admitted.length.toLocaleString()}
+                </td>
+                <td className="px-3 py-1.5 text-fg-2 tabular-nums">
+                  {lane.refused.length.toLocaleString()}
+                </td>
+                <td className="px-3 py-1.5 text-fg-2 tabular-nums">
+                  {lane.fetch_seconds == null ? EM_DASH : formatSeconds(lane.fetch_seconds)}
+                </td>
+                <td className="px-3 py-1.5 text-fg-2 tabular-nums">
+                  {lane.apply_seconds == null ? EM_DASH : formatSeconds(lane.apply_seconds)}
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={headings.length} className="px-3 pb-2 text-xs text-fg-3">
+                  {Object.entries(lane.counts)
+                    .map(([outcome, count]) => `${outcome} ${count.toLocaleString()}`)
+                    .join(" · ")}
+                </td>
+              </tr>
+            </tbody>
+          ))}
+        </table>
+      </div>
+    </details>
   );
 }
 
@@ -206,6 +355,11 @@ export function RunsPage() {
   }, [runId]);
 
   const selected = runs?.find((run) => run.id === runId) ?? null;
+  /* `stage_durations` names its own stages, and the two lists agree only by convention — a stage
+   * the timer never marked simply has no duration, which is why this is a lookup and not a zip. */
+  const durations = new Map(
+    (funnel?.stage_durations ?? []).map((row) => [row.name, row.seconds] as const),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -289,7 +443,11 @@ export function RunsPage() {
             </section>
           ) : null}
 
+          <GateBand funnel={funnel} />
+
           <CoverageBand funnel={funnel} />
+
+          <LanesAccordion funnel={funnel} />
 
           <section>
             <h2 className="mb-3 label-micro text-fg-3">
@@ -305,6 +463,7 @@ export function RunsPage() {
                   key={stage.name}
                   stage={stage}
                   last={index === funnel.stages.length - 1}
+                  seconds={durations.get(stage.name)}
                 />
               ))}
             </ol>
