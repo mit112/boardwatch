@@ -208,8 +208,17 @@ def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
 def test_gate_ineligible_with_span_excludes_the_lead_and_persists_final_gate_ineligible(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """TWO postings, on purpose. Run 5 (2026-09-05) was the first run on which the judge
+    WORKED — 40 judged, 10 rejected — and it went FATAL: "cohort incomplete: 10 shortlisted
+    candidates unaccounted", because a judge rejection was not a terminal state the cohort
+    guard knew about. This test had ONE posting, so the rejection emptied the slate and the
+    empty-day guard fired instead; and it never asserted `summary.fatal`, so it was green on
+    the exact run that failed. With a second lead that stays, the cohort guard is the guard
+    that runs, and the fatal assertion is the one that matters.
+    """
     _ready(env)
     posting_id = _seed(env)
+    kept_id = _seed(env, slug="acme-gate-kept")
     _arm_gate(env)
     monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
     monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(posting_id))
@@ -218,12 +227,17 @@ def test_gate_ineligible_with_span_excludes_the_lead_and_persists_final_gate_ine
     summary = _pipeline(env, tmp_path / "apps")
 
     assert fake_claude.exists(), "the gate never called the fake claude at all"
-    assert posting_id not in [lead.posting_id for lead in summary.tailored], (
+    tailored_ids = [lead.posting_id for lead in summary.tailored]
+    assert posting_id not in tailored_ids, (
         "a lead the gate demoted to ineligible must never be tailored"
     )
+    assert kept_id in tailored_ids, "the lead the judge passed must still be delivered"
+    assert summary.gate_judged == 2
     assert summary.gate_ineligible == 1
     assert summary.gate_failed_open == 0
     assert _current_gate_verdict(env, posting_id) == "ineligible"
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_excluded_ids == [posting_id]
 
 
 # ---------------------------------------------------------------------------
