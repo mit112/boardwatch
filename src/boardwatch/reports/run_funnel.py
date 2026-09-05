@@ -144,6 +144,12 @@ _TOP_MISSING = 10
 # `ScanSummary` always had and never published, `partial` and `unchanged`, stop being invisible,
 # so the numbers a reader was already given now sum to the total instead of leaving a gap they had
 # to guess at. A consumer that ignores the added keys reads every old key correctly.
+#
+# **T39's `scan.empty_complete_guarded` does NOT bump it either**, on the same `fetch_cost`
+# precedent one paragraph up. No new top-level section — `scan` has been here since v1 — and no
+# existing key changes MEANING: the guarded boards were already counted inside `boards_complete`
+# before this key existed, and still are. What was invisible is WHICH of them the empty-complete
+# guard fired on; a consumer that ignores the added key reads every old key correctly.
 ARTIFACT_VERSION = 7
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -929,6 +935,12 @@ class ScanContext:
     boards_unchanged: int = 0
     boards_failed: int = 0
     postings_seen: int = 0
+    # T39. A SUBSET of `boards_complete`, not a fifth partition member: `apply_board`'s guard
+    # (`_empty_complete_is_evidence_of_nothing`) still counts the board `complete`, it only
+    # refuses to treat the empty answer as closure. Slugs, not a count, mirroring
+    # `ScanSummary.empty_complete_guarded` one layer down — "which board" is the operator's
+    # first question. `()` on a `--no-scan` run, the same as every other scan-only field here.
+    empty_complete_guarded: tuple[str, ...] = ()
     # None means NOT MEASURED (a `--no-scan` run, or a stored funnel written before D-330),
     # which is a different statement from an empty tuple ("scanned, and nothing was timed").
     fetch_cost: tuple[ProviderFetchCost, ...] | None = None
@@ -1759,6 +1771,10 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             # check, and 0 == 0 would report a pass the run never earned.
             "boards_reconciled": funnel.scan.boards_reconciled,
             "postings_seen": funnel.scan.postings_seen,
+            # T39. A SUBSET of `boards_complete`, never summed into `boards_reconciled` — see
+            # `ScanContext.empty_complete_guarded`. `[]` when the guard did not fire, which is
+            # every healthy run; sorted so two runs naming the same boards render identically.
+            "empty_complete_guarded": sorted(funnel.scan.empty_complete_guarded),
             # Ordered most-expensive first so the constraint is the first row a reader sees.
             "fetch_cost": None if funnel.scan.fetch_cost is None else [
                 {

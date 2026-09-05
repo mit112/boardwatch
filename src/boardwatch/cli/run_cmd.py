@@ -238,6 +238,16 @@ def run(
         f"{_shortlist_line(summary)} · "
         f"{len(summary.tailored)} tailored{degraded_note} · {summary.leads_with_pdf} with PDF"
     )
+    if summary.scan_empty_complete_guarded:
+        # Named, not counted, mirroring `scan_cmd`'s own line (T15): an operator needs to know
+        # WHICH board answered empty to tell a degraded provider from a renamed slug apart.
+        # Printed only when the guard fired at all — the healthy-run case is an empty list, and
+        # a line that prints every day trains the reader to stop looking at it.
+        console.print(
+            f"  ! {len(summary.scan_empty_complete_guarded)} empty-complete guarded "
+            f"({', '.join(sorted(summary.scan_empty_complete_guarded))})",
+            markup=False,
+        )
     for lead in summary.tailored:
         mark = "✓" if lead.pdf_built else "·"
         console.print(f"  {mark} {lead.company} — {lead.title} → {lead.out_dir}", markup=False)
