@@ -7,29 +7,168 @@ import {
   markApplied,
   markSkipped,
   report,
+  unapply,
   unreport,
   unskip,
 } from "../api/client";
-import type { Answers, QueueCounts, QueueDetail, QueueResponse, QueueRow } from "../api/types";
+import type {
+  Answers,
+  QueueCounts,
+  QueueDetail,
+  QueueResponse,
+  QueueRow,
+  ReviewReason,
+} from "../api/types";
+import { TOKEN_EVENT } from "../api/token";
 import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
-import { StatusBand } from "../components/StatusBand";
+import { QUEUE_FACETS, StatusBand } from "../components/StatusBand";
 import type { QueueFacet } from "../components/StatusBand";
+import { useHashRoute } from "../hooks/useHashRoute";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ToastRequest } from "../hooks/useToasts";
-import { matchesQuery, sortRows } from "../lib/sort";
+import {
+  REVIEW_REASON_LABELS,
+  countReviewReasons,
+  reviewBreakdown,
+  reviewLaneSentence,
+} from "../lib/reviewReasons";
+import { matchesQuery, parseSortState, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
 
 const COLLAPSE_MS = 200;
 const POLL_MS = 30_000;
 
+/*
+ * Working state kept across a tab switch and a reload, in `sessionStorage` and never in
+ * `localStorage`: this is what the reader is doing RIGHT NOW, so it should die with the tab rather
+ * than greet them a week later with a filter they have forgotten setting.
+ *
+ * Every access is wrapped, exactly as `api/token.ts` wraps its own: storage throws outright when
+ * it is disabled or the quota is gone, and a viewer that cannot remember a filter must still be a
+ * viewer that runs.
+ */
+const REVIEW_OPEN_KEY = "boardwatch.review-open";
+
+function readSession(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(key: string, value: string): void {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    /* Remembering is a convenience; failing to remember is never a page failure. */
+  }
+}
+
+/** A stored flag, or `null` when nothing is stored — which is NOT the same as `false`, because a
+ *  default only applies while the reader has expressed no preference. */
+function readStoredFlag(key: string): boolean | null {
+  const stored = readSession(key);
+  return stored === "true" ? true : stored === "false" ? false : null;
+}
+
+/*
+ * The queue's working state, restored on mount and written on every change. Taking the Runs tab
+ * and coming back used to throw away the filter text, the score floor, both facets and both sort
+ * orders — all of it re-entered by hand, every time.
+ *
+ * The decoders are the enforcement point for the closed catalogs. Storage outlives a bundle
+ * upgrade, so a stored facet or sort key can name a member this build no longer has: it is
+ * DISCARDED whole rather than passed through as a tenth bucket or repaired into something valid.
+ */
+const QUEUE_KEYS = {
+  query: "boardwatch.queue.query",
+  minScore: "boardwatch.queue.minScore",
+  facet: "boardwatch.queue.facet",
+  reason: "boardwatch.queue.reason",
+  sort: "boardwatch.queue.sort",
+  reviewSort: "boardwatch.queue.reviewSort",
+} as const;
+
+const decodeText = (raw: string | null): string | null => raw;
+const encodeText = (value: string): string => value;
+
+const decodeFacet = (raw: string | null): QueueFacet | null =>
+  (QUEUE_FACETS as readonly string[]).includes(raw ?? "") ? (raw as QueueFacet) : null;
+const encodeFacet = (value: QueueFacet | null): string => value ?? "";
+
+const decodeReason = (raw: string | null): ReviewReason | null =>
+  raw !== null && raw in REVIEW_REASON_LABELS ? (raw as ReviewReason) : null;
+const encodeReason = (value: ReviewReason | null): string => value ?? "";
+
+const encodeSort = (value: SortState): string => JSON.stringify(value);
+
+/**
+ * `useState` that reads its initial value from `sessionStorage` and writes every later one back.
+ *
+ * `decode` and `encode` must be module-level functions: an inline arrow would be a new identity on
+ * every render and the setter would stop being stable, which is what the callers below rely on.
+ */
+function useSessionState<T>(
+  key: string,
+  fallback: T,
+  decode: (raw: string | null) => T | null,
+  encode: (value: T) => string,
+): [T, (next: T) => void] {
+  const [value, setValue] = useState<T>(() => decode(readSession(key)) ?? fallback);
+  const set = useCallback(
+    (next: T) => {
+      setValue(next);
+      writeSession(key, encode(next));
+    },
+    [key, encode],
+  );
+  return [value, set];
+}
+
 type Removal = "applied" | "skipped" | "reported";
 
 function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
+}
+
+/*
+ * One review reason, as a toggle. The pressed treatment is the band's own (`Metric` in
+ * `StatusBand`): a fill plus an inset accent bar plus brighter text — three channels, never colour
+ * alone (SC 1.4.1) — and the `aria-label` starts with the visible label and count so Label in Name
+ * holds (SC 2.5.3) before it names the action `aria-pressed` cannot convey.
+ */
+function ReasonChip({
+  label,
+  count,
+  active,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={`${label} ${count.toLocaleString()} — ${active ? "showing only these, activate to clear" : "show only these"}`}
+      onClick={onToggle}
+      className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-3 text-sm transition-colors duration-[120ms] ease-snap ${
+        active
+          ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+          : "text-fg-2 hover:bg-surface-2"
+      }`}
+    >
+      <span>{label}</span>
+      <span className="tabular-nums text-fg-3">{count.toLocaleString()}</span>
+    </button>
+  );
 }
 
 export function QueuePage({
@@ -47,14 +186,30 @@ export function QueuePage({
   const [newCount, setNewCount] = useState(0);
 
   /*
-   * Collapsed by default, and that IS the feature: the top of the page has to be the list you can
-   * work through without re-deriving anything. Open is one click and the count is always visible,
-   * so the lane is never hidden — only folded.
+   * Collapsed by default while there is an apply queue to work down, and that IS the feature: the
+   * top of the page has to be the list you can work through without re-deriving anything. Open is
+   * one click and the count is always visible, so the lane is never hidden — only folded.
+   *
+   * With an EMPTY apply lane the default flips, because then the fold hides the only work on the
+   * page: the reader met a placeholder above a closed section and had to click "show" every day
+   * the engine version moved. A stored preference outranks both — the reader who folded it did so
+   * on purpose.
    */
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewOpenPref, setReviewOpenPref] = useState<boolean | null>(() =>
+    readStoredFlag(REVIEW_OPEN_KEY),
+  );
+  const setReviewOpen = useCallback((next: boolean) => {
+    setReviewOpenPref(next);
+    writeSession(REVIEW_OPEN_KEY, String(next));
+  }, []);
 
-  const [query, setQuery] = useState("");
-  const [minScore, setMinScore] = useState("");
+  const [query, setQuery] = useSessionState(QUEUE_KEYS.query, "", decodeText, encodeText);
+  const [minScore, setMinScore] = useSessionState(
+    QUEUE_KEYS.minScore,
+    "",
+    decodeText,
+    encodeText,
+  );
   /*
    * The verdict facet from the status band, shared across BOTH lanes exactly like `query` and
    * `minScore` — it expresses "what am I looking for", which spans the apply queue and the review
@@ -62,8 +217,31 @@ export function QueuePage({
    * the band's own counts stay put and the reader can switch straight from one facet to another
    * instead of the cell they need to click dropping to zero.
    */
-  const [facet, setFacet] = useState<QueueFacet | null>(null);
-  const [sort, setSort] = useState<SortState>({ key: "rank", direction: "asc" });
+  const [facet, setFacet] = useSessionState<QueueFacet | null>(
+    QUEUE_KEYS.facet,
+    null,
+    decodeFacet,
+    encodeFacet,
+  );
+  /*
+   * The REVIEW-REASON facet, alongside the verdict one and composed with it. Every review row
+   * already carried its reason as a chip and nothing could filter by one, so on a 149-lead lane
+   * the chips were nine repeating labels to scan past rather than a control. Applied after
+   * `filteredReview` for the same reason the verdict facet is: the chip counts must not collapse
+   * to the current selection, or the chip the reader wants next reads zero.
+   */
+  const [reasonFacet, setReasonFacet] = useSessionState<ReviewReason | null>(
+    QUEUE_KEYS.reason,
+    null,
+    decodeReason,
+    encodeReason,
+  );
+  const [sort, setSort] = useSessionState<SortState>(
+    QUEUE_KEYS.sort,
+    { key: "rank", direction: "asc" },
+    parseSortState,
+    encodeSort,
+  );
   /*
    * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
    * table silently re-ordered the apply list above it — a list the reader is working top-down and
@@ -72,9 +250,28 @@ export function QueuePage({
    * express "what am I looking for", which spans both lanes, while sort expresses "how do I want
    * THIS list arranged".
    */
-  const [reviewSort, setReviewSort] = useState<SortState>({ key: "rank", direction: "asc" });
+  const [reviewSort, setReviewSort] = useSessionState<SortState>(
+    QUEUE_KEYS.reviewSort,
+    { key: "rank", direction: "asc" },
+    parseSortState,
+    encodeSort,
+  );
 
-  const [selected, setSelected] = useState<number | null>(null);
+  /*
+   * The open lead and the run filter live in the URL (`#/queue?run=5&lead=61310`), not in state:
+   * they are the two things a reader points AT rather than does, so they have to be sendable,
+   * bookmarkable and reloadable. `useHashRoute` is called here rather than passed down from `App`
+   * because it subscribes to `hashchange` itself and the route above needs neither key.
+   */
+  const [, , routeParams, setRouteParams] = useHashRoute();
+  const selected = routeParams.lead;
+  const runFilter = routeParams.run;
+  const openLead = useCallback(
+    (postingId: number | null) => {
+      setRouteParams({ lead: postingId });
+    },
+    [setRouteParams],
+  );
   /*
    * The keyboard CURSOR, which is not the selection: ↓/↑ walk the list without opening a pane and
    * without fetching a detail per row, and Enter opens the one you stopped on. One cursor for both
@@ -82,9 +279,26 @@ export function QueuePage({
    * has focus anyway.
    */
   const [activeId, setActiveId] = useState<number | null>(null);
+  /*
+   * Both are keyed by the posting they describe, and the render reads them through `shownDetail` /
+   * `shownError` below. `selected` is now driven by the URL, so it can change without going
+   * through a click handler — a back button, a pasted link — and clearing these in an effect keyed
+   * on it would be a setState synchronised into an effect body, which is the cascading render the
+   * lint rule rejects. Comparing the id costs nothing and cannot go stale.
+   */
   const [detail, setDetail] = useState<QueueDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<{ id: number; message: string } | null>(null);
   const [answers, setAnswers] = useState<Answers | null>(null);
+
+  /* Whether the `lead` in the URL is a posting this queue actually holds. `false` while the queue
+     is still loading, when every id is unknown. */
+  const leadKnown =
+    data !== null &&
+    selected !== null &&
+    [...data.rows, ...data.review].some((row) => row.posting_id === selected);
+
+  const reviewOpen =
+    reviewOpenPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0);
 
   const knownIds = useRef<Set<number>>(new Set());
 
@@ -113,11 +327,31 @@ export function QueuePage({
     setRemoved(new Map());
   }, []);
 
+  /*
+   * Bumped when a credential is captured after load — the CLI's URL pasted into this open tab
+   * (`api/token.ts`). The load below is keyed on it, so the page that is currently showing "Not
+   * authorised. Re-open the URL the CLI printed" retries with the new bearer instead of asking
+   * the reader to do again what they just did.
+   */
+  const [tokenNonce, setTokenNonce] = useState(0);
+  useEffect(() => {
+    const onToken = () => {
+      setTokenNonce((current) => current + 1);
+    };
+    window.addEventListener(TOKEN_EVENT, onToken);
+    return () => {
+      window.removeEventListener(TOKEN_EVENT, onToken);
+    };
+  }, []);
+
   useEffect(() => {
     let live = true;
     void getQueue()
       .then((response) => {
-        if (live) adopt(response);
+        if (!live) return;
+        // Cleared on success, not only set on failure: a retry that works must take the card down.
+        setLoadError(null);
+        adopt(response);
       })
       .catch((caught: unknown) => {
         if (live) setLoadError(errorMessage(caught, "Could not load the queue."));
@@ -125,7 +359,7 @@ export function QueuePage({
     return () => {
       live = false;
     };
-  }, [adopt]);
+  }, [adopt, tokenNonce]);
 
   /*
    * A background refresh NEVER re-orders the list or moves a row under the pointer. It stashes the
@@ -156,19 +390,23 @@ export function QueuePage({
   }, []);
 
   useEffect(() => {
-    if (selected === null) return;
+    // Not until the lead is known to be ON the page: a stale `lead` in the URL must not spend a
+    // request on a posting the queue does not hold, and the effect below drops it instead.
+    if (selected === null || !leadKnown) return;
     let live = true;
     void getDetail(selected)
       .then((response) => {
         if (live) setDetail(response);
       })
       .catch((caught: unknown) => {
-        if (live) setDetailError(errorMessage(caught, "Could not load this lead."));
+        if (live) {
+          setDetailError({ id: selected, message: errorMessage(caught, "Could not load this lead.") });
+        }
       });
     return () => {
       live = false;
     };
-  }, [selected]);
+  }, [selected, leadKnown]);
 
   useEffect(() => {
     if (selected === null || answers !== null) return;
@@ -179,7 +417,20 @@ export function QueuePage({
       });
   }, [selected, answers]);
 
-  const detailLoading = selected !== null && detail === null && detailError === null;
+  const shownDetail = detail !== null && detail.row.posting_id === selected ? detail : null;
+  const shownError =
+    detailError !== null && detailError.id === selected ? detailError.message : null;
+  const detailLoading = selected !== null && shownDetail === null && shownError === null;
+
+  /*
+   * A `lead` the page cannot show — a stale bookmark, or a lead applied to since the link was sent
+   * — is dropped from the URL rather than left to open a pane on a posting in neither lane. Runs
+   * only once the queue has loaded: before that, EVERY id is unknown.
+   */
+  useEffect(() => {
+    if (data === null || selected === null || leadKnown) return;
+    setRouteParams({ lead: null });
+  }, [data, selected, leadKnown, setRouteParams]);
 
   /*
    * Below `lg` the detail pane is an opaque full-screen sheet, so it is a modal and everything it
@@ -237,6 +488,7 @@ export function QueuePage({
     const floor = minScore.trim() === "" ? null : Number(minScore);
     return (data?.rows ?? []).filter((row) => {
       if (removed.has(row.posting_id)) return false;
+      if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
       // A null score is not below a floor, it is unmeasured — so a floor excludes it rather than
       // silently treating "unknown" as zero.
@@ -245,7 +497,7 @@ export function QueuePage({
       }
       return true;
     });
-  }, [data, removed, query, minScore]);
+  }, [data, removed, runFilter, query, minScore]);
 
   const visible = useMemo(() => {
     // `review` selects a LANE, not a verdict: the apply queue is hidden entirely for it, so its
@@ -268,24 +520,29 @@ export function QueuePage({
     const floor = minScore.trim() === "" ? null : Number(minScore);
     return (data?.review ?? []).filter((row) => {
       if (removed.has(row.posting_id)) return false;
+      if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
       if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
         return false;
       }
       return true;
     });
-  }, [data, removed, query, minScore]);
+  }, [data, removed, runFilter, query, minScore]);
 
   const visibleReview = useMemo(() => {
     // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
     // its location — so filtering "eligible" while skipping this list is the documented "make the
     // review list look empty for a matching filter" failure. `review` shows the whole lane.
-    const base =
+    const byVerdict =
       facet === null || facet === "review"
         ? filteredReview
         : filteredReview.filter((row) => row.verdict === facet);
+    const base =
+      reasonFacet === null
+        ? byVerdict
+        : byVerdict.filter((row) => row.review_reason === reasonFacet);
     return sortRows(base, reviewSort, reviewRankOf);
-  }, [filteredReview, facet, reviewSort, reviewRankOf]);
+  }, [filteredReview, facet, reasonFacet, reviewSort, reviewRankOf]);
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -305,6 +562,9 @@ export function QueuePage({
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
       // contradict the server.
       ineligible: data?.counts.ineligible ?? 0,
+      // Passed through for the same reason as `ineligible`: a closed posting is drained on disk,
+      // so it is never a row and no client-side filter can see one.
+      closed: data?.counts.closed ?? 0,
       // Recomputed against the active filter, unlike `ineligible`: a review lead IS in the
       // payload, so a client-side filter can see one and the cell must agree with the list the
       // reader is looking at.
@@ -371,7 +631,7 @@ export function QueuePage({
           .querySelector<HTMLElement>(`[data-row-id="${String(successor.posting_id)}"]`)
           ?.focus();
       }, COLLAPSE_MS);
-      if (selected === row.posting_id) setSelected(null);
+      if (selected === row.posting_id) openLead(null);
 
       const call =
         kind === "applied" ? markApplied : kind === "skipped" ? markSkipped : report;
@@ -415,15 +675,24 @@ export function QueuePage({
           }
           push({
             /*
-             * The contract has no un-apply route, so this Undo puts the ROW back and says so. It
-             * does not claim to reverse the application record — a false claim there would be
-             * worse than no undo at all.
+             * Says what the button DOES, now that there is an inverse route to call: the undo
+             * withdraws the application record and only then puts the row back — the same
+             * write-then-restore order as skip and report, so a failed withdrawal leaves the row
+             * out rather than showing a lead the store still counts as applied.
              */
-            message: `Marked applied: ${row.company} — ${row.title}. Undo puts the row back; the application record stays until it is withdrawn.`,
+            message: `Marked applied: ${row.company} — ${row.title}. Undo withdraws it and puts the row back.`,
             undo: () => {
-              restore(row.posting_id);
+              void unapply(row.posting_id)
+                .then(() => {
+                  restore(row.posting_id);
+                })
+                .catch((caught: unknown) => {
+                  push({
+                    message: errorMessage(caught, "Could not withdraw that application."),
+                    tone: "error",
+                  });
+                });
             },
-            undoLabel: "Put the row back",
           });
         })
         .catch((caught: unknown) => {
@@ -434,7 +703,7 @@ export function QueuePage({
           });
         });
     },
-    [push, restore, selected, visible, visibleReview],
+    [push, restore, selected, openLead, visible, visibleReview],
   );
 
   /*
@@ -473,13 +742,39 @@ export function QueuePage({
       ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
       : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" };
 
-  const onSort = useCallback((key: SortKey) => {
-    setSort((current) => nextSort(current, key));
-  }, []);
+  // The current sort is read from the render rather than through a functional update: the setters
+  // persist to storage, so they take a value rather than a reducer.
+  const onSort = useCallback(
+    (key: SortKey) => {
+      setSort(nextSort(sort, key));
+    },
+    [sort, setSort],
+  );
 
-  const onReviewSort = useCallback((key: SortKey) => {
-    setReviewSort((current) => nextSort(current, key));
-  }, []);
+  const onReviewSort = useCallback(
+    (key: SortKey) => {
+      setReviewSort(nextSort(reviewSort, key));
+    },
+    [reviewSort, setReviewSort],
+  );
+
+  /*
+   * Counted over the WHOLE lane, never over `visibleReview`: these counts are the menu, and a menu
+   * that re-counts itself against its own selection offers one entry with the number you already
+   * chose and zeroes beside everything else.
+   */
+  const reasonCounts = useMemo(() => countReviewReasons(data?.review ?? []), [data]);
+
+  const toggleReason = useCallback(
+    (next: ReviewReason) => {
+      const clearing = reasonFacet === next;
+      setReasonFacet(clearing ? null : next);
+      // Same reason `review` opens the lane: with the apply queue off the page, a folded review
+      // section would leave a filter whose entire result is invisible.
+      if (!clearing) setReviewOpen(true);
+    },
+    [reasonFacet, setReasonFacet, setReviewOpen],
+  );
 
   // Clicking the active facet's band cell again clears it — one control, both directions.
   const toggleFacet = useCallback(
@@ -495,8 +790,27 @@ export function QueuePage({
        */
       if (!clearing && next === "review") setReviewOpen(true);
     },
-    [facet],
+    [facet, setFacet, setReviewOpen],
   );
+
+  /*
+   * The apply lane is off the page entirely — the `review` facet asks for that lane alone. The
+   * band's readout then describes the review lane, because describing a hidden list is describing
+   * nothing.
+   */
+  const laneOnly = facet === "review" || reasonFacet !== null;
+
+  /*
+   * The lane's copy, GENERATED from the lane. Both sentences below used to name two of the nine
+   * reasons by hand and described none of the 149 leads on the measured day, which is what copy
+   * that enumerates a closed catalog eventually does.
+   */
+  const reviewSentence = reviewLaneSentence(data?.review ?? []);
+  const reviewNote = (() => {
+    const breakdown = reviewBreakdown(data?.review ?? []);
+    const lead = "Held for a look, not blindly appliable";
+    return `${breakdown === "" ? `${lead}.` : `${lead} — ${breakdown}.`} Click to show only this lane.`;
+  })();
 
   // The empty grid must name the lever that emptied it. With a facet on, the two default
   // sentences point at the text box and the score floor — neither of which is what is filtering.
@@ -504,6 +818,12 @@ export function QueuePage({
     facet === null
       ? "Clear the text box or lower the minimum score."
       : `Clear the text box, lower the minimum score, or turn off the ${facet}-only filter.`;
+
+  /* What the reader turned on, in words, so "Show all" is obviously the way back out. */
+  const activeFilters = [
+    facet === null ? null : facet === "review" ? "the review lane only" : `${facet} only`,
+    reasonFacet === null ? null : `${REVIEW_REASON_LABELS[reasonFacet]} only`,
+  ].filter((entry): entry is string => entry !== null);
 
   if (loadError !== null) {
     /*
@@ -538,11 +858,42 @@ export function QueuePage({
       <div className="flex flex-col gap-4" inert={sheetOpen}>
         <StatusBand
           counts={bandCounts}
-          showing={facet === "review" ? visibleReview.length : visible.length}
-          total={facet === "review" ? data.review.length : data.rows.length}
+          /*
+           * What is VISIBLE ON THE PAGE, which is both lanes whenever both are drawn. Counting the
+           * apply lane alone printed "Showing 0 of 0" above 149 listed review leads on the day the
+           * apply lane emptied — the one sentence that answers "did my filter match anything"
+           * contradicting the list directly under it. `laneOnly` is the case where the apply queue
+           * is genuinely off the page, so its zero belongs in neither figure.
+           */
+          reviewNote={reviewNote}
+          showing={laneOnly ? visibleReview.length : visible.length + visibleReview.length}
+          total={laneOnly ? data.review.length : data.rows.length + data.review.length}
           activeFacet={facet}
           onToggleFacet={toggleFacet}
         />
+        {/* Under the band, because it filters the same lists the band's cells do — and rendered
+            only when there is a lane to filter, so a page with no review leads has no dead row. */}
+        {data.review.length === 0 ? null : (
+          <div
+            role="group"
+            aria-label="Filter by review reason"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <span className="label-micro text-fg-3">reason</span>
+            {reasonCounts.map(({ reason, count }) => (
+              <ReasonChip
+                key={reason}
+                label={REVIEW_REASON_LABELS[reason]}
+                count={count}
+                active={reasonFacet === reason}
+                onToggle={() => {
+                  toggleReason(reason);
+                }}
+              />
+            ))}
+          </div>
+        )}
+
         <QueueToolbar
           query={query}
           onQuery={setQuery}
@@ -552,22 +903,39 @@ export function QueuePage({
 
         {/* The active facet stated in words next to a plain clear, so it is obvious a filter is on
             and how to drop it — the pressed band cell shows which, this shows that. */}
-        {facet !== null ? (
+        {/* The run filter reads as its own sentence rather than joining `activeFilters`: it comes
+            from the URL, not from a control on this page, so the reader needs to be told it is on
+            at all before being told how to drop it. */}
+        {runFilter === null ? null : (
           <p className="flex items-center gap-3 text-sm text-fg-2">
-            <span>
-              {facet === "review" ? "Showing the review lane only." : `Showing ${facet} only.`}
-            </span>
+            <span>Showing run {runFilter.toLocaleString()}&rsquo;s leads only.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setRouteParams({ run: null });
+              }}
+              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+            >
+              Show all runs
+            </button>
+          </p>
+        )}
+
+        {activeFilters.length === 0 ? null : (
+          <p className="flex items-center gap-3 text-sm text-fg-2">
+            <span>Showing {activeFilters.join(", ")}.</span>
             <button
               type="button"
               onClick={() => {
                 setFacet(null);
+                setReasonFacet(null);
               }}
               className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
             >
               Show all
             </button>
           </p>
-        ) : null}
+        )}
 
         {newCount > 0 && stashed !== null ? (
           <p className="flex items-center gap-3 text-sm text-fg-2">
@@ -604,7 +972,7 @@ export function QueuePage({
             */}
           {/* The `review` facet hides the apply queue entirely — it is a request to see that lane
               alone. Its own empty/populated states below are unaffected. */}
-          {facet === "review" ? null : data.rows.length === 0 && data.review.length === 0 ? (
+          {laneOnly ? null : data.rows.length === 0 && data.review.length === 0 ? (
             <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
               The queue is empty. A run has to deliver a tailored lead before anything appears
               here — this is not a filter result.
@@ -628,13 +996,11 @@ export function QueuePage({
               collapsing={collapsing}
               onOpenApply={openApply}
               onSelect={(row) => {
-                // Re-clicking the open row must not clear `detail`. `setSelected` bails out on
-                // an unchanged value, so the effect keyed on it never re-fires and the pane
-                // would sit on its loading state for good.
+                // Re-clicking the open row must not rewrite the hash: the detail effect is keyed
+                // on `selected`, and a no-op write that still produced a new value would re-fire
+                // it and drop the pane back to its loading state.
                 if (row.posting_id === selected) return;
-                setSelected(row.posting_id);
-                setDetail(null);
-                setDetailError(null);
+                openLead(row.posting_id);
               }}
               onApplied={(row) => {
                 act(row, "applied");
@@ -657,7 +1023,7 @@ export function QueuePage({
              * included, so `aria-controls="review-list"` can never be left pointing at an element
              * the fallback replaced. `mt-12` moved out to the wrapper so the card inherits it.
              */
-            <div className={facet === "review" ? undefined : "mt-12"}>
+            <div className={laneOnly ? undefined : "mt-12"}>
               <ErrorBoundary
                 title="The review lane could not be drawn."
                 hint="The queue above is unaffected and still works. These leads are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
@@ -665,10 +1031,11 @@ export function QueuePage({
                 resetKeys={[data]}
               >
                 <section aria-labelledby="review-heading">
-                  {/* No top rule when the review lane stands alone (the `review` facet): a rule at
-                      the top of the content has nothing to divide it from. */}
+                  {/* No top rule when the review lane stands alone — the `review` facet or a
+                      reason facet: a rule at the top of the content has nothing to divide it
+                      from. */}
                   <header
-                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-2 ${facet === "review" ? "" : "border-t border-divider pt-8"}`}
+                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-2 ${laneOnly ? "" : "border-t border-divider pt-8"}`}
                   >
                     <h2
                       id="review-heading"
@@ -687,7 +1054,7 @@ export function QueuePage({
                       aria-expanded={reviewOpen}
                       aria-controls="review-list"
                       onClick={() => {
-                        setReviewOpen((open) => !open);
+                        setReviewOpen(!reviewOpen);
                       }}
                       className="min-h-11 rounded-sm px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
                     >
@@ -701,9 +1068,7 @@ export function QueuePage({
                       * split; if they ever disagree, the folder tree wins.
                       */}
                     <p className="w-full text-sm text-fg-2">
-                      Open these before applying. Each one is either outside the US, or carries a
-                      title the role gate will not positively call software — so it is not
-                      blindly appliable. Same split as the{" "}
+                      Open these before applying. {reviewSentence} Same split as the{" "}
                       <code className="text-fg-3">_review</code> folder.
                     </p>
                   </header>
@@ -735,9 +1100,7 @@ export function QueuePage({
                           onOpenApply={openApply}
                           onSelect={(row) => {
                             if (row.posting_id === selected) return;
-                            setSelected(row.posting_id);
-                            setDetail(null);
-                            setDetailError(null);
+                            openLead(row.posting_id);
                           }}
                           onApplied={(row) => {
                             act(row, "applied");
@@ -784,7 +1147,7 @@ export function QueuePage({
                * row, and at `lg` it never registers one.
                */
               const opener = selected;
-              setSelected(null);
+              openLead(null);
               window.setTimeout(() => {
                 const row = document.querySelector<HTMLElement>(
                   `[data-row-id="${String(opener)}"]`,
@@ -797,23 +1160,23 @@ export function QueuePage({
           >
             <DetailPane
               key={selected}
-              detail={detail}
+              detail={shownDetail}
               loading={detailLoading}
-              error={detailError}
+              error={shownError}
               answers={answers}
               onClose={() => {
-                setSelected(null);
+                openLead(null);
               }}
               onApplied={() => {
-                const row = detail?.row;
+                const row = shownDetail?.row;
                 if (row) act(row, "applied");
               }}
               onSkip={() => {
-                const row = detail?.row;
+                const row = shownDetail?.row;
                 if (row) act(row, "skipped");
               }}
               onReport={() => {
-                const row = detail?.row;
+                const row = shownDetail?.row;
                 if (row) act(row, "reported");
               }}
               onToast={(message, tone) => {

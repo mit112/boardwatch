@@ -52,6 +52,7 @@ export function queueResponse(rows: QueueRow[], review: QueueRow[] = []): QueueR
     uncertain: 0,
     ineligible: 0,
     review: review.length,
+    closed: 0,
     applied_ever: 0,
     skipped: 0,
     reported: 0,

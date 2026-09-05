@@ -90,6 +90,11 @@ export const getDetail = (postingId: number): Promise<QueueDetail> =>
 export const markApplied = (postingId: number): Promise<AppliedResponse> =>
   request<AppliedResponse>(`/api/queue/${String(postingId)}/applied`, "POST");
 
+/** The inverse of `markApplied`: the store's `mark_job_unapplied`, so the applied toast's undo is
+ *  a real withdrawal rather than a local restore that leaves the application record standing. */
+export const unapply = (postingId: number): Promise<AppliedResponse> =>
+  request<AppliedResponse>(`/api/queue/${String(postingId)}/unapplied`, "POST");
+
 export const markSkipped = (postingId: number): Promise<SkipResponse> =>
   request<SkipResponse>(`/api/queue/${String(postingId)}/skipped`, "POST");
 

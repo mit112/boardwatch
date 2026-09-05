@@ -92,6 +92,9 @@ function counts(rows: QueueRow[]): QueueCounts {
     // can actually open. `in_queue` above is the apply lane alone, so the two together account
     // for every delivered lead.
     review: reviewRows().length,
+    // Drained like `ineligible` and counted for the same reason, but counted over the whole pool
+    // rather than the apply lane: a closed posting leaves the queue without any rule judging it.
+    closed: pool().filter((row) => row.status === "closed").length,
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     reported: reportedPostingIds.size,
@@ -137,7 +140,9 @@ function route(method: string, path: string): unknown {
   if (method === "GET" && detailMatch) return detailFor(findRow(Number(detailMatch[1])));
 
   const actionMatch =
-    /^\/api\/queue\/(\d+)\/(applied|skipped|unskip|reported|unreport|reveal)$/.exec(path);
+    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|reveal)$/.exec(
+      path,
+    );
   if (method === "POST" && actionMatch) {
     const row = findRow(Number(actionMatch[1]));
     const action = actionMatch[2];
@@ -153,6 +158,12 @@ function route(method: string, path: string): unknown {
       const already = appliedJobIds.has(row.job_id);
       appliedJobIds.add(row.job_id);
       return { outcome: already ? "unchanged" : "created", job_id: row.job_id };
+    }
+    if (action === "unapplied") {
+      // The applied toast's undo. Mirrors `mark_job_unapplied`: the record is withdrawn, so the
+      // lead comes back into the pool rather than merely reappearing in this session's list.
+      const known = appliedJobIds.delete(row.job_id);
+      return { outcome: known ? "transitioned" : "unchanged", job_id: row.job_id };
     }
     if (action === "skipped") {
       skippedPostingIds.add(row.posting_id);

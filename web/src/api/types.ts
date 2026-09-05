@@ -126,6 +126,13 @@ export interface QueueCounts {
    * this the difference between it and the delivered set is an unexplained remainder.
    */
   review: number;
+  /**
+   * Delivered leads whose posting the employer has since taken down. They are NOT in `rows` and
+   * NOT in `in_queue`: a closed posting is not work, and its folder is drained to `_closed`. Its
+   * own cell rather than folded into `ineligible` — nothing judged it, so calling it a rejection
+   * would assert a decision no rule made.
+   */
+  closed: number;
   applied_ever: number;
   skipped: number;
   /**
