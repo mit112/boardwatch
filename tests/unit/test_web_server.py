@@ -1592,3 +1592,31 @@ def test_a_work_auth_status_outside_the_catalog_is_refused_not_copied(
     assert response.json()["issue"] == "unknown_work_auth_status"
     # `AnswersViolation` carries no VALUE by construction; the field is named, its content is not.
     assert b"not_a_catalog_status" not in response.body
+
+
+def test_the_favicon_is_served_and_the_ico_request_is_not_a_404(
+    live: Live, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every page load asked for `/favicon.ico` and got a 404 in the console. The bundle carries
+    `favicon.svg` (Vite copies `public/` to the static root), which is served here; `.ico` is what
+    a browser asks for unprompted and is answered without content rather than refused.
+
+    `static_root` is redirected because the favicon is added to the bundle by the client half of
+    this change, and the bundle is rebuilt once after both land.
+    """
+    bundle = tmp_path / "bundle"
+    (bundle / "assets").mkdir(parents=True)
+    (bundle / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf-8")
+    monkeypatch.setattr(server_mod, "static_root", lambda: bundle)
+
+    svg = call(live, "/favicon.svg", bearer=None)
+    assert svg.status == 200
+    assert svg.headers["content-type"] == "image/svg+xml"
+    assert svg.body.startswith(b"<svg")
+
+    ico = call(live, "/favicon.ico", bearer=None)
+    assert ico.status != 404, ico.body[:200]
+
+    # The control: the closed asset-name rule is untouched, so widening it is not what made the
+    # two requests above succeed.
+    assert call(live, "/assets/../../etc/passwd", bearer=None).status == 404
