@@ -233,3 +233,57 @@ def test_b2_instrument_counts_the_apply_lane_not_every_delivered_lead(
     pdf_stage = next(stage for stage in data["stages"] if stage["name"] == "pdf")
     assert pdf_stage["entered"] == 3, pdf_stage
     assert pdf_stage["advanced"] == 3, pdf_stage
+
+
+def test_an_above_band_title_never_reaches_the_lane_so_t44_cannot_fire(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins WHY T44's `seniority_above_band` is inert on the pipeline path.
+
+    T44 routes an `above_band` title to the review lane, and T43's `_lead_lanes` now computes
+    and passes that verdict for real. But the pipeline calls `rank_open_postings` WITHOUT
+    `include_over_seniority`, so the ranker hides an above-band posting as
+    `hidden_over_seniority` BEFORE delivery — it never becomes a lead, never reaches
+    `review_gate.lane`, and the flag can therefore never be True here. The live profile's band
+    is `entry`, so this is the real configuration, not a hypothetical one.
+
+    That is a decision, not a bug to patch silently: surfacing above-band leads into the review
+    lane instead of dropping them is a product change (it raises delivered volume with postings
+    currently withheld), and it is recorded for the owner rather than taken here.
+
+    This test is the guard on that reasoning. It FAILS the moment someone passes
+    `include_over_seniority=True` without deciding what the lane should do with the result —
+    which is exactly when T44's branch stops being dead code.
+    """
+    _ready(env)
+    apply_id = _seed_posting(env, slug="inband1")
+    senior_id = _seed_posting(env, slug="senior1")
+    engine = get_engine(env)
+    with engine.begin() as conn:
+        conn.execute(
+            tables.postings.update()
+            .where(tables.postings.c.id == senior_id)
+            .values(title="Senior Backend Engineer", normalized_title="senior backend engineer")
+        )
+        # The gate short-circuits to `in_band` on `any` and says so rather than passing
+        # silently, so a real band must be set or this test would pass vacuously.
+        conn.execute(tables.profile.update().values(target_seniority_band="entry"))
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_ok)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    delivered = {lead.posting_id for lead in summary.tailored}
+    assert delivered == {apply_id}, (
+        "the above-band posting must be hidden by the RANKER, never delivered to a lane; "
+        f"got {delivered}"
+    )
+    # Read from the funnel artifact, where the reason is named: "not delivered" alone would
+    # also be true if some unrelated filter had eaten it.
+    data = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    shortlist = next(st for st in data["stages"] if st["name"] == "shortlist")
+    over = next(d for d in shortlist["drops"] if d["reason"] == "hidden_over_seniority")
+    assert over["count"] == 1, (
+        "and it must be hidden as over-seniority specifically, not lost to another filter; "
+        f"drops were {shortlist['drops']}"
+    )
