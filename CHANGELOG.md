@@ -323,6 +323,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`top` now ranks a decided lead above one nobody has judged yet.** Score used to be the whole
+  sort key, so an `eligible` posting (deterministic or a persisted final-gate verdict) could rank
+  below a higher-scoring `uncertain` one — the only thing score-only sorting hid was `ineligible`.
+  The shortlist now sorts by verdict tier first, score second: a decided `eligible` lead outranks
+  an `uncertain` software-engineer lead, which outranks everything else still visible. Score still
+  breaks ties within a tier — this reorders tiers, it does not reweigh the score.
+
 - **The board scan no longer ends with one host running alone.** Boards were all handed to the
   worker pool up front, so the submission order *was* the schedule — and that order gave every host
   one slot per round. A round is as wide as the fleet has hosts (131 of them), so a host with ten
