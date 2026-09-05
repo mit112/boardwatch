@@ -31,7 +31,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,7 @@ from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import server as server_mod
+from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
 from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
@@ -1219,7 +1220,7 @@ def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None
 
     counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
     assert counts["delivered_last_run"] == 1
-    assert counts["last_run_finished"] == NOW.isoformat()
+    assert counts["last_run_finished"] == NOW.replace(tzinfo=UTC).isoformat()
 
 
 # -------------------------------------------------------------------------------------- details
@@ -1446,3 +1447,192 @@ def test_an_unusable_profile_row_is_answered_not_dropped(
 
     assert response.status == 503, response.body[:400]
     assert b"eligibility_facts_json" in response.body
+
+
+# -------------------------------------------------------------- the web-viewer payload contract
+
+
+def test_every_queue_timestamp_carries_an_explicit_utc_offset(live: Live, engine: Engine) -> None:
+    """The store holds NAIVE UTC (`core/clock.utcnow` strips tzinfo). A zone-less ISO string is
+    parsed by the browser as LOCAL time, so an owner at UTC-5 read a run that finished at 12:56 PM
+    as 05:56 PM. The offset is the fix, and it belongs on the wire rather than in the client:
+    `new Date()` on an offset-carrying string is right in every locale.
+    """
+    with engine.begin() as conn:
+        run_id = _run(conn)
+        _deliver(conn, "one", run_id=run_id)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+
+    stamps = [payload["counts"]["last_run_finished"], payload["rows"][0]["first_seen"]]
+    assert all(stamp is not None for stamp in stamps), payload["counts"]
+    for stamp in stamps:
+        assert stamp.endswith("+00:00"), stamp
+        assert datetime.fromisoformat(stamp).tzinfo is not None, stamp
+    # The instant is unchanged: the offset is attached to the stored naive value, never shifted.
+    assert datetime.fromisoformat(payload["counts"]["last_run_finished"]) == NOW.replace(
+        tzinfo=UTC
+    )
+    assert datetime.fromisoformat(payload["rows"][0]["first_seen"]) == NOW.replace(tzinfo=UTC)
+
+
+def test_every_run_timestamp_carries_an_explicit_utc_offset(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        _run(conn)
+
+    run = call(live, "/api/runs", bearer=live.token).json()["runs"][0]
+
+    for name in ("started", "finished"):
+        assert run[name] is not None, run
+        assert run[name].endswith("+00:00"), run[name]
+    assert datetime.fromisoformat(run["finished"]) == NOW.replace(tzinfo=UTC)
+    assert datetime.fromisoformat(run["started"]) == (NOW - timedelta(minutes=20)).replace(
+        tzinfo=UTC
+    )
+
+
+def test_an_unfinished_run_still_reports_a_null_finished(live: Live, engine: Engine) -> None:
+    """The control for the two above: attaching an offset must not turn "not finished yet" into
+    a string. `_counts` reads only FINISHED runs, so this is the runs payload's case alone."""
+    with engine.begin() as conn:
+        _run(conn, finished=None)
+
+    run = call(live, "/api/runs", bearer=live.token).json()["runs"][0]
+
+    assert run["finished"] is None
+    assert run["started"].endswith("+00:00")
+
+
+def test_a_rows_locations_are_de_duplicated_and_location_is_the_first(
+    live: Live, engine: Engine
+) -> None:
+    """The live store served "Austin, Texas, United States; Bozeman, …; …, Austin, Bozeman, …" —
+    one list joined twice, with duplicates. `location` is now the PRIMARY location and `locations`
+    the de-duplicated list, so the client renders "Austin, TX +1" instead of a wall of text.
+
+    De-duplication is at the ENTRY level and case-insensitive on the trimmed entry; an entry is
+    never split on its internal commas, or "Austin, TX" becomes two places.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, "one", locations=["Austin, TX", "austin, tx ", "Remote"])
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+
+    assert row["location"] == "Austin, TX"
+    assert row["locations"] == ["Austin, TX", "Remote"]
+
+
+def test_a_row_with_no_locations_reports_none_and_an_empty_list(
+    live: Live, engine: Engine
+) -> None:
+    with engine.begin() as conn:
+        _deliver(conn, "one", locations=[])
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+
+    assert row["location"] is None
+    assert row["locations"] == []
+
+
+def test_the_answers_panel_serves_work_auth_words_not_enum_tokens(
+    live: Live, engine: Engine
+) -> None:
+    """The panel exists to be COPIED into an employer's form. `ead_or_similar` pasted into "what
+    is your work authorization status?" is a token from this program's catalog, not an answer a
+    human wrote, so the profile's stored value is restated in the words the form expects.
+    """
+    facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="ead_or_similar", jurisdiction="us", needs_sponsorship=False
+        )
+    )
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    work_auth = call(live, "/api/answers", bearer=live.token).json()["work_auth"]
+
+    assert work_auth["status"] == "EAD or similar (work authorization document)"
+    # Already true before this change, asserted so it stays true: a raw `True` on a form is not
+    # an answer to "do you need sponsorship".
+    assert work_auth["needs_sponsorship"] == "no"
+
+
+#: The catalog's own `work_auth.status` vocabulary, read from the BUNDLED rules rather than
+#: respelled here: the choice vocabulary belongs to the catalog (D-P2-4), and a list retyped in a
+#: test would go on passing after the catalog gained a sixth member.
+WORK_AUTH_STATUS_CHOICES: tuple[str, ...] = next(
+    field.choices
+    for field in load_rules(Path("/nonexistent")).family("work_auth").fields
+    if field.name == "status"
+)
+
+
+@pytest.mark.parametrize("status", WORK_AUTH_STATUS_CHOICES)
+def test_every_declared_work_auth_status_has_words(status: str) -> None:
+    """The mapping is CLOSED over the catalog's declared choices. Parametrised over the catalog so
+    a new member ships with words or fails here — a member with none would otherwise reach an
+    employer's form as a raw token, which is the bug this closes."""
+    assert status in WORK_AUTH_STATUS_WORDS
+    assert WORK_AUTH_STATUS_WORDS[status] != status
+
+
+def test_a_work_auth_status_outside_the_catalog_is_refused_not_copied(
+    live: Live, engine: Engine
+) -> None:
+    """Out-of-catalog is a failure, never a new bucket. Passing the unknown token through would
+    put it on the clipboard, which is exactly what the words mapping exists to prevent; answering
+    with a blank would hide a corrupt profile row behind an empty form field."""
+    facts = Facts(work_authorization=WorkAuthFact(status="not_a_catalog_status"))
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    response = call(live, "/api/answers", bearer=live.token)
+
+    assert response.status == 422, response.body[:400]
+    assert response.json()["issue"] == "unknown_work_auth_status"
+    # `AnswersViolation` carries no VALUE by construction; the field is named, its content is not.
+    assert b"not_a_catalog_status" not in response.body
+
+
+def test_the_favicon_is_served_and_the_ico_request_is_not_a_404(
+    live: Live, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every page load asked for `/favicon.ico` and got a 404 in the console. The bundle carries
+    `favicon.svg` (Vite copies `public/` to the static root), which is served here; `.ico` is what
+    a browser asks for unprompted and is answered without content rather than refused.
+
+    `static_root` is redirected because the favicon is added to the bundle by the client half of
+    this change, and the bundle is rebuilt once after both land.
+    """
+    bundle = tmp_path / "bundle"
+    (bundle / "assets").mkdir(parents=True)
+    (bundle / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf-8")
+    monkeypatch.setattr(server_mod, "static_root", lambda: bundle)
+
+    svg = call(live, "/favicon.svg", bearer=None)
+    assert svg.status == 200
+    assert svg.headers["content-type"] == "image/svg+xml"
+    assert svg.body.startswith(b"<svg")
+
+    ico = call(live, "/favicon.ico", bearer=None)
+    assert ico.status != 404, ico.body[:200]
+
+    # The control: the closed asset-name rule is untouched, so widening it is not what made the
+    # two requests above succeed.
+    assert call(live, "/assets/../../etc/passwd", bearer=None).status == 404
+
+
+def test_the_queue_payload_carries_the_fields_the_client_halves_are_built_against(
+    live: Live, engine: Engine
+) -> None:
+    """`counts.closed`, `meta.reveal_supported` and `row.why` were audited as already emitted and
+    are asserted here as ONE statement about a default payload, so the client halves that consume
+    them are not built against a field that only exists in a special-cased test."""
+    with engine.begin() as conn:
+        _deliver(conn, "one")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+
+    assert payload["counts"]["closed"] == 0
+    assert payload["meta"]["reveal_supported"] is True
+    assert "why" in payload["rows"][0]

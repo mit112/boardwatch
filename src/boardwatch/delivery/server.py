@@ -594,6 +594,16 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._file(root / "index.html", "text/html; charset=utf-8")
             return
+        # Named explicitly rather than by widening `_ASSET`: Vite copies `public/` to the static
+        # ROOT, not into `assets/`, and the closed character set that makes the asset route safe
+        # is worth more than one extra branch. `.ico` is what a browser asks for without being
+        # told to; answered with no content so the console stays clean.
+        if path == "/favicon.svg":
+            self._file(root / "favicon.svg", "image/svg+xml")
+            return
+        if path == "/favicon.ico":
+            self._send(HTTPStatus.NO_CONTENT, b"", "image/svg+xml")
+            return
         asset = _ASSET.match(path)
         # The name is matched against a closed character set with no separator in it, so no
         # traversal segment can be expressed; the containment assertion below is what catches a
