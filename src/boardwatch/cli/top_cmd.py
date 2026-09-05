@@ -561,12 +561,20 @@ def rank_open_postings(
     # Score alone used to be the whole key, so a decided lead could rank below one nobody
     # has judged yet. Tier first, score second (D-477): tier 0 is a DECIDED `eligible` — the
     # deterministic verdict on the row, or a persisted final-gate `eligible` read the same
-    # way the ineligible hide below reads `gate_verdicts`; tier 1 is `uncertain` + role
-    # `swe`, the release population everything else is drawn from; tier 2 is everything
-    # else still visible (uncertain non-swe, unevaluated, ...). Score still orders WITHIN a
-    # tier — this re-orders tiers, it does not re-weigh the score.
+    # way the ineligible hide below reads `gate_verdicts` — AND role `swe`; tier 1 is
+    # `uncertain` + role `swe`; tier 2 is everything else still visible (any-verdict
+    # non-swe or no-role-signal, unevaluated, ...). Role is a term of tier 0 since run 5
+    # (2026-09-05, D-483): without it every `eligible` posting whose title carried no role
+    # signal at all — park rangers, pulmonologists, wealth associates, all `eligible` because
+    # the body flagged nothing — outranked every undecided software lead, 20 of 30 delivered,
+    # worsening each run as `built` retired the software ones. The release population is
+    # role `swe` in BOTH decided tiers. Score still orders WITHIN a tier — this re-orders
+    # tiers, it does not re-weigh the score.
     def _rank_tier(posting: RankedPosting) -> int:
-        if posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible":
+        decided_eligible = (
+            posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible"
+        )
+        if decided_eligible and posting.role == "swe":
             return 0
         if posting.verdict == "uncertain" and posting.role == "swe":
             return 1

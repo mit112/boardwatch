@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+
+- **A lead the final-eligibility judge rejects no longer makes the run fatal.** The cohort guard
+  requires every shortlisted candidate to reach a terminal state, and a judge rejection was not
+  one it knew: on the first run where the judge worked, its 10 rejections read as "10 shortlisted
+  candidates unaccounted" and the run exited 1 after delivering everything else. A rejection is
+  now a terminal state of its own, subtracted from the cohort and from the render denominator,
+  and reported under the gate's `ineligible` count as before.
+
+### Changed
+
+- **A decided `eligible` lead earns the top rank tier only when its title reads as a software
+  role.** Ranking tiered any `eligible` verdict first, so postings whose titles carried no role
+  signal at all — and whose bodies flagged nothing, hence `eligible` — outranked every undecided
+  software lead and filled two thirds of a slate. Both decided tiers now require role `swe`; an
+  `eligible` lead with no role signal ranks with everything else, below the undecided software
+  leads it used to displace. Score still orders within a tier.
+
 ## [Unreleased]
 
 ### Added
