@@ -65,8 +65,10 @@ stale `.git/index.lock` from 09-04 22:54 with no git process alive). Mit ran
 `content_digest` was verified read-only against `projection_candidate(...)` — **MATCH**. The
 seven worktrees are removed (`bw-int` last) and their branches deleted. **The editable venv now
 runs T37, T38 and T39**, and the next `--project` run is M1's first acceptance reading (§5 of
-`HANDOFF-2026-09-07.md`). The formatting session is still owed and re-stales the stamp:
-**re-approve immediately after it, before any run.**
+`HANDOFF-2026-09-07.md`). **The formatting session is DONE (D-476), 04:45–05:00 CDT:** Nakshatra
+now sits above SAKEC, the skills block is kept as shell-authored, `projection.{sde,ios}.yaml` exist;
+`projection.yaml` re-approved at **04:59:45 CDT**, both lens files at 04:59:52 and 05:00:01, all three
+`content_digest`s verified read-only — **MATCH**. The stamp is fresh for the 06:00 tick.
 
 **0-0. OWNER RULINGS 2026-09-05 04:13 (D-475): T40 — YES, build. T41 — FIX, build.** Both are
 now plain tickets for the next execution session, in that order, after R2.

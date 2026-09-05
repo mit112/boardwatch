@@ -12811,3 +12811,15 @@ Run 4 adds ~40; the apply lane stays ≤ 10, so M1's headline is a count.
 | docs + `ROADMAP.md` + `HANDOFF-2026-09-07.md`, `../bw-int` on `close-2026-09-06`, detached, read from its own exit sentinel | **exit 0 — 9,469 passed / 0 failed / 1 skipped / 4 xfailed**, 410.13 s, overlapping the 04:00 tick's fetch phase |
 
 The count matches the 09-06 post-review gate exactly: no test was added or changed by this session.
+
+### The formatting session (04:45–05:00 CDT, Mit's sitting, D-476)
+
+| step | result |
+|---|---|
+| before-edit render via `projection_candidate` + `LatexRenderer` | `content_digest` `a1063a6e…` == the 04:14 stamp — apparatus confirmed |
+| `projection.yaml` | Nakshatra moved above SAKEC; digest `3a292ad2…` → `acc847ba…` |
+| `projection.sde.yaml` / `projection.ios.yaml` | new; digests `7b48b126…` / `19a588f5…`; 8 entries each, 1 page |
+| renders | `preview-2026-09-05/01-after/{main,sde,ios}/`; lens sets 1 page, full pool 2 pages |
+| `approve-projection` × 3 | 04:59:45 / 04:59:52 / 05:00:01 CDT, `controlling_terminal` |
+| read-only verification | all three `content_digest` + `bundle_digest` **MATCH**; pre-approval control reported NO STAMP × 3 |
+| stamps on disk | 4 (the 04:14 stamp is superseded and inert) |
