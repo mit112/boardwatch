@@ -283,6 +283,11 @@ class Lead:
     out_dir: str
     pdf_built: bool
     locations: tuple[str, ...] | None
+    # T43. True for a review-lane lead delivered with no PDF by design — the tailor loop never
+    # attempted it. B2 ("leads with a compiled résumé PDF — 100%", D-477) is read over
+    # apply-lane leads only, so the `pdf` stage below excludes these from its denominator; a
+    # normal, pre-T43 artifact carries `False` on every lead, which is the old behaviour.
+    pending_tailor: bool = False
 
     @property
     def location_class(self) -> LocationClass:
@@ -1190,6 +1195,11 @@ def build_run_funnel(
 
     tailored = len(leads)
     with_pdf = sum(1 for lead in leads if lead.pdf_built)
+    # T43/B2 (D-477): a review-lane lead is DELIVERED (counted in `tailored`, above) but never
+    # attempted a render, so it must not count against the `pdf` stage below the way a real
+    # tailor failure would — that stage measures whether tailoring the leads it entered ACTUALLY
+    # produced a PDF, and a review lead entered no render at all.
+    apply_lane_tailored = sum(1 for lead in leads if not lead.pending_tailor)
 
     if shortlist is None:
         # The ranker never ran: a fatal scan outage or a missing profile returns before it. Its
@@ -1494,12 +1504,14 @@ def build_run_funnel(
         ),
         Stage(
             name="pdf",
-            entered=tailored,
+            # T43/B2 (D-477): the denominator is APPLY-lane leads, not every delivered lead — a
+            # pending-tailor review lead never entered a render, so it is not this stage's drop.
+            entered=apply_lane_tailored,
             advanced=with_pdf,
             drops=(
                 Drop(
                     reason="no_pdf",
-                    count=tailored - with_pdf,
+                    count=apply_lane_tailored - with_pdf,
                     note="résumé source written but no PDF compiled — D-006's silent degrade",
                 ),
             ),

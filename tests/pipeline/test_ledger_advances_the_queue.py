@@ -34,7 +34,17 @@ from boardwatch.store.ledger_queries import (
 from tests.conftest import write_test_resume_template
 
 runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
-BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
+
+# T43 appended the trailing clause: it trips the (non-blocking, default `preference`)
+# `degree` family's `degree_preferred` pattern, which is enough on its own — one row, no
+# blocking family involved — for `engine.evaluate` to return `eligible` rather than the
+# zero-row `uncertain` the plain sentence produced. See `test_pipeline_run.BODY` for the
+# full reasoning; kept as a separate constant here rather than imported, matching this
+# module's existing duplication of `_seed_posting`/`_ready` from that one.
+BODY = (
+    "We are hiring a backend engineer to work on Python and PostgreSQL services. "
+    "Bachelor's degree preferred."
+)
 
 
 @pytest.fixture()

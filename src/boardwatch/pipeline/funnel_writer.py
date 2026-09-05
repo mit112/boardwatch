@@ -100,7 +100,7 @@ def collect_run_funnel(
     liveness: LivenessCheck | None = None,
     # D-325. `None` means the measured-death sweep did NOT run, never that it found nothing.
     death_probe: DeathProbeReport | None = None,
-    tailored: list[tuple[int, str, str, Path, bool]],
+    tailored: list[tuple[int, str, str, Path, bool, bool]],
     tailor_failed: int,
     # P5a. `projection_ran` is the ONLY thing that decides whether the artifact carries a
     # `projection` stage — never whether `projection_outcomes` is non-empty. A projected run can
@@ -142,13 +142,13 @@ def collect_run_funnel(
 ) -> RunFunnel:
     """Read every count this run's funnel needs, then hand them to the pure builder.
 
-    `tailored` is (posting_id, company, title, out_dir, pdf_built) per lead — plain tuples so
-    this module does not import `PipelineSummary` and make pipeline -> reports -> pipeline a
-    cycle. `coverages` is one per-lead coverage report in the SAME order (P4 item 6), passed
-    separately from the tuple exactly as `rewrite_rows` is.
+    `tailored` is (posting_id, company, title, out_dir, pdf_built, pending_tailor) per lead —
+    plain tuples so this module does not import `PipelineSummary` and make pipeline -> reports
+    -> pipeline a cycle. `coverages` is one per-lead coverage report in the SAME order (P4 item
+    6), passed separately from the tuple exactly as `rewrite_rows` is.
     """
     catalog = load_rules(settings.config_dir)
-    posting_ids = [posting_id for posting_id, _, _, _, _ in tailored]
+    posting_ids = [posting_id for posting_id, _, _, _, _, _ in tailored]
 
     with engine.connect() as conn:
         identity = current_identity(conn, settings)
@@ -288,8 +288,9 @@ def collect_run_funnel(
             # three fields above label `"unknown"` — which is what distinguishes it from a
             # posting that resolved and named no place.
             locations=provenance[posting_id].locations if posting_id in provenance else None,
+            pending_tailor=pending_tailor,
         )
-        for posting_id, company, title, out_dir, pdf_built in tailored
+        for posting_id, company, title, out_dir, pdf_built, pending_tailor in tailored
     ]
 
     return build_run_funnel(
