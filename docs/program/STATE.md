@@ -75,8 +75,11 @@ close-2026-09-06`, then **immediately** `boardwatch profile-bundle approve-proje
 controlling TTY (the screen prints the shell's header and education above the entries), then the
 formatting session in that same sitting — per-lens skills, the SAKEC/Nakshatra order,
 `projection.{sde,ios}.yaml` — because each of those edits re-stales the stamp. Then verify the
-gate read-only (`projection_candidate(...)`'s `content_digest` must equal the stamp's), delete the
-worktrees, `git push origin main`. **Without Mit: do not merge; do not move `main`.** The reason is
+gate read-only (`projection_candidate(...)`'s `content_digest` must equal the stamp's), then
+`git push origin main`. **The branch to merge is `close-2026-09-06`** (it fast-forwards; it already
+contains `close-2026-09-05`'s four commits). Only then delete the worktrees, and note there are
+SEVEN: `../bw-close`, `../bw-t31`, `../bw-t32`, `../bw-t37`, `../bw-t38`, `../bw-t39` and
+`../bw-int` — `bw-int` is the one holding `close-2026-09-06`, so remove it LAST, after the merge. **Without Mit: do not merge; do not move `main`.** The reason is
 mechanical: the tick runs the editable venv from `main`, and a stale stamp costs a ~107-min scan,
 a P5a refusal, exit 1 and a withheld heartbeat — a false alert for a condition we chose.
 
