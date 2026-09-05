@@ -1,4 +1,5 @@
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -335,3 +336,38 @@ def test_an_invalid_value_for_a_new_key_is_refused(cfg) -> None:
     even though the casters here only parse."""
     assert runner.invoke(app, ["config", "set", "location_filter_mode", "sideways"]).exit_code == 1
     assert runner.invoke(app, ["config", "set", "seen_ttl_days", "0"]).exit_code == 1
+
+
+# ---- gate.* is readable from the CLI (T49, D-482)
+
+
+def test_show_lists_every_gate_key_from_the_file_not_the_defaults(cfg) -> None:
+    """`Settings` ignores an unknown `[gate]` key SILENTLY, so a misspelt `enabld = true` reads
+    exactly like success and `config show` is the operator's only CLI read-back for the one
+    setting that spends money. Every value is asserted against a WRITTEN file, not the defaults,
+    so a `show` that printed `GateTier()` would fail here."""
+    (cfg / "config.toml").write_text(
+        '[gate]\nenabled = true\nmodel = "haiku"\nclaude_config_dir = "/x/claude-cfg"\n'
+        "batch_size = 7\ncall_timeout_s = 120\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, [*_base(cfg), "config", "show"])
+    assert result.exit_code == 0, result.output
+    for line in (
+        r"gate\.enabled = True\s+\(default False",
+        r"gate\.model = haiku\s+\(default sonnet",
+        r"gate\.claude_config_dir = /x/claude-cfg\s+\(default None",
+        r"gate\.batch_size = 7\s+\(default 13",
+        r"gate\.call_timeout_s = 120\s+\(default 300",
+    ):
+        assert re.search(line, result.output), f"{line!r} not in:\n{result.output}"
+
+
+def test_every_gate_field_is_printed_by_config_show() -> None:
+    """`_GATE_KEYS` is a hand-kept mirror of `GateTier`, the same shape as `_SCALAR_KEYS`, and a
+    hand-kept mirror drifted once before (five scalars shipped invisible). This is the detector:
+    a field added to `GateTier` must appear here or the read-back is silently partial again."""
+    from boardwatch.cli.config_cmd import _GATE_KEYS
+    from boardwatch.core.settings import GateTier
+
+    assert set(_GATE_KEYS) == set(GateTier.model_fields)

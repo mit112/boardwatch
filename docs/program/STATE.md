@@ -20,55 +20,56 @@
 
 ## Current standing
 
-### Session 2026-09-09 (execution): THE FLOOR SHIPPED AND IS LIVE at the predicted `rules_hash`, THE JUDGE IS ARMED — and run 4, the first armed run, JUDGED NOTHING because the model fences its JSON. T47 and T50 merged, both gated exit 0. Two owner calls are OPEN.
+### Session 2026-09-05 (review + closure): the 09-09 execution REVIEWED and its four judgment calls HOLD under mutation; run 4 is DISQUALIFIED and not re-judged (owner); Track 1 CLOSED and the threshold STRUCTURE set (owner); T49 shipped; the zero-row class MEASURED. The count starts at run 5 — the first scheduled run on a working configuration — and the tick fires 06:00 CDT, not 04:00.
 
-**Read this before acting.** Decision: **D-481**. Report: **`REPORT-2026-09-09.md`**. Numbers:
-`METRICS.md`, `Session — 2026-09-09` (the execution block, not the planning one above it).
-D-480's four rulings were executed in D2's order and none was re-asked.
+**Read this before acting.** Decision: **D-482** (the rulings, the measurement, and three
+corrections to D-481). Numbers: `METRICS.md`, `Session — 2026-09-05 · review`. D-481 and
+`REPORT-2026-09-09.md` stand except where D-482 corrects them.
 
-**Live configuration now — all of it verified through a second path, not by eye:**
+**Live configuration — unchanged since D-481, re-verified through a second path:**
+`near_miss_years_ceilings: {"experience_years": 1}`, six families `blocker`, `rules_hash`
+`033ea489f254`, `engine_version` `1+8c8694b96ca8`, `[gate]` enabled / haiku / expanded
+`claude_config_dir` — now readable with `boardwatch config show` (T49). The launchd job is loaded
+with a PATH that reaches `claude`, and reads **`runs = 0`**: nothing has run under it yet.
 
-- `profile.eligibility_policy_json` carries `near_miss_years_ceilings: {"experience_years": 1}`
-  and all six families are still `blocker` (read back via Python `?mode=ro`).
-- The live `rules_hash` is **`033ea489f254`**, which is exactly what was PREDICTED before the
-  write; `engine_version` is `1+8c8694b96ca8`. Both were confirmed in run 4's manifest.
-- `<config_dir>/config.toml` carries a `[gate]` block: `enabled = true`, `model = "haiku"`,
-  `claude_config_dir` as an EXPANDED absolute path. Appended, never overwritten — the file
-  already held six live settings. Read back through `load_settings()`, which is the ONLY check
-  that distinguishes a typo from success.
-- The launchd tick is loaded and fires **04:00** (not 06:00, which the handoff stated wrongly).
+**THE TICK FIRES 06:00 CDT UNTIL A REBOOT.** launchd started 2026-09-03 23:43, the zone was set
+to Chicago at 23:48, and launchd keeps its boot zone; run 1 fired 06:00:05 CDT on 09-04. D-481's
+"04:00" was wrong; `STANDING-FACTS.md` had it right. Today's 06:00 was missed ON PURPOSE: the job
+was booted out at 05:47 on Mit's request so T47 could land first (D-480 D2) and reloaded ~09:05.
+**No run in this store has been tick-fired on a valid configuration** — run 1 tick-fired and
+failed in 25 ms on the projection stamp; runs 2, 3 and 4 were launched by hand. The PATH fix, the
+armed judge and the fence parser are all unexercised under launchd until **run 5 at 06:00 CDT on
+2026-09-06**. Read three things when it lands: `runs = 1` in `launchctl print`, a fresh
+`boardwatch-run.log` mtime, and `judged > 0` in the gate block. All three ⇒ run 5 is day 1 of 3.
 
-**THE OPEN FINDING — do not read run 4's gate as healthy.** Run 4 was exit 0 in 80.7 min, and its
-gate was `instrumented: true`, `judged: 0`, `failed_open_batches: 4`. Real headless haiku returns
-the verdict array wrapped in a ```json fence despite the output contract forbidding fences, so the
-parse died on the backtick at character 0. **Fail-open held: nothing was dropped and all 40 leads
-were delivered — unjudged.** T50 fixes the parser and the fixture; it merged AFTER the run, so
-**no run has yet exercised a working judge.**
+**Owner rulings 2026-09-05 11:20–11:45 CDT (D-482) — none is to be re-asked:**
+1. Run 4's 40 unjudged leads are **NOT re-judged**. There is no shipped path to them: fail-open
+   wrote no gate row, and `built` retires a lead from every later slate; `gate request` ranks the
+   OPEN shortlist. The handoff's "~$0.35" priced a mechanism that does not exist.
+2. **Run 4 does NOT count** toward the provisional pass — judge inert, hand-launched, and T50
+   changed the eligibility gate after it. The count starts at run 5.
+3. **LinkedIn Track 1 is CLOSED: accept the loss** (D-453's own recommendation).
+4. **Per-source thresholds, STRUCTURE now:** employer-board sources ≥ 85% independent recall;
+   LinkedIn carries no bar. The **Indeed and hiring.cafe numbers are set at the first post-reset
+   reading (~2026-09-17)**, when the 14-day window exists again.
 
-**TWO OWNER CALLS ARE OPEN. They were deliberately not assumed:**
+**The zero-row class (M3's "no requirement rows") is MEASURED, not touched.** 33 of 120 delivered
+leads had zero requirement rows — runs 2 and 3 only; **run 4 delivered none**, because T45's
+verdict tiering put 40 `eligible` leads ahead of every `uncertain` one. Population: **32,602 of
+96,266** current evaluations (33.9%) have zero rows, all `uncertain`, so none can reach the apply
+lane. On a 2,000-posting random sample 49.0% carry a lexical requirement cue, "N years …
+experience" phrasings 5.5% (~1,800 postings), degree words 34.8%. The years contexts are real
+detection gaps: adjective-laden "0-1 years of professional software development experience",
+en-dash/plus ranges "2–12+ years", "Experience Required: 3 to 5 years". **Rules are not touched —
+that restarts the count.** Ticketed as **T51** for M3's window, corpus rows first.
 
-1. **Re-judge run 4's 40 unjudged leads now that T50 has landed?** ~$0.35, ~4.5 min.
-2. **Does run 4 count toward the three frozen clean runs?** It exited 0, but the judge was inert
-   for all of it. The recommendation is NO — the configuration under test was never exercised —
-   but the call belongs to the owner.
-
-**Next action.** Answer the two calls above. Then T49 (`config show` learning the five `gate.*`
-keys) is the one named leftover: the operator still has NO CLI read-back for the only setting that
-spends money. The ledger drain stays DECLINED (D-479 §4), re-verified on the live store before the
-write: 80 dispositions, all `built`, zero `skipped`. `ledger reopen --stale` was NOT run.
-
-**Three things a fresh session must not re-derive.** (1) `catalog.py` and `engine.py` are DIGESTED,
-so any edit to them moves `engine_version` and makes every open posting pending — "T47 re-keys
-nobody" was only ever true of `rules_hash`. (2) The plist's PATH did not reach `claude` and every
-unattended judge batch would have failed open; this is invisible from a manual run because the
-interactive shell supplies the directory. Fixed. (3) `experience_unconfirmed` is not persisted in
-any artifact — the queue's `details.json` carries only `verdict` and `target_flag` — so the
-handoff's "39 of 80" cannot be reproduced from disk.
+**Next action.** Nothing eligibility-side. Wait for run 5 and read it as above. The one machine
+action is Mit's and optional: a reboot moves the tick to 04:00.
 
 ### Owed, and specifically NOT done
 
-- **`near_miss_years_ceiling` itself is untouched in code and in the live store.** Planned as T47
-  (D-479): the value becomes per-user policy data; the bundled 3 stays.
+- **T51 — widen the years detections the zero-row measurement exposed (D-482).** M3's window
+  only: it moves `engine_version`, so not before the third clean run. Corpus rows first.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
   takes `eligible` to **0**, and the `work_auth` form is worth **245 of 4,617 (5.3%)** — about a
   quarter of the measured defect. **Do not re-derive it, and do not quote the naive 29.9%**, which is
@@ -105,12 +106,13 @@ and only the per-source THRESHOLD is still owed; job-apps keeps running until it
 (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410, re-scoped by D-450). **Do not
 re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
 
-1. **SET PER-SOURCE THRESHOLDS.** Framing DECIDED: option D then C — decompose LinkedIn first
-   (**done**, D-431/D-453), then bar on `lane-only` exposure rather than recall. The numeric level is
-   the owner's, and **D-450 must be on the page when it is set.**
-2. **TRACK 1 — the already-admissible LinkedIn boards.** Re-sized by D-453 from 382 postings to
-   **113 on the gate-survivor basis, 13 on the carried basis**, over **108 boards** at 3.2 s each ≈
-   **5.8 min/run forever**. Still his; the board-sample confound that held it is gone.
+1. **PER-SOURCE THRESHOLDS — STRUCTURE RULED (D-482):** employer-board sources ≥ 85% independent
+   recall; LinkedIn no bar. **Owed: the Indeed and hiring.cafe numbers at the first post-reset
+   reading (~2026-09-17)**, with D-450 on the page again. The instrument
+   (`.agent/2026-09-02-session/per_source_recall.py`) still points at the OLD account home for
+   job-apps' ledger — a one-line fix before it runs.
+2. **TRACK 1 — CLOSED (D-482): accept the loss**, per D-453. Do not re-raise it from the 382 or
+   the 113.
 3. **Mit's résumé calls** — whether to send a document at all; the D-220 prose rewrite of the submitted "sole iOS developer" answer (outside the bundle); the per-lens formatting session.
 4. **P2 item 8 — the onboarding field-taxonomy gatherer. DEFERRED by Mit 2026-08-28.** The last
    multi-tenancy gap of its kind; D-054 forbids us authoring non-tech field content.
@@ -142,9 +144,8 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
   armed and WORKING**, and its 50-board sample is **reverted** (D-456) — watched boards 482 → 432,
   then 490 after run 149's Indeed convergences. Remaining tier-D lanes are **DECIDED AGAINST**, not
   deferred (D-451).
-- **14-day acceptance: not started, HELD BY THE OWNER.** The provisional pass is **not being chased**
-  (D-351 item 2: work comes first), and every `rules_hash` bump restarts its counter — #364 bumped
-  it on 2026-09-03d.
+- **Provisional pass: the count starts at run 5 (D-482), 0 of 3.** 14-day acceptance not started.
+  Not chased (D-351 item 2: work comes first), and every `rules_hash` bump restarts the count.
 
 ## Live blockers and carried gaps
 
@@ -152,4 +153,4 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **Runs 1–3 were all launched by hand or failed closed; the first warm UNATTENDED tick is 2026-09-05 04:00, which runs whatever `main` is parked on** — the mechanism note is still true | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`). **The 04:00 schedule fires at 06:00 CDT** until the next reboot: launchd started five minutes before the timezone was set (2026-09-06b) | **Mit** (mechanism); every session (discipline) |
+| **No run has been tick-fired on a valid configuration; run 5 at 06:00 CDT on 2026-09-06 is the first** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run. The tick fires **06:00 CDT until a reboot** — launchd keeps its boot zone, and the zone was set five minutes after the 09-03 boot — so a reboot moves it to 04:00. Verify a tick by `runs = N` in `launchctl print` and the log mtime, never by the run row alone: a hand run proves the code, only a tick proves the plist | **Mit** (reboot); every session (discipline) |

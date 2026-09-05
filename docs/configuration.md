@@ -46,6 +46,23 @@ daily pipeline unattended" in the README). Presence-gated, off unless set:
 
     export BOARDWATCH_HEARTBEAT_URL=https://hc-ping.com/<your-check-uuid>
 
+## `[gate]`
+
+The headless final-eligibility judge that runs inside `boardwatch run` between ranking and
+tailoring. Off by default; arming it is a hand edit of `config.toml` (there is no toggle), and it
+spends money on every run while on. Every seam around the call fails open: a missing binary, a
+timeout, a non-zero exit or an unreadable response drops that batch's verdicts, never a lead.
+`boardwatch config show` prints all five keys — read them back there after any edit, because an
+unknown key under `[gate]` is ignored silently, so the file alone cannot tell a typo from success.
+
+| Key | Type / Range | Default | Takes effect |
+|---|---|---|---|
+| `gate.enabled` | bool | `false` | next run |
+| `gate.claude_config_dir` | path, expanded absolute | unset | next run |
+| `gate.model` | string, a `claude` model alias | `sonnet` | next run |
+| `gate.batch_size` | int, ≥ 1 | 13 | next run |
+| `gate.call_timeout_s` | int, ≥ 1 | 300 | next run |
+
 ## Résumé tailoring
 
 `boardwatch tailor` introduces no new config keys. It follows the same `config_dir` /

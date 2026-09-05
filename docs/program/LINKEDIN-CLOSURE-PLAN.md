@@ -114,7 +114,7 @@ usable JDs to an unauthenticated guest request today.
 
 ## The plan — three tracks, cheapest first
 
-### Track 1 — admit the already-admissible boards (no new code) — **OVER-SIZED 3.4x (D-453)**
+### Track 1 — admit the already-admissible boards (no new code) — **OVER-SIZED 3.4x (D-453) — CLOSED 2026-09-05: the owner ruled ACCEPT THE LOSS (D-482)**
 
 **403 absent postings sit at 108 employers whose `companies` row already carries a real ATS
 provider+slug — but 382/92 was never the yield, and neither is 403/108.** Priced on what boardwatch

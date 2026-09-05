@@ -195,6 +195,20 @@ _NOTIFY_KEYS = {
     "notify.webhook_enabled": "next notify",
 }
 
+# gate.* live under [gate]: the headless final-eligibility judge (T42). The ONE tier that spends
+# money when on — and `Settings` ignores a misspelt key silently, so this read-back is the only
+# CLI check that a `[gate]` edit landed at all (D-482). A hand-kept mirror of `GateTier`, the
+# same shape as `_SCALAR_KEYS`; `test_every_gate_field_is_printed_by_config_show` holds the two
+# equal, because a hand-kept mirror drifted once before. Read-only here: arming the judge is a
+# deliberate hand edit of config.toml, not a toggle.
+_GATE_KEYS: dict[str, str] = {
+    "enabled": "opt-in headless final-eligibility judge; spends money when true; next run",
+    "claude_config_dir": "CLAUDE_CONFIG_DIR of the headless call, expanded absolute path; next run",
+    "model": "claude model alias, e.g. haiku; next run",
+    "batch_size": "leads per call, ≥1; next run",
+    "call_timeout_s": "seconds per call, ≥1; next run",
+}
+
 _SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password", "webhook_url"})
 
 
@@ -278,6 +292,9 @@ def show(ctx: typer.Context) -> None:
     console.print(f"llm.max_calls_per_run = {llm.max_calls_per_run} (default 50; ≥1)")
     present = "set" if resolve_secret(LLM_API_KEY_ENV) is not None else "unset"
     console.print(f"llm.api_key: {present} (via {LLM_API_KEY_ENV})")
+    for leaf, note in _GATE_KEYS.items():
+        cur, dflt = getattr(settings.gate, leaf), getattr(defaults.gate, leaf)
+        console.print(f"gate.{leaf} = {cur} (default {dflt}; {note})")
     for key, effect in _NOTIFY_KEYS.items():
         leaf = key.split(".", 1)[1]
         cur = getattr(settings.notify, leaf)
