@@ -466,6 +466,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A shared-host third party could see two independent request streams from one process, not
+  one.** The board scan and the lane stage each build their own `Fetcher`, and per-host pacing
+  lived on that instance rather than the process — so for any host both reach, each instance paced
+  itself against its own clock, and the host could see up to twice the requests-in-flight and
+  requests-per-second the configured `per_host_delay_seconds` promises it. The measured exposure
+  was hiring.cafe's lane, which fetches a provider's own board URL directly (94 requests to
+  greenhouse, ashby and lever combined in one run) while the scan is fetching the same three hosts
+  on its own schedule. Per-host pacing state is now shared by every `Fetcher` in the process, so
+  whichever lane or scan issues a request to a given host, that host sees one paced stream.
+  Nothing about identity changed: the scan and the lane still use their own client and User-Agent.
+
 - **A board could be fetched in full and then thrown away, because the lane stage was writing at
   the same time.** The lane stage had been moved onto a background thread so its network work
   overlaps the board scan — but it took its *writes* with it, which left two threads writing the

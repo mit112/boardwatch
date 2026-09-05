@@ -519,32 +519,30 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
     keep the honest identifying UA: that is the D22 politeness contract, and an aggregator's
     edge behaviour is no reason to stop identifying ourselves to boards that answer us honestly.
 
-    The cost is real and is why the separation is stated rather than assumed: per-host pacing
-    state lives per `Fetcher` instance, so these two do not share a delay.
+    T41 (D-475) moved per-host pacing off the `Fetcher` instance onto a registry shared by
+    every `Fetcher` in the process (`politeness.HostPacing`), so these two instances now pace
+    a host they both reach TOGETHER — only the client (and its UA) stays separate. What that
+    closes was smaller than the prior docstring here estimated: the only shared-host traffic
+    is `lanes/hiringcafe.py`, which issues one GET per admitted board straight to the
+    provider's own board URL — 94 of them in run 3 (greenhouse 40, ashby 44, lever 10), inside
+    a 346 s fetch window. The scan's own time on those same three hosts was 90.0 s / 10.1 s /
+    12.0 s, so at `per_host_delay_seconds` 1.0 the two INDEPENDENT instances could put at most
+    2 requests in flight and 2 req/s onto whichever one of those hosts the two windows
+    intersected on — an exposure of at most ~90 s on one host per run, not the lane stage's
+    full 352 s. It is shared now regardless of the size of the prior gap.
 
-    **THE HIRING.CAFE LANE NOW DOES TARGET A PROVIDER HOST**, and the two halves of what that
-    used to rule out are answered separately rather than together.
+    **THE HIRING.CAFE LANE DOES TARGET A PROVIDER HOST**, and the two halves that raised are
+    answered separately, as before.
 
     * IDENTITY is preserved outright. That lane restores `politeness.identifying_user_agent()`
       per request for a provider board (`Fetcher.get(headers=...)`), so a board that answers us
       honestly still gets the honest UA. D22 is unweakened; only the aggregator sees the
       browser UA, which is what D-369 bought it.
-    * PACING is weakened, and **SP2 widened that weakening from a boundary to a WINDOW**. The
-      two instances keep separate per-host state (`Fetcher._host_locks` and `_last_request_at`
-      are per instance), so the lane's requests are not spaced against the scan's at all. The
-      old bound here — "nothing CONCURRENT results, because `run()` runs the scan stage then
-      this one, strictly in that order" — **stopped being true when SP2 put the lane stage on a
-      background thread that overlaps the whole board scan**, and T37 keeps it that way
-      deliberately: the fetch overlap is the entire prize. So for any host BOTH reach, the two
-      per-host locks are independent and up to 2 req/s can go to that third party for the
-      lane stage's whole duration (run 3: ~352 s), not for one boundary request. The lane does
-      reach provider hosts — `lanes/hiringcafe.py` fetches a provider board directly, and
-      `lanes/grnh_seeds.py` and `lanes/jsonld.py` dereference ATS hosts.
-      **This is a live third-party pacing question and it is the OWNER'S** — it is recorded
-      rather than silently fixed, because the fix is either one shared `Fetcher` (which
-      re-serialises the lanes against the scan and gives back SP2's prize) or a cross-instance
-      per-host lock. Within the lane stage the contract holds unchanged, because one `Fetcher`
-      serves every lane and its per-host lock is held for each request's full duration.
+    * PACING is now shared per process, which closes the window SP2 opened when it put the
+      lane stage on a background thread overlapping the whole board scan (T37 keeps that
+      overlap deliberately — the fetch overlap is the entire prize). Within the lane stage the
+      contract was always unchanged, because one `Fetcher` serves every lane and its per-host
+      lock is held for each request's full duration.
     """
     return Fetcher(
         settings,

@@ -242,6 +242,28 @@ def _never_reach_the_real_queue_root(
     monkeypatch.setattr(runner, "DEFAULT_QUEUE_ROOT", tmp_path_factory.mktemp("bw-queue"))
 
 
+@pytest.fixture(autouse=True)
+def _isolated_host_pacing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give every test its own `HostPacing` registry. No opt-out.
+
+    T41 (D-475) moved per-host locks and last-request timestamps off the `Fetcher` instance
+    onto a registry shared by every `Fetcher` in the PROCESS — the whole point being that two
+    instances built by the same process pace a shared host together. Left un-isolated, that
+    sharing bleeds across tests too: the suite builds ~47 `Fetcher`s directly, and a fake host
+    spelling reused by two test modules (`https://ok.example/x` appears in several) would carry
+    the first test's last-request timestamp into the second, adding up to a real `time.sleep` of
+    up to `per_host_delay_seconds` per shared fake host per test. Swapping in a fresh registry
+    before each test is the isolation `_never_reach_the_real_data_dir` gives the store, one root
+    over, for the same reason: production sharing must not become test-to-test sharing.
+
+    The import is deferred for the reason `_never_reach_the_real_queue_root` gives above: this
+    module is imported at collection time for every test in the repo.
+    """
+    from boardwatch.core import politeness
+
+    monkeypatch.setattr(politeness, "_PROCESS_PACING", politeness.HostPacing())
+
+
 @pytest.fixture()
 def dedup_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Config dir == data dir, so a CLI-driven `eligibility run` and the engine under test

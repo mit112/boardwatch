@@ -526,8 +526,10 @@ def test_the_lane_fetcher_is_a_second_instance_with_a_browser_user_agent(
     engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """§4.7 — the six providers keep the honest identifying UA; only the lane gets a browser
-    one, and it must come from a SEPARATE `Fetcher` so per-host pacing is not shared with a
-    provider host."""
+    one, and it must come from a SEPARATE `Fetcher` instance. Since T41 (D-475) that instance
+    shares its per-host PACING with every other `Fetcher` in the process — only the client
+    (and its UA) is separate — so this test pins the instance and the UA, not pacing
+    independence."""
     lane = StubLane([])
     monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
 
