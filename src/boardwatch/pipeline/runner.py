@@ -560,10 +560,30 @@ def _rotation_index(run_id: int) -> int:
     return run_id
 
 
-def _run_lanes(
+@dataclass(frozen=True)
+class _LaneFetch:
+    """One lane's finished network half, held from the fetch phase to the serial apply phase.
+
+    Carries the `Lane` itself and not just its name: `_apply_lane` needs the object to build the
+    report, and re-resolving it from `LANE_FACTORIES` at the apply site would construct a SECOND
+    lane whose context and admission budget are not the ones the fetch actually ran under.
+
+    `_FetchedLane`, the per-lane payload, is defined below beside the fetch half that produces it.
+    """
+
+    name: str
+    lane: Lane
+    fetched: _FetchedLane
+
+
+def _fetch_lanes(
     engine: Engine, settings: Settings, run_id: int
-) -> tuple[list[LaneReport], list[str]]:
-    """Run every enabled lane; return what each did and every non-fatal problem.
+) -> tuple[list[_LaneFetch], list[str]]:
+    """Set the stage up and run every enabled lane's PACED NETWORK half. **Writes nothing.**
+
+    The read half of `_run_lanes`, split out by T37 so it can run on the background thread SP2
+    introduced while the apply half stays on the pipeline's single writer thread. Everything here
+    is a short read or a network request; the only lasting effect is the `_LaneFetch`es returned.
 
     **A lane may never fail the run.** A lane is additive breadth: the corpus without it is
     exactly the corpus this pipeline has always ranked, so the fail-safe direction is open — the
@@ -575,12 +595,11 @@ def _run_lanes(
     The failure is still LOUD: it lands in `summary.errors`, which the run row persists and the
     CLI prints, and the lane is absent from the reported list rather than present with zeros.
     """
-    reports: list[LaneReport] = []
     errors: list[str] = []
     if not settings.lanes_enabled:
         # No client is constructed at all on the default path, so a run with lanes off opens no
         # extra connection pool and sends nothing anywhere.
-        return reports, errors
+        return [], errors
     # Read ONCE for the stage, not once per lane: it is the same profile for every lane, and a
     # second read could only differ by racing a `profile set` mid-run.
     facets = _lane_facets(engine)
@@ -640,12 +659,13 @@ def _run_lanes(
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {exc!r}")
     if not resolved:
-        return reports, errors
+        return [], errors
 
-    # PARALLEL fetch, SERIAL apply — the same shape `scan/coordinator.py` uses, and for the same
-    # reason: `apply_board` is the pipeline's single writer, so it runs in the CONSUMING loop
-    # below and never in a worker. Two lanes applying at once would be two writers on one
-    # SQLite store.
+    # PARALLEL fetch, and NOTHING ELSE. The apply half is `_apply_lanes`, on the CALLING thread.
+    # The comment this replaces promised "PARALLEL fetch, SERIAL apply" and was made false by
+    # SP2, which put `_run_lanes` — both halves — on a daemon thread overlapping the board scan,
+    # so `apply_board` was reached from two threads at once. Serial with respect to EACH OTHER
+    # was never the property that mattered; serial with respect to the COORDINATOR is (T37).
     #
     # `max_workers` is the lane count and is deliberately NOT a setting. It is bounded by
     # `LANE_FACTORIES` (two today), the per-host pace — not the worker count — is what limits
@@ -655,81 +675,126 @@ def _run_lanes(
     # lanes issued ~85 requests to hiringcafe and ~166 to linkedin, so the pacing floor moves
     # from their sum to their max and a third lane would be nearly free behind linkedin. The
     # apply half does not move at all. Do not expect a speedup proportional to lanes.
-    by_name: dict[str, LaneReport] = {}
+    fetched: dict[str, _FetchedLane] = {}
     with ThreadPoolExecutor(max_workers=len(resolved)) as pool:
         future_map = {
-            pool.submit(_fetch_lane, engine, settings, lane, fetcher): (name, lane)
+            pool.submit(_fetch_lane, engine, settings, lane, fetcher): name
             for name, lane in resolved
         }
-        # `as_completed`, so the first lane to finish fetching starts applying while the others
-        # are still on the network. Order is restored below.
         for future in as_completed(future_map):
-            name, lane = future_map[future]
+            name = future_map[future]
             try:
-                fetched = future.result()
+                fetched[name] = future.result()
             except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
                 # Same message as before the split: a lane whose FETCH raised is reported and
                 # absent from `reports`, never present with zeros.
                 errors.append(f"lane {name}: collection failed: {exc!r}")
-                continue
-            try:
-                report, seed_refusal = _apply_lane(engine, lane, fetched, run_id)
-                by_name[name] = report
-                # The unroutable-seed refusal, RETURNED from the write rather than written to
-                # `errors_json` directly (mirrors `_resolver_error_note`). Reaches this list on a
-                # clean apply; a failed apply raises below and is itself reported.
-                if seed_refusal is not None:
-                    errors.append(seed_refusal)
-            except _LaneSeedPersistFailed as exc:
-                # Apply landed; only the seed drain broke. Named as its own phase so an operator is
-                # not sent to the apply path for a persistence fault.
-                errors.append(f"lane {name}: seed persistence failed: {exc.cause!r}")
-            except _LaneApplyFailed as exc:
-                # The apply PHASE: `_LaneApplyFailed` carries the apply failure as the primary cause
-                # even when the seed persistence beside it also failed (D-418), so this repr names
-                # the phase that actually broke rather than a masking persistence error.
-                errors.append(f"lane {name}: apply failed: {exc.cause!r}")
-                # The seed drain runs even on a failed apply, so a refusal it produced must still
-                # surface -- carried on the exception because the clean-apply return that appends it
-                # never happened here.
-                if exc.seed_refusal is not None:
-                    errors.append(exc.seed_refusal)
-            except Exception as exc:  # noqa: BLE001 - one lane's apply must not take another's
-                # Any OTHER post-fetch failure (neither typed phase): still reported, still
-                # non-fatal, named as the apply phase because that is the dominant post-fetch write.
-                errors.append(f"lane {name}: apply failed: {exc!r}")
-            # A resolver that crashed on a seed is returned for charging in `_persist_seed_work`
-            # (charged unless that persistence itself fails), but that crash is otherwise durable
-            # ONLY in `runs.errors_json`, which no operator surface queries.
-            # Surfaced HERE, from the returned `LaneResult`, so it reaches the returned errors --
-            # which become `summary.errors` (the morning digest, the console) and `stage_errors`
-            # (`runs.errors_json`, via `finish_run`). On BOTH the clean-apply and failed-apply
-            # paths, because `_persist_seed_work` charged the crash in either case.
-            note = _resolver_error_note(name, fetched.result)
-            if note is not None:
-                errors.append(note)
-            # A producer that dropped a MALFORMED seed URL before it could reach `record_seeds`.
-            # Surfaced from the returned `LaneResult` on BOTH paths (like the resolver-crash note):
-            # a producer's refusals are a fetch-phase fact, independent of whether the apply landed.
-            refused = _refused_seed_note(name, fetched.result)
-            if refused is not None:
-                errors.append(refused)
 
-    # Back into `lanes_enabled` order. `as_completed` yields by completion, which would make the
-    # funnel's lane list order depend on which aggregator answered first — a diff in every
-    # artifact for no reason, and a fixture that passes or fails by race.
-    reports.extend(by_name[name] for name, _ in resolved if name in by_name)
+    # Back into `lanes_enabled` order HERE, before anything is applied, rather than reordering
+    # the reports afterwards. `as_completed` yields by completion, so applying in that order
+    # would make the funnel's lane list AND the error list depend on which aggregator answered
+    # first — a diff in every artifact for no reason, and a fixture that passes or fails by race.
+    return [
+        _LaneFetch(name=name, lane=lane, fetched=fetched[name])
+        for name, lane in resolved
+        if name in fetched
+    ], errors
+
+
+def _apply_lanes(
+    engine: Engine, run_id: int, fetches: Sequence[_LaneFetch]
+) -> tuple[list[LaneReport], list[str]]:
+    """Land every fetched lane, one at a time, on the CALLING thread. **The only lane writer.**
+
+    Split out of `_run_lanes` by T37, and the split is the fix rather than a tidy-up. SP2 moved
+    the whole stage onto a daemon thread that overlaps the board scan, which left `apply_board`
+    being called from TWO threads at once — this stage's and the scan coordinator's. `apply_board`
+    opens a DEFERRED transaction and READS before it writes, so a lane commit landing in the gap
+    between the coordinator's read snapshot and its first write fails that write with
+    `SQLITE_BUSY_SNAPSHOT` — surfaced by the driver as `database is locked` — IMMEDIATELY, without
+    ever consulting `busy_timeout`, because no amount of waiting makes a stale snapshot writable.
+    Run 3 discarded a whole fetched Workday board that way. Raising the timeout cannot fix it;
+    removing the second writer does, which is what calling this at the JOIN site achieves.
+
+    Every failure is RETURNED, never raised: one lane's broken apply must not take another's
+    results with it, and a lane may never fail the run.
+    """
+    reports: list[LaneReport] = []
+    errors: list[str] = []
+    for fetch in fetches:
+        name, lane = fetch.name, fetch.lane
+        try:
+            report, seed_refusal = _apply_lane(engine, lane, fetch.fetched, run_id)
+            reports.append(report)
+            # The unroutable-seed refusal, RETURNED from the write rather than written to
+            # `errors_json` directly (mirrors `_resolver_error_note`). Reaches this list on a
+            # clean apply; a failed apply raises below and is itself reported.
+            if seed_refusal is not None:
+                errors.append(seed_refusal)
+        except _LaneSeedPersistFailed as exc:
+            # Apply landed; only the seed drain broke. Named as its own phase so an operator is
+            # not sent to the apply path for a persistence fault.
+            errors.append(f"lane {name}: seed persistence failed: {exc.cause!r}")
+        except _LaneApplyFailed as exc:
+            # The apply PHASE: `_LaneApplyFailed` carries the apply failure as the primary cause
+            # even when the seed persistence beside it also failed (D-418), so this repr names
+            # the phase that actually broke rather than a masking persistence error.
+            errors.append(f"lane {name}: apply failed: {exc.cause!r}")
+            # The seed drain runs even on a failed apply, so a refusal it produced must still
+            # surface -- carried on the exception because the clean-apply return that appends it
+            # never happened here.
+            if exc.seed_refusal is not None:
+                errors.append(exc.seed_refusal)
+        except Exception as exc:  # noqa: BLE001 - one lane's apply must not take another's
+            # Any OTHER post-fetch failure (neither typed phase): still reported, still
+            # non-fatal, named as the apply phase because that is the dominant post-fetch write.
+            errors.append(f"lane {name}: apply failed: {exc!r}")
+        # A resolver that crashed on a seed is returned for charging in `_persist_seed_work`
+        # (charged unless that persistence itself fails), but that crash is otherwise durable
+        # ONLY in `runs.errors_json`, which no operator surface queries.
+        # Surfaced HERE, from the returned `LaneResult`, so it reaches the returned errors --
+        # which become `summary.errors` (the morning digest, the console) and `stage_errors`
+        # (`runs.errors_json`, via `finish_run`). On BOTH the clean-apply and failed-apply
+        # paths, because `_persist_seed_work` charged the crash in either case.
+        note = _resolver_error_note(name, fetch.fetched.result)
+        if note is not None:
+            errors.append(note)
+        # A producer that dropped a MALFORMED seed URL before it could reach `record_seeds`.
+        # Surfaced from the returned `LaneResult` on BOTH paths (like the resolver-crash note):
+        # a producer's refusals are a fetch-phase fact, independent of whether the apply landed.
+        refused = _refused_seed_note(name, fetch.fetched.result)
+        if refused is not None:
+            errors.append(refused)
     return reports, errors
 
 
-def _run_lanes_stage(
+def _run_lanes(
     engine: Engine, settings: Settings, run_id: int
-) -> tuple[list[LaneReport], list[str], float]:
+) -> tuple[list[LaneReport], list[str]]:
+    """Run every enabled lane end to end — fetch them, then land them — on the CALLING thread.
+
+    Both halves in one call, which is what the `skip_scan` path (no scan to overlap) and the
+    lane-stage tests want. The OVERLAPPED path deliberately does not use this: it calls
+    `_fetch_lanes_stage` on the background thread and `_apply_lanes` at the join, so that the
+    store keeps exactly one writer while the scan is running (T37).
+    """
+    fetches, errors = _fetch_lanes(engine, settings, run_id)
+    reports, apply_errors = _apply_lanes(engine, run_id, fetches)
+    return reports, [*errors, *apply_errors]
+
+
+def _fetch_lanes_stage(
+    engine: Engine, settings: Settings, run_id: int
+) -> tuple[list[_LaneFetch], list[str], float]:
     """Entry point for the lane stage's ONE background thread (SP2), started as soon as the
     run row exists so its network work overlaps the board scan instead of paying for both
     serially — the lanes touch hosts the scan never does.
 
-    `_run_lanes` already turns a per-lane failure into a returned error string and never raises
+    **It runs the FETCH half only (T37).** SP2 ran the apply here too, which put a second writer
+    on the store beside the scan's own `apply_board` and cost run 3 a whole board; `_apply_lanes`
+    says exactly how. The apply now happens at the join site, on the pipeline's one writer thread.
+
+    `_fetch_lanes` already turns a per-lane failure into a returned error string and never raises
     for one; what it does NOT guard is its own setup (`_lane_facets`, `watched_company_names`,
     building the lane `Fetcher`) — on the main thread an exception there would abort the run
     like any other stage's, but here it would run on a background thread and vanish silently
@@ -737,17 +802,18 @@ def _run_lanes_stage(
     the same "a lane may never fail the run" contract extended to cover the stage's own setup.
 
     Timed independently of `_StageClock`: once this overlaps the scan, `stage_durations["lanes"]`
-    is only the residual join wait, and the elapsed time returned here is what still answers
-    "how long did the lane stage actually take" — carried onto every `LaneReport` this run
-    produced (`PipelineSummary.lanes`), since a stage-level number has nowhere else to live
-    without a second, parallel bookkeeping structure.
+    is the residual join wait PLUS the serial apply, and the elapsed time returned here is the
+    fetch half of the answer to "how long did the lane stage actually take". The join site adds
+    its apply time to this before carrying the total onto every `LaneReport` this run produced
+    (`PipelineSummary.lanes`), since a stage-level number has nowhere else to live without a
+    second, parallel bookkeeping structure.
     """
     started = perf_counter()
     try:
-        reports, errors = _run_lanes(engine, settings, run_id)
+        fetches, errors = _fetch_lanes(engine, settings, run_id)
     except Exception as exc:  # noqa: BLE001 - the lane stage may never fail the run
         return [], [f"lanes: stage failed: {exc!r}"], perf_counter() - started
-    return reports, errors, perf_counter() - started
+    return fetches, errors, perf_counter() - started
 
 
 def _lane_facets(engine: Engine) -> LaneFacets:
@@ -1511,13 +1577,20 @@ def run_pipeline(
     #
     # A run that returns BEFORE that join point (a systemic scan outage, or a refused `--project`
     # preflight) never joins this thread at all — joining there would spend the wall clock this
-    # whole change exists to buy back. `daemon=True` is what makes that free: the thread, and the
-    # company/posting rows it is still writing, outlive the function call rather than blocking the
-    # process on it. This is the ONE visible change from "a refusing run pays nothing" — it still
-    # pays nothing in WALL CLOCK, but it now spends network in the background, and the rows land
-    # attributed to THIS run's id because that id was already fixed when the thread started.
+    # whole change exists to buy back. `daemon=True` is what makes that free: the thread outlives
+    # the function call rather than blocking the process on it.
+    #
+    # T37: the thread FETCHES ONLY, so what it outlives with is paced network work and no store
+    # write at all — `_apply_lanes` runs at the join, on this thread. The stated consequence, and
+    # it is chosen rather than discovered: **a run that returns before the join lands no lane
+    # rows.** SP2 had them landing in the background attributed to a run that then exited 1; that
+    # is the attribution this removes, and it restores exactly the pre-SP2 outcome, in which a
+    # refused run reached the inline lane call and never ran it. A refused run delivers nothing
+    # anyway, and the lane's own fetch is re-driven next run — the seeds are re-queued uncharged
+    # for precisely this case (`_persist_seed_work`). What a refusing run now costs that it did
+    # not before is the background network alone.
     lane_thread: Thread | None = None
-    lane_stage_result: list[tuple[list[LaneReport], list[str], float]] = []
+    lane_stage_result: list[tuple[list[_LaneFetch], list[str], float]] = []
     if not skip_scan:
         console.print("[bold]scan[/bold]")
 
@@ -1528,7 +1601,7 @@ def run_pipeline(
             console.print("[bold]lanes[/bold]")
             lane_thread = Thread(
                 target=lambda: lane_stage_result.append(
-                    _run_lanes_stage(engine, settings, started_run_id)
+                    _fetch_lanes_stage(engine, settings, started_run_id)
                 ),
                 daemon=True,
             )
@@ -1646,17 +1719,27 @@ def run_pipeline(
         # than restated.
         #
         # SP2: unless `skip_scan`, the stage's own network work already STARTED back when the
-        # scan minted the run row (`lane_thread`, above) — this is only the JOIN, at the point
-        # the stage has always sat: after the `--project` preflight (so a refused projection
-        # never has to wait on it) and before the death-probe sweep, which depends on the
-        # lanes having re-sighted whatever they could find. `stage_durations["lanes"]` below is
-        # therefore no longer the stage's own cost — it is the residual wait for a thread that
-        # may already be done — and `lane_elapsed`, carried onto every `LaneReport`
+        # scan minted the run row (`lane_thread`, above) — this is the JOIN, at the point the
+        # stage has always sat: after the `--project` preflight (so a refused projection never
+        # has to wait on it) and before the death-probe sweep, which depends on the lanes having
+        # re-sighted whatever they could find.
+        #
+        # T37: the APPLY happens HERE, not on that thread. `apply_board` is the pipeline's single
+        # writer and the scan is calling it right up until the join, so a lane applying from the
+        # daemon thread was a second concurrent writer — `_apply_lanes` records what that cost.
+        # The apply is serial wall clock the join no longer avoids (run 3: 5.9 s against a 352 s
+        # lane stage and a 6,419 s scan), and buying the fetch overlap was always the point.
+        #
+        # `stage_durations["lanes"]` is therefore the residual wait for a thread that may already
+        # be done, PLUS that apply — and `lane_elapsed`, carried onto every `LaneReport`
         # (`stage_elapsed_seconds`), is what still answers "how long did the lane stage take".
+        # It sums the two halves rather than timing one span because the fetch half ran on
+        # another thread: they are strictly sequential, so the sum is exact, but no single clock
+        # reading spans them.
         #
         # `skip_scan` has no scan to overlap and keeps the original inline call.
         #
-        # No `fatal` path either way. `_run_lanes` catches per lane and returns what went
+        # No `fatal` path either way. `_apply_lanes` catches per lane and returns what went
         # wrong, because a lane is additive: the corpus without it is exactly the corpus this
         # pipeline has always ranked, so a dead aggregator costs the run its extra reach and
         # nothing else.
@@ -1666,7 +1749,11 @@ def run_pipeline(
         if not skip_scan:
             if lane_thread is not None:
                 lane_thread.join()
-                lane_reports, lane_errors, lane_elapsed = lane_stage_result[0]
+                lane_fetches, fetch_errors, fetch_elapsed = lane_stage_result[0]
+                apply_started = perf_counter()
+                lane_reports, apply_errors = _apply_lanes(engine, run_id, lane_fetches)
+                lane_errors = [*fetch_errors, *apply_errors]
+                lane_elapsed = fetch_elapsed + (perf_counter() - apply_started)
             else:
                 lane_reports, lane_errors, lane_elapsed = [], [], None
         else:

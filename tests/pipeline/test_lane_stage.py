@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event, get_ident
 from time import monotonic, sleep
 from typing import Any
 
@@ -1979,22 +1979,36 @@ def test_the_death_probe_still_runs_after_the_lane_thread_is_joined(
     )
 
 
-def test_a_fatally_refusing_run_still_lets_the_lane_thread_land_its_rows(
+def test_a_fatally_refusing_run_fetches_in_the_background_but_lands_no_lane_rows(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SP2's one visible change from "a refusing run pays nothing": the lane thread starts as
-    soon as the run row exists (from the scan's `on_run_started`), before any later check can
-    refuse the run -- so a run that turns out fatal (here, a systemic scan outage) still costs
-    network in the background even though it costs no wall clock. The lane's rows land
-    attributed to THIS run's id regardless, because that id was fixed before the fatal check
-    ever ran. `daemon=True` is what keeps the wall-clock claim true: joining here would spend
-    exactly the time this test proves the run does not spend.
+    """T37's chosen consequence, pinned here so it is never re-decided by accident.
+
+    SP2 ran the lane APPLY on the background thread as well as the fetch, so a run that turned
+    out fatal still wrote lane rows -- attributed to a run that then exited 1. T37 moves the
+    apply to the JOIN site, on the pipeline's one writer thread, and a refusing run returns
+    before ever reaching it. So a refused run lands NOTHING from the lanes, which is exactly
+    what it did before SP2 (the inline lane call sat after the same preflight). What a refusing
+    run still spends, and did not before SP2, is background NETWORK.
+
+    THREE things are asserted and each covers a way the other two could pass for nothing:
+
+    * the run really was refused -- otherwise there is no refusal being tested;
+    * the lane really did FETCH -- the null control. Without it, "no lane row landed" is equally
+      consistent with a lane stage that never started, and this test would pass against a
+      completely disabled lane;
+    * the same stub lane on a NON-refused run DOES land its row -- the second control, which is
+      what proves the absence above is the refusal's doing and not a broken stub.
+
+    The wall-clock claim SP2 made is re-asserted unchanged: a refusing run must not wait on the
+    thread. `daemon=True` is still what keeps that true.
     """
     assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(env, ["tailor", "init"]).exit_code == 0
     write_test_resume_template(load_settings(data_dir=env).config_dir)
 
     LANE_DELAY = 6.0
+    collected = Event()
 
     def _fake_run_scan_outage(
         engine: Engine,
@@ -2034,10 +2048,16 @@ def test_a_fatally_refusing_run_still_lets_the_lane_thread_land_its_rows(
     baseline_summary, baseline_elapsed = _run("baseline")
     assert baseline_summary.fatal is not None, "the fake outage did not refuse the baseline run"
 
+    # `on_collect` fires on the FETCH side, on the background thread, so setting the event there
+    # is what makes the fetch observable at all once its rows no longer are.
     monkeypatch.setattr(
         runner_mod,
         "LANE_FACTORIES",
-        {"stub": lambda _ctx: StubLane([("hiringcafe", "src:sp2")], delay=LANE_DELAY)},
+        {
+            "stub": lambda _ctx: StubLane(
+                [("hiringcafe", "src:sp2")], delay=LANE_DELAY, on_collect=collected.set
+            )
+        },
     )
     summary, elapsed = _run("apps")
 
@@ -2050,7 +2070,15 @@ def test_a_fatally_refusing_run_still_lets_the_lane_thread_land_its_rows(
         f"baseline -- it waited on the {LANE_DELAY}s lane thread"
     )
 
+    # NULL CONTROL: the background fetch really ran. `collect` is entered before the stub's own
+    # delay, so this returns as soon as the lane stage reached the network half.
+    assert collected.wait(timeout=LANE_DELAY + 5.0), (
+        "the lane stage never reached its fetch -- the assertions below would hold for a lane "
+        "that was simply never started"
+    )
+
     engine = get_engine(env)
+
     def _board_scan_row() -> Any:
         with engine.connect() as conn:
             return conn.execute(
@@ -2059,16 +2087,83 @@ def test_a_fatally_refusing_run_still_lets_the_lane_thread_land_its_rows(
                 .where(tables.companies.c.slug == "src:sp2")
             ).one_or_none()
 
-    # Polls the SAME row this test needs, rather than a company-existence check followed by a
-    # separate query -- the company and its `board_scans` row commit in different transactions
-    # (`upsert_lane_company`, then `apply_board`), so stopping on the company alone raced the
-    # second write on a loaded machine.
-    deadline = monotonic() + LANE_DELAY + 5.0
-    scan_row = _board_scan_row()
-    while scan_row is None and monotonic() < deadline:
-        sleep(0.02)
-        scan_row = _board_scan_row()
+    # Polled rather than read once, and the direction matters: this is an ABSENCE, so a single
+    # early read would pass against the very implementation the test exists to reject. The
+    # window is the stub's whole remaining delay plus a margin -- under SP2 the row appeared
+    # inside it every time.
+    deadline = monotonic() + LANE_DELAY + 2.0
+    while monotonic() < deadline:
+        assert _board_scan_row() is None, (
+            "a refused run landed a lane row -- the apply is still running off the join site"
+        )
+        sleep(0.05)
 
-    assert scan_row is not None, "the lane's company never landed after a refusing run"
-    assert scan_row.scan_kind == "lane"
-    assert scan_row.run_id == summary.run_id, "the lane's row was not attributed to the refused run"
+    # SECOND CONTROL: the identical stub lane, on a run that is NOT refused, lands its row. An
+    # absence proves nothing until the same apparatus has been shown to produce a presence.
+    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(0.0))
+    monkeypatch.setattr(
+        runner_mod,
+        "LANE_FACTORIES",
+        {"stub": lambda _ctx: StubLane([("hiringcafe", "src:sp2")], delay=0.0)},
+    )
+    healthy_summary, _ = _run("healthy")
+    assert healthy_summary.fatal is None, healthy_summary.errors
+    landed = _board_scan_row()
+    assert landed is not None, "the stub lane cannot land a row at all -- the control is broken"
+    assert landed.scan_kind == "lane"
+    assert landed.run_id == healthy_summary.run_id
+
+
+def test_the_lane_stage_applies_on_the_joining_thread_and_never_on_the_background_one(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T37's regression guard, and the property is THREAD IDENTITY rather than an overlap count.
+
+    `test_the_applies_never_overlap_because_apply_board_is_the_single_writer` proves the two
+    LANES are serial with each other. It says nothing about the scan COORDINATOR, which is
+    calling `apply_board` on the run's own thread for the whole time the lane thread is alive --
+    and that is the pair SP2 created and run 3 lost a Workday board to. Only the thread a call
+    arrives on can tell those two apart, so that is what is recorded here.
+
+    Deliberately at the pipeline seam and not at `_run_lanes`: the background thread only exists
+    on the `run_pipeline` path, so a test that called `_run_lanes` directly would be green under
+    SP2 and prove nothing.
+    """
+    assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _cli(env, ["tailor", "init"]).exit_code == 0
+    write_test_resume_template(load_settings(data_dir=env).config_dir)
+
+    apply_threads: list[int] = []
+    real = runner_mod.apply_board
+
+    def spy(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+        apply_threads.append(get_ident())
+        return real(engine_, snapshot, company_id, run_id, scan_kind)
+
+    monkeypatch.setattr(runner_mod, "apply_board", spy)
+    # A scan slow enough that a lane applying on its own thread lands WHILE the scan is still
+    # running -- the production overlap, not a sequence that happens to be safe.
+    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(1.0))
+    monkeypatch.setattr(
+        runner_mod,
+        "LANE_FACTORIES",
+        {"stub": lambda _ctx: StubLane([("hiringcafe", "src:t37")], delay=0.0)},
+    )
+    settings = load_settings(data_dir=env).model_copy(update={"lanes_enabled": ("stub",)})
+
+    caller = get_ident()
+    summary = run_pipeline(
+        get_engine(env),
+        settings,
+        console=Console(quiet=True),
+        out_root=tmp_path / "apps",
+        resume_path=settings.config_dir / "resume.yaml",
+    )
+
+    assert summary.fatal is None, summary.errors
+    # Not vacuous by absence: the lane must actually have applied something.
+    assert apply_threads, "no lane apply happened at all -- there is nothing to attribute"
+    assert set(apply_threads) == {caller}, (
+        "a lane applied from the background thread; `apply_board` was reached from "
+        f"{len(set(apply_threads))} threads while the scan was writing on {caller}"
+    )

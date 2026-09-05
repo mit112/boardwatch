@@ -12,11 +12,15 @@ its mitigation is the runtime refusal in `store/fs_safety.py`, exercised by test
 
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from time import perf_counter
 
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from boardwatch.store.db import ensure_schema, get_engine
 
@@ -67,3 +71,49 @@ def test_two_processes_writing_concurrently_never_corrupt_or_lose_a_write(tmp_pa
         total = conn.execute(text("SELECT COUNT(*) FROM runs")).scalar_one()
     assert integrity == "ok"  # no page corruption survived the concurrent writers
     assert total == 2 * _WRITES_EACH  # every write from both processes landed; none was lost
+
+
+def test_a_deferred_read_then_write_loses_its_snapshot_the_moment_another_connection_commits(
+    tmp_path: Path,
+) -> None:
+    """WHY T37 moved the lane apply off the background thread instead of raising `busy_timeout`.
+
+    `apply_board` opens a DEFERRED transaction (`engine.begin()`) and READS -- to decide insert
+    versus update -- before it writes. In WAL, upgrading that read snapshot to a write when any
+    other connection has committed since the snapshot was taken fails with SQLITE_BUSY_SNAPSHOT,
+    surfaced by the driver as `database is locked`. It is NOT a queueing failure: SQLite does not
+    invoke the busy handler at all here, because no amount of waiting can make a stale snapshot
+    writable -- the transaction has to be rolled back and retried from a fresh read.
+
+    So the elapsed time is the load-bearing assertion, not the error. `busy_timeout` is 5,000 ms
+    on this engine and run 3's lost board was read as a 5-second starvation; a failure that
+    returns in milliseconds says the timeout was never consulted, and therefore that raising it
+    -- T37's stated fallback -- could not have fixed anything. Removing the second writer is the
+    only fix, which is what moving the apply to the join site does.
+    """
+    engine = get_engine(tmp_path / "store", busy_timeout_ms=5000)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE probe (id INTEGER PRIMARY KEY, v TEXT)"))
+
+    started = perf_counter()
+    with pytest.raises(OperationalError) as caught:
+        with engine.begin() as coordinator:
+            # The read half of a read-modify-write: this is what takes the snapshot.
+            coordinator.execute(text("SELECT count(*) FROM probe")).one()
+            # One commit from a SECOND connection, exactly as the lane stage had while the scan
+            # coordinator was mid-`apply_board`. ONE is enough; a stream is not needed.
+            with engine.connect() as lane:
+                lane.execute(text("INSERT INTO probe (v) VALUES ('lane')"))
+                lane.commit()
+            coordinator.execute(text("INSERT INTO probe (v) VALUES ('board')"))
+    elapsed = perf_counter() - started
+
+    # The extended result code, not the message: `database is locked` is what a genuine
+    # busy-timeout expiry says too, and the two demand opposite fixes.
+    assert caught.value.orig is not None
+    assert caught.value.orig.sqlite_errorcode == sqlite3.SQLITE_BUSY_SNAPSHOT
+    assert elapsed < 1.0, (
+        f"the write failed after {elapsed:.2f}s against a 5.0s busy_timeout -- if it ever does "
+        "queue, this is a starvation failure and raising the timeout becomes a real option"
+    )
