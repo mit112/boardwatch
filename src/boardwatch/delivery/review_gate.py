@@ -41,7 +41,7 @@ different evaluations. All three flags default False, which is exactly the old b
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, get_args
 
 from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.role_gate import role_verdict
@@ -100,6 +100,12 @@ ReviewReason = Literal[
     "experience_requirement",
     "seniority_above_band",
 ]
+
+
+#: The same catalog at runtime, for a caller that PERSISTS a reason and must refuse an unknown
+#: one rather than publish it. `get_args` rather than a restated tuple: a hand-copied list would
+#: keep validating against a stale catalog the moment a member is added above.
+REVIEW_REASONS: frozenset[str] = frozenset(get_args(ReviewReason))
 
 
 class LaneDecision(NamedTuple):
