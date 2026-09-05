@@ -20,6 +20,20 @@
 
 ## Current standing
 
+### Session 2026-09-09 (planning): P1 IS PLANNED — the ≤ 1-YoE floor lands as PER-USER POLICY DATA (T47), the judge is armed AFTER it, above-band stays hidden, the drain is declined; THREE owner decisions are batched in `HANDOFF-2026-09-09.md` §0 and NOTHING has been executed
+
+**Read this before acting.** Reasoning: **D-479**. Numbers: `METRICS.md`, the `Session — 2026-09-09`
+block. The execution session works `HANDOFF-2026-09-09.md`: put §0's three decisions to Mit first
+(D1 mechanism, D2 order, D3 above-band, with the floor's four consequences on the page), then T47
+(`Policy.near_miss_years_ceilings`, `effective_family`, differing-only snapshot key, `eligibility
+policy ceiling`), then his `policy ceiling experience_years 1`, then the `[gate]` block with
+`model = "haiku"` read back through `Settings`, then the tick. **Two claims in
+`REPORT-2026-09-08.md` P1 are corrected (D-479 §2):** the R7 pin is of the BUNDLED file and the
+corpus runs on it, so a per-user change moves neither; the 91 months bars DO turn over live. The
+ledger drain is declined on the standing test (80 `built`, 0 `skipped`); the eligibility re-key is
+83,308 postings pending at run 4's preflight, ~8–12 min, not pre-run. Run 3 dropped 973
+above-band postings while 3,270 in-band lost on rank — surfacing them displaces, never adds.
+
 ### Session 2026-09-08 (execution): ALL SIX D-477 TICKETS LANDED on `main`, each gated exit 0 plus a final integration gate (9,497 passed); the judge model is RULED HAIKU; T42 is built but OFF and its arming is BLOCKED on an owner decision
 
 **Read this before acting on anything below it.** Reasoning: **D-478**. Numbers: `METRICS.md`,
@@ -66,10 +80,13 @@ keys are ignored silently, so a typo looks identical to success.
 
 ## Next action
 
-**0. THE 06:00 TICK IS STILL UNLOADED, AND RUN 4 HAS NOT HAPPENED.** `launchctl bootout` was run
-at 05:47 CDT on 2026-09-05 so merges never landed under a live run of the editable venv. `main`
-now holds all six tickets, and the primary checkout is parked on `main`, so the re-load is
-unblocked:
+**0. THE 06:00 TICK IS STILL UNLOADED, AND RUN 4 HAS NOT HAPPENED — ON PURPOSE, until
+`HANDOFF-2026-09-09.md` §4's sequence has run: T47 merged → `policy ceiling experience_years 1` →
+`[gate]` block verified → tick.** Run 4 is the first COUNTED run of the provisional pass and must
+reflect the ≤ 1-YoE ruling; an eligibility change after it restarts the count. `launchctl bootout`
+was run at 05:47 CDT on 2026-09-05 so merges never landed under a live run of the editable venv.
+`main` holds all six D-477 tickets and the primary checkout is parked on `main`, so once the
+sequence is done the re-load is:
 
 ```
 launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist
@@ -86,24 +103,8 @@ T42's new IN-classified `gate` setting re-stamping `run_policy_version` (`config
 `f56a0166` -> `200396b9`), armed or not. It is not an eligibility re-key and nothing auto-reopens
 (D-478 §3). Read cold on the first run after a long gap it looks like an incident; it is not.
 
-**0-0. OWNER RULINGS 2026-09-05 04:13 (D-475): T40 — YES, build. T41 — FIX, build.** Both are
-now plain tickets for the next execution session, in that order, after R2.
-
-**0-1. T34 (M1) IS RESPECIFIED AND ITS READ-ONLY FORM IS APPROVED (D-474 choice 4).** The
-apparatus as written cannot work — `gate request` ranks with `include_handled=False` and all 80
-delivered leads carry `built` permanently, so the judged population and `delivered_unapplied`
-are DISJOINT BY CONSTRUCTION, and `m1_probe.py`'s null control passes on the gate pass's own
-totals while the lane join is empty (D-473 choice 8). **Run it ONLY as `HANDOFF-2026-09-07.md`
-§4 says**: pin ids first, `build_gate_request` on a `mode=ro` engine, a PLANTED item that must
-return `ineligible`, two blind judges, raw-substring `span_of` as the persisted-equivalent,
-nothing written. Only with no run in flight. **T35** (D-424) is gated on 09-09;
-`.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
-
-**0-2. T40 AND T41 ARE RULED (§0-0) AND TICKETED.** T40:
-`apply_board` on `write_connection` (`BEGIN IMMEDIATE`), one line; the stated consequence is a
-CLI write failing loudly during one of the ~30 boards whose apply exceeds 5 s. T41: one
-per-process per-host pacing registry shared by every `Fetcher`, two clients kept; priced at 94
-waits of ≤ 1 s per run. Specs, red-first tests and blast radius in the handoff §3.
+**0-1. T34 (M1) IS EXECUTED, read-only, blind two-judge steps included (D-478; METRICS `Session — 2026-09-08`).**
+T35 (D-424) is gated on 09-09; `.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
 
 **0-3. CLOSED, BY RULING:** T28 (this session — structurally zero, no successor). T33 and its
 residual-zero successor, T36 as specified, T18 `data`/`ai`, T24, T26 (D-472 and earlier). **T36 is
@@ -130,10 +131,9 @@ execution session can merge without a live run.** Run 4 is therefore NOT today's
 (`launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist`) or run by hand when the
 merges are on `main`; the heartbeat will alert on the missed ping unless paused in its dashboard.
 
-**1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
-verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
-across **~78,615 open `uncertain` postings**. Different blast radius, different question, still his.
-D-449 governs: a ruling is only as wide as the question put.
+**1. THE YEARS RULING HAS PROPAGATED — RULED 2026-09-05 (D-478 §5), PLANNED (D-479), NOT EXECUTED.**
+"I dont want jobs which have more than 1 YOE" is an instruction, not a fact, so A4's distinction is
+satisfied. What remains is his: D1–D3 in `HANDOFF-2026-09-09.md` §0, then T47 and the value.
 
 **2. RE-READ THE GATE ON THE NEXT RUN, AND DECIDE WHETHER IT BECOMES ROUTINE.** The gate now filters
 38 postings from future shortlists. It is a **manual handshake** — `gate request` → judge →
@@ -164,7 +164,8 @@ alternative that actually bounds it.
 
 ### Owed, and specifically NOT done
 
-- **`near_miss_years_ceiling` itself is untouched.** See item 1.
+- **`near_miss_years_ceiling` itself is untouched in code and in the live store.** Planned as T47
+  (D-479): the value becomes per-user policy data; the bundled 3 stays.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
   takes `eligible` to **0**, and the `work_auth` form is worth **245 of 4,617 (5.3%)** — about a
   quarter of the measured defect. **Do not re-derive it, and do not quote the naive 29.9%**, which is
@@ -191,11 +192,13 @@ fix is T41** (shared pacing STATE, not a shared client — the client's default 
 linkedin and github_lists rely on). **Mit's call, and it is a pacing promise to third parties,
 not a performance knob.**
 
-**0. WHETHER THE YEARS RULING PROPAGATES BEYOND THE GATE.** He ruled **"a stated bar is a bar"**
-on **28 final-gate verdicts over the delivered shortlist** (D-461). `near_miss_years_ceiling` in the
-DETERMINISTIC engine abstains on the same 2-3 year band across **~78,615 open `uncertain` postings**.
-**Do not move it on the strength of the gate ruling** — different population, different blast radius,
-and lowering the ceiling REJECTS rather than releases (D-440).
+**0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), THREE DECISIONS STILL HIS.** D1: carry
+it as per-user policy data (T47, recommended) or as a whole-file `rules.yaml` override (silent
+freeze of the live catalog — rejected by the plan, his to overrule). D2: P1 first, then arm the
+judge, both before run 4 (gate rows are keyed on `rules_hash`). D3: keep above-band titles hidden
+(973 dropped on run 3 vs 3,270 in-band lost on rank). Put all three with the floor's four
+consequences — 2–3 y total bars, scoped bars > 1 y, **13–36-month bars**, and the boundary that
+hedged/preferred bars do not move. `HANDOFF-2026-09-09.md` §0.
 
 **0-1. RETIRED / ANSWERED — held WHOLE in `STANDING-FACTS.md`.** Gate 1 is PER-SOURCE RECALL (D-421)
 and only the per-source THRESHOLD is still owed; job-apps keeps running until it is met

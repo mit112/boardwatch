@@ -72,12 +72,15 @@ cheaper; METRICS `Session — 2026-09-08`).
 experience bar's **floor must be <= 1 year** — `0`, `1`, `0-1`, `0-2`, `0-3` qualify, `2+` does
 not. The engine already reads ranges by floor, so this is a threshold change, not a parser change.
 But `near_miss_years_ceiling = 3` makes the engine ABSTAIN on exactly the 2-3 year bars now
-rejected: **31-35% of the delivered slate**. The fix is a personal `rules.yaml` override
-(`3 -> 1`), never the bundled catalog, and it re-keys the ledger, owes a drain, moves the repo's
-content pins, and turns over 91 month-stated corpus occurrences. **This is the M3 lever. It is
-planning work now, not measurement work** — the measurement is done.
+rejected: **31-35% of the delivered slate**. The fix is **T47** (D-479): the ceiling becomes
+per-user POLICY data beside `Policy.families`, never the bundled catalog and not a whole-file
+`rules.yaml` override (which replaces the bundled file outright and has no drift detector). It
+re-keys `rules_hash` once when the value is set (83,308 postings re-judged at the next preflight);
+the ledger drain is declined (80 `built`, 0 `skipped`); no repo pin and no corpus row moves; the 91
+month-stated bars turn over in the live store. **This is the M3 lever. It is ticketed** —
+`HANDOFF-2026-09-09.md`.
 
-**Two decisions left, both owner's:**
+**Three decisions left, all owner's — batched in `HANDOFF-2026-09-09.md` §0 (D1 mechanism, D2 order, D3 above-band); the two below are D2 and D3:**
 1. **Arm T42, or fix the band deterministically first?** Arming rejects the same 2-3 year bars at
    LLM cost every run; the override does it for free. They are not exclusive, but the order
    changes what run 4 reads.
