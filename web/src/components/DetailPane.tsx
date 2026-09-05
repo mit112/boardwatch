@@ -187,6 +187,12 @@ export function DetailPane({
   onToast: (message: string, tone: "info" | "error") => void;
 }) {
   const [shown, setShown] = useState(false);
+  /*
+   * The description box's height. Collapsed by default at 36rem, which is roughly a screen of
+   * prose on the pane's width — enough to see whether the JD is worth reading without the box
+   * owning the rest of the scroll.
+   */
+  const [jdExpanded, setJdExpanded] = useState(false);
   const pane = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -421,11 +427,36 @@ export function DetailPane({
                 was read from it.
               </p>
             ) : (
-              <div className="max-h-96 overflow-y-auto rounded-md border border-divider bg-bg p-3">
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-fg-2">
-                  {detail.jd_body}
-                </p>
-              </div>
+              <>
+                {/*
+                  * The frozen body carries NO newlines, so `whitespace-pre-wrap` has nothing to
+                  * wrap and a 6,000-character JD renders as one unbroken paragraph. Nothing here
+                  * alters or infers structure in third-party text — the only honest fixes
+                  * available at render time are typographic: a 68ch measure so a line is a line
+                  * rather than a 1,900px scan, and `leading-relaxed` (1.625) so the reader can
+                  * find their way back to the start of the next one.
+                  */}
+                <div
+                  className={`overflow-y-auto rounded-md border border-divider bg-bg p-3 ${
+                    jdExpanded ? "" : "max-h-[36rem]"
+                  }`}
+                >
+                  <p className="max-w-[68ch] text-sm leading-relaxed whitespace-pre-wrap text-fg-2">
+                    {detail.jd_body}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-expanded={jdExpanded}
+                  aria-label={`${jdExpanded ? "Collapse" : "Expand"} the job description`}
+                  onClick={() => {
+                    setJdExpanded((current) => !current);
+                  }}
+                  className="mt-2 inline-flex min-h-11 items-center rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+                >
+                  {jdExpanded ? "Collapse" : "Expand"}
+                </button>
+              </>
             )}
           </section>
 
