@@ -242,12 +242,19 @@ def assess_body(html: str, *, title: str) -> tuple[str, BodyRejection | None]:
 # body is the fingerprint (`catalog_fingerprint`, which moves on any marker edit) keying the
 # corpus re-sweep, and the drain re-running this current detector against each held body.
 
-FOREIGN_BODY_CATALOG_VERSION = 1
+FOREIGN_BODY_CATALOG_VERSION = 2
 
 # Page furniture and derived labels that only an aggregator's own UI emits. Every member is
 # measured against the live corpus (2026-09-01), not imagined: the first five are jobright's
-# chrome and CTAs, the sixth is its own sponsorship verdict, and the last two are LinkedIn's
+# chrome and CTAs, the sixth is its own sponsorship verdict, and the next two are LinkedIn's
 # signed-out interstitial. An employer writing its own JD emits none of them.
+#
+# The last two are the aggregator's own PLUMBING rather than its chrome, and they arrive here
+# for the same reason: a blind gate judge found an Indeed posting on the 2026-09-03e shortlist
+# whose whole body said it was not a job, and it had already reached the owner's queue with a
+# résumé rendered for it. Both phrases are in that one body, which is what the threshold of two
+# needs. They are the long forms deliberately — the word "test" is a job TOPIC, and a Test
+# Automation JD says it in every paragraph.
 _FOREIGN_BODY_MARKERS: tuple[str, ...] = (
     "apply on employer site",
     "sign in join now",
@@ -257,6 +264,8 @@ _FOREIGN_BODY_MARKERS: tuple[str, ...] = (
     "h1b sponsor likely",
     "join or sign in to find your next job",
     "agree & join linkedin",
+    "internal test job",
+    "not a real job",
 )
 
 # A CONSERVATIVE POLICY, and — stated plainly because the first version of this comment got it

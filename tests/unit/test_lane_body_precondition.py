@@ -89,8 +89,8 @@ def test_the_catalog_is_closed_and_fingerprinted() -> None:
     edit invalidates the whole corpus's checks, which is a real cost and must not be silent.
     """
     assert MIN_FOREIGN_MARKERS == 2
-    assert FOREIGN_BODY_CATALOG_VERSION == 1
-    assert catalog_fingerprint() == "b3d8225fcbd0ea81"
+    assert FOREIGN_BODY_CATALOG_VERSION == 2
+    assert catalog_fingerprint() == "6d28e5b9f88a349d"
     assert foreign_body_markers(" ".join(_EXPECTED_MARKERS)) == tuple(_EXPECTED_MARKERS)
 
 
@@ -105,6 +105,8 @@ _EXPECTED_MARKERS = (
     "h1b sponsor likely",
     "join or sign in to find your next job",
     "agree & join linkedin",
+    "internal test job",
+    "not a real job",
 )
 
 
@@ -176,3 +178,51 @@ def test_every_control_above_the_precondition_passes_the_jobright_page() -> None
         JOBRIGHT_PAGE.replace("\n", "<br>"), title="Software Engineer"
     )
     assert rejection is None
+
+
+# The offending body's own words, as the two blind gate judges reported them on 2026-09-03e.
+# Reconstructed rather than quoted from the store: the posting was lost with the pre-reset
+# corpus (2026-09-03), and the rebuilt corpus carries ZERO bodies matching either phrase — so
+# the marker pair costs nothing today and closes the class for the next one.
+INDEED_TEST_JOB = (
+    "Responsibilities\n"
+    "INDEED INTERNAL TEST JOB. Please do not apply.\n"
+    "This is not a real job and no application will be reviewed.\n"
+    "Qualifications\n"
+    "None. This posting exists to exercise the Indeed job pipeline end to end.\n"
+    "Benefits\n"
+    "None.\n"
+)
+
+
+def test_an_aggregators_own_test_posting_fails_the_precondition() -> None:
+    """T27. A gate judge found this on the 2026-09-03e shortlist: a lead whose entire body says
+    it is not a job. It reached the owner's queue with a résumé rendered for it.
+
+    Closed through the foreign-body catalog rather than an Indeed-side filter, because this
+    catalog already carries its own drain — `catalog_fingerprint` moves on any marker edit, and
+    the sweep re-checks every stored body against the current detector, so the fix reaches
+    bodies already banked as well as future ones. A lane-side filter would only ever see new
+    ones.
+    """
+    with pytest.raises(ForeignBodyText) as caught:
+        require_employer_body(INDEED_TEST_JOB)
+    assert set(caught.value.markers) == {"internal test job", "not a real job"}
+
+
+def test_a_real_test_automation_jd_is_not_held() -> None:
+    """The control, and it is the reason the markers are the two long phrases rather than the
+    word "test". Verbatim opening of a live Lever posting for a Test Automation engineer
+    (posting 41039 on 2026-09-04), a title family that says "test" in every paragraph."""
+    veeva = (
+        "Veeva Systems is a mission-driven organization and pioneer in industry cloud, helping "
+        "life sciences companies bring therapies to patients faster.\n"
+        "The Role\n"
+        "As an Associate Software Engineer in Test Automation you will build and maintain the "
+        "automated test suites that gate every release. You will write test plans, review test "
+        "coverage, and own the internal test infrastructure our engineers depend on.\n"
+        "Requirements\n"
+        "Experience with automated testing frameworks.\n"
+    )
+    assert foreign_body_markers(veeva) == ()
+    require_employer_body(veeva)  # raises nothing
