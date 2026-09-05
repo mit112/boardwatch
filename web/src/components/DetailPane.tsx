@@ -235,6 +235,15 @@ export function DetailPane({
 
   const row = detail?.row ?? null;
   const requirements = detail?.requirements ?? [];
+  /*
+   * ONE fact, ONE place. `closed` and `unverifiable` each render a chip below with its reason
+   * beside it, and `thin_jd` renders the chip that says why there is no coverage fraction — so a
+   * `status` fact cell and a `coverage · —` fact cell above them were the same claim a second and
+   * a third time. The fact cell is what goes: the chip carries the visible REASON, which is the
+   * half a bare word cannot. Both cells stay wherever no chip renders.
+   */
+  const statusChipShown = row?.status === "closed" || row?.status === "unverifiable";
+  const coverageChipShown = row?.thin_jd === true;
   const pdfPath = pathFromFileUri(row?.pdf_uri ?? null);
   const folder = parentDirectory(pdfPath);
 
@@ -285,9 +294,11 @@ export function DetailPane({
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
               <Fact label="remote policy" value={row.remote_policy ?? EM_DASH} />
               <Fact label="age" value={formatAge(row.posted_days)} />
-              <Fact label="status" value={row.status} />
+              {statusChipShown ? null : <Fact label="status" value={row.status} />}
               <Fact label="score · as of now" value={formatScore(row.score)} note={row.why} />
-              <Fact label="coverage · as of now" value={formatFraction(row.coverage)} />
+              {coverageChipShown ? null : (
+                <Fact label="coverage · as of now" value={formatFraction(row.coverage)} />
+              )}
               <Fact label="first seen" value={formatTimestamp(row.first_seen)} />
             </div>
 
@@ -298,6 +309,7 @@ export function DetailPane({
                   label="closed"
                   emphasis="strong"
                   reason="The posting is no longer open on the board."
+                  showReason
                 />
               ) : null}
               {/* The reason is VISIBLE here, not a tooltip: "unverifiable" is a claim about what
