@@ -11,7 +11,8 @@ import { EM_DASH, formatTimestamp } from "../lib/format";
  * hides the apply queue, the way opening only that section would. `ineligible` is deliberately NOT a
  * facet: it is drained, never listed, so a toggle there could only ever show an empty list.
  */
-export type QueueFacet = "eligible" | "uncertain" | "review";
+export const QUEUE_FACETS = ["eligible", "uncertain", "review"] as const;
+export type QueueFacet = (typeof QUEUE_FACETS)[number];
 
 /*
  * The status band. Tabular numerals throughout, so a figure that changes does not shift the ones

@@ -25,8 +25,9 @@ import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
-import { StatusBand } from "../components/StatusBand";
+import { QUEUE_FACETS, StatusBand } from "../components/StatusBand";
 import type { QueueFacet } from "../components/StatusBand";
+import { useHashRoute } from "../hooks/useHashRoute";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ToastRequest } from "../hooks/useToasts";
 import {
@@ -35,7 +36,7 @@ import {
   reviewBreakdown,
   reviewLaneSentence,
 } from "../lib/reviewReasons";
-import { matchesQuery, sortRows } from "../lib/sort";
+import { matchesQuery, parseSortState, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
 
 const COLLAPSE_MS = 200;
@@ -73,6 +74,60 @@ function writeSession(key: string, value: string): void {
 function readStoredFlag(key: string): boolean | null {
   const stored = readSession(key);
   return stored === "true" ? true : stored === "false" ? false : null;
+}
+
+/*
+ * The queue's working state, restored on mount and written on every change. Taking the Runs tab
+ * and coming back used to throw away the filter text, the score floor, both facets and both sort
+ * orders — all of it re-entered by hand, every time.
+ *
+ * The decoders are the enforcement point for the closed catalogs. Storage outlives a bundle
+ * upgrade, so a stored facet or sort key can name a member this build no longer has: it is
+ * DISCARDED whole rather than passed through as a tenth bucket or repaired into something valid.
+ */
+const QUEUE_KEYS = {
+  query: "boardwatch.queue.query",
+  minScore: "boardwatch.queue.minScore",
+  facet: "boardwatch.queue.facet",
+  reason: "boardwatch.queue.reason",
+  sort: "boardwatch.queue.sort",
+  reviewSort: "boardwatch.queue.reviewSort",
+} as const;
+
+const decodeText = (raw: string | null): string | null => raw;
+const encodeText = (value: string): string => value;
+
+const decodeFacet = (raw: string | null): QueueFacet | null =>
+  (QUEUE_FACETS as readonly string[]).includes(raw ?? "") ? (raw as QueueFacet) : null;
+const encodeFacet = (value: QueueFacet | null): string => value ?? "";
+
+const decodeReason = (raw: string | null): ReviewReason | null =>
+  raw !== null && raw in REVIEW_REASON_LABELS ? (raw as ReviewReason) : null;
+const encodeReason = (value: ReviewReason | null): string => value ?? "";
+
+const encodeSort = (value: SortState): string => JSON.stringify(value);
+
+/**
+ * `useState` that reads its initial value from `sessionStorage` and writes every later one back.
+ *
+ * `decode` and `encode` must be module-level functions: an inline arrow would be a new identity on
+ * every render and the setter would stop being stable, which is what the callers below rely on.
+ */
+function useSessionState<T>(
+  key: string,
+  fallback: T,
+  decode: (raw: string | null) => T | null,
+  encode: (value: T) => string,
+): [T, (next: T) => void] {
+  const [value, setValue] = useState<T>(() => decode(readSession(key)) ?? fallback);
+  const set = useCallback(
+    (next: T) => {
+      setValue(next);
+      writeSession(key, encode(next));
+    },
+    [key, encode],
+  );
+  return [value, set];
 }
 
 type Removal = "applied" | "skipped" | "reported";
@@ -148,8 +203,13 @@ export function QueuePage({
     writeSession(REVIEW_OPEN_KEY, String(next));
   }, []);
 
-  const [query, setQuery] = useState("");
-  const [minScore, setMinScore] = useState("");
+  const [query, setQuery] = useSessionState(QUEUE_KEYS.query, "", decodeText, encodeText);
+  const [minScore, setMinScore] = useSessionState(
+    QUEUE_KEYS.minScore,
+    "",
+    decodeText,
+    encodeText,
+  );
   /*
    * The verdict facet from the status band, shared across BOTH lanes exactly like `query` and
    * `minScore` — it expresses "what am I looking for", which spans the apply queue and the review
@@ -157,7 +217,12 @@ export function QueuePage({
    * the band's own counts stay put and the reader can switch straight from one facet to another
    * instead of the cell they need to click dropping to zero.
    */
-  const [facet, setFacet] = useState<QueueFacet | null>(null);
+  const [facet, setFacet] = useSessionState<QueueFacet | null>(
+    QUEUE_KEYS.facet,
+    null,
+    decodeFacet,
+    encodeFacet,
+  );
   /*
    * The REVIEW-REASON facet, alongside the verdict one and composed with it. Every review row
    * already carried its reason as a chip and nothing could filter by one, so on a 149-lead lane
@@ -165,8 +230,18 @@ export function QueuePage({
    * `filteredReview` for the same reason the verdict facet is: the chip counts must not collapse
    * to the current selection, or the chip the reader wants next reads zero.
    */
-  const [reasonFacet, setReasonFacet] = useState<ReviewReason | null>(null);
-  const [sort, setSort] = useState<SortState>({ key: "rank", direction: "asc" });
+  const [reasonFacet, setReasonFacet] = useSessionState<ReviewReason | null>(
+    QUEUE_KEYS.reason,
+    null,
+    decodeReason,
+    encodeReason,
+  );
+  const [sort, setSort] = useSessionState<SortState>(
+    QUEUE_KEYS.sort,
+    { key: "rank", direction: "asc" },
+    parseSortState,
+    encodeSort,
+  );
   /*
    * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
    * table silently re-ordered the apply list above it — a list the reader is working top-down and
@@ -175,9 +250,28 @@ export function QueuePage({
    * express "what am I looking for", which spans both lanes, while sort expresses "how do I want
    * THIS list arranged".
    */
-  const [reviewSort, setReviewSort] = useState<SortState>({ key: "rank", direction: "asc" });
+  const [reviewSort, setReviewSort] = useSessionState<SortState>(
+    QUEUE_KEYS.reviewSort,
+    { key: "rank", direction: "asc" },
+    parseSortState,
+    encodeSort,
+  );
 
-  const [selected, setSelected] = useState<number | null>(null);
+  /*
+   * The open lead and the run filter live in the URL (`#/queue?run=5&lead=61310`), not in state:
+   * they are the two things a reader points AT rather than does, so they have to be sendable,
+   * bookmarkable and reloadable. `useHashRoute` is called here rather than passed down from `App`
+   * because it subscribes to `hashchange` itself and the route above needs neither key.
+   */
+  const [, , routeParams, setRouteParams] = useHashRoute();
+  const selected = routeParams.lead;
+  const runFilter = routeParams.run;
+  const openLead = useCallback(
+    (postingId: number | null) => {
+      setRouteParams({ lead: postingId });
+    },
+    [setRouteParams],
+  );
   /*
    * The keyboard CURSOR, which is not the selection: ↓/↑ walk the list without opening a pane and
    * without fetching a detail per row, and Enter opens the one you stopped on. One cursor for both
@@ -185,9 +279,23 @@ export function QueuePage({
    * has focus anyway.
    */
   const [activeId, setActiveId] = useState<number | null>(null);
+  /*
+   * Both are keyed by the posting they describe, and the render reads them through `shownDetail` /
+   * `shownError` below. `selected` is now driven by the URL, so it can change without going
+   * through a click handler — a back button, a pasted link — and clearing these in an effect keyed
+   * on it would be a setState synchronised into an effect body, which is the cascading render the
+   * lint rule rejects. Comparing the id costs nothing and cannot go stale.
+   */
   const [detail, setDetail] = useState<QueueDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<{ id: number; message: string } | null>(null);
   const [answers, setAnswers] = useState<Answers | null>(null);
+
+  /* Whether the `lead` in the URL is a posting this queue actually holds. `false` while the queue
+     is still loading, when every id is unknown. */
+  const leadKnown =
+    data !== null &&
+    selected !== null &&
+    [...data.rows, ...data.review].some((row) => row.posting_id === selected);
 
   const reviewOpen =
     reviewOpenPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0);
@@ -282,19 +390,23 @@ export function QueuePage({
   }, []);
 
   useEffect(() => {
-    if (selected === null) return;
+    // Not until the lead is known to be ON the page: a stale `lead` in the URL must not spend a
+    // request on a posting the queue does not hold, and the effect below drops it instead.
+    if (selected === null || !leadKnown) return;
     let live = true;
     void getDetail(selected)
       .then((response) => {
         if (live) setDetail(response);
       })
       .catch((caught: unknown) => {
-        if (live) setDetailError(errorMessage(caught, "Could not load this lead."));
+        if (live) {
+          setDetailError({ id: selected, message: errorMessage(caught, "Could not load this lead.") });
+        }
       });
     return () => {
       live = false;
     };
-  }, [selected]);
+  }, [selected, leadKnown]);
 
   useEffect(() => {
     if (selected === null || answers !== null) return;
@@ -305,7 +417,20 @@ export function QueuePage({
       });
   }, [selected, answers]);
 
-  const detailLoading = selected !== null && detail === null && detailError === null;
+  const shownDetail = detail !== null && detail.row.posting_id === selected ? detail : null;
+  const shownError =
+    detailError !== null && detailError.id === selected ? detailError.message : null;
+  const detailLoading = selected !== null && shownDetail === null && shownError === null;
+
+  /*
+   * A `lead` the page cannot show — a stale bookmark, or a lead applied to since the link was sent
+   * — is dropped from the URL rather than left to open a pane on a posting in neither lane. Runs
+   * only once the queue has loaded: before that, EVERY id is unknown.
+   */
+  useEffect(() => {
+    if (data === null || selected === null || leadKnown) return;
+    setRouteParams({ lead: null });
+  }, [data, selected, leadKnown, setRouteParams]);
 
   /*
    * Below `lg` the detail pane is an opaque full-screen sheet, so it is a modal and everything it
@@ -363,6 +488,7 @@ export function QueuePage({
     const floor = minScore.trim() === "" ? null : Number(minScore);
     return (data?.rows ?? []).filter((row) => {
       if (removed.has(row.posting_id)) return false;
+      if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
       // A null score is not below a floor, it is unmeasured — so a floor excludes it rather than
       // silently treating "unknown" as zero.
@@ -371,7 +497,7 @@ export function QueuePage({
       }
       return true;
     });
-  }, [data, removed, query, minScore]);
+  }, [data, removed, runFilter, query, minScore]);
 
   const visible = useMemo(() => {
     // `review` selects a LANE, not a verdict: the apply queue is hidden entirely for it, so its
@@ -394,13 +520,14 @@ export function QueuePage({
     const floor = minScore.trim() === "" ? null : Number(minScore);
     return (data?.review ?? []).filter((row) => {
       if (removed.has(row.posting_id)) return false;
+      if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
       if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
         return false;
       }
       return true;
     });
-  }, [data, removed, query, minScore]);
+  }, [data, removed, runFilter, query, minScore]);
 
   const visibleReview = useMemo(() => {
     // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
@@ -504,7 +631,7 @@ export function QueuePage({
           .querySelector<HTMLElement>(`[data-row-id="${String(successor.posting_id)}"]`)
           ?.focus();
       }, COLLAPSE_MS);
-      if (selected === row.posting_id) setSelected(null);
+      if (selected === row.posting_id) openLead(null);
 
       const call =
         kind === "applied" ? markApplied : kind === "skipped" ? markSkipped : report;
@@ -576,7 +703,7 @@ export function QueuePage({
           });
         });
     },
-    [push, restore, selected, visible, visibleReview],
+    [push, restore, selected, openLead, visible, visibleReview],
   );
 
   /*
@@ -615,13 +742,21 @@ export function QueuePage({
       ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
       : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" };
 
-  const onSort = useCallback((key: SortKey) => {
-    setSort((current) => nextSort(current, key));
-  }, []);
+  // The current sort is read from the render rather than through a functional update: the setters
+  // persist to storage, so they take a value rather than a reducer.
+  const onSort = useCallback(
+    (key: SortKey) => {
+      setSort(nextSort(sort, key));
+    },
+    [sort, setSort],
+  );
 
-  const onReviewSort = useCallback((key: SortKey) => {
-    setReviewSort((current) => nextSort(current, key));
-  }, []);
+  const onReviewSort = useCallback(
+    (key: SortKey) => {
+      setReviewSort(nextSort(reviewSort, key));
+    },
+    [reviewSort, setReviewSort],
+  );
 
   /*
    * Counted over the WHOLE lane, never over `visibleReview`: these counts are the menu, and a menu
@@ -638,7 +773,7 @@ export function QueuePage({
       // section would leave a filter whose entire result is invisible.
       if (!clearing) setReviewOpen(true);
     },
-    [reasonFacet, setReviewOpen],
+    [reasonFacet, setReasonFacet, setReviewOpen],
   );
 
   // Clicking the active facet's band cell again clears it — one control, both directions.
@@ -655,7 +790,7 @@ export function QueuePage({
        */
       if (!clearing && next === "review") setReviewOpen(true);
     },
-    [facet, setReviewOpen],
+    [facet, setFacet, setReviewOpen],
   );
 
   /*
@@ -768,6 +903,24 @@ export function QueuePage({
 
         {/* The active facet stated in words next to a plain clear, so it is obvious a filter is on
             and how to drop it — the pressed band cell shows which, this shows that. */}
+        {/* The run filter reads as its own sentence rather than joining `activeFilters`: it comes
+            from the URL, not from a control on this page, so the reader needs to be told it is on
+            at all before being told how to drop it. */}
+        {runFilter === null ? null : (
+          <p className="flex items-center gap-3 text-sm text-fg-2">
+            <span>Showing run {runFilter.toLocaleString()}&rsquo;s leads only.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setRouteParams({ run: null });
+              }}
+              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+            >
+              Show all runs
+            </button>
+          </p>
+        )}
+
         {activeFilters.length === 0 ? null : (
           <p className="flex items-center gap-3 text-sm text-fg-2">
             <span>Showing {activeFilters.join(", ")}.</span>
@@ -843,13 +996,11 @@ export function QueuePage({
               collapsing={collapsing}
               onOpenApply={openApply}
               onSelect={(row) => {
-                // Re-clicking the open row must not clear `detail`. `setSelected` bails out on
-                // an unchanged value, so the effect keyed on it never re-fires and the pane
-                // would sit on its loading state for good.
+                // Re-clicking the open row must not rewrite the hash: the detail effect is keyed
+                // on `selected`, and a no-op write that still produced a new value would re-fire
+                // it and drop the pane back to its loading state.
                 if (row.posting_id === selected) return;
-                setSelected(row.posting_id);
-                setDetail(null);
-                setDetailError(null);
+                openLead(row.posting_id);
               }}
               onApplied={(row) => {
                 act(row, "applied");
@@ -949,9 +1100,7 @@ export function QueuePage({
                           onOpenApply={openApply}
                           onSelect={(row) => {
                             if (row.posting_id === selected) return;
-                            setSelected(row.posting_id);
-                            setDetail(null);
-                            setDetailError(null);
+                            openLead(row.posting_id);
                           }}
                           onApplied={(row) => {
                             act(row, "applied");
@@ -998,7 +1147,7 @@ export function QueuePage({
                * row, and at `lg` it never registers one.
                */
               const opener = selected;
-              setSelected(null);
+              openLead(null);
               window.setTimeout(() => {
                 const row = document.querySelector<HTMLElement>(
                   `[data-row-id="${String(opener)}"]`,
@@ -1011,23 +1160,23 @@ export function QueuePage({
           >
             <DetailPane
               key={selected}
-              detail={detail}
+              detail={shownDetail}
               loading={detailLoading}
-              error={detailError}
+              error={shownError}
               answers={answers}
               onClose={() => {
-                setSelected(null);
+                openLead(null);
               }}
               onApplied={() => {
-                const row = detail?.row;
+                const row = shownDetail?.row;
                 if (row) act(row, "applied");
               }}
               onSkip={() => {
-                const row = detail?.row;
+                const row = shownDetail?.row;
                 if (row) act(row, "skipped");
               }}
               onReport={() => {
-                const row = detail?.row;
+                const row = shownDetail?.row;
                 if (row) act(row, "reported");
               }}
               onToast={(message, tone) => {
