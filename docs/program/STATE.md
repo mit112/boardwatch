@@ -20,56 +20,61 @@
 
 ## Current standing
 
-### Session 2026-09-06b (planning review): the 2026-09-06 report HOLDS; the lane-pacing exposure is RE-SIZED to ~90 s on one host per run and the review's shared-`Fetcher` claim was WRONG, so the fix is T41; T40 is RECOMMENDED on run 3's apply distribution; T34's read-only form is APPROVED with a planted control and the gate's cadence is a RULE; T36 is a RULE; the fleet call is 0 wall minutes — next list `HANDOFF-2026-09-07.md`
+### Session 2026-09-08 (execution): ALL SIX D-477 TICKETS LANDED on `main`, each gated exit 0 plus a final integration gate (9,497 passed); the judge model is RULED HAIKU; T42 is built but OFF and its arming is BLOCKED on an owner decision
 
-**Read this before acting on anything below it.** Reasoning: **D-474**. Numbers: `METRICS.md`,
-the `Session — 2026-09-06b` block. The 2026-09-06 execution block moved WHOLE into
-`STANDING-FACTS.md`; D-473 holds its reasoning. **`main` is still `84671523`.**
-`close-2026-09-06` carries FOURTEEN commits over it and **one `--ff-only` merge lands them all.**
+**Read this before acting on anything below it.** Reasoning: **D-478**. Numbers: `METRICS.md`,
+the `Session — 2026-09-08` block. Report: **`REPORT-2026-09-08.md`**.
 
-**The five decisions the 09-06 session left are all ruled or sized (D-474):**
-- **(a) Lane pacing (§0-A below).** Real, owner's, and **~90 s on `boards-api.greenhouse.io`
-  per run**, seconds on ashby and lever — not 352 s: only hiringcafe's 94 per-board GETs reach
-  scan hosts. The review's "a shared `Fetcher` re-serialises the lanes" was false (the lock is
-  per HOST); the real coupling is the client's default UA. **Fix = T41**, a per-process pacing
-  registry, two clients kept, SP2 untouched. Recommended; Mit's word.
-- **(b) T40 RECOMMENDED.** Run 3 applies: p50 0.26 s, p90 5.15 s, max 16.4 s, **30 of 287 past
-  the 5 s `busy_timeout`**. `BEGIN IMMEDIATE` makes a CLI write during one of those fail loudly
-  instead of the scan losing a board. Mit's yes.
-- **(c) T34 APPROVED read-only** (`HANDOFF-2026-09-07.md` §4) with a planted item that MUST
-  come back `ineligible`. **Cadence rule:** apply lane is 5 of 80; ≥ 1 apply-lane
-  gate-`ineligible` ⇒ per-run gate over the apply lane only; 0 ⇒ stays manual.
-- **(d) T36 by rule** on the first post-merge run, against run 4 as the same-fleet pre-T38
-  baseline: tail ≤ 3 min and `boards_failed` 0 ⇒ `scan_workers` 16 (model 83.8 → 45.2 min).
-- **(e) Fleet: 0 wall minutes either way** — the 9-board chain (≈ 31 min) is under the Workday
-  span at 8 or 16 workers. Dropping the three saves ~1,200 host-s/run and removes 97 `eligible`
-  postings with 0 leads. Mit's.
+T40, T41, T45, T44, T43, T42 are on `main`. T46 needed no code — B8's daily instrument is the
+funnel's `pdf` stage `entered`, which T43 made apply-lane-only; its column is now on the
+acceptance table. T34 was executed read-only, including its blind two-judge steps.
 
-**`ROADMAP.md` is NEW, at Mit's request** — five milestones with exit criteria; **M1 (land the merge, run
-it once) is the open one: the merge LANDED at 04:13 (§0), the run is owed.** Work only what moves its
-exit criterion.
+**Three things a fresh session must not re-derive:**
 
-**Run 4 is the launchd tick of 2026-09-05 on `main` UNCHANGED** (287 boards, no T37/T38/T39),
-deliberately not postponed: SP3 measurement 2 of 3 and T38's baseline. **It did not fire at
-04:00 CDT: launchd computes the calendar interval in the zone it BOOTED with, and the system
-zone was set to Chicago five minutes after boot — so the tick fires at 06:00 CDT** (as 09-04's
-did, 06:00:05) until a reboot or a plist edit, Mit's. Verify on run 4's `started_at`; read it
-first (R2).
+1. **The judge model is ruled: HAIKU** — 92.6% head-to-head with sonnet on the ineligible axis,
+   kappa 0.847, planted control caught by both, 2.04x cheaper ($0.0086 vs $0.0176 per lead).
+   §4's own bar could not be scored: there are **0 stored `final_gate:` verdicts** (the 95 died
+   with the 09-03 reset), and the substituted slate has **no `ineligible` in its truth column**,
+   which makes an agreement bar maximal for a judge that never decides. See D-478 §1.
+2. **T42 is built, gated, and OFF by default — but arming it is an OPEN OWNER DECISION**, not a
+   mechanical step. Under the owner's own 2026-09-05 ruling (bar floor <= 1 YOE) the judge is
+   RIGHT to reject 2-3 year bars, but the engine abstains on them by policy
+   (`near_miss_years_ceiling = 3`), so arming rejects **31-35% of the delivered slate** and
+   settles that lever by fiat. The cheaper locus is a personal `rules.yaml` override, which owes
+   a ledger drain. Left to planning — see `REPORT-2026-09-08.md` P1.
+3. **T44 cannot fire on the pipeline path.** Its verdict is now computed for real (it defaulted
+   `False` at every caller), but `runner.py` omits `include_over_seniority`, so the ranker drops
+   above-band leads before any lane sees them. `moved = 0` was never "no lead is above band".
+   A guard test pins this. See D-478 §2.
+
+**The arming preconditions for T42 are NOT met, and one instruction is wrong.**
+`~/.claude-boardwatch` does not exist; the plist carries no `CLAUDE_CONFIG_DIR` (that IS the
+right variable — confirmed in the installed binary; there is no `--config-dir` flag). And the
+gate block must go in **`~/Library/Application Support/boardwatch/config.toml`**, which is what
+`Settings` reads (`BOARDWATCH_CONFIG_DIR` > platformdirs) — **not** `~/.config/boardwatch/`,
+which does not exist and would arm nothing silently.
 
 ## Next action
 
-**0. THE MERGE LANDED — 2026-09-05 04:13 CDT, IN MIT'S SITTING, WITH THE RE-APPROVAL.** `main` is
-`b040ee90` on origin (`git merge --ff-only close-2026-09-06`, fifteen commits, after removing a
-stale `.git/index.lock` from 09-04 22:54 with no git process alive). Mit ran
-`profile-bundle approve-projection` on a controlling terminal at 04:14:01 CDT; the stamp's
-`content_digest` was verified read-only against `projection_candidate(...)` — **MATCH**. The
-seven worktrees are removed (`bw-int` last) and their branches deleted. **The editable venv now
-runs T37, T38 and T39**, and the next `--project` run is M1's first acceptance reading (§5 of
-`HANDOFF-2026-09-07.md`). **The formatting session is DONE (D-476), 04:45–05:00 CDT:** Nakshatra
-now sits above SAKEC, the skills block is kept as shell-authored, `projection.{sde,ios}.yaml` exist;
-`projection.yaml` re-approved at **04:59:45 CDT**, both lens files at 04:59:52 and 05:00:01, all three
-`content_digest`s verified read-only — **MATCH**. The stamp is fresh for the 06:00 tick. The template's
-spacing was then evened out (D-476 addendum; outside the stamp, re-verified MATCH).
+**0. THE 06:00 TICK IS STILL UNLOADED, AND RUN 4 HAS NOT HAPPENED.** `launchctl bootout` was run
+at 05:47 CDT on 2026-09-05 so merges never landed under a live run of the editable venv. `main`
+now holds all six tickets, and the primary checkout is parked on `main`, so the re-load is
+unblocked:
+
+```
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist
+launchctl print gui/$UID/com.boardwatch.run     # `list` shows 0 for a NEVER-RUN job; use print
+```
+
+It fires at **06:00 CDT, not 04:00**, until a reboot (launchd computes the interval in its
+boot-time zone), or run `boardwatch run --project --top 40` by hand. Then take run 4's reading per
+`HANDOFF-2026-09-07.md` §5. The healthchecks heartbeat (period 1 d, grace 2 h) will alert on the
+missed ping unless paused in its dashboard; the ping-URL `/pause` returned 400 — do not retry it.
+
+**Expect run 4's ledger-drift report to show EVERY permanent disposition stale.** That is landing
+T42's new IN-classified `gate` setting re-stamping `run_policy_version` (`config_hash`
+`f56a0166` -> `200396b9`), armed or not. It is not an eligibility re-key and nothing auto-reopens
+(D-478 §3). Read cold on the first run after a long gap it looks like an incident; it is not.
 
 **0-0. OWNER RULINGS 2026-09-05 04:13 (D-475): T40 — YES, build. T41 — FIX, build.** Both are
 now plain tickets for the next execution session, in that order, after R2.

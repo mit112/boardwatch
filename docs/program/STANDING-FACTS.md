@@ -2708,3 +2708,47 @@ own funnel — the shortlist drops **46 `hidden_duplicate` + 5 `hidden_slate_cap
 **1,498 / 83,308 (1.80%)**. The delivered set is the one population where this is zero by
 construction; the 14-18% headline is **retired, not refuted**, and its replacement is already in
 every funnel. No successor ticket.
+
+---
+
+## Session 2026-09-06b (planning review) — settled, moved WHOLE from STATE on 2026-09-08
+
+Every decision below was EXECUTED in the 2026-09-08 session: T40, T41 and T34 are done,
+T36 and the fleet call stand as the rules they state. Kept verbatim, nothing summarised
+away. Reasoning: D-474 (the rulings) and D-478 (what execution found against them).
+
+### Session 2026-09-06b (planning review): the 2026-09-06 report HOLDS; the lane-pacing exposure is RE-SIZED to ~90 s on one host per run and the review's shared-`Fetcher` claim was WRONG, so the fix is T41; T40 is RECOMMENDED on run 3's apply distribution; T34's read-only form is APPROVED with a planted control and the gate's cadence is a RULE; T36 is a RULE; the fleet call is 0 wall minutes — next list `HANDOFF-2026-09-07.md`
+
+**Read this before acting on anything below it.** Reasoning: **D-474**. Numbers: `METRICS.md`,
+the `Session — 2026-09-06b` block. The 2026-09-06 execution block moved WHOLE into
+`STANDING-FACTS.md`; D-473 holds its reasoning. **`main` is still `84671523`.**
+`close-2026-09-06` carries FOURTEEN commits over it and **one `--ff-only` merge lands them all.**
+
+**The five decisions the 09-06 session left are all ruled or sized (D-474):**
+- **(a) Lane pacing (§0-A below).** Real, owner's, and **~90 s on `boards-api.greenhouse.io`
+  per run**, seconds on ashby and lever — not 352 s: only hiringcafe's 94 per-board GETs reach
+  scan hosts. The review's "a shared `Fetcher` re-serialises the lanes" was false (the lock is
+  per HOST); the real coupling is the client's default UA. **Fix = T41**, a per-process pacing
+  registry, two clients kept, SP2 untouched. Recommended; Mit's word.
+- **(b) T40 RECOMMENDED.** Run 3 applies: p50 0.26 s, p90 5.15 s, max 16.4 s, **30 of 287 past
+  the 5 s `busy_timeout`**. `BEGIN IMMEDIATE` makes a CLI write during one of those fail loudly
+  instead of the scan losing a board. Mit's yes.
+- **(c) T34 APPROVED read-only** (`HANDOFF-2026-09-07.md` §4) with a planted item that MUST
+  come back `ineligible`. **Cadence rule:** apply lane is 5 of 80; ≥ 1 apply-lane
+  gate-`ineligible` ⇒ per-run gate over the apply lane only; 0 ⇒ stays manual.
+- **(d) T36 by rule** on the first post-merge run, against run 4 as the same-fleet pre-T38
+  baseline: tail ≤ 3 min and `boards_failed` 0 ⇒ `scan_workers` 16 (model 83.8 → 45.2 min).
+- **(e) Fleet: 0 wall minutes either way** — the 9-board chain (≈ 31 min) is under the Workday
+  span at 8 or 16 workers. Dropping the three saves ~1,200 host-s/run and removes 97 `eligible`
+  postings with 0 leads. Mit's.
+
+**`ROADMAP.md` is NEW, at Mit's request** — five milestones with exit criteria; **M1 (land the merge, run
+it once) is the open one: the merge LANDED at 04:13 (§0), the run is owed.** Work only what moves its
+exit criterion.
+
+**Run 4 is the launchd tick of 2026-09-05 on `main` UNCHANGED** (287 boards, no T37/T38/T39),
+deliberately not postponed: SP3 measurement 2 of 3 and T38's baseline. **It did not fire at
+04:00 CDT: launchd computes the calendar interval in the zone it BOOTED with, and the system
+zone was set to Chicago five minutes after boot — so the tick fires at 06:00 CDT** (as 09-04's
+did, 06:00:05) until a reboot or a plist edit, Mit's. Verify on run 4's `started_at`; read it
+first (R2).

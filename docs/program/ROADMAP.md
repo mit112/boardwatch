@@ -57,24 +57,44 @@ runs in `METRICS.md`; the 14-day confirm starts passively. **Rule during the fre
 `rules_hash` change restarts the count — so every eligibility change waits for M3's window or
 is batched.
 
-### M3 — Make the apply lane bigger than five. *(the product milestone; owner rulings + one build session)*
-The queue is 40 a run and ~35 of those are "look at this yourself". The three buckets and the
-lever on each, measured, not guessed:
-- **Experience-unconfirmed (39 of 80).** The deterministic `near_miss_years_ceiling` abstains on
-  the 2–3-year band across ~78,615 open `uncertain` postings — **the biggest undecided lever in
-  the program**, and it is the owner's: he ruled "a stated bar is a bar" on 28 gate verdicts,
-  and D-449 says a ruling is only as wide as the question put. **Ask it as its own question,
-  with the blast radius on the page.**
-- **No requirement rows (30 of 80).** A JD the engine read and found nothing to check. Measure
-  first: how many are genuinely requirement-free postings versus extraction misses (chrome,
-  page-config JSON, site boilerplate — the four delivery defects the gate judges found are the
-  known shapes). The fix is on the extraction side, not the rules.
-- **Role-unconfirmed (6 of 80).** Title taxonomy (the `ServiceNow Developer` question); small.
-Plus **M1's other output**: T34/M1 says whether the LLM final gate catches anything in the apply
-lane the split does not; if it does, it runs per run over the apply lane only (D-474 choice 4).
-**Exit:** apply lane ≥ 10 per run on three consecutive runs, with the review lane's composition
-in METRICS. **This restarts the freeze**, which is why it is after M2's provisional pass and
-before the 14-day confirm is relied on.
+### M3 — Make the apply lane bigger than five. *(the lever is BUILT and OFF; what remains is two owner decisions, not a build)*
+The 2026-09-08 session landed all five D-477 tickets (D-478). The shape of this milestone has
+changed: the build is done and the open items are rulings.
+
+**What landed.** T43 splits the lane BEFORE the tailor loop, so the render is spent on apply-lane
+leads only and a review-lane lead is delivered pending-tailor. T45 tiers the shortlist by verdict.
+T42 — the judge — is built, gated and **OFF by default**, fail-open at every seam. T46's B8
+instrument is the funnel's `pdf` stage `entered`, now apply-lane-only, with its column on the
+acceptance table. The judge model is **ruled haiku** (92.6% head-to-head, kappa 0.847, 2.04x
+cheaper; METRICS `Session — 2026-09-08`).
+
+**The biggest lever is now RULED but NOT executed.** The owner ruled on 2026-09-05 that the
+experience bar's **floor must be <= 1 year** — `0`, `1`, `0-1`, `0-2`, `0-3` qualify, `2+` does
+not. The engine already reads ranges by floor, so this is a threshold change, not a parser change.
+But `near_miss_years_ceiling = 3` makes the engine ABSTAIN on exactly the 2-3 year bars now
+rejected: **31-35% of the delivered slate**. The fix is a personal `rules.yaml` override
+(`3 -> 1`), never the bundled catalog, and it re-keys the ledger, owes a drain, moves the repo's
+content pins, and turns over 91 month-stated corpus occurrences. **This is the M3 lever. It is
+planning work now, not measurement work** — the measurement is done.
+
+**Two decisions left, both owner's:**
+1. **Arm T42, or fix the band deterministically first?** Arming rejects the same 2-3 year bars at
+   LLM cost every run; the override does it for free. They are not exclusive, but the order
+   changes what run 4 reads.
+2. **Should above-band leads be surfaced instead of hidden?** T44 routes `above_band` to review,
+   but the ranker drops those leads upstream (`include_over_seniority` is never passed), so the
+   rule cannot fire. Surfacing them raises delivered volume with postings currently withheld —
+   possibly the wrong direction for an entry-band, <=1-YoE target. A guard test pins the current
+   behaviour.
+
+**Still open, unchanged:** **no requirement rows (30 of 80)** — measure genuinely
+requirement-free postings versus extraction misses before touching rules; **role-unconfirmed
+(6 of 80)** — title taxonomy, small.
+
+**Exit:** apply lane >= 10 per run on three consecutive runs, with the review lane's composition in
+METRICS. **This restarts the freeze**, which is why it is after M2's provisional pass and before
+the 14-day confirm is relied on. All five D-477 tickets restart the provisional-pass count, so the
+count begins from run 4.
 
 ### M4 — Find what job-apps finds. *(the retirement milestone; owner thresholds + the LinkedIn tracks)*
 `RETIREMENT-PLAN.md` holds the finished analysis; do not re-derive it. In order: **set the
