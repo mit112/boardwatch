@@ -28,9 +28,15 @@ export function formatFraction(fraction: number | null): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
 
+/**
+ * TWO decimals, not one. Measured on the live store: every row on the first screen printed 0.9 or
+ * 1.0, so the column that the list sorts by carried no information at all — one decimal collapses
+ * the whole ranked head onto two values. The scale is not fixed at 0..1 (the fixtures run to ~90),
+ * so this is a precision change rather than a percentage.
+ */
 export function formatScore(score: number | null): string {
   if (score == null) return EM_DASH;
-  return score.toFixed(1);
+  return score.toFixed(2);
 }
 
 export function formatTimestamp(iso: string | null): string {

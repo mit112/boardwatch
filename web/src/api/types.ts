@@ -69,7 +69,16 @@ export interface QueueRow {
   job_id: number;
   title: string;
   company: string;
+  /** The PRIMARY location: the first entry of `locations`, or `null` when the list is empty. */
   location: string | null;
+  /**
+   * Every location the posting lists, de-duplicated case-insensitively with the whitespace
+   * trimmed, in the board's original order; `[]` when it names none. This is the same list the
+   * store-level row carries, NOT a re-split of the joined `location` string above — a separator
+   * that appears inside a location ("Washington, D.C.") makes the two answers differ, and only
+   * one of them is what the board actually published.
+   */
+  locations: string[];
   remote_policy: string | null;
   /** From the nullable `postings.posted_at`. `null` renders as an em dash, NEVER as `0d`. */
   posted_days: number | null;
@@ -91,6 +100,13 @@ export interface QueueRow {
   score: number | null;
   /** Résumé keyword coverage as a fraction 0..1. `null` exactly when `thin_jd` is true. */
   coverage: number | null;
+  /**
+   * The server's own explanation of the score — which components contributed and by how much.
+   * `null` when the ranker recorded none. Rendered VERBATIM: the frontend never infers a reason
+   * from the score, because a hand-written explanation is a second, wrong opinion about a shipped
+   * ranker in exactly the way `off_target_reason` below is.
+   */
+  why: string | null;
   /**
    * Why the role gate vetoed the title, carrying the text it actually matched. Displayed beside
    * the badge so a veto is auditable. The frontend never re-derives this from the title: a
@@ -162,6 +178,13 @@ export interface QueueResponse {
    */
   review: QueueRow[];
   counts: QueueCounts;
+  /**
+   * What this SERVER can do, as distinct from what the data says. Optional because a viewer older
+   * than the field omits it entirely, and the honest default for an unknown capability here is
+   * "assume it works": hiding a control that would in fact have worked costs the reader the only
+   * route to the folder.
+   */
+  meta?: { reveal_supported: boolean };
 }
 
 export interface RequirementView {

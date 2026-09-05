@@ -115,7 +115,14 @@ function queueResponse(): QueueResponse {
   const rows = applyRows();
   // `counts` is computed over the APPLY lane, exactly as the server does: `in_queue`,
   // `eligible` and `uncertain` describe what is blindly appliable, and `review` is its own cell.
-  return { rows, review: reviewRows(), counts: counts(rows) };
+  // The fixture platform CAN reveal (one posting answers `ok: false`, which is a per-lead
+  // failure rather than a missing handler), so the capability flag is true here.
+  return {
+    rows,
+    review: reviewRows(),
+    counts: counts(rows),
+    meta: { reveal_supported: true },
+  };
 }
 
 function findRow(postingId: number): QueueRow {

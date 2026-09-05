@@ -1182,6 +1182,7 @@ export function QueuePage({
               onToast={(message, tone) => {
                 push({ message, tone });
               }}
+              revealSupported={data.meta?.reveal_supported ?? true}
             />
           </ErrorBoundary>
         )}

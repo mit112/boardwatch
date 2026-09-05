@@ -6,28 +6,54 @@ import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
 
 /*
+ * The row grid. It buys one thing over cards — the ability to compare eight jobs at once — and
+ * that is what the track rules here are protecting.
+ *
  * Every row is its own grid, so EVERY track has to resolve to the same width in every row or the
- * columns jitter row to row — which destroys the one thing a row layout buys over cards, the
- * ability to compare eight jobs at once. So no `auto` and no content-based minimum appears here:
+ * columns jitter row to row. So no `auto` and no content-based minimum appears in ANY tier below:
  * the flexible tracks are `minmax(0,Nfr)` over free space that is identical on every row, and
  * every other track is a fixed length.
  *
- * Two tiers, driven by a CONTAINER query rather than the viewport, because the list also narrows
- * when the detail pane opens — and a viewport breakpoint cannot see that. On the narrow tier the
- * rank, location, age, flags and per-row actions collapse into the title cell's meta line; the
- * detail pane carries the actions there.
- */
-/*
- * The wide tier's fixed tracks total 45rem; below roughly 78rem of CONTAINER width there is not
- * enough left for a title and a location to be readable rather than truncated, so that is where
- * the tiers switch. Measured, not guessed: at 64rem the eight-column layout left the title 234px
- * and every row read "Software E…".
+ * FOUR tiers, driven by a CONTAINER query rather than the viewport, because the list also narrows
+ * when the detail pane opens — and a viewport breakpoint cannot see that. Whatever a tier drops
+ * reappears in the title cell's meta line, so no tier loses a fact; it only stops being a column.
+ *
+ * The CONTAINER width each tier is designed for, measured in a browser against the live store:
+ *
+ *   tier      container      the viewport that produces it              columns added
+ *   phone     under 40rem    390 (container 21.4rem)                    title · verdict
+ *   narrow    40 – 52rem     a hand-narrowed window                     + score
+ *   middle    52 – 78rem     1440 pane open (54rem); 1000, where the    + location · actions
+ *                            pane is a sheet and the list is 59.5rem
+ *   wide      78rem and up   1440 pane closed (87rem); 2560 pane        + rank · age · coverage
+ *                            open (124rem)
+ *
+ * The MIDDLE tier is the one the audit found missing. `main` used to cap at 110rem, which left the
+ * list container 1184px with the pane open on a 2560 display and 864px at 1440 — both under 78rem,
+ * so the eight-column tier was unreachable whenever a lead was open and the reader dropped to
+ * three columns. The cap is now 160rem (`App.tsx`), which restores the wide tier at 2560; this
+ * tier covers 1440.
+ *
+ * Its fixed tracks total 24.5rem, and with `gap-3` across five columns plus the row's own `px-4`
+ * that is 29.5rem of overhead — so at the 54rem floor the two flexible tracks share 24.5rem, or
+ * 261px of title over 131px of location. Below 52rem the title falls under the ~235px at which
+ * every row reads "Software E…", which is where the tier stops. The wide tier's fixed tracks
+ * total 45rem and it keeps its measured 78rem threshold for the same reason.
  */
 export const GRID_TEMPLATE =
-  "grid-cols-[minmax(0,1fr)_4.5rem_7.5rem] " +
+  "grid-cols-[minmax(0,1fr)_7.5rem] " +
+  "@min-[40rem]:grid-cols-[minmax(0,1fr)_4.5rem_7.5rem] " +
+  "@min-[52rem]:grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_4.5rem_7.5rem_12.5rem] " +
   "@min-[78rem]:grid-cols-[3rem_minmax(0,2.4fr)_minmax(0,1.2fr)_4rem_4.5rem_7.5rem_13rem_13rem]";
 
+/** Rank, age and coverage · flags: the wide tier alone. */
 export const WIDE_ONLY = "hidden @min-[78rem]:block";
+
+/** Location · remote and the per-row actions: the middle tier and up. */
+export const MIDDLE_UP = "hidden @min-[52rem]:block";
+
+/** Score: every tier but the phone one, where 150px of title is worth more than the number. */
+export const SCORE_UP = "hidden @min-[40rem]:block";
 
 function Flags({ row }: { row: QueueRow }) {
   return (
@@ -127,7 +153,17 @@ export function QueueRowItem({
   onSkip: () => void;
   onReport: () => void;
 }) {
+  /*
+   * `location` is the PRIMARY location and `locations` is the whole list, so the cell reads
+   * "Austin, TX +2" rather than a joined string that truncates into "Austin, TX; Hillsboro, O…".
+   * `?? []` because an older viewer omits the field entirely (see `lib/format`'s header).
+   */
+  const locations = row.locations ?? [];
   const where = row.location ?? EM_DASH;
+  const alsoWhere = locations.length - 1;
+  // The tooltip is the ONLY place the reader can recover a truncated list, so it carries all of
+  // them whenever there is more than one and the primary alone otherwise.
+  const whereTitle = locations.length > 1 ? locations.join(", ") : where;
   const named = `${row.title} at ${row.company}`;
   return (
     <div
@@ -174,20 +210,39 @@ export function QueueRowItem({
                 {row.company}
               </span>
             </button>
-            {/* Narrow tier only: everything the collapsed columns were carrying. */}
+            {/* Everything the tier above this row's own has as a column. Each item hides at the
+                width where it becomes one, so a fact is never shown twice and never lost. */}
             <span className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3 @min-[78rem]:hidden">
-              <span className="tabular-nums">#{rank}</span>
-              <span>{where}</span>
-              <span>{row.remote_policy ?? EM_DASH}</span>
-              <span className="tabular-nums">{formatAge(row.posted_days)}</span>
-              <span className="tabular-nums">cov {formatFraction(row.coverage)}</span>
-              <Flags row={row} />
+              <span className="tabular-nums @min-[78rem]:hidden">#{rank}</span>
+              <span className="@min-[52rem]:hidden" title={whereTitle}>
+                {where}
+                {alsoWhere > 0 ? ` +${String(alsoWhere)}` : ""}
+              </span>
+              <span className="@min-[52rem]:hidden">{row.remote_policy ?? EM_DASH}</span>
+              {/* Labelled, unlike the location and the age beside it: a bare `0.90` next to
+                  `cov 62%` is two unlabelled fractions and no way to tell which is which. */}
+              <span
+                className="tabular-nums @min-[40rem]:hidden"
+                title={row.why ?? "Score, as of now."}
+              >
+                score {formatScore(row.score)}
+              </span>
+              <span className="tabular-nums @min-[78rem]:hidden">{formatAge(row.posted_days)}</span>
+              <span className="tabular-nums @min-[78rem]:hidden">
+                cov {formatFraction(row.coverage)}
+              </span>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 @min-[78rem]:hidden">
+                <Flags row={row} />
+              </span>
             </span>
           </div>
 
-          <div role="gridcell" className={`${WIDE_ONLY} min-w-0 leading-tight`}>
-            <span className="block truncate text-sm text-fg-2" title={where}>
+          <div role="gridcell" className={`${MIDDLE_UP} min-w-0 leading-tight`}>
+            <span className="block truncate text-sm text-fg-2" title={whereTitle}>
               {where}
+              {alsoWhere > 0 ? (
+                <span className="ml-1 text-fg-3">{`+${String(alsoWhere)}`}</span>
+              ) : null}
             </span>
             <span className="block truncate text-xs text-fg-3">
               {row.remote_policy ?? EM_DASH}
@@ -202,10 +257,12 @@ export function QueueRowItem({
             {formatAge(row.posted_days)}
           </span>
 
+          {/* The tooltip is the server's OWN explanation when it sent one. Nothing here infers a
+              reason from the number: the ranker is the only thing that knows what it weighed. */}
           <span
             role="gridcell"
-            className="text-right text-sm text-fg tabular-nums"
-            title="Score, as of now."
+            className={`${SCORE_UP} text-right text-sm text-fg tabular-nums`}
+            title={row.why ?? "Score, as of now."}
           >
             {formatScore(row.score)}
           </span>
@@ -226,7 +283,7 @@ export function QueueRowItem({
 
           <div
             role="gridcell"
-            className="hidden items-center justify-end gap-1.5 @min-[78rem]:flex"
+            className="hidden items-center justify-end gap-1.5 @min-[52rem]:flex"
             onClick={(event) => {
               event.stopPropagation();
             }}

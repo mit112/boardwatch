@@ -16,7 +16,7 @@ function fieldLabel(key: string): string {
   return key.replace(/_/g, " ");
 }
 
-function KeyValueRows({
+function Rows({
   entries,
   onError,
 }: {
@@ -38,15 +38,56 @@ function KeyValueRows({
   );
 }
 
+/*
+ * An UNSET field is not an answer, and it must not be laid out as one. Measured on the live
+ * store: seven identity rows, every one of them reading "not set", 779px of a 2,050px pane —
+ * so the panel's weight was proportional to what the local profile does NOT hold. The set rows
+ * stay in the open where they can be copied; the rest fold behind one line that states the
+ * ratio, which is the only fact the reader wants from them.
+ *
+ * A `<details>`, not a button: it needs no state, it is keyboard-reachable and screen-reader
+ * announced for free, and its open/closed state is exposed without an `aria-expanded` to keep
+ * in step.
+ */
+function KeyValueRows({
+  entries,
+  onError,
+}: {
+  entries: [string, string | null][];
+  onError: (message: string) => void;
+}) {
+  const set = entries.filter(([, value]) => value !== null);
+  const unset = entries.filter(([, value]) => value === null);
+  return (
+    <>
+      {set.length === 0 ? null : <Rows entries={set} onError={onError} />}
+      {unset.length === 0 ? null : (
+        <details>
+          <summary className="flex min-h-11 cursor-default items-center text-xs text-fg-3">
+            {`${String(set.length)} of ${String(entries.length)} set`}
+          </summary>
+          <Rows entries={unset} onError={onError} />
+        </details>
+      )}
+    </>
+  );
+}
+
 export function AnswersPanel({
   answers,
+  defaultOpen = true,
   onError,
 }: {
   answers: Answers | null;
+  /**
+   * Expanded by default: the owner opened the pane on purpose. The caller passes `false` where
+   * something ELSE is the next read — the detail pane does that when the JD yielded no
+   * requirements, because there its own copy tells the reader to go and read the description.
+   */
+  defaultOpen?: boolean;
   onError: (message: string) => void;
 }) {
-  // Expanded by default: the owner opened this pane on purpose.
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
 
   const identityEntries = Object.entries(answers?.identity ?? {});
   const identityBlock = identityEntries
