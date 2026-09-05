@@ -28,7 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -220,6 +220,39 @@ class RulesCatalog:
             family.id: policy.families.get(family.id, family.default_policy)
             for family in self.families
         }
+
+    def effective_ceilings(self, policy: Policy) -> dict[str, int]:
+        """family id -> near-miss ceiling for EVERY declared family.
+
+        The same materialisation rule `materialised_policy` follows, for the same reason: the
+        stored map may be empty or partial, the derived map never is, and a family the catalog
+        no longer declares is DROPPED rather than carried so a phantom entry cannot decide a
+        verdict. Only the entries that differ from the declared ceiling are hashed
+        (`hashing.build_identity`), which is what keeps stating the default free.
+        """
+        return {
+            family.id: policy.near_miss_years_ceilings.get(
+                family.id, family.near_miss_years_ceiling
+            )
+            for family in self.families
+        }
+
+    def effective_family(self, family_id: str, policy: Policy) -> FamilySpec:
+        """The family spec as the USER's policy leaves it.
+
+        A resolver is handed a FamilySpec and nothing else, so a per-user ceiling has to reach
+        it as a spec. Routing it through the catalog rather than adding a policy argument to
+        `resolve()` keeps every resolver signature where it is.
+
+        The declared spec is returned UNCHANGED when the policy states nothing or states the
+        value it already has: `replace` on a frozen dataclass rebuilds all seventeen fields,
+        and this runs once per detection over the whole open-posting set.
+        """
+        family = self.family(family_id)
+        ceiling = policy.near_miss_years_ceilings.get(family_id)
+        if ceiling is None or ceiling == family.near_miss_years_ceiling:
+            return family
+        return replace(family, near_miss_years_ceiling=ceiling)
 
 
 def bundled_rules_text() -> str:

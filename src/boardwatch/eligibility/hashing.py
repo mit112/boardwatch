@@ -103,6 +103,21 @@ def build_identity(
         "catalog_version": catalog.version,
         "policy": materialised,
     }
+    # The per-user near-miss ceilings, DIFFERING-ONLY and only when there are any. Unlike
+    # `policy` above this is not materialised in full, and the asymmetry is deliberate:
+    # writing every family's ceiling would add the key to every tenant's snapshot and re-key
+    # the entire ledger — plus every fixture pinned on today's hashes — for a feature nobody
+    # had used. Stating a family's declared ceiling therefore hashes identically to stating
+    # nothing (D-P2-2: never two fingerprints for one behaviour), and only a value that
+    # actually changes a verdict moves `rules_hash`.
+    ceilings = catalog.effective_ceilings(policy)
+    differing = {
+        family.id: ceilings[family.id]
+        for family in catalog.families
+        if ceilings[family.id] != family.near_miss_years_ceiling
+    }
+    if differing:
+        rules_snapshot["near_miss_years_ceilings"] = differing
     profile_hash = digest(profile_snapshot)
     rules_hash = digest(rules_snapshot)
     return InputIdentity(

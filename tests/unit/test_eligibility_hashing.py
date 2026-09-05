@@ -358,6 +358,52 @@ def test_the_declared_map_in_this_module_matches_the_real_registry() -> None:
     assert DECLARED == declared_fields()
 
 
+# ---- the per-user near-miss ceiling enters the rules snapshot DIFFERING-ONLY (T47)
+
+def test_a_ceiling_equal_to_the_catalog_default_is_not_a_second_fingerprint(
+    tmp_path: Path,
+) -> None:
+    """D-P2-2, applied to the ceiling. `experience_years` declares 3, so a user who states 3
+    has expressed the catalog's own behaviour and must hash byte-identically to a user who
+    stated nothing -- otherwise one behaviour has two fingerprints and every row keyed on the
+    old one is stale for no reason.
+
+    This is also what makes LANDING the feature free: an unset ceiling adds no key, so no
+    tenant's `rules_hash` moves until somebody sets a value that differs.
+    """
+    base = _identity(tmp_path)
+    stated = _identity(
+        tmp_path, policy=Policy(near_miss_years_ceilings={"experience_years": 3})
+    )
+    assert stated.rules_hash == base.rules_hash
+    assert stated.rules_snapshot == base.rules_snapshot
+    assert set(base.rules_snapshot) == {"catalog_version", "policy"}
+
+
+def test_a_differing_ceiling_re_keys_the_rules_hash(tmp_path: Path) -> None:
+    """The other direction, and the one that must not be missed: a real change of behaviour
+    MUST re-key, or the anti-join returns the old verdict forever (D-P2-22)."""
+    base = _identity(tmp_path)
+    floored = _identity(
+        tmp_path, policy=Policy(near_miss_years_ceilings={"experience_years": 1})
+    )
+    assert floored.rules_hash != base.rules_hash
+    assert floored.rules_snapshot["near_miss_years_ceilings"] == {"experience_years": 1}
+    # The snapshot IS the hashed payload for the new key too (D-P2-14).
+    assert digest(floored.rules_snapshot) == floored.rules_hash
+    verify_identity(floored, posting_version_id=1)
+
+
+def test_only_the_differing_families_reach_the_snapshot(tmp_path: Path) -> None:
+    """Every family but `experience_years` declares 0 and none is stated, so the map carries
+    exactly one entry. Writing the whole materialised map instead would re-key every tenant
+    on a feature none of them uses."""
+    floored = _identity(
+        tmp_path, policy=Policy(near_miss_years_ceilings={"experience_years": 1})
+    )
+    assert set(floored.rules_snapshot["near_miss_years_ceilings"]) == {"experience_years"}
+
+
 def test_the_snapshot_does_not_embed_the_catalog(tmp_path: Path) -> None:
     """D-P2-21. catalog_version is a sha256 over the whole document, so it pins the
     catalog exactly; copying it into every input row would be 10,000 copies at corpus

@@ -12,7 +12,7 @@ vocabularies themselves live in the catalog, not here (D-P2-4); this module owns
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
 
@@ -127,6 +127,20 @@ class Policy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     families: dict[str, PolicyChoice] = Field(default_factory=dict)
+    # Stretch tolerance is a PER-USER preference, not a property of the catalog (D-480 D1).
+    # The near-miss band (D-333) abstains on a `required` bar at or under this many years
+    # because one declared total cannot represent internships and co-ops; how far that
+    # tolerance reaches is the user's call, so it is carried here beside severity rather
+    # than as a whole-file `rules.yaml` override, which would win outright over the bundled
+    # catalog and freeze it silently at today's content.
+    #
+    # family id -> ceiling. An absent family means "use the catalog's declared ceiling", the
+    # same absence rule `families` uses. Only entries that DIFFER from that declared value
+    # are hashed (`hashing.build_identity`), so setting a family to the value it already has
+    # is not a second fingerprint for identical behaviour (D-P2-2).
+    near_miss_years_ceilings: dict[str, Annotated[int, Field(ge=0)]] = Field(
+        default_factory=dict
+    )
 
 
 class ProfileRowInvalid(ValueError):
