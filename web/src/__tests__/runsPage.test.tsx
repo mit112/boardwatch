@@ -100,3 +100,28 @@ it("shows a stage's wall clock beside its name", async () => {
 
   expect(screen.getByText("12.3 s")).toBeDefined();
 });
+
+it("shows a stage note's first sentence and collapses the rest", async () => {
+  await renderRuns(
+    runFunnel({
+      stages: [
+        funnelStage({
+          name: "shortlist",
+          note:
+            "The stage D-016 exists for: the `hidden_below_cutoff` bucket. It is the remainder " +
+            "of the others, so the stage balances by construction.",
+        }),
+      ],
+    }),
+  );
+
+  const first = screen.getByText(/The stage D-016 exists for/);
+  expect(first.closest("details")).toBeNull();
+  // A backtick span is code, not a literal backtick in prose.
+  expect(screen.getByText("hidden_below_cutoff").tagName).toBe("CODE");
+
+  const rest = screen.getByText(/It is the remainder of the others/);
+  const details = rest.closest("details");
+  expect(details).not.toBeNull();
+  expect(details?.open).toBe(false);
+});

@@ -1,13 +1,65 @@
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { getFunnel, getRuns } from "../api/client";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
 
+/*
+ * Stage and drop notes are the decision log speaking to an engineer: "The stage D-016 exists
+ * for: …", "D-006's silent degrade", with literal backticks around the identifiers. Two small
+ * splitters render that as prose instead of as a paste.
+ *
+ * Deliberately NOT a markdown library. Backtick spans are the only markup these notes contain,
+ * a dependency for that is the wrong trade in a bundle served off localhost, and a general
+ * renderer would also interpret the `*` and `_` that appear in identifiers.
+ */
+
+/** `\`code\`` spans become `<code>`; everything else is text, never markup. */
+function withCode(text: string, keyPrefix: string): ReactNode[] {
+  return text.split(/(`[^`]+`)/).map((part, index) =>
+    part.length > 1 && part.startsWith("`") && part.endsWith("`") ? (
+      <code key={`${keyPrefix}:${String(index)}`} className="font-display text-fg-2">
+        {part.slice(1, -1)}
+      </code>
+    ) : (
+      part
+    ),
+  );
+}
+
+/**
+ * The first sentence, and the rest. These notes lead with the answer and follow with the
+ * argument, so the split is where the card stops being a readout and starts being a rationale.
+ * A note with no sentence break is entirely first sentence and gets no disclosure.
+ */
+function splitFirstSentence(note: string): [string, string] {
+  const match = /^(.*?[.!?])\s+(\S.*)$/s.exec(note);
+  if (match === null) return [note, ""];
+  return [match[1] ?? note, match[2] ?? ""];
+}
+
 /** A stage's wall clock. One decimal, tabular, in seconds throughout — the durations run from
  * fractions of a second to tens of minutes and a mixed unit makes two of them incomparable. */
 function formatSeconds(seconds: number): string {
   return `${seconds.toFixed(1)} s`;
+}
+
+function StageNote({ name, note }: { name: string; note: string }) {
+  const [lead, rest] = splitFirstSentence(note);
+  return (
+    <div className="mt-1">
+      <p className="text-xs text-fg-3">{withCode(lead, `${name}:note`)}</p>
+      {rest === "" ? null : (
+        <details>
+          <summary className="flex min-h-11 cursor-pointer items-center label-micro text-fg-3 transition-colors duration-150 ease-in-out hover:text-fg-2">
+            why
+          </summary>
+          <p className="pb-1 text-xs text-fg-3">{withCode(rest, `${name}:why`)}</p>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function StageCard({
@@ -64,7 +116,7 @@ function StageCard({
           ) : null}
         </div>
 
-        {stage.note === "" ? null : <p className="mt-1 text-xs text-fg-3">{stage.note}</p>}
+        {stage.note === "" ? null : <StageNote name={stage.name} note={stage.note} />}
 
         {!stage.instrumented ? null : stage.drops.length === 0 ? (
           <p className="mt-2 text-xs text-fg-3">no drops recorded at this stage</p>
@@ -77,7 +129,11 @@ function StageCard({
                 </span>
                 <span className="text-sm text-fg-2">{drop.reason}</span>
                 {drop.note === "" ? null : (
-                  <span className="text-xs text-fg-3">{drop.note}</span>
+                  // Shown whole: a drop note is one clause, and hiding half of it would cost more
+                  // than it saves. Its backticks are still backticks.
+                  <span className="text-xs text-fg-3">
+                    {withCode(drop.note, `${drop.reason}:note`)}
+                  </span>
                 )}
               </li>
             ))}

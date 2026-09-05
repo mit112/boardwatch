@@ -228,7 +228,12 @@ const FUNNEL_114: RunFunnel = {
       instrumented: true,
       // The last bucket is the remainder of the others, so this stage balances by construction.
       derived: true,
-      note: "considered == shortlisted + every drop",
+      // Decision-log prose with a backtick span in it, which is what the artifact actually
+      // carries: the first sentence is the readout and the rest is the argument behind it.
+      note:
+        "considered == shortlisted + every drop. The `hidden_below_cutoff` bucket is the " +
+        "remainder of the others (D-016), so this stage reconciles by construction and its " +
+        "balance is bookkeeping rather than evidence.",
       run_scoped_attribution: {
         judged: 3771,
         handled: 61,
