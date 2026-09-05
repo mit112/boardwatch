@@ -129,20 +129,33 @@ def test_stats_does_not_count_an_in_band_posting(data_dir: Path) -> None:
     assert report.over_seniority == 0
 
 
-def test_the_stats_table_renders_the_over_seniority_count(tmp_path, monkeypatch):
-    """A counter that is computed and tested but never rendered is invisible to the operator."""
-    import inspect
+def test_the_stats_table_renders_the_over_seniority_count(data_dir: Path) -> None:
+    """A counter that is computed and tested but never rendered is invisible to the operator.
 
-    from boardwatch.cli import stats_cmd
+    T19. This used to read `inspect.getsource(stats_cmd)` and assert the label and the attribute
+    appeared SOMEWHERE in the module, which is satisfied by the comment that names them — the
+    test passed with the `add_row` line deleted. It now drives the real command and reads the
+    rendered table, so deleting either row fails it. Verified by deleting each row once.
 
-    source = inspect.getsource(stats_cmd)
-    assert "over target band" in source, "over_seniority is counted but never shown"
-    assert "report.over_seniority" in source
-    # Same for the zero-signal bucket. Ordering the gates correctly moves postings OUT of
-    # `over_seniority`; if the bucket they move into is never rendered, fixing the double-count
-    # would simply make them disappear from the readout.
-    assert "zero signal" in source, "zero_signal is counted but never shown"
-    assert "report.zero_signal" in source
+    `-1` on the width because rich wraps the table to the terminal and the label is long enough
+    to fold at the default 80 columns; the rendered text would then carry a newline inside the
+    phrase this asserts on.
+    """
+    _seed_one_posting(data_dir, title="Staff Software Engineer", band="entry")
+
+    result = runner.invoke(app, ["--data-dir", str(data_dir), "stats"], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0, result.stdout
+    assert "over target band" in result.stdout, "over_seniority is counted but never shown"
+    # Ordering the gates correctly moves postings OUT of `over_seniority`; if the bucket they
+    # move into is never rendered, fixing the double-count would simply make them disappear
+    # from the readout.
+    assert "zero signal" in result.stdout, "zero_signal is counted but never shown"
+    # The VALUE, not only the label: a row rendering a hardcoded 0 would pass a label check.
+    over_line = next(
+        line for line in result.stdout.splitlines() if "over target band" in line
+    )
+    assert "1" in over_line, over_line
 def test_a_posting_that_is_both_non_swe_and_over_band_is_counted_once(data_dir: Path) -> None:
     """`top` gates in ORDER: the role gate `continue`s before the seniority gate ever runs, so
     this posting is `hidden_non_swe` there and nothing else. Counted independently here it
