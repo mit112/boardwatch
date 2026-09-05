@@ -11,7 +11,14 @@ import {
   unreport,
   unskip,
 } from "../api/client";
-import type { Answers, QueueCounts, QueueDetail, QueueResponse, QueueRow } from "../api/types";
+import type {
+  Answers,
+  QueueCounts,
+  QueueDetail,
+  QueueResponse,
+  QueueRow,
+  ReviewReason,
+} from "../api/types";
 import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -21,7 +28,12 @@ import { StatusBand } from "../components/StatusBand";
 import type { QueueFacet } from "../components/StatusBand";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ToastRequest } from "../hooks/useToasts";
-import { reviewBreakdown, reviewLaneSentence } from "../lib/reviewReasons";
+import {
+  REVIEW_REASON_LABELS,
+  countReviewReasons,
+  reviewBreakdown,
+  reviewLaneSentence,
+} from "../lib/reviewReasons";
 import { matchesQuery, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
 
@@ -68,6 +80,41 @@ function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
 }
 
+/*
+ * One review reason, as a toggle. The pressed treatment is the band's own (`Metric` in
+ * `StatusBand`): a fill plus an inset accent bar plus brighter text — three channels, never colour
+ * alone (SC 1.4.1) — and the `aria-label` starts with the visible label and count so Label in Name
+ * holds (SC 2.5.3) before it names the action `aria-pressed` cannot convey.
+ */
+function ReasonChip({
+  label,
+  count,
+  active,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={`${label} ${count.toLocaleString()} — ${active ? "showing only these, activate to clear" : "show only these"}`}
+      onClick={onToggle}
+      className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-3 text-sm transition-colors duration-[120ms] ease-snap ${
+        active
+          ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+          : "text-fg-2 hover:bg-surface-2"
+      }`}
+    >
+      <span>{label}</span>
+      <span className="tabular-nums text-fg-3">{count.toLocaleString()}</span>
+    </button>
+  );
+}
+
 export function QueuePage({
   push,
   onSheet,
@@ -110,6 +157,14 @@ export function QueuePage({
    * instead of the cell they need to click dropping to zero.
    */
   const [facet, setFacet] = useState<QueueFacet | null>(null);
+  /*
+   * The REVIEW-REASON facet, alongside the verdict one and composed with it. Every review row
+   * already carried its reason as a chip and nothing could filter by one, so on a 149-lead lane
+   * the chips were nine repeating labels to scan past rather than a control. Applied after
+   * `filteredReview` for the same reason the verdict facet is: the chip counts must not collapse
+   * to the current selection, or the chip the reader wants next reads zero.
+   */
+  const [reasonFacet, setReasonFacet] = useState<ReviewReason | null>(null);
   const [sort, setSort] = useState<SortState>({ key: "rank", direction: "asc" });
   /*
    * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
@@ -330,12 +385,16 @@ export function QueuePage({
     // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
     // its location — so filtering "eligible" while skipping this list is the documented "make the
     // review list look empty for a matching filter" failure. `review` shows the whole lane.
-    const base =
+    const byVerdict =
       facet === null || facet === "review"
         ? filteredReview
         : filteredReview.filter((row) => row.verdict === facet);
+    const base =
+      reasonFacet === null
+        ? byVerdict
+        : byVerdict.filter((row) => row.review_reason === reasonFacet);
     return sortRows(base, reviewSort, reviewRankOf);
-  }, [filteredReview, facet, reviewSort, reviewRankOf]);
+  }, [filteredReview, facet, reasonFacet, reviewSort, reviewRankOf]);
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -543,6 +602,24 @@ export function QueuePage({
     setReviewSort((current) => nextSort(current, key));
   }, []);
 
+  /*
+   * Counted over the WHOLE lane, never over `visibleReview`: these counts are the menu, and a menu
+   * that re-counts itself against its own selection offers one entry with the number you already
+   * chose and zeroes beside everything else.
+   */
+  const reasonCounts = useMemo(() => countReviewReasons(data?.review ?? []), [data]);
+
+  const toggleReason = useCallback(
+    (next: ReviewReason) => {
+      const clearing = reasonFacet === next;
+      setReasonFacet(clearing ? null : next);
+      // Same reason `review` opens the lane: with the apply queue off the page, a folded review
+      // section would leave a filter whose entire result is invisible.
+      if (!clearing) setReviewOpen(true);
+    },
+    [reasonFacet, setReviewOpen],
+  );
+
   // Clicking the active facet's band cell again clears it — one control, both directions.
   const toggleFacet = useCallback(
     (next: QueueFacet) => {
@@ -565,7 +642,7 @@ export function QueuePage({
    * band's readout then describes the review lane, because describing a hidden list is describing
    * nothing.
    */
-  const laneOnly = facet === "review";
+  const laneOnly = facet === "review" || reasonFacet !== null;
 
   /*
    * The lane's copy, GENERATED from the lane. Both sentences below used to name two of the nine
@@ -585,6 +662,12 @@ export function QueuePage({
     facet === null
       ? "Clear the text box or lower the minimum score."
       : `Clear the text box, lower the minimum score, or turn off the ${facet}-only filter.`;
+
+  /* What the reader turned on, in words, so "Show all" is obviously the way back out. */
+  const activeFilters = [
+    facet === null ? null : facet === "review" ? "the review lane only" : `${facet} only`,
+    reasonFacet === null ? null : `${REVIEW_REASON_LABELS[reasonFacet]} only`,
+  ].filter((entry): entry is string => entry !== null);
 
   if (loadError !== null) {
     /*
@@ -632,6 +715,29 @@ export function QueuePage({
           activeFacet={facet}
           onToggleFacet={toggleFacet}
         />
+        {/* Under the band, because it filters the same lists the band's cells do — and rendered
+            only when there is a lane to filter, so a page with no review leads has no dead row. */}
+        {data.review.length === 0 ? null : (
+          <div
+            role="group"
+            aria-label="Filter by review reason"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <span className="label-micro text-fg-3">reason</span>
+            {reasonCounts.map(({ reason, count }) => (
+              <ReasonChip
+                key={reason}
+                label={REVIEW_REASON_LABELS[reason]}
+                count={count}
+                active={reasonFacet === reason}
+                onToggle={() => {
+                  toggleReason(reason);
+                }}
+              />
+            ))}
+          </div>
+        )}
+
         <QueueToolbar
           query={query}
           onQuery={setQuery}
@@ -641,22 +747,21 @@ export function QueuePage({
 
         {/* The active facet stated in words next to a plain clear, so it is obvious a filter is on
             and how to drop it — the pressed band cell shows which, this shows that. */}
-        {facet !== null ? (
+        {activeFilters.length === 0 ? null : (
           <p className="flex items-center gap-3 text-sm text-fg-2">
-            <span>
-              {facet === "review" ? "Showing the review lane only." : `Showing ${facet} only.`}
-            </span>
+            <span>Showing {activeFilters.join(", ")}.</span>
             <button
               type="button"
               onClick={() => {
                 setFacet(null);
+                setReasonFacet(null);
               }}
               className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
             >
               Show all
             </button>
           </p>
-        ) : null}
+        )}
 
         {newCount > 0 && stashed !== null ? (
           <p className="flex items-center gap-3 text-sm text-fg-2">
@@ -693,7 +798,7 @@ export function QueuePage({
             */}
           {/* The `review` facet hides the apply queue entirely — it is a request to see that lane
               alone. Its own empty/populated states below are unaffected. */}
-          {facet === "review" ? null : data.rows.length === 0 && data.review.length === 0 ? (
+          {laneOnly ? null : data.rows.length === 0 && data.review.length === 0 ? (
             <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
               The queue is empty. A run has to deliver a tailored lead before anything appears
               here — this is not a filter result.
@@ -746,7 +851,7 @@ export function QueuePage({
              * included, so `aria-controls="review-list"` can never be left pointing at an element
              * the fallback replaced. `mt-12` moved out to the wrapper so the card inherits it.
              */
-            <div className={facet === "review" ? undefined : "mt-12"}>
+            <div className={laneOnly ? undefined : "mt-12"}>
               <ErrorBoundary
                 title="The review lane could not be drawn."
                 hint="The queue above is unaffected and still works. These leads are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
@@ -754,10 +859,11 @@ export function QueuePage({
                 resetKeys={[data]}
               >
                 <section aria-labelledby="review-heading">
-                  {/* No top rule when the review lane stands alone (the `review` facet): a rule at
-                      the top of the content has nothing to divide it from. */}
+                  {/* No top rule when the review lane stands alone — the `review` facet or a
+                      reason facet: a rule at the top of the content has nothing to divide it
+                      from. */}
                   <header
-                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-2 ${facet === "review" ? "" : "border-t border-divider pt-8"}`}
+                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-2 ${laneOnly ? "" : "border-t border-divider pt-8"}`}
                   >
                     <h2
                       id="review-heading"

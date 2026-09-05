@@ -67,7 +67,9 @@ describe("the status readout", () => {
     render(<App />);
     await screen.findByText(/Showing 3 of 3/);
 
-    fireEvent.change(screen.getByLabelText(/filter/i), { target: { value: "ALPHA" } });
+    fireEvent.change(screen.getByLabelText("Filter company, title, location"), {
+      target: { value: "ALPHA" },
+    });
 
     // The denominator is the page's whole population, so the reader can see how much was hidden.
     expect(screen.getByText(/Showing 1 of 3/)).toBeTruthy();
