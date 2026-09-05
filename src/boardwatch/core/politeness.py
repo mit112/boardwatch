@@ -114,17 +114,41 @@ def identifying_user_agent() -> str:
     return f"boardwatch/{package_version('boardwatch')} (+https://github.com/mit112/boardwatch)"
 
 
+class HostPacing:
+    """Per-host lock and last-request-time state, shared by every `Fetcher` in the process.
+
+    T41 (D-475): this used to live on the `Fetcher` instance, so the scan's `Fetcher` and the
+    lane stage's own instance (`pipeline/runner.py::_lane_fetcher`) paced a host they both
+    reach independently of each other — up to 2 in flight and 2 req/s where the promise to
+    that third party is 1. The pacing contract (`per_host_delay_seconds`) is per PROCESS, not
+    per instance, so this state must be too.
+    """
+
+    def __init__(self) -> None:
+        self.guard = threading.Lock()
+        self.host_locks: dict[str, threading.Lock] = {}
+        self.last_request_at: dict[str, float] = {}
+
+
+#: The default every `Fetcher` shares unless a caller injects its own registry.
+_PROCESS_PACING = HostPacing()
+
+
 class Fetcher:
-    def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.Client | None = None,
+        *,
+        pacing: HostPacing | None = None,
+    ) -> None:
         self._client = client or httpx.Client(
             headers={"User-Agent": identifying_user_agent()}, timeout=30.0, follow_redirects=True
         )
         self._delay = max(settings.per_host_delay_seconds, PER_HOST_DELAY_FLOOR)
         self._pace_from_start = settings.pace_from_request_start
         self._retry_attempts = settings.retry_attempts
-        self._guard = threading.Lock()
-        self._host_locks: dict[str, threading.Lock] = {}
-        self._last_request_at: dict[str, float] = {}
+        self._pacing = pacing if pacing is not None else _PROCESS_PACING
 
     @property
     def effective_delay(self) -> float:
@@ -209,24 +233,24 @@ class Fetcher:
             # still advances the clock — a failing host must not be retried faster than a
             # healthy one.
             if self._pace_from_start:
-                self._last_request_at[host] = time.monotonic()
+                self._pacing.last_request_at[host] = time.monotonic()
             try:
                 return self._send_with_retries(
                     method, url, validators, json_body, headers, min_host_delay
                 )
             finally:
                 if not self._pace_from_start:
-                    self._last_request_at[host] = time.monotonic()
+                    self._pacing.last_request_at[host] = time.monotonic()
 
     def _host_lock(self, host: str) -> threading.Lock:
-        with self._guard:
-            return self._host_locks.setdefault(host, threading.Lock())
+        with self._pacing.guard:
+            return self._pacing.host_locks.setdefault(host, threading.Lock())
 
     def _pace(self, host: str, min_host_delay: float | None = None) -> None:
         # `max`, never a replacement: an override may only make this client MORE polite. A caller
         # passing a smaller number than the configured floor gets the floor.
         delay = max(self._delay, min_host_delay or 0.0)
-        last = self._last_request_at.get(host)
+        last = self._pacing.last_request_at.get(host)
         if last is not None:
             remaining = delay - (time.monotonic() - last)
             if remaining > 0:

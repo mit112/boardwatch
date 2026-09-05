@@ -486,3 +486,59 @@ def test_a_retry_after_inside_the_cap_is_still_honoured(
         result = _fetcher(tmp_path).get("https://ok.example/x")
     assert result.status_code == 200
     assert max(slept, default=0.0) >= 5.0, slept
+
+
+# --------------------------------------------------------------------------------------
+# T41 (D-475) — pacing state is per PROCESS, not per `Fetcher` instance
+# --------------------------------------------------------------------------------------
+
+
+def test_two_fetcher_instances_pace_one_shared_host_together(tmp_path: Path) -> None:
+    """`_guard`, `_host_locks` and `_last_request_at` used to live on the `Fetcher`
+    INSTANCE, so two instances built by the same process — the scan's own and the lane
+    stage's `_lane_fetcher(settings)` — paced a host they both reach independently of each
+    other. The pacing promise a `per_host_delay_seconds` makes to a third party is per
+    PROCESS: a host reached by two instances must still see one request stream.
+
+    Two SEPARATE `Fetcher` instances hit the SAME host back-to-back (sequentially, one
+    thread). Against a shared registry the second instance's request must wait out the
+    first instance's pacing, so the two starts land at least `per_host_delay_seconds`
+    apart. Against the (unchanged) per-instance state the two instances share nothing and
+    the gap collapses to ~0 — that is the red this test is meant to catch.
+    """
+    starts: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        starts.append(time.monotonic())
+        return httpx.Response(200)
+
+    with respx.mock:
+        respx.get("https://shared.example/x").mock(side_effect=handler)
+        settings = _settings(tmp_path, delay=1.0)
+        Fetcher(settings).get("https://shared.example/x")
+        Fetcher(settings).get("https://shared.example/x")
+
+    assert len(starts) == 2
+    gap = starts[1] - starts[0]
+    assert gap >= 0.95, gap
+
+
+def test_two_fetcher_instances_on_different_hosts_still_overlap(tmp_path: Path) -> None:
+    """The control for the test above. A shared registry paces a host both instances
+    reach — it must NOT pace two instances against each other on hosts that differ, or
+    every unrelated `Fetcher` in the process would slow every other one down."""
+    starts: list[float] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        starts.append(time.monotonic())
+        return httpx.Response(200)
+
+    with respx.mock:
+        respx.get("https://one.example/x").mock(side_effect=handler)
+        respx.get("https://two.example/x").mock(side_effect=handler)
+        settings = _settings(tmp_path, delay=1.0)
+        Fetcher(settings).get("https://one.example/x")
+        Fetcher(settings).get("https://two.example/x")
+
+    gap = starts[1] - starts[0]
+    assert gap < 0.5, gap
