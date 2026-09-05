@@ -67,7 +67,24 @@ ZeroSignalVerdict = Literal["pass", "veto", "unmeasured"]
 # Anchored guard: `^(?!...)` makes the lookahead cover the WHOLE title rather than only
 # the tail, so a bare business-domain noun can never veto an engineering title from the
 # left. Used where a trailing `(?!...)` guard would be blind in the wrong direction.
-_NOENG = r"^(?!.*\b(?:engineer|engineering|developer|architect|programmer|swe|sde|sdet)\b).*"
+_NOENG = (
+    r"^(?!.*\b(?:engineer|engineering|developer|architect|programmer|swe|sde|sdet|"
+    # The SWE-signal domain words. Without them the guard exempted only titles carrying a job
+    # FAMILY noun, so "ML Platform Lead" and "Infrastructure Lead" were vetoed by the generic
+    # manager/director/lead deny while "DevOps Lead" survived on a separate rescue list — the
+    # same role, hidden or shown depending on which word its team happens to use.
+    #
+    # `data` and `ai`, which `_NOSW` does spare, are deliberately NOT here, and the difference
+    # is measured rather than assumed. Over the 47,295 distinct open titles in the live corpus
+    # (2026-09-04), the four words below release 166 titles from a hard veto; adding `data`
+    # releases a further 321 and `ai` a further 187, and both populations are dominated by
+    # business roles that merely name the technology — "Aladdin Data Risk, Controls &
+    # Governance, Director", "AI Physics Sales Lead - EMEA", "Accounting AI Solutions Lead".
+    # `data` also un-vetoes "Item Data Quality Analyst", which this repository's own suite
+    # pins as `not_swe`. `_NOSW` can afford them because it guards denies whose head noun is
+    # already a software org word; this guard has no such backstop.
+    r"platform|infrastructure|machine\s+learning|ml)\b).*"
+)
 
 # Like `_NOENG`, but spares the software SURFACE words that are not signals on their own.
 # `_NOENG` is enough for a deny that runs after the rescue on a title whose software evidence

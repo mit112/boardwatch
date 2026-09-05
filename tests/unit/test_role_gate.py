@@ -35,6 +35,17 @@ NEVER_NOT_SWE_TITLES = [
     "Kernel Driver Engineer",
 ]
 
+# T18. A software LEAD whose title carries no job-family head noun. `_NOENG` exempted only
+# engineer/developer/architect/programmer/swe/sde/sdet, so the generic manager|director|lead
+# deny fired on these while "DevOps Lead" was rescued by a separate list — the same role,
+# hidden or shown depending on which word the team happens to use.
+SOFTWARE_LEADS_WITHOUT_A_FAMILY_NOUN = [
+    "ML Platform Lead",
+    "Infrastructure Lead",
+    "Machine Learning Manager, Feed Relevance (Retrieval)",
+    "Director, Data & ML Platform",
+]
+
 
 class TestVerdicts:
     @pytest.mark.parametrize("title", NOT_SWE_TITLES)
@@ -48,6 +59,19 @@ class TestVerdicts:
         # `swe` or `uncertain` both pass: `uncertain` falls through to scoring unchanged,
         # which is why the gate retains 100% of the protected population.
         assert role_verdict(title)[0] != "not_swe"
+
+    @pytest.mark.parametrize("title", SOFTWARE_LEADS_WITHOUT_A_FAMILY_NOUN)
+    def test_a_software_lead_with_no_family_noun_is_not_vetoed(self, title: str) -> None:
+        """T18. Not asserted as `swe` — the title carries no positive software signal either,
+        so `uncertain` is the honest verdict and the ranker passes it through to scoring. What
+        must not happen is a hard `not_swe`, which hides the posting outright."""
+        assert role_verdict(title)[0] != "not_swe"
+
+    def test_the_widened_guard_still_vetoes_a_non_software_domain_title(self) -> None:
+        """The control on the other side. `_NOENG` spares the domain words; it does not spare
+        a title whose only engineering-adjacent word is a business one."""
+        assert role_verdict("Deal Strategist")[0] == "not_swe"
+        assert role_verdict("Payroll Coordinator")[0] == "not_swe"
 
     def test_uncertain_is_reachable_and_reasoned(self) -> None:
         verdict, reason = role_verdict("Data Warehouse Engineer")
