@@ -20,8 +20,11 @@ export function Badge({
       : "border-control text-fg-2";
   return (
     <span className="inline-flex items-baseline gap-1.5">
+      {/* `whitespace-nowrap`: a two-word label is one token to read, and at 390px wide the
+          "thin JD" chip broke across its own space and rendered as "THIN / JD". The `reason`
+          below is a sibling and stays wrapping — that one IS prose. */}
       <span
-        className={`inline-flex min-h-5 items-center rounded-sm border px-1.5 py-0.5 label-micro ${tone}`}
+        className={`inline-flex min-h-5 items-center rounded-sm border px-1.5 py-0.5 whitespace-nowrap label-micro ${tone}`}
         {...(reason ? { title: reason } : {})}
       >
         {label}

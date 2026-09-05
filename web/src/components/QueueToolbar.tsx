@@ -65,8 +65,14 @@ export function QueueToolbar({
         * the row, so this is an accelerator rather than the only route — but a queue worked at
         * speed every morning is exactly the case where an undiscovered accelerator is a wasted
         * one. `Tab` reaches the list in a single stop, by construction: see `QueueTable`.
+        *
+        * Hidden under `(hover: none)`. On a touch device there is no keyboard to press any of
+        * these on, so nine key hints are nine lines of instructions for hardware that is not
+        * there — at 390px they were most of what sat above the list. The query is `hover`, not a
+        * width: a narrow WINDOW on a laptop still has the keyboard, and hiding the hints there
+        * would take the accelerators away from the reader who can use them.
         */}
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-3">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-3 [@media(hover:none)]:hidden">
         <span>
           <Key>/</Key> filter
         </span>
