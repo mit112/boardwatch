@@ -372,6 +372,13 @@ class PipelineSummary:
     # has to be visible rather than buried in `evaluated: 0`.
     scan_new: int = 0
     scan_closed: int = 0
+    # T39. Boards whose `complete` snapshot listed ZERO postings for a board that still held
+    # open ones, so `apply_board`'s guard refused to close it (`scan.apply
+    # ._empty_complete_is_evidence_of_nothing`). Before this it reached only `boardwatch scan`'s
+    # own console line — a pipeline run's log and funnel artifact carried no trace of the guard
+    # ever firing. Slugs, not a count, for the same reason `ScanSummary.empty_complete_guarded`
+    # is: "which board" is the operator's first question.
+    scan_empty_complete_guarded: list[str] = field(default_factory=list)
     evaluated: int = 0
     # The ranker's whole population accounting, not just what it showed. `shortlisted` alone
     # is capped at --top and so measures the flag rather than the funnel; the considered count
@@ -1632,6 +1639,7 @@ def run_pipeline(
             summary.scan_boards_complete = scan_summary.complete
             summary.scan_new = scan_summary.new
             summary.scan_closed = scan_summary.closed
+            summary.scan_empty_complete_guarded = scan_summary.empty_complete_guarded
             # CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent
             # empty day)". `is_systemic_scan_outage` (D-037) is the same predicate
             # `coordinator.py`'s standalone scan uses, so the two can never disagree on the
@@ -2695,6 +2703,10 @@ def _emit_funnel(
             boards_unchanged=scan_summary.unchanged if scan_summary else 0,
             boards_failed=summary.scan_boards_failed,
             postings_seen=summary.scan_postings_seen,
+            # Read off `summary`, not `scan_summary` directly: unlike `boards_partial`/
+            # `boards_unchanged` above, the run log (`cli/run_cmd.py`) needs this too, and
+            # `_emit_funnel` sees nothing `run_cmd` does not also see through `PipelineSummary`.
+            empty_complete_guarded=tuple(summary.scan_empty_complete_guarded),
             # `None` when no scan ran, so the artifact distinguishes "not measured" from
             # "measured and empty" (D-330). A lane never reaches the timing seam and is
             # deliberately absent rather than present at zero.
