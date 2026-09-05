@@ -9,14 +9,13 @@ anyway. The fix computes `review_gate.lane` — the ONE lane definition, the sam
 apply-lane leads only; a review-lane lead is still DELIVERED (a real folder, a `resume_tailored`
 artifact row, the JD and apply link), just with no PDF and `pending_tailor=True`.
 
-Every posting here shares one seeded JD body (`test_pipeline_run.BODY`) that trips no
-eligibility rule at all — the real catalog finds no requirement in it, so the engine's own
-zero-row branch returns `uncertain`, which `review_gate.classify` routes to review under
-`no_requirements_found`. That is what makes a PLAIN `_seed_posting` posting a review-lane lead
-with no extra setup. An apply-lane lead needs a genuinely `eligible` verdict, which this module
-fabricates directly in `eligibility_evaluations`/`eligibility_requirements` under the run's own
-(profile_hash, rules_hash) identity — the real catalog has nothing in `BODY` to hang an
-`eligible` verdict on, and authoring a catalog-satisfying JD is not what this ticket is about.
+`test_pipeline_run._seed_posting`'s shared JD body was itself widened by T43 (a trailing
+`degree_preferred` clause) so every OTHER pre-existing test using it still reaches
+`run_tailor` — see that module's `BODY` docstring. This module's apply-lane postings reuse it
+unmodified; its review-lane postings seed the ORIGINAL, un-widened body locally
+(`_REVIEW_BODY`), which trips no eligibility rule at all — the real catalog finds no
+requirement in it, so the engine's own zero-row branch returns `uncertain`, which
+`review_gate.classify` routes to review under `no_requirements_found`.
 """
 
 from __future__ import annotations
@@ -26,20 +25,22 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
-from sqlalchemy import insert, select
+from sqlalchemy import insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
-from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
-from boardwatch.eligibility.preflight import current_identity
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.reports.tailor import run_tailor
 from boardwatch.store import tables
-from boardwatch.store.db import get_engine
+from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from tests.conftest import write_test_resume_template
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
+
+# The PRE-T43 body: no `degree_preferred` clause, so it trips no eligibility rule at all and
+# the engine's zero-row branch abstains to `uncertain` — a review-lane posting by construction.
+_REVIEW_BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
 
 
 @pytest.fixture()
@@ -57,72 +58,60 @@ def _ready(data_dir: Path) -> None:
     write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
 
 
-def _force_eligible(data_dir: Path, posting_id: int) -> None:
-    """Fabricate a CURRENT `eligible` evaluation for `posting_id`, under the profile's real
-    (profile_hash, rules_hash) identity, so `run_eligibility`'s anti-join skips re-evaluating
-    it and `current_verdicts` reads this verdict back as-is. One `eligibility_requirements`
-    row (preferred, met) keeps `no_requirement_rows` False without setting either unconfirmed
-    flag, so `review_gate.classify` reaches its `eligible` short-circuit — an apply-lane lead.
-    """
-    settings = load_settings(data_dir=data_dir)
+def _seed_review_posting(data_dir: Path, *, slug: str) -> int:
+    """Mirrors `test_pipeline_run._seed_posting`'s FK chain exactly, but with `_REVIEW_BODY`
+    rather than the (now eligibility-widened) shared `BODY` — a review-lane posting."""
     engine = get_engine(data_dir)
-    with engine.connect() as conn:
-        identity = current_identity(conn, settings)
-    assert identity is not None, "the profile must be seeded before forcing a verdict"
-    profile_hash, rules_hash = identity
+    ensure_schema(engine)
     now = utcnow()
     with engine.begin() as conn:
-        version_id = (
+        company_id = int(
             conn.execute(
-                select(tables.posting_versions.c.id)
-                .where(tables.posting_versions.c.posting_id == posting_id)
-                .order_by(tables.posting_versions.c.id.desc())
-            )
-            .scalars()
-            .first()
+                insert(tables.companies).values(
+                    name="Acme", provider="greenhouse", slug=slug, source="user", watched=True
+                )
+            ).inserted_primary_key[0]
         )
-        input_id = conn.execute(
-            insert(tables.eligibility_inputs).values(
-                posting_version_id=version_id,
-                profile_hash=profile_hash,
-                profile_snapshot_json={},
-                rules_hash=rules_hash,
-                rules_snapshot_json={},
-                input_fingerprint=f"t43-fp-{posting_id}",
-                created_at=now,
-            )
-        ).inserted_primary_key[0]
-        eval_id = conn.execute(
-            insert(tables.eligibility_evaluations).values(
-                input_id=input_id,
-                engine_kind=ENGINE_KIND,
-                engine_version=engine_version(),
-                verdict="eligible",
-                created_at=now,
-            )
-        ).inserted_primary_key[0]
+        job_id = int(
+            conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
+        )
+        posting_id = int(
+            conn.execute(
+                insert(tables.postings).values(
+                    company_id=company_id,
+                    provider_posting_id=f"p-{slug}",
+                    title="Backend Engineer",
+                    normalized_title="backend engineer",
+                    url="https://example.test/j",
+                    locations_json=["Remote"],
+                    remote_policy="remote",
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    status="open",
+                    consecutive_missing=0,
+                    content_hash=f"h-{slug}",
+                    body_text=_REVIEW_BODY,
+                    job_id=job_id,
+                )
+            ).inserted_primary_key[0]
+        )
         conn.execute(
-            insert(tables.eligibility_requirements).values(
-                evaluation_id=eval_id,
-                ordinal=0,
-                rule_id="skill_pref:python",
-                requiredness="preferred",
-                requirement_text="Python",
-                jd_locator_json={},
-                disposition="met",
+            insert(tables.posting_versions).values(
+                posting_id=posting_id,
+                content_hash=f"h-{slug}",
+                body_text=_REVIEW_BODY,
+                captured_at=now,
+                capture_reason="new",
             )
         )
+    return posting_id
 
 
 def _seed_slate(data_dir: Path) -> tuple[list[int], list[int]]:
-    """3 apply-lane postings (forced `eligible`) + 2 review-lane postings (plain — the shared
-    seeded body trips no eligibility rule, so the real engine abstains to `uncertain` with zero
-    requirement rows, which routes to review under `no_requirements_found`). Returns
-    (apply_ids, review_ids)."""
+    """3 apply-lane postings (the shared, eligibility-widened `BODY`) + 2 review-lane postings
+    (`_REVIEW_BODY`, zero-row). Returns (apply_ids, review_ids)."""
     apply_ids = [_seed_posting(data_dir, slug=f"apply{i}") for i in range(3)]
-    for posting_id in apply_ids:
-        _force_eligible(data_dir, posting_id)
-    review_ids = [_seed_posting(data_dir, slug=f"review{i}") for i in range(2)]
+    review_ids = [_seed_review_posting(data_dir, slug=f"review{i}") for i in range(2)]
     return apply_ids, review_ids
 
 

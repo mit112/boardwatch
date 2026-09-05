@@ -42,7 +42,21 @@ HEALTHY_BODY = b'{"jobs": []}'
 runner = CliRunner()
 
 INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
-BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
+
+# T43 appended the trailing clause: it trips the (non-blocking, default `preference`)
+# `degree` family's `degree_preferred` pattern, which is enough on its own — one row, no
+# blocking family involved — for `engine.evaluate` to return `eligible` rather than the
+# zero-row `uncertain` the plain sentence produced. Verified against the real engine, not
+# assumed. Since T43 moved `review_gate.lane` BEFORE the tailor loop, an `uncertain`
+# zero-row posting now routes to the REVIEW lane and is never tailored — which would
+# silently break every test in this module (and its many importers) that assumes a
+# shortlisted posting always reaches `run_tailor`. `degree` is not one of the two families
+# `eligibility/read.py::current_requirement_flags` inspects, so this sets neither
+# `experience_unconfirmed` nor `eligibility_unconfirmed` either.
+BODY = (
+    "We are hiring a backend engineer to work on Python and PostgreSQL services. "
+    "Bachelor's degree preferred."
+)
 
 
 @pytest.fixture()

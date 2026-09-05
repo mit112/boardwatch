@@ -13,7 +13,7 @@ boardwatch replaces job-apps when, for **14 consecutive unattended days**, one c
 | # | Metric | Bar |
 |---|---|---|
 | B1 | Net-new profile-eligible, live, deduped leads/day | **≥ 10** |
-| B2 | Leads with a compiled résumé PDF | **100%** |
+| B2 | Apply-lane leads with a compiled résumé PDF (T43 re-read, D-477) | **100%** |
 | B3 | Leads passing the deterministic résumé QA gate (page count = hard fail) | **100%** |
 | B4 | Fabrications, independently audited | **0** on n ≥ 100 |
 | B5 | Silent empty days (run "succeeds", produces nothing) | **0** |

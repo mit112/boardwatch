@@ -44,10 +44,13 @@ from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.api import resolve_owner_name
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT, reconcile_queue, sync_queue
+from boardwatch.delivery.review_gate import REVIEW_DIR
+from boardwatch.delivery.review_gate import lane as review_lane
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.eligibility.read import NO_REQUIREMENT_FLAGS, current_requirement_flags
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneContext, LaneResult
 from boardwatch.lanes.facets import (
@@ -113,6 +116,7 @@ from boardwatch.scan.coordinator import (
     run_scan,
     systemic_scan_outage_reason,
 )
+from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
@@ -122,6 +126,7 @@ from boardwatch.store.queries import (
     RUN_OK,
     append_run_error,
     company_exists,
+    current_posting_versions,
     ensure_run,
     finish_run,
     get_profile,
@@ -130,7 +135,7 @@ from boardwatch.store.queries import (
     watched_company_names,
 )
 from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
-from boardwatch.store.run_funnel_queries import lead_provenance
+from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.seed_queries import (
     LaneSeed,
     record_seed_attempt,
@@ -343,6 +348,14 @@ class TailoredLead:
     # `TailorResult.degraded` so a SYSTEMATIC degrade (every lead shipping generic while the run
     # still prints green) surfaces as a count on the run line, not only in the artifact meta.
     degraded: bool = False
+    # T43. True for a review-lane lead delivered with no PDF: the tailor loop skipped the render
+    # (`review_gate.lane` routed it to `_review` BEFORE the loop ran) rather than attempted and
+    # failed it. Distinct from `degraded`, which always carries a real, if untailored, PDF — a
+    # `pending_tailor` lead carries none. Cleared the moment `boardwatch tailor run` renders the
+    # lead for real: that writes a fresh `resume_tailored` artifact row with no such marker, which
+    # `delivered_unapplied`'s recency ordering (`_supersedes`) picks up as the new winner with no
+    # further code needed here.
+    pending_tailor: bool = False
 
 
 @dataclass
@@ -1271,6 +1284,61 @@ def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:
         del outcomes[ProjectionLeadOutcome.PROJECTED]
 
 
+def _lead_lanes(
+    engine: Engine, settings: Settings, leads: Sequence[RankedPosting]
+) -> dict[int, tuple[str, int | None]]:
+    """posting_id -> (`review_gate.lane`'s verdict, its current `posting_version_id`), computed
+    BEFORE the tailor loop (T43) so the expensive render is spent on apply-lane leads only.
+
+    The ONE lane definition `delivery/queue.py` already calls at sync time, fed the same shape of
+    facts `delivery_queries.review_job_ids` reads for the standing queue — so a lead tailored (or
+    not) here can never disagree with the lane `sync_queue` files its folder under later, because
+    both call sites are `review_gate.lane` reading the CURRENT evaluation.
+
+    `posting_closed=False` unconditionally: `leads` is `ranked.visible`, already filtered to
+    `postings.status == "open"` by the ranker's own query, so a closed posting never reaches here.
+    """
+    if not leads:
+        return {}
+    posting_ids = [p.posting_id for p in leads]
+    with engine.connect() as conn:
+        identity = current_identity(conn, settings)
+        profile_hash, rules_hash = identity if identity is not None else (None, None)
+        versions = current_posting_versions(conn, posting_ids)
+        version_ids = [v.posting_version_id for v in versions.values()]
+        flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
+        locations_by_posting = {
+            int(row.id): tuple(
+                str(loc) for loc in (row.locations_json or []) if str(loc).strip()
+            )
+            for row in conn.execute(
+                select(postings.c.id, postings.c.locations_json).where(
+                    postings.c.id.in_(posting_ids)
+                )
+            ).all()
+        }
+    result: dict[int, tuple[str, int | None]] = {}
+    for posting in leads:
+        posting_version = versions.get(posting.posting_id)
+        posting_version_id = (
+            None if posting_version is None else posting_version.posting_version_id
+        )
+        posting_flags = flags.get(posting.posting_id, NO_REQUIREMENT_FLAGS)
+        result[posting.posting_id] = (
+            review_lane(
+                verdict=posting.verdict,
+                locations=locations_by_posting.get(posting.posting_id, ()),
+                title=posting.title,
+                experience_unconfirmed=posting_flags.experience_unconfirmed,
+                eligibility_unconfirmed=posting_flags.eligibility_unconfirmed,
+                no_requirement_rows=posting_flags.no_requirement_rows,
+                posting_closed=False,
+            ),
+            posting_version_id,
+        )
+    return result
+
+
 def _abandon_unattempted(summary: PipelineSummary, remaining: Sequence[RankedPosting]) -> None:
     """Give every lead the aborted projection stage never reached a terminal accounting.
 
@@ -1951,6 +2019,11 @@ def run_pipeline(
 
         clock.mark("liveness")
 
+        # T43 — the lane split moves BEFORE the tailor loop, so the render is spent on
+        # apply-lane leads only. Computed once over the whole slate rather than per-lead inside
+        # the loop, for the same reason `dead_job_ids` above is: one query beats N.
+        lane_of = _lead_lanes(engine, settings, leads)
+
         # Names the résumé source in the log, so a projected run is distinguishable from an
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
         # passed; `projection_ctx` itself stays in scope for the loop below.
@@ -1960,6 +2033,27 @@ def run_pipeline(
         # still claims it entered at the full shortlist. See `_abandon_unattempted`.
         for lead_index, posting in enumerate(leads):
             dest = day_dir / _slug(posting.company, posting.posting_id)
+            posting_lane, posting_version_id = lane_of.get(posting.posting_id, ("", None))
+            if posting_lane == REVIEW_DIR:
+                # T43. Never reaches projection or `run_tailor` — both render, and the render is
+                # exactly the cost this ticket exists to stop spending on a lead the owner has to
+                # read before applying anyway. `_deliver_pending_review_lead` still writes a
+                # `resume_tailored` artifact row (so the delivery queue's `artifacts`-rooted JOIN
+                # finds this lead at all — `delivery_queries._delivered_select` starts FROM
+                # `artifacts`) and still creates `dest` with a real `.tex` stub inside it (so
+                # `boardwatch verify`'s filesystem check, which stats the `.tex` path from the row,
+                # does not read a missing-file discrepancy for a lead that was never meant to
+                # render one).
+                summary.tailored.append(
+                    _deliver_pending_review_lead(
+                        engine,
+                        posting,
+                        dest=dest,
+                        posting_version_id=posting_version_id,
+                        run_id=run_id,
+                    )
+                )
+                continue
             # The authored résumé and no lineage, unless this lead is projected below. Never a
             # FALLBACK: a projection that fails does not reach `run_tailor` at all (it `continue`s),
             # because a fallback SUCCEEDS and every lead it produced would earn a permanent `built`
@@ -2744,7 +2838,10 @@ def _emit_funnel(
         death_probe=summary.death_probe,
         stage_durations=summary.stage_durations,
         tailored=[
-            (lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built)
+            (
+                lead.posting_id, lead.company, lead.title, lead.out_dir, lead.pdf_built,
+                lead.pending_tailor,
+            )
             for lead in summary.tailored
         ],
         tailor_failed=summary.tailor_failed,
@@ -2971,6 +3068,62 @@ def _remove_if_empty(path: Path) -> None:
         path.rmdir()
     except OSError:
         pass  # non-empty (partial output worth keeping) or already gone
+
+
+def _deliver_pending_review_lead(
+    engine: Engine,
+    posting: RankedPosting,
+    *,
+    dest: Path,
+    posting_version_id: int | None,
+    run_id: int,
+) -> TailoredLead:
+    """T43. One review-lane lead, delivered with no render: a real folder carrying a `.tex`
+    stub (never a PDF), and a `resume_tailored` artifact row so the delivery queue's
+    `artifacts`-rooted JOIN (`delivery_queries._delivered_select`) finds this lead at all.
+
+    The stub file matters, not just the directory — `boardwatch verify`'s filesystem check
+    (`reports/reconcile.py`) stats the artifact row's own `uri` and reports `missing_typ_file`
+    if nothing is there; a directory with nothing in it would read as a genuine defect.
+
+    The marker is `meta_json.pdf_uri` absent, which `queue._sync_locked`'s `_pdf_source`
+    ALREADY reads and already handles as a named, non-fatal fact (`_NO_PDF_ARTIFACT`) rather
+    than a failure — no new column, no new queue-side branch. `pending_tailor` rides beside it
+    in the same `meta_json` so "never rendered by design" reads apart from "rendered and the
+    file later went missing", which is `_PDF_FILE_MISSING` and means something different.
+    Promotion needs no explicit clear: `boardwatch tailor run <posting_id>` writes a NEW
+    `resume_tailored` row with neither key, and `delivered_unapplied`'s recency ordering
+    (`_supersedes`) already picks the newer row as the lead's current one.
+    """
+    tex_path = _ensure_dir(dest) / "resume.tex"
+    tex_path.write_text(
+        "% pending_tailor: this review-lane lead has not been rendered.\n"
+        "% `boardwatch tailor run <posting_id>` renders it on demand.\n",
+        encoding="utf-8",
+    )
+    with engine.begin() as conn:
+        record_artifact(
+            conn,
+            kind=TAILORED_KIND,
+            uri=str(tex_path),
+            posting_version_id=posting_version_id,
+            media_type="text/x-tex",
+            meta={"typst_pdf_built": False, "pdf_uri": None, "pending_tailor": True},
+            run_id=run_id,
+        )
+    return TailoredLead(
+        posting_id=posting.posting_id,
+        company=posting.company,
+        title=posting.title,
+        out_dir=dest,
+        pdf_built=False,
+        why=posting.why,
+        score=posting.score.total,
+        pdf_path=None,
+        coverage=None,
+        degraded=False,
+        pending_tailor=True,
+    )
 
 
 def _count_evaluations(engine: Engine, run_id: int) -> int:
