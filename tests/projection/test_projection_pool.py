@@ -24,8 +24,9 @@ from boardwatch.projection.pool import (
     _synthesized_skill_groups,
     project_pool,
     projection_candidate,
+    projection_content_digest,
 )
-from boardwatch.projection.stamp import write_stamp
+from boardwatch.projection.stamp import stamp_path, write_stamp
 from boardwatch.tailor.model import SkillGroup
 from tests.projection.conftest import bundle_ctx  # noqa: F401  (fixture re-export)
 
@@ -176,6 +177,9 @@ def test_omitting_skill_groups_synthesizes_them_from_the_bundle_catalog(
         projection_env.config_dir,
         digest=digest,
         bundle_digest=bundle_digest,
+        content_digest=projection_candidate(
+            projection_env.bundle_root, projection_env.declaration, as_of=AS_OF
+        ).content_digest,
         approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
     )
 
@@ -630,3 +634,64 @@ def test_a_query_string_link_target_is_NOT_refused(
     )
     candidate = projection_candidate(projection_env.bundle_root, decl, as_of=AS_OF)
     assert candidate.entries[0].link_url == "https://example.test/a?x=1&y=2#top"
+
+
+def test_the_content_digest_moves_on_a_single_bullet_character(
+    projection_env,  # noqa: F811
+) -> None:
+    """T22's mutation guard. The digest is what stands between an edited claim and a résumé the
+    owner never read, and bullets are the bulk of the document — a digest over the entry
+    scaffolding alone would look identical while every bullet changed.
+
+    Asserted on the digest function directly, over two entry tuples that differ in exactly one
+    character of one bullet, so nothing else can account for the difference.
+    """
+    candidate = projection_candidate(
+        projection_env.bundle_root, projection_env.declaration, as_of=AS_OF
+    )
+    entries = candidate.entries
+    assert any(entry.bullets for entry in entries), "no bullets, so this proves nothing"
+    edited = []
+    changed = False
+    for entry in entries:
+        if entry.bullets and not changed:
+            bullets = list(entry.bullets)
+            bullets[0] = bullets[0].model_copy(update={"text": bullets[0].text + "."})
+            edited.append(entry.model_copy(update={"bullets": bullets}))
+            changed = True
+        else:
+            edited.append(entry)
+    assert changed
+    assert projection_content_digest(entries, candidate.skill_groups) != (
+        projection_content_digest(tuple(edited), candidate.skill_groups)
+    )
+
+
+def test_a_stamp_written_before_content_scoping_is_stale_not_accepted(
+    projection_env,  # noqa: F811
+) -> None:
+    """The upgrade path, and it fails CLOSED. A stamp filed before the content digest existed
+    carries no evidence about what the owner read, so it cannot be honoured — the owner
+    re-approves once and every stamp after that is scoped correctly.
+
+    `content_digest` is optional on the model precisely so this file PARSES: a required field
+    would make `read_stamp` raise `ProfileBundleError`, which the CLI reports as an internal
+    error rather than as the honest "re-approve" this is.
+    """
+    digest = projection_digest(load_declaration(projection_env.declaration))
+    bundle_digest = read_current_once(projection_env.bundle_root).bundle_digest
+    path = stamp_path(projection_env.config_dir, digest)
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert raw.pop("content_digest", None) is not None, "the fixture stopped writing one"
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ProjectionError) as exc:
+        project_pool(
+            projection_env.bundle_root,
+            projection_env.declaration,
+            config_dir=projection_env.config_dir,
+            as_of=AS_OF,
+        )
+    assert exc.value.violation.issue is ProjectionIssue.STALE_PROJECTION_APPROVAL
+    assert "predates" in exc.value.violation.message
+    assert bundle_digest  # the bundle itself never moved; only the stamp's scope did

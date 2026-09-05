@@ -32,7 +32,9 @@ tags. `Resume.title` stays `None`: persona shaping is the tailor's job, not Stag
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -101,6 +103,29 @@ def _synthesized_skill_groups(
         for spec in categories.categories
         if (members := by_category.get(spec.category_id))
     ]
+
+
+def _resolved_skill_groups(
+    declaration: ProjectionDeclaration, ctx: ValidationContext
+) -> list[SkillGroup]:
+    """The rendered skills section, from ONE place so the pool and the approval candidate
+    cannot resolve it two ways.
+
+    An explicit `skill_groups` block is the owner taking full control of grouping, order and
+    inclusion; omitting it defers to the bundle's own category taxonomy so the grouping lives in
+    exactly ONE versioned place — `policy/skill-categories.yaml`, bound by the bundle digest —
+    rather than being restated, unversioned and drift-prone, in `projection.yaml` (D-187).
+    """
+    skills_by_id = {s.skill_id: s for s in ctx.index.skills}
+    if declaration.skill_groups:
+        return [
+            SkillGroup(
+                label=group.label,
+                items=[render_skill(skills_by_id[skill_id]) for skill_id in group.skills],
+            )
+            for group in declaration.skill_groups
+        ]
+    return _synthesized_skill_groups(ctx.index.skills, ctx.index.skill_categories)
 
 
 @dataclass(frozen=True)
@@ -178,14 +203,6 @@ def project_pool(
         )
 
     stamp = read_stamp(config_dir, digest)
-    if stamp.bundle_digest != selection.bundle_digest:
-        raise_violation(
-            ProjectionIssue.STALE_PROJECTION_APPROVAL,
-            "the owner's approval was reviewed against a different bundle revision; the "
-            "resolved template values may no longer match the bundle's current facts. Run "
-            "approve-projection again after reviewing the current text",
-            where=digest,
-        )
 
     ctx = context_from_documents(
         documents, root=selection.root, mode="revision", bundle_root=bundle_root
@@ -196,22 +213,7 @@ def project_pool(
     header, education = load_shell(shell_path)
 
     claims_by_id = {c.claim_id: c for c in ctx.index.claims}
-    skills_by_id = {s.skill_id: s for s in ctx.index.skills}
-
-    # An explicit `skill_groups` block is the owner taking full control of grouping, order and
-    # inclusion; omitting it defers to the bundle's own category taxonomy so the grouping lives in
-    # exactly ONE versioned place — `policy/skill-categories.yaml`, bound by the bundle digest —
-    # rather than being restated, unversioned and drift-prone, in `projection.yaml` (D-187).
-    if declaration.skill_groups:
-        skill_groups = [
-            SkillGroup(
-                label=group.label,
-                items=[render_skill(skills_by_id[skill_id]) for skill_id in group.skills],
-            )
-            for group in declaration.skill_groups
-        ]
-    else:
-        skill_groups = _synthesized_skill_groups(ctx.index.skills, ctx.index.skill_categories)
+    skill_groups = _resolved_skill_groups(declaration, ctx)
 
     entries = [
         _build_entry(
@@ -223,6 +225,28 @@ def project_pool(
         )
         for entry_decl in declaration.entries
     ]
+
+    # HERE, not above with `stamp_exists`, because the thing being compared does not exist until
+    # the entries are resolved. The gate is on the RESOLVED TEXT the owner reviewed, not on the
+    # bundle revision they happened to review it against (D-167's original instrument): a bundle
+    # edit the projection does not render must not stale an approval, and any edit that changes
+    # one rendered character must. `bundle_digest` is still recorded on the stamp as provenance —
+    # which revision the owner was looking at — it just no longer decides.
+    #
+    # A stamp written before this field existed carries `None` and is treated as stale: fail
+    # closed. The owner re-approves once, and every subsequent approval is scoped correctly.
+    if stamp.content_digest != projection_content_digest(entries, skill_groups):
+        raise_violation(
+            ProjectionIssue.STALE_PROJECTION_APPROVAL,
+            "the résumé text this declaration resolves to is not the text the owner approved"
+            + (
+                " (the approval predates content-scoped stamps)"
+                if stamp.content_digest is None
+                else ""
+            )
+            + ". Run approve-projection again after reviewing the current text",
+            where=digest,
+        )
 
     resume = Resume(
         header=list(header),
@@ -249,6 +273,46 @@ def project_pool(
     )
 
 
+def projection_content_digest(
+    entries: Sequence[Entry], skill_groups: Sequence[SkillGroup]
+) -> str:
+    """`sha256:<hex>` over the RESOLVED entries — the text the approval screen prints.
+
+    This is what the owner actually reviewed, and it is deliberately NOT the bundle's revision
+    digest. `bundle_digest` staled an approval whenever ANY document in the bundle moved: adding
+    a skill, correcting a date on an entity the projection never cites, promoting a revision for
+    an unrelated reason. Every one of those forced a re-approval of text that had not changed by
+    one character, and an approval screen that re-appears for no visible reason is how
+    rubber-stamping is trained — which then costs the gate the one thing it exists for.
+
+    Digested from `Entry.model_dump(mode="json")`, so it covers every field the screen prints —
+    heading, title, subtitle, dates, location, the link pair — AND every bullet's text. The
+    resolved SKILLS section is in it too: it is rendered onto the résumé, so leaving it out
+    would be a hole exactly where `bundle_digest` used to hold, and the approval screen prints
+    it for the same reason. An edit to an entity the projection does not cite, or to a cited
+    entity's field the projection does not render, changes nothing here. Any edit that changes
+    one rendered character changes it.
+
+    NOT covered, and it never was: the résumé SHELL (`master_resume.yaml`'s header and
+    education). It lives outside the bundle, so `bundle_digest` never bound it either — this
+    narrows nothing, but it is the remaining gap in "the owner saw every literal".
+
+    `sort_keys` is pydantic's declaration order via `model_dump`, which is stable for a frozen
+    model; the list order is the declaration's own entry order, which is itself part of what was
+    reviewed, so it is not sorted away.
+    """
+    payload = {
+        "entries": [entry.model_dump(mode="json") for entry in entries],
+        "skill_groups": [group.model_dump(mode="json") for group in skill_groups],
+    }
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+    )
+
+
 @dataclass(frozen=True)
 class ProjectionCandidate:
     """What the owner is shown before approving: `declaration_path`'s digest, and every declared
@@ -270,6 +334,13 @@ class ProjectionCandidate:
     projection_digest: str
     bundle_digest: str
     entries: tuple[Entry, ...]
+    #: The resolved skills section — rendered onto the résumé, so shown and digested with the
+    #: entries rather than left outside the gate.
+    skill_groups: tuple[SkillGroup, ...]
+    #: The digest of the resolved text above — what `project_pool` compares the stamp against.
+    #: Carried on the candidate so the approving command binds the stamp to the very bytes it
+    #: printed, rather than recomputing them from a second traversal that could drift.
+    content_digest: str
 
 
 def projection_candidate(
@@ -319,8 +390,13 @@ def projection_candidate(
         )
         for entry_decl in declaration.entries
     )
+    skill_groups = tuple(_resolved_skill_groups(declaration, ctx))
     return ProjectionCandidate(
-        projection_digest=digest, bundle_digest=selection.bundle_digest, entries=entries
+        projection_digest=digest,
+        bundle_digest=selection.bundle_digest,
+        entries=entries,
+        skill_groups=skill_groups,
+        content_digest=projection_content_digest(entries, skill_groups),
     )
 
 

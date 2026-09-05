@@ -58,6 +58,15 @@ class ProjectionStamp(BaseModel):
     projection_stamp_id: str
     projection_digest: str
     bundle_digest: str
+    #: The digest of the RESOLVED text the owner was shown (`pool.projection_content_digest`).
+    #: This is what `project_pool` gates on. `bundle_digest` above stays as provenance — which
+    #: revision they were looking at — but no longer decides, because it staled an approval on
+    #: any bundle edit at all, including edits to entities the projection never cites.
+    #:
+    #: Optional with a `None` default so a stamp written before this field parses rather than
+    #: failing `read_stamp`'s model validation, which would surface as an INTERNAL_ERROR instead
+    #: of the honest answer: `project_pool` reads `None` as STALE and the owner re-approves once.
+    content_digest: str | None = None
     approved_at: datetime
     approved_via: Literal["controlling_terminal"] = "controlling_terminal"
 
@@ -85,7 +94,12 @@ def stamp_exists(config_dir: Path, digest: str) -> bool:
 
 
 def write_stamp(
-    config_dir: Path, *, digest: str, bundle_digest: str, approved_at: datetime
+    config_dir: Path,
+    *,
+    digest: str,
+    bundle_digest: str,
+    content_digest: str,
+    approved_at: datetime,
 ) -> Path:
     """Write the stamp for exactly this digest. Idempotent — one digest, one file, because the
     path is a pure function of the digest: writing it again overwrites the same file rather than
@@ -105,6 +119,7 @@ def write_stamp(
         projection_stamp_id=f"projection-approval.{digest_token(digest)}",
         projection_digest=digest,
         bundle_digest=bundle_digest,
+        content_digest=content_digest,
         approved_at=approved_at,
     )
     path = stamp_path(config_dir, digest)

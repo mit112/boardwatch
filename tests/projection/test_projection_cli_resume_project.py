@@ -32,10 +32,12 @@ from sqlalchemy import insert
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
 from boardwatch.projection.declaration import load_declaration, projection_digest
+from boardwatch.projection.pool import projection_candidate
 from boardwatch.projection.scoring import SCORERS
 from boardwatch.projection.stamp import write_stamp
 from boardwatch.store.db import ensure_schema, get_engine
@@ -181,6 +183,9 @@ def _make_env(
             config_dir,
             digest=digest,
             bundle_digest=tree.bundle_digest,
+            content_digest=projection_candidate(
+                config_dir / BUNDLE_DIR_NAME, declaration_path, as_of=utcnow().date()
+            ).content_digest,
             approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
         )
 
@@ -434,6 +439,11 @@ def test_refuses_without_bundle_approval(unapproved_env: Env) -> None:
     assert "missing_projection_approval" in result.output
 
 
+def _rename_the_cited_skill(data: Any) -> None:
+    """Rename the one skill `projection.example.yaml` renders, so the page itself changes."""
+    data["skills"][0]["canonical_name"] = "Renamed Example Language"
+
+
 def _add_second_skill(data: Any) -> None:
     """An ADDITION, not an edit — mirrors `test_projection_cli_project.py`'s own
     `_add_second_skill` — so it changes the bundle's content digest without invalidating any
@@ -446,12 +456,16 @@ def _add_second_skill(data: Any) -> None:
 
 
 def test_refuses_when_the_bundle_has_moved_since_approval(env: Env) -> None:
-    """D-167/C2: the bundle-digest comparison is unconditional inside `project_pool`, so `resume
+    """D-167/C2: the stamp comparison is unconditional inside `project_pool`, so `resume
     project` — the command that actually writes a résumé — must refuse here too, not only
     `profile-bundle project`. Before the fix, this command never read the stamp back at all, so a
     bundle promoted after approval would silently reach the résumé with template text the owner
-    never reviewed."""
-    promote_next_revision(env.tree, mutate=_add_second_skill)
+    never reviewed.
+
+    T22 narrowed WHAT counts as moved: the mutation renames the skill this résumé renders, so
+    the page changed. A bundle edit the résumé does not render no longer refuses — see
+    `test_a_bundle_change_the_resume_does_not_render_no_longer_stales_the_approval`."""
+    promote_next_revision(env.tree, mutate=_rename_the_cited_skill)
 
     result = run(env, ["--posting", str(env.posting_id), "--scorer", "total_distinct"])
 

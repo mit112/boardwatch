@@ -7,7 +7,7 @@ whichever conftest loaded first.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from importlib import resources
 from pathlib import Path
 
@@ -131,10 +131,22 @@ def _build_projection_env(
 
     if approved:
         digest = projection_digest(load_declaration(declaration_path))
+        # Resolved through the production path, not restated: the stamp has to bind the very
+        # text `project_pool` will re-derive, and a fixture that computed it any other way would
+        # be testing the fixture.
+        from boardwatch.projection.pool import projection_candidate
+
+        content_digest = (
+            projection_candidate(bundle_root, declaration_path, as_of=date(2026, 8, 13))
+            .content_digest
+            if promote_bundle
+            else "sha256:" + "0" * 64
+        )
         write_stamp(
             config_dir,
             digest=digest,
             bundle_digest=bundle_digest,
+            content_digest=content_digest,
             approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
         )
 

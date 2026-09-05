@@ -27,6 +27,7 @@ from boardwatch.projection.stamp import (
 D1 = "sha256:" + "a" * 64
 D2 = "sha256:" + "b" * 64
 BD1 = "sha256:" + "c" * 64
+CD1 = "sha256:" + "d" * 64
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
 #: Malformed digests the fix must reject: missing the `sha256:` prefix, hex too short, hex too
@@ -50,7 +51,7 @@ def test_a_written_stamp_is_found_for_its_own_digest_only(tmp_path: Path) -> Non
     bundle's `ApprovalStamp` (keyed by a *candidate* digest, a different fact) unsafe — a stamp
     for one digest must never read as present for another.
     """
-    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
+    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     assert path == stamp_path(tmp_path, D1)
     assert stamp_exists(tmp_path, D1) is True
     assert stamp_exists(tmp_path, D2) is False
@@ -62,7 +63,7 @@ def test_the_written_stamp_content_matches_the_requested_digest(tmp_path: Path) 
     default-object stand-in. This is what would fail if the stamp were computed over the wrong
     bytes, or recorded a digest other than the one it was asked to bind.
     """
-    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
+    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     logical = PurePosixPath(f"projection-approvals/{path.name}")
     reloaded = load_yaml_bytes(path.read_bytes(), logical_path=logical)
     stamp = ProjectionStamp.model_validate(reloaded)
@@ -76,7 +77,7 @@ def test_read_stamp_returns_the_bundle_digest_it_was_written_with(tmp_path: Path
     """`read_stamp` is the read side `project_pool` uses, unconditionally (D-167); it must not
     merely find the file, it must recover the exact `bundle_digest` `write_stamp` bound — not
     the projection digest, and not a default."""
-    write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
+    write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     stamp = read_stamp(tmp_path, D1)
     assert stamp.projection_digest == D1
     assert stamp.bundle_digest == BD1
@@ -96,7 +97,7 @@ def test_read_stamp_on_a_stamp_missing_bundle_digest_raises_a_typed_error(tmp_pa
     required (this task's own schema change) — valid YAML that fails `ProjectionStamp.model_validate`
     with a bare `pydantic.ValidationError`, not a read failure at all. Every caller who ran
     `approve-projection` before this commit has this sitting on disk."""
-    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
+    path = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     logical = PurePosixPath(f"{APPROVALS_DIR}/{path.name}")
     raw = load_yaml_bytes(path.read_bytes(), logical_path=logical)
     assert isinstance(raw, dict)
@@ -165,16 +166,16 @@ def test_read_stamp_still_accepts_the_bytes_an_approval_already_wrote(tmp_path: 
 
 
 def test_two_writes_of_one_digest_do_not_produce_two_files(tmp_path: Path) -> None:
-    write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
-    write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
+    write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
+    write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     assert len(list((tmp_path / "projection-approvals").iterdir())) == 1
 
 
 def test_two_different_digests_produce_two_files_with_different_stamp_ids(tmp_path: Path) -> None:
     """The collision-free-id property: two distinct declarations approved in the same config
     directory must not alias to one stamp, and must not derive the same stamp id."""
-    path1 = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, approved_at=NOW)
-    path2 = write_stamp(tmp_path, digest=D2, bundle_digest=BD1, approved_at=NOW)
+    path1 = write_stamp(tmp_path, digest=D1, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
+    path2 = write_stamp(tmp_path, digest=D2, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     assert path1 != path2
     assert len(list((tmp_path / "projection-approvals").iterdir())) == 2
 
@@ -199,14 +200,14 @@ def test_stamp_path_rejects_a_malformed_digest(tmp_path: Path, malformed: str) -
 @pytest.mark.parametrize("malformed", MALFORMED_DIGESTS)
 def test_write_stamp_rejects_a_malformed_digest(tmp_path: Path, malformed: str) -> None:
     with pytest.raises(BundlePathError):
-        write_stamp(tmp_path, digest=malformed, bundle_digest=BD1, approved_at=NOW)
+        write_stamp(tmp_path, digest=malformed, bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
 
 
 def test_write_stamp_leaves_no_file_behind_for_a_malformed_digest(tmp_path: Path) -> None:
     """The rejection happens before any I/O: a malformed digest must not leave a partially
     written stamp, or even an empty `projection-approvals/` directory, behind."""
     with pytest.raises(BundlePathError):
-        write_stamp(tmp_path, digest="not-a-digest", bundle_digest=BD1, approved_at=NOW)
+        write_stamp(tmp_path, digest="not-a-digest", bundle_digest=BD1, content_digest=CD1, approved_at=NOW)
     assert not (tmp_path / "projection-approvals").exists()
 
 

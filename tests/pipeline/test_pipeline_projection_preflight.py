@@ -28,6 +28,7 @@ from sqlalchemy import Engine, func, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import PipelineSummary, run_pipeline
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
@@ -64,6 +65,10 @@ _SHELL_BODY = (
 #: compares `stamp.bundle_digest` to the revision actually being read (D-167) — rather than
 #: monkeypatching the raise.
 WRONG_BUNDLE_DIGEST = "sha256:" + "1" * 64
+#: A content digest that is not the one this declaration resolves to. Since T22 THIS is what
+#: stales an approval — the résumé text moved — rather than the bundle revision moving under
+#: an unchanged rendering.
+WRONG_CONTENT_DIGEST = "sha256:" + "2" * 64
 
 #: Deliberately far from any real "today", so a `date.today()` implementation cannot coincide with
 #: the frozen `utcnow()` the clock test injects.
@@ -109,7 +114,7 @@ def _install_projection(config_dir: Path) -> str:
     return bundle_digest
 
 
-def _approve(config_dir: Path, bundle_digest: str) -> None:
+def _approve(config_dir: Path, bundle_digest: str, *, content_digest: str | None = None) -> None:
     """File a projection approval for the declaration on disk, bound to `bundle_digest`.
 
     `stamp_path` is a pure function of the DECLARATION digest, so calling this a second time with
@@ -117,10 +122,21 @@ def _approve(config_dir: Path, bundle_digest: str) -> None:
     `approve-projection` does, and what makes the retry in the headline test a genuine
     re-approval instead of a fresh environment.
     """
+    if content_digest is None:
+        # Resolved through the production path so the stamp binds the very text the pool will
+        # re-derive; `None` from a caller deliberately filing a STALE stamp keeps that arm.
+        from boardwatch.projection.pool import projection_candidate
+
+        content_digest = projection_candidate(
+            config_dir / BUNDLE_DIR_NAME,
+            config_dir / "projection.yaml",
+            as_of=utcnow().date(),
+        ).content_digest
     write_stamp(
         config_dir,
         digest=projection_digest(load_declaration(config_dir / "projection.yaml")),
         bundle_digest=bundle_digest,
+        content_digest=content_digest,
         approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
     )
 
@@ -182,8 +198,8 @@ def test_a_stale_stamp_fails_the_run_and_consumes_no_leads(env: Path, tmp_path: 
     ids = _ready(env, 2)
     config_dir = _config_dir(env)
     real_digest = _install_projection(config_dir)
-    # Approved — but against a revision that is not the one on disk.
-    _approve(config_dir, WRONG_BUNDLE_DIGEST)
+    # Approved — but for résumé text that is not what this declaration resolves to.
+    _approve(config_dir, WRONG_BUNDLE_DIGEST, content_digest=WRONG_CONTENT_DIGEST)
     engine = get_engine(env)
     out_root = tmp_path / "apps"
 
@@ -252,7 +268,7 @@ def test_without_the_flag_nothing_changes(env: Path, tmp_path: Path) -> None:
     ids = _ready(env, 2)
     config_dir = _config_dir(env)
     _install_projection(config_dir)
-    _approve(config_dir, WRONG_BUNDLE_DIGEST)
+    _approve(config_dir, WRONG_BUNDLE_DIGEST, content_digest=WRONG_CONTENT_DIGEST)
 
     summary = _pipeline(env, tmp_path / "apps", project=False)
 

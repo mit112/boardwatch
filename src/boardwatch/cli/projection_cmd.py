@@ -124,6 +124,13 @@ def _prompt_text(candidate: ProjectionCandidate) -> str:
                 lines.append(f"    - {bullet.text}")
     else:
         lines.append("No entries declared; the stamp authorises the declaration itself.")
+    # Rendered onto the résumé and now inside the approval's content digest, so it has to be on
+    # screen: a gate that stales on text the owner was never shown is a gate they cannot act on.
+    if candidate.skill_groups:
+        lines.append("")
+        lines.append("Skills as they would render:")
+        for group in candidate.skill_groups:
+            lines.append(f"  {group.label}: {', '.join(group.items)}")
     lines.append("")
     return "\n".join(lines)
 
@@ -177,6 +184,7 @@ def approve_projection(
         config_dir,
         digest=candidate.projection_digest,
         bundle_digest=candidate.bundle_digest,
+        content_digest=candidate.content_digest,
         approved_at=datetime.now(UTC),
     )
     typer.echo(f"approved projection {candidate.projection_digest}")

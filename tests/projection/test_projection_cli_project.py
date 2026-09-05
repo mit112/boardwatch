@@ -30,11 +30,13 @@ from typer.testing import CliRunner
 
 from boardwatch.cli import projection_cmd
 from boardwatch.cli.app import app
+from boardwatch.core.clock import utcnow
 from boardwatch.profile_bundle.errors import IssueCode
 from boardwatch.profile_bundle.paths import BUNDLE_DIR_NAME
 from boardwatch.profile_bundle.yaml_loader import load_yaml_bytes
 from boardwatch.profile_bundle.yaml_writer import document_bytes
 from boardwatch.projection.declaration import load_declaration, projection_digest
+from boardwatch.projection.pool import projection_candidate
 from boardwatch.projection.stamp import APPROVALS_DIR, stamp_path, write_stamp
 from tests.profile_bundle.conftest import (
     PromotedRevisionTree,
@@ -50,6 +52,14 @@ _SHELL_BODY = (
     "education:\n"
     "  - Example University\n"
 )
+
+
+def _rename_the_cited_skill(data: Any) -> None:
+    """Edit the canonical name of the one skill `projection.example.yaml` DOES render.
+
+    The counterpart to `_add_second_skill`: same bundle-digest move, but this one changes a
+    character the résumé actually prints, so the approval must stale."""
+    data["skills"][0]["canonical_name"] = "Renamed Example Language"
 
 
 def _add_second_skill(data: Any) -> None:
@@ -104,6 +114,9 @@ def _make_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, approve: bool)
             config_dir,
             digest=digest,
             bundle_digest=tree.bundle_digest,
+            content_digest=projection_candidate(
+                config_dir / BUNDLE_DIR_NAME, declaration_path, as_of=utcnow().date()
+            ).content_digest,
             approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
         )
 
@@ -187,12 +200,32 @@ def test_exits_zero_when_neither_bundle_nor_declaration_changed(approved_env: En
     assert payload(result)["outcome"] == "clean"
 
 
-def test_exits_nonzero_when_only_the_bundle_changed(approved_env: Env) -> None:
-    """The declaration is byte-for-byte what was approved; only the bundle moved.
-    `project_pool` reads the stamp back and compares its `bundle_digest` against the bundle
-    actually being read, unconditionally (D-167) — this used to be `--check`'s own,
-    otherwise-unreachable job; now plain `project` refuses here on its own."""
+def test_a_bundle_change_the_resume_does_not_render_no_longer_stales_the_approval(
+    approved_env: Env,
+) -> None:
+    """T22. The declaration is byte-for-byte what was approved and the bundle moved — but the
+    added skill is not one the declaration cites, so not one rendered character changed.
+
+    The gate used to compare `bundle_digest`, which staled on ANY bundle movement: adding a
+    skill, correcting a date on an entity the projection never mentions, promoting a revision
+    for an unrelated reason. Each of those re-opened an approval screen showing text identical
+    to the text already approved, which is how rubber-stamping is trained — and then costs the
+    gate the one thing it exists for.
+    """
     promote_next_revision(approved_env.tree, mutate=_add_second_skill)
+
+    result = run(approved_env, ["--json"])
+    assert result.exit_code == 0, result.output
+    assert payload(result)["outcome"] == "clean"
+
+
+def test_a_bundle_change_the_resume_DOES_render_stales_the_approval(  # noqa: N802
+    approved_env: Env,
+) -> None:
+    """The control, and the half that must not be lost with `bundle_digest`. Same mechanism —
+    a promoted child revision — but this one renames the one skill the declaration renders, so
+    a character on the page changed and the owner has not seen it."""
+    promote_next_revision(approved_env.tree, mutate=_rename_the_cited_skill)
 
     result = run(approved_env, ["--json"])
     assert result.exit_code != 0
@@ -258,6 +291,9 @@ def test_plain_text_output_never_leaks_an_absolute_bundle_path(unapproved_env: E
         unapproved_env.config_dir,
         digest=digest,
         bundle_digest=unapproved_env.tree.bundle_digest,
+        content_digest=projection_candidate(
+            unapproved_env.bundle_root, unapproved_env.declaration, as_of=utcnow().date()
+        ).content_digest,
         approved_at=datetime(2026, 8, 13, 12, tzinfo=UTC),
     )
     (unapproved_env.bundle_root / "CURRENT").unlink()
