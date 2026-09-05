@@ -209,6 +209,19 @@ class Settings(BaseModel):
     # 139 against a curated-board baseline of 33.4 and hiringcafe's 45.9. Uncapping it would go
     # `lane_posting_budget`-bound immediately and drag that budget behind it, which is the
     # genuinely unbounded lever. Raise it to a larger FIXED number if reach there is wanted.
+    #
+    # A `"<lane>.tier1"` key bounds that lane's TIER-1 admissions SEPARATELY from its own cap
+    # above, and is read by `pipeline.runner._lane_tier1_budget`. Only Indeed has tiers today:
+    # a tier-1 hit dereferences to a SUPPORTED employer board that is watched on admission and
+    # then carried by every later scan independently of Indeed, while a tier-2 hit is an
+    # `indeed`-keyed row nothing will ever scan (D-452). One cap could not tell them apart, and
+    # run 149 measured what the difference is worth — gate 1 26.5% -> 28.8% with `lane-only` and
+    # `absent` falling TOGETHER — but also why "unlimited" is the wrong permanent setting: Indeed
+    # is a stream, so an uncapped lane auto-watches ~58 new boards a run at ~9.33 s of scan time
+    # each, forever (D-459). `"indeed.tier1"` is how tier 1 gets a bound of its own instead.
+    #
+    # NO `.tier1` KEY SHIPS, and the absence is load-bearing: with it absent, tier 1 charges the
+    # lane's own cap exactly as it always has, so upgrading moves no tenant's admissions.
     lane_new_companies_per_run_overrides: dict[str, int | Literal["unlimited"]] = Field(
         default_factory=_default_lane_new_companies_overrides
     )

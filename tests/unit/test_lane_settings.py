@@ -103,6 +103,59 @@ def test_the_shipped_overrides_RESOLVE_to_uncapped_for_the_pool_lanes_only(cfg: 
     assert _lane_company_cap(settings, "a-lane-nobody-named") == 10
 
 
+def test_no_lane_ships_a_separate_tier1_bound_and_that_is_the_upgrade_guarantee(cfg: Path) -> None:
+    """`_lane_tier1_budget` is the ONE site that resolves a lane's tier-1 bound, and its shipped
+    answer must be None for every lane — including the two uncapped ones and Indeed itself.
+
+    None means tier 1 goes on charging the lane's own cap, which is exactly what every existing
+    `config.toml` gets today. A shipped default here would change every tenant's admissions on
+    upgrade, which is the one thing this bound must not do (D-459 restored the interim cap of 50
+    deliberately, so the shipped state is a bound Mit chose, not one to move underneath him).
+    """
+    from boardwatch.pipeline.runner import _lane_tier1_budget
+
+    settings = load_settings(data_dir=None)
+    for lane in ("indeed", "hiringcafe", "jobapps", "linkedin", "a-lane-nobody-named"):
+        assert _lane_tier1_budget(settings, lane) is None, lane
+
+
+def test_a_tier1_key_resolves_to_its_own_budget_without_touching_the_lane_cap(cfg: Path) -> None:
+    """The tier-1 bound rides in the SAME override table under a `"<lane>.tier1"` key rather than
+    on a `Settings` field of its own — the table's `dict[str, int | "unlimited"]` type carries it
+    and its non-negative validator already applies. So the two facts worth pinning are that the
+    suffixed key does NOT read as a lane's own cap, and that `"unlimited"` translates to
+    `CompanyBudget`'s uncapped sentinel here exactly as it does for a lane.
+    """
+    from boardwatch.pipeline.runner import _lane_company_cap, _lane_tier1_budget
+
+    (cfg / "config.toml").write_text(
+        "[lane_new_companies_per_run_overrides]\n"
+        'indeed = 50\n'
+        '"indeed.tier1" = 25\n'
+        'hiringcafe = 5\n'
+        '"linkedin.tier1" = "unlimited"\n',
+        encoding="utf-8",
+    )
+    settings = load_settings(data_dir=None)
+
+    assert _lane_company_cap(settings, "indeed") == 50
+    bounded = _lane_tier1_budget(settings, "indeed")
+    assert bounded is not None
+    assert [bounded.admit("greenhouse", str(n)) for n in range(26)].count(True) == 25
+
+    # `"unlimited"` must become the uncapped budget, NOT a budget of 0 — 0 means "admit nothing
+    # and still report every refusal", which reads as a working lane while adding no reach.
+    uncapped = _lane_tier1_budget(settings, "linkedin")
+    assert uncapped is not None
+    assert all(uncapped.admit("greenhouse", str(n)) for n in range(100))
+    assert uncapped.refused == ()
+
+    # The two lookups do not cross: a lane with a plain cap and no `.tier1` key has NO separate
+    # tier bound, and the cap it does have is its own.
+    assert _lane_tier1_budget(settings, "hiringcafe") is None
+    assert _lane_company_cap(settings, "hiringcafe") == 5
+
+
 def test_a_lane_list_loads_from_config_toml_as_a_tuple(cfg: Path) -> None:
     """TOML has no tuple, so the array has to coerce — otherwise arming a lane by hand-editing
     config.toml would fail validation and the only route in would be the CLI."""

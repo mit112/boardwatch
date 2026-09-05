@@ -84,3 +84,57 @@ def test_refusing_the_same_company_twice_records_it_once():
     for _ in range(3):
         assert budget.admit("greenhouse", "dropped") is False
     assert budget.refused == (("greenhouse", "dropped"),)
+
+
+# --- The tier-aware bound (D-452, D-459) -----------------------------------------------------
+
+
+def test_without_a_tier1_budget_a_tier1_admission_charges_the_lane_cap():
+    """UPGRADE NEUTRALITY. No `.tier1` override ships, so the nested budget is None for every
+    lane, and a tier-1 admission must then be indistinguishable from any other — same slot, same
+    refusal list. A default that separated the two bounds silently would move every existing
+    tenant's admissions on upgrade."""
+    budget = CompanyBudget(limit=1)
+    assert budget.admit("indeed", "acme", tier1=False) is True
+    assert budget.admit("greenhouse", "vertex", tier1=True) is False
+    assert budget.admitted == (("indeed", "acme"),)
+    assert budget.refused == (("greenhouse", "vertex"),)
+
+
+def test_a_tier1_admission_is_charged_to_the_tier1_budget_and_not_to_the_lane_cap():
+    """The whole point: at the lane cap, tier 1 is still admitted under its OWN bound. On Indeed
+    that slot buys a supported employer board that joins the scan fleet and pays off on every
+    later run, where a tier-2 slot buys a permanently-secondhand row (D-452)."""
+    budget = CompanyBudget(limit=1, tier1=CompanyBudget(limit=2))
+    assert budget.admit("indeed", "acme") is True
+    assert budget.admit("indeed", "beta") is False, "the lane cap must still bite on tier 2"
+    assert budget.admit("greenhouse", "vertex", tier1=True) is True
+    assert budget.admit("lever", "beacon", tier1=True) is True
+    assert budget.admitted == (
+        ("indeed", "acme"),
+        ("greenhouse", "vertex"),
+        ("lever", "beacon"),
+    )
+    assert budget.refused == (("indeed", "beta"),)
+
+
+def test_the_tier1_budget_is_a_bound_not_an_uncap():
+    """D-459 refused leaving Indeed at `"unlimited"` because it is a STREAM, not a pool: ~58 new
+    boards a run at 9.33 s of scan time each, compounding. So the tier-1 bound must refuse too,
+    and its refusals must be identified like any other."""
+    budget = CompanyBudget(limit=10, tier1=CompanyBudget(limit=1))
+    assert budget.admit("greenhouse", "vertex", tier1=True) is True
+    assert budget.admit("lever", "beacon", tier1=True) is False
+    assert budget.admitted == (("greenhouse", "vertex"),)
+    assert budget.refused == (("lever", "beacon"),)
+
+
+def test_an_uncapped_tier1_budget_never_refuses_while_the_lane_cap_still_does():
+    """`"indeed.tier1" = "unlimited"` resolves to `CompanyBudget(None)`, the same uncapped
+    sentinel `_lane_company_cap` produces — and it must not leak across to tier 2, which is the
+    half D-452 said to refuse freely."""
+    budget = CompanyBudget(limit=0, tier1=CompanyBudget(limit=None))
+    for slug in ("a", "b", "c"):
+        assert budget.admit("greenhouse", slug, tier1=True) is True
+    assert budget.admit("indeed", "acme") is False
+    assert budget.refused == (("indeed", "acme"),)
