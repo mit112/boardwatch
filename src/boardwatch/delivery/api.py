@@ -327,6 +327,28 @@ def detail_payload(conn: Connection, ctx: ApiContext, posting_id: int) -> dict[s
     }
 
 
+def _unique_locations(locations: Sequence[str]) -> list[str]:
+    """The posting's places, de-duplicated case-insensitively on the trimmed entry, in the order
+    the posting named them.
+
+    `QueueRow.locations` is the SAME list the store joined into `QueueRow.location`, so this reads
+    the list and never re-splits the joined string — splitting it would turn "Austin, TX" into two
+    places. De-duplication is at the ENTRY level for the same reason: the live store served one
+    list joined twice ("Austin, Texas, United States; …; …, Austin, Bozeman, …"), which is a
+    duplicate ENTRY, not a duplicate word.
+    """
+    seen: set[str] = set()
+    unique: list[str] = []
+    for entry in locations:
+        trimmed = entry.strip()
+        key = trimmed.casefold()
+        if not trimmed or key in seen:
+            continue
+        seen.add(key)
+        unique.append(trimmed)
+    return unique
+
+
 def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any]:
     """One `QueueRow` as the frontend's `QueueRow` interface.
 
@@ -337,6 +359,10 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
     `thin_jd` is `fraction is None`, which is true both for a JD carrying no recognised
     requirement at all and for a store with no master résumé to measure against. Both are
     literally "no coverage fraction could be computed", which is what the badge says.
+
+    `location` is the PRIMARY location — the first entry of `locations` — and not the store's
+    joined display string. The full de-duplicated list travels beside it as `locations` so the
+    client can render "+N" and the rest in a tooltip rather than a wall of text in a table cell.
 
     `review_reason` is on EVERY row rather than only on the review list, because `detail_payload`
     serializes one row with no list around it — a field that existed only inside `review` would be
@@ -356,12 +382,14 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         no_requirement_rows=row.requirement_flags.no_requirement_rows,
     ).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
+    locations = _unique_locations(row.locations)
     return {
         "posting_id": row.posting_id,
         "job_id": row.job_id,
         "title": row.title,
         "company": row.company,
-        "location": row.location,
+        "location": locations[0] if locations else None,
+        "locations": locations,
         "remote_policy": row.remote_policy,
         "posted_days": row.posted_days,
         "first_seen": _iso_utc(row.first_seen),

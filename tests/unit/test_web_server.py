@@ -1500,3 +1500,34 @@ def test_an_unfinished_run_still_reports_a_null_finished(live: Live, engine: Eng
 
     assert run["finished"] is None
     assert run["started"].endswith("+00:00")
+
+
+def test_a_rows_locations_are_de_duplicated_and_location_is_the_first(
+    live: Live, engine: Engine
+) -> None:
+    """The live store served "Austin, Texas, United States; Bozeman, …; …, Austin, Bozeman, …" —
+    one list joined twice, with duplicates. `location` is now the PRIMARY location and `locations`
+    the de-duplicated list, so the client renders "Austin, TX +1" instead of a wall of text.
+
+    De-duplication is at the ENTRY level and case-insensitive on the trimmed entry; an entry is
+    never split on its internal commas, or "Austin, TX" becomes two places.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, "one", locations=["Austin, TX", "austin, tx ", "Remote"])
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+
+    assert row["location"] == "Austin, TX"
+    assert row["locations"] == ["Austin, TX", "Remote"]
+
+
+def test_a_row_with_no_locations_reports_none_and_an_empty_list(
+    live: Live, engine: Engine
+) -> None:
+    with engine.begin() as conn:
+        _deliver(conn, "one", locations=[])
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+
+    assert row["location"] is None
+    assert row["locations"] == []
