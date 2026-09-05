@@ -549,15 +549,15 @@ export function RunsPage() {
         </p>
       ) : (
         <>
-          {funnel.fatal !== null || funnel.errors.length > 0 ? (
+          {funnel.fatal != null || funnel.errors.length > 0 ? (
             <section className="rounded-md border border-fg-2 bg-surface p-4">
               <h2 className="text-sm text-fg">
-                {funnel.fatal === null ? "This run recorded errors." : "This run ended fatally."}
+                {funnel.fatal == null ? "This run recorded errors." : "This run ended fatally."}
               </h2>
               {/* The reason, verbatim and selectable: it names the unaccounted posting ids, which
                   is the only part of a fatal a reader can act on. Mono because it is an artifact
                   string, not prose. */}
-              {funnel.fatal === null ? null : (
+              {funnel.fatal == null ? null : (
                 <p className="mt-2 font-display text-sm break-words text-fg">{funnel.fatal}</p>
               )}
               <ul className="mt-2 flex flex-col gap-1">

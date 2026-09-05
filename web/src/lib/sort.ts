@@ -97,6 +97,10 @@ export function matchesQuery(row: QueueRow, query: string): boolean {
   return (
     row.company.toLowerCase().includes(needle) ||
     row.title.toLowerCase().includes(needle) ||
-    (row.location ?? "").toLowerCase().includes(needle)
+    (row.location ?? "").toLowerCase().includes(needle) ||
+    // Every location, not only the primary: `location` is now the first of `locations`, and a
+    // posting listed as "New York, NY / Boston, MA" must answer to "boston". `?? []` because an
+    // older server omits the list (see `format.ts`).
+    (row.locations ?? []).some((entry) => entry.toLowerCase().includes(needle))
   );
 }
