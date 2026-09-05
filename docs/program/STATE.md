@@ -20,11 +20,12 @@
 
 ## Current standing
 
-### Session 2026-09-09 (planning): P1 IS PLANNED — the ≤ 1-YoE floor lands as PER-USER POLICY DATA (T47), the judge is armed AFTER it, above-band stays hidden, the drain is declined; THREE owner decisions are batched in `HANDOFF-2026-09-09.md` §0 and NOTHING has been executed
+### Session 2026-09-09 (planning): P1 IS PLANNED AND RULED — the ≤ 1-YoE floor lands as PER-USER POLICY DATA (T47), the judge is armed AFTER it, above-band stays hidden, the drain is declined; ALL FOUR owner decisions are TAKEN (D-480) and NOTHING has been executed
 
-**Read this before acting.** Reasoning: **D-479**. Numbers: `METRICS.md`, the `Session — 2026-09-09`
-block. The execution session works `HANDOFF-2026-09-09.md`: put §0's three decisions to Mit first
-(D1 mechanism, D2 order, D3 above-band, with the floor's four consequences on the page), then T47
+**Read this before acting.** Reasoning: **D-479**; rulings: **D-480** (08:33 CDT, all as
+recommended, reach confirmed including 13–36-month bars). Numbers: `METRICS.md`, the
+`Session — 2026-09-09` block. The execution session works `HANDOFF-2026-09-09.md` §2–§4 without
+asking anything: T47
 (`Policy.near_miss_years_ceilings`, `effective_family`, differing-only snapshot key, `eligibility
 policy ceiling`), then his `policy ceiling experience_years 1`, then the `[gate]` block with
 `model = "haiku"` read back through `Settings`, then the tick. **Two claims in
@@ -131,9 +132,9 @@ execution session can merge without a live run.** Run 4 is therefore NOT today's
 (`launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.boardwatch.run.plist`) or run by hand when the
 merges are on `main`; the heartbeat will alert on the missed ping unless paused in its dashboard.
 
-**1. THE YEARS RULING HAS PROPAGATED — RULED 2026-09-05 (D-478 §5), PLANNED (D-479), NOT EXECUTED.**
-"I dont want jobs which have more than 1 YOE" is an instruction, not a fact, so A4's distinction is
-satisfied. What remains is his: D1–D3 in `HANDOFF-2026-09-09.md` §0, then T47 and the value.
+**1. THE YEARS RULING HAS PROPAGATED — RULED (D-478 §5), PLANNED (D-479), DECIDED (D-480), NOT
+EXECUTED.** "I dont want jobs which have more than 1 YOE" is an instruction, not a fact, so A4's
+distinction is satisfied. Nothing is left to ask: T47, the value, the gate block, the tick.
 
 **2. RE-READ THE GATE ON THE NEXT RUN, AND DECIDE WHETHER IT BECOMES ROUTINE.** The gate now filters
 38 postings from future shortlists. It is a **manual handshake** — `gate request` → judge →
@@ -192,13 +193,10 @@ fix is T41** (shared pacing STATE, not a shared client — the client's default 
 linkedin and github_lists rely on). **Mit's call, and it is a pacing promise to third parties,
 not a performance knob.**
 
-**0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), THREE DECISIONS STILL HIS.** D1: carry
-it as per-user policy data (T47, recommended) or as a whole-file `rules.yaml` override (silent
-freeze of the live catalog — rejected by the plan, his to overrule). D2: P1 first, then arm the
-judge, both before run 4 (gate rows are keyed on `rules_hash`). D3: keep above-band titles hidden
-(973 dropped on run 3 vs 3,270 in-band lost on rank). Put all three with the floor's four
-consequences — 2–3 y total bars, scoped bars > 1 y, **13–36-month bars**, and the boundary that
-hedged/preferred bars do not move. `HANDOFF-2026-09-09.md` §0.
+**0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), ALL DECISIONS TAKEN (D-480).** D1 = T47
+(per-user policy data). D2 = floor first, then arm the judge, both before run 4. D3 = above-band
+stays hidden, no ticket. Reach confirmed for 2–3 y total bars, scoped bars > 1 y and 13–36-month
+bars; hedged/preferred bars do not move. Nothing here is still owner-gated; it is execution.
 
 **0-1. RETIRED / ANSWERED — held WHOLE in `STANDING-FACTS.md`.** Gate 1 is PER-SOURCE RECALL (D-421)
 and only the per-source THRESHOLD is still owed; job-apps keeps running until it is met

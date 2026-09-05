@@ -80,7 +80,7 @@ the ledger drain is declined (80 `built`, 0 `skipped`); no repo pin and no corpu
 month-stated bars turn over in the live store. **This is the M3 lever. It is ticketed** —
 `HANDOFF-2026-09-09.md`.
 
-**Three decisions left, all owner's — batched in `HANDOFF-2026-09-09.md` §0 (D1 mechanism, D2 order, D3 above-band); the two below are D2 and D3:**
+**All three decisions are RULED (D-480, 2026-09-05): D1 = T47, D2 = floor first then arm, D3 = keep hidden. The two below are kept as the record of what was weighed:**
 1. **Arm T42, or fix the band deterministically first?** Arming rejects the same 2-3 year bars at
    LLM cost every run; the override does it for free. They are not exclusive, but the order
    changes what run 4 reads.
