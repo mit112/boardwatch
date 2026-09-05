@@ -11,6 +11,8 @@ gate that moves under the fixture fails here instead of passing vacuously.
 
 from __future__ import annotations
 
+import pytest
+
 from boardwatch.delivery.review_gate import (
     CLOSED_DIR,
     REVIEW_DIR,
@@ -18,7 +20,9 @@ from boardwatch.delivery.review_gate import (
     classify,
     lane,
 )
+from boardwatch.rank.leveling import load_leveling
 from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.seniority_gate import seniority_verdict
 
 
 def test_eligible_still_faces_the_location_and_role_gates() -> None:
@@ -561,5 +565,123 @@ def test_lane_projects_the_zero_row_gate_too() -> None:
                 locations=["San Jose, CA, United States"],
                 title="Software Engineer",
                 no_requirement_rows=no_rows,
+            )
+            assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# ------------------------------------------------------------------- seniority (T44, title-only)
+
+
+@pytest.fixture
+def cat(tmp_path):
+    """The bundled default leveling catalog, loaded against an empty dir (no override present).
+
+    Never touches the real config dir: `load_leveling` reads `<config_dir>/leveling.yaml` only
+    when that file exists and falls back to the packaged default otherwise (`rank/leveling.py`),
+    so a fresh `tmp_path` is the bundled catalog, not a live user's override.
+    """
+    return load_leveling(tmp_path)
+
+
+@pytest.fixture
+def tier(cat):
+    return cat.fields["software"]
+
+
+def test_seniority_verdict_actually_calls_the_titles_above_and_in_band(cat, tier) -> None:
+    """The fixture the rest of this section relies on, asserted directly first.
+
+    Same discipline `role_verdict` gets above: a routing test is only as good as the classifier
+    result it is built on, so that result is checked out loud rather than assumed. Both titles are
+    the HANDOFF's own controls.
+    """
+    assert seniority_verdict("Senior Software Engineer", None, "entry", tier, cat)[0] == (
+        "above_band"
+    )
+    assert seniority_verdict("Software Engineer, New Grad", None, "entry", tier, cat)[0] == (
+        "in_band"
+    )
+
+
+def test_an_above_band_title_holds_an_otherwise_appliable_lead() -> None:
+    """T44's red case. "Senior Software Engineer" is US, confirmed `swe`, `uncertain`, and
+    carries every requirement row — every OLDER gate in `classify` clears it, so unchanged code
+    promotes it straight to the blind-apply queue. `seniority_above_band` is TITLE-only: the
+    caller derives it from `rank.seniority_gate.seniority_verdict` and passes the boolean
+    alongside the verdict, exactly as the two requirement flags already do (D-477 rejected a
+    deterministic body-seniority family — this reads no JD body at all).
+    """
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Senior Software Engineer",
+        seniority_above_band=True,
+    ) == (REVIEW_DIR, "seniority_above_band")
+
+
+def test_an_in_band_title_control_stays_apply() -> None:
+    """Control: the same shape, `seniority_above_band=False`, is unaffected."""
+    assert classify(
+        verdict="uncertain",
+        locations=["San Jose, CA, United States"],
+        title="Software Engineer, New Grad",
+        seniority_above_band=False,
+    ) == ("", None)
+
+
+def test_seniority_above_band_outranks_the_eligible_short_circuit() -> None:
+    """Placement is the whole of T44's scope: BEFORE `eligible`, not after.
+
+    Mirrors R1's reasoning for location and role: eligibility answers the six blocker families
+    and says nothing about seniority, so an `eligible` verdict must not let a senior title ride
+    straight into the blind-apply queue.
+    """
+    assert classify(
+        verdict="eligible",
+        locations=["Austin, TX"],
+        title="Senior Software Engineer",
+        seniority_above_band=True,
+    ) == (REVIEW_DIR, "seniority_above_band")
+
+
+def test_an_earlier_gate_still_wins_over_the_seniority_gate() -> None:
+    """A decided fact outranks the new gate, exactly as it does for the two requirement flags."""
+    assert classify(
+        verdict="uncertain",
+        locations=["Kaunas, Lithuania"],
+        title="Senior Software Engineer",
+        seniority_above_band=True,
+    ) == (REVIEW_DIR, "non_us_location")
+    assert classify(
+        verdict="uncertain",
+        locations=["Chicago, Illinois, United States"],
+        title="Registered Nurse Practitioner",
+        seniority_above_band=True,
+    ) == (REVIEW_DIR, "role_vetoed")
+
+
+def test_the_seniority_gate_is_inert_when_the_caller_states_in_band() -> None:
+    """The default is False, so every un-updated call site keeps its exact old behaviour."""
+    for verdict, locations, title in _CASES:
+        assert classify(verdict=verdict, locations=locations, title=title) == classify(
+            verdict=verdict, locations=locations, title=title, seniority_above_band=False
+        )
+
+
+def test_lane_projects_the_seniority_gate_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
+    for verdict in ("uncertain", "eligible", None):
+        for above_band in (False, True):
+            decision = classify(
+                verdict=verdict,
+                locations=["San Jose, CA, United States"],
+                title="Senior Software Engineer",
+                seniority_above_band=above_band,
+            )
+            assert decision.lane == lane(
+                verdict=verdict,
+                locations=["San Jose, CA, United States"],
+                title="Senior Software Engineer",
+                seniority_above_band=above_band,
             )
             assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
