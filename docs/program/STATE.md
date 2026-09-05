@@ -20,6 +20,54 @@
 
 ## Current standing
 
+### Session 2026-09-04e: the WHOLE 2026-09-04 ticket list is EXECUTED from a written handoff — 19 tickets merged, one worktree and one gate each, every gate exit 2 with exactly the two known environmental failures; THREE of the planning session's rulings were overturned on measurement, and FOUR tickets are blocked because the population they were written against died with the reset
+
+**Read this before acting on anything below it.** Reasoning: **D-469**. Numbers: `METRICS.md`, the
+`Session — 2026-09-04e` block. **Written for the planning session:
+`docs/program/REPORT-2026-09-04e.md`** — it carries the ticket table, every place the spec was wrong,
+and what is left.
+
+**⚠ THE 2026-09-05 04:00 TICK WILL DELIVER NOTHING UNTIL MIT RE-APPROVES THE PROJECTION.** T22 gates
+the approval on a digest of the resolved content, and a stamp without it fails CLOSED — the ruled
+upgrade path. **Verified by reading the file**: the one live stamp
+(`projection-approvals/sha256-3a292ad2…ce0ba.yaml`) carries no `content_digest`, so the `--project`
+preflight refuses. Approval needs a controlling TTY, so it is his and cannot be done from a session:
+`boardwatch profile-bundle approve-projection`, review the screen (it now prints every bullet AND
+the resolved skills section), type `approve`.
+
+**SHIPPED (local commits, unpushed — `gh` is still not installed):** T20 `a4f6c4de`, T7 `d8201f59`,
+T6 `66d7c81d`, T8 `04211e1e`, T10 `e1dfa73c`, T9 `ab73046c`, T11 `891c030f`, T12 `5c29bd73`,
+T13 `a90e993e`, T22 `81cfa093`, T27 `25e32dce`, T18 `78a43eec`, SP1 `49558a9d`, T25 `d9544125`,
+T19 `db0c9b91`, T21 `ae64c0ee`, T16 `3abd92f8`, T26 `21c38b57`, T15 `4cb3679c`, T14 `43c7f1c6`,
+T7b `e803c6a1` — **21 tickets**. One line each is in `CHANGELOG.md`.
+
+**THREE RULINGS WERE OVERTURNED, EACH ON A MEASUREMENT THE RULING DID NOT HAVE.** (1) **T16's ruled
+`metadata.create_all` emits 0 of the schema's 20 triggers** — the ten append-only `RAISE(ABORT)`
+pairs the keystone rests on among them — and `compare_metadata` cannot see triggers, so the ruling's
+own safety argument was false. A DDL-template replay of the real chain ships instead: **92.9 ms →
+2.9 ms (32x)**, schema identical. (2) **T18 ships 4 of its 6 words**: over 47,295 open titles the
+four move 166 titles, while `data` adds 321 and `ai` 187, both dominated by business roles, and
+`data` un-vetoes a title the repo's own suite pins as `not_swe`. (3) **T26 ships 1 of its 2 classes**:
+chrome-only holds **4.81%** of open bodies against its own ~1% stop condition, on real JDs condemned
+for non-English or off-catalog headings.
+
+**THE PRE-RESET STORE IS GONE AND IT BLOCKED FOUR TICKETS.** `eligibility_evaluations` holds only
+`('deterministic','1+bf844e01ebcb', 61927)` — **no final-gate rows at all**. M1's required null
+control returned **0/0/0** against D-461's 43/38/14; T28 found **0 duplicate groups in 40 delivered
+leads** against a 14-18% headline, so no identity change was taken; T27's markers hold 0; T26(b) has
+no Eightfold body to fix against. **D-461's 43/38/14 describe a store that no longer exists — do not
+re-quote them as live.**
+
+**THE DELIVERED QUEUE CURRENTLY READS 0 APPLY / 40 REVIEW**, every lead `verdict=None`, because the
+stored corpus is at `engine_version 1+bf844e01ebcb` while `current_identity` computes
+`1+d89b423701e5`. That is the one-off re-evaluation the tick owes (T3+T4, now also T20), not a
+defect; confirmed identical against pre-T20 code. The live profile row strict-validates.
+
+**A READ-ONLY REVIEW OF THE SESSION'S OWN 19 COMMITS FOUND TWO REAL DEFECTS, BOTH FROM T7** — fixed
+in-session as T7b. `GET /api/answers` crashed uncaught and DROPPED the connection (the web dispatcher
+catches three types and `ProfileRowInvalid` is none of them); `top`/`export`/`eligibility run`/`stats`
+tracebacked instead of naming the column. Every gate had been green.
+
 ### Session 2026-09-04d: the owner-ruled TOP FOUR from the architecture review SHIP, plus T5 — five tickets, five worktrees, five gates, all merged to a local `main`; both eligibility changes were A/B'd over the live corpus first, and one of them turns out to move NOTHING
 
 **Read this before acting on anything below it.** Reasoning: **D-468**. Numbers: `METRICS.md`, the
@@ -87,52 +135,45 @@ experience follows declaration order, so SAKEC (Feb-Apr 2021) prints above Naksh
 runtime files in `{config_dir}`, the wiki at `~/dev/portfolio-website/`, the loaded `com.boardwatch.run`
 job. **The global CLAUDE.md's "fresh machine" ritual is STALE for this repo — do not re-run it.**
 
-### Session 2026-09-03e: the owed LEDGER DRAIN is REFUSED on measurement, the LLM FINAL GATE is ARMED for the first time and filters 38 of 95 delivered leads, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows
-
-Reasoning: **D-460** (the drain), **D-461** (the gate + the owner's years ruling), **D-462** (the
-drought alarm), **D-463** (the aggregator refusal + the hiring.cafe ceiling correction). Numbers:
-`METRICS.md`, the `Session — 2026-09-03e` block. Shipped: **#369, #370, #371, #372**.
-
-**THE DRAIN D-455 LEFT OWED IS CLOSED BY REFUSAL, NOT BY DEFERRAL, AND THE OWNER RULED IT.** The
-re-key ran first and is the half that paid — **151,626 postings re-evaluated** under
-`1+bf844e01ebcb` (run 150). The drain itself relieves no scarcity: **83,168 open postings already
-flow unsuppressed against 1,489 the ledger withholds (~56x)**, the ledger is **100% `built` / zero
-`skipped`** so it can only re-deliver, and D-455's own win never needed it (those 996 postings were
-never built and carry no disposition row). **The inherited "they rank low anyway" premise was FALSE
-for this population** — p50 age **2 days**, so **1.41 score-points** lost, not the 9.7 the
-2026-08-27 reading assumed. Stale stamps fail nothing; the drain stays available on his word.
-
-**THE FINAL GATE IS ARMED AND HAS ROWS FOR THE FIRST TIME (0 → 95).** D-436's own architectural
-answer, chosen by the owner over the deterministic topic net. **43 eligible / 38 ineligible / 14
-uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is a bar"** on the 28
-`experience_years` verdicts — **and that ruling is bounded to the GATE, not to
-`near_miss_years_ceiling`** (D-461, and see Owner-gated below).
-
 ## Next action
 
-**0. THE TOP FOUR ARE DONE (plus T5). THE NEXT SESSION EXECUTES `docs/program/HANDOFF-2026-09-04e.md`**
-— written 2026-09-04e by the planning session (personal subscription, Fable): ticket order, the
-rulings for T6/T7/T10/T15/T16, failing-test-first acceptance per ticket, and the report format to
-bring back. T14 is put to Mit there and is not started. **Then this paragraph's original reading
-still holds** — it continues `TICKETS-2026-09-04.md` from T7, reading `HANDOFF-REVIEW-2026-09-04d.md`
-first — three of the tickets' stated
-symptoms are corrected there by measurement, and the corrections change what two of the remaining
-tickets are worth. **Take T7 next, out of ticket order**: it is sized "S / cheap+spec" on the belief
-that a corrupt profile row makes everything abstain, and the measured behaviour for the POLICY half
-is the opposite — the catalog defaults materialise, five of six families fall back to `preference`,
-and postings they would have rejected read `eligible`. **First read the 2026-09-05 04:00 tick**
-(`~/Library/Logs/boardwatch-run.log`, heartbeat pinged): it is the first unattended run of the new
-transaction behaviour, the re-keyed catalog, the queue-root refusal and the fail-closed renderer, and
-it pays the one-off corpus re-evaluation both `rules.yaml` changes bought. **Then the rest of the
-confirmed list**, and behind it the three run-speed items (memory
-`run-speed-queue-workers-lanes-overlap-parallel-tailor`): `scan_workers` ceiling > 8 (local config
-value, never the code default), lanes overlapped with the scan, parallel tailoring. **Also owed, and
-untouched this session:** the formatting session (per-lens skills, the SAKEC/Nakshatra order,
-`.agent/2026-09-04c-session/projection.{sde,ios}.yaml` drafts, how a JD picks its projects); review
+**0. RE-APPROVE THE PROJECTION — MIT, IN A REAL TERMINAL, BEFORE ANY RUN DELIVERS AGAIN.**
+`boardwatch profile-bundle approve-projection`. T22 gates on a content digest and the one live stamp
+predates it, so the `--project` preflight refuses and the run delivers nothing. Verified by reading
+the stamp file. Needs a controlling TTY; no session can do it.
+
+**0-1. READ THE 2026-09-05 04:00 TICK** (`~/Library/Logs/boardwatch-run.log`, heartbeat pinged).
+It is the first unattended run of **nineteen** merged tickets, not five, and it pays the one-off
+corpus re-evaluation that T3+T4+T20 bought. Until it lands, the delivered queue reads **0 apply /
+40 review** with every lead `verdict=None` — that is the owed re-key, not a defect. Record status,
+scan minutes, evaluated count, tailored/PDF count, whether the renderer refused anything, whether
+the heartbeat pinged. If it failed, that is the next session's first ticket.
+
+**0-2. THE PLANNING SESSION REVIEWS `docs/program/REPORT-2026-09-04e.md`.** Three of its rulings were
+overturned on measurement and two of its factual claims about the code were wrong; the report says
+which and why, and it is the input to whatever it plans next. **Four questions are open for it**:
+whether T18 should also take `data`/`ai` (measured cost: 508 more titles into the review lane);
+whether T26's chrome-only class is worth rebuilding on a real chrome detector rather than
+`count_section_markers`; whether M1 and T28 are re-run once the corpus and a gate pass exist; and
+whether SP3 is worth its risk now that SP2 has taken the same file.
+
+**0-3. THREE BRANCHES ARE READY AND UNMERGED**, each green in its own worktree:
+- **`T30`** — `.python-version` = 3.13 plus both environmental tests rewritten to patch the fault in
+  (both mutation-checked). Merge it, run `uv sync` in the primary checkout when no run is in flight
+  and not within the hour before 04:00, verify `.venv/bin/python -V` is 3.13.x and
+  `.venv/bin/boardwatch --help` runs. **After that, green is exit 0** and the blocker row below goes.
+- **`SP2`** — lanes on one daemon thread from a new `on_run_started` callback. 2,327 pipeline tests
+  pass, two-writer concurrency ran 11/11. Prize is 6-13 min per run.
+- **`T17`** — `BOARDWATCH_CONFIG_DIR` pinned with no opt-out; **zero tests broke**.
+
+**0-4. SP3 (+T23) IS NOT STARTED.** It rewrites `run_pipeline`'s tailor loop and SP2 rewrote the same
+file's lanes stage; running both at once is the conflict the handoff's ordering exists to prevent.
+
+**0-5. STILL OWED AND UNTOUCHED THIS SESSION:** the formatting session (per-lens skills, the
+SAKEC/Nakshatra order, the `projection.{sde,ios}.yaml` drafts, how a JD picks its projects); review
 and import `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291 human
-step); **push `main`, which is now 7 commits ahead of `origin` and has never been pushed** (`gh` is
-still not installed, so this is Mit's); StreakSync `main` (fast-forwarded locally to `6377723`, 6
-ahead of origin).
+step); **push `main`, now 29+ commits ahead of `origin` and never pushed** (`gh` is still not
+installed, so this is Mit's); StreakSync `main`.
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -250,6 +291,6 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 | Item | Detail | Owner |
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
-| **`make check` is RED on `main` for TWO ENVIRONMENTAL tests, and the cause is an UNPINNED INTERPRETER (found 2026-09-04)** | Both fail at pristine `979ddcdf` with no working-tree changes, so this is not a code regression: `tests/unit/test_ground.py::test_fail_closed_on_deeply_nested_json` (its own precondition `pytest.raises(RecursionError)` on 20,000-deep JSON **DID NOT RAISE** — CPython 3.14 no longer recurses there, so the test can no longer prove the guard rather than the guard being broken) and `tests/profile_bundle/test_profile_bundle_cli_exit_codes.py::test_an_unreadable_drafts_directory_could_not_complete` (`chmod 0o000` no longer yields `PermissionError`/exit 3 on this macOS; the probe reports `draft_not_found`/exit 1). **The venv is now Python 3.14.7 because `pyproject.toml` says only `requires-python = ">=3.11"` and there is no `.python-version`, so the post-reset rebuild silently moved the interpreter forward** — the pre-reset venv was 3.12/3.13 (evidenced by the rehydrated transcripts: 872 `.venv/lib/python3.12` and 499 `python3.13` references against 31 for 3.14). **9,394 tests pass; only these two fail.** Every other gate target is green (`generalization`, `index-check`, `ruff`, `mypy --strict` 351 files, `web-test`). The fix is a choice — pin the interpreter, or rewrite both tests to assert the behaviour without depending on the old environment — and it is not obviously the former | **Mit** (chooses pin vs. rewrite) |
+| **`make check` is RED on `main` for TWO ENVIRONMENTAL tests — SOLVED on branch `T30`, NOT YET MERGED (2026-09-04e)** | Both fail at pristine `main` with no working-tree changes, so it was never a code regression: `tests/unit/test_ground.py::test_fail_closed_on_deeply_nested_json` (its own precondition `pytest.raises(RecursionError)` on 20,000-deep JSON DID NOT RAISE — CPython 3.14 no longer recurses there) and `tests/profile_bundle/test_profile_bundle_cli_exit_codes.py::test_an_unreadable_drafts_directory_could_not_complete` (`chmod 0o000` no longer yields `PermissionError` on this macOS). The venv is 3.14.7 because `pyproject.toml` says only `requires-python = ">=3.11"` and there was no `.python-version`. **Branch `T30` does BOTH halves the owner's choice was between**: `.python-version` = 3.13, AND both tests rewritten to patch the fault in — `json.loads` raising `RecursionError` as seen by `ground`, and `Path.is_dir` raising `PermissionError` for the drafts path — so each proves its guard on ANY interpreter, and each is MUTATION-CHECKED against the code it guards. The old drafts test also `skip`ped itself under root, which is a test that silently does not run; that is gone. **Not merged only because `uv sync` would change the interpreter under the first unattended run.** Merge it, `uv sync`, and green becomes **exit 0** — then delete this row | **Mit** (merge + `uv sync`) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **The unattended 04:00 tick FIRED ONCE on this machine (06:00 local 2026-09-04, run 1: failed closed by design) and the first CLEAN run (2) was MANUAL; the first warm unattended tick is 2026-09-05 04:00** — the mechanism note is still true| The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. A stale `.git/index.lock` once silently blocked every `git pull` for a whole session — check the lock's MTIME and `pgrep -x git` before blaming contention. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run, not one. Closing it mechanically means pointing the plist at a worktree pinned to `main`, which moves a scheduled job and a venv. The plist was path-fixed from the pre-reset account home to the current one (`~`) | **Mit** (mechanism); every session (discipline) |

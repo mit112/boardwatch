@@ -2357,3 +2357,34 @@ reasoning moved WHOLE into `STANDING-FACTS.md` at this close.
   next-action item 1, and in the table — one decision in three places. The numbers that matter
   (**2,809 `unknown` · 258 `unmet` · 43 `met`** across 475 review-lane leads; two blind judges
   swinging ~10 of 40, which is why the wrong-hold rate is a RANGE of **17%-47%**) live in D-440.
+
+---
+
+## Session 2026-09-03e, moved WHOLE out of `STATE.md` on 2026-09-04e
+
+Moved because `STATE.md` passed its ~250-line threshold again and its own header rules that the
+fix is to move settled blocks out, not to summarise them away. Nothing is deleted. **One number
+below is now historical and must NOT be re-quoted as live: the 95 gate verdicts (43/38/14) were
+written against the PRE-RESET store and no final-gate row survives in the current one** — see
+D-469 and `REPORT-2026-09-04e.md`.
+
+### Session 2026-09-03e: the owed LEDGER DRAIN is REFUSED on measurement, the LLM FINAL GATE is ARMED for the first time and filters 38 of 95 delivered leads, and the armed drought alarm turns out to false-fire on 40 of 136 historical windows
+
+Reasoning: **D-460** (the drain), **D-461** (the gate + the owner's years ruling), **D-462** (the
+drought alarm), **D-463** (the aggregator refusal + the hiring.cafe ceiling correction). Numbers:
+`METRICS.md`, the `Session — 2026-09-03e` block. Shipped: **#369, #370, #371, #372**.
+
+**THE DRAIN D-455 LEFT OWED IS CLOSED BY REFUSAL, NOT BY DEFERRAL, AND THE OWNER RULED IT.** The
+re-key ran first and is the half that paid — **151,626 postings re-evaluated** under
+`1+bf844e01ebcb` (run 150). The drain itself relieves no scarcity: **83,168 open postings already
+flow unsuppressed against 1,489 the ledger withholds (~56x)**, the ledger is **100% `built` / zero
+`skipped`** so it can only re-deliver, and D-455's own win never needed it (those 996 postings were
+never built and carry no disposition row). **The inherited "they rank low anyway" premise was FALSE
+for this population** — p50 age **2 days**, so **1.41 score-points** lost, not the 9.7 the
+2026-08-27 reading assumed. Stale stamps fail nothing; the drain stays available on his word.
+
+**THE FINAL GATE IS ARMED AND HAS ROWS FOR THE FIRST TIME (0 → 95).** D-436's own architectural
+answer, chosen by the owner over the deterministic topic net. **43 eligible / 38 ineligible / 14
+uncertain**, 48 quoted spans, store-verified. **The owner ruled "a stated bar is a bar"** on the 28
+`experience_years` verdicts — **and that ruling is bounded to the GATE, not to
+`near_miss_years_ceiling`** (D-461, and see Owner-gated below).

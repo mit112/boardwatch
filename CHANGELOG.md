@@ -291,6 +291,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The test suite builds a fresh database schema without replaying every migration.** Every test
+  that needs an empty store paid the cost of the full 27-migration chain, at about 93 ms each. A
+  test-only fast path now replays a template captured once per process instead, and the schema comes
+  out identical — every table, index and trigger, and the alembic stamp. Measured: 92.9 ms down to
+  2.9 ms, a 32x cut. `metadata.create_all`, the shortcut a ticket proposed, was tried and rejected on
+  measurement: it produces zero of this schema's 20 triggers, including the append-only
+  `RAISE(ABORT)` guards the eligibility keystone depends on, and was only a 7.6x speedup regardless.
+  A real store still migrates normally — the shortcut only fires for a completely empty, test-only
+  database.
+
+- **The board scan's worker ceiling can now be raised to 32; the default stays 4.** The scan is
+  89.2% of a measured 3h20m run, and the old ceiling of 8 workers capped it regardless of the
+  machine running it. Raising the ceiling does not raise the request rate to any one host — pacing
+  is still per-host — so the benefit is concurrency across hosts, which mainly helps Workday
+  tenants (each on their own host); the five other providers share one host each and gain nothing
+  from extra workers. The right number depends on the operator's own box and fleet, so it is set in
+  their own `config.toml`, not defaulted higher for everyone.
+
 - **Every database transaction now begins explicitly.** SQLite's Python driver opens a transaction
   only when something writes, never when something reads — so the reads and the write of a
   read-then-write sequence were not one operation, and anything running alongside could land between
@@ -398,6 +416,147 @@ All notable changes to this project are documented here. The format follows
   increase how many leads reach the queue; only the delivery count does that (D-394).
 
 ### Fixed
+
+- **An empty board no longer counts as evidence that its postings closed.** Two consecutive empty
+  answers from a board closed its whole inventory — and the two commonest reasons a board answers
+  empty are not closure at all: a provider serving an empty list while degraded, or a tenant renaming
+  its board so the old address still resolves and returns nothing. Either way, boardwatch was
+  deleting a live board's postings on the strength of two empty responses. A `complete` snapshot
+  listing zero postings for a board that still holds open ones is now treated as unchanged — nothing
+  closes — and the guard is reported per board, by name, on the scan summary. It is zero-only, never
+  a ratio: a board that is genuinely and permanently shrinking still closes normally, and the guard
+  drains itself the moment the board lists a posting again. Known residual: a board that genuinely
+  empties out never has its postings closed in the store, though the liveness check still withholds
+  them from delivery, so the cost is store hygiene rather than a dead lead reaching you.
+
+- **A job description that is really an ATS's page-configuration JSON, or written entirely without
+  section headings, is no longer delivered as if it were the job.** Two blind reviewers found a
+  delivered lead whose body was 98 KB of JSON, not prose — the foreign-body check only recognised
+  aggregator phrasing, so a body with no prose in it at all passed straight through. It is now
+  refused when the body parses as JSON, or when the ratio of JSON-shaped punctuation exceeds a
+  threshold set at three times the highest value seen in 61,927 live open bodies (0.0495), so it
+  holds nothing today and exists as headroom for the next one. Refusing a body for having **no
+  section headings at all** was tried and measured, then dropped: it would have held 4.81% of open
+  bodies — real job descriptions from Palantir, Toyota and others, condemned only for using heading
+  words outside the recognised set or for being written in a language other than English — against a
+  stated tolerance of about 1%. That check is not shipped.
+
+- **A test posting an aggregator uses to check its own pipeline is no longer delivered as a real
+  job.** A blind reviewer found a delivered lead whose entire body read "INDEED INTERNAL TEST JOB …
+  this is not a real job," complete with a rendered résumé. It is now caught by the same foreign-body
+  check that already screens aggregator phrasing, so the fix also re-checks every body already on
+  file, not just new ones. Measured against the live corpus: zero currently-open bodies match, so
+  nothing is withheld today.
+
+- **A software title that names a specialization instead of "engineer" no longer gets vetoed as
+  not a software role.** "ML Platform Lead" and "Infrastructure Lead" were denied by the generic
+  seniority-word veto while "DevOps Lead" was separately exempted — the same kind of role was
+  shown or hidden depending on which word a team happened to use for it. `platform`,
+  `infrastructure`, `machine learning` and `ml` are now exempted the same way. `data` and `ai` are
+  deliberately left out: across 47,295 distinct open titles, the four added words free 166 titles
+  from the veto, but adding `data` would free a further 321 and `ai` a further 187, and both of
+  those groups are dominated by business roles that merely mention the technology — none of the 166
+  are marked eligible by this change; they move from hidden to the review lane, for you to look at.
+
+- **A résumé bullet reworded using an approved word substitution is no longer refused for using
+  it.** The approved-substitution table stores whole phrases (`ML` → `machine learning`), but the
+  check that authorises a reworded bullet tested one word at a time, so a two-word substitution
+  could never fully match and was rejected — the table's own approved swap was blocked by the check
+  meant to allow it. It is now matched as one contiguous phrase, not as a set of individually
+  allowed words, so half of an approved substitution (just "machine," without "learning") still
+  cannot pass on its own.
+
+- **`profile-bundle add-evidence` and `resolve-conflict` now take the exclusive bundle lock**,
+  matching `rebase` and `promote`, which already did. Both write several documents in a load-bearing
+  order — evidence before the manifest that describes it before the records that cite it, or a
+  ruling before the group it rules on — and a second writer interleaving between any two of those
+  steps could leave the bundle in exactly the inconsistent state that ordering exists to prevent. A
+  second operator is now told the bundle is busy and refused, rather than silently interleaving.
+
+- **A projection approval no longer expires when an unrelated part of your career-profile bundle
+  changes.** The approval was staked on the whole bundle's revision, so adding a skill or fixing a
+  date on an entity your résumé never cites reopened the approval screen showing text you had
+  already approved — a screen that reappears for no visible reason trains you to stop reading it.
+  The approval is now staked on a digest of the résumé's own resolved, rendered content: every
+  entry's fields, every bullet's text, the resolved skills section. Only an edit that changes a
+  rendered character stales it. A stamp written before this change is read as stale, so you
+  re-approve once and every stamp after that is scoped correctly.
+
+- **A host's rate-limit response can no longer stall an entire scan for an hour.** A `Retry-After`
+  header was honoured uncapped, inside the lock a scan holds for that whole host — and Greenhouse,
+  Lever and SmartRecruiters each serve their entire fleet from one shared host, so one tenant's
+  `Retry-After: 3600` parked every other board on that host for the full hour. A wait longer than a
+  minute is now treated as an outage and reported as one instead of being slept through; a
+  `Retry-After` inside that cap is still honoured in full.
+
+- **Pressing Ctrl-C during a board scan no longer waits out the rest of the fleet first.** The scan
+  shut down its worker pool without cancelling queued work, so aborting at board 3 of a 288-board
+  fleet meant waiting for the other 285 anyway — under the same lock, which is why pressing Ctrl-C a
+  second time and killing the process mid-write was the usual outcome. Queued boards not yet started
+  are now dropped on abort; boards already fetching are still waited for, since abandoning a live
+  connection would leak it.
+
+- **A failure while closing out a run no longer silently swallows the rest of the shutdown
+  sequence.** `finish_run` is the first step of the run's cleanup chain, and it was unguarded: a
+  failure there replaced the run's real, original failure reason with a database error, and
+  skipped everything after it — the funnel artifact, the delivery queue, the morning digest, every
+  soft alarm and the heartbeat — leaving the run row reading `running` until the next run's own
+  reaper closed it. The original failure now survives in the funnel artifact even when the row
+  itself cannot be updated to say so.
+
+- **The bundle-to-résumé approval screen now shows every bullet you are approving, not just the
+  headings around them.** The screen already states that no unread literal reaches a résumé — but
+  it printed only titles, dates and locations, never the bullets themselves, which are both the
+  bulk of the document and the part an edit actually changes. Every bullet is now shown, in render
+  order, never truncated.
+
+- **A link in a rendered résumé containing `&`, `#` or `%` no longer fails the PDF compile.** The
+  link target was written directly inside a LaTeX macro argument, where those three characters are
+  read as alignment, parameter and comment syntax rather than as text — so a GitHub or portfolio URL
+  containing any of them failed the compile and cost the lead its résumé entirely, and the error was
+  reported as a bullet problem, pointing an operator at the wrong place. Those three characters are
+  now escaped where the link is written. `{`, `}` and backslash are refused outright rather than
+  escaped — measurement showed escaping them either corrupts the visible link or fails anyway — and
+  the refusal happens on the actual resolved link value, not just at template-authoring time, since a
+  bad character can also arrive from a bundle fact.
+
+- **A profile's wanted location no longer scores a false match against an unrelated posting.** The
+  location scorer checked one string for containment inside the other, so a profile wanting "NY"
+  scored a Germany posting a perfect 1.0 (`"ny"` sits inside `"germany"`), and "CA" did the same for
+  Casablanca. This is a ranking input, not a filter, so a foreign posting could silently outrank a
+  real local one with nothing reported. A match must now sit on a word boundary in both directions.
+
+- **A shortlisted job suppressed for its normal re-show window even when the run ended in a late
+  fatal.** Marking a job "seen" and gating that on the run having actually completed its stage was
+  written above four late-stage fatal checks, so a run that failed one of them — an unrendered-leads
+  guard, a zero-output guard, a cohort guard, a filesystem-truth guard — still recorded the whole
+  shortlist as seen and suppressed it for its full window, on the strength of a broken run. The write
+  now happens below all four checks; nothing else about when a job is marked seen changes.
+
+- **A corrupted eligibility policy record no longer clears every posting silently.** Reading a
+  malformed stored policy failed closed to an *empty* policy — but an empty policy resolves against
+  the catalog defaults, where five of six requirement families default to a severity that can never
+  reject a posting. A corrupt record therefore cleared postings your real policy would have
+  rejected, and reported the run as successful while doing it; this same defect is what made the
+  2026-09-04 review's own probe read every posting as eligible. A malformed policy or facts record
+  now fails the run outright rather than being read as empty; a genuinely absent record — a fresh
+  install, or a schema upgraded before facts were entered — still reads as empty, which is the
+  legitimate case.
+
+- **Identical eligibility rules content no longer triggers a full re-judging of every open
+  posting.** The rules snapshot recorded both a content hash and which file the rules were read from
+  — the second added no information a verdict could depend on, only provenance, but it was folded
+  into the same key. Copying the bundled rules file into the config directory unchanged flipped
+  that provenance string, changed the recorded hash, and re-evaluated the entire corpus for a change
+  that moves no verdict. The hash now covers rules content alone; which file they were read from is
+  still reported, just no longer part of the key.
+
+- **A test asserting the stats table renders its counters now actually drives the command.** It
+  previously read the command's own source code and asserted the label and field name appeared
+  somewhere in it — which passed even with the row that renders the count deleted, because the
+  module's own comment names both. It now runs the real command and reads the rendered table,
+  checking the value in the row as well as the label; deleting either of the two rows it covers now
+  fails it.
 
 - **A bar written in months is now read as a bar.** "At least 18 months of professional experience"
   matched nothing at all, because every experience pattern required the word *years* — so a posting
