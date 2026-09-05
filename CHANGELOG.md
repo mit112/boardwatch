@@ -310,6 +310,17 @@ All notable changes to this project are documented here. The format follows
   asks for a fresh approval exactly as editing a bullet does. **Existing approvals are staled by
   this change: approve once more after upgrading.**
 
+### Fixed
+
+- **A board is no longer lost to a concurrent CLI write.** Applying a board's scan results read
+  the existing postings before writing, in a transaction that only took SQLite's write lock at the
+  first write. If `top`, `web`, or `digest` committed a write in that window, the apply's own write
+  failed outright rather than waiting — a run 3 board vanished this way. The apply now takes the
+  write lock up front, so a concurrent CLI write queues behind it instead of colliding with it.
+  The trade runs the other way for a long apply: a CLI command that arrives while one of the ~30
+  boards per run is mid-apply now waits up to the 5-second busy timeout and may itself see
+  "database is locked" — the interactive command loses so the unattended scan does not.
+
 ### Changed
 
 - **The board scan no longer ends with one host running alone.** Boards were all handed to the
