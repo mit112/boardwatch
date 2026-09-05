@@ -99,7 +99,7 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "false, the default, measures it from the previous request's END",
     ),
     "retry_attempts": (int, "next scan", "total attempts 1–10 (1 = no retry)"),
-    "scan_workers": (int, "next scan", "1–8"),
+    "scan_workers": (int, "next scan", "1–32"),
     "detail_fetch_budget": (
         int, "next scan", "per-posting detail fetches per board per scan, 1–1000"
     ),

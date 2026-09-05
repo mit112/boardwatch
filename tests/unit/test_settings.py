@@ -61,13 +61,29 @@ def test_settings_are_frozen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     [
         ("per_host_delay_seconds", 0.1),   # below 0.25 floor
         ("retry_attempts", 0), ("retry_attempts", 11),
-        ("scan_workers", 0), ("scan_workers", 9),
+        ("scan_workers", 0), ("scan_workers", 33),
     ],
 )
 def test_out_of_range_settings_are_rejected(tmp_path, field, bad) -> None:
     with pytest.raises(ValidationError) as exc:
         Settings(data_dir=tmp_path, config_dir=tmp_path, **{field: bad})
     assert field in str(exc.value)
+
+
+def test_scan_workers_reaches_above_eight(tmp_path) -> None:
+    """SP1. Run 2 measured the board scan at 178.6 min — 89.2% of a 3 h 20 min run — and the
+    ceiling of 8 was the binding constraint on the one stage that dominates it. `politeness.py`
+    keeps every HOST's rate unchanged whatever this is, so raising the ceiling adds concurrency
+    ACROSS hosts and none within one; Workday is the provider that benefits, because it serves
+    one host per tenant.
+
+    The DEFAULT stays 4. The ceiling is what a machine may be told to use; the value belongs in
+    the operator's own `config.toml`, never in code, because the right number is a property of
+    their box and their fleet.
+    """
+    assert Settings(data_dir=tmp_path, config_dir=tmp_path).scan_workers == 4
+    assert Settings(data_dir=tmp_path, config_dir=tmp_path, scan_workers=16).scan_workers == 16
+    assert Settings(data_dir=tmp_path, config_dir=tmp_path, scan_workers=32).scan_workers == 32
 
 
 @pytest.mark.parametrize(
@@ -89,7 +105,7 @@ def test_every_weight_key_constrained_to_unit_interval(tmp_path, key, weight) ->
         ("retry_attempts = 0", "retry_attempts"),
         ("retry_attempts = 11", "retry_attempts"),
         ("scan_workers = 0", "scan_workers"),
-        ("scan_workers = 9", "scan_workers"),
+        ("scan_workers = 33", "scan_workers"),
         ("[weights]\nskill_coverage = -0.1", "skill_coverage"),
         ("[weights]\nskill_coverage = 1.1", "skill_coverage"),
     ],

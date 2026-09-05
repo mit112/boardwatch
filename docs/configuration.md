@@ -10,7 +10,7 @@ every `top` run (no restart needed).
 |---|---|---|---|
 | `per_host_delay_seconds` | float, ≥ 0.25 | 1.0 | next scan |
 | `retry_attempts` | int, 1–10 | 3 | next scan |
-| `scan_workers` | int, 1–8 | 4 | next scan |
+| `scan_workers` | int, 1–32 | 4 | next scan |
 | `detail_fetch_budget` | int, 1–1000 | 50 | next scan |
 | `seen_ttl_days` | int, ≥ 1 | 7 | next top/run |
 | `reap_stale_after_hours` | int, ≥ 1 | 24 | next run |

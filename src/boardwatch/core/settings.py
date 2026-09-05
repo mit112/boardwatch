@@ -103,7 +103,15 @@ class Settings(BaseModel):
     # A `running` row this old with no terminal status is a crashed/killed run, not one still
     # in flight (P3 slice 2, D-046). Age-based because `runs` carries no pid/heartbeat column.
     reap_stale_after_hours: int = Field(default=24, ge=1)
-    scan_workers: int = Field(default=4, ge=1, le=8)
+    # Ceiling raised from 8 (SP1). Run 2 measured the board scan at 178.6 min — 89.2% of a
+    # 3 h 20 min run — so this is the one knob on the stage that dominates the run. Raising the
+    # CEILING is not raising the rate: `politeness.py` paces per HOST and is untouched, so the
+    # extra workers buy concurrency ACROSS hosts and none within one. Workday is the provider
+    # that benefits, because it serves one host per tenant.
+    #
+    # The DEFAULT stays 4 deliberately. The right number is a property of the operator's box and
+    # their fleet, so it belongs in their own `config.toml` and never in this line.
+    scan_workers: int = Field(default=4, ge=1, le=32)
     # Multi-endpoint providers (SmartRecruiters) need one detail request per UNSEEN
     # posting because their list carries no bodies. Bounds a first scan of a large
     # board; exceeding it yields a partial snapshot, never a silent truncation.
