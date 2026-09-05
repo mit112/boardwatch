@@ -24,7 +24,7 @@ createRoot(container).render(
   <StrictMode>
     <ErrorBoundary
       title="boardwatch could not draw the page."
-      hint="Draw it again first. If it comes straight back, restart `boardwatch web` and open the new URL it prints — the page's JavaScript is served from disk while the data comes from the server's own copy, and only a restart brings the two back together. Do not reload this tab: the session token was in the URL fragment and is already erased from it, so a reload would leave the page unauthorised."
+      hint="Draw it again first, and reload the tab if that does not take — the session token is kept in this browser, so a reload comes back authorised. If it still comes straight back, restart `boardwatch web` and open the new URL it prints: the page's JavaScript is served from disk while the data comes from the server's own copy, and only a restart brings the two back together."
       action="Draw the page again"
     >
       <App />
