@@ -366,61 +366,74 @@ export function DetailPane({
             </p>
           </section>
 
-          {/* Actions. "Copy PDF path" is the highest-value control in the app: both the macOS and
-              the Windows file dialog accept a pasted absolute path. */}
-          <section className="flex flex-wrap gap-2">
-            <ApplyLink url={row.apply_url} />
+          {/*
+            * Actions, in TWO groups with a rule between them, exactly as the row separates them.
+            * The first group opens and copies and changes nothing; the second WRITES, and
+            * "Mark applied" writes an application record the contract has no route to reverse.
+            * One flat `flex-wrap` put "Mark applied" between "Reveal folder" and "Skip" as soon
+            * as the seven buttons wrapped, which is the arrangement most likely to be misclicked.
+            * Each group is its own flex box, so wrapping never interleaves them.
+            *
+            * "Copy PDF path" is the highest-value control in the app: both the macOS and the
+            * Windows file dialog accept a pasted absolute path.
+            */}
+          <section className="flex flex-wrap items-start gap-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <ApplyLink url={row.apply_url} />
 
-            {pdfPath === null ? (
-              <span className="inline-flex min-h-11 items-center rounded-sm border border-divider px-3 text-sm text-fg-3">
-                no PDF built
-              </span>
-            ) : (
-              <>
-                <CopyButton
-                  value={pdfPath}
-                  label="Copy PDF path"
-                  variant="primary"
-                  onError={(message) => {
-                    onToast(message, "error");
-                  }}
-                  title={`Paste this straight into the file dialog: ${pdfPath}`}
-                />
-                <ActionButton
-                  label="Open PDF"
-                  title="Opens inline, in a new tab."
-                  onClick={() => {
-                    void openPdf(row.posting_id).catch((caught: unknown) => {
-                      onToast(caught instanceof Error ? caught.message : "Could not open the PDF.", "error");
-                    });
-                  }}
-                />
-                {!revealSupported ? null : (
+              {pdfPath === null ? (
+                <span className="inline-flex min-h-11 items-center rounded-sm border border-divider px-3 text-sm text-fg-3">
+                  no PDF built
+                </span>
+              ) : (
+                <>
+                  <CopyButton
+                    value={pdfPath}
+                    label="Copy PDF path"
+                    variant="primary"
+                    onError={(message) => {
+                      onToast(message, "error");
+                    }}
+                    title={`Paste this straight into the file dialog: ${pdfPath}`}
+                  />
                   <ActionButton
-                    label="Reveal folder"
-                    {...(folder === null ? {} : { title: folder })}
+                    label="Open PDF"
+                    title="Opens inline, in a new tab."
                     onClick={() => {
-                      void revealFolder(row.posting_id)
-                        .then((result) => {
-                          if (!result.ok) {
-                            onToast(result.reason ?? "The folder could not be revealed.", "error");
-                          }
-                        })
-                        .catch((caught: unknown) => {
-                          onToast(
-                            caught instanceof Error ? caught.message : "Reveal failed.",
-                            "error",
-                          );
-                        });
+                      void openPdf(row.posting_id).catch((caught: unknown) => {
+                        onToast(caught instanceof Error ? caught.message : "Could not open the PDF.", "error");
+                      });
                     }}
                   />
-                )}
-              </>
-            )}
+                  {!revealSupported ? null : (
+                    <ActionButton
+                      label="Reveal folder"
+                      {...(folder === null ? {} : { title: folder })}
+                      onClick={() => {
+                        void revealFolder(row.posting_id)
+                          .then((result) => {
+                            if (!result.ok) {
+                              onToast(result.reason ?? "The folder could not be revealed.", "error");
+                            }
+                          })
+                          .catch((caught: unknown) => {
+                            onToast(
+                              caught instanceof Error ? caught.message : "Reveal failed.",
+                              "error",
+                            );
+                          });
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </span>
 
-            <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
-            <ActionButton label="Skip" onClick={onSkip} />
-            <ActionButton label="Report" onClick={onReport} />
+            <span className="flex flex-wrap items-center gap-2 border-l border-divider pl-2">
+              <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
+              <ActionButton label="Skip" onClick={onSkip} />
+              <ActionButton label="Report" onClick={onReport} />
+            </span>
           </section>
 
           <section>
