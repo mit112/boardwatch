@@ -1620,3 +1620,19 @@ def test_the_favicon_is_served_and_the_ico_request_is_not_a_404(
     # The control: the closed asset-name rule is untouched, so widening it is not what made the
     # two requests above succeed.
     assert call(live, "/assets/../../etc/passwd", bearer=None).status == 404
+
+
+def test_the_queue_payload_carries_the_fields_the_client_halves_are_built_against(
+    live: Live, engine: Engine
+) -> None:
+    """`counts.closed`, `meta.reveal_supported` and `row.why` were audited as already emitted and
+    are asserted here as ONE statement about a default payload, so the client halves that consume
+    them are not built against a field that only exists in a special-cased test."""
+    with engine.begin() as conn:
+        _deliver(conn, "one")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+
+    assert payload["counts"]["closed"] == 0
+    assert payload["meta"]["reveal_supported"] is True
+    assert "why" in payload["rows"][0]
