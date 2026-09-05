@@ -486,3 +486,160 @@ def test_units_are_split_once_per_scope_not_once_per_pattern(
     assert len(calls) == len(set(calls)), calls  # no scope split twice
     assert len(calls) <= len(scopes)
     assert len(calls) <= 2  # the literal contract, independent of the catalog's shape
+
+
+# ------------------------------------ experience-years recall, the 2026-09-05 widenings
+#
+# MEASURED: 32,602 of 96,266 current evaluations carry ZERO requirement rows, and on a
+# 2,000-posting random sample 5.5% state an "N years ... experience" bar the catalog matched
+# nothing on. Each test below quotes a span verbatim from a real posting in that residue and
+# names which pattern now catches it. The controls under them are the other half of the same
+# measurement: the phrasings that look like a years bar and are not.
+
+def _by_id(dets: list[Detection]) -> dict[str, Detection]:
+    return {d.pattern.id: d for d in dets}
+
+
+def test_a_range_bar_survives_a_parenthetical_that_hedges_a_DIFFERENT_bar(catalog) -> None:
+    """"0-1 years of professional software development experience (1+ years of internship
+    experience desirable)" is one clause: no comma, no conjunction. So the aside's
+    `desirable` was the whole sentence's hedge, it stood the floor down, and the posting
+    wrote NO experience row at all.
+
+    The aside states its own duration, which is what says the hedge has a bar of its own to
+    belong to. The floor outside it is real and stays required; the aside's own `1+ years of
+    internship experience` stays hedged, which is the second assertion.
+    """
+    body = ("0-1 years of professional software development experience "
+            "(1+ years of internship experience desirable)")
+    dets = detect(body, catalog, enabled_families=ALL)
+    found = _by_id(dets)
+    assert "scoped_range_years_minimum" in found
+    detection = found["scoped_range_years_minimum"]
+    assert detection.values["years"] == "0"
+    start, end = detection.span
+    assert body[start:end] == "0-1 years of professional software development experience"
+    # the aside is a PREFERENCE: nothing inside it may become a second required bar
+    aside = body.index("(")
+    assert [d.pattern.id for d in dets if d.span[0] > aside] == []
+
+
+@pytest.mark.parametrize("body,hedge", [
+    ("5+ years of experience (preferred).", "preferred"),
+    ("5+ years of experience (strongly preferred).", "strongly preferred"),
+    ("5+ years of experience (nice to have).", "nice to have"),
+    ("5+ years of experience (a plus).", "a plus"),
+])
+def test_a_bare_parenthetical_hedge_still_stands_the_bar_down(catalog, body, hedge) -> None:
+    """THE CONTROL THAT BOUNDS THE TEST ABOVE, and the reason the aside rule asks for a
+    duration rather than merely for parentheses. A trailing "(preferred)" IS the sentence's
+    hedge; reading it as a hard floor is the worst wrong verdict this family can produce.
+
+    `total_years_preferred` is the positive control: the bar is still SEEN, as a preference.
+    """
+    dets = detect(body, catalog, enabled_families=ALL)
+    assert "total_years_minimum" not in _ids(dets), hedge
+    assert "total_years_preferred" in _ids(dets)
+
+
+def test_comma_separated_adjectives_no_longer_break_the_run(catalog) -> None:
+    """"2-4 years of professional, post University experience". The adjective run was
+    `(?:\\s+ADJ)*` and cannot cross a COMMA, so it stopped at `professional,` and no tail
+    could reach `experience`. The posting wrote no row.
+
+    The comma allowance is `(?:\\s*,)?`, NOT `\\s*,?`: inside the atomic group the greedy
+    form ate the space separating the run from the domain phrase and could not give it back,
+    which silently broke `2-12+ years of industry software engineering experience` — the
+    control in the next test.
+    """
+    body = "2-4 years of professional, post University experience"
+    found = _by_id(detect(body, catalog, enabled_families=ALL))
+    assert "scoped_range_years_minimum" in found
+    detection = found["scoped_range_years_minimum"]
+    assert detection.values["years"] == "2"
+    assert body[detection.span[0]:detection.span[1]] == body
+
+
+def test_an_en_dash_range_with_a_plus_on_the_upper_bound_still_fires(catalog) -> None:
+    """CONTROL, green before and after: "Minimum Requirements 2–12+ years of industry
+    software engineering experience" already matched, and the comma allowance above is the
+    change most likely to break it (see that test's second paragraph)."""
+    body = "Minimum Requirements 2–12+ years of industry software engineering experience"
+    found = _by_id(detect(body, catalog, enabled_families=ALL))
+    assert "scoped_range_years_minimum" in found
+    detection = found["scoped_range_years_minimum"]
+    assert detection.values["years"] == "2"
+    assert body[detection.span[0]:detection.span[1]] == (
+        "2–12+ years of industry software engineering experience"
+    )
+
+
+def test_an_abbreviated_year_unit_is_the_same_bar(catalog) -> None:
+    """"2+ Yrs of experience". Every pattern in the family spelled the unit `years?`, so a
+    posting that abbreviates it wrote no row — the same class as the months forms, one
+    spelling further down."""
+    body = "2+ Yrs of experience"
+    found = _by_id(detect(body, catalog, enabled_families=ALL))
+    assert "total_years_minimum" in found
+    detection = found["total_years_minimum"]
+    assert detection.values["years"] == "2"
+    assert body[detection.span[0]:detection.span[1]] == "2+ Yrs of experience"
+
+
+@pytest.mark.parametrize("body,span,years", [
+    ("Experience Required: 3 to 5 years", "Experience Required: 3 to 5 years", "3"),
+    ("Experience Required: 1 to 3 years", "Experience Required: 1 to 3 years", "1"),
+    ("Experience Required -6+ Years", "Experience Required -6+ Years", "6"),
+])
+def test_the_noun_first_labelled_bar_is_detected(catalog, body, span, years) -> None:
+    """Every pattern in the family reads left to right from the NUMBER and needs the bar's
+    noun, a domain phrase or a gerund to FOLLOW it. When the posting labels the block instead
+    there is no tail to anchor on, and these three wrote no row at all.
+
+    The range form captures the LOW end, exactly as `range_years_minimum` does: a "3 to 5
+    years" bar is unmet for a one-year profile on its floor alone.
+    """
+    found = _by_id(detect(body, catalog, enabled_families=ALL))
+    assert "labeled_years_minimum" in found, _ids(detect(body, catalog, enabled_families=ALL))
+    detection = found["labeled_years_minimum"]
+    assert detection.values["years"] == years
+    assert body[detection.span[0]:detection.span[1]] == span
+
+
+def test_a_hedged_scoped_bar_never_becomes_a_REQUIRED_row(catalog) -> None:
+    """"Minimum of 2 years of frontend engineering experience preferred" — the one phrasing
+    in the residue whose only wrong answer is a REQUIRED row. `scoped_years_minimum` matches
+    the sentence and `years_hedges` stands it down, which is what this pins.
+
+    It writes no row at all today: the family carries `total_years_preferred` and
+    `range_years_preferred` but no scoped/domain preferred sibling, so a hedged bar carrying
+    a domain noun is invisible rather than recorded as a preference. That gap is NOT closed
+    here — a new preferred pattern is a recall change with its own measurement — so this
+    asserts only the half that decides a verdict.
+    """
+    body = "Minimum of 2 years of frontend engineering experience preferred"
+    dets = detect(body, catalog, enabled_families=ALL)
+    assert [d for d in dets if d.pattern.requiredness == "required"] == []
+
+
+@pytest.mark.parametrize("body", [
+    "$100,000 - $115,000 year",
+    "We have grown a great deal over the years.",
+    "Must be 18 years of age or older.",
+    "Applicants must be 18 years or older.",
+    "This is a year-end bonus.",
+    "The fiscal year begins in July.",
+])
+def test_the_years_word_without_a_bar_writes_no_experience_row(catalog, body) -> None:
+    """THE NEGATIVE CONTROLS for every widening above. Salary text, ordinary prose, and an
+    AGE floor are the three ways `years` appears in a JD without stating an experience bar.
+
+    "Applicants must be 18 years or older." is the one that was NOT green before: nothing
+    followed `years` that `domain_years_minimum`'s stopword head knew about, so `or` was read
+    as the head of a domain phrase and an 18-year AGE floor resolved `unmet` against every
+    profile this tool is for. `age` and `old` were already in that head; `or` and `older`
+    were not, and one word decided whether the posting was deleted from view.
+    """
+    dets = [d for d in detect(body, catalog, enabled_families=ALL)
+            if d.family == "experience_years"]
+    assert dets == [], _ids(dets)

@@ -494,13 +494,29 @@ families:
       # "8 years of relevant professional experience." under a Requirements heading is the
       # single most common form there is, and its marker is the heading, not the sentence.
       # The subject suppressor, not a marker, is what keeps company-side prose out.
+      #
+      # TWO WIDENINGS RUN THROUGH EVERY PATTERN BELOW, applied to all of them together rather
+      # than to the one span that exposed each, because these are twins that mirror one another
+      # arm for arm and a JD that writes a bar one way writes every bar in it that way.
+      #  * `(?:years?|yrs?)(?!\w)\.?` FOR `years?\b`. Measured 2026-09-05 on a 2,000-posting
+      #    random sample of the 32,602 evaluations carrying ZERO requirement rows: "2+ Yrs of
+      #    experience" is a bar, and every pattern here spelled the unit one way and wrote no
+      #    row at all on the abbreviation. Same class as the months forms above, one spelling
+      #    further down. The trailing `\.?` takes "Yrs." and the boundary is a lookahead rather
+      #    than `\b` so the period can be consumed AFTER it.
+      #  * `(?:\s*,)?` AFTER EACH ADJECTIVE in the run. "2-4 years of professional, post
+      #    University experience" stopped the run dead at the comma and no tail could reach
+      #    `experience`. It is `(?:\s*,)?` and NOT `\s*,?`: the run is an ATOMIC group, so the
+      #    greedy form ate the space separating the run from the domain phrase, could not give
+      #    it back, and silently broke "2-12+ years of industry software engineering
+      #    experience" -- a span that already matched. Both are corpus rows (m1048, m1049).
       - id: total_years_minimum
         requiredness: required
         implies: total_years_minimum
         scope: sentence
         capture: years
         requirement_text: "At least {years} years of total experience"
-        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         # The company-side SUBJECT is a subject suppressor, not a unit suppressor: it must both
         # PRECEDE the span and sit in the same clause. As a unit suppressor it deleted the
         # candidate-side requirement in "Our team has 25 years of experience, and candidates
@@ -573,7 +589,7 @@ families:
         scope: sentence
         capture: months
         requirement_text: "At least {months} months of total experience"
-        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
         abstain_by: [*degree_alternative_to_years]
@@ -583,7 +599,7 @@ families:
         scope: sentence
         capture: months
         requirement_text: "Months of experience scoped to a specific skill or domain"
-        pattern: '(?<![-–—\d])\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
+        pattern: '(?<![-–—\d])\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges, *months_conversion]
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -593,7 +609,7 @@ families:
         scope: sentence
         capture: years
         requirement_text: "At least {years} years of total experience"
-        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
+        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
         # Same either-path disjunction guard as total_years_minimum: "3-5 years ... or a
@@ -661,7 +677,7 @@ families:
         # scope is the whole difference between honouring both rulings and breaking one.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
-        pattern: '(?<![-–—\d])\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
+        pattern: '(?<![-–—\d])\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
 
       # An activity GERUND standing in for the noun. "5+ years building and deploying web
       # applications" states a floor and never says "experience", so neither the total nor the
@@ -694,7 +710,7 @@ families:
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
-        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
       # FINDING (2026-08-30 queue audit): a RANGE could never reach the SCOPED tail, so the
       # commonest way a JD states a bar -- "3-6 years of professional software engineering
@@ -724,7 +740,7 @@ families:
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
-        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
+        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
       - id: scoped_range_years_activity
         requiredness: required
         implies: activity_years_minimum
@@ -734,7 +750,7 @@ families:
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
-        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
+        pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?\s+(?:building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling)\b'
 
       # TWO MORE RECALL SIBLINGS (2026-08-30 queue audit, second pass). Measured against the
       # live apply lane AFTER the range fix landed: 25 postings still stated a bar and produced
@@ -771,7 +787,7 @@ families:
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
-        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+(?:of|in))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?!(?:age|old|experience|equivalent|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}?\s*(?:,\s*|\s+(?:and|or)\s+)(?:[\w.+#/-]+\s+){0,3}?experience\b'
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?!(?:age|old|experience|equivalent|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}?\s*(?:,\s*|\s+(?:and|or)\s+)(?:[\w.+#/-]+\s+){0,3}?experience\b'
 
       # SHAPE 2, NO `experience` NOUN ANYWHERE. "5+ years'' embedded SW", "15+ Years of Systems
       # Engineering:", "2 years in SaaS, PaaS, or IaaS software development", "5 years of
@@ -794,7 +810,11 @@ families:
       #    preferred` and `... 3 years must be in a technical leadership role` put the verb
       #    where a domain noun belongs, and a bare `is`/`must` is not a domain.
       #    `pioneering`, `helping`, `combined`, and the determiners keep the
-      #    remaining tenure prose out. The GERUNDS are listed for a second reason: they belong
+      #    remaining tenure prose out. `or` and `older` are in it for a FOURTH reason, added
+      #    2026-09-05: `age` and `old` were there from the start but "Applicants must be 18
+      #    years or older." puts neither word next, so `or` was read as the head of a domain
+      #    phrase and an AGE floor resolved `unmet` -- 18 is past the near-miss band and this
+      #    value has no `met`, so the posting was deleted from view by a bar it never stated. The GERUNDS are listed for a second reason: they belong
       #    to `scoped_years_activity`, and letting both fire would put two rows on one span.
       #  * NO `experience` NOUN IN THE REST OF THE CLAUSE. This is the pattern's own
       #    definition made enforceable rather than merely stated: without it the pattern also
@@ -819,7 +839,42 @@ families:
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
-        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>[2-9]|1[0-9])\s*\+?\s*(?:or\s+more\s+)?years?\b[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated))*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>[2-9]|1[0-9])\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to|or|older)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
+
+      # SHAPE 3, THE NOUN FIRST. "Experience Required: 3 to 5 years", "Experience Required
+      # -6+ Years". Every pattern above reads left to right from the NUMBER, so all of them
+      # need the bar's noun (or a domain phrase, or a gerund) to FOLLOW the count. When the
+      # posting labels the block instead -- the noun, a separator, then the count, and nothing
+      # after it -- there is no tail to anchor on and the posting carried no experience row at
+      # all. Measured 2026-09-05 on a 2,000-posting random sample of the zero-row population,
+      # this shape and the two widenings beside it account for the "N years ... experience"
+      # phrasings the catalog matched nothing on.
+      #
+      # ONE pattern rather than a total/range pair, because the range is the only difference:
+      # the optional `(?:[-–—]|to) M` arm captures the LOW end exactly as `range_years_minimum`
+      # does, which is the conservative read of a "3 to 5 years" bar. So it implies
+      # `total_years_minimum` in both forms, and joins the refinement group through that value.
+      #
+      # THE SEPARATOR IS MANDATORY, and it is what keeps salary prose out. `Experience` is a
+      # common word; without a `:` or a dash directly before the number the pattern would read
+      # any nearby count as a bar. With it, "Compensation and Experience: $100,000 - $115,000
+      # year" cannot match -- the run between the separator and the digits is whitespace only,
+      # so the pattern can never skip a currency symbol or a thousands group to reach a
+      # two-digit number.
+      #
+      # Same suppressors as `total_years_minimum`, for the same reasons: a labelled block is
+      # as capable of being hedged ("Experience Preferred: 5 years") or company-side as any
+      # other, and a degree disjunction waives this bar as it waives that one.
+      - id: labeled_years_minimum
+        requiredness: required
+        implies: total_years_minimum
+        scope: sentence
+        capture: years
+        requirement_text: "At least {years} years of total experience"
+        pattern: '\bexperience(?:\s+(?:required|requirements?|needed|level|range))?\s*[:\-–—]+\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of|min\.?)\s+)?(?P<years>\d{1,2})\s*(?:(?:[-–—]|\s+to\s+)\s*\d{1,2})?\s*\+?\s*(?:years?|yrs?)(?!\w)\.?'
+        subject_suppressors: [*company_side_years]
+        suppressed_by_unit: [*years_hedges]
+        abstain_by: [*degree_alternative_to_years]
 
       # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
       # preferred." told a 2-year candidate they were INELIGIBLE. Two alternatives per
@@ -831,7 +886,7 @@ families:
         scope: sentence
         capture: years
         requirement_text: "{years} years of total experience is preferred"
-        pattern: '(?:(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?(?<![-–—\d])\b(?P<years_alt>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
+        pattern: '(?:(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?(?<![-–—\d])\b(?P<years_alt>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
       - id: range_years_preferred
         requiredness: preferred
@@ -839,7 +894,7 @@ families:
         scope: sentence
         capture: years
         requirement_text: "{years} years of total experience is preferred"
-        pattern: '(?:\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?\b(?P<years_alt>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*years?\b(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time))*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
+        pattern: '(?:\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?\b(?P<years_alt>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
 
   - id: clearance
