@@ -146,11 +146,18 @@ describe("working state across a tab switch", () => {
     render(<App />);
     await screen.findByRole("grid", { name: "Queue" });
 
+    /*
+     * The `hashchange` a real browser fires off each of these navigations, dispatched explicitly:
+     * jsdom queues it as a task, so back-to-back clicks in one turn would land BEFORE it and the
+     * test would never exercise the re-parse that actually threatens the remembered params.
+     */
     fireEvent.click(screen.getByRole("button", { name: "Runs" }));
+    fireEvent(window, new HashChangeEvent("hashchange"));
     // `#/runs` stays bare — a runs URL must not carry a queue lead id.
     expect(window.location.hash).toBe("#/runs");
 
     fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+    fireEvent(window, new HashChangeEvent("hashchange"));
 
     // Both keys are back: the round trip is a navigation, not a reset. The page re-mounts and
     // re-fetches, so the list is awaited rather than read out of the click's own turn.
