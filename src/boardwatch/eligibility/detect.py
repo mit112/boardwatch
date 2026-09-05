@@ -18,6 +18,8 @@ The scopes, all applied per match:
   suppressed_by_sentence  UNIT-scoped, unbounded. A same-sentence qualifying escape.
   suppressed_by_unit      CLAUSE-scoped hedge, plus an introducer allowance for a hedge
                           separated from its clause by delimiters only ("Nice to have: ...").
+                          A hedge inside a parenthetical that states its own duration bar
+                          belongs to THAT bar and reaches nothing outside the aside.
   subject_suppressors     CLAUSE-scoped grammatical subject that must PRECEDE the span.
   abstain_by              DOCUMENT-scoped, and does NOT drop: it marks the row undecidable
                           so the resolver renders UNKNOWN. Dropping would return `eligible`
@@ -53,6 +55,34 @@ _CLAUSE_SPLIT = re.compile(r"[;:,]")
 _CLAUSE_BOUNDARY = re.compile(r"[;:,]|(?<!\w)(?:and|but|while|whereas)(?!\w)", re.IGNORECASE)
 
 _ONLY_DELIMS = re.compile(r"^[\s;:,()\[\]\-–—]*$")
+
+# A parenthetical aside, and the shape that makes one a requirement in its own right.
+# "0-1 years of professional software development experience (1+ years of internship
+# experience desirable)" carries no comma and no conjunction, so the whole sentence is one
+# clause and the aside's `desirable` stood the floor down -- the posting then wrote NO
+# experience row at all, which is the zero-row shape the keystone calls a monitoring failure.
+#
+# Bounded to an aside that states its OWN duration, not to asides in general: a bare
+# "(preferred)", "(strongly preferred)" or "(nice to have)" IS the sentence's hedge and must
+# keep suppressing, because a stated preference read as a hard floor is the worst wrong
+# verdict this engine can produce. The duration is what says the aside has a bar of its own
+# for the hedge to belong to.
+_ASIDE = re.compile(r"\(([^()]*)\)")
+_ASIDE_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)\b", re.IGNORECASE)
+
+
+def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) -> bool:
+    """Does the hedge at [mlo, mhi) belong to a parenthetical bar rather than to the span?
+
+    False whenever the span sits in the same aside: there the hedge is the span's own.
+    """
+    for aside in _ASIDE.finditer(unit):
+        if not (aside.start() <= mlo and mhi <= aside.end()):
+            continue
+        if aside.start() <= lo and hi <= aside.end():
+            return False
+        return _ASIDE_DURATION.search(aside.group(1)) is not None
+    return False
 
 
 @dataclass(frozen=True)
@@ -193,6 +223,7 @@ def _suppressed(
     before_only: bool = False,
     introducer: bool = False,
     inside_span: bool = False,
+    aside_owned: bool = False,
 ) -> str | None:
     """Run a suppressor list against whatever string it is handed, outside the span.
 
@@ -207,10 +238,16 @@ def _suppressed(
     `inside_span` is for `abstain_by` alone (finding 45): an abstention is not a
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
+    `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical bar of
+    its own has claimed (`_hedge_owned_by_an_aside`).
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
+            if aside_owned and _hedge_owned_by_an_aside(
+                text, lo, hi, match.start(), match.end()
+            ):
+                continue
             inside = clo <= match.start() and match.end() <= chi
             intro = (
                 introducer
@@ -269,7 +306,7 @@ def detect(
                     bounds = _clause_bounds(unit, lo, hi)
                     if _suppressed(
                         unit, lo, hi, pattern.suppressed_by_unit,
-                        bounds=bounds, introducer=True,
+                        bounds=bounds, introducer=True, aside_owned=True,
                     ):
                         continue
                     if _suppressed(

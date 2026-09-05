@@ -114,7 +114,10 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     assert len(catalog.negation_cues) == 26
     # 2026-09-04: 57 -> 59. `total_months_minimum` and `scoped_months_minimum`: every pattern
     # above them requires `years?`, so a bar stated in months wrote no row at all.
-    assert sum(len(f.patterns) for f in catalog.families) == 59
+    # 2026-09-05: 59 -> 60. `labeled_years_minimum`: every pattern above it reads left to right
+    # from the NUMBER, so "Experience Required: 3 to 5 years" -- the noun first, nothing after
+    # the count -- gave none of them a tail to anchor on and wrote no row at all.
+    assert sum(len(f.patterns) for f in catalog.families) == 60
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -145,7 +148,9 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # `U.S. Citizenship and Immigration Services` E-Verify boilerplate out.
         # 2026-09-04: +2, one per months pattern. A months bar is exactly as vulnerable to a
         # hedge as its years twin, and both also carry the `count as` conversion-note guard.
-        "suppressed_by_unit": 20,
+        # 2026-09-05: +1, `labeled_years_minimum`. "Experience Preferred: 5 years" is the
+        # labelled block's own hedge, and it must stand the bar down like any other.
+        "suppressed_by_unit": 21,
         "suppressed_by_sentence": 5,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
@@ -159,7 +164,9 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # exposure to "Our engineers have 30 years ..." the moment it widens the twin's reach.
         # 2026-09-04: +2, one per months pattern -- "Our team has 30 months of experience" is
         # the same company-side prose the years twins are guarded against.
-        "subject_suppressors": 27,
+        # 2026-09-05: +1, `labeled_years_minimum` inherits the same exposure to "Our team has
+        # 25 years of experience" as every other pattern in the family.
+        "subject_suppressors": 28,
         # 7 on the degree family (degree_equivalence) + 2 on the experience family
         # (degree_alternative_to_years, D-073): a degree-gated disjunctive alternative makes
         # the years bar abstain, not resolve unmet.
@@ -167,7 +174,10 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-04: +1, `total_months_minimum` inherits its years twin's degree-disjunction
         # abstain. (The regex names `years?`, so it is inert on a months sentence today; it is
         # carried so the two arms cannot drift when that regex is widened.)
-        "abstain_by": 10,
+        #
+        # 2026-09-05: +1, `labeled_years_minimum` implies `total_years_minimum`, so it carries
+        # that value's degree-disjunction abstain rather than deciding where its twin abstains.
+        "abstain_by": 11,
         # The SAME regex as two of those nine, at a different SCOPE, on the six
         # scoped/domain minimum patterns. The owner ruled that the `or` in
         # "a Bachelor's OR N years of X experience" clears the bar it joins, and the word
