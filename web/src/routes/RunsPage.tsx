@@ -326,11 +326,41 @@ function LanesAccordion({ funnel }: { funnel: RunFunnel }) {
 }
 
 function BoardsAccordion({ funnel }: { funnel: RunFunnel }) {
+  const [filter, setFilter] = useState("");
+  // 670 rows on a live run, and the reader arrives knowing which board they came for. Matched
+  // against the three identifying columns only — a number is found by reading the row, not by
+  // typing it.
+  const needle = filter.trim().toLowerCase();
+  const shown =
+    needle === ""
+      ? funnel.sources
+      : funnel.sources.filter((source) =>
+          [source.provider, source.board_slug, source.company_source].some((field) =>
+            field.toLowerCase().includes(needle),
+          ),
+        );
   return (
     <details className="rounded-md border border-divider bg-surface">
       <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface-2">
         Boards ({funnel.sources.length.toLocaleString()})
       </summary>
+      <label className="flex flex-wrap items-center gap-3 border-t border-divider px-4 py-2">
+        <span className="label-micro text-fg-3">filter</span>
+        <input
+          type="search"
+          value={filter}
+          onChange={(event) => {
+            setFilter(event.target.value);
+          }}
+          placeholder="provider, board or source"
+          className="min-h-11 min-w-64 rounded-sm border border-control bg-bg px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2"
+        />
+        {needle === "" ? null : (
+          <span className="text-sm text-fg-2 tabular-nums">
+            {shown.length.toLocaleString()} of {funnel.sources.length.toLocaleString()}
+          </span>
+        )}
+      </label>
       <div className="overflow-x-auto border-t border-divider">
         <table className="w-full text-sm">
           <thead>
@@ -345,7 +375,7 @@ function BoardsAccordion({ funnel }: { funnel: RunFunnel }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-divider">
-            {funnel.sources.map((source) => (
+            {shown.map((source) => (
               <tr key={`${source.provider}:${source.board_slug}`}>
                 <td className="px-3 py-1.5 text-fg-2">{source.provider}</td>
                 <td className="px-3 py-1.5 text-fg">{source.board_slug}</td>
@@ -367,11 +397,31 @@ function BoardsAccordion({ funnel }: { funnel: RunFunnel }) {
                 </td>
               </tr>
             ))}
+            {shown.length > 0 ? null : (
+              <tr>
+                <td colSpan={8} className="px-3 py-2 text-sm text-fg-2">
+                  no board matches that filter
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
     </details>
   );
+}
+
+/**
+ * How a run reads in the picker. `finished_at` NULL means only that nothing ever CLOSED the row
+ * (`store/queries.finish_run`) — in flight, killed, or a standalone lane that raised — so
+ * "running" is the narrowest true thing to say, and the status column says the same word for all
+ * three. Before this, such a run printed its START time in the FINISH position with no marker.
+ */
+function runLabel(run: RunSummary): string {
+  if (run.finished === null) {
+    return `${run.id} · started ${formatTimestamp(run.started)} · running`;
+  }
+  return `${run.id} · ${formatTimestamp(run.finished)} · ${run.status ?? "unknown"}`;
 }
 
 export function RunsPage() {
@@ -433,35 +483,58 @@ export function RunsPage() {
           >
             {(runs ?? []).map((run) => (
               <option key={run.id} value={run.id}>
-                {run.id} · {formatTimestamp(run.finished ?? run.started)} · {run.status ?? "unknown"}
+                {runLabel(run)}
               </option>
             ))}
           </select>
         </label>
 
         {selected === null ? null : (
-          <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
-            {(
-              [
-                ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`, false],
-                ["partial", formatCount(selected.boards_partial), false],
-                ["unchanged", formatCount(selected.boards_unchanged), false],
-                // The ONE cell in this row whose value changes what you should do about the run,
-                // and it was rendered in the same weight as the zeros beside it.
-                ["failed", formatCount(selected.boards_failed), (selected.boards_failed ?? 0) > 0],
-                ["postings seen", formatCount(selected.postings_seen), false],
-                ["new", formatCount(selected.new_count), false],
-                ["leads", formatCount(selected.leads), false],
-              ] as [string, string, boolean][]
-            ).map(([label, value, emphasis]) => (
-              <div key={label} className="flex min-w-28 flex-col gap-1 px-4 py-2">
-                <dt className="label-micro text-fg-3">{label}</dt>
-                <dd className={`text-lg tabular-nums ${emphasis ? "text-fg" : "text-fg-2"}`}>
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <section aria-label="Run summary">
+            <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
+              {(
+                [
+                  // Only on a run nothing has closed. A finished run's status is already in the
+                  // picker, and a cell that reads "complete" on every other run is noise.
+                  ...(selected.finished === null
+                    ? ([["status", "running", false]] as [string, ReactNode, boolean][])
+                    : []),
+                  ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`, false],
+                  ["partial", formatCount(selected.boards_partial), false],
+                  ["unchanged", formatCount(selected.boards_unchanged), false],
+                  // The ONE cell in this row whose value changes what you should do about the run,
+                  // and it was rendered in the same weight as the zeros beside it.
+                  ["failed", formatCount(selected.boards_failed), (selected.boards_failed ?? 0) > 0],
+                  ["postings seen", formatCount(selected.postings_seen), false],
+                  ["new", formatCount(selected.new_count), false],
+                  // The run's leads are a QUERY the other page can answer, and this was the only
+                  // place on either page that knew which run a lead came from. Hash-routed, so
+                  // the loopback server still needs no SPA fallback.
+                  [
+                    "leads",
+                    (selected.leads ?? 0) > 0 ? (
+                      <a
+                        href={`#/queue?run=${String(selected.id)}`}
+                        className="underline underline-offset-4 transition-colors duration-150 ease-in-out hover:text-fg"
+                      >
+                        {formatCount(selected.leads)}
+                      </a>
+                    ) : (
+                      formatCount(selected.leads)
+                    ),
+                    false,
+                  ],
+                ] as [string, ReactNode, boolean][]
+              ).map(([label, value, emphasis]) => (
+                <div key={label} className="flex min-w-28 flex-col gap-1 px-4 py-2">
+                  <dt className="label-micro text-fg-3">{label}</dt>
+                  <dd className={`text-lg tabular-nums ${emphasis ? "text-fg" : "text-fg-2"}`}>
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         )}
       </div>
 

@@ -53,7 +53,9 @@ export const RUNS: RunSummary[] = [
   {
     id: 111,
     started: "2026-08-25T15:00:05Z",
-    finished: null,
+    // A failed run is still a CLOSED one: `finish_run` stamps `finished_at` and the status
+    // together. `finished: null` belongs to run 110 below, which nothing ever closed.
+    finished: "2026-08-25T15:41:18Z",
     status: "failed",
     boards_attempted: 124,
     boards_complete: 63,
@@ -62,6 +64,23 @@ export const RUNS: RunSummary[] = [
     boards_failed: 61,
     postings_seen: 9911,
     new_count: 84,
+    leads: 0,
+  },
+  {
+    // `status: running` with `finished_at` NULL means only that nothing ever closed this row —
+    // in flight, killed, or a lane that raised. It has no funnel artifact for the same reason,
+    // so selecting it is also the fixture's one "no artifact for that run" path.
+    id: 110,
+    started: "2026-08-25T12:00:02Z",
+    finished: null,
+    status: "running",
+    boards_attempted: 124,
+    boards_complete: 38,
+    boards_partial: 0,
+    boards_unchanged: 0,
+    boards_failed: 0,
+    postings_seen: 6104,
+    new_count: 41,
     leads: 0,
   },
 ];
@@ -287,7 +306,7 @@ export const FUNNELS: Record<number, RunFunnel> = {
     ...FUNNEL_114,
     run_id: 111,
     started_at: RUNS[3]!.started,
-    finished_at: null,
+    finished_at: RUNS[3]!.finished,
     reconciles: false,
     // The scan died before the gate was armed, so its readout is an absence, not a row of zeros.
     gate: {

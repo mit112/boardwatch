@@ -125,3 +125,17 @@ it("shows a stage note's first sentence and collapses the rest", async () => {
   expect(details).not.toBeNull();
   expect(details?.open).toBe(false);
 });
+
+it("links a run's leads to that run's slice of the queue", async () => {
+  await renderRuns(runFunnel(), [runSummary({ id: 5, leads: 8 })]);
+
+  const link = screen.getByRole("link", { name: "8" });
+  expect(link.getAttribute("href")).toBe("#/queue?run=5");
+});
+
+it("calls a run nothing has closed running, in the picker and in the summary", async () => {
+  await renderRuns(runFunnel(), [runSummary({ id: 5, finished: null, status: "running" })]);
+
+  expect(screen.getByRole("option", { name: /5 · started .* · running/ })).toBeDefined();
+  expect(valueFor(screen.getByRole("region", { name: "Run summary" }), "status")).toBe("running");
+});
