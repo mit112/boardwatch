@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run now says when the empty-board guard fired.** A board answering "complete, zero postings"
+  while it still holds open ones is not treated as closure — the two usual causes are a degraded
+  provider and a renamed board, neither of which is evidence that the jobs are gone. That guard
+  existed but was only ever printed by `boardwatch scan`; a pipeline run's log and its funnel
+  artifact carried no trace of it firing. The run log now names the boards it fired on, and the
+  funnel's `scan` block carries them under `empty_complete_guarded`. Existing funnel readers are
+  unaffected: it is an added key in a section that has always been there, and no existing key
+  changes meaning.
+
+
 - **A résumé can no longer be delivered under the name "Your Name".** The renderer never produces
   the header or education block itself — both come only from the LaTeX template at
   `{config_dir}/resume_template.tex`. When that file was missing, it silently fell back to the
@@ -455,6 +465,29 @@ All notable changes to this project are documented here. The format follows
   increase how many leads reach the queue; only the delivery count does that (D-394).
 
 ### Fixed
+
+- **A board could be fetched in full and then thrown away, because the lane stage was writing at
+  the same time.** The lane stage had been moved onto a background thread so its network work
+  overlaps the board scan — but it took its *writes* with it, which left two threads writing the
+  store while the scan was running. The last run lost a whole Workday board that way: it was
+  fetched completely, then its apply failed with `database is locked` and the entire snapshot was
+  discarded, so the board is reported as unscanned.
+
+  This is not a lock-wait that needed a longer timeout, and raising one would not have helped at
+  any value. Applying a board opens a deferred transaction and *reads* before it writes; once any
+  other connection commits in that gap, the write is refused immediately — in well under a
+  millisecond, against a five-second timeout — because a read snapshot that has gone stale cannot
+  be made writable by waiting. One concurrent write is enough, which is why a single board of 135
+  was affected rather than all of them.
+
+  The lane stage now fetches on its background thread and hands the results back; the pipeline
+  applies them itself, so the scan is the only thing writing for the whole of its run. One visible
+  consequence: a run that ends before that hand-back — a systemic scan outage, or a refused
+  `--project` preflight — now lands no lane rows at all, instead of writing them in the background
+  under a run that then exits non-zero. That is what it did before the overlap existed, and such a
+  run delivers nothing either way; the lane's seeds are re-queued without being charged, so nothing
+  is aged out by it.
+
 
 - **An empty board no longer counts as evidence that its postings closed.** Two consecutive empty
   answers from a board closed its whole inventory — and the two commonest reasons a board answers

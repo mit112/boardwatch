@@ -20,6 +20,53 @@
 
 ## Current standing
 
+### Session 2026-09-06 (execution): T37, T38 and T39 SHIP — and T37's diagnosis was WRONG: the lost board is a WAL snapshot-upgrade conflict, not a `busy_timeout` starvation, so the prescribed fallback could never have worked; T28 is CLOSED on a positive control; dominos is UNWATCHED; `main` is still UNMOVED by Mit's ruling
+
+**Read this before acting on anything below it.** Reasoning: **D-473**. Numbers: `METRICS.md`,
+the `Session — 2026-09-06` block. Report: `REPORT-2026-09-06.md`. **`main` is still `84671523`.**
+`close-2026-09-06` now carries SEVEN commits over it (T31, T32, the two 09-05 closes, then T37,
+T39, T38 and this close) and **one `--ff-only` merge still lands them all**.
+
+**MIT RULED TWICE AT THE TOP OF THE SESSION.** (a) **Do not merge** — `main` stays parked on the
+T30 state so the 04:00 tick delivers with a valid projection stamp and pays SP3 its second warm
+tailor measurement. The merge is still one step with the re-approval, in his sitting; §0 below is
+unchanged. (b) **Drop dominos only** of the four smartrecruiters boards: `companies remove
+smartrecruiters:dominos` is an UNWATCH, verified before and after — **288 → 287 watched**, its 800
+open postings still held and now in the death-probe population (D-314), not in silence.
+
+**T37 — THE HANDOFF'S MECHANISM WAS WRONG AND ITS FALLBACK IS IMPOSSIBLE.** D-472 read the lost
+`FidelityCareers` apply as starvation past `busy_timeout` 5 s. **Starvation does not reproduce**:
+a back-to-back stream of short transactions on one thread let a 200 / 2,000 / 20,000-insert writer
+on another in after **0.003 / 0.039 / 0.160 s**. The real fault is a **WAL snapshot upgrade** —
+`apply_board` opens a DEFERRED transaction and READS before it writes, so **ONE** commit from any
+other connection in that gap fails the write with `SQLITE_BUSY_SNAPSHOT` (517), rendered as
+`database is locked`, in **0.0006 s against a 5,000 ms timeout**. The busy handler is never
+invoked, so **no value of `busy_timeout` changes the outcome** — pinned as a test on ELAPSED TIME
+so it is not re-proposed. Fixed by the split the handoff preferred: the lane thread FETCHES only,
+the join site applies. **Chosen consequence:** a run returning before the join lands NO lane rows
+(pre-SP2 behaviour) — a shipped test asserted the opposite and was rewritten.
+
+**T38 — THE READY QUEUE, because the static fix is a REGRESSION.** `host_diverse` is gone,
+replaced by `host_queues` + `take_ready` and a `wait(FIRST_COMPLETED)` dispatch loop bounded at
+`scan_workers`. Sized on the model D-344 was fitted to, recalibrated against run 3: today 95.0 min,
+**static chain-first 105.5 (worse than doing nothing)**, ready queue **83.8**. Null control, both
+arms on ONE fleet (287 boards, 131 hosts): the smartrecruiters chain moves from positions
+3, 134, 147, 153… to **3, 11, 19, 27…** — the gap is now exactly `scan_workers` — with **0 of 131
+hosts' own board order changed**. **This supersedes D-344's "not built (the model already prices
+the loss)".** T36 is re-decided on the next tick's tail, not before.
+
+**T39** — `scan.empty_complete_guarded` in the funnel and one run-log line; `ARTIFACT_VERSION`
+deliberately not bumped (additive key, `fetch_cost` precedent).
+
+**T28 — CLOSED, and the zero is STRUCTURAL.** The probe reaches the funnel's 40 for each run and
+still finds 0 duplicate groups at every scope. The control that establishes it is a POSITIVE one:
+the identical grouping over the 83,308 open postings finds **7,093 groups**. The cause is in run 3's
+own funnel — the shortlist drops **46 `hidden_duplicate` + 5 `hidden_slate_cap`** and holds run 2's
+40 as `hidden_handled` before the slate is cut, over a corpus-wide `dedup` that already suppressed
+**1,498 / 83,308 (1.80%)**. The delivered set is the one population where this is zero by
+construction; the 14-18% headline is **retired, not refuted**, and its replacement is already in
+every funnel. No successor ticket.
+
 ### Session 2026-09-05b (planning review): the 2026-09-05 report HOLDS; run 3 is READ (106.8-min warm scan, SP2 paid in full, 35 verdict moves, 3 apply / 37 review); T33's residual-zero successor is REFUSED on consequence, T36 is CLOSED on the smartrecruiters critical path, and the merge of `close-2026-09-05` is BOUND to Mit's re-approval — next list `HANDOFF-2026-09-06.md`
 
 **Read this before acting on anything below it.** Reasoning: **D-472**. Numbers: `METRICS.md`,
@@ -46,76 +93,55 @@ concurrently, apply serially).
 **RULED (D-472):** `residual_chars == 0` — **NO**: 128 bodies, 120 `uncertain` + 8
 `ineligible`, ZERO eligible, zero leads, zero ever tailored; no chrome class is open. **T36 —
 CLOSED as specified**: both runs end on the smartrecruiters host ALONE (47.9 min of run 2, 27.6
-of run 3), 1,931 detail requests on one host that `host_diverse` emits one board per round
-behind 135 Workday singletons — the lever is ORDER (**T38**), and `scan_workers` is re-decided
+of run 3), 1,931 detail requests on one host that the ordering then in force emitted one board
+per round behind 135 Workday singletons — the lever is ORDER (**T38**), and `scan_workers` is re-decided
 only after it. T15's guard never reaches the funnel (**T39**). T28, T34 carried unchanged; T35
 gated on 09-09.
 
-### Session 2026-09-05 (execution): the 04:00 tick was NOT waited for — **run 3 was launched by hand at 22:39; it FINISHED 00:43 exit 0 and is read in 2026-09-05b**; T31 and T32 are gate-green but **NOTHING IS MERGED**, and T33 is REFUSED on inspection at 0.701% held
-
-**Read this before acting on anything below it.** Reasoning: **D-471**. Numbers: `METRICS.md`, the
-`Session — 2026-09-05` block. **Written for the planning session:
-`docs/program/REPORT-2026-09-05.md`. The remaining list: `docs/program/HANDOFF-2026-09-05-POSTRUN.md`.**
-
-**`main` IS UNTOUCHED AT `84671523`.** The primary checkout runs the editable venv, so a live run
-must not have its code swapped underneath it. Branch **`close-2026-09-05`** carries, in order,
-`1fc61596` (T31: `init` seeds the bundled `resume_template.tex` when absent, never overwrites),
-`d406a9f6` (T32: the résumé shell joins `projection_content_digest` and the approval screen), and
-the close commit. **ONE `--ff-only` merge lands all three.** Full gate on the T31+T32 state: **exit
-0, 9,462 passed / 0 failed / 1 skipped / 4 xfailed.** Worktrees `../bw-t31`, `../bw-t32`,
-`../bw-close` are left in place; delete after merging.
-
-**⚠ T32 STALES THE PROJECTION APPROVAL — Mit chose this at 23:26 on 09-04 on the condition that he
-re-approves before the next `--project` run.** Until he does, any `--project` run scans in full and
-then refuses at the P5a preflight. `boardwatch profile-bundle approve-projection`, controlling TTY.
-
-**RUN 3 was launched by hand**, not by launchd: `run --project --top 40` with
-`BOARDWATCH_HEARTBEAT_URL` and `BOARDWATCH_ALERT_URL` **unset**, so the 04:00 tick still owns the
-heartbeat signal. Warm scan **283 of 288 boards in 79.3 min against run 2's cold 178.6 min**, and
-the corpus GREW 61,927 → 81,777 open as `detail_fetch_budget` absorbs the backlog run 2 left
-(`boards_partial` 70). **R1, T28 and T34 are CARRIED** — the run had not finished when the session
-was wrapped.
-
-**T33 IS CLOSED, AND THE RULING IS "NO".** The class D-470 authorised holds **429/61,232 =
-0.701%** — inside its 1% bar, both null controls pass, and the threshold arm passes — but **14 of
-20 printed held bodies are real JDs**, reproduced at ~11 of 20 on a second seed over a 24% larger
-corpus. `MIN_BODY_CHARS` is an English-length constant that condemns complete Chinese JDs; a line
-floor fails the same way. **The survivor is `residual_chars == 0`: 118 bodies / 0.193%, 10 of 10
-chrome — sized as M, not S, and it is the one open question this session produced** (§4 of the
-post-run handoff).
-
-**T36 LOOKS WEAKER THAN IT DID.** The warm scan is 2.25x faster at `scan_workers` unchanged, so
-the corpus warming up may already have paid the lever. `board_scans` cannot model this at all
-(127 s of rows against a 10,716 s stage); only `funnel.scan.fetch_cost` can, and it double-counts
-same-host blocking, so every projection from it is an UPPER bound. smartrecruiters is 24.0% of run
-2's fetch cost on ONE host over 10 boards.
-
 ## Next action
 
-**0. THE NEXT THINGS, IN THIS ORDER — `docs/program/HANDOFF-2026-09-06.md`.** (a) **With Mit
-at the keyboard and no run in flight**: `git merge --ff-only close-2026-09-05`, then
-`boardwatch profile-bundle approve-projection` (the screen now prints the shell's header and
-education), the formatting session in the same sitting, verify the gate read-only, delete the
-three worktrees, push. **Without Mit: do not merge; do not move `main`.** (b) **T37** — the lost
-apply, reproduced red first, fixed by applying the lanes serially after the scan's join.
-(c) **T38** — the scan order: emit the smartrecruiters chain from round 0. (d) **T39** — T15's
-guard into the funnel. Each in a worktree off `close-2026-09-05`, one gate each.
+**0. THE MERGE, AND IT IS STILL ONE STEP WITH THE RE-APPROVAL, IN MIT'S SITTING.** With Mit at
+the keyboard and `pgrep -fl "boardwatch run"` finding nothing: `git merge --ff-only
+close-2026-09-06`, then **immediately** `boardwatch profile-bundle approve-projection` on a
+controlling TTY (the screen prints the shell's header and education above the entries), then the
+formatting session in that same sitting — per-lens skills, the SAKEC/Nakshatra order,
+`projection.{sde,ios}.yaml` — because each of those edits re-stales the stamp. Then verify the
+gate read-only (`projection_candidate(...)`'s `content_digest` must equal the stamp's), delete the
+worktrees, `git push origin main`. **Without Mit: do not merge; do not move `main`.** The reason is
+mechanical: the tick runs the editable venv from `main`, and a stale stamp costs a ~107-min scan,
+a P5a refusal, exit 1 and a withheld heartbeat — a false alert for a condition we chose.
 
-**0-1. CARRIED, UNCHANGED:** **T28** (the probe, null control first: it must find the 40 before
-grouping) and **T34** (M1 — `gate request` → two blind judges → `gate apply` → the m1 probe; the
-planning session rules on the cadence). **T35** is gated on reaching 09-09.
+**0-1. CARRIED — T34 (M1), NOT STARTED, AND DELIBERATELY.** `gate request` → two blind judges →
+`gate apply` → `.agent/2026-09-04e-session/m1_probe.py`, with the null control that the join
+reproduces the gate pass's own totals before the lane column is added. **It was not started
+because the gate pass is a WRITE path and the 04:00 tick was inside its window** — and T37's
+finding makes that sharper than it was: it takes ONE concurrent commit to kill a board mid-scan,
+so a CLI write during a run is no longer a theoretical risk. Run it with no run in flight and no
+tick due. **T35** (gate 1 re-measure, D-424) is gated on reaching 09-09;
+`.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
 
-**0-2. CLOSED, BY RULING (D-472):** T33 and its residual-zero successor; T36 as specified
-(`scan_workers` is re-decided only after T38, on a tick whose smartrecruiters tail is gone —
-and the config comment's `le=8` claim is stale against `le=32`). Still closed: T18 `data`/`ai`,
-T24, T26. SP3 (+T23) stays deferred until three warm ticks report the tailor stage — run 3 is
-the first at 5.16 s/lead.
+**0-2. T40 IS PROPOSED AND NOT BUILT — the same defect class, one process wider.** T37 removed the
+in-process second writer. It did NOT close the cross-process case: **every default-context CLI
+command in this repo is a write path**, so anything run against the live store during a scan —
+`top`, `doctor`, a `digest` — can kill a board through the identical snapshot upgrade. The
+one-line hardening is `apply_board` taking `write_connection` (`BEGIN IMMEDIATE`), which makes a
+contended apply QUEUE on `busy_timeout` instead of failing instantly. It is deliberately not
+shipped inside a bug fix: it changes the scan's locking discipline for every board, holds the
+write lock for a whole board apply, and is **Mit's call**.
 
-**0-3. STILL OWED AND UNTOUCHED — MIT'S:** push `main` after the merge (nothing to push before
-it); `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291); the
-formatting session (with the re-approval, above); **a fleet call sized in the handoff §5** —
-dominos (23,875 deferred, 0 leads ever), boschgroup, cityofnewyork and abbvie carry the
-smartrecruiters chain at ~400 host-seconds each per run; StreakSync `main`.
+**0-3. CLOSED, BY RULING:** T28 (this session — structurally zero, no successor). T33 and its
+residual-zero successor, T36 as specified, T18 `data`/`ai`, T24, T26 (D-472 and earlier). **T36 is
+re-decided only on the first tick after T38 lands**, on that tick's own smartrecruiters tail —
+and `config.toml`'s comment still claims `le=8` against `Field(default=4, ge=1, le=32)`, to be
+corrected in the next change that touches Mit's config, with his OK. SP3 (+T23) stays deferred
+until three warm ticks report the tailor stage; run 3 is the first at 5.16 s/lead.
+
+**0-4. STILL OWED AND UNTOUCHED — MIT'S:** `git push origin main` after the merge (nothing to push
+before it); `.agent/2026-09-04c-session/discover-candidates.yaml` (80 GitHub-list boards, D-291);
+the formatting session (with the re-approval, above); **the rest of the smartrecruiters fleet call**
+— dominos is dropped, and boschgroup (4,018 deferred, 0 leads), cityofnewyork (1,084, 0) and
+abbvie (1,074, 0) remain at ~400 host-seconds each per run, now overlapped by T38 rather than
+serialised behind the fleet; StreakSync `main`.
 
 **1. THE YEARS RULING'S PROPAGATION IS OWNER-GATED AND MUST NOT BE ASSUMED.** He ruled on **28
 verdicts on the delivered shortlist**. `near_miss_years_ceiling` abstains on that same 2-3 year band
@@ -162,11 +188,6 @@ alternative that actually bounds it.
   **availability** — 2 total refusals and 2 near-total in the last 7 armed runs.
 - **The refused-aggregator filter is REFUSED (D-463)**, not deferred. Its premise inverts on the
   actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
-- **A run was launched with the wrong flags this session.** `boardwatch run` defaults to `--top 10`
-  and no `--project`; the daily driver is **`run --project --top 40`** — CORRECTED 2026-09-04d from
-  `--top 100`, which this file and memory both carried; `plutil -p` on the live plist says 40. Run 151 was killed ~17 min
-  in and relaunched as 152. **Never set `BOARDWATCH_HEARTBEAT_URL` on a manual run** — it would ping
-  the production healthcheck and mask a real 04:00 failure.
 
 ## Owner-gated — do NOT start or decide unilaterally
 

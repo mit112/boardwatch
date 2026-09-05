@@ -2559,3 +2559,61 @@ refused**: run 2's tailor stage was 162 s (4.06 s/lead, 1.35% of a cold run), bu
 cost is a 4-64 s range set by the slate, so the prize is 2-30 min/run; the first three warm ticks
 decide it. The LLM gate's cadence waits on M1. **The real run-time lever is `scan_workers`, still
 8 in Mit's `config.toml` against a ceiling of 32** — T36, only after the first warm scan is read.
+
+## Session 2026-09-05 (execution), moved WHOLE out of `STATE.md` on 2026-09-06
+
+Moved because `STATE.md` reached its ceiling again and this session is settled: run 3 was
+read out in 2026-09-05b, and T37/T38/T39 — the tickets it produced — all shipped on
+2026-09-06. Nothing is summarised; the block is exactly as it stood.
+
+### Session 2026-09-05 (execution): the 04:00 tick was NOT waited for — **run 3 was launched by hand at 22:39; it FINISHED 00:43 exit 0 and is read in 2026-09-05b**; T31 and T32 are gate-green but **NOTHING IS MERGED**, and T33 is REFUSED on inspection at 0.701% held
+
+**Read this before acting on anything below it.** Reasoning: **D-471**. Numbers: `METRICS.md`, the
+`Session — 2026-09-05` block. **Written for the planning session:
+`docs/program/REPORT-2026-09-05.md`. The remaining list: `docs/program/HANDOFF-2026-09-05-POSTRUN.md`.**
+
+**`main` IS UNTOUCHED AT `84671523`.** The primary checkout runs the editable venv, so a live run
+must not have its code swapped underneath it. Branch **`close-2026-09-05`** carries, in order,
+`1fc61596` (T31: `init` seeds the bundled `resume_template.tex` when absent, never overwrites),
+`d406a9f6` (T32: the résumé shell joins `projection_content_digest` and the approval screen), and
+the close commit. **ONE `--ff-only` merge lands all three.** Full gate on the T31+T32 state: **exit
+0, 9,462 passed / 0 failed / 1 skipped / 4 xfailed.** Worktrees `../bw-t31`, `../bw-t32`,
+`../bw-close` are left in place; delete after merging.
+
+**⚠ T32 STALES THE PROJECTION APPROVAL — Mit chose this at 23:26 on 09-04 on the condition that he
+re-approves before the next `--project` run.** Until he does, any `--project` run scans in full and
+then refuses at the P5a preflight. `boardwatch profile-bundle approve-projection`, controlling TTY.
+
+**RUN 3 was launched by hand**, not by launchd: `run --project --top 40` with
+`BOARDWATCH_HEARTBEAT_URL` and `BOARDWATCH_ALERT_URL` **unset**, so the 04:00 tick still owns the
+heartbeat signal. Warm scan **283 of 288 boards in 79.3 min against run 2's cold 178.6 min**, and
+the corpus GREW 61,927 → 81,777 open as `detail_fetch_budget` absorbs the backlog run 2 left
+(`boards_partial` 70). **R1, T28 and T34 are CARRIED** — the run had not finished when the session
+was wrapped.
+
+**T33 IS CLOSED, AND THE RULING IS "NO".** The class D-470 authorised holds **429/61,232 =
+0.701%** — inside its 1% bar, both null controls pass, and the threshold arm passes — but **14 of
+20 printed held bodies are real JDs**, reproduced at ~11 of 20 on a second seed over a 24% larger
+corpus. `MIN_BODY_CHARS` is an English-length constant that condemns complete Chinese JDs; a line
+floor fails the same way. **The survivor is `residual_chars == 0`: 118 bodies / 0.193%, 10 of 10
+chrome — sized as M, not S, and it is the one open question this session produced** (§4 of the
+post-run handoff).
+
+**T36 LOOKS WEAKER THAN IT DID.** The warm scan is 2.25x faster at `scan_workers` unchanged, so
+the corpus warming up may already have paid the lever. `board_scans` cannot model this at all
+(127 s of rows against a 10,716 s stage); only `funnel.scan.fetch_cost` can, and it double-counts
+same-host blocking, so every projection from it is an UPPER bound. smartrecruiters is 24.0% of run
+2's fetch cost on ONE host over 10 boards.
+
+
+## The manual-run flag fossil, moved WHOLE out of `STATE.md` on 2026-09-06
+
+Moved because the incident it narrates is long past — it names runs 151 and 152, and the
+2026-09-03 reset restarted run ids at 1 — while the two facts inside it are permanent. Kept
+verbatim rather than summarised.
+
+- **A run was launched with the wrong flags this session.** `boardwatch run` defaults to `--top 10`
+  and no `--project`; the daily driver is **`run --project --top 40`** — CORRECTED 2026-09-04d from
+  `--top 100`, which this file and memory both carried; `plutil -p` on the live plist says 40. Run 151 was killed ~17 min
+  in and relaunched as 152. **Never set `BOARDWATCH_HEARTBEAT_URL` on a manual run** — it would ping
+  the production healthcheck and mask a real 04:00 failure.
