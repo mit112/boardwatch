@@ -7,6 +7,11 @@ exits immediately, reading its canned behaviour from environment variables the t
 Fails open at every seam (D-074): the fake's failure modes below (`exit1`, `garbage`,
 `wrongcount`) each drop exactly one BATCH's verdicts and must never make the run fatal or
 drop a real lead from the slate.
+
+The `fenced` mode is NOT a failure mode -- it is the shape real headless haiku actually
+returned on run 4, and it must be JUDGED, not failed open. It exists because this fake
+returned bare `json.dumps(verdicts)` and therefore modelled a response the live model does
+not reliably produce, which is how an armed judge reached production judging nothing.
 """
 
 from __future__ import annotations
@@ -91,7 +96,12 @@ else:
         for l in labels
     ]
 
-envelope = {"is_error": False, "result": json.dumps(verdicts)}
+result_text = json.dumps(verdicts)
+if mode == "fenced":
+    # Byte-shape of what real haiku returned on run 4: a ```json fence around the array,
+    # despite the output contract forbidding fences.
+    result_text = "```json" + chr(10) + result_text + chr(10) + "```"
+envelope = {"is_error": False, "result": result_text}
 print(json.dumps(envelope))
 '''
 
@@ -262,6 +272,37 @@ def test_gate_garbage_output_fails_open(
     assert summary.fatal is None
     assert summary.gate_failed_open == 1
     assert summary.gate_judged == 0
+    assert posting_id in [lead.posting_id for lead in summary.tailored]
+
+
+# ---------------------------------------------------------------------------
+# a FENCED response is the real model's shape and must be judged, not failed open
+# ---------------------------------------------------------------------------
+
+
+def test_gate_judges_a_response_wrapped_in_a_markdown_fence(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run 4, the first armed run, judged NOTHING: all four haiku batches came back as
+    ```json\n[...]\n``` and all four failed open on a JSONDecodeError at character 0.
+
+    The suite was green throughout, because the fake returned an unfenced array — a shape the
+    live model does not reliably produce. This test pins the live shape, and the assertion is
+    on `gate_judged`, not merely on `gate_failed_open == 0`: a stage that fails open silently
+    also reports zero judged, so only the positive count distinguishes "parsed it" from
+    "never called".
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "fenced")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert fake_claude.exists(), "the gate never attempted a call"
+    assert summary.gate_failed_open == 0, summary.errors
+    assert summary.gate_judged == 1
+    assert summary.gate_eligible == 1
     assert posting_id in [lead.posting_id for lead in summary.tailored]
 
 
