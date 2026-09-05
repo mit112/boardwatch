@@ -46,7 +46,8 @@ the `Session — 2026-09-06b` block. The 2026-09-06 execution block moved WHOLE 
   postings with 0 leads. Mit's.
 
 **`ROADMAP.md` is NEW, at Mit's request** — five milestones with exit criteria; **M1 (land the merge, run
-it once) is the open one.** Work only what moves its exit criterion.
+it once) is the open one: the merge LANDED at 04:13 (§0), the run is owed.** Work only what moves its
+exit criterion.
 
 **Run 4 is the launchd tick of 2026-09-05 on `main` UNCHANGED** (287 boards, no T37/T38/T39),
 deliberately not postponed: SP3 measurement 2 of 3 and T38's baseline. **It did not fire at
@@ -57,19 +58,18 @@ first (R2).
 
 ## Next action
 
-**0. THE MERGE, AND IT IS STILL ONE STEP WITH THE RE-APPROVAL, IN MIT'S SITTING.** With Mit at
-the keyboard and `pgrep -fl "boardwatch run"` finding nothing: `git merge --ff-only
-close-2026-09-06`, then **immediately** `boardwatch profile-bundle approve-projection` on a
-controlling TTY (the screen prints the shell's header and education above the entries), then the
-formatting session in that same sitting — per-lens skills, the SAKEC/Nakshatra order,
-`projection.{sde,ios}.yaml` — because each of those edits re-stales the stamp. Then verify the
-gate read-only (`projection_candidate(...)`'s `content_digest` must equal the stamp's), then
-`git push origin main`. **The branch to merge is `close-2026-09-06`** (it fast-forwards; it already
-contains `close-2026-09-05`'s four commits). Only then delete the worktrees, and note there are
-SEVEN: `../bw-close`, `../bw-t31`, `../bw-t32`, `../bw-t37`, `../bw-t38`, `../bw-t39` and
-`../bw-int` — `bw-int` is the one holding `close-2026-09-06`, so remove it LAST, after the merge. **Without Mit: do not merge; do not move `main`.** The reason is
-mechanical: the tick runs the editable venv from `main`, and a stale stamp costs a ~107-min scan,
-a P5a refusal, exit 1 and a withheld heartbeat — a false alert for a condition we chose.
+**0. THE MERGE LANDED — 2026-09-05 04:13 CDT, IN MIT'S SITTING, WITH THE RE-APPROVAL.** `main` is
+`b040ee90` on origin (`git merge --ff-only close-2026-09-06`, fifteen commits, after removing a
+stale `.git/index.lock` from 09-04 22:54 with no git process alive). Mit ran
+`profile-bundle approve-projection` on a controlling terminal at 04:14:01 CDT; the stamp's
+`content_digest` was verified read-only against `projection_candidate(...)` — **MATCH**. The
+seven worktrees are removed (`bw-int` last) and their branches deleted. **The editable venv now
+runs T37, T38 and T39**, and the next `--project` run is M1's first acceptance reading (§5 of
+`HANDOFF-2026-09-07.md`). The formatting session is still owed and re-stales the stamp:
+**re-approve immediately after it, before any run.**
+
+**0-0. OWNER RULINGS 2026-09-05 04:13 (D-475): T40 — YES, build. T41 — FIX, build.** Both are
+now plain tickets for the next execution session, in that order, after R2.
 
 **0-1. T34 (M1) IS RESPECIFIED AND ITS READ-ONLY FORM IS APPROVED (D-474 choice 4).** The
 apparatus as written cannot work — `gate request` ranks with `include_handled=False` and all 80
@@ -81,7 +81,7 @@ return `ineligible`, two blind judges, raw-substring `span_of` as the persisted-
 nothing written. Only with no run in flight. **T35** (D-424) is gated on 09-09;
 `.agent/2026-09-02-session/per_source_recall.py`, standing 28.8%.
 
-**0-2. T40 AND T41 ARE TICKETED AND OWNER-GATED — Mit's yes at the top of the session.** T40:
+**0-2. T40 AND T41 ARE RULED (§0-0) AND TICKETED.** T40:
 `apply_board` on `write_connection` (`BEGIN IMMEDIATE`), one line; the stated consequence is a
 CLI write failing loudly during one of the ~30 boards whose apply exceeds 5 s. T41: one
 per-process per-host pacing registry shared by every `Fetcher`, two clients kept; priced at 94

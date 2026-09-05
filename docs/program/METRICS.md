@@ -12794,6 +12794,16 @@ Run 4 adds ~40; the apply lane stays ≤ 10, so M1's headline is a count.
 | the 09-04 tick | `runs.started_at` 11:00:05Z = **06:00:05 CDT** for a plist saying `Hour 4` |
 | prediction | run 4 starts **06:00 CDT** (11:00Z); the job was NOT kickstarted |
 
+### The merge and the re-approval (04:13–04:14 CDT, Mit's sitting)
+
+| step | result |
+|---|---|
+| `git merge --ff-only close-2026-09-06` | `84671523` → **`b040ee90`**, 15 commits, pushed; a stale `.git/index.lock` (09-04 22:54, no git process) removed first |
+| `profile-bundle approve-projection` | stamp `approved_at` 2026-09-05T09:14:01Z, `approved_via: controlling_terminal` |
+| read-only verification | `projection_candidate(...).content_digest` == stamp `content_digest` — **MATCH** |
+| worktrees / branches | 7 removed (`bw-int` last) / 7 deleted |
+| editable venv | imports `_fetch_lanes`, `_apply_lanes`, `take_ready` — T37/T38 live for the next run |
+
 ### Gate on the planning close
 
 | gate | result |
