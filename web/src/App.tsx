@@ -68,7 +68,7 @@ export function App() {
         Skip to content
       </button>
       <header inert={sheet} className="sticky top-0 z-30 border-b border-divider bg-bg/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[110rem] flex-wrap items-center gap-6 px-6 py-3">
+        <div className="mx-auto flex max-w-[160rem] flex-wrap items-center gap-6 px-6 py-3">
           {/* A real `h1`, not a styled span: it is the only document-level heading either route
               has, and without it a screen reader's heading list starts at `h2` under nothing.
               Set as a wordmark in the display voice. The accent rule beside it is the only place
@@ -108,7 +108,16 @@ export function App() {
         </div>
       </header>
 
-      <main id="view" tabIndex={-1} className="mx-auto max-w-[110rem] px-6 py-10">
+      {/*
+        * 160rem, not the 110rem this used to be. 110rem is 1760px, so on the 27-inch display this
+        * is worked on (2560 CSS px) it left 400px of dead margin each side AND — because the
+        * detail pane takes up to 32rem of what is left — put the queue's list container at 1184px,
+        * under the 78rem at which `QueueRowItem` switches to its eight-column tier. The widest
+        * layout was therefore unreachable whenever a lead was open, at every width. The cap is on
+        * the GRID's page, so it is raised here and the readable measure is held where the prose
+        * actually is: the JD box in the detail pane and the queue's empty state.
+        */}
+      <main id="view" tabIndex={-1} className="mx-auto max-w-[160rem] px-6 py-10">
         {/*
           * Wraps the route SWITCH, not the header — so a view that fails to draw leaves the nav
           * above it working, and the reader's way out is the tab they already know. `resetKeys`
