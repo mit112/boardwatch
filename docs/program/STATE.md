@@ -22,9 +22,9 @@
 
 ### Session 2026-09-05d (jobapps lane audit → RE-ARMED; eligible count re-measured): **the `jobapps` lane had been UNARMED since the reset** — the recovered config was the 08-28 tuning, older than the 08-31 arming — so runs 2–5 ingested ZERO job-apps discovery (store: 0 tagged postings, 0 `jobapps` companies, 0 lane scans for it). Re-armed 19:15 CDT on Mit's call, BEFORE the 20:00 chain, with `resumes/` as the first root and a 96-link symlink staging root (`<data_dir>/jobapps-staging`, the D-423 vehicle) as the second, covering `APPLY_QUEUE`'s groups and every date's `_eligibility_review`: **1,460 direct-apply postings, 776 employers (692 new)**, cap override `unlimited`. Discovery only — `rules_hash`/`engine_version` untouched, the D-483 count holds. Decision **D-486**; numbers in `METRICS.md`.
 
-**Live eligible, under run 5's identity (the last evaluated):** tier 0 (`eligible` + `swe`) **67 — 38 delivered, 29 undelivered**; tier 1 (`uncertain` + `swe`) 994, never folded in. **Under the code on `main` there are ZERO current verdicts until run 6 finishes re-evaluating** — T51 moved `engine_version`; `boardwatch web` reads every lead `unevaluated` until then. Five `Acme` test-fixture folders (06:59 CDT, pytest temp paths, `job_id 1` = a real posting) were removed from `~/boardwatch-queue`; apply lane is 40. **Owed:** the test path that reaches the real queue root (the conftest guard patches `pipeline.runner` only); after run 6, `track import "<home>/dev/Job apps/APPLY_QUEUE/_applied"` (25 records) and re-point `jobapps_queue_dir` at `APPLY_QUEUE` itself.
+**Live eligible, under run 5's identity (the last evaluated):** tier 0 (`eligible` + `swe`) **67 — 38 delivered, 29 undelivered**; tier 1 (`uncertain` + `swe`) 994, never folded in. **Under the code on `main` there are ZERO current verdicts until run 6 finishes re-evaluating** — T51 moved `engine_version`; `boardwatch web` reads every lead `unevaluated` until then. Five `Acme` test-fixture folders (06:59 CDT, pytest temp paths, `job_id 1` = a real posting) were removed from `~/boardwatch-queue`; apply lane is 40. **Owed:** the test path that reaches the real queue root (the conftest guard patches `pipeline.runner` only); after run 6, `track import "<home>/dev/Job apps/APPLY_QUEUE/_applied"` (25 records). **Do NOT re-point `jobapps_queue_dir` at `APPLY_QUEUE`** — Mit (19:35 CDT): `APPLY_QUEUE` is historical and no longer updates; `resumes/` is the daily feed and the lane already reads it directly. The open gap is FUTURE dates' `_eligibility_review` buckets (the staging links are static); a one-line link refresh in the launchd wrapper, outside the repo, is the proposed fix — owner's call tomorrow.
 
-**Read run 6 for:** `lane jobapps → ~1,460 attempted · N resolved` (plus the two network lanes), `provider='jobapps'` companies > 0, `judged > 0`, `fatal` absent, software titles. A `JobAppsSourceError` in `summary.errors` means a root moved.
+**READ AND CONFIRMED — runs 6, 7, 8 all `ok`, and the PROVISIONAL PASS IS MET (3 of 3).** The lane read 3,071 and resolved **1,460** on every run, admitting **682** companies on run 6 and **0** on runs 7 and 8 — the convergence a drained one-time harvest produces. Store: 1,460 tagged postings under 770 employers, 251 converged onto real boards. The judge worked on all three (40/39/38 judged, 0 batches failed open) and now REJECTS (6 on run 7, 11 on run 8). **Run 6 reconciled every stage — projection, tailor and PDF all 40 of 40, and 40 of 40 leads were software** (run 5: 9 PDFs of 30, and 20 of 30 non-software). Apply lane **128**, of which **48 carry a `jobapps:` board target** (TikTok, Apple, IBM, Google DeepMind, Toyota, Disney, Marriott, KLA, Garmin, PayPal). **End-of-line eligible: 189 (`eligible` + `swe`), 49 undelivered**; tier 1 `uncertain`+`swe` 1,644, never folded in. Numbers: `METRICS.md`, `Session — 2026-09-05 (later)`.
 
 ### Session 2026-09-05c (web viewer audit → fixed and SHIPPED): 25 findings from a browser-and-code audit of `boardwatch web`, all 25 closed by FOUR headless Opus executors on the enterprise seat (T56–T59, 30 commits, ~$35, 26 min wall) plus five integration commits; gated green on `web-audit` (9,586 passed), merged to `main` as `3df9ce1f`, **CI green after `e43b7caa`** (the docs push first went red on a quoted test address — D-485 records it). Decision: **D-485**. Nothing here touches eligibility, `rules.yaml`, `engine_version` or `delivery/queue.py`, so the count and the 20:00 chain are unaffected.
 
@@ -103,9 +103,7 @@ upper bound). `engine_version` moved again; run 6 re-evaluates ~103k postings on
 `main` before the freeze. **Runs 6, 7, 8 are scheduled for 20:00 CDT** (owner: "so we dont waste
 daylight"), kickstarted under launchd by a detached scheduler that waits out any gate.
 
-**Next action.** Read run 6's `lane jobapps` line first (D-486). Set `"indeed.tier1"` (owner). Read runs 6, 7, 8 as they land (the chain kickstarts each when the
-previous exits 0; `launchctl print` `runs = N`, `judged > 0`, `fatal` absent, the lead titles
-software). Three clean ⇒ provisional pass. Mit's optional machine action: a reboot moves the
+**Next action.** **The provisional pass is MET (runs 6–8, all `ok`).** 14-day acceptance not started. Set `"indeed.tier1"` (owner). Refresh the jobapps staging links before tomorrow's run so the new date's `_eligibility_review` bucket is reachable (owner's call: a one-line refresh in the launchd wrapper, outside the repo). Mit's optional machine action: a reboot moves the
 06:00 tick to 04:00 — not before the chain is done.
 
 ### Owed, and specifically NOT done
@@ -186,7 +184,7 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
   armed and WORKING**, and its 50-board sample is **reverted** (D-456) — watched boards 482 → 432,
   then 490 after run 149's Indeed convergences. Remaining tier-D lanes are **DECIDED AGAINST**, not
   deferred (D-451).
-- **Provisional pass: the count starts at run 6 (D-483; run 5 failed), 0 of 3.** 14-day acceptance not started.
+- **Provisional pass: MET — runs 6, 7, 8 all `ok` under launchd, 3 of 3 (D-483's count, discharged 2026-09-05).** 14-day acceptance not started.
   Not chased (D-351 item 2: work comes first), and every `rules_hash` bump restarts the count.
 
 ## Live blockers and carried gaps
