@@ -360,6 +360,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`track import` no longer marks hundreds of jobs applied from one aggregator URL.** The url key
+  refused nothing on a fan-out, on the premise that one url resolving to several jobs was one posting
+  stored twice. It is not: the ledger already collapses that case onto one job, and `normalize_url`
+  drops the query parameter that carries an aggregator's identity (`indeed.com/viewjob?jk=…`), so
+  one job-apps row keyed by such a url matched 566 jobs on the live store and would have hidden all
+  566 from the queue for good. A url fan-out is now reported `ambiguous` and writes nothing, exactly
+  as a company/title fan-out always was; a url seen twice under one job still writes once.
+
+- **A store's "front end" no longer reads as a software title.** Giant Eagle's checkout-supervisor
+  track ("Front End Lead Trainee", "Trainee, Front End Lead") matched the role gate's
+  `front end … lead` rescue, and the rescue being unconditional, 47 open rows sat in tier 0 and three
+  reached the apply lane with tailored PDFs. Both front-end rescue branches now carry an anchored
+  `trainee` guard, and a store deny covers the retail forms (`lead trainee`, `team lead(er)` with
+  a separator, `coach`, `checkout`, `cashier`, `clerk`). A/B over every distinct open title in the
+  live store: 8 titles and 74 postings move, all of them store-floor rows at Giant Eagle and Walmart;
+  no software title moves, and "Frontend Team Leader", "Front End Tech Lead" and "Front End Developer
+  Trainee" are pinned as spared.
+
+
 - **An "18 years or older" age floor no longer rejects a posting.** `domain_years_minimum` read
   "18 years or older" as an eighteen-year experience bar; `or` and `older` join the words that
   stop that pattern, so an age requirement writes no experience row.
