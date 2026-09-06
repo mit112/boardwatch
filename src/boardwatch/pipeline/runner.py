@@ -705,7 +705,7 @@ def _fetch_lanes(
         try:
             resolved.append((name, factory(context)))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
-            errors.append(f"lane {name}: collection failed: {exc!r}")
+            errors.append(f"lane {name}: collection failed: {type(exc).__name__}: {exc}")
     if not resolved:
         return [], errors
 
@@ -734,9 +734,9 @@ def _fetch_lanes(
             try:
                 fetched[name] = future.result()
             except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
-                # Same message as before the split: a lane whose FETCH raised is reported and
-                # absent from `reports`, never present with zeros.
-                errors.append(f"lane {name}: collection failed: {exc!r}")
+                # Same message as the factory site above: a lane whose FETCH raised is reported
+                # and absent from `reports`, never present with zeros.
+                errors.append(f"lane {name}: collection failed: {type(exc).__name__}: {exc}")
 
     # Back into `lanes_enabled` order HERE, before anything is applied, rather than reordering
     # the reports afterwards. `as_completed` yields by completion, so applying in that order

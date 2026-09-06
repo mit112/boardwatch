@@ -9,6 +9,7 @@ Fixtures below are synthetic: invented companies, titles and URLs, never a real 
 from __future__ import annotations
 
 import plistlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -272,6 +273,12 @@ def test_non_directory_entries_are_skipped_not_counted(tmp_path: Path) -> None:
     assert len(rows) + len(malformed) == 1
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="chmod(0o000) does not revoke read access on Windows -- the directory stays "
+    "listable, so there is no OSError for the raise site to type. The raise site itself "
+    "is platform-neutral; only this way of provoking it is POSIX-only.",
+)
 def test_an_unreadable_directory_raises_the_typed_error_not_a_raw_oserror(
     tmp_path: Path,
 ) -> None:

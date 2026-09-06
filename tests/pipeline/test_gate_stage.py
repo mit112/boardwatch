@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -131,6 +132,20 @@ def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return sentinel
 
 
+#: The FIXTURE above is POSIX-only, not the stage. It installs an extensionless script named
+#: `claude`, and Windows' CreateProcess appends only `.exe` to an extensionless command, so
+#: `_call_claude`'s `subprocess.run(["claude", ...])` raises `FileNotFoundError` and the gate
+#: fails open before the fake runs at all -- which silently turns every mode below into the
+#: same "judge unavailable" path. A `.cmd`/`.bat` shim would not be found either, for the same
+#: reason. Tests that need the fake only to be ABSENT are NOT marked: they assert a request was
+#: never made, which is meaningful on every platform.
+_needs_an_executable_fake = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the fake `claude` is an extensionless POSIX script and Windows cannot spawn it; "
+    "the gate stage itself is platform-neutral",
+)
+
+
 def _ready(data_dir: Path) -> None:
     assert _cli(data_dir, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(data_dir, ["tailor", "init"]).exit_code == 0
@@ -205,6 +220,7 @@ def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_ineligible_with_span_excludes_the_lead_and_persists_final_gate_ineligible(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -245,6 +261,7 @@ def test_gate_ineligible_with_span_excludes_the_lead_and_persists_final_gate_ine
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_nonzero_exit_fails_open_and_is_not_fatal(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -273,6 +290,7 @@ def test_gate_nonzero_exit_fails_open_and_is_not_fatal(
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_garbage_output_fails_open(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -294,6 +312,7 @@ def test_gate_garbage_output_fails_open(
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_judges_a_response_wrapped_in_a_markdown_fence(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -325,6 +344,7 @@ def test_gate_judges_a_response_wrapped_in_a_markdown_fence(
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_wrong_item_count_fails_open(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -348,6 +368,7 @@ def test_gate_wrong_item_count_fails_open(
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_ineligible_with_no_span_persists_uncertain_and_the_lead_is_still_delivered(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
