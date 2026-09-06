@@ -699,8 +699,8 @@ def test_the_artifact_version_does_not_move_for_the_board_split() -> None:
     """
     from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 
-    assert ARTIFACT_VERSION == 7
-    assert funnel_to_dict(funnel())["artifact_version"] == 7
+    assert ARTIFACT_VERSION == 8
+    assert funnel_to_dict(funnel())["artifact_version"] == 8
 
 
 def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -> None:
@@ -1062,7 +1062,7 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     # run reports the discovery coverage it was already persisting; to 7 by D-267, which put
     # each lead's `locations` and the hard US gate's verdict on them into the record the gate
     # itself produces.
-    assert payload["artifact_version"] == 7
+    assert payload["artifact_version"] == 8
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 

@@ -10,7 +10,7 @@ The load-bearing property is that consecutive marks SUM to the run, so an unacco
 a visible row rather than a missing total; and that an untimed run says `None` rather than
 reporting a stageless run.
 
-`artifact_version` is left ALONE (7): this is an additive key, the same ruling `scan.fetch_cost`
+`artifact_version` is left ALONE (8): this is an additive key, the same ruling `scan.fetch_cost`
 took. Asserted here so the reliance on it is visible from the change that relies on it.
 """
 
@@ -140,5 +140,5 @@ def test_the_markdown_says_the_TOTAL_is_not_the_whole_process() -> None:  # noqa
 def test_the_section_is_additive_and_does_not_bump_the_artifact_version() -> None:
     """A new key nothing reads back cannot invalidate a stored artifact — the ruling
     `scan.fetch_cost` took (D-330) and the one this section relies on."""
-    assert ARTIFACT_VERSION == 7
-    assert funnel_to_dict(_funnel(_SAMPLE))["artifact_version"] == 7
+    assert ARTIFACT_VERSION == 8
+    assert funnel_to_dict(_funnel(_SAMPLE))["artifact_version"] == 8
