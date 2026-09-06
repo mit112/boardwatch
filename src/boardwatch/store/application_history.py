@@ -28,8 +28,11 @@ Two keys, kept apart and never blended, because they have different confidence:
   **When it resolves to more than one job the row writes nothing** and is reported `ambiguous`:
   the cost of guessing wrong is asymmetric. A job wrongly marked applied is dropped from the
   queue for good and nothing ever reports that it was, whereas a job left unmarked merely
-  re-surfaces. Refusing keeps the loss recoverable. The `url` key is exact, so a fan-out there
-  is one posting stored twice rather than two requisitions, and it still writes to all of them.
+  re-surfaces. Refusing keeps the loss recoverable. **The `url` key refuses a fan-out too.** One
+  posting stored twice is one JOB (the ledger collapsed it), so a url resolving to several jobs
+  means the key lost the identity: `normalize_url` keeps only allow-listed query parameters, and
+  an aggregator's identity lives in the one it strips (`indeed.com/viewjob?jk=...`). Measured on
+  the live store on 2026-09-06, one such row covered 566 jobs (D-487).
 
 Matching runs against **every** posting, open or closed. `applications` records what the user
 did, keyed on the canonical `job_id`, and restricting the index to open postings would make
@@ -314,7 +317,7 @@ def import_history(
 ) -> ImportReport:
     """Write an application for every matched job that does not already carry one.
 
-    Except when the weak key fanned out: a `company_title` match covering several jobs writes
+    Except when a key fanned out: a match covering several jobs -- on either key -- writes
     nothing and is reported `ambiguous`. Marking a job applied hides it from the queue for
     good, so guessing which requisition the row meant is the one error this cannot take back.
 
@@ -346,9 +349,10 @@ def import_history(
             )
             continue
         match_key, job_ids = found
-        if match_key is MatchKey.COMPANY_TITLE and len(job_ids) > 1:
-            # Refuse rather than guess. Both ids are kept so the audit names the requisitions
-            # this declined to choose between; resolving it means supplying a url for the row.
+        if len(job_ids) > 1:
+            # Refuse rather than guess, on EITHER key. Every id is kept so the audit names the
+            # jobs this declined to choose between; resolving a title fan-out means supplying a
+            # url for the row, and a url fan-out means the url carries no identity to supply.
             results.append(
                 RowResult(
                     line_no=row.line_no,

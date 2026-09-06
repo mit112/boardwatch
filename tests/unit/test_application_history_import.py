@@ -4,8 +4,9 @@ What is asserted here is the contract the CLI depends on, not implementation det
 
 * **the five buckets partition the input** — every row lands in exactly one, so an unmatched,
   malformed or ambiguous row is counted rather than dropped;
-* **a weak-key match that fans out writes nothing** — one (company, title) covering several
-  requisitions is refused and reported, because a wrongly-applied job is hidden for good;
+* **a match that fans out to several jobs writes nothing** — one (company, title), or one
+  normalised url, covering several jobs is refused and reported, because a wrongly-applied job
+  is hidden for good;
 * **the two keys are not equally trusted** — `company_title` matches nothing unless the caller
   opts in, and the key that matched is recorded per row;
 * **importing twice writes nothing the second time** — no duplicate application, no bumped
@@ -410,26 +411,55 @@ def test_an_ambiguous_row_is_refused_even_when_every_candidate_is_already_tracke
     assert report.results[0].application_ids == ()
 
 
-def test_a_url_key_that_covers_several_jobs_still_writes_to_all_of_them(
+def test_a_url_key_that_covers_several_jobs_is_ambiguous_and_writes_nothing(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """The URL key is exact, so a fan-out on it is one posting seen twice, not two requisitions.
-
-    Deliberately NOT changed alongside the company/title refusal: `normalize_url` folding two
-    stored postings onto one key means the same application really does cover both.
+    """A url fan-out is NOT "one posting seen twice": that case is one job, because the ledger
+    already collapsed the duplicate. Two DIFFERENT jobs behind one normalised url means the url
+    key lost the identity -- `normalize_url` keeps only allow-listed query parameters, and an
+    aggregator's identity lives in the parameter it strips (`indeed.com/viewjob?jk=...`). Measured
+    2026-09-06 on the live store: one job-apps row keyed by such a url matched 566 jobs, and the
+    old contract would have marked all 566 applied and hidden them from the queue for good
+    (D-487). Same asymmetric cost as the company/title refusal, same answer: write nothing,
+    report `ambiguous` with every candidate id.
     """
     with engine.begin() as conn:
-        first = _posting(conn, key="a", url="https://boards.example.test/acme/1")
-        second = _posting(conn, key="b", url="https://www.boards.example.test/acme/1/?utm_source=x")
+        first = _posting(conn, key="a", url="https://www.indeed.com/viewjob?jk=6d2d8952d9226b08")
+        second = _posting(conn, key="b", url="https://www.indeed.com/viewjob?jk=0000000000000000")
+    rows, malformed = parse_history(
+        _write(tmp_path, "h.csv", "company,title,url\nAcme,SWE,https://www.indeed.com/viewjob?jk=6d2d8952d9226b08\n")
+    )
+    with engine.begin() as conn:
+        report = import_history(conn, rows, malformed, allow_title_match=False)
+        assert _count(conn, applications) == 0
+    assert report.results[0].bucket is ImportBucket.AMBIGUOUS
+    assert report.results[0].match_key is MatchKey.URL
+    assert report.results[0].job_ids == tuple(sorted((first, second)))
+    assert report.results[0].application_ids == ()
+
+
+def test_a_url_seen_twice_under_one_job_still_writes_once(engine: Engine, tmp_path: Path) -> None:
+    """The case the old contract was written for -- one posting stored twice -- is one JOB, so
+    it is a single-job match and writes exactly one application. Control for the refusal above."""
+    with engine.begin() as conn:
+        job = _posting(conn, key="a", url="https://boards.example.test/acme/1")
+        company_id = conn.execute(select(postings.c.company_id).where(postings.c.job_id == job)).scalar_one()
+        conn.execute(
+            insert(postings).values(
+                company_id=company_id, job_id=job, provider_posting_id="b", title="Software Engineer",
+                normalized_title="software engineer", url="https://www.boards.example.test/acme/1/?utm_source=x",
+                locations_json=["Remote"], remote_policy="remote", first_seen_at=NOW, last_seen_at=NOW,
+                status="open", consecutive_missing=0, content_hash="b", body_text="body b",
+            )
+        )
     rows, malformed = parse_history(
         _write(tmp_path, "h.csv", "company,title,url\nAcme,SWE,https://boards.example.test/acme/1\n")
     )
     with engine.begin() as conn:
         report = import_history(conn, rows, malformed, allow_title_match=False)
     assert report.results[0].bucket is ImportBucket.MATCHED
-    assert report.results[0].match_key is MatchKey.URL
-    assert report.results[0].job_ids == tuple(sorted((first, second)))
-    assert len(report.results[0].application_ids) == 2
+    assert report.results[0].job_ids == (job,)
+    assert len(report.results[0].application_ids) == 1
 
 
 def test_a_quoted_newline_stays_inside_its_field(tmp_path: Path) -> None:
