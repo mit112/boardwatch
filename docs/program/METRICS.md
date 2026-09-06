@@ -13434,7 +13434,7 @@ Apply lane by run: 2→4 · 3→3 · 4→26 · 5→9 · 6→40 · 7→31 · 8→
 only unknown family on 236. Control: `eligible`+not-swe 172.
 
 **CI.** Nightly Windows: red 09-01 … 09-06 (nine tests × 3 versions); `t61` dispatch run
-34061956555 → attempt 1: Windows 3.11 and 3.12 GREEN, macOS and all Linux shards green, Windows 3.13 red on ONE unrelated wall-clock test (`test_the_lane_stage_overlaps_the_board_scan_instead_of_serializing_after_it`, 4.58 s against a 4.5 s margin under `-n auto`); attempt 2 re-ran that job (see STATE). Push run 34015436139 shard 4/4 failed once on
+34061956555 → attempt 1: Windows 3.11 and 3.12 GREEN, macOS and all Linux shards green, Windows 3.13 red on ONE unrelated wall-clock test (`test_the_lane_stage_overlaps_the_board_scan_instead_of_serializing_after_it`, 4.58 s against a 4.5 s margin under `-n auto`); attempt 2 re-ran that job GREEN — the whole run is green; the overlap test is a wall-clock flake with no prior history, NOT ticketed. Push run 34015436139 shard 4/4 failed once on
 `test_indeed_lane::test_an_ordinary_unseedable_hit_produces_no_refusal_note` and passed on the next
 push — a flake, not triaged.
 
