@@ -268,7 +268,8 @@ def test_the_jobapps_source_round_trips_through_config_set(cfg: Path) -> None:
     value is written straight into TOML and a `Path` is not TOML-serializable."""
     result = runner.invoke(app, ["config", "set", "jobapps_discovery_dir", "/srv/q"])
     assert result.exit_code == 0, result.stdout
-    assert "jobapps_discovery_dir = /srv/q" in runner.invoke(app, ["config", "show"]).stdout
+    shown = f"jobapps_discovery_dir = {Path('/srv/q')}"  # str(Path) separates per platform
+    assert shown in runner.invoke(app, ["config", "show"]).stdout
     assert load_settings(data_dir=None).jobapps_discovery_dir == Path("/srv/q")
 
 

@@ -61,9 +61,12 @@ def _resume() -> Resume:
 
 
 def _info(pdf: Path) -> dict[str, str]:
-    """`pdfinfo`'s key/value report. Split on the FIRST colon only: a title carries its own."""
+    """`pdfinfo`'s key/value report. Split on the FIRST colon only: a title carries its own.
+
+    `encoding` is pinned rather than left to `text=True`: poppler writes UTF-8, and the
+    locale codec is cp1252 on Windows, which turns the accent into two characters."""
     finished = subprocess.run(
-        ["pdfinfo", str(pdf)], capture_output=True, text=True, check=True, timeout=60
+        ["pdfinfo", str(pdf)], capture_output=True, encoding="utf-8", check=True, timeout=60
     )
     fields: dict[str, str] = {}
     for line in finished.stdout.splitlines():

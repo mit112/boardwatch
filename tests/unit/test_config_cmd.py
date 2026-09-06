@@ -353,10 +353,12 @@ def test_show_lists_every_gate_key_from_the_file_not_the_defaults(cfg) -> None:
     )
     result = runner.invoke(app, [*_base(cfg), "config", "show"])
     assert result.exit_code == 0, result.output
+    # `show` prints `str(Path)`, whose separator is the platform's -- escaped, not hardcoded.
+    claude_config_dir = re.escape(str(Path("/x/claude-cfg")))
     for line in (
         r"gate\.enabled = True\s+\(default False",
         r"gate\.model = haiku\s+\(default sonnet",
-        r"gate\.claude_config_dir = /x/claude-cfg\s+\(default None",
+        rf"gate\.claude_config_dir = {claude_config_dir}\s+\(default None",
         r"gate\.batch_size = 7\s+\(default 13",
         r"gate\.call_timeout_s = 120\s+\(default 300",
     ):
