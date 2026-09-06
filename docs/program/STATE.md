@@ -20,6 +20,12 @@
 
 ## Current standing
 
+### Session 2026-09-05d (jobapps lane audit → RE-ARMED; eligible count re-measured): **the `jobapps` lane had been UNARMED since the reset** — the recovered config was the 08-28 tuning, older than the 08-31 arming — so runs 2–5 ingested ZERO job-apps discovery (store: 0 tagged postings, 0 `jobapps` companies, 0 lane scans for it). Re-armed 19:15 CDT on Mit's call, BEFORE the 20:00 chain, with `resumes/` as the first root and a 96-link symlink staging root (`<data_dir>/jobapps-staging`, the D-423 vehicle) as the second, covering `APPLY_QUEUE`'s groups and every date's `_eligibility_review`: **1,460 direct-apply postings, 776 employers (692 new)**, cap override `unlimited`. Discovery only — `rules_hash`/`engine_version` untouched, the D-483 count holds. Decision **D-486**; numbers in `METRICS.md`.
+
+**Live eligible, under run 5's identity (the last evaluated):** tier 0 (`eligible` + `swe`) **67 — 38 delivered, 29 undelivered**; tier 1 (`uncertain` + `swe`) 994, never folded in. **Under the code on `main` there are ZERO current verdicts until run 6 finishes re-evaluating** — T51 moved `engine_version`; `boardwatch web` reads every lead `unevaluated` until then. Five `Acme` test-fixture folders (06:59 CDT, pytest temp paths, `job_id 1` = a real posting) were removed from `~/boardwatch-queue`; apply lane is 40. **Owed:** the test path that reaches the real queue root (the conftest guard patches `pipeline.runner` only); after run 6, `track import "<home>/dev/Job apps/APPLY_QUEUE/_applied"` (25 records) and re-point `jobapps_queue_dir` at `APPLY_QUEUE` itself.
+
+**Read run 6 for:** `lane jobapps → ~1,460 attempted · N resolved` (plus the two network lanes), `provider='jobapps'` companies > 0, `judged > 0`, `fatal` absent, software titles. A `JobAppsSourceError` in `summary.errors` means a root moved.
+
 ### Session 2026-09-05c (web viewer audit → fixed and SHIPPED): 25 findings from a browser-and-code audit of `boardwatch web`, all 25 closed by FOUR headless Opus executors on the enterprise seat (T56–T59, 30 commits, ~$35, 26 min wall) plus five integration commits; gated green on `web-audit` (9,586 passed), merged to `main` as `3df9ce1f`, **CI green after `e43b7caa`** (the docs push first went red on a quoted test address — D-485 records it). Decision: **D-485**. Nothing here touches eligibility, `rules.yaml`, `engine_version` or `delivery/queue.py`, so the count and the 20:00 chain are unaffected.
 
 **What the owner sees now:** every page time in local zone (was +5h); a failed run's reason and the judge readout on the Runs page; a real undo after Mark applied; the review lane open by itself when the apply lane is empty, with a per-reason filter row and honest counts; the list keeps its columns beside the pane at 1440 and shows all eight at 2560; locations as a primary plus a count. **Owed from it:** `jurisdiction` still copies as a raw token (`us`); the badge's `REASONS` map and `lib/reviewReasons.ts` are held equal by a test, not an import; the ingest-side paragraph-boundary preservation the audit assumed turned out unnecessary (the frozen body carries newlines).
@@ -97,7 +103,7 @@ upper bound). `engine_version` moved again; run 6 re-evaluates ~103k postings on
 `main` before the freeze. **Runs 6, 7, 8 are scheduled for 20:00 CDT** (owner: "so we dont waste
 daylight"), kickstarted under launchd by a detached scheduler that waits out any gate.
 
-**Next action.** Set `"indeed.tier1"` (owner). Read runs 6, 7, 8 as they land (the chain kickstarts each when the
+**Next action.** Read run 6's `lane jobapps` line first (D-486). Set `"indeed.tier1"` (owner). Read runs 6, 7, 8 as they land (the chain kickstarts each when the
 previous exits 0; `launchctl print` `runs = N`, `judged > 0`, `fatal` absent, the lead titles
 software). Three clean ⇒ provisional pass. Mit's optional machine action: a reboot moves the
 06:00 tick to 04:00 — not before the chain is done.
