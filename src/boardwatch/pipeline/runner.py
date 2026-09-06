@@ -734,8 +734,8 @@ def _fetch_lanes(
             try:
                 fetched[name] = future.result()
             except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
-                # Same message as before the split: a lane whose FETCH raised is reported and
-                # absent from `reports`, never present with zeros.
+                # Same message as the factory site above: a lane whose FETCH raised is reported
+                # and absent from `reports`, never present with zeros.
                 errors.append(f"lane {name}: collection failed: {type(exc).__name__}: {exc}")
 
     # Back into `lanes_enabled` order HERE, before anything is applied, rather than reordering
