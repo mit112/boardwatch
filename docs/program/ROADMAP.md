@@ -15,7 +15,7 @@ boardwatch finds what it found.** Two bars measure that, and they are different:
 
 | bar | what it measures | where it is written | standing |
 |---|---|---|---|
-| **B1–B7, 14 frozen days** (`PROGRAM.md` §1) | boardwatch WORKS unattended | provisional pass = 3 frozen clean runs, then a 14-day background confirm | **0 of 3** — the count starts at run 6 (D-483; run 5 failed on a fixed integration defect); every `rules_hash` bump restarts it |
+| **B1–B7, 14 frozen days** (`PROGRAM.md` §1) | boardwatch WORKS unattended | provisional pass = 3 frozen clean runs, then a 14-day background confirm | **3 of 3 — MET (runs 6–8, D-483 discharged 2026-09-05)**; 14-day confirm day 1 = run 9 (2026-09-06). **B8 first reading (D-487): 17.2% unapplyable on n = 128, 14.7% on the gate-judged cohort, bar ≤ 16%.** Every `rules_hash` bump restarts the confirm |
 | **Gate 1, per-source recall** (`RETIREMENT-PLAN.md` §1) | boardwatch FINDS what job-apps finds | the owner sets a per-source threshold; job-apps runs until it is met | **28.8%** (5,838 / 20,289, pre-reset). Structure RULED (D-482): employer boards ≥ 85%, LinkedIn no bar; Indeed/hiring.cafe numbers at the first post-reset reading (~09-17) |
 
 Applying is Mit's own work and is deliberately not chased by the program (D-351). The program's
@@ -48,7 +48,7 @@ then one `--project` run on the merged code, read against run 4 (the last pre-me
 in the funnel; the T36 rule applied (`HANDOFF-2026-09-07.md` §5). **Why first:** nothing after
 this is measurable on unmerged code, and the tick runs whatever `main` is parked on.
 
-### M2 — Close the store-contention class and freeze. **Build DONE (T40, T41 on `main`); the freeze holds from run 6; provisional pass 0 of 3 (D-483).**
+### M2 — Close the store-contention class and freeze. **DONE — provisional pass MET 3 of 3 on runs 6–8 (D-483); the 14-day confirm runs passively from run 9.**
 T40 (`apply_board` on the write lock) and, on Mit's word, T41 (one per-host pacing clock per
 process). Then **stop changing eligibility, the profile and the résumé gate**, and let the
 launchd cadence deliver the **provisional pass: 3 consecutive frozen clean runs**, each meeting
@@ -57,7 +57,7 @@ runs in `METRICS.md`; the 14-day confirm starts passively. **Rule during the fre
 `rules_hash` change restarts the count — so every eligibility change waits for M3's window or
 is batched.
 
-### M3 — Make the apply lane bigger than five. **Build DONE and LIVE (T42–T47, T50); measured by the same runs as M2 (D-482).**
+### M3 — Make the apply lane bigger than five. **EXIT MET on runs 6–8 (apply-lane 40 / 33 / 13, review composition in METRICS); B8's precision half read at 14.7% on the gate-judged lane (D-487).**
 The 2026-09-08 session landed all five D-477 tickets (D-478). The shape of this milestone has
 changed: the build is done and the open items are rulings.
 
