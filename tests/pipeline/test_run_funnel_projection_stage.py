@@ -19,6 +19,8 @@ FROZEN JSON rather than off the summary, so what is asserted is what a reader of
 from __future__ import annotations
 
 import json
+import os
+import stat
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +33,9 @@ from boardwatch.reports.resume_gate import RenderToolMissingError
 from boardwatch.store.db import get_engine
 from boardwatch.tailor.render.latex import resolve_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
+from tests.pipeline.test_gate_stage import EVIDENCE, FAKE_CLAUDE, _arm_gate
+from tests.pipeline.test_gate_stage import _seed as _seed_gate_posting
+from tests.pipeline.test_lane_split_before_tailor import _seed_review_posting
 from tests.pipeline.test_ledger_advances_the_queue import _ready
 from tests.pipeline.test_pipeline_projection_leads import (
     _pipeline,
@@ -50,6 +55,24 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     return tmp_path / "data"
+
+
+@pytest.fixture()
+def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """T42's fake `claude`, on the FRONT of PATH — the script itself is imported rather than
+    restated, so the judge this module drives is byte-identical to the one `test_gate_stage`
+    drives. Defined here, not imported: importing a fixture by name shadows it at every test
+    signature and ruff flags the redefinition (F811) — the same reason the lane-split module
+    redefines `env` rather than importing it."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    script = bindir / "claude"
+    script.write_text(FAKE_CLAUDE, encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    sentinel = tmp_path / "fake-claude-called.log"
+    monkeypatch.setenv("GATE_FAKE_SENTINEL", str(sentinel))
+    return sentinel
 
 
 def _stages(payload: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -91,13 +114,15 @@ def test_a_projected_run_that_lost_a_lead_reconciles(
 
     # The regression this task fixes, read off the frozen artifact.
     assert payload["reconciles"] is True
-    assert payload["artifact_version"] == 7
+    assert payload["artifact_version"] == 8
 
     stages = _stages(payload)
     projection = stages["projection"]
     assert projection["entered"] == 2
     assert projection["advanced"] == 1
-    assert _drops(projection) == {"withheld_not_live": 0, "candidate_unrenderable": 1}
+    assert _drops(projection) == {
+        "withheld_not_live": 0, "routed_to_review_lane": 0, "candidate_unrenderable": 1,
+    }
     assert projection["reconciled"] is True
     # The drops are counted per lead at the raise site, so the balance is evidence.
     assert projection["derived"] is False
@@ -117,6 +142,108 @@ def test_a_projected_run_that_lost_a_lead_reconciles(
     markdown = summary.funnel.markdown_path.read_text(encoding="utf-8")
     assert "### projection — 2 in, 1 out" in markdown
     assert "**candidate_unrenderable**: 1" in markdown
+
+
+def test_a_projected_run_that_routed_a_lead_to_review_reconciles(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T60. Three shortlisted leads, one of them review-lane (T43): it is DELIVERED with no render
+    at all, so it never entered projection and it is not one of the leads projection advanced.
+
+    The assertion that trips against unchanged code is `payload["reconciles"] is True`. The
+    projection stage entered at 3 and accounted for 2, the tailor stage entered at 2 and advanced
+    3, and the `projected_leads` cross-check compared 3 leads against 2 lineage rows — three
+    separate failures, all of them a review-lane lead the report had no bucket for. Runs 7, 8 and
+    9 each wrote `DOES NOT RECONCILE` for exactly this reason, and B6 is read off this field.
+    """
+    _ready(env, 2)
+    review_id = _seed_review_posting(env, slug="t60review")
+    _projected_env(env)
+    _use(monkeypatch, _SelectRunner())
+
+    summary = _pipeline(env, tmp_path / "apps", top_n=3)
+
+    assert summary.fatal is None, summary.errors
+    # Non-vacuity: the run really did route one lead to the review lane and render the other two.
+    pending = [lead.posting_id for lead in summary.tailored if lead.pending_tailor]
+    assert pending == [review_id], summary.tailored
+    assert len(summary.tailored) == 3
+    assert summary.projection_outcomes == Counter({ProjectionLeadOutcome.PROJECTED: 2})
+
+    assert summary.funnel is not None
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["reconciles"] is True
+
+    stages = _stages(payload)
+    projection = stages["projection"]
+    assert projection["entered"] == 3
+    assert projection["advanced"] == 2
+    assert _drops(projection) == {"withheld_not_live": 0, "routed_to_review_lane": 1}
+    assert projection["reconciled"] is True
+
+    # The two paths merge: 2 rendered apply-lane leads and the 1 unrendered review lead.
+    assert stages["tailor"]["entered"] == 3
+    assert stages["tailor"]["advanced"] == 3
+    assert _drops(stages["tailor"]) == {"tailor_failed": 0}
+    assert stages["tailor"]["reconciled"] is True
+
+    # The recount narrows with it: the review lead writes no `projection_kind` lineage row.
+    checks = {str(check["name"]): check for check in payload["cross_checks"]}
+    assert checks["projected_leads"]["in_memory"] == 2
+    assert checks["projected_leads"]["from_store"] == 2
+    assert checks["projected_leads"]["agrees"] is True
+
+    markdown = summary.funnel.markdown_path.read_text(encoding="utf-8")
+    assert "- **routed_to_review_lane**: 1 — DELIVERED, not lost." in markdown
+    assert "DOES NOT RECONCILE" not in markdown
+
+
+def test_a_projected_run_with_a_judge_rejection_and_a_review_lead_reconciles(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run 9's own shape, end to end: an apply-lane lead, a lead the final eligibility judge
+    rejects (T54/D-483), and a review-lane lead. All five of the runner's terminal states are
+    reachable here and three of them are populated.
+
+    The judge is the fake `claude` T42's own tests drive — no real model call — targeting one
+    posting by label with a span quoted verbatim out of its JD, which is what makes the rejection
+    PERSIST as `ineligible` rather than fail open to `uncertain`.
+    """
+    apply_ids = _ready(env, 1)
+    rejected_id = _seed_gate_posting(env, slug="t60-rejected")
+    review_id = _seed_review_posting(env, slug="t60review")
+    _projected_env(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
+    monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(rejected_id))
+    monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
+    _use(monkeypatch, _SelectRunner())
+
+    summary = _pipeline(env, tmp_path / "apps", top_n=3)
+
+    assert fake_claude.exists(), "the gate never called the fake claude at all"
+    assert summary.fatal is None, summary.errors
+    # Non-vacuity, one line per terminal state this run is supposed to have produced.
+    assert summary.gate_excluded_ids == [rejected_id]
+    assert summary.gate_ineligible == 1
+    assert [lead.posting_id for lead in summary.tailored if lead.pending_tailor] == [review_id]
+    assert [lead.posting_id for lead in summary.tailored if lead.pdf_built] == apply_ids
+    assert summary.projection_outcomes == Counter({ProjectionLeadOutcome.PROJECTED: 1})
+
+    assert summary.funnel is not None
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["reconciles"] is True
+
+    projection = _stages(payload)["projection"]
+    assert projection["entered"] == 3
+    assert projection["advanced"] == 1
+    assert _drops(projection) == {
+        "withheld_not_live": 0, "gate_rejected": 1, "routed_to_review_lane": 1,
+    }
+    assert projection["reconciled"] is True
+    assert _stages(payload)["tailor"]["entered"] == 2
+    assert _stages(payload)["tailor"]["advanced"] == 2
+    assert _stages(payload)["tailor"]["reconciled"] is True
 
 
 def test_a_refused_projected_run_still_carries_an_UNMEASURED_stage(
@@ -298,7 +425,9 @@ def test_a_late_run_scoped_projection_failure_still_reconciles(
     projection = _stages(payload)["projection"]
     assert projection["entered"] == 3
     assert projection["advanced"] == 1
-    assert _drops(projection) == {"withheld_not_live": 0, "not_attempted": 2}
+    assert _drops(projection) == {
+        "withheld_not_live": 0, "routed_to_review_lane": 0, "not_attempted": 2,
+    }
     # The regression, read off the frozen artifact rather than off the summary.
     assert projection["reconciled"] is True
     assert projection["derived"] is False
@@ -363,7 +492,9 @@ def test_a_late_template_failure_still_reconciles(
     projection = _stages(payload)["projection"]
     assert projection["entered"] == 3
     assert projection["advanced"] == 1
-    assert _drops(projection) == {"withheld_not_live": 0, "not_attempted": 2}
+    assert _drops(projection) == {
+        "withheld_not_live": 0, "routed_to_review_lane": 0, "not_attempted": 2,
+    }
     assert projection["reconciled"] is True
 
 
@@ -407,7 +538,9 @@ def test_a_projected_run_aborting_in_the_TAILOR_loop_still_reconciles(
     projection = _stages(payload)["projection"]
     assert projection["entered"] == 3
     assert projection["advanced"] == 2
-    assert _drops(projection) == {"withheld_not_live": 0, "not_attempted": 1}
+    assert _drops(projection) == {
+        "withheld_not_live": 0, "routed_to_review_lane": 0, "not_attempted": 1,
+    }
     assert projection["reconciled"] is True
 
 

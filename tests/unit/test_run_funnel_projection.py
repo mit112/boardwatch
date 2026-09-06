@@ -19,9 +19,16 @@ the implementation drifted:
     (`projection_availability is None`), never from the counter being empty — a projected run
     legitimately counts nothing, and a stray counter entry must not be able to conjure the stage.
   * **Every shortlisted lead is counted in exactly one stage.** The runner partitions the cohort
-    into four terminal states (lead, tailor failure, withheld as gone, projection failure), and the
-    two stages' balances have to be those same four terms — which is why the `withheld_not_live`
-    bucket MOVES to the projection stage rather than being left where it would be subtracted twice.
+    into five terminal states (lead, tailor failure, withheld as gone, judge rejection, projection
+    failure), and the two stages' balances have to be those same five terms — which is why the
+    `withheld_not_live` and `gate_rejected` buckets MOVE to the projection stage rather than being
+    left where they would be subtracted twice.
+
+T60 added the last two of those buckets and one that is not a terminal state at all:
+`routed_to_review_lane` counts leads that were DELIVERED pending-tailor (T43) and therefore
+bypassed projection and re-entered at the tailor stage. Runs 7, 8 and 9 each wrote
+`reconciliation: DOES NOT RECONCILE` into their own artifact for want of these buckets, and B6
+("funnel reconciliation 100% to a terminal state or explicit pending") is read off that field.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.reports.run_funnel import (
     ARTIFACT_VERSION,
     CrossCheck,
+    GateCounters,
     Lead,
     LivenessCheck,
     RunFunnel,
@@ -72,7 +80,9 @@ def catalog() -> RulesCatalog:
     return load_rules(BUNDLED)
 
 
-def lead(posting_id: int) -> Lead:
+def lead(posting_id: int, *, pending_tailor: bool = False) -> Lead:
+    """`pending_tailor` is the T43 review-lane lead: DELIVERED, and never rendered — which is why
+    it carries no PDF. The two flags are mutually exclusive on the pipeline path."""
     return Lead(
         posting_id=posting_id,
         title="Backend Engineer",
@@ -81,8 +91,9 @@ def lead(posting_id: int) -> Lead:
         board_slug="stripe",
         company_source="registry",
         out_dir=f"/tmp/apps/2026-08-17/stripe-{posting_id}",
-        pdf_built=True,
+        pdf_built=not pending_tailor,
         locations=("New York, NY",),
+        pending_tailor=pending_tailor,
     )
 
 
@@ -92,8 +103,15 @@ def funnel(
     # cannot trip one by arithmetic it did not intend. Pass it to break a balance deliberately.
     shortlisted: int | None = None,
     leads: int = 2,
+    # T60. How many of `leads` are review-lane leads, delivered pending-tailor (T43). They are
+    # inside `leads` because they ARE delivered — the point of the bucket is that they bypassed
+    # projection, not that they were lost.
+    review: int = 0,
     tailor_failed: int = 0,
     dead: int | None = None,
+    # T60. None models a run where `gate.enabled` was False — the gate was not armed, so there is
+    # no `GateCounters` at all. An int arms it and rejects that many leads.
+    gate_ineligible: int | None = None,
     outcomes: Mapping[ProjectionLeadOutcome, int] | None = None,
     # False models a run where `--project` was never passed: there is no verdict to report.
     projection_ran: bool = True,
@@ -106,15 +124,19 @@ def funnel(
 ) -> RunFunnel:
     """A funnel whose every OTHER stage and check balances, so the only thing a test can trip is
     the one it is about. The derived `shortlisted` is the runner's own partition — a lead, a tailor
-    failure, a lead withheld as gone, or a projection failure — which makes it larger than `leads`
-    whenever a test asks for a drop, so a tailor stage still entering at `shortlisted` is visible.
+    failure, a lead withheld as gone, a judge rejection, or a projection failure — which makes it
+    larger than `leads` whenever a test asks for a drop, so a tailor stage still entering at
+    `shortlisted` is visible. Review-lane leads add no term: they are delivered, so they are
+    already inside `leads`.
     """
-    lead_objects = [lead(700 + i) for i in range(leads)]
+    lead_objects = [lead(700 + i, pending_tailor=i >= leads - review) for i in range(leads)]
+    apply_lane = leads - review
     if shortlisted is None:
         shortlisted = (
             leads
             + tailor_failed
             + (dead or 0)
+            + (gate_ineligible or 0)
             + sum(
                 count
                 for outcome, count in (outcomes or {}).items()
@@ -130,7 +152,9 @@ def funnel(
         cache_hit_prior_run=0,
         cache_hit_unattributed=0,
     )
-    tailored_artifacts = TailoredArtifactCounts(rows=len(lead_objects), with_pdf=len(lead_objects))
+    # `with_pdf` is the APPLY lane: a review-lane lead is delivered with no render at all, so a
+    # store recount of `typst_pdf_built` rows would not see it either.
+    tailored_artifacts = TailoredArtifactCounts(rows=len(lead_objects), with_pdf=apply_lane)
     return build_run_funnel(
         run_id=42,
         started_at=None,
@@ -159,7 +183,20 @@ def funnel(
         projection=(
             build_projection_counters(outcomes or Counter()) if projection_ran else None
         ),
-        projected_lineage_rows=len(lead_objects) if lineage_rows is None else lineage_rows,
+        # The apply lane, not every lead: `_deliver_pending_review_lead` writes its
+        # `resume_tailored` row with no `projection_kind` in the meta at all.
+        projected_lineage_rows=apply_lane if lineage_rows is None else lineage_rows,
+        gate=(
+            None
+            if gate_ineligible is None
+            else GateCounters(
+                judged=gate_ineligible,
+                eligible=0,
+                ineligible=gate_ineligible,
+                uncertain=0,
+                failed_open_batches=0,
+            )
+        ),
         tailored_artifacts=tailored_artifacts,
         sources=[
             SourceOutcome(
@@ -221,7 +258,9 @@ def test_the_projection_stage_balances() -> None:
 
     assert stage.entered == 4
     assert stage.advanced == 2
-    assert drops(stage) == {"withheld_not_live": 1, "candidate_unrenderable": 1}
+    assert drops(stage) == {
+        "withheld_not_live": 1, "routed_to_review_lane": 0, "candidate_unrenderable": 1,
+    }
     assert stage.entered == stage.advanced + sum(drop.count for drop in stage.drops)
     assert stage.reconciled is True
 
@@ -266,15 +305,23 @@ def test_the_tailor_stage_no_longer_carries_the_withheld_bucket() -> None:
 
 
 def test_every_shortlisted_lead_is_counted_in_exactly_one_stage() -> None:
-    """The runner's four terminal states — lead, tailor failure, withheld as gone, projection
-    failure — and nothing counted twice or in none. `_cohort_guard` reconciles the same partition
-    by ID set, so a lead the funnel loses is a lead that guard would have called unaccounted.
+    """The runner's terminal states — lead, tailor failure, withheld as gone, judge rejection
+    (T54), projection failure — and nothing counted twice or in none. `_cohort_guard` reconciles
+    the same partition by ID set, so a lead the funnel loses is a lead that guard would have
+    called unaccounted.
+
+    `routed_to_review_lane` is the ONE bucket that is deliberately not a terminal state: it is a
+    drop at the projection stage and an entrant at the tailor stage, because a review-lane lead
+    was delivered. It is subtracted back out below so this sum still counts each lead once —
+    which is also what pins that it appears in exactly those two places and nowhere else.
     """
     report = funnel(
-        shortlisted=5,
-        leads=2,
+        shortlisted=7,
+        leads=3,
+        review=1,
         tailor_failed=1,
         dead=1,
+        gate_ineligible=1,
         outcomes=Counter(
             {
                 ProjectionLeadOutcome.PROJECTED: 3,
@@ -285,15 +332,188 @@ def test_every_shortlisted_lead_is_counted_in_exactly_one_stage() -> None:
     projection = named(report, "projection")
     tailor = named(report, "tailor")
 
-    # projection: 5 = 3 + (1 withheld + 1 lineage_mismatch) · tailor: 3 = 2 + 1
+    # projection: 7 = 3 + (1 withheld + 1 gate + 1 review + 1 lineage_mismatch)
+    # tailor:     4 = 3 + 1
     assert projection.reconciled is True
     assert tailor.reconciled is True
-    counted = len(report.leads) + sum(
-        drop.count for stage in (projection, tailor) for drop in stage.drops
+    re_entrants = drops(projection)["routed_to_review_lane"]
+    assert re_entrants == 1, "non-vacuity: the subtraction below has to bite"
+    counted = (
+        len(report.leads)
+        + sum(drop.count for stage in (projection, tailor) for drop in stage.drops)
+        - re_entrants
     )
-    assert counted == named(report, "shortlist").advanced == 5
+    assert counted == named(report, "shortlist").advanced == 7
     reasons = [drop.reason for stage in (projection, tailor) for drop in stage.drops]
     assert len(reasons) == len(set(reasons)), reasons
+
+
+# --------------------------------------------------------------------------------------
+# T60 — the two terminal states the funnel did not know: the judge, and the review lane
+# --------------------------------------------------------------------------------------
+
+
+def test_run_nines_shape_reconciles() -> None:
+    """Run 9's own numbers, off its frozen artifact: 40 shortlisted · 3 withheld · 1 judge
+    rejection · 29 routed to review · 7 projected · 36 delivered · 7 with a PDF.
+
+    That run wrote `reconciliation: DOES NOT RECONCILE` into its own funnel — B6's bar — because
+    the projection stage entered at 40 and accounted for 10, and the tailor stage entered at 7 and
+    advanced 36. Nothing was lost: every one of the 30 unnamed leads was in a terminal or
+    explicitly pending state the report had no bucket for.
+    """
+    report = funnel(
+        shortlisted=40,
+        leads=36,
+        review=29,
+        dead=3,
+        gate_ineligible=1,
+        outcomes=Counter({ProjectionLeadOutcome.PROJECTED: 7}),
+    )
+    projection = named(report, "projection")
+    tailor = named(report, "tailor")
+
+    # B6's bar first, then the buckets that make it hold.
+    assert projection.reconciled is True
+    assert tailor.reconciled is True
+    assert projection.entered == 40
+    assert projection.advanced == 7
+    assert drops(projection) == {
+        "withheld_not_live": 3,
+        "gate_rejected": 1,
+        "routed_to_review_lane": 29,
+    }
+    # The two paths merge: 7 rendered apply-lane leads and 29 unrendered review-lane ones.
+    assert tailor.entered == 36
+    assert tailor.advanced == 36
+    assert drops(tailor) == {"tailor_failed": 0}
+
+    check = check_named(report, "projected_leads")
+    assert check is not None
+    # The APPLY lane, and the store's 7 lineage rows — not the 36 delivered leads.
+    assert check.in_memory == 7
+    assert check.from_store == 7
+    assert check.agrees
+    assert len(report.leads) == 36  # non-vacuity: the two counts really do differ here
+
+    assert report.unreconciled == ()
+    assert report.disagreements == ()
+    assert report.reconciles is True
+    assert funnel_to_dict(report)["reconciles"] is True
+
+
+def test_run_eights_shape_reconciles() -> None:
+    """The other unreconciled run, with a different mix: 40 shortlisted · 13 projected · 2 lost in
+    projection (1 withheld, 1 unrenderable candidate) · 11 judge rejections · 14 routed to review.
+    Pinned beside run 9 because run 9's projection lost nothing, so on its own it would not show
+    the new buckets sitting alongside a real `ProjectionLeadOutcome` drop."""
+    report = funnel(
+        shortlisted=40,
+        leads=27,
+        review=14,
+        dead=1,
+        gate_ineligible=11,
+        outcomes=Counter(
+            {
+                ProjectionLeadOutcome.PROJECTED: 13,
+                ProjectionLeadOutcome.CANDIDATE_UNRENDERABLE: 1,
+            }
+        ),
+    )
+    projection = named(report, "projection")
+
+    assert projection.reconciled is True
+    assert named(report, "tailor").reconciled is True
+    assert report.reconciles is True
+    assert projection.entered == 40
+    assert projection.advanced == 13
+    assert drops(projection) == {
+        "withheld_not_live": 1,
+        "gate_rejected": 11,
+        "routed_to_review_lane": 14,
+        "candidate_unrenderable": 1,
+    }
+    assert named(report, "tailor").entered == 27
+
+
+def test_the_review_bucket_says_the_leads_were_delivered() -> None:
+    """The bucket sits under "why every non-lead was dropped", so its note has to say the one
+    thing that is not true of any other bucket there: these leads were DELIVERED. A reader who
+    takes `routed_to_review_lane: 29` as a loss reads a 40-lead run as a 7-lead one."""
+    report = funnel(
+        shortlisted=40, leads=36, review=29, dead=3, gate_ineligible=1,
+        outcomes=Counter({ProjectionLeadOutcome.PROJECTED: 7}),
+    )
+    review_drop = next(
+        drop for drop in named(report, "projection").drops
+        if drop.reason == "routed_to_review_lane"
+    )
+
+    assert "DELIVERED" in review_drop.note
+    text = funnel_to_markdown(report)
+    assert "- **routed_to_review_lane**: 29" in text
+    assert "**gate_rejected**: 1" in text
+    assert "DOES NOT RECONCILE" not in text
+
+
+def test_the_review_bucket_can_actually_fail_the_balance() -> None:
+    """Non-vacuity, mirroring `test_the_projection_stage_can_actually_fail_its_balance`: run 9's
+    shortlist with the 29 review-lane leads NOT reaching the stage is exactly the pre-T60 report,
+    and it must read unreconciled rather than being absorbed."""
+    report = funnel(
+        shortlisted=40, leads=7, review=0, dead=3, gate_ineligible=1,
+        outcomes=Counter({ProjectionLeadOutcome.PROJECTED: 7}),
+    )
+    stage = named(report, "projection")
+
+    assert stage.reconciled is False
+    assert stage in report.unreconciled
+    assert report.reconciles is False
+    assert stage.entered == 40
+    assert drops(stage) == {
+        "withheld_not_live": 3, "gate_rejected": 1, "routed_to_review_lane": 0,
+    }
+
+
+def test_a_disarmed_gate_names_no_bucket_and_an_armed_one_names_a_zero() -> None:
+    """`gate_to_dict`'s own split, applied to the stage: a gate that was never armed judged
+    nothing, and a gate that judged and rejected nobody is a different fact. Absent versus 0, not
+    0 versus 0."""
+    disarmed = named(funnel(dead=1, outcomes=FOUR_TERMINAL_STATES), "projection")
+    armed = named(
+        funnel(dead=1, gate_ineligible=0, outcomes=FOUR_TERMINAL_STATES), "projection"
+    )
+
+    assert "gate_rejected" not in drops(disarmed)
+    assert drops(armed)["gate_rejected"] == 0
+    assert armed.reconciled is True
+
+
+def test_an_authored_run_carries_the_gate_bucket_on_the_tailor_stage() -> None:
+    """With no projection stage the tailor stage is the ranker's successor, so the judge's
+    rejections land there — exactly where `withheld_not_live` already moves. Never in both, or a
+    healthy run reads as unbalanced."""
+    report = funnel(projection_ran=False, dead=1, gate_ineligible=1)
+    tailor = named(report, "tailor")
+
+    assert tailor.reconciled is True
+    assert report.reconciles is True
+    assert tailor.entered == named(report, "shortlist").advanced == 4
+    assert drops(tailor) == {"tailor_failed": 0, "withheld_not_live": 1, "gate_rejected": 1}
+
+
+def test_an_authored_run_never_names_the_review_bucket() -> None:
+    """A review-lane lead on an authored run bypassed nothing — there is no projection stage to
+    bypass — so it is simply inside the tailor stage's `advanced`. A bucket here would subtract a
+    lead that was delivered and report a healthy run as unbalanced."""
+    report = funnel(projection_ran=False, leads=3, review=1, dead=0)
+    tailor = named(report, "tailor")
+
+    assert "routed_to_review_lane" not in drops(tailor)
+    assert tailor.entered == 3
+    assert tailor.advanced == 3
+    assert tailor.reconciled is True
+    assert report.reconciles is True
 
 
 def test_a_projected_run_that_lost_a_lead_still_reconciles() -> None:
@@ -330,13 +550,16 @@ def test_an_outcome_no_lead_reached_is_absent_not_a_drop_of_zero() -> None:
 
 
 def test_a_clean_projected_run_names_no_outcome_at_all() -> None:
-    """Every lead projected: the stage carries the withheld bucket and NOTHING else, rather than
-    five zero rows for the five ways a lead can fail to be projected."""
+    """Every lead projected: the stage carries the two buckets that are always MEASURED — the
+    leads liveness withheld and the leads the lane split routed to review, both 0 here — and
+    NOTHING else, rather than five zero rows for the five ways a lead can fail to be projected.
+    A measured zero and a bucket nobody looked at are different claims; only the second is
+    suppressed."""
     stage = named(funnel(dead=0, leads=4, outcomes=Counter({
         ProjectionLeadOutcome.PROJECTED: 4
     })), "projection")
 
-    assert drops(stage) == {"withheld_not_live": 0}
+    assert drops(stage) == {"withheld_not_live": 0, "routed_to_review_lane": 0}
     assert stage.advanced == 4
 
 
@@ -430,7 +653,7 @@ def test_an_empty_counter_on_a_projected_run_still_gets_its_stage() -> None:
 
     assert stage.entered == 2
     assert stage.advanced == 0
-    assert drops(stage) == {"withheld_not_live": 2}
+    assert drops(stage) == {"withheld_not_live": 2, "routed_to_review_lane": 0}
     assert stage.reconciled is True
 
 
@@ -527,9 +750,13 @@ def test_the_store_recount_counts_only_lineage_bearing_rows(engine: Engine) -> N
 def test_the_artifact_version_is_bumped() -> None:
     """A new stage is a new section, and more than that: on a projected run `tailor.entered` stops
     meaning `shortlisted`. Every bump so far signalled a new top-level section, and D-113 is the
-    precedent for DECLINING one on a merely additive key — this is not one."""
-    assert ARTIFACT_VERSION == 7
-    assert funnel_to_dict(funnel(outcomes=FOUR_TERMINAL_STATES))["artifact_version"] == 7
+    precedent for DECLINING one on a merely additive key — this is not one.
+
+    v8 (T60) is the same ruling one step on: no new section, but on a projected run
+    `tailor.entered` stops meaning `projection.advanced` and becomes that plus the review-lane
+    leads, and `projected_leads.in_memory` narrows to the apply lane."""
+    assert ARTIFACT_VERSION == 8
+    assert funnel_to_dict(funnel(outcomes=FOUR_TERMINAL_STATES))["artifact_version"] == 8
 
 
 def test_the_stage_sits_between_shortlist_and_tailor() -> None:

@@ -150,7 +150,16 @@ _TOP_MISSING = 10
 # existing key changes MEANING: the guarded boards were already counted inside `boards_complete`
 # before this key existed, and still are. What was invisible is WHICH of them the empty-complete
 # guard fired on; a consumer that ignores the added key reads every old key correctly.
-ARTIFACT_VERSION = 7
+#
+# **v8 is T60's two terminal states, and it bumps for the v5 reason rather than the v6 one.** It
+# adds no top-level section — `gate_rejected` and `routed_to_review_lane` are drop reasons inside
+# the `projection` and `tailor` stages, which have been in `stages` since v5 and v1 — but on a
+# projected run `tailor.entered` changes MEANING again: it is no longer what projection advanced,
+# it is that plus the review-lane leads that never entered projection. A consumer comparing
+# `tailor.entered` against `projection.advanced` across two runs would read T43's lane split as
+# leads appearing from nowhere. `projected_leads.in_memory` changes meaning with it (the apply
+# lane, not every delivered lead). A changed meaning is exactly what this field signals.
+ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -1253,6 +1262,10 @@ def build_run_funnel(
     # tailor failure would — that stage measures whether tailoring the leads it entered ACTUALLY
     # produced a PDF, and a review lead entered no render at all.
     apply_lane_tailored = sum(1 for lead in leads if not lead.pending_tailor)
+    # T60. The other side of that split. These leads are DELIVERED — they are inside `tailored`
+    # above — but they never reached projection, because the lane split runs before the tailor
+    # loop. They are a named drop on the projection stage and an entrant on the tailor stage.
+    routed_to_review = tailored - apply_lane_tailored
 
     if shortlist is None:
         # The ranker never ran: a fatal scan outage or a missing profile returns before it. Its
@@ -1423,6 +1436,48 @@ def build_run_funnel(
             "third terminal state, which is why it is its own bucket"
         ),
     )
+    # T60 — the judge's own terminal state (T42, D-483): the leads `run_gate_stage` persisted
+    # `ineligible` against a quoted span and removed from the slate, before the lane split. ONE
+    # object, moving between the ranker's two possible successors exactly as `withheld_drop`
+    # above does — the projection stage on a projected run, the tailor stage on an authored one.
+    #
+    # `gate.ineligible` rather than `len(summary.gate_excluded_ids)`, which the runner uses for
+    # the same population: `apply_gate_verdicts` increments the count and appends the label in
+    # the SAME branch of the SAME loop iteration, so the two are equal for every input and
+    # threading the ids through would be a second parameter for a number this already has.
+    #
+    # ABSENT, not 0, when the gate was not armed — `gate_to_dict`'s own split: a gate that never
+    # ran and a gate that judged and rejected nobody are different facts.
+    gate_drops: tuple[Drop, ...] = (
+        ()
+        if gate is None
+        else (
+            Drop(
+                reason="gate_rejected",
+                count=gate.ineligible,
+                note=(
+                    "the final eligibility judge decided ineligible, the verdict carried a span "
+                    "quoted from the frozen JD, and the stage dropped the lead before the lane "
+                    "split. A FIFTH terminal state — not a render failure and not withheld as "
+                    "gone, which is why it is its own bucket"
+                ),
+            ),
+        )
+    )
+    # T60 — the review lane (T43), and the ONE bucket in this artifact that is not a loss. It
+    # belongs to the projection stage alone: that is the stage these leads bypassed, and on an
+    # authored run there is nothing to bypass, so they are simply inside the tailor stage's
+    # `advanced` there and naming a bucket would subtract a lead that was delivered.
+    review_lane_drop = Drop(
+        reason="routed_to_review_lane",
+        count=routed_to_review,
+        note=(
+            "DELIVERED, not lost. A review-lane lead gets its folder, its JD, its apply link "
+            "and its `resume_tailored` row with no render at all (T43), so it bypassed "
+            "projection entirely and RE-ENTERS the tailor stage below, where it is counted in "
+            "both `entered` and `advanced`"
+        ),
+    )
     # P5a — present only on a `--project` run, and NOT INSTRUMENTED when the ranker never ran, for
     # the same reason the shortlist and tailor stages are: the preflight refuses before ranking, so
     # how many leads projection would have attempted is unknown rather than zero.
@@ -1432,7 +1487,11 @@ def build_run_funnel(
             name="projection",
             entered=None if shortlist is None else shortlist.shortlisted,
             advanced=None if shortlist is None else projection.projected,
-            drops=() if shortlist is None else (withheld_drop, *projection.drops),
+            drops=(
+                ()
+                if shortlist is None
+                else (withheld_drop, *gate_drops, review_lane_drop, *projection.drops)
+            ),
             # NOT derived. Every drop is counted where the lead actually leaves — one increment at
             # the raise site inside the loop — so this identity can genuinely fail, and it is what
             # catches a projection exit added without a counter. Do not let arithmetic masquerade
@@ -1446,9 +1505,12 @@ def build_run_funnel(
                 if shortlist is None
                 else "Every SHORTLISTED lead, and what the bundle's projection made of it. "
                 "Entered at the ranker's shortlist rather than at the leads projection actually "
-                "attempted, so the leads liveness withheld keep a named bucket here instead of "
-                "vanishing between two stages — nothing projected them, and they are not "
-                "projection failures either. Every other drop is named by the "
+                "attempted, so the leads liveness withheld, the leads the final eligibility "
+                "judge rejected and the leads the lane split routed to review all keep a named "
+                "bucket here instead of vanishing between two stages — nothing projected any of "
+                "them, and none of them is a projection failure. `routed_to_review_lane` is the "
+                "one bucket here that is not a loss: those leads were DELIVERED and re-enter at "
+                "the tailor stage below. Every remaining drop is named by the "
                 "`ProjectionLeadOutcome` the pipeline counted for ONE lead, and an outcome no "
                 "lead reached is ABSENT rather than reported as 0. `not_attempted` is the one "
                 "bucket that names no cause: a RUN-scoped fault stopped the stage, and those "
@@ -1535,24 +1597,41 @@ def build_run_funnel(
         *(() if projection_stage is None else (projection_stage,)),
         Stage(
             name="tailor",
-            # On a projected run this enters at what PROJECTION advanced, not at the ranker's
-            # shortlist: the withheld and projection-dropped leads never reached the tailor loop,
-            # and they are accounted for in the stage above. Read off `projection_stage.advanced`
-            # rather than recomputed, so the two can never drift apart.
+            # On a projected run TWO paths merge here, and `entered` is their sum: what
+            # PROJECTION advanced, read off `projection_stage.advanced` rather than recomputed so
+            # the two can never drift apart, plus the review-lane leads, which bypassed the
+            # projection stage and are its `routed_to_review_lane` drop. The withheld,
+            # judge-rejected and projection-dropped leads never reached the tailor loop at all
+            # and are accounted for in the stage above.
             #
             # None, not 0, for the same reason as the shortlist stage above: if the ranker never
             # ran, how many leads it would have handed over is unknown rather than zero.
             entered=(
                 (None if shortlist is None else shortlist.shortlisted)
                 if projection_stage is None
-                else projection_stage.advanced
+                else (
+                    None
+                    if projection_stage.advanced is None
+                    else projection_stage.advanced + routed_to_review
+                )
             ),
             advanced=tailored,
             drops=(
                 Drop(reason="tailor_failed", count=tailor_failed),
-                # Only when there is no projection stage to hold it. Keeping it here as well would
-                # subtract the withheld leads twice and report a healthy run as unbalanced.
-                *(() if projection_stage is not None else (withheld_drop,)),
+                # Only when there is no projection stage to hold them. Keeping them here as well
+                # would subtract those leads twice and report a healthy run as unbalanced.
+                *(() if projection_stage is not None else (withheld_drop, *gate_drops)),
+            ),
+            note=(
+                ""
+                if projection_stage is None
+                else (
+                    "TWO paths merge here on a projected run: the leads projection advanced, "
+                    "which arrive rendered, and the review-lane leads, which never entered "
+                    "projection and arrive unrendered by design (T43). `entered` is the sum of "
+                    "the two, so a review lead is a named drop in the stage above AND an "
+                    "entrant here rather than being counted in neither."
+                )
             ),
         ),
         Stage(
@@ -1614,11 +1693,17 @@ def build_run_funnel(
             else (
                 CrossCheck(
                     name="projected_leads",
-                    in_memory=tailored,
+                    # T60: the APPLY lane, not every delivered lead. A review-lane lead is
+                    # delivered pending-tailor and `runner._deliver_pending_review_lead` writes
+                    # its `resume_tailored` row with no `projection_kind` at all, so counting it
+                    # here would make this check disagree on every run that routed one.
+                    in_memory=apply_lane_tailored,
                     from_store=projected_lineage_rows,
                     note=(
-                        "pipeline's leads vs resume_tailored rows carrying projection lineage "
-                        "(meta_json '$.projection_kind'). Counted against the LEADS, not against "
+                        "pipeline's APPLY-LANE leads vs resume_tailored rows carrying projection "
+                        "lineage (meta_json '$.projection_kind'). A review-lane lead is delivered "
+                        "with no render and writes no lineage, so it is on neither side. Counted "
+                        "against the LEADS, not against "
                         "the projection stage's `advanced`: `advanced` counts leads whose "
                         "projection succeeded, and one of those can still fail the résumé gate "
                         "afterwards — which writes no artifact row at all, so `advanced` is this "
