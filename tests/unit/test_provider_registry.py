@@ -6,6 +6,7 @@ import pytest
 from boardwatch.providers import registry
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
+from boardwatch.providers.jibe import JibeProvider
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workable import WorkableProvider
@@ -22,14 +23,16 @@ def test_each_provider_declares_public_board_hosts() -> None:
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
-    assert set(built) == {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"}
+    assert set(built) == {
+        "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
+    }
     for name, inst in built.items():
         assert inst.name == name
 
 
 def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
-        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"}
+        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe"}
     )
 
 
@@ -40,6 +43,26 @@ def test_workday_declares_a_suffix_and_no_exact_hosts() -> None:
     # the suffix must be the extractor/help MAP KEY, not absent
     assert ".myworkdayjobs.com" in registry.slug_extractor_map()
     assert ".myworkdayjobs.com" in registry.slug_help_map()
+
+
+def test_jibe_declares_a_custom_domain_and_therefore_no_hosts_and_no_suffix() -> None:
+    """A Jibe board is served from the EMPLOYER'S OWN hostname (careers.amd.com,
+    jobs.statefarm.com, careers.jhuapl.edu), so there is neither a finite paste-host list nor a
+    shared vendor suffix to key one off. Both maps are empty ON PURPOSE.
+
+    `custom_domain_slug` is what says so, and it is asserted BY NAME here rather than by
+    letting `test_each_provider_declares_public_board_hosts` accept an empty tuple: that check
+    exists to catch a provider whose hosts nobody declared, and weakening it for this one would
+    stop it catching that for the other five.
+    """
+    assert JibeProvider().board_hosts == ()
+    assert getattr(JibeProvider, "board_host_suffixes", ()) == ()
+    assert JibeProvider.custom_domain_slug is True
+    # the identity is `jibe:<careers host>`; the slug IS the host, lowercased
+    assert JibeProvider.normalize_slug("Careers.Acme.Test") == "careers.acme.test"
+    assert "jibe" in registry.slug_normalizer_map()
+    assert "jibe" not in registry.host_provider_map().values()
+    assert "jibe" not in registry.host_suffix_provider_map().values()
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:

@@ -86,6 +86,11 @@ LIST_URLS: tuple[tuple[str, str], ...] = tuple(
 PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # Body inline with the listing: about one request per board.
     ("greenhouse", "lever", "ashby", "workable"),
+    # Inlines every body too, but PAGES the listing at 100 postings per request, so a board
+    # costs ceil(N/100) requests instead of one -- 12 for the largest measured jibe board.
+    # Dearer than a one-request board, and still cheaper by an order of magnitude than the
+    # tiers below, which additionally spend a GET on every unseen posting.
+    ("jibe",),
     # Spends `detail_fetch_budget` on a per-posting GET for every unseen posting.
     ("workday",),
     # The same, and boardwatch watches none of them, so a first exposure here is the one cost this

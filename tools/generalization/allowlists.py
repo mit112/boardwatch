@@ -252,6 +252,26 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:2547602e77c8afb5fae16a39f7b063cafd860f56d9d6423a891167815d121257",
     ),
+    "tests/fixtures/jibe/dead_404.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:8366a89d1d8c19a4cbcb7a9d03eeadfe1feda67a27348501562d2254b426002f",
+    ),
+    "tests/fixtures/jibe/empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:ab58f7c8b85b16f406abb275703257c20b05f53f7a4158229ea6784af2a0f779",
+    ),
+    "tests/fixtures/jibe/normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:cf72c01ec824dd34eaf1e3aa6ac1bc437705c1465d77a0780b873c90cf58cde9",
+    ),
+    "tests/fixtures/jibe/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:032c2070aa310f089edb4a929d0eaf1c87dd1a5484861a870cf881bbb32a721b",
+    ),
     "tests/fixtures/lever/dead_404.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,
