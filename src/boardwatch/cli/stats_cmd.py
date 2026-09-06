@@ -7,10 +7,13 @@ single aggregation surface. Read-only; keyless; no network.
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli._profile_row import refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
 from boardwatch.eligibility.facts import ProfileRowInvalid
@@ -22,18 +25,25 @@ console = Console()
 def stats(
     ctx: typer.Context,
     days: int = typer.Option(7, "--days", help="Trailing window for qualified/week."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the tables."
+    ),
 ) -> None:
     """Qualified-opportunities/week and the discovery pipeline, from your local DB."""
+    out = narrative(as_json, console)
     app_ctx = build_context(ctx.obj)
     try:
         report = compute_stats(
-            app_ctx.engine, app_ctx.settings, window_days=days, output_console=console
+            app_ctx.engine, app_ctx.settings, window_days=days, output_console=out
         )
     except ProfileRowInvalid as exc:
         refuse_unusable_profile_row(exc)
     if report is None:
-        console.print("no profile yet — run `boardwatch init` first")
+        out.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1)
+    if as_json:
+        emit_json(asdict(report))
+        return
     qual = Table(title=f"Qualified opportunities (last {report.window_days}d)",
                  show_header=True, header_style="bold", title_justify="left")
     qual.add_column("Bucket")
