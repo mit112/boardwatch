@@ -504,6 +504,29 @@ class TestOwnerRulingTeamLeader:
         ):
             assert role_verdict(title)[0] == "swe", title
 
+    @pytest.mark.parametrize("title", [
+        # Giant Eagle's checkout supervisor track: 47 open rows reached the apply lane with
+        # tailored PDFs on 2026-09-05/06 (D-487). `front end` is the store checkout area here.
+        "Front End Lead Trainee",
+        "Trainee, Front End Lead",
+        "Front End Team Leader",
+        # Walmart's store-floor forms.
+        "(USA) Front End Coach",
+        "(CAN) Front End Checkout Team Associate",
+    ])
+    def test_a_store_front_end_title_is_vetoed(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict == "not_swe", (title, reason)
+
+    @pytest.mark.parametrize("title", [
+        "Front End Tech Lead",  # the rescue's `lead` head noun exists for exactly this title
+        "Frontend Team Leader",  # pinned software above; the store deny must not reach it
+        "Front End Developer Trainee",  # `trainee` drops the rescue, the signal still carries it
+    ])
+    def test_the_store_deny_spares_a_real_front_end_role(self, title: str) -> None:
+        verdict, reason = role_verdict(title)
+        assert verdict != "not_swe", (title, reason)
+
 
 class TestNonSoftwareFamiliesAnalystSpecialist:
     """The analyst / specialist / administrator / advisor families leaked as delivered leads.

@@ -187,6 +187,13 @@ _DENY_SERVICE: tuple[str, ...] = tuple([
     r"\bcrew\s+member\b|\bteam\s+member\b|\bshift\s+(lead|supervisor)\b",
     r"\bguest\s+(service|experience)\b|\bconcierge\b|\bvalet\b|\bflight attendant\b",
     r"\blifeguard\b|\bbarber\b|\bstylist\b",
+    # Grocery / big-box "front end" is the checkout area, not the web tier: "Front End Lead
+    # Trainee" (Giant Eagle), "Front End Coach" / "Front End Checkout Team Associate" (Walmart).
+    # The rescue's `trainee` guard is what lets the first form reach this deny. `team lead(er)`
+    # is spelled with a separator on purpose: "Frontend Team Leader" is a pinned software title
+    # and stays clear, while the two-word store form is what retail HR writes.
+    r"\bfront[\s-]?end\s+(?:lead\s+trainee|coach|checkout|cashier|clerk)\b|"
+    r"\bfront[\s-]end\s+team\s+lead(?:er)?\b|\btrainee,\s+front[\s-]?end\b",
 ])
 
 # Business, GTM, people, finance, legal, education, creative — HARD half: the head noun
@@ -452,10 +459,15 @@ _TITLE_SWE_RESCUE = (
     # false positive cleared every deny below it. The other three tokens have no such
     # sense and stay bare, which is what keeps "AI First Full Stack Tech Lead" and
     # "Senior Backend Java Engineer - Vice President" classified software (D-294).
-    r"\b(front[\s-]?end|frontend)\b.{0,30}"
+    # Both `front end` branches carry an anchored `trainee` guard (the `_NOENG` shape): Giant
+    # Eagle's "Front End Lead Trainee" / "Trainee, Front End Lead" -- a checkout-supervisor
+    # track, 47 open rows -- matched `front end ... lead` and, the rescue being unconditional,
+    # reached the apply lane with tailored PDFs (D-487). A software title that says `trainee`
+    # loses only the RESCUE; "Front End Developer Trainee" is still carried by the signal.
+    r"^(?!.*\btrainee\b).*?\b(front[\s-]?end|frontend)\b.{0,30}"
     r"\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b|"
     # ...and the same pair in the other order ("AI/ML Agent Engineer - Front-End Focus").
-    r"\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b.{0,30}"
+    r"^(?!.*\btrainee\b).*?\b(?:(?:engineer|developer|architect|programmer)\w*|lead)\b.{0,30}"
     r"\b(front[\s-]?end|frontend)\b|"
     # `lead` is in the head-noun list because "Front End Tech Lead" is a real software
     # title that would otherwise lose the rescue and then be vetoed by the bare `lead`
