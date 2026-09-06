@@ -360,6 +360,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A run that splits its slate now reconciles its own funnel.** Since the review lane (T43) and the
+  final judge's rejections (T54) became terminal states, every run that routed a lead to review or
+  dropped one on a judge verdict wrote `reconciliation: DOES NOT RECONCILE` into `funnel-N.md`
+  — runs 7, 8 and 9 all did — because the funnel had no bucket for either. The projection stage
+  now names `gate_rejected` (absent when the judge is disarmed) and `routed_to_review_lane`
+  (delivered, not lost), the tailor stage enters at what projection advanced plus the review leads,
+  and the `projected_leads` cross-check counts the apply lane only. Funnel artifact version 8.
+- **The nightly Windows CI jobs are green again.** Red on every scheduled run since at least
+  2026-09-01 on nine tests. A lane that fails to collect now names its path readably
+  (`Type: message`, not a repr that doubled every Windows backslash); two config tests and a PDF
+  metadata helper stopped assuming POSIX separators and a UTF-8 locale; the gate-stage tests that
+  need the fake `claude` to actually run, and one chmod test, are skipped on Windows with the
+  fixture named as the reason.
+
 - **`track import` no longer marks hundreds of jobs applied from one aggregator URL.** The url key
   refused nothing on a fan-out, on the premise that one url resolving to several jobs was one posting
   stored twice. It is not: the ledger already collapses that case onto one job, and `normalize_url`
