@@ -131,20 +131,22 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # T42. Off by default (multi-tenancy) — arming the headless final-eligibility-gate judge
     # is the operator's own act, never something a fresh install or a new tenant inherits.
     # `claude_config_dir` is machine-local (None ships inert, same reasoning as
-    # jobapps_discovery_dir); `model`/`batch_size`/`call_timeout_s` are cost knobs that say
-    # nothing about roles, seniority, geography or field.
+    # jobapps_discovery_dir); `model`/`batch_size`/`call_timeout_s`/`depth` are cost knobs that
+    # say nothing about roles, seniority, geography or field.
     "Settings.gate": {
         "enabled": False,
         "claude_config_dir": None,
         "model": "sonnet",
         "batch_size": 13,
         "call_timeout_s": 300,
+        "depth": 0,
     },
     "GateTier.enabled": False,
     "GateTier.claude_config_dir": None,
     "GateTier.model": "sonnet",
     "GateTier.batch_size": 13,
     "GateTier.call_timeout_s": 300,
+    "GateTier.depth": 0,
 }
 
 SETTINGS_FIELD_CLASS: dict[str, str] = {
@@ -200,6 +202,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "GateTier.model": "capability",
     "GateTier.batch_size": "operational",
     "GateTier.call_timeout_s": "operational",
+    "GateTier.depth": "operational",
 }
 
 # Preference-bearing parameter defaults, which live outside the settings models.

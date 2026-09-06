@@ -348,7 +348,7 @@ def test_show_lists_every_gate_key_from_the_file_not_the_defaults(cfg) -> None:
     so a `show` that printed `GateTier()` would fail here."""
     (cfg / "config.toml").write_text(
         '[gate]\nenabled = true\nmodel = "haiku"\nclaude_config_dir = "/x/claude-cfg"\n'
-        "batch_size = 7\ncall_timeout_s = 120\n",
+        "batch_size = 7\ncall_timeout_s = 120\ndepth = 150\n",
         encoding="utf-8",
     )
     result = runner.invoke(app, [*_base(cfg), "config", "show"])
@@ -361,6 +361,9 @@ def test_show_lists_every_gate_key_from_the_file_not_the_defaults(cfg) -> None:
         rf"gate\.claude_config_dir = {claude_config_dir}\s+\(default None",
         r"gate\.batch_size = 7\s+\(default 13",
         r"gate\.call_timeout_s = 120\s+\(default 300",
+        # T63. A judge depth that silently read back as 0 would look exactly like a run that
+        # judged only its shortlist, which is the one thing this knob exists to change.
+        r"gate\.depth = 150\s+\(default 0",
     ):
         assert re.search(line, result.output), f"{line!r} not in:\n{result.output}"
 

@@ -160,6 +160,11 @@ _GATE_IRRELEVANT: frozenset[str] = frozenset(
         "claude_config_dir",  # machine-local — which login answers, not which verdict
         "batch_size",  # pure batching, like max_calls_per_run
         "call_timeout_s",  # throughput, same class as retry_attempts/scan_workers
+        # T63. Changes WHEN a posting is judged, never the verdict any posting receives: a
+        # deeper slate reaches the same judge under the same identity and every verdict is
+        # persisted the same way. Restamping `policy_version` for it would invalidate every
+        # stored disposition for a scheduling knob.
+        "depth",
     }
 )
 

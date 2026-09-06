@@ -574,6 +574,13 @@ class GateCounters:
     raw `decision` — so `eligible + ineligible + uncertain == judged` always holds.
     `failed_open_batches` counts BATCHES, not leads: a batch of `gate.batch_size` that fails
     open costs at most that many unjudged leads, left unchanged on the slate, never dropped.
+
+    `beyond_slate` (T63) is how many of the judged leads the run did NOT deliver: with
+    `gate.depth` above `--top` the judge sees a deeper slate than the tailor does, and the
+    surplus is cut before the lane split. It is the ONE place that number is reported — those
+    leads are inside the shortlist stage's `capped_by_top_n`, because for delivery that is
+    exactly what they were. 0 means the run delivered everything it judged, which is what
+    `gate.depth = 0` always produces.
     """
 
     judged: int
@@ -581,6 +588,7 @@ class GateCounters:
     ineligible: int
     uncertain: int
     failed_open_batches: int
+    beyond_slate: int = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -594,6 +602,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "ineligible": None,
             "uncertain": None,
             "failed_open_batches": None,
+            "beyond_slate": None,
         }
     return {
         "instrumented": True,
@@ -602,6 +611,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "ineligible": gate.ineligible,
         "uncertain": gate.uncertain,
         "failed_open_batches": gate.failed_open_batches,
+        "beyond_slate": gate.beyond_slate,
     }
 
 
@@ -2571,7 +2581,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             if funnel.gate is None
             else f"{funnel.gate.judged} judged ({funnel.gate.eligible} eligible, "
             f"{funnel.gate.ineligible} ineligible, {funnel.gate.uncertain} uncertain) · "
-            f"{funnel.gate.failed_open_batches} batch(es) failed open"
+            f"{funnel.gate.failed_open_batches} batch(es) failed open · "
+            f"{funnel.gate.beyond_slate} beyond the delivered slate"
         ),
         "",
         "*T42 (D-477's \"lever\"): a headless final-eligibility-gate judge over the whole "
@@ -2580,7 +2591,12 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "with a current gate row. Fails OPEN at every seam (D-074) — a missing binary, a "
         "non-zero exit, a timeout, unparseable JSON, or a wrong item count all leave that "
         "batch's leads unjudged, never dropped, and `failed_open_batches` climbing with "
-        "`judged` at 0 is the signature of the judge being entirely unreachable.*",
+        "`judged` at 0 is the signature of the judge being entirely unreachable. "
+        "`beyond_slate` is T63: with `gate.depth` above `--top` the judge sees a deeper slate "
+        "than the run tailors, and those leads were cut before the lane split — judged, never "
+        "presented, never recorded `seen`, so they rank again next run carrying the verdict "
+        "this run bought for them. They are counted in the shortlist stage's "
+        "`capped_by_top_n`, which is what they were for delivery.*",
         "",
         "## Stub rate",
         "",

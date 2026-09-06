@@ -207,6 +207,7 @@ _GATE_KEYS: dict[str, str] = {
     "model": "claude model alias, e.g. haiku; next run",
     "batch_size": "leads per call, ≥1; next run",
     "call_timeout_s": "seconds per call, ≥1; next run",
+    "depth": "leads JUDGED, against --top delivered; 0 = only the shortlist; next run",
 }
 
 _SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password", "webhook_url"})
