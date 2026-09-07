@@ -281,6 +281,17 @@ class AppleProvider:
     )
 
     @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """Always the one employer this provider serves (T74), like `amazon`.
+
+        The slug names NO employer here: it is a COUNTRY token (`united-states`, `macao`), so
+        the default rule (the slug IS the employer token) would name the company after a place.
+        A constant is right for the same reason it is right for amazon — every board this
+        provider serves is one employer's own site, sliced by location rather than by company.
+        """
+        return "Apple"
+
+    @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:
         return None
 

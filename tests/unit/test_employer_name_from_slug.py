@@ -122,8 +122,10 @@ _SLUG_SHAPES: dict[str, tuple[str, str]] = {
     # a composite slug names it in ONE of its segments, never in the career-site segment
     "workday": ("acme.wd1.myworkdayjobs.com/acme/Acme_External_Site", "acme"),
     "oraclehcm": ("acme.fa.us2.oraclecloud.com/CX_1", "acme"),
-    # the one provider whose slug is a CATEGORY, not an employer
+    # the two providers whose slug names a FACET of one employer's own site, not an employer:
+    # a job category, and a country
     "amazon": ("software-development", "Amazon"),
+    "apple": ("united-states", "Apple"),
 }
 
 
@@ -144,7 +146,7 @@ def test_only_providers_whose_slug_is_not_the_employer_token_declare_a_deriver()
     """Pins the split so a sixth deriver has to justify itself, and so a provider losing its
     deriver in a refactor is a failing test rather than a silently mis-named company."""
     assert set(employer_name_map()) == {
-        "amazon", "eightfold", "jibe", "oraclehcm", "phenom", "workday",
+        "amazon", "apple", "eightfold", "jibe", "oraclehcm", "phenom", "workday",
     }
 
 
