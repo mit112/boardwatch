@@ -17,6 +17,18 @@ All notable changes to this project are documented here. The format follows
 - **`detail_fetch_budget` now accepts up to 10,000** (was 1,000), so one scan can fetch every body on
   the largest watched board instead of filling it across several.
 
+- **A Workday board can now name ONE facet bucket, which is the only way past Workday's
+  2,000-result ceiling.** `workday:<host>/<tenant>/<site>#jobFamilyGroup=Technology` watches that
+  bucket; a slug with no `#` is unchanged, byte for byte, and every existing board keeps its
+  behaviour. CXS clamps `total` at 2000 and will not page past it, so a large board was previously
+  enumerated blind — Citi reported 2,000 and yielded 1,988 rows of a true 4,411. Sliced, the same
+  board reports and enumerates 1,073 of 1,073 with nothing censored, and the slice costs FEWER
+  requests than the blind walk it replaces. One unfiltered request per sliced board resolves the
+  descriptor to the tenant's own opaque facet id at fetch time; that id is never stored or reused
+  across boards, and the request's own rows are discarded. A descriptor the board does not offer
+  fails the scan with an error naming what it does offer — it never falls back to the unfiltered
+  board.
+
 - **A new provider: `amazon` (the amazon.jobs public search API).** `amazon:<category>` names one
   of 38 catalog categories -- the corpus is 22,282 postings and a single query can only reach
   10,000, so a category is what keeps a board enumerable (the largest holds 3,370). Bodies arrive
