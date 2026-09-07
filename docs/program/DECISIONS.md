@@ -27453,6 +27453,18 @@ owner. Building a drain for the Amazon renamed-category hazard — `scan/apply.p
 UNCHANGED, names that exact case in its comment, and is covered by two tests; T69's executor raised it
 without having read the apply path.
 
+**Addendum 03:55 CDT — the rank-band measurement CANNOT be done retroactively.** Having said above
+that tuning `gate.depth` needs conversion BY RANK BAND, this session then checked whether run 10's
+data supports it. It does not: `eligibility_evaluations.score` is **NULL on all 145 judge rows**,
+no table carries a per-lead rank (`job_dispositions`, `posting_events`, `artifacts` all lack one),
+`artifacts.meta_json` holds no score, and only the **40 delivered** leads get an artifact at all —
+so even a score recovered there could never describe the 83 leads BEYOND the slate, which are
+exactly the population the question is about. The ranker's order exists only transiently inside the
+run. **The measurement therefore needs a small instrumentation change first — persist the shortlist
+rank alongside the gate verdict — and until that ships, any claim about the shape of the yield curve
+beyond "56.6% at depth 150 vs 85% at depth ~40" is unfounded.** Recorded so the next session does
+not spend the time discovering the data is absent.
+
 **Cross-references.** D-492 (phenom/eightfold, the teaser-body defect, the budget ruling), D-491
 (the depth decision and the 85% it rests on), D-271 (`board_enumerated` off raw rows), D-314, D-343,
 D-103.
