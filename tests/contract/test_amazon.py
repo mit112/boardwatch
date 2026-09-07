@@ -8,6 +8,7 @@ inventory that closes every posting the board holds.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -399,9 +400,13 @@ def test_a_row_re_served_by_the_shifting_sort_is_kept_once(tmp_path: Path) -> No
         return_value=httpx.Response(200, content=_envelope(rows[-1:], 101))
     )
     snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
-    assert snapshot.status == "complete"
     assert len(snapshot.postings) == 100
     assert snapshot.board_enumerated == 100
+    # The re-serve is deduped to 100 distinct ids, but the board SAID 101 -- so one posting was
+    # never served and the walk is genuinely one short. That is `partial`, not `complete`:
+    # `complete` is what authorizes apply_board to close everything it did not see.
+    assert snapshot.status == "partial"
+    assert "collected 100 of 101" in (snapshot.error or "")
 
 
 @respx.mock
@@ -622,3 +627,55 @@ def test_healthcheck_refuses_an_out_of_catalog_slug_without_a_request(tmp_path: 
     route = respx.get(url__startswith=SEARCH).mock(return_value=httpx.Response(200))
     assert provider.healthcheck(_fetcher(tmp_path), "totally-made-up") == BoardHealth.ERROR
     assert route.call_count == 0
+
+
+def test_each_catalog_key_is_the_slug_of_its_own_value() -> None:
+    """The pairing, not just the two sets. `set(values) == set(recorded)` and a sorted key list
+    both survive an arbitrary PERMUTATION of the 38 values across the 38 keys -- transpose
+    `design`/`legal` and every other test in this file still passes, while `amazon:design` would
+    silently fetch and store the Legal board under a company row the user added as `design`."""
+    for token, category in _CATEGORIES.items():
+        expected = re.sub(r"[^a-z0-9]+", "-", category.lower()).strip("-")
+        assert token == expected, f"{token!r} is not the slug of {category!r} ({expected!r})"
+
+
+@respx.mock
+def test_exhausting_the_page_cap_is_partial_not_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `for...else` page-cap branch. Asserting `_MAX_PAGES * _PAGE_LIMIT == _HITS_CENSOR`
+    pins three constants against each other and exercises nothing: delete the `else:` clause and
+    that assertion still passes, while a board that fills every page reports `complete` holding
+    only what the cap allowed -- which authorizes closing everything beyond it."""
+    monkeypatch.setattr("boardwatch.providers.amazon._MAX_PAGES", 2)
+    # `hits` at the cap so the total is censored and the completeness guard cannot fire: this
+    # test must fail for the page-cap reason alone, not for the shortfall reason.
+    respx.get(_page_url(0)).mock(
+        return_value=httpx.Response(200, content=_envelope(_clone_rows(100, 7000000), 10000))
+    )
+    respx.get(_page_url(100)).mock(
+        return_value=httpx.Response(200, content=_envelope(_clone_rows(100, 7100000), 10000))
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "partial"
+    assert "page cap of 2 pages reached" in (snapshot.error or "")
+    assert snapshot.board_total_censored is True
+
+
+@respx.mock
+def test_the_reported_total_is_page_zeros_and_a_later_page_cannot_rewrite_it(
+    tmp_path: Path,
+) -> None:
+    """Every other multi-page test serves the SAME `hits` on both pages, so removing the
+    `if first:` guard around `_stated_total` leaves them all green while the denominator becomes
+    whatever the last page happened to say."""
+    respx.get(_page_url(0)).mock(
+        return_value=httpx.Response(200, content=_envelope(_clone_rows(100, 7200000), 150))
+    )
+    respx.get(_page_url(100)).mock(
+        return_value=httpx.Response(200, content=_envelope(_clone_rows(50, 7300000), 999))
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.board_reported_total == 150
+    assert snapshot.board_enumerated == 150
+    assert snapshot.status == "complete"

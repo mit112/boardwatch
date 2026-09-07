@@ -196,6 +196,7 @@ class AmazonProvider:
         errors: list[str] = []
         rows: list[dict[str, Any]] = []
         seen: set[str] = set()
+        idless = 0
         reported_total: int | None = None
         censored: bool | None = None
         observed = None
@@ -259,7 +260,13 @@ class AmazonProvider:
             for row in page_rows:
                 identifier = row.get("id_icims")
                 if identifier is None:
-                    rows.append(row)  # kept so it fails to parse loudly; count_listed_ids skips it
+                    # SKIPPED, never kept. `str(None)` is the truthy literal "None", so
+                    # `parse_job`'s `if not posting_id` guard does NOT fire on it: keeping the
+                    # row mints a posting keyed "None", every id-less row collides with it under
+                    # UNIQUE(company_id, provider_posting_id), and none of them appear in
+                    # `count_listed_ids`, so apply_board closes the survivor the instant it is
+                    # written. Identical to the eightfold defect fixed in D-492.
+                    idless += 1
                     continue
                 if str(identifier) in seen:
                     continue  # the `sort=recent` re-serve; see the module docstring
@@ -275,6 +282,22 @@ class AmazonProvider:
         else:
             errors.append(
                 f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete"
+            )
+
+        enumerated = count_listed_ids(rows, "id_icims")
+        if idless:
+            # Never silent, for the same reason a non-object entry is not: a posting we cannot
+            # key is a posting we cannot close, and the shortfall must be visible as a shortfall.
+            errors.append(f"skipped {idless} rows with no id_icims")
+        if reported_total is not None and not censored and enumerated < reported_total:
+            # A SHORT PAGE IS NOT PROOF THE BOARD ENDED. A degraded backend that serves 63 rows
+            # on a full page terminates the walk with `complete` and a truncated inventory --
+            # and `complete` is the one status that authorizes apply_board to close every
+            # posting it no longer sees (CLOSE_AFTER_MISSES == 2, so two such scans delete them).
+            # Every other paged provider forces `partial` here; this one now does too.
+            errors.append(
+                f"incomplete listing: collected {enumerated} of {reported_total} postings; "
+                "treating as partial so unseen postings are not closed"
             )
 
         postings: list[RawPosting] = []
@@ -303,7 +326,7 @@ class AmazonProvider:
             # failures above dropped any (D-271). `len(postings)` would make this a
             # parse-failure count while every other paged provider means a listing census by
             # it, and the column is persisted, so the two readings could never be told apart.
-            board_enumerated=count_listed_ids(rows, "id_icims"),
+            board_enumerated=enumerated,
             # There is no detail endpoint, so nothing can ever be deferred. Stated rather than
             # left None: None means "not measured", and this is measured at zero by design.
             detail_deferred=0,
