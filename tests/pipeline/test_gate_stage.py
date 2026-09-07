@@ -16,6 +16,7 @@ not reliably produce, which is how an armed judge reached production judging not
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
@@ -467,3 +468,163 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
     assert summary.gate_judged == 0
     assert summary.gate_failed_open == 0
     assert posting_id in [lead.posting_id for lead in summary.tailored]
+
+
+# ---------------------------------------------------------------------------
+# (f) T63 — judge DEPTH: the judge sees more leads than the run tailors
+# ---------------------------------------------------------------------------
+
+
+def _arm_gate_with_depth(data_dir: Path, *, depth: int) -> None:
+    config_dir = load_settings(data_dir=data_dir).config_dir
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "config.toml").write_text(
+        '[gate]\nenabled = true\nmodel = "sonnet"\nbatch_size = 13\n'
+        f"call_timeout_s = 30\ndepth = {depth}\n",
+        encoding="utf-8",
+    )
+
+
+def _dispositions(data_dir: Path) -> dict[int, str]:
+    """`job_id -> disposition` for every row in the store. Read through the TABLE rather than
+    through anything the runner returns: the claim under test is what the ledger holds, and a
+    summary field would only re-report the code that wrote it."""
+    from sqlalchemy import select
+
+    engine = get_engine(data_dir)
+    with engine.connect() as conn:
+        return {
+            int(row.job_id): str(row.disposition)
+            for row in conn.execute(
+                select(tables.job_dispositions.c.job_id, tables.job_dispositions.c.disposition)
+            )
+        }
+
+
+def _job_of(data_dir: Path, posting_ids: list[int]) -> dict[int, int]:
+    from boardwatch.store.regroup import job_anchors
+
+    engine = get_engine(data_dir)
+    with engine.connect() as conn:
+        return job_anchors(conn, posting_ids)
+
+
+def _depth_pipeline(data_dir: Path, out_root: Path, *, top_n: int):  # type: ignore[no-untyped-def]
+    settings = load_settings(data_dir=data_dir)
+    return run_pipeline(
+        get_engine(data_dir),
+        settings,
+        console=Console(quiet=True),
+        out_root=out_root,
+        resume_path=settings.config_dir / "resume.yaml",
+        skip_scan=True,
+        top_n=top_n,
+    )
+
+
+@_needs_an_executable_fake
+def test_gate_depth_judges_deeper_than_the_run_tailors_and_queues_the_surplus(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T63. FIVE postings, `--top 2`, `gate.depth = 5`.
+
+    The judge must see all five while the tailor sees two, and the three it did not deliver
+    must leave NO trace in `job_dispositions` — not a `seen` row, not anything. A `seen` row
+    would bury a lead nobody was ever shown for the whole TTL (D-103), which would make the
+    verdict this run paid for unusable.
+
+    RED against the pre-change runner on `summary.gate_judged == 5`: `depth` was not a field
+    on `GateTier`, `Settings` drops an unknown `[gate]` key silently, and the ranker was called
+    with `limit=top_n`, so the judge was handed 2.
+    """
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-depth-{n}") for n in range(5)]
+    _arm_gate_with_depth(env, depth=5)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")  # every lead comes back `eligible`
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=2)
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 5, "the judge must see the whole depth slate, not the shortlist"
+    assert summary.gate_eligible == 5
+    assert summary.gate_beyond_slate == 3
+    delivered = [lead.posting_id for lead in summary.tailored]
+    assert len(delivered) == 2, f"the tailor must see only --top, got {delivered}"
+
+    # Exactly the two delivered jobs carry a row; the other three carry none AT ALL.
+    anchors = _job_of(env, ids)
+    dispositions = _dispositions(env)
+    assert {anchors[pid] for pid in delivered} == set(dispositions), dispositions
+    for posting_id in ids:
+        if posting_id not in delivered:
+            assert anchors[posting_id] not in dispositions, (
+                f"posting {posting_id} was judged but never presented; it must carry no "
+                f"disposition, or it is buried for the seen TTL"
+            )
+
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["reconciles"] is True, [
+        (stage["name"], stage) for stage in payload["stages"] if stage.get("reconciled") is False
+    ]
+    assert payload["gate"]["judged"] == 5
+    assert payload["gate"]["beyond_slate"] == 3
+
+    # ---- second run, same store, same stub: the surplus is a QUEUE, not a re-judge.
+    summary2 = _depth_pipeline(env, tmp_path / "apps2", top_n=2)
+
+    assert summary2.fatal is None, summary2.fatal
+    assert summary2.gate_judged == 0, "a lead with a current gate row must never be re-judged"
+    queued = set(ids) - set(delivered)
+    delivered2 = {lead.posting_id for lead in summary2.tailored}
+    assert len(delivered2) == 2
+    assert delivered2 <= queued, (
+        "run 2 must deliver leads run 1 judged and did not tailor — that is the queue"
+    )
+    for posting_id in delivered2:
+        assert _current_gate_verdict(env, posting_id) == "eligible"
+    assert summary2.gate_beyond_slate == 1  # three queued, two delivered
+
+
+@_needs_an_executable_fake
+def test_gate_depth_never_judges_a_lead_liveness_withheld(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The depth slate is liveness-checked BEFORE it is judged, so seat time is never spent on
+    a posting that has already 404'd. The whole slate is probed (five), and the judge is handed
+    what survived (four).
+
+    RED against the pre-change runner on `summary.liveness_checked == 5`: it probed `top_n`
+    leads, so this read 2.
+    """
+    from boardwatch.core.liveness import Liveness
+
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-live-{n}") for n in range(5)]
+    _arm_gate_with_depth(env, depth=5)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    dead_id = ids[0]
+
+    def probe(posting_id: int, url: str) -> Liveness:
+        if posting_id == dead_id:
+            return Liveness(posting_id, "dead", "refetch_gone", "HTTP 404")
+        return Liveness(posting_id, "alive", "refetch_ok", "HTTP 200")
+
+    settings = load_settings(data_dir=env)
+    summary = run_pipeline(
+        get_engine(env),
+        settings,
+        console=Console(quiet=True),
+        out_root=tmp_path / "apps",
+        resume_path=settings.config_dir / "resume.yaml",
+        skip_scan=True,
+        top_n=2,
+        liveness_prober=probe,
+    )
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.liveness_checked == 5, "the DEPTH slate is what gets probed, not the shortlist"
+    assert summary.liveness_dead == 1
+    assert summary.gate_judged == 4, "a withheld lead must never cost a judge call"
+    assert _current_gate_verdict(env, dead_id) is None
+    assert summary.gate_beyond_slate == 2  # four alive, two delivered

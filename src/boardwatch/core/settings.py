@@ -66,6 +66,14 @@ class GateTier(BaseModel):
     read from here: the credential lives wherever `claude` itself keeps it). `model`/
     `batch_size`/`call_timeout_s` are cost knobs, not correctness knobs — every seam around
     the call fails open regardless of their values (D-074).
+
+    `depth` (T63) is how many ranked leads the judge SEES, against `--top`, which is how many
+    the run delivers and tailors. `0` — the default and the behaviour that shipped — means
+    "judge only the delivered shortlist". A value above `--top` ranks that many, judges the
+    whole slate, then cuts back to `--top` before the lane split, so tier 1 drains as a QUEUE:
+    a lead judged `eligible` today ranks in tier 0 tomorrow and is tailored then. A value at
+    or below `--top` behaves exactly like `0`. It changes WHEN a posting is judged, never the
+    verdict any posting receives.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -75,6 +83,7 @@ class GateTier(BaseModel):
     model: str = "sonnet"
     batch_size: int = Field(default=13, ge=1)
     call_timeout_s: int = Field(default=300, ge=1)
+    depth: int = Field(default=0, ge=0)
 
 
 class NotifyTier(BaseModel):

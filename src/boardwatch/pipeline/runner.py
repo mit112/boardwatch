@@ -517,6 +517,12 @@ class PipelineSummary:
     gate_uncertain: int = 0
     # BATCHES that failed open (D-074), not items — see `llm.gate_judge.GateStageResult`.
     gate_failed_open: int = 0
+    # T63 — leads that survived liveness and the gate but ranked BEYOND the delivered slate, so
+    # `gate.depth` had them judged and this run cut them before the lane split. Always 0 unless
+    # `gate.depth > top_n`. They are NOT a loss: no `seen` row is written for them, so they rank
+    # again next run — and a `depth` lead the judge cleared ranks in tier 0 there, which is the
+    # queue this knob exists to drain.
+    gate_beyond_slate: int = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -1984,11 +1990,23 @@ def run_pipeline(
         clock.mark("death_probe")
 
         console.print("[bold]eligibility[/bold]")
+        # T63 — judge DEPTH. `gate.depth` above `top_n` ranks a DEEPER slate than this run will
+        # deliver, so the judge sees leads the tailor never will and tier 1 drains as a queue
+        # (a lead judged `eligible` today ranks in tier 0 tomorrow — `top_cmd._rank_tier` reads
+        # gate verdicts, and `run_gate_stage` never re-judges a row it already decided). The
+        # extra leads are cut back to `top_n` after the gate, below, and nothing past that point
+        # ever sees them. `depth <= top_n` — and `depth` with the gate disarmed — ranks exactly
+        # `top_n`, which is byte-identical to the behaviour that shipped.
+        rank_limit = (
+            settings.gate.depth
+            if settings.gate.enabled and settings.gate.depth > top_n
+            else top_n
+        )
         try:
             ranked = rank_open_postings(
                 engine,
                 settings,
-                limit=top_n,
+                limit=rank_limit,
                 output_console=console,
                 run_id=run_id,
                 # The pipeline records its own dispositions AFTER the tailor loop
@@ -2105,8 +2123,10 @@ def run_pipeline(
         clock.mark("liveness")
 
         # T42 — the headless final-eligibility-gate judge stage. HERE: after liveness (so a
-        # dead lead is never sent for judging) and BEFORE T43's lane split below, so it judges
-        # the WHOLE delivered slate — both the apply and review lanes — which is what the
+        # dead lead is never sent for judging, and under T63 that is the whole DEPTH slate —
+        # the extra probes are what buy the guarantee that judge seat time is never spent on a
+        # posting that has already 404'd) and BEFORE T43's lane split below, so it judges the
+        # WHOLE slate — both the apply and review lanes — which is what the
         # ticket asks for. `gate.enabled` defaults False; every seam below fails open (D-074)
         # rather than ever dropping a real job, and is counted rather than silently swallowed.
         if settings.gate.enabled:
@@ -2118,11 +2138,50 @@ def run_pipeline(
         summary.gate_uncertain = gate_result.uncertain
         summary.gate_failed_open = gate_result.failed_open_batches
         summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
+        # T63 — THE CUT, and it is the last line at which `leads` is the depth slate. Everything
+        # below sees only the delivered slate: the lane split, projection, the tailor loop, the
+        # cohort guard and the `seen` write. Taken in RANKER order off the post-gate survivors,
+        # so a lead the judge rejected or liveness withheld gives its slot back to the next lead
+        # down rather than shrinking the day's delivery.
+        #
+        # A cut lead gets NO `seen` row (see the disposition call at the end of this function):
+        # it was never presented to anybody, and a `seen` row would bury it for the whole TTL —
+        # D-103's "capped postings are buried, not queued". It ranks again next run, carrying
+        # the verdict this run bought for it.
+        beyond_slate = leads[top_n:] if rank_limit > top_n else []
+        if beyond_slate:
+            leads = leads[:top_n]
+        beyond_slate_ids = frozenset(posting.posting_id for posting in beyond_slate)
+        summary.gate_beyond_slate = len(beyond_slate)
+        beyond_slate_job_ids: set[int] = set()
+        if beyond_slate_ids:
+            with engine.connect() as anchor_conn:
+                beyond_slate_job_ids = set(
+                    job_anchors(anchor_conn, sorted(beyond_slate_ids)).values()
+                )
+        if beyond_slate and summary.shortlist is not None:
+            # The funnel's shortlist stage is defined on the DELIVERED slate, not on the ranker's
+            # `visible` (T63): `advanced` feeds the tailor stage's `entered`, and a lead that was
+            # cut never entered the tailor loop and is not one of its named drops, so leaving it
+            # in `advanced` would leave the run unreconciled. It moves into `capped_by_top_n`,
+            # which is exactly what it is — it cleared every filter and was beaten only by rank.
+            # An equal amount leaves `advanced` and enters a drop, so the stage's identity keeps
+            # failing on a real ranker bug; it is only the split that moves.
+            summary.shortlist = replace(
+                summary.shortlist,
+                shortlisted=summary.shortlist.shortlisted - len(beyond_slate),
+                hidden_below_cutoff=summary.shortlist.hidden_below_cutoff + len(beyond_slate),
+            )
         if gate_result.judged or gate_result.failed_open_batches:
+            beyond_note = (
+                f", {summary.gate_beyond_slate} beyond the delivered slate"
+                if summary.gate_beyond_slate
+                else ""
+            )
             console.print(
                 f"gate: {gate_result.judged} judged ({gate_result.eligible} eligible, "
                 f"{gate_result.ineligible} ineligible, {gate_result.uncertain} uncertain), "
-                f"{gate_result.failed_open_batches} batch(es) failed open"
+                f"{gate_result.failed_open_batches} batch(es) failed open{beyond_note}"
             )
         for note in gate_result.errors:
             console.print(f"  ! {note}", markup=False)
@@ -2421,11 +2480,16 @@ def run_pipeline(
             # state, and the tailor stage never ran for it. A lead the final-eligibility judge
             # persisted `ineligible` for is the FIFTH: removed from the slate before tailoring,
             # persisted as a gate row, reported under `gate_ineligible` — decided, not lost.
+            # T63 adds `beyond_slate_ids`: a lead `gate.depth` had judged but this run did not
+            # deliver reached no terminal state because it was never in the cohort — it is not a
+            # lead, not a render failure and not a loss. Subtracted rather than accounted, for
+            # the same reason the four above are. Empty unless `gate.depth > top_n`.
             visible_ids = (
                 frozenset(posting.posting_id for posting in ranked.visible)
                 - frozenset(summary.dead_lead_ids)
                 - frozenset(summary.projection_failed_ids)
                 - frozenset(summary.gate_excluded_ids)
+                - beyond_slate_ids
             )
             lead_ids = frozenset(lead.posting_id for lead in summary.tailored)
             failed_ids = frozenset(summary.tailor_failed_ids)
@@ -2467,8 +2531,13 @@ def run_pipeline(
             run_id,
             # A job whose posting was withheld as gone is dropped from the `seen` tier for the
             # same reason a fatal drops the whole tier: it was never presented to anybody.
+            # T63: and a job whose lead ranked beyond the delivered slate is dropped for the
+            # same reason again. `gate.depth` judged it; nothing presented it. A `seen` row
+            # would bury it for the TTL and the verdict this run paid for would go unused.
             surfaced_job_ids=tuple(
-                job_id for job_id in ranked.surfaced_job_ids if job_id not in dead_job_ids
+                job_id
+                for job_id in ranked.surfaced_job_ids
+                if job_id not in dead_job_ids and job_id not in beyond_slate_job_ids
             ),
             stage_completed=summary.fatal is None,
         )
@@ -2979,6 +3048,7 @@ def _emit_funnel(
                 ineligible=summary.gate_ineligible,
                 uncertain=summary.gate_uncertain,
                 failed_open_batches=summary.gate_failed_open,
+                beyond_slate=summary.gate_beyond_slate,
             )
             if settings.gate.enabled
             else None
