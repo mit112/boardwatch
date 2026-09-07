@@ -97,7 +97,11 @@ PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # repo has never measured. Last, and slowest, by the owner's ruling. oraclehcm joins this tier
     # for the same reason -- it is per-posting detail-fetching AND unwatched -- and it is placed
     # here rather than beside workday because an unmeasured cost belongs with the unmeasured ones.
-    ("smartrecruiters", "oraclehcm"),
+    # `phenom` is ranked here for completeness only -- its career sites are on the EMPLOYER's own
+    # domain, so it declares no paste host and `parse_board_target` can never return it from a
+    # listing URL. It is listed because PROVIDER_PRIORITY must cover the registry: an unranked
+    # provider raises UnrankedProvider rather than being sorted quietly to the end.
+    ("smartrecruiters", "oraclehcm", "phenom"),
 )
 
 PROVIDER_PRIORITY: tuple[str, ...] = tuple(

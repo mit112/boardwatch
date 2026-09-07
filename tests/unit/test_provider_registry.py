@@ -8,6 +8,7 @@ from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.jibe import JibeProvider
 from boardwatch.providers.lever import LeverProvider
+from boardwatch.providers.phenom import PhenomProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workable import WorkableProvider
 from boardwatch.providers.workday import WorkdayProvider
@@ -25,7 +26,7 @@ def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
     assert set(built) == {
         "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-        "oraclehcm",
+        "oraclehcm", "phenom",
     }
     for name, inst in built.items():
         assert inst.name == name
@@ -33,7 +34,8 @@ def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
 
 def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
-        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe", "oraclehcm"}
+        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
+         "oraclehcm", "phenom"}
     )
 
 
@@ -75,8 +77,26 @@ def test_oraclehcm_declares_a_suffix_and_no_exact_hosts() -> None:
     assert ".oraclecloud.com" in registry.slug_help_map()
 
 
-def test_composite_slug_providers_are_the_two_that_declare_it() -> None:
-    assert registry.composite_slug_providers() == frozenset({"workday", "oraclehcm"})
+def test_composite_slug_providers_are_the_three_that_declare_it() -> None:
+    assert registry.composite_slug_providers() == frozenset({"workday", "oraclehcm", "phenom"})
+
+
+def test_phenom_declares_neither_an_exact_host_nor_a_suffix() -> None:
+    """Phenom career sites are on the EMPLOYER's own domain (jobs.baesystems.com,
+    www.pgcareers.com, jobs.battelle.org), so there is no bounded hostname set to register and
+    no shared suffix either -- the Workday escape hatch does not apply. The consequence is
+    deliberate and is asserted here rather than worked around: a pasted Phenom URL is not
+    recognized, and a board is added through the qualified `phenom:{host}/{country}/{lang}`
+    form only. That form needs `composite_slug`, which is what lets "/" through it."""
+    assert PhenomProvider().board_hosts == ()
+    assert getattr(PhenomProvider, "board_host_suffixes", ()) == ()
+    # both markers: the same `custom_domain_slug` jibe declares, AND `composite_slug`, because
+    # the country/lang cannot be read off the host. phenom is the only provider that is both.
+    assert PhenomProvider.custom_domain_slug is True
+    assert PhenomProvider.composite_slug is True
+    assert "phenom" in registry.composite_slug_providers()
+    assert "phenom" not in registry.host_provider_map().values()
+    assert "phenom" not in registry.host_suffix_provider_map().values()
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:

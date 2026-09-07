@@ -1,0 +1,14 @@
+{
+  "refineSearch": {
+    "status": 200,
+    "hits": 0,
+    "totalHits": 0,
+    "eid": "acme-external",
+    "data": {
+      "jobs": [],
+      "aggregations": [],
+      "suggestions": [],
+      "locationData": {}
+    }
+  }
+}

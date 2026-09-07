@@ -9,9 +9,13 @@ Workday and Oracle HCM are different: they are the three providers that define a
 method, because their board list omits the body and a second per-posting request is
 needed to get one. Dereferencing a posting LINK is therefore only necessary for those three
 — and ALL THREE are now dereferenced (see the SmartRecruiters, Workday and Oracle HCM sections
-below). All seven providers resolve. Across every one, a recovered `provider_posting_id` lets a
-later aggregator-sourced posting converge with a board scan through
-`UNIQUE(company_id, provider_posting_id)` instead of duplicating it.
+below). All seven of those providers resolve. Across every one, a recovered
+`provider_posting_id` lets a later aggregator-sourced posting converge with a board scan
+through `UNIQUE(company_id, provider_posting_id)` instead of duplicating it. TWO registered
+providers resolve nothing here and never reach the catalog — jibe and phenom, each on the
+employer's own unbounded hostname, each with its own section below. phenom also needs a second
+per-posting request, but it is a POST widget rather than a `_detail_url`, so it is not one of
+the three above.
 
 THE EVIDENCE BEHIND EACH IS NOT EQUAL, and this paragraph exists so that is never read as
 uniform. SmartRecruiters and Workday each cleared a bar of tens of thousands of real URLs
@@ -111,6 +115,18 @@ are not all board roots; most are the site-guard class below. The reference PATT
 `_posting_id` on 4,398 of 4,407 last segments as sampled, which is a narrower claim than
 "4,398 identities were produced" and is NOT evidence of coverage — coverage is the 4,456. The
 detail-fetch contract remains unproven and nothing here lifts it.
+
+PHENOM: NOT DEREFERENCEABLE BY SHAPE, and it never reaches this module's catalog at all. A
+Phenom career site runs on the EMPLOYER's own domain, so `providers/phenom.py` registers neither
+a paste host nor a host suffix, and `parse_board_target` raises `UnregisteredBoardHost` for every
+Phenom URL before `parse_posting_target` can look at its path. That is the correct outcome and
+not a gap to be plugged with a `_POSTING_PATH_SHAPES` row: the posting path VARIES PER SITE
+(`{country}/{lang}/job/{jobId}` on the three measured sites, but `applyUrl` — the link an
+aggregator actually deep-links to — points at the UNDERLYING ATS on two of them and is empty on
+the third, so a Phenom posting is as likely to be seen as a brassring or workday URL as a Phenom
+one). Deriving a phenom reference would need a host-to-board mapping this repo does not have,
+and guessing one would mint company rows for boards that do not exist. Out-of-catalog stays a
+failure, never a guess.
 
 THE SHAPE IS POSITIONAL, NOT A `_POSTING_PATH_SHAPES` ROW, and that is why Workday needs a
 branch rather than a catalog entry. Its career site sits INSIDE the composite slug, and the

@@ -337,6 +337,31 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:f2a2052ca48f2144011ca0f180672fddac961efdc4d080fb47f30d45457a60e2",
     ),
+    "tests/fixtures/phenom/detail_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:5f0ee1463d4c5c04387a2dd2229546a83bdaec2d0492480c8cf1d7400c767b2d",
+    ),
+    "tests/fixtures/phenom/list_empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:86e16b0700126ec06e2da36e1657127f0277874abe9e96a274adc455a1c231f8",
+    ),
+    "tests/fixtures/phenom/list_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:5649ef6a06cc3945dae6a6419c537f2eecc1a7e297a283b08c15cd0527d7cbe7",
+    ),
+    "tests/fixtures/phenom/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:3de602f9aa6a835d0d4d2a5ac38880bdee582d79965af8c9b1cf2536a2c0387b",
+    ),
+    "tests/fixtures/phenom/widget_failure.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:2d7a0080f860e4039627082dc045693d1cca73582a5cd1cd962b9056e48a68dc",
+    ),
     "tests/fixtures/smartrecruiters/detail_empty_sections.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

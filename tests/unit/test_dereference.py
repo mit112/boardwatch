@@ -412,3 +412,24 @@ def test_jibe_is_in_neither_dereference_catalog() -> None:
 
     assert "jibe" not in _POSTING_PATH_SHAPES
     assert "jibe" not in _POSTING_REF_PATTERNS
+
+
+def test_a_phenom_posting_url_is_not_a_recognized_board_target_at_all() -> None:
+    """Phenom career sites run on the EMPLOYER's own domain, so the provider registers neither
+    a paste host nor a host suffix and `parse_board_target` refuses first. The distinction
+    matters to a lane deciding what to file as a tier-D seed: this is UnregisteredBoardHost
+    ("no provider claims this host"), NOT UnresolvablePostingURL ("recognized, but no reference
+    is evidenced"). A `_POSTING_PATH_SHAPES` row would be a guess — the posting path varies per
+    site and `applyUrl` points at the underlying ATS on two of the three measured sites."""
+    assert issubclass(UnregisteredBoardHost, UnknownBoardURL)
+    with pytest.raises(UnregisteredBoardHost):
+        parse_posting_target("https://jobs.acme.test/global/en/job/100001BR")
+
+
+def test_phenom_is_in_neither_dereference_catalog() -> None:
+    """Pinned by NAME, the same way jibe is: a later edit that quietly adds a shape row has to
+    face this test and the docstring section it contradicts."""
+    from boardwatch.lanes.dereference import _POSTING_PATH_SHAPES
+
+    assert "phenom" not in _POSTING_PATH_SHAPES
+    assert "phenom" not in _POSTING_REF_PATTERNS

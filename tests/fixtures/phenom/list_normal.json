@@ -1,0 +1,81 @@
+{
+  "refineSearch": {
+    "status": 200,
+    "hits": 3,
+    "totalHits": 3,
+    "eid": "acme-external",
+    "data": {
+      "jobs": [
+        {
+          "jobId": "100001BR",
+          "reqId": "100001BR",
+          "jobSeqNo": "ACME1US100001BREXTERNAL",
+          "title": "Senior Platform Engineer",
+          "descriptionTeaser": "Teaser for the platform role.",
+          "type": "Full-Time",
+          "category": "Engineering & Technology",
+          "city": "Springfield",
+          "state": "Ohio",
+          "country": "United States",
+          "cityState": "Springfield, Ohio",
+          "cityStateCountry": "Springfield, Ohio, United States",
+          "location": "Springfield, Ohio, United States",
+          "postedDate": "2026-09-01T09:00:00.000+0000",
+          "dateCreated": "2026-08-28T09:00:00.000+0000",
+          "applyUrl": "https://ats.example.test/apply?jobid=100001",
+          "externalApply": true,
+          "siteType": "external",
+          "visibilityType": "External",
+          "locale": "en_GLOBAL"
+        },
+        {
+          "jobId": "100002BR",
+          "reqId": "100002BR",
+          "jobSeqNo": "ACME1US100002BREXTERNAL",
+          "title": "Data Analyst",
+          "descriptionTeaser": "Teaser for the analyst role.",
+          "type": "Full-Time",
+          "category": "Analytics",
+          "city": "Remote",
+          "state": "Ohio",
+          "country": "United States",
+          "cityState": "Remote, Ohio",
+          "cityStateCountry": "Remote, Ohio, United States",
+          "location": "Remote, Ohio",
+          "postedDate": "2026-09-02T09:00:00.000+0000",
+          "dateCreated": "2026-08-29T09:00:00.000+0000",
+          "applyUrl": "",
+          "externalApply": false,
+          "siteType": "external",
+          "visibilityType": "External",
+          "locale": "en_GLOBAL"
+        },
+        {
+          "jobId": "100003BR",
+          "reqId": "100003BR",
+          "jobSeqNo": "ACME1US100003BREXTERNAL",
+          "title": "Technical Writer",
+          "descriptionTeaser": "Teaser for the writer role.",
+          "type": "Part-Time",
+          "category": "",
+          "city": "Shelbyville",
+          "state": "",
+          "country": "United States",
+          "cityState": "Shelbyville",
+          "cityStateCountry": "",
+          "location": "Shelbyville, United States",
+          "postedDate": "2026-09-03T09:00:00.000+0000",
+          "dateCreated": "2026-08-30T09:00:00.000+0000",
+          "applyUrl": "https://jobs.acme.test/global/en/job/100003BR/apply",
+          "externalApply": false,
+          "siteType": "external",
+          "visibilityType": "External",
+          "locale": "en_GLOBAL"
+        }
+      ],
+      "aggregations": [],
+      "suggestions": [],
+      "locationData": {}
+    }
+  }
+}
