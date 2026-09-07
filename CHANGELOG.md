@@ -8,6 +8,54 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A new provider: `apple` (the jobs.apple.com hydration payload).** `apple:<country>` names one of
+  35 country boards. There is no JSON API: the data is a double-encoded
+  `window.__staticRouterHydrationData` blob, and `jobSummary` on the listing is a 626-1,055 char
+  TEASER, so a body costs a second request to the detail page. A bare `/en-us/search` 302s to the US
+  board and reports 4,509 while `?page=1` reports 6,107 — two different boards — so every fetch
+  carries an explicit parameter and ASSERTS the effective URL still matches the slug's filter; a
+  redirect that changes the filter is an error, never a board. `board_reported_total` is deliberately
+  **None**: Apple's `totalRecords` counts position-LOCATION rows while `board_enumerated` is fixed
+  repo-wide as distinct posting ids, so reusing it would bake in a permanent ~25% shortfall no scan
+  could ever close. The stated number is still used — the walk compares it against distinct rows and
+  forces `partial` when short. Ships synthetic fixtures, a dated README and contract tests.
+
+- **`boardwatch companies facets <board>`** lists every facet group a Workday board offers, each
+  bucket's posting count, and a copy-pasteable sliced slug. Slicing has been available since the
+  previous release but nothing told an operator what a board actually offers, so the only way to
+  learn a spelling was to guess and read the failing scan's error. Bounded by default — one tenant
+  answers 1,091 location buckets — with `--all` and `--json`. Read-only: one unfiltered request, no
+  store, and it needs no watched board, so a board can be inspected before it is watched.
+
+- **Eightfold's transient HTTP 405 throttle is now retried.** The same URL answers 200 on a
+  re-probe, and one run lost ~2,150 postings across four boards to it, one board 76% of its
+  listing. Two retries per request and a per-board budget of twelve bound it, and the backoff is
+  passed to the fetcher's own pacer rather than a second rate limiter. Retries and exhaustions are
+  counted and reported per run. **A board whose retries are exhausted can never report `complete`**,
+  read off the typed counter rather than the message — otherwise the postings it failed to fetch
+  would be closed as missing.
+
+- **A board watched by a slug rather than a name is now named after its employer.**
+  `companies.name` feeds the `cross_host` posting identity, so two boards naming one employer
+  normalized to two different strings and could not group at all. `companies add` derives the name,
+  and `companies names` repairs existing rows (reporting by default). A name that is not derivable
+  is left alone rather than guessed, and one that differs from its slug only in capitalisation is
+  already the employer's and is not touched.
+
+### Changed
+
+- **At most two leads per company, title and location may share one slate.** One run spent five of
+  its forty slots on a single opening written five ways. The existing cap keys on the byte-identical
+  JD, which those five were not. This is a ranking cap and not a suppressor: nothing is dropped and
+  nothing is asserted to be the same job — the surplus does not consume a slot, writes no `seen` row,
+  and ranks again next run. A group whose members name different locations is untouched, so real
+  openings at forty-two sites still all appear.
+
+- **Each judged lead's rank in the shortlist is recorded with its gate verdict**, so the yield of
+  judging deeper than the run delivers can be read by rank band. It is captured from the ranker's own
+  ordering before the liveness sweep removes anything, and stored beside the verdict rather than in
+  `score`, which means the engine's confidence.
+
 - **The final-gate judge can now see deeper than the run delivers (`gate.depth`).** `0`, the
   default, is the shipped behaviour. Above `--top`, the run ranks and judges that many leads, then
   delivers `--top`; a lead judged but not delivered gets no `seen` row, so it ranks again next run
