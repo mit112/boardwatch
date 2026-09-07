@@ -151,6 +151,17 @@ class AmazonProvider:
     )
 
     @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """Always the one employer this provider serves (T74).
+
+        The one provider whose slug names NO employer — it is a job CATEGORY
+        (`software-development`) — so without this the default rule (the slug IS the employer
+        token) would name the company after a category. A constant is the right answer here
+        precisely because the board host is a single employer's own site.
+        """
+        return "Amazon"
+
+    @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:
         return None
 

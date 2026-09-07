@@ -95,7 +95,7 @@ from boardwatch.core.models import (
     ResponseValidators,
 )
 from boardwatch.core.politeness import Fetcher, FetchFailure, FetchResult
-from boardwatch.providers.base import BoardHealth, health_from_failure
+from boardwatch.providers.base import BoardHealth, employer_label_from_host, health_from_failure
 
 _HOST_SUFFIX = ".eightfold.ai"
 _PAGE_SIZE = 10  # server-fixed: `num=50` AND `num=8` both return 10 rows — ignored, not clamped
@@ -300,6 +300,21 @@ class EightfoldProvider:
     @staticmethod
     def normalize_slug(slug: str) -> str:
         return validated_host(slug)
+
+    @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """The employer's own token out of the board host (T74).
+
+        This is the provider the naming problem was measured on: BOTH of one employer's boards
+        can be Eightfold — one on `careers.{employer}.com` and one on `{employer}.eightfold.ai`
+        — under disjoint id spaces, so the same requisition exists twice and nothing groups the
+        two rows while one of them is NAMED after its hostname.
+        """
+        try:
+            host = validated_host(slug)
+        except ValueError:
+            return None
+        return employer_label_from_host(host, vendor_suffixes=(_HOST_SUFFIX,))
 
     @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:

@@ -116,6 +116,7 @@ def build_providers() -> dict[str, Provider]:
 
 SlugExtractor = Callable[[str, list[str]], str | None]
 SlugNormalizer = Callable[[str], str]
+EmployerNameDeriver = Callable[[str], str | None]
 
 
 def slug_extractor_map() -> dict[str, SlugExtractor]:
@@ -142,6 +143,53 @@ def slug_normalizer_map() -> dict[str, SlugNormalizer]:
         if fn is not None:
             normalizers[cls.name] = cast(SlugNormalizer, fn)
     return normalizers
+
+
+def employer_name_map() -> dict[str, EmployerNameDeriver]:
+    """Provider name -> the deriver that reads an EMPLOYER NAME off that provider's slug.
+
+    Providers opt in with an `employer_name_from_slug` staticmethod; a provider with none is
+    one whose slug IS the employer's token already (`greenhouse:stripe`, `lever:acme`), which
+    `derive_employer_name` below handles as the default rather than making five providers
+    declare the identity function.
+    """
+    derivers: dict[str, EmployerNameDeriver] = {}
+    for cls in PROVIDER_CLASSES:
+        fn = getattr(cls, "employer_name_from_slug", None)
+        if fn is not None:
+            derivers[cls.name] = cast(EmployerNameDeriver, fn)
+    return derivers
+
+
+def derive_employer_name(provider: str, slug: str) -> str | None:
+    """THE ONE PLACE a board's employer name is read off its slug, or None when it cannot be.
+
+    Single source of truth by construction, and that is the requirement rather than a nicety.
+    `companies add` needs it to name a new watch, and `companies names` needs it to repair the
+    rows an earlier `add` named after their slug; a second lookup beside this one would drift,
+    and the row that drifted would be the row nobody reads.
+
+    None means NOT DERIVABLE. Every caller must then leave the stored name exactly as it is and
+    report it. Guessing is the one thing that must not happen here: a duplicate posting is
+    counted and recoverable, while a wrong employer name MERGES two different companies'
+    postings into one identity — the same precision-over-recall direction `core/dedup.py` takes.
+
+    A deriver that raises is treated as "not derivable" rather than propagating: this is reached
+    from a maintenance sweep over every stored row, and one malformed legacy slug must not abort
+    the other 34.
+    """
+    if provider not in PROVIDER_NAMES:
+        return None
+    deriver = employer_name_map().get(provider)
+    if deriver is None:
+        # The slug is the employer's own token on these providers, so it IS the name. Not
+        # title-cased: any capitalization is a guess (see `base.employer_label_from_host`), and
+        # `normalize_company` folds case before anything compares two names.
+        return slug.strip() or None
+    try:
+        return deriver(slug)
+    except ValueError:
+        return None
 
 
 def composite_slug_providers() -> frozenset[str]:

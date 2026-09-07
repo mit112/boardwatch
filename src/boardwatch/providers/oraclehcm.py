@@ -76,7 +76,7 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, health_from_failure
+from boardwatch.providers.base import BoardHealth, employer_label_from_host, health_from_failure
 
 _HOST_SUFFIX = ".oraclecloud.com"
 # Server maximum. 201/300/500 all return exactly 200 rows while echoing the asked-for value
@@ -209,6 +209,16 @@ class OracleHCMProvider:
         "{tenant}.fa.{region}.oraclecloud.com/hcmUI/CandidateExperience/en/sites/<Site> "
         "or use oraclehcm:<host>/<Site>."
     )
+
+    @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """The tenant label out of the host (T74). The SITE half is a career-site name of the
+        tenant's own choosing (`CX_1`, `CampusHiring`) and names no employer."""
+        try:
+            host, _site = split_slug(slug)
+        except ValueError:
+            return None
+        return employer_label_from_host(host, vendor_suffixes=(_HOST_SUFFIX,))
 
     @staticmethod
     def normalize_slug(slug: str) -> str:

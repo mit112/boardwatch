@@ -27,12 +27,15 @@ from boardwatch.lanes.grnh_seeds import candidate_document as grnh_candidate_doc
 from boardwatch.lanes.grnh_seeds import resolve as grnh_resolve
 from boardwatch.lanes.grnh_seeds import without_known as grnh_without_known
 from boardwatch.providers.base import BoardHealth, Provider
+from boardwatch.providers.registry import derive_employer_name
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
 from boardwatch.store.queries import (
+    companies_named_by_slug,
     company_exists,
     list_watches,
+    set_company_name,
     stored_slug,
     unwatch,
     upsert_watch,
@@ -113,7 +116,12 @@ def add(
         raise typer.Exit(code=1) from exc  # no DB write on the failed-validation path
     entry = _catalog_index().get((provider, slug))
     source = "registry" if entry else "user"
-    name = entry.name if entry else slug
+    # Off the registry when it knows this board, and otherwise the employer name its SLUG
+    # names — never the slug itself, which is what named 35 live rows after their hostname and
+    # left `normalize_company` returning a different string for two rows naming one employer
+    # (T74). `derive_employer_name` is the single source of truth for that reading; when it
+    # cannot read one, the slug stands, because a guessed employer name merges two companies.
+    name = entry.name if entry else (derive_employer_name(provider, slug) or slug)
     app_ctx = build_context(ctx.obj)
     if verify:
         health = _probe([(provider, slug)], app_ctx.settings)[(provider, slug)]
@@ -155,6 +163,87 @@ def remove(ctx: typer.Context, target: str) -> None:
         stored = stored_slug(conn, provider=provider, slug=slug)
         changed = unwatch(conn, provider=provider, slug=slug)
     console.print(f"Unwatched {provider}:{stored}." if changed else "No such watch.")
+
+
+@companies_app.command("names")
+def names(
+    ctx: typer.Context,
+    apply_: bool = typer.Option(
+        False, "--apply", help="Actually rewrite the names. Without it this only reports."
+    ),
+) -> None:
+    """Repair company rows named after their SLUG rather than their employer (T74).
+
+    WHY THIS EXISTS. `companies.name` is the input to `normalize_company`, which is a component
+    of the `cross_host` posting identity. A board the bundled registry does not know used to be
+    watched with `name = slug`, so a board on `careers.acme.test` was named `careers.acme.test`
+    and a Workday board `acme.wd1.myworkdayjobs.com/acme/Acme_External_Site`. Two rows naming
+    ONE employer therefore normalized to two different strings and could not group at all — and
+    the moment a truncated board's coverage rises, the same requisition genuinely exists under
+    both, because the two boards have disjoint provider id spaces.
+
+    WHAT IT WILL NOT DO. A row whose employer name is not derivable from its slug is LEFT ALONE
+    and listed as such. A wrong employer name merges two different companies' postings, which is
+    far worse than a duplicate, so nothing here guesses. Rows named by the registry or by a lane
+    are not touched at all: they are already employer names, and `upsert_lane_company` records
+    that overwriting one is unrecoverable.
+
+    AFTER --apply, RUN `boardwatch identities backfill`. Every identity row written under an old
+    name is stale the instant the name changes; the backfill is the drain, and `identities
+    verify` is what reports the gap until it runs.
+
+    Reports by default. Safe to re-run: a row already carrying its derived name plans no write.
+    """
+    app_ctx = build_context(ctx.obj)
+    with app_ctx.engine.connect() as conn:
+        rows = companies_named_by_slug(conn)
+    planned = [
+        (row, derive_employer_name(row.provider, row.slug))
+        for row in rows
+    ]
+    changing = [(row, derived) for row, derived in planned if derived and derived != row.name]
+    undecidable = [row for row, derived in planned if derived is None]
+    unchanged = len(planned) - len(changing) - len(undecidable)
+
+    if not rows:
+        console.print("names: no company is named after its slug — nothing to repair.")
+        return
+    table = Table("provider", "slug", "stored name", "derived employer", "action")
+    for row, derived in planned:
+        if derived is None:
+            action = "left as is (not derivable)"
+        elif derived == row.name:
+            action = "already correct"
+        else:
+            action = "rewrite" if apply_ else "would rewrite"
+        table.add_row(row.provider, row.slug, row.name, derived or "—", action)
+    console.print(table)
+
+    if not apply_:
+        console.print(
+            f"names: {len(changing)} row(s) would be rewritten, {unchanged} already correct, "
+            f"{len(undecidable)} not derivable. Re-run with --apply to write."
+        )
+        if changing:
+            console.print(
+                "  then run `boardwatch identities backfill` — the stored `cross_host` "
+                "identities are keyed on the OLD name until it does."
+            )
+        return
+
+    with app_ctx.engine.begin() as conn:
+        written = sum(
+            set_company_name(conn, company_id=row.id, name=derived) for row, derived in changing
+        )
+    console.print(
+        f"names: rewrote {written} row(s), {unchanged} already correct, "
+        f"{len(undecidable)} not derivable and left as they were."
+    )
+    if written:
+        console.print(
+            "  now run `boardwatch identities backfill`: every identity row written under the "
+            "old name is stale until it does."
+        )
 
 
 @companies_app.command("search")

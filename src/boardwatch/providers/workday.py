@@ -446,6 +446,27 @@ class WorkdayProvider:
     )
 
     @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """The Workday TENANT (T74) — `ngc` out of `ngc.wd1.myworkdayjobs.com/ngc/...`.
+
+        The tenant, not the career-SITE segment. A site is the tenant's own label for a
+        candidate experience (`Northrop_Grumman_External_Site`, `External_Career_Site`,
+        `Careers`), so reading an employer out of it means stripping generic career words —
+        a guess, and a wrong employer name merges two companies' postings.
+
+        The honest cost, stated because it is the one case this does NOT unify: a tenant token
+        is not word-separated, so it groups with a single-word employer name (`Qualcomm`,
+        `Stripe`) and cannot group with a multi-word one — `ngc` will never normalize equal to
+        `northrop grumman`. That is a limit of what a slug carries, not something a heuristic
+        here may paper over.
+        """
+        try:
+            _host, tenant, _site, _facet = split_target(slug)
+        except ValueError:
+            return None
+        return tenant.strip().lower() or None
+
+    @staticmethod
     def normalize_slug(slug: str) -> str:
         host, tenant, site, facet = split_target(slug)
         triple = "/".join((host, tenant, site))

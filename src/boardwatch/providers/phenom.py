@@ -72,7 +72,7 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, health_from_failure
+from boardwatch.providers.base import BoardHealth, employer_label_from_host, health_from_failure
 
 _PAGE_SIZE = 500  # server-side maximum; size=1000 returns 500 rows, it is not an error
 # 40 x 500 = 20,000 postings. A backstop only: normal termination is a short page.
@@ -161,6 +161,16 @@ class PhenomProvider:
     # domain AND a composite slug, because the country/lang that distinguish two boards on one
     # host live in the request BODY and cannot be read off the host.
     composite_slug = True
+
+    @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """The employer's own token out of the HOST half of the triple (T74). Country and lang
+        name a locale, never an employer."""
+        try:
+            host, _country, _lang = split_slug(slug)
+        except ValueError:
+            return None
+        return employer_label_from_host(host)
 
     @staticmethod
     def normalize_slug(slug: str) -> str:
