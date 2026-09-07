@@ -102,7 +102,7 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "retry_attempts": (int, "next scan", "total attempts 1–10 (1 = no retry)"),
     "scan_workers": (int, "next scan", "1–32"),
     "detail_fetch_budget": (
-        int, "next scan", "per-posting detail fetches per board per scan, 1–1000"
+        int, "next scan", "per-posting detail fetches per board per scan, 1–10000"
     ),
     "validator_max_age_hours": (
         int,

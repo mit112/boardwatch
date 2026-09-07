@@ -144,7 +144,7 @@ class Settings(BaseModel):
     # Multi-endpoint providers (SmartRecruiters) need one detail request per UNSEEN
     # posting because their list carries no bodies. Bounds a first scan of a large
     # board; exceeding it yields a partial snapshot, never a silent truncation.
-    detail_fetch_budget: int = Field(default=50, ge=1, le=1000)
+    detail_fetch_budget: int = Field(default=50, ge=1, le=10000)
     # Force periodic revalidation of watched boards: a cached conditional-request validator
     # (ETag / Last-Modified) older than this is dropped, so the next scan refetches
     # unconditionally instead of trusting a possibly-stale upstream ETag forever. Without it a
