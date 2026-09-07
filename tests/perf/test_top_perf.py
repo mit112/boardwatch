@@ -57,6 +57,29 @@ BODY_TEMPLATES = [
     "Kafka streaming pipelines in Java.",
 ]
 
+#: Cities the 10K fixture rotates through, so it models 10,000 DISTINCT openings rather than one
+#: requisition posted 10,000 times.
+#:
+#: It used to give every posting the same `["Remote — US"]`, and combined with the constant
+#: `normalized_title` below that made all 10,000 rows one `(company, title, location)` cluster.
+#: `top_cmd.CLUSTER_CAP_PER_KEY` then correctly delivered 2 leads and `visible == 10` failed. The
+#: cap was not wrong; the fixture was, and it had been wrong in a way nothing could see — a corpus
+#: where every row collides on every cap and dedup key is also not the shape this smoke test
+#: claims to time. The rotation is wide enough that the cap cannot bind (2 per key per title, so
+#: capacity is far above the 10 slots requested) while keeping the fixture built from constants.
+LOCATION_ROTATION = [
+    "Remote — US",
+    "Austin, TX",
+    "Denver, CO",
+    "Columbus, OH",
+    "Raleigh, NC",
+    "Phoenix, AZ",
+    "Boise, ID",
+    "Reno, NV",
+    "Omaha, NE",
+    "Tampa, FL",
+]
+
 
 @pytest.mark.perf
 def test_top_path_median_under_one_second(tmp_path: Path) -> None:
@@ -91,7 +114,8 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
                     "provider_posting_id": str(i),
                     "title": "Backend Engineer" if i % 3 else "Platform Engineer",
                     "normalized_title": "backend engineer", "url": f"https://x.example/{i}",
-                    "locations_json": ["Remote — US"], "remote_policy": "remote",
+                    "locations_json": [LOCATION_ROTATION[i % len(LOCATION_ROTATION)]],
+                    "remote_policy": "remote",
                     "posted_at": now - timedelta(days=i % 60),
                     "first_seen_at": now, "last_seen_at": now, "status": "open",
                     "consecutive_missing": 0, "content_hash": body_hash, "body_text": body,

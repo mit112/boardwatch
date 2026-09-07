@@ -25,6 +25,7 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression, resolve_duplicates
 from boardwatch.core.ledger import LedgerRow
+from boardwatch.core.posting_identity import normalized_locations
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.facts import ProfileRowInvalid
@@ -123,17 +124,30 @@ class RankedPosting:
     # survivor's posting_id rather than a bare bool for the same reason `duplicate_of`
     # does: a cap the operator cannot trace to the row that displaced it is not auditable.
     slate_capped_by: int | None = None
+    # A lead holding this row's `(company_id, normalized_title, canonical locations)` allowance
+    # under the CLUSTER cap (T73), set only when the row is surfaced by the
+    # `--include-cluster-cap` drain. A normally-visible posting has None.
+    #
+    # Mutually exclusive with `slate_capped_by` by construction — the slate cap `continue`s
+    # first — and that ordering is the attribution: a byte-identical JD is reported as the
+    # stronger claim it is, and this field means only "the same role at the same place, twice
+    # already". Carries `holders[0]`, the first of the (up to two) leads that took the
+    # allowance in slate order, for the same reason `slate_capped_by` carries an id rather
+    # than a bool: a cap the operator cannot trace to a row is not auditable. One id is
+    # enough to locate the group — company, title and place are all shared.
+    cluster_capped_by: int | None = None
 
 
 @dataclass(frozen=True)
 class RankedResults:
     """The shortlist plus every count needed to account for the postings considered.
 
-    `considered` and the ten drop counts exist so the funnel's shortlist stage can reconcile:
+    `considered` and the drop counts exist so the funnel's shortlist stage can reconcile:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
     hidden_zero_signal + hidden_over_seniority + hidden_ineligible + hidden_duplicate +
-    hidden_applied + hidden_handled + hidden_slate_cap + hidden_below_cutoff`. Each is its own
-    counter, incremented where the posting actually leaves, never a remainder by subtraction —
+    hidden_applied + hidden_handled + hidden_slate_cap + hidden_cluster_cap +
+    hidden_below_cutoff`. Each is its own counter, incremented where the posting actually
+    leaves, never a remainder by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
 
@@ -262,6 +276,24 @@ class RankedResults:
     # owner has stopped draining shows up here as this subset rising while the parent stays
     # flat; folded together, that is invisible.
     hidden_slate_cap_standing: int = 0
+    # The delivery CLUSTER cap (T73). Rows that cleared every filter, were inside the rank
+    # cutoff, and were displaced only because `CLUSTER_CAP_PER_KEY` leads for the same
+    # `(company_id, normalized_title, canonical locations)` already held slots on this run's
+    # slate. Its own bucket and **never folded into `hidden_slate_cap`**: that one asserts a
+    # byte-identical JD is already in front of the owner, which is a strictly stronger claim
+    # than this one makes, and the reader acts differently on the two — a byte-identical twin
+    # is redundant, whereas a third opening for one role in one city may well be worth seeing
+    # once the first two are actioned. The slate cap `continue`s first, so a row caught by
+    # both is attributed to it and never counted twice.
+    #
+    # Like `hidden_slate_cap` this count IS the number of delivery slots freed, exactly: a
+    # capped row does not increment `kept`, so each one refills from further down the ranking.
+    # Also like it, NO `seen` row is written, so the row ranks again — a DEFERRAL, not a
+    # suppression, and the re-entry path is by construction. Unlike it the cap is NOT seeded
+    # from the standing queue, so the deferral ends on the next run whatever the owner does;
+    # that is the pre-D-439 semantics and it is deliberate at a cap of 2, where the group
+    # bleeds two members per run instead of taking a whole slate at once.
+    hidden_cluster_cap: int = 0
     # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
     # caller that forgets to set it gets "suppression disabled" rather than silently
     # claiming the subsystem ran. `hidden_duplicate == 0` on its own is ambiguous — it means
@@ -329,6 +361,51 @@ distinct JDs. Requiring the hash is what buys the zero-collateral result.
 """
 
 
+CLUSTER_CAP_PER_KEY = 2
+"""How many leads may share one `(company_id, normalized_title, canonical locations)` per slate.
+
+A RANKING cap (T73, owner-ruled 2026-09-07), explicitly **not** a suppressor and **not** an
+identity claim. It exists because `SLATE_CAP_PER_KEY`'s key includes `content_hash`, so the one
+shape it structurally cannot see is a single opening EXPRESSED SEVERAL WAYS. Run 10 spent 5 of
+its 40 delivered slots on one Goldman Sachs Dallas security-engineering cluster: one company,
+one normalized title, one city, titles differing only in "Engineering -" versus "Engineering
+Division -" and an en-dash, and five bodies of 3343 / 4321 / 3839 / 3938 / 2756 bytes. Five
+different hashes, so the exact-key cap read them as five distinct requisitions and delivered all
+five.
+
+**Why 2 and not 1.** A limit of 1 would collapse groups that are REAL — Capital One's "Lead
+Software Engineer, Full Stack" x42 and RTX's "Production Operator" x75 are genuinely separate
+openings, and a `company_title_location` SUPPRESSOR was measured and REJECTED for exactly that
+reason (D-295, refused three times). Two keeps the cheapest evidence that a group is real (a
+second lead ships, and the owner can compare them) while refusing to let one cluster take a
+slate. **Nothing here is dropped and nothing is asserted to be the same job**; no
+`IDENTITY_ALGORITHM_VERSION` bump, no `rules_hash` or `engine_version` movement, no ledger write.
+
+**The location component is `posting_identity.normalized_locations`, reused rather than
+reinvented, and the choice of the WHOLE canonical list over a "primary" location is
+load-bearing.** It is the same component the `company_title_location` identity keys on, so the
+cap and the refused suppressor at least agree about what "same place" means. `locations[0]` — the
+reduction `delivery/api.py` renders as the queue's primary location — was rejected because list
+ORDER IS NOT IDENTITY (`normalized_locations`' own docstring says so): a provider that reorders
+one requisition's cities between scans would give two copies of it different keys, so the cap
+would miss, and a 20-city posting would collide with a Dallas-only one, so the cap would fire on
+unrelated leads. The canonical list is order-insensitive, case-folded and office-alias-folded,
+which is what the Goldman cluster needs (all five say exactly "Dallas, TX") and what the
+42-location Capital One group needs (different lists, different keys, untouched).
+
+**A posting naming NO location is NOT KEYED and can never be capped.** `normalized_locations`
+returns `None` for absence rather than an `"[]"` sentinel precisely so location-less postings do
+not all become equal to each other; keying them would collide unrelated requisitions on an empty
+component, and the cost of firing wrongly is a real lead nobody sees, while the cost of not
+firing is one redundant slot. Same fail-open direction, and for the same reason, as the empty
+`normalized_title` and `EMPTY_BODY_HASH` guards on the exact-key cap.
+
+**There is deliberately no body guard here.** The exact-key cap needs one because a body-less JD
+makes its byte-identical claim false; this cap makes no claim about the body at all, so a
+body-less posting is an ordinary member of its company/title/place cluster.
+"""
+
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -342,6 +419,7 @@ def rank_open_postings(
     include_hard_filter: bool = False,
     include_duplicates: bool = False,
     include_slate_cap: bool = False,
+    include_cluster_cap: bool = False,
     include_handled: bool = False,
     include_applied: bool = False,
     only_new: bool = False,
@@ -446,6 +524,9 @@ def rank_open_postings(
     scored: list[RankedPosting] = []
     # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
     slate_keys: dict[int, tuple[int, str, str]] = {}
+    # posting_id -> CLUSTER key (T73), absent for a posting that cannot be keyed: no
+    # `normalized_title`, or no location evidence at all. See CLUSTER_CAP_PER_KEY.
+    cluster_keys: dict[int, tuple[int, str, str]] = {}
     hidden_non_swe = 0
     hidden_zero_signal = 0
     signal_unmeasured = 0
@@ -546,6 +627,17 @@ def rank_open_postings(
         if row.normalized_title and row.content_hash != EMPTY_BODY_HASH:
             slate_keys[int(row.id)] = (
                 int(row.company_id), row.normalized_title, row.content_hash,
+            )
+        # The CLUSTER key (T73), computed HERE beside the slate key so both caps read the same
+        # row once. `normalized_locations` is the `company_title_location` identity's own
+        # location component, reused rather than reinvented; it returns None for a posting with
+        # no location evidence, and a None key is simply not stored, so such a posting is never
+        # capped and never collides with another location-less one. No body guard: this cap
+        # makes no claim about the JD. See CLUSTER_CAP_PER_KEY for the full reasoning.
+        locations_key = normalized_locations(list(row.locations_json or []))
+        if row.normalized_title and locations_key is not None:
+            cluster_keys[int(row.id)] = (
+                int(row.company_id), row.normalized_title, locations_key,
             )
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
@@ -676,6 +768,7 @@ def rank_open_postings(
     kept = 0
     hidden_slate_cap = 0
     hidden_slate_cap_standing = 0
+    hidden_cluster_cap = 0
     # `(company_id, normalized_title, content_hash)` -> the posting_ids holding slots for it, in
     # slate order.
     #
@@ -698,6 +791,17 @@ def rank_open_postings(
     # Read only for reporting; `slate_held_by` grows as this run delivers, and membership here
     # does not, which is the distinction being counted.
     standing_ids = {posting_id for ids in standing_slate.values() for posting_id in ids}
+    # `(company_id, normalized_title, canonical locations)` -> the posting_ids holding slots for
+    # it, in slate order. **Empty, not seeded from the standing queue (T73).** The exact-key cap
+    # is seeded because at a cap of 1 an unseeded deferral lasts exactly one day and the group
+    # delivers a byte-identical copy per run forever (D-439). At a cap of 2 the shape is
+    # different: the two delivered members become `seen`, so the run that follows serves the
+    # next two rather than the same ones, and a five-member cluster is spread over three slates
+    # instead of taking five slots out of one. Seeding it would additionally hold the third
+    # member until the owner actioned one of the first two, which is a QUEUE policy and a
+    # separate change; scoping this to the slate is what the ticket asked for and keeps the
+    # deferral's end condition unconditional.
+    cluster_held_by: dict[tuple[int, str, str], list[int]] = {}
     hidden_handled = 0
     hidden_applied = 0
     hidden_handled_this_run = 0
@@ -791,6 +895,37 @@ def rank_open_postings(
                 # this ships — 49 groups at D-439, 53 a day later.
                 visible.append(replace(posting, slate_capped_by=holders[0]))
                 continue
+            # The CLUSTER cap (T73), and it sits HERE — inside `kept < limit` and immediately
+            # AFTER the exact-key cap — for two reasons, both of them attribution. Inside the
+            # cutoff, so a row the rank cutoff would have dropped anyway is counted as
+            # `hidden_below_cutoff` and not blamed on a cap that decided nothing. After the
+            # exact-key cap, so a row whose JD is byte-identical to a lead already in front of
+            # the owner is reported as that stronger claim; this bucket then means only "the
+            # same role at the same place, already twice on this slate", which is what the
+            # reader has to act on differently.
+            cluster_key = cluster_keys.get(posting.posting_id)
+            # A posting never caps ITSELF, for the reason the exact-key cap does not: within a
+            # run an id appears at most once, so this costs nothing here, and it keeps the two
+            # branches reading the same way rather than relying on the seed being empty.
+            cluster_holders: list[int] = (
+                [
+                    held
+                    for held in cluster_held_by.get(cluster_key, [])
+                    if held != posting.posting_id
+                ]
+                if cluster_key is not None
+                else []
+            )
+            if len(cluster_holders) >= CLUSTER_CAP_PER_KEY and not include_cluster_cap:
+                # NOT surfaced and NOT counted against `limit`: the slot refills from further
+                # down the ranking, and because no `seen` is recorded this row ranks again on
+                # the next run. A DEFERRAL, never a suppression — nothing is dropped and no
+                # claim is made that these postings are one job.
+                hidden_cluster_cap += 1
+                continue
+            if len(cluster_holders) >= CLUSTER_CAP_PER_KEY:
+                visible.append(replace(posting, cluster_capped_by=cluster_holders[0]))
+                continue
             # A drained row is NOT surfaced. `--include-over-seniority`, `--include-non-swe` and
             # `--include-zero-signal` let you inspect a quarantine; recording those rows `seen`
             # would make looking into the bucket suppress them from later runs, so the drain
@@ -813,6 +948,14 @@ def rank_open_postings(
                 holding = slate_held_by.setdefault(slate_key, [])
                 if posting.posting_id not in holding:
                     holding.append(posting.posting_id)
+            if cluster_key is not None:
+                # `not in` for the reason the slate registration needs it: at a cap above 1,
+                # appending an id twice would make `len(cluster_holders)` stop counting DISTINCT
+                # holders and silently halve the allowance. Unreachable within one run, and
+                # cheap enough that the invariant is stated rather than assumed.
+                cluster_holding = cluster_held_by.setdefault(cluster_key, [])
+                if posting.posting_id not in cluster_holding:
+                    cluster_holding.append(posting.posting_id)
             visible.append(posting)
             kept += 1
         else:
@@ -839,6 +982,7 @@ def rank_open_postings(
         hidden_duplicate=hidden_duplicate,
         hidden_slate_cap=hidden_slate_cap,
         hidden_slate_cap_standing=hidden_slate_cap_standing,
+        hidden_cluster_cap=hidden_cluster_cap,
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
         hidden_applied=hidden_applied,
@@ -938,10 +1082,12 @@ def _why_cell(posting: RankedPosting) -> str:
     # first match showed such a row as merely over-band, so the operator could not tell it was
     # also one they had already applied to — a suppression you cannot read is the leak this
     # column exists to close. The last three are mutually exclusive by construction (each
-    # `continue`s in the ranker), and so are `hard_filter` and `slate_capped_by`: the hard-filter
-    # drain `continue`s before the rank cutoff, which is where the cap fires, and the last three
-    # `continue` before it too. So at most three annotations ever appear — either
-    # (hard filter, zero signal, over band) or (zero signal, over band, slate cap).
+    # `continue`s in the ranker), and so are `hard_filter`, `slate_capped_by` and
+    # `cluster_capped_by`: the hard-filter drain `continue`s before the rank cutoff, which is
+    # where both caps fire, the two caps `continue` past each other, and the last three
+    # `continue` before them too. So at most three annotations ever appear — one of
+    # (hard filter, zero signal, over band), (zero signal, over band, slate cap) or
+    # (zero signal, over band, cluster cap).
     # `uncertain` and `zero_signal == "unmeasured"` are deliberately NOT annotated: neither is
     # a drain, both are normally-visible rows, and an extraction outage would annotate the whole
     # table with a fact the notice already states once.
@@ -954,6 +1100,10 @@ def _why_cell(posting: RankedPosting) -> str:
         notes.append(posting.band_reason)
     if posting.slate_capped_by is not None:
         notes.append(f"slate cap: same JD as {posting.slate_capped_by}")
+    if posting.cluster_capped_by is not None:
+        notes.append(
+            f"cluster cap: same company, title and location as {posting.cluster_capped_by}"
+        )
     if posting.duplicate_of is not None:
         notes.append(f"duplicate of {posting.duplicate_of}")
     elif posting.applied_as is not None:
@@ -984,6 +1134,7 @@ def _print_hidden_notices(
     include_hard_filter: bool,
     include_duplicates: bool,
     include_slate_cap: bool,
+    include_cluster_cap: bool,
     include_handled: bool,
     include_applied: bool,
 ) -> None:
@@ -1080,6 +1231,18 @@ def _print_hidden_notices(
             f"{waiting} Deferred, not dropped; see them with --include-slate-cap.",
             markup=False,
         )
+    if results.hidden_cluster_cap and not include_cluster_cap:
+        # Named apart from the slate cap because it makes a WEAKER claim and the operator acts
+        # on it differently: nothing here says two postings are the same job, only that one
+        # role at one place had already taken its two slots on this slate.
+        target.print(
+            f"{results.hidden_cluster_cap} slot(s) freed by the cluster cap — at most "
+            f"{CLUSTER_CAP_PER_KEY} leads per company, title and location on one slate, so a "
+            "single opening written several ways cannot take the day. They return on the next "
+            "run; nothing is dropped and nothing is claimed to be a duplicate. See them with "
+            "--include-cluster-cap.",
+            markup=False,
+        )
     if results.hidden_duplicate and not include_duplicates:
         target.print(
             f"{results.hidden_duplicate} hidden as duplicates — see them with "
@@ -1155,6 +1318,12 @@ def top(
         help="Show leads the slate cap deferred (same company, title and JD as one you "
         "already have).",
     ),
+    include_cluster_cap: bool = typer.Option(
+        False,
+        "--include-cluster-cap",
+        help=f"Show leads the cluster cap deferred (more than {CLUSTER_CAP_PER_KEY} leads for "
+        "one company, title and location on this slate).",
+    ),
     include_handled: bool = typer.Option(
         False,
         "--include-handled",
@@ -1191,6 +1360,7 @@ def top(
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
             include_slate_cap=include_slate_cap,
+            include_cluster_cap=include_cluster_cap,
             include_handled=include_handled,
             include_applied=include_applied,
             only_new=new,
@@ -1222,6 +1392,7 @@ def top(
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
             include_slate_cap=include_slate_cap,
+            include_cluster_cap=include_cluster_cap,
             include_handled=include_handled,
             include_applied=include_applied,
         )
@@ -1242,6 +1413,7 @@ def top(
                         "band": p.band,
                         "duplicate_of": p.duplicate_of,
                         "slate_capped_by": p.slate_capped_by,
+                        "cluster_capped_by": p.cluster_capped_by,
                         "handled_as": p.handled_as,
                         "applied_as": p.applied_as,
                     }
@@ -1284,6 +1456,7 @@ def top(
             include_hard_filter=include_hard_filter,
             include_duplicates=include_duplicates,
             include_slate_cap=include_slate_cap,
+            include_cluster_cap=include_cluster_cap,
             include_handled=include_handled,
             include_applied=include_applied,
         )
@@ -1312,6 +1485,7 @@ def top(
         include_hard_filter=include_hard_filter,
         include_duplicates=include_duplicates,
         include_slate_cap=include_slate_cap,
+        include_cluster_cap=include_cluster_cap,
         include_handled=include_handled,
         include_applied=include_applied,
     )
