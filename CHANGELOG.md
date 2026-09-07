@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The final-gate judge can now see deeper than the run delivers (`gate.depth`).** `0`, the
+  default, is the shipped behaviour. Above `--top`, the run ranks and judges that many leads, then
+  delivers `--top`; a lead judged but not delivered gets no `seen` row, so it ranks again next run
+  carrying its verdict, and one the judge cleared lands in tier 0. The funnel reports the surplus as
+  `gate.beyond_slate` and still reconciles. Liveness probes the whole depth slate first.
+
+- **Two new providers: `jibe` (iCIMS Career Sites) and `oraclehcm` (Oracle Recruiting Cloud).**
+  `jibe:<careers host>` pages an employer's own `/api/jobs` at 100 a page with bodies inline;
+  `oraclehcm:<host>/<siteNumber>` (or a pasted posting URL) lists a site and fetches details under
+  the detail budget, SmartRecruiters-style. Each ships synthetic fixtures with a dated README, a
+  provenance entry, contract tests and a documented dereference stance. Oracle's docstring records
+  five measured traps, including that an unknown site number silently serves the host's default
+  board, so `--verify` cannot catch a typo there.
+
+- **`boardwatch guide` corrected after an independent review** — the `track add` journey line now
+  says `--status applied` (the default `interested` suppresses nothing), `settings toggle` and `web`
+  carry honest store labels with the indirect path named, `eligibility summary`/`abstain` are
+  readers, `companies discover*` are on the network, `top --json` is named as the one bare array,
+  and every `config show --json` key has one shape. `coverage` and `seeds` refusals now go to
+  stderr under `--json`, and JSON output goes through `typer.echo` so a redirected Windows stdout
+  cannot crash on a non-ASCII title.
+
 - **`boardwatch guide` is now generated from the command tree, and `boardwatch skill` is new.**
   Every command prints its usage, its help, an `effect:` line saying what it touches (`pure`,
   `reads store`, `writes store`, `writes files`, `network`, `llm`, `sends`, `interactive`) and a
@@ -374,6 +396,10 @@ All notable changes to this project are documented here. The format follows
   this change: approve once more after upgrading.**
 
 ### Fixed
+
+- **`test_indeed_lane`'s control test was reaching Indeed's live API on every run** — the only test
+  in its file without `@respx.mock`; it failed whenever a live hit carried a malformed URL. It is
+  mocked now and the whole file refuses a real socket.
 
 - **A run that splits its slate now reconciles its own funnel.** Since the review lane (T43) and the
   final judge's rejections (T54) became terminal states, every run that routed a lead to review or
