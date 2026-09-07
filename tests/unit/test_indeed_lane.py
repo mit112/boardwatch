@@ -71,6 +71,40 @@ from boardwatch.store.queries import get_watched_companies, insert_run
 
 runner = CliRunner()
 
+
+@pytest.fixture(autouse=True)
+def _the_module_docstrings_promise_enforced(monkeypatch):
+    """Refuse a real socket from ANY test in this file. Autouse, no opt-out.
+
+    The module docstring promises that nothing here reaches the network, and until this fixture
+    existed nothing enforced it. `_mock_one` registers its route on respx's DEFAULT router, which
+    only intercepts while `@respx.mock` has STARTED it -- so a test that forgets the decorator
+    registers a route that never fires, the `Fetcher` falls through to the real transport, and the
+    lane parses whatever Indeed's live API returns that minute. That failure is silent in the
+    direction that matters: the test still passes on most days, because most live `viewJobUrl`
+    values happen to be well formed, and only goes red when a live hit carries one that is not.
+
+    Two things make that worse than an ordinary flake. This lane presents a vendor's own app
+    credentials against a host whose `robots.txt` is `Disallow: /`, so a live call is a policy
+    breach and not merely noise; and the assertion that breaks is about REFUSED SEEDS, so the
+    failure message quotes a real employer's posting URL into the test log.
+
+    `socket.create_connection` is the chokepoint rather than an httpcore or respx internal: it is
+    stdlib, it is what httpcore's sync backend actually calls, and it catches an escape through
+    any HTTP stack. Nothing in this file wants a socket -- the store is SQLite and the CLI runs
+    in-process -- so there is no legitimate caller to exempt.
+    """
+    import socket
+
+    def refuse(address, *args, **kwargs):
+        raise AssertionError(
+            f"this test opened a real socket to {address!r} -- a request escaped its respx "
+            "mock. A missing @respx.mock is how: the route registers but never intercepts."
+        )
+
+    monkeypatch.setattr(socket, "create_connection", refuse)
+
+
 # (facet term, cursor) -> the page to answer with. `""` is the unfaceted search and `None` is the
 # first page of any facet, which is exactly how the lane spells them on the wire.
 _Page = tuple[list[Hit], str | None]
@@ -883,6 +917,7 @@ def test_a_malformed_view_job_url_surfaces_as_a_visible_refusal_note(tmp_path):
     assert note is not None and "malformed" in note and "127.0.0.1" in note
 
 
+@respx.mock
 def test_an_ordinary_unseedable_hit_produces_no_refusal_note(tmp_path):
     """The control that keeps the note from becoming noise. A known provider's un-slugged shortlink
     and a hit with no apply URL both return None from `tenant_seed_url` for ordinary reasons -- not
