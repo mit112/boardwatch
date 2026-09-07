@@ -14,6 +14,16 @@ All notable changes to this project are documented here. The format follows
   carrying its verdict, and one the judge cleared lands in tier 0. The funnel reports the surplus as
   `gate.beyond_slate` and still reconciles. Liveness probes the whole depth slate first.
 
+- **Two more providers: `phenom` (Phenom People career sites) and `eightfold` (Eightfold PCSX).**
+  `phenom:<host>/<country>/<lang>` drives an employer's own `/widgets` endpoint with two POST
+  widgets (`refineSearch` at 500 a page, `jobDetail` per posting under the detail budget); a
+  posting whose detail fails keeps its teaser as the body and is named in the scan error.
+  `eightfold:<host>` reads the tenant `domain` off the career page, then pages `/api/pcsx/search`
+  at the server-fixed 10 a page (a 3,817-posting board is 382 list requests) and fetches details
+  under the budget; a detail 404 keeps the posting listed. Both are custom-domain providers, so a
+  pasted URL is not recognised and neither is dereferenced. Each ships synthetic fixtures with a
+  dated README, a provenance entry and contract tests.
+
 - **Two new providers: `jibe` (iCIMS Career Sites) and `oraclehcm` (Oracle Recruiting Cloud).**
   `jibe:<careers host>` pages an employer's own `/api/jobs` at 100 a page with bodies inline;
   `oraclehcm:<host>/<siteNumber>` (or a pasted posting URL) lists a site and fetches details under

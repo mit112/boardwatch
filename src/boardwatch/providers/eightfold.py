@@ -78,12 +78,13 @@ from boardwatch.providers.base import BoardHealth, health_from_failure
 
 _HOST_SUFFIX = ".eightfold.ai"
 _PAGE_SIZE = 10  # server-fixed: `num=50` AND `num=8` both return 10 rows — ignored, not clamped
-# 300 pages x 10 = 3000 postings, ~1.5x the largest board measured (1,958 on one tenant,
-# 2026-09-06). A backstop only: normal termination is a short page, and a short page is only
+# 600 pages x 10 = 6000 postings, ~1.5x the largest board measured (3,817 on one tenant,
+# 2026-09-06, live in a scratch store: a 300-page backstop cut it at 3,000 and reported the
+# shortfall). A backstop only: normal termination is a short page, and a short page is only
 # ever the LAST page — measured at start = 0/10/20/100/500 (10 rows each) against start = 1950
-# (2 rows, count 1952) on that same board. A board past the backstop reports the shortfall
+# (2 rows, count 1952) on a second board. A board past the backstop reports the shortfall
 # through the completeness note in fetch_board rather than closing the postings it never saw.
-_MAX_PAGES = 300
+_MAX_PAGES = 600
 # Anything that would make the host slug reinterpretable as a URL with a different authority,
 # path or query than the slug says.
 _HOST_FORBIDDEN = frozenset(":@?#\\%[]")
