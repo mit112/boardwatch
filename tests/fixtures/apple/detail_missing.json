@@ -1,0 +1,20 @@
+{
+ "loaderData": {
+  "root": {
+   "appType": "external",
+   "isSessionAuthenticated": false,
+   "locale": {
+    "postLocationId": "postLocation-AAA",
+    "direction": "ltr",
+    "country": "AAA"
+   },
+   "baseUrl": "https://jobs.apple.com",
+   "talentId": null,
+   "countryCode": "AAA",
+   "searchPageUrl": "search?location=acmeland-AAA",
+   "currentUser": null
+  }
+ },
+ "actionData": null,
+ "errors": null
+}

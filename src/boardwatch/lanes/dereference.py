@@ -1,7 +1,7 @@
 r"""URL -> posting-reference dereferencing (lane groundwork Part 2). No fetching here.
 
 core.board_urls.parse_board_target turns a pasted board URL into (provider, slug) and
-throws the rest of the path away. For five of the eleven providers that is fine: greenhouse,
+throws the rest of the path away. For five of the twelve providers that is fine: greenhouse,
 lever, ashby, workable and amazon all inline every body in the board response, so a link to one
 of their postings is a COMPANY DISCOVERY problem — parse_board_target -> upsert_watch ->
 run_scan already turns it into that company's whole board with no new code. SmartRecruiters,
@@ -13,12 +13,14 @@ sections below); EIGHTFOLD IS REFUSED, deliberately, and its own section below s
 evidence that refusal rests and what would lift it. Seven of the eight providers that reach
 the catalog resolve. Across every one that does, a recovered `provider_posting_id` lets a later
 aggregator-sourced posting converge with a board scan through
-`UNIQUE(company_id, provider_posting_id)` instead of duplicating it. THREE registered providers
-resolve nothing here and never reach the catalog — jibe, phenom and amazon, each with its own
-section below. The first two are on the employer's own unbounded hostname; amazon is not, and
-its section says why registering two exact paste hosts still buys it nothing. phenom also needs
-a second per-posting request, but it is a POST widget rather than a `_detail_url`, so it is not
-one of the four above.
+`UNIQUE(company_id, provider_posting_id)` instead of duplicating it. FOUR registered providers
+resolve nothing here and never reach the catalog — jibe, phenom, amazon and apple, each with its
+own section below. The first two are on the employer's own unbounded hostname; amazon and apple
+are not, and their sections say why registering exact paste hosts still buys them nothing.
+phenom also needs a second per-posting request, but it is a POST widget rather than a
+`_detail_url`, so it is not one of the four above. APPLE IS THE ONE CASE WHERE A POSTING
+REFERENCE IS PERFECTLY RECOVERABLE AND STILL REFUSED, because the board is not — its own
+section below carries the measurement.
 
 THE EVIDENCE BEHIND EACH IS NOT EQUAL, and this paragraph exists so that is never read as
 uniform. SmartRecruiters and Workday each cleared a bar of tens of thousands of real URLs
@@ -212,6 +214,41 @@ THE COST IS THE SAME BOUNDED ONE THE INLINE-BODY PROVIDERS CARRY. An amazon list
 postings is a COMPANY DISCOVERY problem and the entry point for that is `amazon:<category>`.
 What would have to change to lift this is not a rule here but the identity: a board keyed on
 something a posting URL actually names. Out-of-catalog stays a failure, never a guess.
+
+APPLE (jobs.apple.com) — REFUSED, and it is the sharpest version of amazon's problem because
+here the posting reference IS recoverable and the refusal is entirely about the board.
+
+A jobs.apple.com posting URL is `/{locale}/details/{positionId}/{transformedPostingTitle}` —
+ONE fixed shape, verified live on 2026-09-07, whose id segment is exactly the value
+`providers/apple.py` stores as `provider_posting_id`. Expressing that here would be trivial.
+
+IT IS STILL REFUSED, because `PostingTarget` is a TRIPLE and the slug half cannot be honestly
+filled. An apple board is ONE COUNTRY, and the country is a query parameter
+(`?location=united-states-USA`) that no posting URL carries: the path holds the locale, the
+literal `details`, the id and the title, and nothing else. The locale is NOT the board — a
+board is not a locale, and `en-us` is served for every country. Both consumers of this triple
+use its `slug` to name the company row a hit converges onto (`lanes/jobapps.py`,
+`lanes/hiringcafe.py` via `upsert_lane_company`), so guessing `united-states` here would key
+every Apple posting under one company row no board scan necessarily writes, and would be
+WRONG for the majority of the corpus: measured 2026-09-07, the worldwide board held 6,108
+position-location rows of which 4,509 were United States — so a guess of the largest board
+still mis-files roughly a quarter of it, and mis-files it silently.
+
+WORSE, THE POSTING'S OWN PAGE DOES NOT SETTLE IT EITHER. A multi-location requisition belongs
+to SEVERAL country boards at once: one measured posting listed four locations and was served as
+four separate listing rows. There is no single correct slug to recover, so this is not a
+missing fact that a fetch could supply — it is a genuine one-to-many, and `PostingTarget` has
+no way to say so.
+
+`providers/apple.py` therefore declares a `slug_from_path` that answers None for EVERY
+jobs.apple.com URL, so `parse_board_target` raises `UnknownBoardURL` — carrying that provider's
+`slug_help`, which names the `apple:<country>` form — before `parse_posting_target` looks at a
+path. The BASE class, not `UnregisteredBoardHost`: jobs.apple.com IS a registered host, so the
+indeed and JSON-LD lanes must not file it as a tier-D vendor seed.
+
+What would lift this is not a path rule but a `PostingTarget` that can carry a reference
+WITHOUT a board, or an apple board identity keyed on something a posting URL names. Neither is
+in scope here, and guessing the slug is the specific move this module refuses everywhere else.
 
 EIGHTFOLD: REFUSED as of 2026-09-06, on the SHAPE catalog's own arithmetic and on the evidence
 bar this module already set — not on ignorance of the shape. The shape is known and uniform:

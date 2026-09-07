@@ -483,3 +483,59 @@ def test_amazon_is_in_neither_dereference_catalog() -> None:
 
     assert "amazon" not in _POSTING_PATH_SHAPES
     assert "amazon" not in _POSTING_REF_PATTERNS
+
+
+@pytest.mark.parametrize(
+    "apple_url",
+    [
+        # The one posting shape, verified live 2026-09-07, and the search URL a user is most
+        # likely to paste. Neither path names a country.
+        "https://jobs.apple.com/en-us/details/200313970/systems-power-integrity-engineer",
+        "https://jobs.apple.com/en-us/search?location=united-states-USA&page=1",
+        "https://jobs.apple.com/en-us/search",
+        "https://jobs.apple.com/",
+    ],
+)
+def test_an_apple_url_is_not_dereferenceable_and_is_not_a_tier_d_seed(apple_url: str) -> None:
+    """apple joins amazon as a refusal that fails on the SLUG rather than the path, and it is
+    the sharper case of the two.
+
+    The posting REFERENCE is not merely recoverable, it is trivial: `/{locale}/details/{id}/
+    {title}` is ONE fixed shape whose id segment is exactly what `providers/apple.py` stores as
+    `provider_posting_id`. The BOARD is what cannot be filled -- an apple board is one COUNTRY
+    and the country is a query parameter, so no path segment names one, and the locale segment
+    (`en-us`) is served for every country and is not a board.
+
+    Guessing the largest board would be wrong for about a quarter of the corpus (measured
+    2026-09-07: 4,509 of 6,108 position-location rows were United States), and a multi-location
+    requisition belongs to several country boards at once -- one measured posting listed four
+    locations -- so there is no single correct slug even in principle.
+
+    The CLASS is the assertion that matters, for the same reason it is in amazon's test: the
+    base `UnknownBoardURL` and NOT `UnregisteredBoardHost`, because jobs.apple.com IS a
+    registered host and the indeed and JSON-LD lanes must not file it as a tier-D vendor seed."""
+    with pytest.raises(UnknownBoardURL) as raised:
+        parse_posting_target(apple_url)
+    assert not isinstance(raised.value, UnregisteredBoardHost)
+    assert not isinstance(raised.value, UnresolvablePostingURL)
+
+
+def test_the_apple_refusal_carries_the_qualified_form_a_user_can_type() -> None:
+    """The provider's `slug_help` turns the refusal into an instruction, and it reaches the user
+    only because `slug_from_path` returns None -- the default first-segment extractor would hand
+    `normalize_slug` the locale segment `en-us` and complain about a catalog token nobody
+    typed."""
+    with pytest.raises(UnknownBoardURL, match="apple:united-states"):
+        parse_posting_target(
+            "https://jobs.apple.com/en-us/details/200313970/systems-power-integrity-engineer"
+        )
+
+
+def test_apple_is_in_neither_dereference_catalog() -> None:
+    """Pinned by NAME. It matters here for amazon's reason and one more: apple's path is not
+    just uniform but SHORTER than the grammar's `{slug}/{*fixed}/{ref}`, so a shape row would
+    read the locale as the board and resolve confidently to the wrong company row."""
+    from boardwatch.lanes.dereference import _POSTING_PATH_SHAPES
+
+    assert "apple" not in _POSTING_PATH_SHAPES
+    assert "apple" not in _POSTING_REF_PATTERNS

@@ -1,0 +1,850 @@
+{
+ "loaderData": {
+  "root": {
+   "appType": "external",
+   "isSessionAuthenticated": false,
+   "locale": {
+    "postLocationId": "postLocation-AAA",
+    "direction": "ltr",
+    "country": "AAA"
+   },
+   "baseUrl": "https://jobs.apple.com",
+   "talentId": null,
+   "countryCode": "AAA",
+   "searchPageUrl": "search?location=acmeland-AAA",
+   "currentUser": null
+  },
+  "search": {
+   "searchResults": [
+    {
+     "id": "CORP-900100001",
+     "positionId": "900100001",
+     "reqId": "REQ-900100001",
+     "jobPositionId": "JOB-900100001",
+     "postingTitle": "Widget Engineer 1",
+     "transformedPostingTitle": "widget-engineer-1",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100002",
+     "positionId": "900100002",
+     "reqId": "REQ-900100002",
+     "jobPositionId": "JOB-900100002",
+     "postingTitle": "Widget Engineer 2",
+     "transformedPostingTitle": "widget-engineer-2",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100003",
+     "positionId": "900100003",
+     "reqId": "REQ-900100003",
+     "jobPositionId": "JOB-900100003",
+     "postingTitle": "Widget Engineer 3",
+     "transformedPostingTitle": "widget-engineer-3",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100004",
+     "positionId": "900100004",
+     "reqId": "REQ-900100004",
+     "jobPositionId": "JOB-900100004",
+     "postingTitle": "Widget Engineer 4",
+     "transformedPostingTitle": "widget-engineer-4",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100005",
+     "positionId": "900100005",
+     "reqId": "REQ-900100005",
+     "jobPositionId": "JOB-900100005",
+     "postingTitle": "Widget Engineer 5",
+     "transformedPostingTitle": "widget-engineer-5",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100006",
+     "positionId": "900100006",
+     "reqId": "REQ-900100006",
+     "jobPositionId": "JOB-900100006",
+     "postingTitle": "Widget Engineer 6",
+     "transformedPostingTitle": "widget-engineer-6",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100007",
+     "positionId": "900100007",
+     "reqId": "REQ-900100007",
+     "jobPositionId": "JOB-900100007",
+     "postingTitle": "Widget Engineer 7",
+     "transformedPostingTitle": "widget-engineer-7",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100008",
+     "positionId": "900100008",
+     "reqId": "REQ-900100008",
+     "jobPositionId": "JOB-900100008",
+     "postingTitle": "Widget Engineer 8",
+     "transformedPostingTitle": "widget-engineer-8",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100009",
+     "positionId": "900100009",
+     "reqId": "REQ-900100009",
+     "jobPositionId": "JOB-900100009",
+     "postingTitle": "Widget Engineer 9",
+     "transformedPostingTitle": "widget-engineer-9",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100010",
+     "positionId": "900100010",
+     "reqId": "REQ-900100010",
+     "jobPositionId": "JOB-900100010",
+     "postingTitle": "Widget Engineer 10",
+     "transformedPostingTitle": "widget-engineer-10",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100011",
+     "positionId": "900100011",
+     "reqId": "REQ-900100011",
+     "jobPositionId": "JOB-900100011",
+     "postingTitle": "Widget Engineer 11",
+     "transformedPostingTitle": "widget-engineer-11",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100012",
+     "positionId": "900100012",
+     "reqId": "REQ-900100012",
+     "jobPositionId": "JOB-900100012",
+     "postingTitle": "Widget Engineer 12",
+     "transformedPostingTitle": "widget-engineer-12",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100013",
+     "positionId": "900100013",
+     "reqId": "REQ-900100013",
+     "jobPositionId": "JOB-900100013",
+     "postingTitle": "Widget Engineer 13",
+     "transformedPostingTitle": "widget-engineer-13",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100014",
+     "positionId": "900100014",
+     "reqId": "REQ-900100014",
+     "jobPositionId": "JOB-900100014",
+     "postingTitle": "Widget Engineer 14",
+     "transformedPostingTitle": "widget-engineer-14",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100015",
+     "positionId": "900100015",
+     "reqId": "REQ-900100015",
+     "jobPositionId": "JOB-900100015",
+     "postingTitle": "Widget Engineer 15",
+     "transformedPostingTitle": "widget-engineer-15",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100016",
+     "positionId": "900100016",
+     "reqId": "REQ-900100016",
+     "jobPositionId": "JOB-900100016",
+     "postingTitle": "Widget Engineer 16",
+     "transformedPostingTitle": "widget-engineer-16",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100017",
+     "positionId": "900100017",
+     "reqId": "REQ-900100017",
+     "jobPositionId": "JOB-900100017",
+     "postingTitle": "Widget Engineer 17",
+     "transformedPostingTitle": "widget-engineer-17",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100018",
+     "positionId": "900100018",
+     "reqId": "REQ-900100018",
+     "jobPositionId": "JOB-900100018",
+     "postingTitle": "Widget Engineer 18",
+     "transformedPostingTitle": "widget-engineer-18",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100019",
+     "positionId": "900100019",
+     "reqId": "REQ-900100019",
+     "jobPositionId": "JOB-900100019",
+     "postingTitle": "Widget Engineer 19",
+     "transformedPostingTitle": "widget-engineer-19",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100020",
+     "positionId": "900100020",
+     "reqId": "REQ-900100020",
+     "jobPositionId": "JOB-900100020",
+     "postingTitle": "Widget Engineer 20",
+     "transformedPostingTitle": "widget-engineer-20",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SPR",
+       "city": "Springfield",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Springfield",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    }
+   ],
+   "totalRecords": 22,
+   "staticData": {
+    "refData": {
+     "roles": null,
+     "products": [],
+     "jobLevels": null
+    }
+   },
+   "talentRolesInfoById": {},
+   "queryParams": {
+    "location": "acmeland-AAA",
+    "page": "1"
+   },
+   "requestUrl": "https://jobs.apple.com/en-us/search",
+   "filters": {},
+   "search": "",
+   "sort": "",
+   "page": 1,
+   "searchMeta": {
+    "links": [
+     {
+      "rel": "canonical",
+      "href": "https://jobs.apple.com/en-us/search?"
+     }
+    ]
+   }
+  }
+ },
+ "actionData": null,
+ "errors": null
+}

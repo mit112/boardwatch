@@ -400,20 +400,23 @@ def test_candidates_are_ordered_cheapest_provider_first():
     spend `detail_fetch_budget` on a per-posting GET, and boardwatch watches ZERO of those last
     three, so none of their paths has ever run at scale.
 
-    TWO of the eleven positions carry NO cost claim at all, because neither provider can be
-    reached from a listing URL. `phenom` career sites are on the employer's own domain, so it
-    declares no paste host. `amazon` declares two exact paste hosts and still extracts nothing
+    THREE of the twelve positions carry NO cost claim at all, because none of those providers
+    can be reached from a listing URL. `phenom` career sites are on the employer's own domain, so
+    it declares no paste host. `amazon` declares two exact paste hosts and still extracts nothing
     from them: a board is one job CATEGORY and a category is a query parameter, so no path
-    segment names one. Both are ranked only because an unranked registered provider raises
-    `UnrankedProvider` (see the test below) -- amazon sits in the jibe tier because that is where
-    its measured cost puts it (26 requests for its largest live category), phenom behind the
-    detail-fetching tier for the same reason it always was. Eightfold is LAST because it is the
-    only provider that cannot address its own API until an HTML career page has been fetched, and
-    its listing page size is server-fixed at 10.
+    segment names one. `apple` is in amazon's position for the same reason -- a board is one
+    COUNTRY and a country is a query parameter. All three are ranked only because an unranked
+    registered provider raises `UnrankedProvider` (see the test below) -- amazon sits in the jibe
+    tier because that is where its measured cost puts it (26 requests for its largest live
+    category), phenom behind the detail-fetching tier for the same reason it always was, and
+    apple beside phenom because it pays a per-posting GET for a ~320 KB HTML document on top of
+    a 20-row listing page. Eightfold is LAST because it is the only provider that cannot address
+    its own API until an HTML career page has been fetched, and its listing page size is
+    server-fixed at 10.
     """
     assert PROVIDER_PRIORITY == (
         "greenhouse", "lever", "ashby", "workable", "jibe", "amazon", "workday",
-        "smartrecruiters", "oraclehcm", "phenom", "eightfold",
+        "smartrecruiters", "oraclehcm", "phenom", "apple", "eightfold",
     )
     providers = [c.provider for c in discover(_sources()).candidates]
     inline_positions = [i for i, p in enumerate(providers) if p in _INLINE_BODY]
@@ -653,7 +656,7 @@ def test_the_ramp_ranks_every_registered_provider_and_no_others():
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     assert set(PROVIDER_PRIORITY) == set(PROVIDER_NAMES)
-    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 11
+    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 12
 
 
 def test_an_unranked_provider_is_a_failure_and_not_a_quiet_last_place():

@@ -1,0 +1,49 @@
+{
+ "loaderData": {
+  "root": {
+   "appType": "external",
+   "isSessionAuthenticated": false,
+   "locale": {
+    "postLocationId": "postLocation-AAA",
+    "direction": "ltr",
+    "country": "AAA"
+   },
+   "baseUrl": "https://jobs.apple.com",
+   "talentId": null,
+   "countryCode": "AAA",
+   "searchPageUrl": "search?location=acmeland-AAA",
+   "currentUser": null
+  },
+  "search": {
+   "searchResults": [],
+   "totalRecords": 0,
+   "staticData": {
+    "refData": {
+     "roles": null,
+     "products": [],
+     "jobLevels": null
+    }
+   },
+   "talentRolesInfoById": {},
+   "queryParams": {
+    "location": "acmeland-AAA",
+    "page": "1"
+   },
+   "requestUrl": "https://jobs.apple.com/en-us/search",
+   "filters": {},
+   "search": "",
+   "sort": "",
+   "page": 1,
+   "searchMeta": {
+    "links": [
+     {
+      "rel": "canonical",
+      "href": "https://jobs.apple.com/en-us/search?"
+     }
+    ]
+   }
+  }
+ },
+ "actionData": null,
+ "errors": null
+}

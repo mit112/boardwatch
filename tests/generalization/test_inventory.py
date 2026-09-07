@@ -60,7 +60,8 @@ def test_scope_covers_data_files_repo_wide() -> None:
     # provider's four fixtures, 84 -> 88; T65 added the oraclehcm provider's nine, 88 -> 97;
     # T66 added the phenom provider's five, 97 -> 102; T67 added the eightfold provider's
     # seven, 102 -> 109; T69 added the amazon provider's six, 109 -> 115; T71 added Workday's
-    # facet catalog and its two sliced pages, 115 -> 118. The count is pinned so
+    # facet catalog and its two sliced pages, 115 -> 118; T70 added the apple provider's
+    # eight, 118 -> 126. The count is pinned so
     # a data file cannot enter the wheel without someone acknowledging it here; bumping this
     # line IS that acknowledgement, and an addition must be paired with a SHIPPED_DATA entry
     # in allowlists.py.
@@ -78,7 +79,8 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "tests/fixtures/oraclehcm/list_no_expand.json" in scope
     assert "tests/fixtures/phenom/list_normal.json" in scope
     assert "tests/fixtures/amazon/facets_category.json" in scope
-    assert len(scope) == 118
+    assert "tests/fixtures/apple/search_normal.json" in scope
+    assert len(scope) == 126
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
