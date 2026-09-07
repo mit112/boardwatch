@@ -17,6 +17,20 @@ All notable changes to this project are documented here. The format follows
 - **`detail_fetch_budget` now accepts up to 10,000** (was 1,000), so one scan can fetch every body on
   the largest watched board instead of filling it across several.
 
+- **A new provider: `amazon` (the amazon.jobs public search API).** `amazon:<category>` names one
+  of 38 catalog categories -- the corpus is 22,282 postings and a single query can only reach
+  10,000, so a category is what keeps a board enumerable (the largest holds 3,370). Bodies arrive
+  INLINE on the listing, so there is no detail request and nothing is ever deferred: the 2,597
+  Software Development postings cost 26 requests. `result_limit` is pinned at the server's maximum
+  of 100 and the page cap is its own offset ceiling; the API answers every refusal with HTTP 200 and
+  a message in `error`, so `error` is read before `jobs`, and `hits` at 10,000 is recorded as a
+  censored total rather than a count. An unknown category is indistinguishable from an empty one, so
+  the catalog is closed and each key round-trips against the slug of its own value. A short page, an
+  exhausted page cap or a row with no `id_icims` all force `partial` rather than `complete`. An
+  amazon.jobs URL is deliberately NOT dereferenceable: the category lives in the query string, so no
+  posting URL names a board. Ships synthetic fixtures with a dated README, a provenance entry and
+  contract tests.
+
 - **Two more providers: `phenom` (Phenom People career sites) and `eightfold` (Eightfold PCSX).**
   `phenom:<host>/<country>/<lang>` drives an employer's own `/widgets` endpoint with two POST
   widgets (`refineSearch` at 500 a page, `jobDetail` per posting under the detail budget); a
