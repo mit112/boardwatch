@@ -1,17 +1,29 @@
 r"""URL -> posting-reference dereferencing (lane groundwork Part 2). No fetching here.
 
 core.board_urls.parse_board_target turns a pasted board URL into (provider, slug) and
-throws the rest of the path away. For four of the six providers that is fine: greenhouse,
+throws the rest of the path away. For four of the seven providers that is fine: greenhouse,
 lever, ashby and workable all inline every body in the board response, so a link to one
 of their postings is a COMPANY DISCOVERY problem — parse_board_target -> upsert_watch ->
-run_scan already turns it into that company's whole board with no new code. SmartRecruiters
-and Workday are different: they are the only two providers that define a `_detail_url`
+run_scan already turns it into that company's whole board with no new code. SmartRecruiters,
+Workday and Oracle HCM are different: they are the three providers that define a `_detail_url`
 method, because their board list omits the body and a second per-posting request is
-needed to get one. Dereferencing a posting LINK is therefore only necessary for those two
-— and BOTH are now dereferenced, each on measured evidence rather than a live probe (see the
-SmartRecruiters and Workday sections below). All six providers resolve. Across every one, a
-recovered `provider_posting_id` lets a later aggregator-sourced posting converge with a board
-scan through `UNIQUE(company_id, provider_posting_id)` instead of duplicating it.
+needed to get one. Dereferencing a posting LINK is therefore only necessary for those three
+— and ALL THREE are now dereferenced (see the SmartRecruiters, Workday and Oracle HCM sections
+below). All seven providers resolve. Across every one, a recovered `provider_posting_id` lets a
+later aggregator-sourced posting converge with a board scan through
+`UNIQUE(company_id, provider_posting_id)` instead of duplicating it.
+
+THE EVIDENCE BEHIND EACH IS NOT EQUAL, and this paragraph exists so that is never read as
+uniform. SmartRecruiters and Workday each cleared a bar of tens of thousands of real URLs
+whose extracted reference equalled the stored `provider_posting_id` (the figures are in their
+own sections). ORACLE HCM HAS NO SUCH CORPUS — boardwatch watches zero Oracle boards, so there
+were none to measure. What its rule rests on instead is narrower and should be read as such:
+the list endpoint was probed live on 2026-09-06 across three tenants and returns a bare digit
+`Id`, the public URL carrying that `Id` verbatim as its last path segment was fetched and
+answered (302, to the tenant's public browsing site), and `providers/oraclehcm.py:posting_url`
+constructs exactly the shape this module inverts, pinned by a round-trip test. That is
+internal consistency plus one confirmed live shape, NOT the convergence proof the other two
+have.
 
 This module supplies the missing half: reading the posting reference a detail fetch would
 need back out of a posting URL, reusing parse_board_target for host/slug matching rather
@@ -182,7 +194,9 @@ from boardwatch.core.board_urls import parse_board_target
 # for why a longer path must refuse rather than read its last segment. A closed catalog:
 # any provider absent from it refuses rather than guesses. Workday is deliberately NOT in it
 # and is NOT an omission: its shape is POSITIONAL, not a fixed run of segments, so it takes
-# its own branch in parse_posting_target — see the module docstring. The catalog stays closed.
+# its own branch in parse_posting_target — see the module docstring. oraclehcm is absent for the
+# same reason: its career site is the second half of its composite slug and sits MID-path, so the
+# "{slug}/{*fixed}/{ref}" grammar cannot express it either. The catalog stays closed.
 # The last path segment IS the posting reference for every provider above. SmartRecruiters is
 # the one provider where it is not: its segment is `{id}-{title-slug}`, so a reference has to be
 # read back out of it. Keyed here rather than special-cased in the function so the rule stays a
@@ -218,6 +232,15 @@ _POSTING_PATH_SHAPES: dict[str, tuple[str, ...]] = {
 # (93,044 provider-supplied, 4,407 from an independent ledger): `job` occurs in every posting
 # URL and `details` occurs in none, so a second member here would be a guess, not a catalog.
 _WORKDAY_VERB = "job"
+
+# Oracle HCM's public career-site path, which is FIXED but carries the career site inside it:
+# `hcmUI/CandidateExperience/{locale}/sites/{site}/job/{ref}`. Positional like Workday rather
+# than a `_POSTING_PATH_SHAPES` row for the same reason -- the slug's second half IS one of
+# these segments -- but unlike Workday nothing here varies except the locale, so the whole
+# shape is pinned rather than anchored on a single verb.
+_ORACLEHCM_PREFIX = ("hcmui", "candidateexperience")
+_ORACLEHCM_SITES = "sites"
+_ORACLEHCM_VERB = "job"
 
 
 class UnresolvablePostingURL(ValueError):
@@ -266,6 +289,8 @@ def parse_posting_target(url: str) -> PostingTarget:
     provider, slug = parse_board_target(url)
     if provider == "workday":
         return _workday_posting_target(url, slug)
+    if provider == "oraclehcm":
+        return _oraclehcm_posting_target(url, slug)
     shape = _POSTING_PATH_SHAPES.get(provider)
     if shape is None:
         raise UnresolvablePostingURL(
@@ -290,6 +315,49 @@ def parse_posting_target(url: str) -> PostingTarget:
             f"{provider!r} posting reference is not readable from {segments[-1]!r} in {url!r}"
         )
     return PostingTarget(provider=provider, slug=slug, posting_ref=matched.group(1))
+
+
+def _oraclehcm_posting_target(url: str, slug: str) -> PostingTarget:
+    """Oracle HCM's posting URL, read positionally.
+
+    Not expressible as a `_POSTING_PATH_SHAPES` row because the career site is the second
+    half of the composite slug and sits mid-path. The shape is otherwise exact and CLOSED:
+    `hcmUI/CandidateExperience/{locale}/sites/{site}/job/{ref}` -- seven segments, no optional
+    location segment and no trailing chrome admitted. `providers/oraclehcm.py:posting_url`
+    constructs exactly this, and a round-trip test pins the two halves together: if they
+    disagreed, a lane-sourced posting could not converge with a board scan on
+    `UNIQUE(company_id, provider_posting_id)`.
+
+    The reference is the LAST segment verbatim. Oracle requisition ids are bare digit strings
+    (`Id: "344533"`) carried unchanged in the URL, with no title slug fused onto them the way
+    SmartRecruiters fuses one, so there is nothing to read back out and no pattern is needed.
+    A longer path refuses rather than reading its last segment -- the rule the module
+    docstring sets out, and the reason a `/job/{ref}/apply` deep link cannot mint `apply` as a
+    constant, colliding reference for every posting at one employer.
+    """
+    segments = _path_segments(url)
+    lowered = [segment.lower() for segment in segments]
+    site = slug.rsplit("/", 1)[-1]
+    if (
+        len(segments) != 7
+        or tuple(lowered[:2]) != _ORACLEHCM_PREFIX
+        or lowered[3] != _ORACLEHCM_SITES
+        or lowered[5] != _ORACLEHCM_VERB
+    ):
+        raise UnresolvablePostingURL(
+            "oraclehcm posting URLs are "
+            "hcmUI/CandidateExperience/{locale}/sites/{site}/job/{posting_ref}; "
+            f"{url!r} is not that shape"
+        )
+    # The site in the path must be the one the slug names. `parse_board_target` derived the
+    # slug from this same path, so the two can only disagree if the normalizer rewrote it --
+    # but this is the guard that keeps the pair honest if either side later changes.
+    if segments[4] != site:
+        raise UnresolvablePostingURL(
+            f"oraclehcm career site {site!r} is not the segment after "
+            f"{_ORACLEHCM_SITES!r} ({segments[4]!r}) in {url!r}"
+        )
+    return PostingTarget(provider="oraclehcm", slug=slug, posting_ref=segments[-1])
 
 
 def _workday_posting_target(url: str, slug: str) -> PostingTarget:

@@ -391,16 +391,17 @@ def test_ats_chrome_that_parses_is_surfaced_with_the_evidence_that_condemns_it()
 
 def test_candidates_are_ordered_cheapest_provider_first():
     """The owner's ramp: the four one-request inline-body providers, then jibe, then workday,
-    then smartrecruiters.
+    then smartrecruiters and oraclehcm.
 
-    Five of six providers serve every board from ONE host and `Fetcher` holds a per-host lock for
-    each request's full duration, so boards on one provider serialize and no worker count
-    compresses it. Only workday and smartrecruiters additionally spend `detail_fetch_budget` on a
-    per-posting GET, and boardwatch watches ZERO smartrecruiters boards, so that path has never
-    run at scale.
+    Five of the seven providers serve every board from ONE host and `Fetcher` holds a per-host lock
+    for each request's full duration, so boards on one provider serialize and no worker count
+    compresses it. Only workday, smartrecruiters and oraclehcm additionally spend
+    `detail_fetch_budget` on a per-posting GET, and boardwatch watches ZERO smartrecruiters and
+    ZERO oraclehcm boards, so those two paths have never run at scale.
     """
     assert PROVIDER_PRIORITY == (
-        "greenhouse", "lever", "ashby", "workable", "jibe", "workday", "smartrecruiters"
+        "greenhouse", "lever", "ashby", "workable", "jibe", "workday", "smartrecruiters",
+        "oraclehcm",
     )
     providers = [c.provider for c in discover(_sources()).candidates]
     inline_positions = [i for i, p in enumerate(providers) if p in _INLINE_BODY]
@@ -630,7 +631,7 @@ def test_the_module_is_not_a_lane():
 
 
 def test_the_ramp_ranks_every_registered_provider_and_no_others():
-    """Bidirectional, and the direction that matters is the one that fires on a SEVENTH provider.
+    """Bidirectional, and the direction that matters is the one that fires on a NINTH provider.
 
     `parse_board_target` can only return a registered provider, so an unranked one means a
     provider was added without placing its first-exposure cost in the ramp -- and the cap would
@@ -640,7 +641,7 @@ def test_the_ramp_ranks_every_registered_provider_and_no_others():
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     assert set(PROVIDER_PRIORITY) == set(PROVIDER_NAMES)
-    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 7
+    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 8
 
 
 def test_an_unranked_provider_is_a_failure_and_not_a_quiet_last_place():

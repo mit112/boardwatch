@@ -292,6 +292,51 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:0b71201005de8f1d3ca97c40ef9227e225338b36c56d82df8e476d088f0f3a42",
     ),
+    "tests/fixtures/oraclehcm/detail_empty_sections.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:1a71b5035bdb882306ac66945c9cdcf9dbbd631a02d2aac2d0f5aa4f30be59ec",
+    ),
+    "tests/fixtures/oraclehcm/detail_gone.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:b2333262b7b0ff0695e16dc4a941ba6d69d57a03df927ecb24cbbb2456a43c86",
+    ),
+    "tests/fixtures/oraclehcm/detail_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:90cbc760f99d26415b39e4fdb351cb123a5ca76b71367471dbe3f85ed2f82ac0",
+    ),
+    "tests/fixtures/oraclehcm/list_empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:1b4b5e013a1e5e5c415b1977577cb968791e950155fd79f36642887edb25dc4b",
+    ),
+    "tests/fixtures/oraclehcm/list_no_expand.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:f3fee232ec12052169fb80f48d41a8faf38a75bccf66ec243499ea0e13fdfed9",
+    ),
+    "tests/fixtures/oraclehcm/list_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:17ab4e37a26daf2b857e30731b7e632f0071ff9c57e5b094ff82e00c0a4ea095",
+    ),
+    "tests/fixtures/oraclehcm/list_page_full.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:b70a828e58f367d347f5cc18e2b498dec79af61cbdb1d8b1b146602e6c60328e",
+    ),
+    "tests/fixtures/oraclehcm/list_page_short.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:47e097569aeb14f610f8d7de7e0187a24c230d60798a527981d894dbc3a0053a",
+    ),
+    "tests/fixtures/oraclehcm/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:f2a2052ca48f2144011ca0f180672fddac961efdc4d080fb47f30d45457a60e2",
+    ),
     "tests/fixtures/smartrecruiters/detail_empty_sections.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

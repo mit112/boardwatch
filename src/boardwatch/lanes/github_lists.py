@@ -94,8 +94,10 @@ PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # Spends `detail_fetch_budget` on a per-posting GET for every unseen posting.
     ("workday",),
     # The same, and boardwatch watches none of them, so a first exposure here is the one cost this
-    # repo has never measured. Last, and slowest, by the owner's ruling.
-    ("smartrecruiters",),
+    # repo has never measured. Last, and slowest, by the owner's ruling. oraclehcm joins this tier
+    # for the same reason -- it is per-posting detail-fetching AND unwatched -- and it is placed
+    # here rather than beside workday because an unmeasured cost belongs with the unmeasured ones.
+    ("smartrecruiters", "oraclehcm"),
 )
 
 PROVIDER_PRIORITY: tuple[str, ...] = tuple(

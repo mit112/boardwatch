@@ -57,7 +57,8 @@ def test_scope_covers_data_files_repo_wide() -> None:
     # censored-facets fixture, 80 -> 81. The delivery queue added the answers-panel example
     # and the frontend's three build-config files, 81 -> 85. T14 deleted the Workday
     # workerSubType facet probe and its now-orphaned fixture, 85 -> 84. T64 added the jibe
-    # provider's four fixtures, 84 -> 88. The count is pinned so
+    # provider's four fixtures, 84 -> 88; T65 added the oraclehcm provider's nine, 88 -> 97.
+    # The count is pinned so
     # a data file cannot enter the wheel without someone acknowledging it here; bumping this
     # line IS that acknowledgement, and an addition must be paired with a SHIPPED_DATA entry
     # in allowlists.py.
@@ -70,7 +71,8 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "web/package.json" in scope
     assert "web/package-lock.json" in scope
     assert "web/tsconfig.json" in scope
-    assert len(scope) == 88
+    assert "tests/fixtures/oraclehcm/list_no_expand.json" in scope
+    assert len(scope) == 97
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
