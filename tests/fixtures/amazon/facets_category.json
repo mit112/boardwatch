@@ -1,0 +1,128 @@
+{
+  "error": null,
+  "hits": 10000,
+  "facets": {
+    "category_facet": [
+      {
+        "Operations, IT, & Support Engineering": 3370
+      },
+      {
+        "Software Development": 2597
+      },
+      {
+        "Fulfillment & Operations Management": 2245
+      },
+      {
+        "Project/Program/Product Management--Non-Tech": 1211
+      },
+      {
+        "Project/Program/Product Management--Technical": 1187
+      },
+      {
+        "Sales, Advertising, & Account Management": 1181
+      },
+      {
+        "Solutions Architect": 973
+      },
+      {
+        "Facilities, Maintenance, & Real Estate": 907
+      },
+      {
+        "Systems, Quality, & Security Engineering": 713
+      },
+      {
+        "Hardware Development": 701
+      },
+      {
+        "Finance & Accounting": 668
+      },
+      {
+        "Administrative Support": 645
+      },
+      {
+        "Supply Chain/Transportation Management": 598
+      },
+      {
+        "Medical, Health, & Safety": 585
+      },
+      {
+        "Corporate Operations": 569
+      },
+      {
+        "Human Resources": 500
+      },
+      {
+        "Applied Science": 427
+      },
+      {
+        "Business & Merchant Development": 388
+      },
+      {
+        "Design": 354
+      },
+      {
+        "Marketing & PR": 345
+      },
+      {
+        "Buying, Planning, & Instock Management": 305
+      },
+      {
+        "Fulfillment Associate": 234
+      },
+      {
+        "Business Intelligence": 222
+      },
+      {
+        "Investigation & Loss Prevention": 212
+      },
+      {
+        "Customer Service": 197
+      },
+      {
+        "Data Science": 170
+      },
+      {
+        "Legal": 159
+      },
+      {
+        "Machine Learning Science": 131
+      },
+      {
+        "Procurement": 121
+      },
+      {
+        "Editorial, Writing, & Content Management": 81
+      },
+      {
+        "Research Science": 65
+      },
+      {
+        "PR": 41
+      },
+      {
+        "Leadership Development & Training": 40
+      },
+      {
+        "Fulfillment / Warehouse Associate": 36
+      },
+      {
+        "Audio / Video / Photography Production": 35
+      },
+      {
+        "Economics": 27
+      },
+      {
+        "Public Policy": 23
+      },
+      {
+        "Database Administration": 19
+      }
+    ]
+  },
+  "content": {
+    "sidebar": {},
+    "search_results": {}
+  },
+  "jobs": [],
+  "job_posting_search_request": "{\"jobPostingSearchRequest\": {\"query\": null, \"excludeFacets\": [{\"name\": \"businessCategory\", \"values\": [{\"name\": \"a-confidential-job\"}]}, {\"name\": \"isPostedExternally\", \"values\": [{\"name\": \"0\"}]}, {\"name\": \"isUnsearchable\", \"values\": [{\"name\": \"1\"}]}], \"filterFacets\": [], \"start\": \"0\", \"size\": \"1\", \"sort\": {\"sortOrder\": \"DESCENDING\", \"sortType\": \"CREATED_DATE\"}, \"location\": null, \"accessLevel\": \"EXTERNAL\", \"includeFacets\": [{\"name\": \"category\"}], \"locationFacets\": [], \"jobTypeFacets\": [], \"contentFilterFacets\": [], \"treatment\": \"OM\"}}"
+}

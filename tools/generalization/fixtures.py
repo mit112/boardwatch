@@ -86,6 +86,11 @@ class FixtureProvenance:
 # to touch that directory. Deadlines are captured + 90 days: an ATS response shape is not
 # stable enough for a longer window, and a shorter one would have landed this gate already red.
 FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
+    "amazon": FixtureProvenance(
+        captured=date(2026, 9, 7),
+        review_by=date(2026, 12, 6),
+        readme_pin="sha256:d2bc07ee4df6909510cb69944a4a9ae25efd24153a1557932c7af7efdd906016",
+    ),
     "ashby": FixtureProvenance(
         captured=date(2026, 6, 13),
         review_by=date(2026, 9, 11),

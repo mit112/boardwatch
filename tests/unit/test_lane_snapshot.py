@@ -44,4 +44,5 @@ def test_the_provider_registry_still_holds_exactly_the_ats_families():
         "oraclehcm",
         "phenom",
         "eightfold",
+        "amazon",
     }

@@ -4,6 +4,7 @@ import sys
 import pytest
 
 from boardwatch.providers import registry
+from boardwatch.providers.amazon import AmazonProvider
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.eightfold import EightfoldProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
@@ -24,13 +25,14 @@ def test_each_provider_declares_public_board_hosts() -> None:
     assert AshbyProvider().board_hosts == ("jobs.ashbyhq.com",)
     assert WorkableProvider().board_hosts == ("apply.workable.com",)
     assert SmartRecruitersProvider().board_hosts == ("jobs.smartrecruiters.com",)
+    assert AmazonProvider().board_hosts == ("www.amazon.jobs", "amazon.jobs")
 
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
     assert set(built) == {
         "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-        "oraclehcm", "phenom", "eightfold",
+        "oraclehcm", "phenom", "eightfold", "amazon",
     }
     for name, inst in built.items():
         assert inst.name == name
@@ -40,7 +42,7 @@ def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
         {
             "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-            "oraclehcm", "phenom", "eightfold",
+            "oraclehcm", "phenom", "eightfold", "amazon",
         }
     )
 
@@ -122,6 +124,35 @@ def test_eightfold_declares_a_suffix_and_no_exact_hosts() -> None:
     assert "eightfold" not in registry.composite_slug_providers()
 
 
+def test_amazon_declares_exact_hosts_whose_paths_can_never_carry_a_slug() -> None:
+    """The FIRST provider that registers exact paste hosts and still extracts nothing from them.
+
+    An amazon.jobs board is one job CATEGORY, and a category is a query parameter
+    (`?category[]=Software Development`), so no path segment of any amazon.jobs URL names one --
+    not a search URL's and not a posting URL's. `slug_from_path` therefore answers None for
+    every URL, which routes the paste through `slug_help` instead of letting the default
+    first-segment extractor hand `normalize_slug` a locale segment (`en`) and produce a catalog
+    diagnostic about a word the user never typed. Asserted by NAME rather than left to the
+    default, because "no extractor registered" and "an extractor that deliberately declines"
+    are indistinguishable from the map alone.
+    """
+    assert AmazonProvider().board_hosts == ("www.amazon.jobs", "amazon.jobs")
+    assert getattr(AmazonProvider, "board_host_suffixes", ()) == ()
+    assert AmazonProvider.slug_from_path("www.amazon.jobs", ["en", "search"]) is None
+    assert AmazonProvider.slug_from_path("www.amazon.jobs", ["en", "jobs", "10530555", "x"]) is None
+    # both exact hosts must be extractor AND help map keys, not just one of them
+    for host in AmazonProvider.board_hosts:
+        assert host in registry.slug_extractor_map()
+        assert "amazon:software-development" in registry.slug_help_map()[host]
+    # the identity is `amazon:<category token>`, and the token is a CLOSED catalog
+    assert AmazonProvider.normalize_slug("Software-Development") == "software-development"
+    with pytest.raises(ValueError):
+        AmazonProvider.normalize_slug("en")
+    assert "amazon" in registry.slug_normalizer_map()
+    # and it is NOT a composite slug: `amazon:a/b` must keep getting the diagnostic
+    assert "amazon" not in registry.composite_slug_providers()
+
+
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:
     hosts = registry.host_provider_map()
     assert hosts["job-boards.greenhouse.io"] == "greenhouse"
@@ -131,6 +162,8 @@ def test_host_provider_map_covers_all_hosts_without_collision() -> None:
     assert hosts["jobs.ashbyhq.com"] == "ashby"
     assert hosts["apply.workable.com"] == "workable"
     assert hosts["jobs.smartrecruiters.com"] == "smartrecruiters"
+    assert hosts["www.amazon.jobs"] == "amazon"
+    assert hosts["amazon.jobs"] == "amazon"
     total = sum(len(cls().board_hosts) for cls in registry.PROVIDER_CLASSES)
     assert len(hosts) == total  # no host maps to two providers
 
