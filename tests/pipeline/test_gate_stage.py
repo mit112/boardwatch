@@ -628,3 +628,124 @@ def test_gate_depth_never_judges_a_lead_liveness_withheld(
     assert summary.gate_judged == 4, "a withheld lead must never cost a judge call"
     assert _current_gate_verdict(env, dead_id) is None
     assert summary.gate_beyond_slate == 2  # four alive, two delivered
+
+
+def _persisted_ranks(data_dir: Path) -> dict[int, int | None]:
+    """Each judged posting id -> the `shortlist_rank` its gate row recorded (None = absent).
+
+    Read through `raw_output_json` because that is where the rank lives; a rank in `score`
+    would mean the column's documented meaning (the engine's confidence) had been overloaded.
+    """
+    from sqlalchemy import func, select
+
+    from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
+
+    engine = get_engine(data_dir)
+    ranks: dict[int, int | None] = {}
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                tables.posting_versions.c.posting_id,
+                func.json_extract(
+                    tables.eligibility_evaluations.c.raw_output_json, "$.shortlist_rank"
+                ),
+            )
+            .select_from(tables.eligibility_evaluations)
+            .join(
+                tables.eligibility_inputs,
+                tables.eligibility_inputs.c.id == tables.eligibility_evaluations.c.input_id,
+            )
+            .join(
+                tables.posting_versions,
+                tables.posting_versions.c.id
+                == tables.eligibility_inputs.c.posting_version_id,
+            )
+            .where(
+                tables.eligibility_evaluations.c.engine_version.like(
+                    f"{GATE_VERSION_PREFIX}%"
+                )
+            )
+        ).all()
+    for posting_id, rank in rows:
+        ranks[int(posting_id)] = None if rank is None else int(rank)
+    return ranks
+
+
+@_needs_an_executable_fake
+def test_the_gate_row_records_the_leads_shortlist_rank(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T72. Every judged lead's gate row carries its 1-based rank in the depth slate, so
+    conversion can be read BY RANK BAND — the measurement D-493's addendum found impossible
+    because `score` is NULL on every judge row and no table carried a rank.
+
+    RED against the pre-change code on `set(ranks.values()) == {1, 2, 3, 4, 5}`: it recorded
+    no rank at all, so every value read `None`.
+    """
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-rank-{n}") for n in range(5)]
+    _arm_gate_with_depth(env, depth=5)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=2)
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 5
+    ranks = _persisted_ranks(env)
+    assert set(ranks) == set(ids), "every judged lead owes a rank, not just the delivered ones"
+    assert set(ranks.values()) == {1, 2, 3, 4, 5}, (
+        f"a depth-5 slate must record ranks 1..5 exactly once each, got {ranks}"
+    )
+
+
+@_needs_an_executable_fake
+def test_the_recorded_rank_is_the_rankers_own_and_not_a_post_liveness_index(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rank is captured off `ranked.visible`, BEFORE the liveness sweep removes anything.
+
+    This is the whole reason `run_gate_stage` takes the map from its caller instead of
+    enumerating the `leads` list it is handed: by then the sweep has already dropped the dead
+    postings, so an index taken there is short of the true rank by however many leads above it
+    were withheld — and it would silently renumber the survivors into a gapless 1..4.
+
+    RED against an implementation that enumerates inside the gate stage on
+    `sorted(ranks.values()) != [1, 2, 3, 4]`: the withheld lead's rank must be MISSING from
+    the survivors' ranks, not closed up.
+    """
+    from boardwatch.core.liveness import Liveness
+
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-rankgap-{n}") for n in range(5)]
+    _arm_gate_with_depth(env, depth=5)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    dead_id = ids[0]
+
+    def probe(posting_id: int, url: str) -> Liveness:
+        if posting_id == dead_id:
+            return Liveness(posting_id, "dead", "refetch_gone", "HTTP 404")
+        return Liveness(posting_id, "alive", "refetch_ok", "HTTP 200")
+
+    settings = load_settings(data_dir=env)
+    summary = run_pipeline(
+        get_engine(env),
+        settings,
+        console=Console(quiet=True),
+        out_root=tmp_path / "apps",
+        resume_path=settings.config_dir / "resume.yaml",
+        skip_scan=True,
+        top_n=2,
+        liveness_prober=probe,
+    )
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 4
+    ranks = _persisted_ranks(env)
+    assert dead_id not in ranks, "a withheld lead is never judged, so it owes no gate row"
+    assert sorted(ranks.values()) != [1, 2, 3, 4], (
+        "the survivors were renumbered 1..4, which means the rank was taken AFTER the "
+        f"liveness sweep instead of off the ranker's own slate: {ranks}"
+    )
+    assert set(ranks.values()) < {1, 2, 3, 4, 5}
+    assert len(set(ranks.values())) == 4, f"ranks must stay distinct: {ranks}"

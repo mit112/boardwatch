@@ -33,7 +33,17 @@ def gate_engine_version() -> str:
 def record_gate_verdict(
     conn: Connection, *, posting_version_id: int, jd_text: str, facts: Facts,
     policy: Policy, catalog: RulesCatalog, verdict: OracleVerdict, run_id: int | None = None,
+    shortlist_rank: int | None = None,
 ) -> int:
+    """Persist one judge verdict. `shortlist_rank` is the lead's 1-based position in the
+    ranker's DEPTH slate, recorded so conversion can be read BY RANK BAND afterwards.
+
+    It goes in `raw_output_json` rather than `score`: `score` means the engine's own
+    confidence in its verdict, and a rank is not that — writing a rank there would make
+    every future reader of the column wrong. `None` is written as an ABSENT key rather
+    than a null, so a row judged through a path that has no ranker (the
+    `eligibility gate apply` CLI) is distinguishable from a lead that ranked nowhere.
+    """
     accepted = accept_oracle_verdict(verdict, jd_text, catalog)
     persisted: EligibilityVerdict = accepted.expected_verdict  # type: ignore[assignment]
     requirements: list[RequirementItem] = []
@@ -56,6 +66,9 @@ def record_gate_verdict(
         posting_version_id=posting_version_id, facts=facts, policy=policy,
         catalog=catalog, declared_fields=declared_fields(),
     )
+    raw_output: dict[str, object] = {"gate_verdict": verdict.__dict__}
+    if shortlist_rank is not None:
+        raw_output["shortlist_rank"] = shortlist_rank
     return record_evaluation(
         conn, posting_version_id=posting_version_id,
         profile_hash=identity.profile_hash, profile_snapshot=identity.profile_snapshot,
@@ -64,5 +77,5 @@ def record_gate_verdict(
         engine_kind="llm", engine_version=gate_engine_version(),
         verdict=persisted, score=None, requirements=requirements,
         provider=None, model=None, prompt_version=PROMPT_VERSION,
-        idempotency_key=None, run_id=run_id, raw_output={"gate_verdict": verdict.__dict__},
+        idempotency_key=None, run_id=run_id, raw_output=raw_output,
     )

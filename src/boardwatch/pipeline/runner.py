@@ -2083,6 +2083,15 @@ def run_pipeline(
         # the scanner's board-absence rule and one 404 must not be able to retire a live
         # requisition permanently. Tomorrow's run asks again.
         leads = list(ranked.visible)
+        # T72 — the ranker's own 1-based rank, captured HERE and not inside the gate stage.
+        # `leads` is filtered by the liveness sweep below and cut to `top_n` above the lane
+        # split, so any index taken later is short of the true rank by however many leads
+        # ranked above it were dropped. Persisted with each judge verdict so conversion can
+        # be read BY RANK BAND, which is what tuning `gate.depth` needs and what no table
+        # carried before (D-493 addendum).
+        shortlist_ranks = {
+            posting.posting_id: rank for rank, posting in enumerate(ranked.visible, start=1)
+        }
         dead_job_ids: set[int] = set()
         if liveness_prober is not None:
             results = check_leads(
@@ -2131,7 +2140,9 @@ def run_pipeline(
         # rather than ever dropping a real job, and is counted rather than silently swallowed.
         if settings.gate.enabled:
             console.print("[bold]gate[/bold]")
-        leads, gate_result = run_gate_stage(engine, settings, leads, run_id=run_id)
+        leads, gate_result = run_gate_stage(
+            engine, settings, leads, run_id=run_id, shortlist_ranks=shortlist_ranks
+        )
         summary.gate_judged = gate_result.judged
         summary.gate_eligible = gate_result.eligible
         summary.gate_ineligible = gate_result.ineligible

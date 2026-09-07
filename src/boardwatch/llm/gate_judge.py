@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
@@ -206,12 +207,20 @@ def run_gate_stage(
     leads: list[_T],
     *,
     run_id: int | None,
+    shortlist_ranks: Mapping[int, int] | None = None,
 ) -> tuple[list[_T], GateStageResult]:
     """The whole stage: filter to leads that still need judging, judge them in batches,
     persist through the existing handshake, and hand back the slate minus anything this run
     persisted `ineligible`. `leads` is returned UNCHANGED (same list, same order minus
     exclusions) on every fail-open path — `gate.enabled=False`, no profile, or nothing left
     to judge all return the identity slate with an all-zero result.
+
+    `shortlist_ranks` is supplied BY THE CALLER rather than derived from `leads`' order here,
+    and that is the point: by this stage `leads` has already had the liveness sweep's dead
+    postings removed, so its index is short of the true ranker rank by however many leads
+    above it were withheld. Enumerating here would silently record a rank the ranker never
+    assigned, and the whole reason the rank is persisted is to read conversion BY BAND. The
+    caller builds the map off `ranked.visible` before anything filters it.
     """
     if not settings.gate.enabled or not leads:
         return leads, GateStageResult()
@@ -263,7 +272,7 @@ def run_gate_stage(
     with engine.begin() as write_conn:
         result = apply_gate_verdicts(
             write_conn, verdicts, versions=versions, facts=facts, policy=policy,
-            catalog=catalog, run_id=run_id,
+            catalog=catalog, run_id=run_id, shortlist_ranks=shortlist_ranks,
         )
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)
