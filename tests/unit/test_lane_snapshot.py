@@ -31,7 +31,7 @@ def test_a_lane_snapshot_never_claims_a_board_enumeration():
     assert snapshot.board_total_censored is None
 
 
-def test_the_provider_registry_still_holds_exactly_the_six_ats_families():
+def test_the_provider_registry_still_holds_exactly_the_ats_families():
     """A lane must never be registered: fixture rule R13 fires on a provider with no fixtures."""
     assert set(build_providers()) == {
         "greenhouse",
@@ -40,4 +40,5 @@ def test_the_provider_registry_still_holds_exactly_the_six_ats_families():
         "smartrecruiters",
         "workable",
         "workday",
+        "jibe",
     }

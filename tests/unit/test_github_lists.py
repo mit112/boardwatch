@@ -390,7 +390,8 @@ def test_ats_chrome_that_parses_is_surfaced_with_the_evidence_that_condemns_it()
 
 
 def test_candidates_are_ordered_cheapest_provider_first():
-    """The owner's ramp: the four inline-body providers, then workday, then smartrecruiters.
+    """The owner's ramp: the four one-request inline-body providers, then jibe, then workday,
+    then smartrecruiters.
 
     Five of six providers serve every board from ONE host and `Fetcher` holds a per-host lock for
     each request's full duration, so boards on one provider serialize and no worker count
@@ -399,7 +400,7 @@ def test_candidates_are_ordered_cheapest_provider_first():
     run at scale.
     """
     assert PROVIDER_PRIORITY == (
-        "greenhouse", "lever", "ashby", "workable", "workday", "smartrecruiters"
+        "greenhouse", "lever", "ashby", "workable", "jibe", "workday", "smartrecruiters"
     )
     providers = [c.provider for c in discover(_sources()).candidates]
     inline_positions = [i for i, p in enumerate(providers) if p in _INLINE_BODY]
@@ -639,7 +640,7 @@ def test_the_ramp_ranks_every_registered_provider_and_no_others():
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     assert set(PROVIDER_PRIORITY) == set(PROVIDER_NAMES)
-    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 6
+    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 7
 
 
 def test_an_unranked_provider_is_a_failure_and_not_a_quiet_last_place():

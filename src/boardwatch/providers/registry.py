@@ -22,6 +22,7 @@ from typing import Any, cast
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.base import Provider
 from boardwatch.providers.greenhouse import GreenhouseProvider
+from boardwatch.providers.jibe import JibeProvider
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workable import WorkableProvider
@@ -32,7 +33,7 @@ from boardwatch.providers.workday import WorkdayProvider
 # ("cannot instantiate protocol class"). Consumers only iterate and instantiate these.
 PROVIDER_CLASSES = (
     GreenhouseProvider, LeverProvider, AshbyProvider, WorkableProvider,
-    SmartRecruitersProvider, WorkdayProvider,
+    SmartRecruitersProvider, WorkdayProvider, JibeProvider,
 )
 
 

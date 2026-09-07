@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from boardwatch.core.board_urls import UnknownBoardURL
+from boardwatch.core.board_urls import UnknownBoardURL, UnregisteredBoardHost
 from boardwatch.lanes.dereference import (
     _POSTING_REF_PATTERNS,
     PostingTarget,
@@ -379,3 +379,36 @@ def test_posting_target_is_frozen() -> None:
     target = PostingTarget(provider="greenhouse", slug="acme", posting_ref="1")
     with pytest.raises(AttributeError):
         target.slug = "other"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "jibe_posting_url",
+    [
+        # The three on-site posting paths measured live on 2026-09-06, on the synthetic host.
+        "https://careers.acme.test/jobs/1000001",
+        "https://careers.acme.test/careers-home/jobs/1000001",
+        "https://careers.acme.test/main/jobs/1000001",
+    ],
+)
+def test_a_jibe_posting_url_is_not_dereferenceable(jibe_posting_url: str) -> None:
+    """jibe is absent from `_POSTING_PATH_SHAPES` BY DECISION (see the module docstring), and
+    it never reaches that catalog: a Jibe board lives on the employer's own hostname, so the
+    provider registers no paste host and no suffix and `parse_board_target` refuses first.
+
+    `UnregisteredBoardHost` is the RIGHT class here and the assertion pins it: it means "no
+    provider registers this host", which is exactly true, and it subclasses `UnknownBoardURL`
+    so every existing `except UnknownBoardURL` in the lanes keeps catching it unchanged. What
+    must never happen is a `PostingTarget` — the posting path varies per tenant, so reading a
+    reference out of one would be the guess this module exists to refuse."""
+    assert issubclass(UnregisteredBoardHost, UnknownBoardURL)
+    with pytest.raises(UnregisteredBoardHost):
+        parse_posting_target(jibe_posting_url)
+
+
+def test_jibe_is_in_neither_dereference_catalog() -> None:
+    """Pinned by NAME so a later edit that quietly adds a shape row has to face this test and
+    the docstring section it contradicts."""
+    from boardwatch.lanes.dereference import _POSTING_PATH_SHAPES
+
+    assert "jibe" not in _POSTING_PATH_SHAPES
+    assert "jibe" not in _POSTING_REF_PATTERNS

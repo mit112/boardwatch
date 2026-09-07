@@ -131,6 +131,28 @@ nothing to drain. The guard stays because it is still reachable on a different s
 comment at its own site, which names the surviving case and the check that confirmed one was
 left.
 
+JIBE: NOT DEREFERENCEABLE BY SHAPE, and it never reaches the shape catalog at all.
+
+Two independent reasons, and the first one is the whole answer. (1) A Jibe board lives on the
+EMPLOYER'S OWN hostname, so `providers/jibe.py` registers no paste host and no host suffix --
+`parse_board_target` therefore raises `UnregisteredBoardHost` for every jibe posting URL,
+before `_POSTING_PATH_SHAPES` is ever consulted. Registering a host pattern to reach it is not
+available: the set of employer careers domains is unbounded and shares nothing but the
+`/api/jobs` route, so any pattern wide enough to match them would claim hosts belonging to
+every other vendor too. (2) Even given the host, the posting PATH is not one fixed shape. It
+varies per tenant -- `/careers-home/jobs/{req_id}`, `/main/jobs/{req_id}` and `/jobs/{req_id}`
+were all measured live on 2026-09-06 -- so the exact-shape rule the four inline-body providers
+use has nothing to be exact about here, and a "last segment after any prefix" rule is precisely
+the guess this module refuses.
+
+Jibe is consequently absent from `_POSTING_PATH_SHAPES` and from `_POSTING_REF_PATTERNS` BY
+DECISION, not by omission, and the catalog stays closed. The cost is bounded and is the same
+one the four inline-body providers carry: a jibe board response inlines every body
+(`description` + `qualifications` + `responsibilities`), so a link to one of its postings is a
+COMPANY DISCOVERY problem, and the entry point for that is the explicit `jibe:<careers host>`
+form. Nothing in this module has to change to lift it -- what would have to change first is a
+measured, tenant-invariant posting path, which does not exist today.
+
 TWO KNOWN LIMITS, both measured, neither a guess. (1) `myworkdaysite.com` keeps raising
 `UnknownBoardURL` from `parse_board_target`, and adding the host suffix would NOT help: the
 same tenant is stored under the other host, so `wd5.myworkdaysite.com/recruiting/chewy/External`
