@@ -28,7 +28,12 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, count_listed_ids, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    count_listed_ids,
+    employer_label_from_host,
+    health_from_failure,
+)
 
 _PAGE_LIMIT = 100  # HARD server maximum: limit=101 returns HTTP 422, it is not clamped
 _MAX_PAGES = 200  # backstop only (200 x 100 = 20,000); normal termination is a short page
@@ -48,6 +53,16 @@ class JibeProvider:
     # exactly what `test_each_provider_declares_public_board_hosts` exists to catch.
     board_hosts: tuple[str, ...] = ()
     custom_domain_slug = True
+
+    @staticmethod
+    def employer_name_from_slug(slug: str) -> str | None:
+        """The employer's own token out of the careers host (T74). No vendor suffix: every Jibe
+        board sits on the employer's own domain, which is why `board_hosts` is empty."""
+        try:
+            host = JibeProvider.normalize_slug(slug)
+        except ValueError:
+            return None
+        return employer_label_from_host(host)
 
     @staticmethod
     def normalize_slug(slug: str) -> str:

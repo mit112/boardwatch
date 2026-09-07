@@ -161,6 +161,16 @@ class ScanSummary:
     #: Slugs, not a count, because "which board" is the operator's first question and a bare
     #: number cannot answer it.
     empty_complete_guarded: list[str] = field(default_factory=list)
+    #: T74. Requests retried across the run because a provider answered a status IT has measured
+    #: to be a transient throttle rather than a refusal (eightfold's HTTP 405). A COUNT, because
+    #: the question it answers is "what did the throttle cost this run in extra requests".
+    throttle_retries: int = 0
+    #: Slugs of boards that ABANDONED at least one request to that throttle after exhausting its
+    #: retries — so each of those boards is missing rows and is `partial` by construction. Slugs
+    #: rather than a count, for the reason `empty_complete_guarded` gives: "which board" is the
+    #: operator's first question, and a bare number cannot answer it. A silent retry that hid a
+    #: provider going PERMANENTLY 405 would be a monitoring failure; this is what makes it loud.
+    throttle_exhausted: list[str] = field(default_factory=list)
     # FETCH wall clock per provider (D-330). Keyed by `BoardRequest.provider`, so a provider
     # that contributed no work is absent rather than present at zero.
     fetch_cost: dict[str, ProviderFetchCost] = field(default_factory=dict)
@@ -465,6 +475,11 @@ def _scan_body(
                 # Accounted BEFORE the apply, and outside its try: the fetch already cost the run
                 # its seconds whether or not the apply then succeeds, and attributing cost only to
                 # boards that applied cleanly would hide the expensive failures.
+                # Accounted here, beside the fetch cost and for the same reason: the throttle
+                # cost the run its retries whether or not the apply then succeeded.
+                summary.throttle_retries += snapshot.throttle_retries or 0
+                if snapshot.throttle_exhausted:
+                    summary.throttle_exhausted.append(row.slug)
                 cost = summary.fetch_cost.setdefault(request.provider, ProviderFetchCost())
                 cost.boards += 1
                 if snapshot.fetch_seconds is None:

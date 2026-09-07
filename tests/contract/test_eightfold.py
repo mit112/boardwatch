@@ -18,6 +18,7 @@ from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.models import BoardRequest, ResponseValidators
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
+from boardwatch.providers import eightfold
 from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.eightfold import (
     EightfoldProvider,
@@ -456,6 +457,158 @@ def test_every_detail_failing_fails_the_board(tmp_path: Path) -> None:
     snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
     assert snapshot.status == "failed"
     assert "all 4 detail fetches failed" in (snapshot.error or "")
+
+
+# ---------------------------------------------------------------- the 405 throttle
+
+@pytest.fixture()
+def _no_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero the backoff so these tests pin BEHAVIOUR rather than wall clock.
+
+    `min_host_delay` can only ever RAISE this host's pace, so 0.0 leaves `Fetcher`'s own
+    `per_host_delay_seconds` in charge and the retry is still paced — exactly the property the
+    production values rely on. The shipped values are asserted separately below.
+    """
+    monkeypatch.setattr(eightfold, "_THROTTLE_BACKOFF_SECONDS", (0.0,) * 
+                        eightfold._THROTTLE_RETRIES)
+
+
+def test_there_is_one_backoff_step_per_retry() -> None:
+    """`_get` indexes the backoff tuple by attempt, so a tuple shorter than the retry ceiling
+    is an IndexError on the last retry — of a board that is already failing."""
+    assert len(eightfold._THROTTLE_BACKOFF_SECONDS) == eightfold._THROTTLE_RETRIES
+
+
+@respx.mock
+def test_a_405_that_clears_on_retry_lists_the_whole_board(
+    tmp_path: Path, _no_backoff: None
+) -> None:
+    """Measured: the exact search URL that answered 405 answered 200 on four consecutive
+    re-probes. Before T74 a 405 on the FIRST listing request failed the whole board — that is
+    the arm that cost run 10 76% of one board."""
+    payload = _fx("search_normal.json")
+    _mock_boot()
+    respx.get(_search_url(0)).mock(
+        side_effect=[httpx.Response(405), httpx.Response(200, json=payload)]
+    )
+    _mock_details(*payload["data"]["positions"])
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "complete"
+    assert len(snapshot.postings) == 4
+    assert snapshot.board_enumerated == 4
+    # The retry is COUNTED even though it cost the board nothing: a run that only ever reports
+    # a throttle it lost rows to cannot tell a healthy service from a degrading one.
+    assert snapshot.throttle_retries == 1
+    assert snapshot.throttle_exhausted == 0
+
+
+@respx.mock
+def test_a_405_that_never_clears_is_partial_with_a_typed_reason(
+    tmp_path: Path, _no_backoff: None
+) -> None:
+    """The dangerous arm. `apply_board` closes postings only on `complete`, so a board that a
+    throttle stopped mid-listing MUST NOT report `complete` — `CLOSE_AFTER_MISSES` would then
+    close every posting it failed to fetch. The refusal is driven by the TYPED counter, not by
+    the message, and the retry is BOUNDED: three physical attempts, never a fourth."""
+    full = _fx("search_page_full.json")
+    # The throttle is the ONLY signal: with count == 10 the ten listed rows are the whole
+    # board, so no completeness shortfall and no detail failure can carry the `partial`.
+    full["data"]["count"] = 10
+    known = frozenset(str(row["id"]) for row in full["data"]["positions"])
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(200, json=full))
+    throttled = respx.get(_search_url(10)).mock(return_value=httpx.Response(405))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(known=known))
+    assert snapshot.status == "partial"
+    assert snapshot.throttle_retries == 2
+    assert snapshot.throttle_exhausted == 1
+    assert throttled.call_count == 1 + eightfold._THROTTLE_RETRIES
+    assert "throttled" in (snapshot.error or "")
+    # The rows it DID reach are still the inventory, so nothing is invented and nothing is lost
+    assert len(snapshot.listed_ids) == 10
+
+
+@respx.mock
+def test_the_backoff_is_the_fetchers_own_pace_not_a_second_limiter(tmp_path: Path) -> None:
+    """`core/politeness.Fetcher` owns this host's clock and its lock. The backoff is passed as
+    `min_host_delay`, which that class honours before EVERY physical attempt and which can only
+    raise the pace — so the retry is paced by the one limiter the politeness contract is
+    written in, rather than by a `sleep` beside it that measures from a different clock."""
+    seen: list[float | None] = []
+    real_get = Fetcher.get
+
+    def _record(self, url, validators=None, *, headers=None, min_host_delay=None):  # type: ignore[no-untyped-def]
+        seen.append(min_host_delay)
+        return real_get(
+            self, url, validators, headers=headers, min_host_delay=min_host_delay
+        )
+
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(405))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(eightfold, "_THROTTLE_BACKOFF_SECONDS", (0.0, 0.0))
+        patch.setattr(Fetcher, "get", _record)
+        provider.fetch_board(_fetcher(tmp_path), _request())
+    # boot (no override), then the first listing attempt and one override per retry
+    assert seen == [None, None, 0.0, 0.0]
+
+
+@respx.mock
+def test_the_per_board_retry_budget_caps_a_board_that_405s_everywhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second ceiling, and the one that bounds WALL CLOCK rather than request count.
+
+    The per-request ceiling alone lets the detail loop spend a full retry chain on each of
+    `detail_fetch_budget` postings. The budget is monkeypatched DOWN so the test costs four
+    postings rather than fifty — what it pins is that the budget is enforced across requests
+    at all, not the shipped number.
+    """
+    monkeypatch.setattr(eightfold, "_THROTTLE_BACKOFF_SECONDS", (0.0, 0.0))
+    monkeypatch.setattr(eightfold, "_THROTTLE_BOARD_BUDGET", 3)
+    payload = _fx("search_normal.json")
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(200, json=payload))
+    for row in payload["data"]["positions"]:
+        respx.get(_detail_url(str(row["id"]))).mock(return_value=httpx.Response(405))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    # 3 retries and not one more, though four requests were each entitled to two
+    assert snapshot.throttle_retries == 3
+    assert snapshot.throttle_exhausted == 4
+    # every detail failed, which is the existing "all N detail fetches failed" arm — `failed`,
+    # which closes nothing either
+    assert snapshot.status == "failed"
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [404, 500, 503])
+def test_a_non_405_failure_is_not_retried(
+    tmp_path: Path, status: int, _no_backoff: None
+) -> None:
+    """Property 7 is about ONE measured status. A 404 detail is still a fetch failure that
+    keeps the id listed (property 6), and a 500 is already `Fetcher`'s own business — neither
+    may be re-fetched by this loop, which would multiply every failing request by three."""
+    _mock_boot()
+    route = respx.get(_search_url(0)).mock(return_value=httpx.Response(status))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "failed"
+    assert snapshot.throttle_retries == 0
+    assert snapshot.throttle_exhausted == 0
+    # 503 is retryable inside Fetcher itself; `retry_attempts=1` in `_fetcher` pins that to one
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_405_bootstrap_still_reports_what_the_throttle_cost(
+    tmp_path: Path, _no_backoff: None
+) -> None:
+    """A board the throttle killed at its career page is the board whose loss is largest, and
+    `failed` alone cannot say the throttle was why."""
+    respx.get(BOOT_URL).mock(return_value=httpx.Response(405))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "failed"
+    assert snapshot.throttle_retries == 2
+    assert snapshot.throttle_exhausted == 1
 
 
 # ---------------------------------------------------------------- parse contract

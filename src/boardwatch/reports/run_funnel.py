@@ -151,6 +151,13 @@ _TOP_MISSING = 10
 # before this key existed, and still are. What was invisible is WHICH of them the empty-complete
 # guard fired on; a consumer that ignores the added key reads every old key correctly.
 #
+# **T74's `scan.throttle_retries` and `scan.throttle_exhausted` do NOT bump it either**, on the
+# same `fetch_cost` / `empty_complete_guarded` precedent. No new top-level section — `scan` has
+# been here since v1 — and no existing key changes MEANING: a board that abandoned a request to a
+# throttle was already counted in `boards_partial` before these keys existed, and still is. What
+# was invisible is that the reason was a throttle and WHICH boards it hit; a consumer that
+# ignores the added keys reads every old key correctly.
+#
 # **v8 is T60's two terminal states, and it bumps for the v5 reason rather than the v6 one.** It
 # adds no top-level section — `gate_rejected` and `routed_to_review_lane` are drop reasons inside
 # the `projection` and `tailor` stages, which have been in `stages` since v5 and v1 — but on a
@@ -1025,6 +1032,14 @@ class ScanContext:
     # `ScanSummary.empty_complete_guarded` one layer down — "which board" is the operator's
     # first question. `()` on a `--no-scan` run, the same as every other scan-only field here.
     empty_complete_guarded: tuple[str, ...] = ()
+    # T74. What a provider's measured-transient throttle cost this run: extra requests
+    # (`throttle_retries`) and boards that still lost rows to it (`throttle_exhausted`). The
+    # named boards are a SUBSET of `boards_partial`, never a fifth partition member — the
+    # provider forces `partial` on any abandonment precisely so `apply_board` cannot close what
+    # the throttle stopped it listing. `0` / `()` on a run no throttle touched, which is every
+    # healthy run and is a different statement from the key being absent.
+    throttle_retries: int = 0
+    throttle_exhausted: tuple[str, ...] = ()
     # None means NOT MEASURED (a `--no-scan` run, or a stored funnel written before D-330),
     # which is a different statement from an empty tuple ("scanned, and nothing was timed").
     fetch_cost: tuple[ProviderFetchCost, ...] | None = None
@@ -1965,6 +1980,10 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             # `ScanContext.empty_complete_guarded`. `[]` when the guard did not fire, which is
             # every healthy run; sorted so two runs naming the same boards render identically.
             "empty_complete_guarded": sorted(funnel.scan.empty_complete_guarded),
+            # T74. Sorted for the same reason: two runs naming the same boards must render
+            # identically. A non-empty list here always sits inside `boards_partial`.
+            "throttle_retries": funnel.scan.throttle_retries,
+            "throttle_exhausted": sorted(funnel.scan.throttle_exhausted),
             # Ordered most-expensive first so the constraint is the first row a reader sees.
             "fetch_cost": None if funnel.scan.fetch_cost is None else [
                 {
@@ -2304,6 +2323,22 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
                 "rather than closed: "
                 f"{', '.join(sorted(funnel.scan.empty_complete_guarded))}.** *Counted inside "
                 "`complete` above — the guard refuses the closure, not the scan.*"
+            )
+            lines.append("")
+        if funnel.scan.throttle_retries or funnel.scan.throttle_exhausted:
+            # Reported even when nothing was abandoned: a run that spent retries and lost no
+            # rows is the throttle WORKING, and a reader who only ever sees this line when it
+            # failed cannot tell a healthy service from one that is degrading.
+            lines.append(
+                f"**{funnel.scan.throttle_retries} request(s) were retried against a provider "
+                "throttle.** "
+                + (
+                    f"*{len(funnel.scan.throttle_exhausted)} board(s) still lost rows to it and "
+                    "are counted `partial` above, so nothing they failed to list was closed: "
+                    f"{', '.join(sorted(funnel.scan.throttle_exhausted))}.*"
+                    if funnel.scan.throttle_exhausted
+                    else "*Every one of them cleared; no board lost rows.*"
+                )
             )
             lines.append("")
         lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))

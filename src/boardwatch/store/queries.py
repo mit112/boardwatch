@@ -532,6 +532,46 @@ def upsert_lane_company(
     )
 
 
+def companies_named_by_slug(conn: Connection) -> list[Row[Any]]:
+    """Every company row whose `name` is just its `slug`, oldest first.
+
+    This is the EXACT population `companies add` created before T74: a board the bundled
+    registry does not know was watched with `name = slug`, so a Workday triple or an Eightfold
+    host became the company's display name and the `cross_host` identity component built from
+    it (`normalize_company(company_name)`) named a hostname rather than an employer.
+
+    An exact, case-insensitive `name == slug` test rather than "does this look like a
+    hostname": the first is a fact about how the row was written, the second is a heuristic that
+    would also catch a registry name and a lane-discovered one — the two names that are already
+    correct and that `upsert_lane_company` documents as unrecoverable once overwritten.
+    """
+    return list(
+        conn.execute(
+            select(companies.c.id, companies.c.provider, companies.c.slug, companies.c.name)
+            .where(func.lower(companies.c.name) == func.lower(companies.c.slug))
+            .order_by(companies.c.id)
+        ).all()
+    )
+
+
+def set_company_name(conn: Connection, *, company_id: int, name: str) -> int:
+    """Rewrite one company's display name. Returns rows affected.
+
+    Keyed on the primary key, not on (provider, slug), because the caller has already resolved
+    the row it read and re-resolving by slug would reintroduce the case-variant ambiguity
+    `stored_slug` exists to settle.
+
+    THE CALLER OWES A REBUILD. `companies.name` feeds `IdentityInputs.company_name`, which is a
+    component of the `cross_host` posting identity, so every identity row written under the old
+    name is stale the moment this commits — `identities verify` reports exactly that, and
+    `boardwatch identities backfill` is the drain.
+    """
+    result = conn.execute(
+        update(companies).where(companies.c.id == company_id).values(name=name)
+    )
+    return int(result.rowcount)
+
+
 def company_exists(conn: Connection, *, provider: str, slug: str) -> bool:
     """Is this `(provider, slug)` already stored, watched or not — under ANY slug case?
 

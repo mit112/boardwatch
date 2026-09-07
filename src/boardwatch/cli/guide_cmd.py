@@ -351,6 +351,15 @@ bucket instead of the whole board, which is the only way past Workday's 2,000-re
 descriptor must be one the board's own facets list, or every scan of it fails.""",
     ),
     "companies remove": Entry(("writes store",), "Stops watching one board. Its postings stay."),
+    "companies names": Entry(
+        ("reads store", "writes store"),
+        """Repairs company rows named after their SLUG rather than their employer. Reports by
+default; `--apply` writes. `companies.name` is what `normalize_company` reads, so a board named
+`careers.acme.test` cannot group with the same employer's other board however identical the
+postings are. A row whose employer name is not derivable from its slug is LEFT ALONE and listed —
+a wrong employer name merges two companies' postings. Run `identities backfill` afterwards: every
+stored identity is keyed on the old name until it does.""",
+    ),
     "companies list": Entry(
         ("reads store",),
         "Every watched board with its source, health and last success. Takes `--json`.",
