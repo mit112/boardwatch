@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
   carrying its verdict, and one the judge cleared lands in tier 0. The funnel reports the surplus as
   `gate.beyond_slate` and still reconciles. Liveness probes the whole depth slate first.
 
+- **`detail_fetch_budget` now accepts up to 10,000** (was 1,000), so one scan can fetch every body on
+  the largest watched board instead of filling it across several.
+
 - **Two more providers: `phenom` (Phenom People career sites) and `eightfold` (Eightfold PCSX).**
   `phenom:<host>/<country>/<lang>` drives an employer's own `/widgets` endpoint with two POST
   widgets (`refineSearch` at 500 a page, `jobDetail` per posting under the detail budget); a

@@ -27317,3 +27317,13 @@ it). Adding Northrop without its cost stated (stated above; dropping it is the o
 
 **Cross-references.** D-491 (the parked state, the seat rule), D-490 (the comparison), D-271
 (`detail_deferred` before truncation, distinct-id enumeration), D-103 (buried not queued).
+
+**Addendum 23:55 CDT — the owner ruled on the budget call:** "we can have super long/over night runs
+for anything. We could keep fetching as long as we need to cover everything." The live config was
+found already at `detail_fetch_budget = 400` (D-491's "~45 runs to fill" priced the scratch stores'
+default of 50, not the live store); it was set to the 1,000 ceiling by `config set` (backup
+`config.toml.bak-2026-09-06-detailbudget`), then the ceiling itself was raised to 10,000
+(`04e000bb`: `settings.py`, `config_cmd.py`, `docs/configuration.md`) and the live value set to
+5,000 after a green gate. Run 10 therefore fetches every unseen body on every board in one pass;
+Northrop's 3,817 details are ~70 min of paced requests on its own host, concurrent with the rest.
+The Northrop keep/drop call is closed the same way: keep.
