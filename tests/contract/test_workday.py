@@ -21,11 +21,13 @@ from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.workday import (
     WorkdayProvider,
+    _facet_catalog,
     _facet_sum,
     _posting_id,
     _uncapped_total,
     parse_posting,
     split_slug,
+    split_target,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "workday"
@@ -978,3 +980,453 @@ def test_ragged_facets_never_raise() -> None:
     # "count" is a present JSON null, not an absent key — .get(key, default) does not catch it
     payload = {"total": 2000, "facets": [{"values": [{"count": None}, {"count": 10}]}]}
     assert _uncapped_total(payload) == (10, True)
+
+
+# ------------------------------------------------- facet slicing (T71, property 6)
+# Workday clamps `total` at 2000 and wraps the pager past it, so a board larger than that is
+# enumerated blind and partially: live 2026-09-07 Citi's 4,376 postings reported 2000 and
+# yielded 1,988, of which 1,075 were technology roles and we held 566. The facets are NOT
+# clamped, so a slug may name ONE facet bucket and the sliced `total` reads that bucket's true
+# size. The absolute requirement is that a slug with NO fragment behaves as it always did.
+
+SLICED_SLUG = f"{SLUG}#jobFamilyGroup=Technology"
+SLICED_URL = f"{LIST_URL}#jobFamilyGroup=Technology"
+# The tenant's own opaque hash for "Technology" in list_facet_catalog.json. Never hardcoded in
+# a slug or a catalog in production — resolved from the live board on every fetch.
+TECHNOLOGY_ID = "3f2c9a1e708d01575bddff0c12010001"
+
+
+def _sliced_request(
+    slug: str = SLICED_SLUG, url: str = SLICED_URL,
+    known: frozenset[str] = frozenset(), budget: int = 50,
+) -> BoardRequest:
+    return BoardRequest(
+        provider="workday", slug=slug, url=url,
+        known_posting_ids=known, detail_budget=budget,
+    )
+
+
+def _sliced_ids() -> frozenset[str]:
+    return _all_listed_ids("list_sliced_page_full.json", "list_sliced_page_short.json")
+
+
+def _bodies(route: respx.Route) -> list[dict[str, Any]]:
+    return [json.loads(call.request.content) for call in route.calls]
+
+
+# ---- the backwards-compatibility contract: an unsliced slug must not move at all ----------
+
+@respx.mock
+def test_an_unsliced_request_body_is_byte_identical_to_the_shipped_one(tmp_path: Path) -> None:
+    """THE BACKWARDS-COMPATIBILITY ASSERTION. 157 live boards use the three-part slug, and
+    `appliedFacets` was already in the body and already empty, so slicing must POPULATE that
+    field rather than change the body's bytes, key order or key set for an unsliced board.
+
+    Pinned as BYTES, not as a parsed dict: a parsed comparison passes for a version that
+    reorders the keys or renders `{}` as `null`, and the body is the only thing that decides
+    which postings the server returns. Break `_search_body` by making it inject a group key
+    unconditionally and this is the assertion that fails, on the first page's bytes."""
+    route = respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_page_full.json")),
+            httpx.Response(200, json=_fx("list_page_short.json")),
+        ]
+    )
+    provider.fetch_board(_fetcher(tmp_path), _request(budget=0))
+    assert [call.request.content for call in route.calls] == [
+        b'{"appliedFacets":{},"limit":20,"offset":0,"searchText":""}',
+        b'{"appliedFacets":{},"limit":20,"offset":20,"searchText":""}',
+    ]
+
+
+@respx.mock
+def test_an_unsliced_board_issues_no_facet_catalog_request(tmp_path: Path) -> None:
+    # The catalog request is the whole extra cost of slicing and an unsliced board must not
+    # pay it: one POST for a one-page board, exactly as before.
+    route = respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_normal.json"))
+    )
+    provider.fetch_board(
+        _fetcher(tmp_path), _request(known=_all_listed_ids("list_normal.json"))
+    )
+    assert route.call_count == 1
+
+
+def test_an_unsliced_slug_still_yields_the_bare_triple_and_the_bare_url() -> None:
+    assert WorkdayProvider.normalize_slug(SLUG) == SLUG
+    assert provider.board_url(SLUG) == LIST_URL
+    assert split_target(SLUG) == ("acme.wd5.myworkdayjobs.com", "acme", "AcmeCareers", None)
+
+
+# ---- slug identity -----------------------------------------------------------------------
+
+def test_a_facet_fragment_is_parsed_off_before_the_triple_split() -> None:
+    # NOT a fourth path component: `split_slug` requires exactly three and every stored slug
+    # uses that form, so a fourth would collide with the invariant and with 157 live boards.
+    host, tenant, site, facet = split_target(SLICED_SLUG)
+    assert (host, tenant, site) == ("acme.wd5.myworkdayjobs.com", "acme", "AcmeCareers")
+    assert facet == ("jobFamilyGroup", "Technology")
+
+
+def test_a_sliced_slug_normalizes_and_round_trips() -> None:
+    once = WorkdayProvider.normalize_slug(
+        "ACME.WD5.MyWorkdayJobs.com/ACME/AcmeCareers#jobFamilyGroup=Technology"
+    )
+    assert once == SLICED_SLUG
+    assert WorkdayProvider.normalize_slug(once) == once
+
+
+def test_a_sliced_slug_round_trips_through_the_qualified_form() -> None:
+    assert parse_board_target(f"workday:{SLICED_SLUG}") == ("workday", SLICED_SLUG)
+
+
+def test_board_url_makes_two_slices_of_one_tenant_two_distinct_cache_keys() -> None:
+    """`board_url` IS the `http_cache` key and the `board_scans` url. Without the fragment,
+    every slice of one tenant collapses onto the unsliced board's row and they overwrite each
+    other's validators in turn."""
+    technology = provider.board_url(SLICED_SLUG)
+    operations = provider.board_url(f"{SLUG}#jobFamilyGroup=Operations")
+    assert technology == SLICED_URL
+    assert operations == f"{LIST_URL}#jobFamilyGroup=Operations"
+    assert technology != operations != provider.board_url(SLUG)
+    # the fragment goes at the END, after `/jobs` — not spliced into the path, which is what
+    # reading it as part of the site segment produces
+    assert technology.startswith(f"{LIST_URL}#")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup",   # no '='
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#=Technology",      # no group
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup=",  # no descriptor
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#job Family=Tech",  # whitespace in group
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup=T\tech",  # control char
+        "acme.wd5.myworkdayjobs.com/acme#jobFamilyGroup=Technology",    # not a triple
+        "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#",                 # empty fragment
+    ],
+)
+def test_a_malformed_facet_fragment_is_rejected(bad: str) -> None:
+    with pytest.raises(ValueError):
+        split_target(bad)
+
+
+def test_a_descriptor_keeps_its_spaces_punctuation_and_later_equals_signs() -> None:
+    # "Software Engineering and Architecture" is a real jobFamily; a live descriptor carries
+    # spaces, '&' and ','. The fragment splits on the FIRST '=' only and decodes nothing,
+    # because the descriptor is compared to the live catalog verbatim.
+    _, _, _, facet = split_target(f"{SLUG}#jobFamilyGroup=Operations, Sales & Marketing")
+    assert facet == ("jobFamilyGroup", "Operations, Sales & Marketing")
+    _, _, _, with_equals = split_target(f"{SLUG}#jobFamilyGroup=A=B")
+    assert with_equals == ("jobFamilyGroup", "A=B")
+
+
+def test_a_descriptors_case_is_preserved_because_the_catalog_match_is_exact() -> None:
+    _, _, _, facet = split_target(f"{SLUG}#Country_and_Jurisdiction=United States of America")
+    assert facet == ("Country_and_Jurisdiction", "United States of America")
+
+
+# ---- the facet catalog -------------------------------------------------------------------
+
+def test_the_facet_catalog_reads_a_group_nested_inside_another_groups_values() -> None:
+    """Live Citi 2026-09-07 answers a `locationMainGroup` whose single value is itself a GROUP
+    (`facetParameter: "locations"`) carrying the buckets, with no `id`/`count` of its own. A
+    top-level-only read reports `locations` absent, and an absent group is a board-level ERROR
+    here — so that reading refuses a slice the tenant really offers."""
+    catalog = _facet_catalog(_fx("list_facet_catalog.json"))
+    assert catalog["jobFamilyGroup"]["Technology"] == TECHNOLOGY_ID
+    assert "locations" in catalog
+    assert catalog["locations"]["1 ACME WAY  SPRINGFIELD"]
+
+
+def test_the_facet_catalog_never_raises_on_a_ragged_payload() -> None:
+    # same defensive contract as `_facet_sum`: a live payload is not schema-validated and one
+    # odd entry must not fail the whole board
+    assert _facet_catalog({}) == {}
+    assert _facet_catalog({"facets": "not a list"}) == {}
+    assert _facet_catalog({"facets": ["nope", 7]}) == {}
+    assert _facet_catalog({"facets": [{"facetParameter": "g", "values": "nope"}]}) == {}
+    # a bucket with no id, and one with a null descriptor, are both unusable as a slice target
+    payload = {"facets": [{"facetParameter": "g", "values": [
+        {"descriptor": "NoId", "count": 3}, {"id": "x", "descriptor": None},
+        {"id": "y", "descriptor": "Real"}]}]}
+    assert _facet_catalog(payload) == {"g": {"Real": "y"}}
+
+
+# ---- a sliced fetch ----------------------------------------------------------------------
+
+@respx.mock
+def test_a_sliced_board_reads_its_total_from_the_slice_not_the_2000_censor(
+    tmp_path: Path,
+) -> None:
+    """THE MEASURED POINT OF THE WHOLE TICKET. Unfiltered, this board reports the 2000 censor
+    and its facets recover 4589; sliced, `total` reads the bucket's TRUE 25 and the pager
+    enumerates every one of them. Live on Citi 2026-09-07: unfiltered total=2000 / 1,988
+    enumerated, sliced total=1074 / 1,074 enumerated."""
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_facet_catalog.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_full.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_short.json")),
+        ]
+    )
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _sliced_request(known=_sliced_ids(), budget=0)
+    )
+    assert snapshot.status == "complete"
+    assert snapshot.board_reported_total == 25
+    assert snapshot.board_total_censored is False
+    assert snapshot.board_enumerated == 25
+    assert len(snapshot.listed_ids) == 25
+    # and the unfiltered control, on the same fixture, still reads the censored 4589
+    assert _uncapped_total(_fx("list_facet_catalog.json")) == (4589, True)
+
+
+@respx.mock
+def test_a_sliced_board_sends_the_id_resolved_from_this_boards_own_catalog(
+    tmp_path: Path,
+) -> None:
+    """One unfiltered POST reads the catalog, every page after it carries the resolved id.
+    The id is an opaque tenant hash and appears in NO slug and NO catalog in this repo —
+    a slug names the DESCRIPTOR and the id is resolved at fetch time."""
+    route = respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_facet_catalog.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_full.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_short.json")),
+        ]
+    )
+    provider.fetch_board(_fetcher(tmp_path), _sliced_request(known=_sliced_ids()))
+    bodies = _bodies(route)
+    assert route.call_count == 3  # 1 catalog + 2 pages, and the pager stopped on the short one
+    assert bodies[0]["appliedFacets"] == {}          # the catalog read is UNFILTERED
+    assert bodies[0]["offset"] == 0
+    assert [b["appliedFacets"] for b in bodies[1:]] == [
+        {"jobFamilyGroup": [TECHNOLOGY_ID]}, {"jobFamilyGroup": [TECHNOLOGY_ID]},
+    ]
+    assert [b["offset"] for b in bodies[1:]] == [0, 20]  # the slice is paged from 0 again
+    # The fragment is IDENTITY, not address: every POST targets the bare CXS endpoint — the
+    # same one an unsliced board posts to, which is why one host lock and one delay still
+    # serialize every slice of a tenant. NOTE this assertion cannot fail: httpx drops a
+    # fragment when the client builds the request, so it holds even for a version that posts
+    # to the fragment-bearing url. `fetch_board`'s own strip keeps the intent local instead of
+    # delegating it to that normalization; it is belt and braces, not the thing pinned here.
+    assert {str(call.request.url) for call in route.calls} == {LIST_URL}
+
+
+@respx.mock
+def test_the_catalog_requests_own_rows_never_enter_the_slices_inventory(
+    tmp_path: Path,
+) -> None:
+    """The catalog request is the UNFILTERED board's first page. Enumerating its rows would put
+    non-slice postings into the slice's `listed_ids`, and `listed_ids` is what authorizes
+    apply_board to close everything it no longer sees."""
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_facet_catalog.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_full.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_short.json")),
+        ]
+    )
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _sliced_request(known=_sliced_ids(), budget=0)
+    )
+    unfiltered = _all_listed_ids("list_facet_catalog.json")
+    assert unfiltered  # the fixture really does carry rows the slice must not claim
+    assert snapshot.listed_ids.isdisjoint(unfiltered)
+    assert snapshot.listed_ids == _sliced_ids()
+
+
+@respx.mock
+def test_a_sliced_pager_stops_on_a_short_page_and_fetches_details_for_the_slice(
+    tmp_path: Path,
+) -> None:
+    # the whole existing termination and detail machinery is unchanged under a slice
+    respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_facet_catalog.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_full.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_short.json")),
+        ]
+    )
+    detail = _fx("detail_normal.json")
+    for name in ("list_sliced_page_full.json", "list_sliced_page_short.json"):
+        for row in _fx(name)["jobPostings"]:
+            info = dict(detail["jobPostingInfo"]) | {"title": row["title"]}
+            respx.get(_detail_url(row["externalPath"])).mock(
+                return_value=httpx.Response(200, json={"jobPostingInfo": info})
+            )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _sliced_request())
+    assert snapshot.status == "complete"
+    assert len(snapshot.postings) == 25
+    assert snapshot.detail_deferred == 0
+
+
+@respx.mock
+def test_the_facet_id_is_resolved_per_board_and_never_reused_across_tenants(
+    tmp_path: Path,
+) -> None:
+    """`e32326e1...` is ONE tenant's id for "Technology" and means nothing on another, so
+    caching it — in a module constant, a catalog file, or across two boards in one run — sends
+    a second tenant a filter it does not recognise. Two boards, same descriptor, ids that must
+    differ on the wire."""
+    other_slug = "other.wd5.myworkdayjobs.com/other/OtherCareers#jobFamilyGroup=Technology"
+    other_url = "https://other.wd5.myworkdayjobs.com/wday/cxs/other/OtherCareers/jobs"
+    other_id = "9999aaaa708d01575bddff0c1201ffff"
+    other_catalog = dict(_fx("list_facet_catalog.json"))
+    other_catalog["facets"] = [
+        {"facetParameter": "jobFamilyGroup",
+         "values": [{"id": other_id, "descriptor": "Technology", "count": 25}]}
+    ]
+
+    acme = respx.post(LIST_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=_fx("list_facet_catalog.json")),
+            httpx.Response(200, json=_fx("list_sliced_page_short.json")),
+        ]
+    )
+    other = respx.post(other_url).mock(
+        side_effect=[
+            httpx.Response(200, json=other_catalog),
+            httpx.Response(200, json=_fx("list_sliced_page_short.json")),
+        ]
+    )
+    fetcher = _fetcher(tmp_path)
+    provider.fetch_board(fetcher, _sliced_request(known=_sliced_ids()))
+    provider.fetch_board(
+        fetcher,
+        _sliced_request(slug=other_slug, url=f"{other_url}#jobFamilyGroup=Technology",
+                        known=_sliced_ids()),
+    )
+    assert _bodies(acme)[1]["appliedFacets"] == {"jobFamilyGroup": [TECHNOLOGY_ID]}
+    assert _bodies(other)[1]["appliedFacets"] == {"jobFamilyGroup": [other_id]}
+    assert TECHNOLOGY_ID != other_id
+
+
+# ---- the fail-safe direction: out of catalog is an ERROR, never an unfiltered fetch -------
+
+@respx.mock
+def test_an_unknown_descriptor_is_an_error_with_zero_rows_and_no_unfiltered_fallback(
+    tmp_path: Path,
+) -> None:
+    """THE LOAD-BEARING DECISION. An unfiltered fallback would silently restore the blind
+    2,000-row listing while the operator believed the board was sliced — the same class of
+    failure as an ignored facet parameter or an unknown Oracle siteNumber. So: ERROR, a reason
+    naming the descriptor, ZERO rows, and exactly ONE request — the catalog read.
+
+    `route.call_count == 1` is the assertion that catches the fallback specifically: a version
+    that fell back would fetch the unfiltered board's pages and enumerate them."""
+    route = respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_facet_catalog.json"))
+    )
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path),
+        _sliced_request(
+            slug=f"{SLUG}#jobFamilyGroup=Warehouse Operations",
+            url=f"{LIST_URL}#jobFamilyGroup=Warehouse Operations",
+            budget=0,
+        ),
+    )
+    assert snapshot.status == "failed"
+    assert "Warehouse Operations" in (snapshot.error or "")
+    assert snapshot.postings == []
+    assert snapshot.listed_ids == frozenset()
+    assert snapshot.board_enumerated is None
+    assert route.call_count == 1  # the catalog read only; NO unfiltered listing was fetched
+    # and the message names the group it looked in, plus what that group does offer
+    assert "jobFamilyGroup" in (snapshot.error or "")
+    assert "Technology" in (snapshot.error or "")
+
+
+@respx.mock
+def test_an_unknown_facet_group_is_an_error_naming_the_groups_the_tenant_returns(
+    tmp_path: Path,
+) -> None:
+    """Tenants expose DIFFERENT groups: Citi, Target and Lowes offer `jobFamilyGroup` and no
+    `jobFamily` at all. Naming an absent GROUP is as much an error as naming an absent
+    descriptor, and the message must list what the tenant actually returned — the planning
+    session's first probe read only `jobFamily` and reported "0 SWE roles" for three boards
+    that in fact carry thousands."""
+    route = respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_facet_catalog.json"))
+    )
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path),
+        _sliced_request(
+            slug=f"{SLUG}#jobFamily=Software Engineering and Architecture",
+            url=f"{LIST_URL}#jobFamily=Software Engineering and Architecture",
+            budget=0,
+        ),
+    )
+    assert snapshot.status == "failed"
+    assert "jobFamily" in (snapshot.error or "")
+    assert "Software Engineering and Architecture" in (snapshot.error or "")
+    assert "jobFamilyGroup" in (snapshot.error or "")  # what the tenant DOES offer
+    assert snapshot.listed_ids == frozenset()
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_catalog_request_that_fails_is_a_failed_board_not_an_unfiltered_fetch(
+    tmp_path: Path,
+) -> None:
+    route = respx.post(LIST_URL).mock(return_value=httpx.Response(500))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _sliced_request())
+    assert snapshot.status == "failed"
+    assert "facet catalog" in (snapshot.error or "")
+    assert snapshot.listed_ids == frozenset()
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_catalog_response_with_no_facets_is_an_error_not_an_unfiltered_fetch(
+    tmp_path: Path,
+) -> None:
+    # a tenant that stopped serving facets is exactly the case where a fallback would restore
+    # the blind listing invisibly
+    payload = dict(_fx("list_facet_catalog.json")) | {"facets": []}
+    route = respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _sliced_request())
+    assert snapshot.status == "failed"
+    assert "Technology" in (snapshot.error or "")
+    assert snapshot.listed_ids == frozenset()
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_non_json_catalog_response_is_an_error_not_an_unfiltered_fetch(
+    tmp_path: Path,
+) -> None:
+    route = respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, content=b"<html>maintenance</html>")
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _sliced_request())
+    assert snapshot.status == "failed"
+    assert "facet catalog unreadable" in (snapshot.error or "")
+    assert route.call_count == 1
+
+
+# ---- healthcheck under a slice -----------------------------------------------------------
+
+@respx.mock
+def test_healthcheck_on_a_slice_the_tenant_offers_is_ok(tmp_path: Path) -> None:
+    # the unfiltered response already carries the catalog, so this costs no extra request
+    route = respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_facet_catalog.json"))
+    )
+    assert provider.healthcheck(_fetcher(tmp_path), SLICED_SLUG) is BoardHealth.OK
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_healthcheck_on_a_slice_the_tenant_does_not_offer_is_error(tmp_path: Path) -> None:
+    # otherwise a mistyped descriptor reads OK here and then fails every scan forever
+    respx.post(LIST_URL).mock(
+        return_value=httpx.Response(200, json=_fx("list_facet_catalog.json"))
+    )
+    health = provider.healthcheck(_fetcher(tmp_path), f"{SLUG}#jobFamily=Warehouse")
+    assert health is BoardHealth.ERROR
+
+
+def test_healthcheck_on_a_malformed_facet_fragment_is_error(tmp_path: Path) -> None:
+    assert provider.healthcheck(_fetcher(tmp_path), f"{SLUG}#nope") is BoardHealth.ERROR

@@ -1,0 +1,69 @@
+{
+  "total": 2000,
+  "jobPostings": [
+    {
+      "title": "Unfiltered Engineer 1",
+      "externalPath": "/job/Remote-USA/Unfiltered-Engineer-1_JR2000001",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000001"
+      ]
+    },
+    {
+      "title": "Unfiltered Engineer 2",
+      "externalPath": "/job/Remote-USA/Unfiltered-Engineer-2_JR2000002",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000002"
+      ]
+    }
+  ],
+  "facets": [
+    {
+      "facetParameter": "jobFamilyGroup",
+      "descriptor": "Job Category",
+      "values": [
+        {
+          "id": "3f2c9a1e708d01575bddff0c12010001",
+          "descriptor": "Technology",
+          "count": 25
+        },
+        {
+          "id": "3f2c9a1e708d01575bddff0c12010002",
+          "descriptor": "Operations, Sales & Marketing",
+          "count": 4564
+        }
+      ]
+    },
+    {
+      "facetParameter": "timeType",
+      "descriptor": "Time Type",
+      "values": [
+        {
+          "id": "3f2c9a1e708d01575bddff0c12010003",
+          "descriptor": "Full time",
+          "count": 4589
+        }
+      ]
+    },
+    {
+      "facetParameter": "locationMainGroup",
+      "values": [
+        {
+          "facetParameter": "locations",
+          "descriptor": "Locations",
+          "values": [
+            {
+              "id": "3f2c9a1e708d01575bddff0c12010004",
+              "descriptor": "1 ACME WAY  SPRINGFIELD",
+              "count": 4589
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "userAuthenticated": false
+}

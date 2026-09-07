@@ -1,0 +1,210 @@
+{
+  "total": 25,
+  "jobPostings": [
+    {
+      "title": "Technology Engineer 100",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-100_JR2000100",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000100"
+      ]
+    },
+    {
+      "title": "Technology Engineer 101",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-101_JR2000101",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000101"
+      ]
+    },
+    {
+      "title": "Technology Engineer 102",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-102_JR2000102",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000102"
+      ]
+    },
+    {
+      "title": "Technology Engineer 103",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-103_JR2000103",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000103"
+      ]
+    },
+    {
+      "title": "Technology Engineer 104",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-104_JR2000104",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000104"
+      ]
+    },
+    {
+      "title": "Technology Engineer 105",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-105_JR2000105",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000105"
+      ]
+    },
+    {
+      "title": "Technology Engineer 106",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-106_JR2000106",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000106"
+      ]
+    },
+    {
+      "title": "Technology Engineer 107",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-107_JR2000107",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000107"
+      ]
+    },
+    {
+      "title": "Technology Engineer 108",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-108_JR2000108",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000108"
+      ]
+    },
+    {
+      "title": "Technology Engineer 109",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-109_JR2000109",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000109"
+      ]
+    },
+    {
+      "title": "Technology Engineer 110",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-110_JR2000110",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000110"
+      ]
+    },
+    {
+      "title": "Technology Engineer 111",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-111_JR2000111",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000111"
+      ]
+    },
+    {
+      "title": "Technology Engineer 112",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-112_JR2000112",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000112"
+      ]
+    },
+    {
+      "title": "Technology Engineer 113",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-113_JR2000113",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000113"
+      ]
+    },
+    {
+      "title": "Technology Engineer 114",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-114_JR2000114",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000114"
+      ]
+    },
+    {
+      "title": "Technology Engineer 115",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-115_JR2000115",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000115"
+      ]
+    },
+    {
+      "title": "Technology Engineer 116",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-116_JR2000116",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000116"
+      ]
+    },
+    {
+      "title": "Technology Engineer 117",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-117_JR2000117",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000117"
+      ]
+    },
+    {
+      "title": "Technology Engineer 118",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-118_JR2000118",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000118"
+      ]
+    },
+    {
+      "title": "Technology Engineer 119",
+      "externalPath": "/job/Remote-USA/Technology-Engineer-119_JR2000119",
+      "locationsText": "Remote, USA",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR2000119"
+      ]
+    }
+  ],
+  "facets": [
+    {
+      "facetParameter": "jobFamilyGroup",
+      "descriptor": "Job Category",
+      "values": [
+        {
+          "id": "3f2c9a1e708d01575bddff0c12010001",
+          "descriptor": "Technology",
+          "count": 25
+        }
+      ]
+    },
+    {
+      "facetParameter": "timeType",
+      "descriptor": "Time Type",
+      "values": [
+        {
+          "id": "3f2c9a1e708d01575bddff0c12010003",
+          "descriptor": "Full time",
+          "count": 25
+        }
+      ]
+    }
+  ],
+  "userAuthenticated": false
+}
