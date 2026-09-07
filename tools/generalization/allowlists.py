@@ -222,6 +222,36 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:8c86b064f349f1c689268df34e5f9741cd42ec7fe86781f1652be5595a55517e",
     ),
+    "tests/fixtures/amazon/empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:a7f1f9b3efd894cc1c89aa1e5bb2be2ffff8dcad79c15240ab33950a915ab4c5",
+    ),
+    "tests/fixtures/amazon/error_offset_ceiling.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:1338572a9ddcc3de15339ebb75e390c6b188adfc92526b18edc1463b87118256",
+    ),
+    "tests/fixtures/amazon/error_result_limit.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:41e47c4c8fe2e309d6c4c70523a048ff9e03c47c9bfda7c55ec2dcac4f88a9fd",
+    ),
+    "tests/fixtures/amazon/facets_category.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:1b3b8b1709c9780ca2fb7043d01b92fcb69a241d74f739d0c6fd11bafdd8afd6",
+    ),
+    "tests/fixtures/amazon/normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:090bdfb059bcbc44ecbe265db7995f04091a628e5076ae5494d4aaa1827a7d4d",
+    ),
+    "tests/fixtures/amazon/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:8deb20aa7bb90721b8a371d4f5fcc3fb5bf6c04726f3087361d9e3f1875d51f3",
+    ),
     "tests/fixtures/ashby/normal.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

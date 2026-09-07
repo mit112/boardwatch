@@ -433,3 +433,53 @@ def test_phenom_is_in_neither_dereference_catalog() -> None:
 
     assert "phenom" not in _POSTING_PATH_SHAPES
     assert "phenom" not in _POSTING_REF_PATTERNS
+
+
+@pytest.mark.parametrize(
+    "amazon_url",
+    [
+        # The posting shape measured on 2,597 of 2,597 rows of a full live category, and the
+        # search URL a user is most likely to paste. Neither path names a category.
+        "https://www.amazon.jobs/en/jobs/10530555/senior-platform-engineer",
+        "https://amazon.jobs/en/jobs/10530555/senior-platform-engineer",
+        "https://www.amazon.jobs/en/search?category%5B%5D=Software+Development",
+        "https://www.amazon.jobs/",
+    ],
+)
+def test_an_amazon_url_is_not_dereferenceable_and_is_not_a_tier_d_seed(amazon_url: str) -> None:
+    """amazon is the only refusal in this module that fails on the SLUG, not the path.
+
+    The posting REFERENCE is perfectly recoverable -- `/en/jobs/{id_icims}/{title-slug}` held on
+    2,597 of 2,597 rows. The BOARD is not: an amazon board is one job CATEGORY and the category
+    is a query parameter, so no path segment names one, and a `PostingTarget`'s slug is what
+    names the company row a hit converges onto. Guessing it would mint a duplicate Amazon row
+    per aggregator hit and converge nothing.
+
+    The CLASS is the assertion that matters. It must be the BASE `UnknownBoardURL` and NOT
+    `UnregisteredBoardHost`: amazon.jobs IS a registered host, so the indeed and JSON-LD lanes
+    must not file it as a tier-D vendor seed. (jibe and phenom take the subclass, correctly,
+    because no provider registers their hosts at all.)"""
+    with pytest.raises(UnknownBoardURL) as raised:
+        parse_posting_target(amazon_url)
+    assert not isinstance(raised.value, UnregisteredBoardHost)
+    assert not isinstance(raised.value, UnresolvablePostingURL)
+
+
+def test_the_amazon_refusal_carries_the_qualified_form_a_user_can_type() -> None:
+    """A dead end with no way out is a worse diagnostic than none. The provider's `slug_help`
+    is what turns this refusal into an instruction, and it reaches the user only because
+    `slug_from_path` returns None -- the default first-segment extractor would hand
+    `normalize_slug` the locale segment `en` and produce a catalog complaint about a word the
+    user never typed."""
+    with pytest.raises(UnknownBoardURL, match="amazon:software-development"):
+        parse_posting_target("https://www.amazon.jobs/en/jobs/10530555/senior-platform-engineer")
+
+
+def test_amazon_is_in_neither_dereference_catalog() -> None:
+    """Pinned by NAME, the same way jibe and phenom are. It matters more here than for those
+    two: amazon's path IS uniform, so a shape row looks reasonable right up to the point where
+    it invents a category."""
+    from boardwatch.lanes.dereference import _POSTING_PATH_SHAPES
+
+    assert "amazon" not in _POSTING_PATH_SHAPES
+    assert "amazon" not in _POSTING_REF_PATTERNS

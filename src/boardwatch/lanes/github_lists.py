@@ -87,10 +87,17 @@ PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # Body inline with the listing: about one request per board.
     ("greenhouse", "lever", "ashby", "workable"),
     # Inlines every body too, but PAGES the listing at 100 postings per request, so a board
-    # costs ceil(N/100) requests instead of one -- 12 for the largest measured jibe board.
-    # Dearer than a one-request board, and still cheaper by an order of magnitude than the
-    # tiers below, which additionally spend a GET on every unseen posting.
-    ("jibe",),
+    # costs ceil(N/100) requests instead of one -- 12 for the largest measured jibe board, and
+    # 26 for amazon's largest live category. Dearer than a one-request board, and still cheaper
+    # by an order of magnitude than the tiers below, which additionally spend a GET on every
+    # unseen posting.
+    #
+    # `amazon` is ranked HERE on its measured cost, but like `phenom` below it can never be
+    # reached from a listing URL: an amazon.jobs board is one job CATEGORY and a category is a
+    # query parameter, so `slug_from_path` extracts nothing and `parse_board_target` never
+    # returns it. It is ranked because PROVIDER_PRIORITY must cover the registry -- an unranked
+    # provider raises UnrankedProvider rather than being sorted quietly to the end.
+    ("jibe", "amazon"),
     # Spends `detail_fetch_budget` on a per-posting GET for every unseen posting.
     ("workday",),
     # The same, and boardwatch watches none of them, so a first exposure here is the one cost this

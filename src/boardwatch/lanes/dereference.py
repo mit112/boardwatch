@@ -1,8 +1,8 @@
 r"""URL -> posting-reference dereferencing (lane groundwork Part 2). No fetching here.
 
 core.board_urls.parse_board_target turns a pasted board URL into (provider, slug) and
-throws the rest of the path away. For four of the eight providers that is fine: greenhouse,
-lever, ashby and workable all inline every body in the board response, so a link to one
+throws the rest of the path away. For five of the eleven providers that is fine: greenhouse,
+lever, ashby, workable and amazon all inline every body in the board response, so a link to one
 of their postings is a COMPANY DISCOVERY problem — parse_board_target -> upsert_watch ->
 run_scan already turns it into that company's whole board with no new code. SmartRecruiters,
 Workday, Oracle HCM and Eightfold are different: they are the four providers that define a
@@ -13,10 +13,12 @@ sections below); EIGHTFOLD IS REFUSED, deliberately, and its own section below s
 evidence that refusal rests and what would lift it. Seven of the eight providers that reach
 the catalog resolve. Across every one that does, a recovered `provider_posting_id` lets a later
 aggregator-sourced posting converge with a board scan through
-`UNIQUE(company_id, provider_posting_id)` instead of duplicating it. TWO registered providers
-resolve nothing here and never reach the catalog — jibe and phenom, each on the employer's own
-unbounded hostname, each with its own section below. phenom also needs a second per-posting
-request, but it is a POST widget rather than a `_detail_url`, so it is not one of the four above.
+`UNIQUE(company_id, provider_posting_id)` instead of duplicating it. THREE registered providers
+resolve nothing here and never reach the catalog — jibe, phenom and amazon, each with its own
+section below. The first two are on the employer's own unbounded hostname; amazon is not, and
+its section says why registering two exact paste hosts still buys it nothing. phenom also needs
+a second per-posting request, but it is a POST widget rather than a `_detail_url`, so it is not
+one of the four above.
 
 THE EVIDENCE BEHIND EACH IS NOT EQUAL, and this paragraph exists so that is never read as
 uniform. SmartRecruiters and Workday each cleared a bar of tens of thousands of real URLs
@@ -181,6 +183,35 @@ one the four inline-body providers carry: a jibe board response inlines every bo
 COMPANY DISCOVERY problem, and the entry point for that is the explicit `jibe:<careers host>`
 form. Nothing in this module has to change to lift it -- what would have to change first is a
 measured, tenant-invariant posting path, which does not exist today.
+
+AMAZON: NOT DEREFERENCEABLE, and this one fails on the SLUG rather than on the path — which
+makes it the only refusal here that a better path rule could not lift.
+
+THE SHAPE IS THE MOST UNIFORM IN THIS FILE. `job_path` was `/en/jobs/{id_icims}/{title-slug}`
+on 2,597 of 2,597 rows of a full live category (2026-09-07), and the id segment equalled the
+row's own `id_icims` — the value `providers/amazon.py` stores as `provider_posting_id` — on all
+2,597. So the REFERENCE is recoverable. Nothing else is.
+
+WHAT IS NOT RECOVERABLE IS THE BOARD. An amazon board is ONE JOB CATEGORY, and the category is
+a QUERY PARAMETER (`?category[]=Software Development`) that no posting URL carries: the path is
+locale, `jobs`, id, title and nothing more. `PostingTarget` is a triple, and both consumers use
+its `slug` to name the company row a hit converges onto (`lanes/jobapps.py`, `lanes/hiringcafe.py`
+via `upsert_lane_company`), so a slug guessed here would key the posting under a company row no
+board scan writes — minting a duplicate Amazon row per aggregator hit and converging nothing.
+There is no fix inside this module: the missing fact is in the posting PAYLOAD (`job_category`),
+and reading it needs a fetch, which this module does not do.
+
+`providers/amazon.py` therefore declares a `slug_from_path` that answers None for EVERY
+amazon.jobs URL, so `parse_board_target` raises `UnknownBoardURL` — carrying that provider's
+`slug_help`, which names the `amazon:<category>` form — before `parse_posting_target` looks at a
+path. The BASE class, not `UnregisteredBoardHost`: amazon.jobs IS a registered host, so the
+indeed and JSON-LD lanes must not file it as a tier-D vendor seed.
+
+THE COST IS THE SAME BOUNDED ONE THE INLINE-BODY PROVIDERS CARRY. An amazon listing row inlines
+`description`, `basic_qualifications` and `preferred_qualifications`, so a link to one of its
+postings is a COMPANY DISCOVERY problem and the entry point for that is `amazon:<category>`.
+What would have to change to lift this is not a rule here but the identity: a board keyed on
+something a posting URL actually names. Out-of-catalog stays a failure, never a guess.
 
 EIGHTFOLD: REFUSED as of 2026-09-06, on the SHAPE catalog's own arithmetic and on the evidence
 bar this module already set — not on ignorance of the shape. The shape is known and uniform:
