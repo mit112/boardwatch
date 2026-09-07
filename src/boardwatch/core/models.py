@@ -164,6 +164,20 @@ class BoardSnapshot(BaseModel):
     # `started_at` at the top of the APPLY, so those timestamps sum to seconds across a
     # ~57-minute run and time the DB write alone.
     fetch_seconds: float | None = None
+    # T74. Requests this board retried, and requests it ABANDONED, because the service answered
+    # a status its own provider classifies as a TRANSIENT THROTTLE rather than a refusal
+    # (eightfold's HTTP 405). Two counters, not one, because they answer different questions:
+    # `throttle_retries` is what the throttle COST the board in extra requests, and
+    # `throttle_exhausted` is the number of requests whose rows this run simply does not have.
+    # `None` means the provider does not instrument throttling at all, which is not the same
+    # claim as zero — the distinction `board_reported_total` already draws for coverage.
+    #
+    # A non-zero `throttle_exhausted` is what forces `partial` in the provider. It is TYPED for
+    # exactly that reason: a retry whose only trace is English inside `error` is a silent retry,
+    # and a silent retry masks a provider going permanently 405 — the monitoring failure the
+    # keystone invariant refuses (a thing that cannot fire must be visible, not invisible).
+    throttle_retries: int | None = None
+    throttle_exhausted: int | None = None
 
     @model_validator(mode="after")
     def _postings_empty_for_unchanged_and_failed(self) -> BoardSnapshot:

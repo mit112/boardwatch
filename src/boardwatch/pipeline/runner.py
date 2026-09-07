@@ -3030,6 +3030,13 @@ def _emit_funnel(
             # `boards_unchanged` above, the run log (`cli/run_cmd.py`) needs this too, and
             # `_emit_funnel` sees nothing `run_cmd` does not also see through `PipelineSummary`.
             empty_complete_guarded=tuple(summary.scan_empty_complete_guarded),
+            # T74. Read straight off `scan_summary`, like `boards_partial` above and unlike
+            # `empty_complete_guarded`: nothing outside this artifact consumes them, so routing
+            # them through `PipelineSummary` would add two fields with one reader apiece.
+            throttle_retries=0 if scan_summary is None else scan_summary.throttle_retries,
+            throttle_exhausted=(
+                () if scan_summary is None else tuple(scan_summary.throttle_exhausted)
+            ),
             # `None` when no scan ran, so the artifact distinguishes "not measured" from
             # "measured and empty" (D-330). A lane never reaches the timing seam and is
             # deliberately absent rather than present at zero.
