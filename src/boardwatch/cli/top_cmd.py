@@ -1205,7 +1205,7 @@ def top(
         # be used. T7 made the parsers raise rather than fail closed, and without this the
         # operator gets a pydantic traceback naming a line in a library instead of the column
         # of their own profile row that needs editing.
-        refuse_unusable_profile_row(exc)
+        refuse_unusable_profile_row(exc, output_console)
     if json_output:
         # Printed to stderr, BEFORE the JSON: a script whose ranked array came back empty would
         # otherwise get `[]` with no reason at all, which is indistinguishable from "no matches

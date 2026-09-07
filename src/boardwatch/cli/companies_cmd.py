@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import inspect
 
+from boardwatch.cli._json_out import emit_json
 from boardwatch.cli.context import build_context
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.clock import utcnow
@@ -168,10 +169,19 @@ def search(ctx: typer.Context, query: str) -> None:
 
 
 @companies_app.command("list")
-def list_(ctx: typer.Context) -> None:
+def list_(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the table."
+    ),
+) -> None:
+    """Every watched board with its source, health and last success."""
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         rows = list_watches(conn)
+    if as_json:
+        emit_json({"rows": [dict(row._mapping) for row in rows]})
+        return
     table = Table("provider", "slug", "source", "watched", "last_health", "last_ok_at")
     for r in rows:
         table.add_row(

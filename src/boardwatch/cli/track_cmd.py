@@ -7,6 +7,7 @@ there is no edit or delete verb.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import get_args
 
@@ -14,6 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli.context import build_context
 from boardwatch.store.application_history import (
     COLUMNS,
@@ -116,15 +118,23 @@ def status_(
 def list_(
     ctx: typer.Context,
     status: str | None = typer.Option(None, "--status", help="Show only this status."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the table."
+    ),
 ) -> None:
     """Show your funnel, most recently touched first."""
     if status is not None:
         _validate_status(status)
+    out = narrative(as_json, console)
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         rows = list_funnel(conn, status=status)
     if not rows:
-        console.print("nothing tracked yet. Add one with `boardwatch track add <posting id>`.")
+        out.print("nothing tracked yet. Add one with `boardwatch track add <posting id>`.")
+    if as_json:
+        emit_json({"rows": [asdict(row) for row in rows]})
+        return
+    if not rows:
         return
     table = Table(show_header=True, header_style="bold")
     table.add_column("App", style="dim")
@@ -232,14 +242,21 @@ def import_(
 def log(
     ctx: typer.Context,
     application_id: int = typer.Argument(..., help="Application id from `track list`."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the table."
+    ),
 ) -> None:
     """Show the immutable event ledger for one application."""
+    out = narrative(as_json, console)
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         if get_application(conn, application_id) is None:
-            console.print(f"no application {application_id}. Run `boardwatch track list`.")
+            out.print(f"no application {application_id}. Run `boardwatch track list`.")
             raise typer.Exit(code=1)
         events = get_application_events(conn, application_id)
+    if as_json:
+        emit_json({"rows": [dict(event._mapping) for event in events]})
+        return
     table = Table(show_header=True, header_style="bold")
     table.add_column("When")
     table.add_column("Event")

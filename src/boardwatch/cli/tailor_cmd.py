@@ -64,8 +64,11 @@ def init_cmd(
     ),
 ) -> None:
     """Scaffold an authored résumé YAML at {config_dir}/resume.yaml."""
-    app_ctx = build_context(ctx.obj, ensure=False)
-    path = _resume_path(app_ctx.settings)
+    # `load_settings`, not `build_context`: this needs `config_dir` and nothing else, and
+    # `get_engine` mkdirs the data dir, so `--data-dir /some/scratch` left a directory behind
+    # for a command whose whole subject is a file in the CONFIG dir.
+    settings = load_settings(data_dir=ctx.obj)
+    path = _resume_path(settings)
     if path.exists() and not force:
         console.print(f"{path} already exists; pass --force to overwrite")
         raise typer.Exit(code=1)
@@ -77,8 +80,9 @@ def init_cmd(
 @tailor_app.command("validate")
 def validate_cmd(ctx: typer.Context, resume_path: Path | None = RESUME_OPTION) -> None:
     """Load the authored résumé and report entry/bullet counts plus per-bullet skills."""
-    app_ctx = build_context(ctx.obj, ensure=False)
-    settings = app_ctx.settings
+    # `load_settings` for the same reason `init` uses it: this is the one `pure` command in the
+    # family and `build_context` would create the data dir it promises not to touch.
+    settings = load_settings(data_dir=ctx.obj)
     try:
         resume = load_resume(_resume_path(settings, resume_path))
     except ResumeLoadError as exc:

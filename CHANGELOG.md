@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch guide` is now generated from the command tree, and `boardwatch skill` is new.**
+  Every command prints its usage, its help, an `effect:` line saying what it touches (`pure`,
+  `reads store`, `writes store`, `writes files`, `network`, `llm`, `sends`, `interactive`) and a
+  short entry written for a coding agent driving the CLI; `boardwatch guide track add` prints one
+  part, `boardwatch guide store` one section. The migration half of each effect is derived from the
+  command's own source, and a test fails by name on any command without an entry or any entry
+  without a command. `boardwatch skill` prints the short SKILL.md text an agent saves, naming only
+  `guide`, `run` and `scan`; `guide --skill <n>` announces a stale saved copy.
+
+- **`--json` on the read commands.** `show`, `stats`, `track list`, `track log`, `companies list`,
+  `profile show`, `ledger show` and `config show` print one JSON object on standard output and
+  nothing else there; preflight notices, refusals and "nothing tracked yet" go to standard error,
+  so the output pipes. `show --json` carries the posting, the score components, the role, signal,
+  band and hard-filter verdicts, both eligibility audits and the body.
+
 - **The review page now carries the fixes from the 2026-09-05 audit.** Every timestamp the
   page shows is in your local zone (the API serialises UTC with an explicit offset, where before a
   zone-less string was read as local time). Undo after *Mark applied* now withdraws the application

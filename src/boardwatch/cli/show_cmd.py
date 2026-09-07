@@ -7,6 +7,7 @@ on-demand extraction runs for them ('displayed, never ranked', §3.6).
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import cast
 
 import typer
@@ -15,6 +16,7 @@ from rich.table import Table
 from sqlalchemy import select
 
 from boardwatch.cli._hints import print_next_step
+from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli._profile_row import refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
@@ -39,7 +41,7 @@ from boardwatch.store.tables import companies, extractions, postings
 console = Console()
 
 
-def _render_audit(audit: AuditView) -> None:
+def _render_audit(audit: AuditView, out: Console) -> None:
     """The persisted eligibility audit, evidence linked. Plain lines, no Rich markup, so a
     disposition or a sliced quote can never be read as a style tag.
 
@@ -64,37 +66,41 @@ def _render_audit(audit: AuditView) -> None:
         header = f"Eligibility: {audit.verdict}"
     if audit.is_historical:
         header += f" (historical, captured {audit.captured_at})"
-    console.print(header, markup=False)
+    out.print(header, markup=False)
     if not audit.catalog_version_matches:
-        console.print("catalog version no longer present — showing raw rule ids", markup=False)
+        out.print("catalog version no longer present — showing raw rule ids", markup=False)
     for req in audit.requirements:
-        console.print(f"  {req.disposition} · {req.requiredness}: {req.label}", markup=False)
+        out.print(f"  {req.disposition} · {req.requiredness}: {req.label}", markup=False)
         if req.quote:
-            console.print(f"      quote: {req.quote}", markup=False)
+            out.print(f"      quote: {req.quote}", markup=False)
         for sup in req.support:
-            console.print(f"      support: {sup.evidence_quote}", markup=False)
+            out.print(f"      support: {sup.evidence_quote}", markup=False)
 
 
-def _render_llm_audit(audit: AuditView) -> None:
+def _render_llm_audit(audit: AuditView, out: Console) -> None:
     """The opt-in LLM lane's read, dimmed and labeled advisory so it never reads as the
     authoritative verdict above it (D-P3-13). Plain lines with markup off, same as
     _render_audit, since the quote is arbitrary JD text that could contain '['."""
-    console.print(f"advisory (LLM): {audit.verdict}", style="dim", markup=False)
+    out.print(f"advisory (LLM): {audit.verdict}", style="dim", markup=False)
     for req in audit.requirements:
-        console.print(
+        out.print(
             f"  {req.disposition} · {req.requiredness}: {req.label}",
             style="dim",
             markup=False,
         )
         if req.quote:
-            console.print(f"      quote: {req.quote}", style="dim", markup=False)
+            out.print(f"      quote: {req.quote}", style="dim", markup=False)
 
 
 def show(
     ctx: typer.Context,
     posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the readout."
+    ),
 ) -> None:
     """Full posting with a live score-component breakdown."""
+    out = narrative(as_json, console)
     app_ctx = build_context(ctx.obj)
     engine, settings = app_ctx.engine, app_ctx.settings
     with engine.connect() as conn:
@@ -109,28 +115,49 @@ def show(
             .where(postings.c.id == posting_id)
         ).one_or_none()
     if row is None:
-        console.print(f"no posting with id {posting_id}")
+        out.print(f"no posting with id {posting_id}")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold]{row.title}[/bold] — {row.company_name}")
+    payload: dict[str, object] = {
+        "posting": {
+            "id": row.id,
+            "title": row.title,
+            "company": row.company_name,
+            "provider": row.provider,
+            "slug": row.slug,
+            "url": row.url,
+            "locations": list(row.locations_json or []),
+            "remote_policy": row.remote_policy,
+            "department": row.department,
+            "posted_at": row.posted_at,
+            "status": row.status,
+            "closed_at": row.closed_at,
+            "salary_min": row.salary_min,
+            "salary_max": row.salary_max,
+            "salary_currency": row.salary_currency,
+            "salary_period": row.salary_period,
+            "job_id": row.job_id,
+        }
+    }
+    out.print(f"[bold]{row.title}[/bold] — {row.company_name}")
     if row.url:
-        console.print(f"Link: {row.url}")
+        out.print(f"Link: {row.url}")
     if row.locations_json:
-        console.print(f"Locations: {', '.join(row.locations_json)} · {row.remote_policy}")
+        out.print(f"Locations: {', '.join(row.locations_json)} · {row.remote_policy}")
     if row.salary_min is not None or row.salary_max is not None:  # structured comp iff present
         comp = f"Compensation: {row.salary_min}–{row.salary_max}"
         extras = " ".join(str(part) for part in (row.salary_currency, row.salary_period) if part)
-        console.print(f"{comp} {extras}".rstrip())
+        out.print(f"{comp} {extras}".rstrip())
 
     if row.status == "closed":
-        console.print(f"[red]CLOSED[/red] — closed at {row.closed_at}")
-        console.print("closed — not ranked")
+        out.print(f"[red]CLOSED[/red] — closed at {row.closed_at}")
+        out.print("closed — not ranked")
     else:
-        run_preflight(engine, settings, console)
+        run_preflight(engine, settings, out)
         with engine.connect() as conn:
             profile_row = get_profile(conn)
             if profile_row is None:
-                console.print("no profile yet — run `boardwatch init` first")
+                out.print("no profile yet — run `boardwatch init` first")
                 raise typer.Exit(code=1)
             profile = profile_view_from_row(profile_row)
             version = load_taxonomy(settings.config_dir).version
@@ -155,7 +182,8 @@ def show(
         table.add_column("Weight")
         table.add_column("Weighted")
         table.add_column("Detail")
-        for entry in explain(score):
+        components = list(explain(score))
+        for entry in components:
             table.add_row(
                 entry.component,
                 "—" if entry.raw is None else f"{entry.raw:.2f}",
@@ -163,13 +191,17 @@ def show(
                 "—" if entry.weighted is None else f"{entry.weighted:.3f}",
                 entry.detail,
             )
-        console.print(table)
+        out.print(table)
+        payload["score"] = {
+            "total": score.total,
+            "components": [asdict(entry) for entry in components],
+        }
         # `show <id>` is the audit surface for the role gate: every posting says what the
         # gate made of its title, so a hidden row can always be looked up and checked.
         # Plain line, markup off — the matched text is arbitrary title text.
         role, role_reason = role_verdict(row.title)
         hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
-        console.print(f"Role: {role_reason}{hidden_note}", markup=False)
+        out.print(f"Role: {role_reason}{hidden_note}", markup=False)
         # Same contract for the zero-signal rule, and it needs no extra query: `extraction` was
         # already read above for the score, and it is the ROW (None when absent), not a
         # collapsed `or {}`, so this surface can tell "found nothing" from "never looked".
@@ -188,7 +220,7 @@ def show(
                 if zero_signal == "veto"
                 else " — the rule could not fire, so this row is NOT filtered"
             )
-            console.print(f"Signal: {zero_signal_reason}{signal_note}", markup=False)
+            out.print(f"Signal: {zero_signal_reason}{signal_note}", markup=False)
         # Same contract for the seniority gate: a row `top` hides as above_band must be
         # explainable by looking it up, or the quarantine is unauditable.
         leveling = load_leveling(settings.config_dir)
@@ -201,7 +233,7 @@ def show(
         band_note = (
             " — hidden from top unless --include-over-seniority" if band == "above_band" else ""
         )
-        console.print(f"Band: {band_reason}{band_note}", markup=False)
+        out.print(f"Band: {band_reason}{band_note}", markup=False)
         # And the same contract for the hard filters -- the LARGEST cut in the pipeline, and the
         # one this surface said nothing about. A row `top` drops for an excluded title or a
         # non-US location has to be explainable by looking it up, or the bucket is unauditable.
@@ -215,14 +247,20 @@ def show(
             if hard_veto is not None
             else "cleared every hard filter"
         )
-        console.print(f"Hard filter: {hard_line}", markup=False)
+        out.print(f"Hard filter: {hard_line}", markup=False)
+        payload["gates"] = {
+            "role": {"verdict": role, "reason": role_reason},
+            "signal": {"verdict": zero_signal, "reason": zero_signal_reason},
+            "band": {"verdict": band, "reason": band_reason},
+            "hard_filter": None if hard_veto is None else asdict(hard_veto),
+        }
 
     catalog = load_rules(settings.config_dir)
     with engine.connect() as conn:
         try:
             identity = current_identity(conn, settings)
         except ProfileRowInvalid as exc:
-            refuse_unusable_profile_row(exc)
+            refuse_unusable_profile_row(exc, out)
         profile_hash, rules_hash = identity if identity is not None else (None, None)
         audit = load_audit(
             conn,
@@ -233,9 +271,15 @@ def show(
         )
         llm_audit = load_llm_audit(conn, posting_id, catalog)
     if audit is not None:
-        _render_audit(audit)
+        _render_audit(audit, out)
     if llm_audit is not None:
-        _render_llm_audit(llm_audit)
+        _render_llm_audit(llm_audit, out)
+    payload["eligibility"] = None if audit is None else asdict(audit)
+    payload["llm_eligibility"] = None if llm_audit is None else asdict(llm_audit)
+    payload["body_text"] = row.body_text
+    if as_json:
+        emit_json(payload)
+        return
 
     console.print(row.body_text)
     print_next_step(console, "`boardwatch track add <#>` to record an application")

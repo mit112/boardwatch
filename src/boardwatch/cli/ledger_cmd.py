@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
 
+from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.ledger import is_live
@@ -39,12 +40,16 @@ def show(
     expired: bool = typer.Option(
         False, "--expired", help="Include lapsed and reopened rows, which no longer govern."
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the table."
+    ),
 ) -> None:
     """List the jobs the ledger is suppressing, and why.
 
     A suppression that cannot be listed is a leak rather than a filter, so this reads the bucket
     directly instead of inferring it from what `top` happened to hide.
     """
+    out = narrative(as_json, console)
     app_ctx = build_context(ctx.obj)
     now = utcnow()
     with app_ctx.engine.connect() as conn:
@@ -71,7 +76,30 @@ def show(
                 )
 
     if not rows:
-        console.print("ledger: nothing to show" if not stale else "ledger: no stale decisions")
+        out.print("ledger: nothing to show" if not stale else "ledger: no stale decisions")
+        if as_json:
+            emit_json({"rows": []})
+        return
+    if as_json:
+        emit_json(
+            {
+                "rows": [
+                    {
+                        "job_id": job_id,
+                        "disposition": row.disposition,
+                        "reason": row.reason,
+                        "governs": is_live(
+                            expires_at=row.expires_at, reopened_at=row.reopened_at, now=now
+                        ),
+                        "expires_at": row.expires_at,
+                        "reopened_at": row.reopened_at,
+                        "policy_version": row.policy_version,
+                        "postings": titles.get(job_id, []),
+                    }
+                    for job_id, row in sorted(rows.items())
+                ]
+            }
+        )
         return
 
     table = Table(show_header=True, header_style="bold")

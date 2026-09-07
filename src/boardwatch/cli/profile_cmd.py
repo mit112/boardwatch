@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from sqlalchemy import Engine
 
+from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli._profile_row import facts_of, policy_of
 from boardwatch.cli.context import build_context
 from boardwatch.cli.eligibility_cmd import (
@@ -112,14 +113,34 @@ def split_csv(raw: str) -> list[str]:
 
 
 @profile_app.command("show")
-def show(ctx: typer.Context) -> None:
+def show(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of text."
+    ),
+) -> None:
     """Render profile, recognized skills, and the taxonomy version used."""
+    out = narrative(as_json, console)
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         row = get_profile(conn)
     if row is None:
-        console.print("no profile yet — run `boardwatch init` first")
+        out.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1)
+    if as_json:
+        emit_json(
+            {
+                "text": row.text,
+                "skills": list(row.skills_json or []),
+                "taxonomy_version": row.taxonomy_version,
+                "target_titles": list(row.target_titles_json or []),
+                "exclude_titles": list(row.exclude_titles_json or []),
+                "target_seniority_band": row.target_seniority_band,
+                "locations": list(row.locations_json or []),
+                "remote_only": bool(row.remote_only),
+            }
+        )
+        return
     console.print(f"Profile text: {row.text[:120]}{'…' if len(row.text) > 120 else ''}")
     skills = row.skills_json or []
     console.print(f"Skills ({len(skills)}): {', '.join(skills) if skills else '—'}")
