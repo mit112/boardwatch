@@ -16,7 +16,7 @@ on the same identity the write used).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -114,6 +114,7 @@ def apply_gate_verdicts(
     policy: Policy,
     catalog: RulesCatalog,
     run_id: int | None = None,
+    shortlist_ranks: Mapping[int, int] | None = None,
 ) -> ApplyGateResult:
     """Run every verdict through `record_gate_verdict` against the posting's CURRENT
     OPEN version body (`versions`, re-read by the caller at apply time — this is the
@@ -125,6 +126,13 @@ def apply_gate_verdicts(
     profile row), never the labeling pass's all-blocker reference policy; writing
     under the wrong policy computes a different identity and the ranker's read
     silently no-ops.
+
+    `shortlist_ranks` maps posting id to its 1-based rank in the ranker's depth slate, and
+    is threaded straight to `record_gate_verdict` so the ledger row records where the lead
+    ranked. A posting missing from the map gets no rank rather than a fabricated one --
+    the CLI handshake has no ranker at all and passes `None`, and a `.get` miss under a
+    supplied map means the caller's own map disagreed with its verdict list, which is a
+    fact worth leaving visible rather than papering over with a sentinel.
     """
     # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most:
     # `record_gate_verdict` persists an ineligible-capable verdict with a span sliced out of
@@ -163,6 +171,7 @@ def apply_gate_verdicts(
             catalog=catalog,
             verdict=verdict,
             run_id=run_id,
+            shortlist_rank=None if shortlist_ranks is None else shortlist_ranks.get(posting_id),
         )
         judged += 1
         if persisted == "ineligible":
