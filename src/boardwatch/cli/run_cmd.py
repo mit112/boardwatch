@@ -120,6 +120,7 @@ def _shortlist_line(summary: PipelineSummary) -> str:
         f"{counts.hidden_over_seniority} over seniority, "
         f"{counts.hidden_duplicate} duplicate, "
         f"{counts.hidden_slate_cap} slate-capped{slate_standing}, "
+        f"{counts.hidden_cluster_cap} cluster-capped, "
         f"{counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
         f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}{unmeasured}"

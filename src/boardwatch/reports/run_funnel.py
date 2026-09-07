@@ -353,6 +353,20 @@ class ShortlistCounts:
     # them apart across runs: this rising while the parent holds means the queue is not being
     # drained, which the parent alone cannot show.
     slate_cap_standing: int = 0
+    # T73, the delivery CLUSTER cap: leads that cleared every filter and were inside the rank
+    # cutoff, displaced only because `top_cmd.CLUSTER_CAP_PER_KEY` leads for the same company,
+    # normalized title and canonical location already held slots on this run's slate. A genuine
+    # DROP and part of the identity above.
+    #
+    # **Never folded into `hidden_slate_cap`, and the difference is what the reader acts on.**
+    # That bucket says a BYTE-IDENTICAL JD is already in front of the owner, so the withheld
+    # copy is redundant; this one says only that one role at one place had taken its slots, and
+    # a third opening there may well be worth seeing. The ranker's exact-key cap `continue`s
+    # first, so a row caught by both is attributed to it and never counted twice. Not gated on
+    # identity completeness, so 0 here means 0, and no identity claim is made — the
+    # `company_title_location` SUPPRESSOR was refused (D-295); this defers instead, and the
+    # deferral ends on the next run because no `seen` row is written.
+    hidden_cluster_cap: int = 0
     # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
     # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
     # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
@@ -1363,6 +1377,17 @@ def build_run_funnel(
                             if shortlist.slate_cap_standing
                             else ""
                         )
+                    ),
+                ),
+                Drop(
+                    reason="hidden_cluster_cap",
+                    count=shortlist.hidden_cluster_cap,
+                    note=(
+                        "one company, title and location had already taken its allowance of "
+                        "this slate's slots (top_cmd.CLUSTER_CAP_PER_KEY) — a single opening "
+                        "written several ways, deferred so it cannot take the day. NOT a "
+                        "duplicate claim and nothing is dropped: no `seen` row is written, so "
+                        "it returns on the next run. Inspect with `top --include-cluster-cap`"
                     ),
                 ),
                 Drop(
