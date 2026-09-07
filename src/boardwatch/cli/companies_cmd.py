@@ -6,20 +6,21 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 import typer
 import yaml
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 from sqlalchemy import inspect
 
-from boardwatch.cli._json_out import emit_json
+from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli.context import build_context
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.clock import utcnow
-from boardwatch.core.politeness import Fetcher
-from boardwatch.core.settings import Settings
+from boardwatch.core.politeness import Fetcher, FetchFailure
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.github_lists import candidate_document, discover, fetch_listings, select
 from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED
@@ -28,6 +29,7 @@ from boardwatch.lanes.grnh_seeds import resolve as grnh_resolve
 from boardwatch.lanes.grnh_seeds import without_known as grnh_without_known
 from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.providers.registry import derive_employer_name
+from boardwatch.providers.workday import FacetBucket, FacetUnavailable, read_facet_catalog
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
@@ -51,6 +53,19 @@ console = Console()
 _UNPROVEN = frozenset({BoardHealth.DEAD, BoardHealth.ERROR, BoardHealth.UNREACHABLE})
 
 _VERIFY_HELP = "Probe each board before watching it; skip any that cannot be confirmed."
+
+# Only Workday can be sliced today: the `#group=Descriptor` fragment, the live catalog and the
+# descriptor -> opaque-id resolution all live in `providers/workday.py` and no sibling provider
+# has an equivalent. Named here rather than discovered by probing, so refusing a board of
+# another provider costs no request.
+_SLICEABLE_PROVIDERS = frozenset({"workday"})
+
+# The facet groups an operator would actually slice a board on, keyed on the parameter with its
+# non-alphanumerics dropped and its case folded. The parameter is the TENANT's own JSON key and
+# tenants spell one dimension differently -- measured live 2026-09-07, NVIDIA answers
+# `jobFamilyGroup` and T-Mobile answers `Job_Family_Group` for the same thing, so matching the
+# literal spelling would hide the only sliceable group one of them has.
+_SLICEABLE_GROUPS = frozenset({"jobfamilygroup", "jobfamily"})
 
 
 def _probe(
@@ -290,6 +305,177 @@ def list_(
             r.last_health or "—", str(r.last_ok_at or "—"),
         )
     console.print(table)
+
+
+class _Bucket(NamedTuple):
+    """One bucket as this command reports it. `target` is the whole point: descriptor case and
+    spacing are matched EXACTLY against the live catalog, so an operator who retypes a
+    descriptor by hand earns a board that fails every scan — it is spelt out per bucket rather
+    than left for the reader to assemble.
+
+    The opaque facet id is deliberately NOT here. It is a tenant-specific hash resolved from
+    the live board on every fetch and stored nowhere, and publishing it invites someone to
+    paste it into a slug, where it means nothing on any other tenant.
+    """
+
+    descriptor: str
+    postings: int | None
+    target: str
+
+
+class _Group(NamedTuple):
+    """One facet group: the parameter an operator types, whether the default view shows it,
+    and its buckets biggest-first."""
+
+    parameter: str
+    sliceable: bool
+    buckets: tuple[_Bucket, ...]
+
+
+def _group_is_sliceable(parameter: str) -> bool:
+    """Whether this facet group is one an operator would narrow a board to.
+
+    The bound the default view applies. Not cosmetic: one live tenant answers 1,091 `locations`
+    buckets and 51 `locationRegionStateProvince` buckets beside the ONE group that decides
+    which roles a slice holds (measured 2026-09-07), so printing every group by default buries
+    the only useful lines under four figures of noise. `--all` prints them.
+    """
+    return "".join(c for c in parameter if c.isalnum()).casefold() in _SLICEABLE_GROUPS
+
+
+def _buckets(provider: str, base_slug: str, parameter: str, buckets: list[FacetBucket]) -> \
+        tuple[_Bucket, ...]:
+    """One group's buckets, biggest first.
+
+    A bucket whose count the board did not state sorts LAST rather than as 0 — it is unknown,
+    not zero, and ranking it as zero would claim the board said something it did not. Ties
+    break on the descriptor so the order is total and the output is reproducible.
+    """
+    ordered = sorted(
+        buckets, key=lambda b: (b.postings is None, -(b.postings or 0), b.descriptor)
+    )
+    return tuple(
+        _Bucket(
+            descriptor=bucket.descriptor,
+            postings=bucket.postings,
+            target=f"{provider}:{base_slug}#{parameter}={bucket.descriptor}",
+        )
+        for bucket in ordered
+    )
+
+
+@companies_app.command("facets")
+def facets(
+    ctx: typer.Context,
+    target: str,
+    all_groups: bool = typer.Option(
+        False, "--all", help="Print every facet group, not only the ones worth slicing on."
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit one JSON object instead of the listing."
+    ),
+) -> None:
+    """Every facet bucket a board offers to slice on, with the number of postings in each.
+
+    READ-ONLY and store-free by construction: it never calls `build_context`, so it cannot
+    migrate a database, and it needs no watched board — the whole point is to inspect a board
+    BEFORE deciding to watch it. Its one cost is a single unfiltered request to the board.
+
+    It exists because a slice's descriptor is matched against the live catalog EXACTLY, and
+    until this command the only way to learn a spelling was to guess, watch the scan fail and
+    read the offered names out of the stored error. The counts are what make the answer
+    actionable: a blanket `#jobFamilyGroup=Technology` was wrong on 7 of 10 live boards probed
+    2026-09-07 — the group holding engineering was `Engineering`, `20 - SOFTWARE` or
+    `NGC - Engineering`, on one board the PARAMETER was `Job_Family_Group` instead, and on one
+    board no bucket held engineering at all, which is also a real answer.
+    """
+    out = narrative(as_json, console)
+    try:
+        provider, slug = parse_board_target(target)
+    except UnknownBoardURL as exc:
+        out.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    if provider not in _SLICEABLE_PROVIDERS:
+        # Named, and non-zero. An empty listing would read as "this board has no facets", a
+        # different and false claim: the provider has no slicing mechanism at all.
+        out.print(
+            f"[red]{provider} boards cannot be sliced by facet — only "
+            f"{', '.join(sorted(_SLICEABLE_PROVIDERS))} offers a facet catalog, so there is "
+            f"nothing to list for {provider}:{slug}.[/red]"
+        )
+        raise typer.Exit(code=1)
+    # load_settings, NOT build_context: this command must not open — and therefore must not
+    # migrate — the store to answer a question about a board it may never watch (D-279).
+    settings = load_settings(data_dir=ctx.obj)
+    try:
+        base_slug, catalog = read_facet_catalog(Fetcher(settings), slug)
+    except (FetchFailure, FacetUnavailable, ValueError) as exc:
+        out.print(f"[red]could not read {provider}:{slug}'s facet catalog: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    shown = [p for p in catalog if all_groups or _group_is_sliceable(p)]
+    # Sliceable groups first even under `--all`, so the group that decides which roles a slice
+    # holds is never printed below a `distance` or a province list.
+    shown.sort(key=lambda p: not _group_is_sliceable(p))
+    groups = [
+        _Group(p, _group_is_sliceable(p), _buckets(provider, base_slug, p, catalog[p]))
+        for p in shown
+    ]
+    withheld = [p for p in catalog if p not in shown]
+    if as_json:
+        emit_json(
+            {
+                "provider": provider,
+                "slug": base_slug,
+                "groups": [
+                    dict(group._asdict(), buckets=[b._asdict() for b in group.buckets])
+                    for group in groups
+                ],
+                "groups_withheld": withheld,
+            }
+        )
+        return
+    _print_facets(provider, base_slug, groups, withheld)
+
+
+def _print_facets(
+    provider: str, base_slug: str, groups: list[_Group], withheld: list[str]
+) -> None:
+    """The human rendering.
+
+    Every tenant-derived string goes out with rich's markup and highlighting OFF and soft wrap
+    ON, or is escaped — for three separate reasons that each break the one thing this command
+    is for. A descriptor containing `[` is read as markup (the escape `companies discover`
+    already documents), and rich word-wraps AND crops at the console width, either of which
+    turns a copy-pasteable slug into one that is not.
+    """
+    console.print(
+        f"{provider}:{base_slug} — {len(groups) + len(withheld)} facet group(s), "
+        f"{len(groups)} shown."
+    )
+    for group in groups:
+        counted = [b.postings for b in group.buckets if b.postings is not None]
+        stated = f", {sum(counted)} postings" if len(counted) == len(group.buckets) else ""
+        console.print(
+            f"\n[bold]{escape(group.parameter)}[/bold] — "
+            f"{len(group.buckets)} bucket(s){stated}",
+            highlight=False,
+        )
+        for bucket in group.buckets:
+            console.print(
+                f"  {'—' if bucket.postings is None else bucket.postings:>7}  {bucket.target}",
+                markup=False, highlight=False, soft_wrap=True,
+            )
+    if not groups:
+        console.print(
+            "\nNothing worth slicing: this board offers no job-family or job-category facet "
+            "group, so a slice could only narrow it by location or time type."
+        )
+    if withheld:
+        console.print(
+            f"\n{len(withheld)} group(s) not shown ({', '.join(withheld)}); --all prints them.",
+            markup=False, highlight=False, soft_wrap=True,
+        )
 
 
 @companies_app.command("export")

@@ -350,6 +350,17 @@ A Workday slug may end in `#<facetGroup>=<Descriptor>` (for example
 bucket instead of the whole board, which is the only way past Workday's 2,000-result ceiling; the
 descriptor must be one the board's own facets list, or every scan of it fails.""",
     ),
+    "companies facets": Entry(
+        ("network",),
+        """Every facet bucket a Workday board offers to slice on, biggest first, each with the
+number of postings in it and the exact `provider:slug#group=Descriptor` to copy. Takes `--json`
+and `--all` (the default hides the location and time-type groups — one live tenant answers 1,091
+location buckets). It needs no watched board and opens no store at all, so it is safe on a store
+you must not change; it makes ONE unfiltered request, which is why it is not `pure`. Only
+Workday can be sliced: any other provider exits non-zero rather than printing an empty table.
+Read it BEFORE `companies add` on a big Workday board — a descriptor is matched EXACTLY, and a
+misspelt one becomes a board that fails every scan.""",
+    ),
     "companies remove": Entry(("writes store",), "Stops watching one board. Its postings stay."),
     "companies names": Entry(
         ("reads store", "writes store"),

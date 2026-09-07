@@ -61,7 +61,10 @@ Six measured properties drive this design. Each has a regression test; none shou
 
    A named group or descriptor that is not in the live catalog is a board-level ERROR, NEVER
    an unfiltered fetch. Falling back would restore the blind 2,000-row listing while the
-   operator believed the board was sliced — the same trap as an ignored facet parameter.
+   operator believed the board was sliced — the same trap as an ignored facet parameter. Which
+   makes the spelling the operator's whole problem, so `boardwatch companies facets <board>`
+   prints the live catalog — every group, every bucket, its posting count and the slug that
+   would fetch it — with no store and no watch needed.
 
 Detail fetches are bounded and skip known postings (the SmartRecruiters pattern), so
 snapshot.postings is the newly-fetched subset and snapshot.listed_ids carries the FULL live
@@ -317,28 +320,74 @@ class FacetUnavailable(Exception):
     """
 
 
-def _facet_catalog(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
-    """{facetParameter: {value descriptor: OPAQUE value id}} from an offset=0 payload.
+class FacetBucket(NamedTuple):
+    """One bucket of a board's live facet catalog: the descriptor a slug names, the tenant's
+    OPAQUE id for it, and how many postings it holds.
+
+    `postings` is the wire's `count`, renamed: `count` is `tuple.count` and a NamedTuple cannot
+    shadow it. `int | None` rather than `int` — every bucket measured live carries a count (two
+    tenants, 2026-09-07), but a live payload is not schema-validated, and `None` records a
+    bucket that answered without a usable one instead of inventing a 0 the board never claimed,
+    the same distinction `_uncapped_total` draws between "recovered" and "the server refused".
+    """
+
+    descriptor: str
+    facet_id: str
+    postings: int | None
+
+
+def facet_buckets(payload: dict[str, Any]) -> dict[str, list[FacetBucket]]:
+    """{facetParameter: [FacetBucket, ...]} from an offset=0 payload, in the board's own order.
+
+    THE one walk of the facets block. `_facet_catalog` is a projection of this, so the slicing
+    path and `companies facets` cannot disagree about the nesting — which is the part that is
+    load-bearing (see `_facet_catalog`).
+
+    A group with no usable bucket of its own gets NO key here, which is what keeps
+    `_resolve_facet`'s two failure messages distinct: an absent key is "that group is not
+    offered by this board", and an empty one would claim the tenant offers a group with
+    nothing in it. Live `locationMainGroup` is exactly that case — three nested groups, no
+    bucket of its own — so this is not a hypothetical.
 
     Walked RECURSIVELY, because a facet group can nest another GROUP inside its `values`
-    instead of buckets: live Citi 2026-09-07 answers a `locationMainGroup` whose single value
-    is itself a group (`facetParameter: "locations"`) carrying the buckets. A top-level-only
-    read reports `locations` absent, and an absent group is a board-level ERROR here — so that
-    reading would refuse a slice the tenant really offers. The planning session's first probe
-    made the same class of mistake in the other direction by reading one group and concluding
-    three boards had no engineering roles.
+    instead of buckets: live tenants answer a `locationMainGroup` whose values are themselves
+    groups (`facetParameter: "locations"`, `"locationCountry"`,
+    `"locationRegionStateProvince"`) carrying the buckets. A top-level-only read reports those
+    absent, and an absent group is a board-level ERROR here — so that reading would refuse a
+    slice the tenant really offers. Re-measured 2026-09-07 on two further tenants: it nests
+    THREE such groups, not the one the first probe saw. The planning session's first probe made
+    the same class of mistake in the other direction by reading one group and concluding three
+    boards had no engineering roles.
 
     Ragged shapes are skipped rather than raised on, for the reason `_facet_sum` records: a
     live payload is not schema-validated and one odd entry must not fail the whole board.
     """
-    catalog: dict[str, dict[str, str]] = {}
+    catalog: dict[str, list[FacetBucket]] = {}
     raw = payload.get("facets")
     for group in raw if isinstance(raw, list) else []:
         _collect_facet_group(group, catalog)
     return catalog
 
 
-def _collect_facet_group(group: Any, catalog: dict[str, dict[str, str]]) -> None:
+def _facet_catalog(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """{facetParameter: {value descriptor: OPAQUE value id}} — the view `_resolve_facet` and
+    `healthcheck` resolve a slug's descriptor against.
+
+    A PROJECTION of `facet_buckets`, not a second walk. The count is dropped here rather than
+    never read, because the slicing path has no use for it and `companies facets` does; two
+    independent walks would be two chances to disagree about the nesting, and a walk that
+    misses the nesting refuses a slice the tenant really offers.
+
+    Duplicate descriptors inside one group resolve LAST-WINS, exactly as the single-pass
+    version did — the dict comprehension consumes the buckets in the board's own order.
+    """
+    return {
+        parameter: {bucket.descriptor: bucket.facet_id for bucket in buckets}
+        for parameter, buckets in facet_buckets(payload).items()
+    }
+
+
+def _collect_facet_group(group: Any, catalog: dict[str, list[FacetBucket]]) -> None:
     if not isinstance(group, dict):
         return
     values = group.get("values")
@@ -355,7 +404,18 @@ def _collect_facet_group(group: Any, catalog: dict[str, dict[str, str]]) -> None
         if not (isinstance(parameter, str) and parameter):
             continue
         if isinstance(descriptor, str) and descriptor and isinstance(facet_id, str) and facet_id:
-            catalog.setdefault(parameter, {})[descriptor] = facet_id
+            catalog.setdefault(parameter, []).append(
+                FacetBucket(descriptor, facet_id, _posting_count(value.get("count")))
+            )
+
+
+def _posting_count(raw: Any) -> int | None:
+    """A bucket's wire `count`, or None when it is absent, null or not a number. `bool` is
+    excluded for the reason `_facet_sum` excludes it: `True` is an `int` and would read as 1.
+    """
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return int(raw)
+    return None
 
 
 def _named(items: list[str], limit: int = 6) -> str:
@@ -403,6 +463,36 @@ def _resolve_facet(fetcher: Fetcher, url: str, facet: FacetSlice) -> str:
             f"that group offers {_named(sorted(values))}"
         )
     return facet_id
+
+
+def read_facet_catalog(
+    fetcher: Fetcher, slug: str
+) -> tuple[str, dict[str, list[FacetBucket]]]:
+    """(the board's slug with any slice fragment dropped, its live facet catalog with counts).
+
+    The read-only half of `_resolve_facet`, for an operator asking what a board offers BEFORE
+    deciding to watch it — which is why it takes a slug rather than a stored board, opens no
+    store and returns rather than raising on an empty catalog. It makes exactly ONE request,
+    the same unfiltered offset=0 POST `_resolve_facet` makes, because `facets` is populated
+    only there (trap 2); the page's `jobPostings` rows are discarded and nothing is persisted.
+
+    No validators are sent, for the reason `_resolve_facet` records: a 304 would decide
+    "unchanged" from a request we never made, and the CXS POST serves no validators anyway.
+
+    An incoming slug MAY already name a slice; the fragment is DROPPED rather than refused. The
+    catalog is a property of the board, and a filtered response re-aggregates its facets over
+    the slice — so answering a sliced slug with the slice's own counts would tell an operator
+    comparing buckets the wrong numbers.
+
+    Raises ValueError on a malformed slug and FacetUnavailable when the board answers no
+    readable payload; FetchFailure propagates to the caller.
+    """
+    host, tenant, site, _ = split_target(slug)
+    page = fetcher.post_json(_search_url(host, tenant, site), _search_body(0))
+    payload = _payload(page.content)
+    if payload is None:
+        raise FacetUnavailable("facet catalog unreadable: the board did not answer JSON")
+    return "/".join((host, tenant, site)), facet_buckets(payload)
 
 
 def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
