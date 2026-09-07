@@ -237,7 +237,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 13386 | Session — 2026-09-06 (later) · the five owed items executed: links job loaded, `indeed.tier1` 25, 18 applications imported after a 566-job url fan-out was refused, the store front-end titles vetoed (74 postings, verdict-neutral on software), 27 of 53 review holds clear a blind two-pass triage |
 | METRICS.md | 13508 | Session — 2026-09-07 (early) · run 10 launched by hand and READ: the first `gate.depth = 150` run reconciles, but tier-1 conversion at depth is 56.6% not 85%; `amazon` and Workday facet slicing merged; Northrop found watched twice with unsuppressable duplicates |
 | METRICS.md | 13591 | Session — 2026-09-07 (early, cont.) · run 11, the 06:00 tick and the first COUNTABLE one: `ok` in 43 min, both new boards enumerate fully live, and the judge cost at depth AMORTIZES from 145 to 62 |
-| METRICS.md | 13639 | Session — 2026-09-07 (mid) · the five ruled calls EXECUTED: the PDF drop explained as a first-fill artifact, the shortlist rank instrumented, Workday slicing applied live for 16,183 closes and zero censored boards, Northrop dropped, and four executors merged |
+| METRICS.md | 13639 | Session — 2026-09-07 (mid) · the five ruled calls EXECUTED: the PDF drop explained as a first-fill artifact, the shortlist rank instrumented, Workday slicing applied live for 15,640 closes and zero censored boards, Northrop dropped, and four executors merged |
 
 ---
 
@@ -13636,7 +13636,7 @@ postings carry "fellow"; the seniority-sense bucket is contaminated by Scale AI'
 "STEM/Finance/Medical Fellow — Human Frontier Collective" programs, so the map would exclude exactly
 the target class to fix one AMD lead already ranked #39 of 40).
 
-## Session — 2026-09-07 (mid) · the five ruled calls EXECUTED: the PDF drop explained as a first-fill artifact, the shortlist rank instrumented, Workday slicing applied live for 16,183 closes and zero censored boards, Northrop dropped, and four executors merged
+## Session — 2026-09-07 (mid) · the five ruled calls EXECUTED: the PDF drop explained as a first-fill artifact, the shortlist rank instrumented, Workday slicing applied live for 15,640 closes and zero censored boards, Northrop dropped, and four executors merged
 
 **Item 0 — the PDF drop 21 -> 5, CLOSED as benign.**
 
@@ -13675,16 +13675,28 @@ first, read-only, one unfiltered POST each at >= 1 req/s.
 | Leidos | `jobFamilyGroup=Engineering` | 873 / 873 | 0 | **1,220** | +82 |
 | Leidos | `jobFamilyGroup=Information Technology` | 558 / 558 | 0 | 0 | +558 |
 | Northrop (workday) | `jobFamilyGroup=NGC - Non NGJF` (drain) | 91 / 91 | 0 | **2,938** | +19 |
-| Abbott | **not sliced** — offers no technology group (best is `Research & Development` 155) | — | — | — | — |
+| Abbott | **not sliced** — biggest technology group is `Information Technology` at 61 of 2,589 | — | — | — | — |
 
-**Totals: 16,183 postings closed · censored boards 10 -> 0 · open postings ~150,000 -> 137,810 ·
+**Correction, found by running the T75 command after the fact:** the mid-session probe printed only
+each catalog's TOP 8 buckets, so Abbott was recorded as offering no technology group. `boardwatch
+companies facets` shows all 17 of its `jobFamilyGroup` buckets and one of them is `Information
+Technology` at **61**. The decision not to slice Abbott still holds — 61 kept against ~1,900 closed —
+but the reason given for it was wrong. The command caught an error in the hand-rolled probe that
+motivated it, on its first live invocation.
+
+**Attribution, read from `posting_events` by run rather than from `closed_at`:** runs 13, 17, 18,
+19, 30, 32, 35, 40 and 42 (the slicing scans) closed **15,640**. `closed_at >= 2026-09-07` reads
+**16,183** because run 10 closed 223 and run 11 closed 320 before any of this work — a date filter
+attributes those to the slicing and it must not.
+
+**Totals: 15,640 postings closed BY THE SLICING · censored boards 10 -> 0 · open postings ~150,000 -> 137,810 ·
 fleet 341 watched.** PNC's Technology slice was tested and REVERTED once (162 of a true 3,743)
 before the owner ruled on the measured table, then re-applied under that ruling.
 
 **Why the blanket descriptor would have failed.** Measured group sizes: Walmart `Technology` 939 /
 `Data Analytics` 211 of 21,230; Target `Technology` 101 of 12,312; PNC 162 of 3,743; NVIDIA
 `Engineering` 1,756 of 2,684; Thales `20 - SOFTWARE` 369 / `18 - SYSTEM` 343 / `21 - ENG` 211 of
-2,630; Abbott none of 2,589; T-Mobile `Information Technology - Group` **30** under the parameter
+2,630; Abbott `Information Technology` 61 of 2,589; T-Mobile `Information Technology - Group` **30** under the parameter
 `Job_Family_Group`; Leidos `Engineering` 873 + `Information Technology` 557 of 2,191; Northrop
 `NGC - Engineering` 2,182 of 3,791.
 

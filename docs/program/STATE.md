@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### Session 2026-09-07 (mid; ALL FIVE RULED CALLS EXECUTED — 16,183 postings closed, zero censored boards, four executors merged): **D-494.**
+### Session 2026-09-07 (mid; ALL FIVE RULED CALLS EXECUTED — 15,640 postings closed, zero censored boards, four executors merged): **D-494.**
 
 **The PDF drop 21 -> 5 is BENIGN and the question is closed.** The PDF stage converted 100% on both
 runs (`21 in, 21 out`; `5 in, 5 out`; `no_pdf: 0`). The whole delta is the apply/review lane split
@@ -31,13 +31,12 @@ first seen on 09-07 — run 10 discovered them itself. It was the first-fill of 
 09-06 plus `amazon` and Jane Street. **~5 PDFs a run is the STEADY STATE; the apply lane is bounded
 by the arrival rate of new `eligible`+`swe`+in-band postings, not by a backlog.**
 
-**Fleet: 16,183 postings CLOSED and censored boards 10 -> 0.** Workday facet slicing is applied
+**Fleet: 15,640 postings CLOSED by the slicing and censored boards 10 -> 0.** Workday facet slicing is applied
 live to 13 slices across nine boards; open postings ~150,000 -> **137,810**; ~2,650 postings the
 blind 2,000-walks had never seen. Per-board closes: Northrop 2,938 · Walmart 2,266 · Target 2,051 ·
 T-Mobile 1,988 · PNC 1,897 · Citi 1,529 · Leidos 1,220 · BAH 1,008 · NVIDIA 743. **The ruling's
 premise did not survive measurement:** `jobFamilyGroup=Technology` is the right descriptor for only
-**3 of the 10** boards — T-Mobile uses a different PARAMETER (`Job_Family_Group`) and Abbott offers
-no technology group at all, so Abbott is deliberately not sliced. **Northrop's workday row lost the
+**3 of the 10** boards — T-Mobile uses a different PARAMETER (`Job_Family_Group`) and Abbott's biggest technology group is only 61 of 2,589, so Abbott is deliberately not sliced. **Northrop's workday row lost the
 comparison** (3,000 of 3,791 on a page cap; its Engineering group is 2,182, above the 2,000 clamp,
 so slicing does not fix it) and was DRAINED to 91 then unwatched — 2,938 closed through the absence
 rule first, leaving 91 unclosable instead of 3,010. Eightfold keeps 3,424. **Fleet 341 watched.**
