@@ -1,0 +1,43 @@
+{
+  "status": 200,
+  "error": {
+    "message": "",
+    "body": ""
+  },
+  "data": {
+    "id": 1000000000001,
+    "displayJobId": "AC-0001",
+    "name": "Senior Platform Engineer",
+    "locations": [
+      "Remote",
+      "Springfield - Remote, Acmeland"
+    ],
+    "standardizedLocations": [
+      "REMOTE",
+      "SPRINGFIELD - REMOTE, ACMELAND"
+    ],
+    "location": "Remote",
+    "postedTs": 1788652800,
+    "creationTs": 1788566400,
+    "stars": 0,
+    "isHot": 0,
+    "department": "Platform Engineering",
+    "workLocationOption": "remote_local",
+    "locationFlexibility": null,
+    "atsJobId": "AC-0001",
+    "positionUrl": "/careers/job/1000000000001",
+    "publicUrl": "https://careers.acme.test/careers/job/1000000000001",
+    "jobDescription": "<h2><b>Company:</b></h2>Acme Corp<p>We are hiring a Senior Platform Engineer to build and operate the deployment tooling used by every team at Acme.</p><h3>Responsibilities</h3><ul><li>Own the build pipeline.</li><li>Mentor other engineers.</li></ul>",
+    "jdHighlight": [],
+    "positionExtraDetails": {
+      "videos": []
+    },
+    "positionUserActions": {
+      "isSaved": false,
+      "applyAction": {
+        "status": "log_in"
+      }
+    }
+  },
+  "metadata": null
+}

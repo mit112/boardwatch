@@ -1,21 +1,22 @@
 r"""URL -> posting-reference dereferencing (lane groundwork Part 2). No fetching here.
 
 core.board_urls.parse_board_target turns a pasted board URL into (provider, slug) and
-throws the rest of the path away. For four of the seven providers that is fine: greenhouse,
+throws the rest of the path away. For four of the eight providers that is fine: greenhouse,
 lever, ashby and workable all inline every body in the board response, so a link to one
 of their postings is a COMPANY DISCOVERY problem — parse_board_target -> upsert_watch ->
 run_scan already turns it into that company's whole board with no new code. SmartRecruiters,
-Workday and Oracle HCM are different: they are the three providers that define a `_detail_url`
-method, because their board list omits the body and a second per-posting request is
-needed to get one. Dereferencing a posting LINK is therefore only necessary for those three
-— and ALL THREE are now dereferenced (see the SmartRecruiters, Workday and Oracle HCM sections
-below). All seven of those providers resolve. Across every one, a recovered
-`provider_posting_id` lets a later aggregator-sourced posting converge with a board scan
-through `UNIQUE(company_id, provider_posting_id)` instead of duplicating it. TWO registered
-providers resolve nothing here and never reach the catalog — jibe and phenom, each on the
-employer's own unbounded hostname, each with its own section below. phenom also needs a second
-per-posting request, but it is a POST widget rather than a `_detail_url`, so it is not one of
-the three above.
+Workday, Oracle HCM and Eightfold are different: they are the four providers that define a
+`_detail_url` method, because their board list omits the body and a second per-posting request
+is needed to get one. Dereferencing a posting LINK is therefore only necessary for those four
+— and THREE of the four are dereferenced (see the SmartRecruiters, Workday and Oracle HCM
+sections below); EIGHTFOLD IS REFUSED, deliberately, and its own section below says on what
+evidence that refusal rests and what would lift it. Seven of the eight providers that reach
+the catalog resolve. Across every one that does, a recovered `provider_posting_id` lets a later
+aggregator-sourced posting converge with a board scan through
+`UNIQUE(company_id, provider_posting_id)` instead of duplicating it. TWO registered providers
+resolve nothing here and never reach the catalog — jibe and phenom, each on the employer's own
+unbounded hostname, each with its own section below. phenom also needs a second per-posting
+request, but it is a POST widget rather than a `_detail_url`, so it is not one of the four above.
 
 THE EVIDENCE BEHIND EACH IS NOT EQUAL, and this paragraph exists so that is never read as
 uniform. SmartRecruiters and Workday each cleared a bar of tens of thousands of real URLs
@@ -180,6 +181,38 @@ one the four inline-body providers carry: a jibe board response inlines every bo
 COMPANY DISCOVERY problem, and the entry point for that is the explicit `jibe:<careers host>`
 form. Nothing in this module has to change to lift it -- what would have to change first is a
 measured, tenant-invariant posting path, which does not exist today.
+
+EIGHTFOLD: REFUSED as of 2026-09-06, on the SHAPE catalog's own arithmetic and on the evidence
+bar this module already set — not on ignorance of the shape. The shape is known and uniform:
+every position row on all four tenants probed carries `positionUrl` as `/careers/job/{digits}`
+(40 rows, one shape, zero exceptions), and the detail payload's `publicUrl` is that path under
+the tenant host.
+
+TWO SEPARATE THINGS BLOCK A CATALOG ROW, and only the first is mechanical. (1) `_POSTING_PATH_
+SHAPES` encodes `{slug}/{*fixed}/{ref}` and its length test is `len(shape) + 2`, which assumes
+the SLUG IS THE FIRST PATH SEGMENT. An Eightfold slug is the HOST (`providers/eightfold.py`),
+so a posting path is `careers/job/{ref}` — three segments, no slug among them — and any entry
+here would either be off by one or quietly redefine what the catalog's rows mean for the five
+providers already in it. Eightfold would need its own branch, as Workday and Oracle HCM have.
+(2) THE EVIDENCE IS THE WRONG KIND. What is measured is the SHAPE OF A FIELD IN A LIVE PAYLOAD,
+sampled once.
+SmartRecruiters was refused here for years on exactly that basis and was lifted only by 3,041
+real posting URLs whose extracted reference equalled the stored `provider_posting_id` 3,041
+times out of 3,041; Workday by 93,044. boardwatch watches ZERO Eightfold boards today, so that
+convergence count is necessarily zero and cannot be raised by looking harder at the payload.
+
+WHAT WOULD LIFT IT, stated so the next reader does not re-derive this paragraph: watch some
+Eightfold boards, scan them, and check the extracted reference against the stored
+`provider_posting_id` on real rows. Until then an Eightfold posting URL raises
+`UnresolvablePostingURL` from the "no evidenced way" branch, which is the correct outcome and
+not an omission.
+
+**THE REFUSAL IS ALSO NARROWER THAN IT LOOKS, and that is worth knowing before sizing the
+work.** Only a `*.eightfold.ai` URL reaches this function at all. An Eightfold tenant on the
+employer's own domain (`careers.{employer}.test`) raises `UnregisteredBoardHost` from
+`parse_board_target` one step earlier, because nothing distinguishes it from the employer's own
+careers site — see the `board_hosts` comment in `providers/eightfold.py`. So lifting this
+refusal buys convergence on the vendor-hosted minority only.
 
 TWO KNOWN LIMITS, both measured, neither a guess. (1) `myworkdaysite.com` keeps raising
 `UnknownBoardURL` from `parse_board_target`, and adding the host suffix would NOT help: the

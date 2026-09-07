@@ -1,0 +1,129 @@
+{
+  "status": 200,
+  "error": {
+    "message": "",
+    "body": ""
+  },
+  "data": {
+    "positions": [
+      {
+        "id": 1000000000001,
+        "displayJobId": "AC-0001",
+        "name": "Senior Platform Engineer",
+        "locations": [
+          "Remote",
+          "Springfield - Remote, Acmeland"
+        ],
+        "standardizedLocations": [
+          "REMOTE",
+          "SPRINGFIELD - REMOTE, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Platform Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "remote_local",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0001",
+        "positionUrl": "/careers/job/1000000000001"
+      },
+      {
+        "id": 1000000000002,
+        "displayJobId": "AC-0002",
+        "name": "Staff Hardware Engineer",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Hardware Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "hybrid",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0002",
+        "positionUrl": "/careers/job/1000000000002"
+      },
+      {
+        "id": 1000000000003,
+        "displayJobId": "AC-0003",
+        "name": "Technical Writer",
+        "locations": [
+          "Shelbyville, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SHELBYVILLE, ST, ACMELAND"
+        ],
+        "postedTs": 1788480000,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Documentation",
+        "creationTs": 1788393600,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0003",
+        "positionUrl": "/careers/job/1000000000003"
+      },
+      {
+        "id": 1000000000004,
+        "displayJobId": "AC-0004",
+        "name": "Field Service Technician",
+        "locations": [
+          "Ogdenville, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "OGDENVILLE, ST, ACMELAND"
+        ],
+        "postedTs": 1788393600,
+        "solrScore": null,
+        "stars": 0,
+        "department": null,
+        "creationTs": 1788307200,
+        "isHot": 0,
+        "workLocationOption": "flex_hybrid_v2",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0004",
+        "positionUrl": "/careers/job/1000000000004"
+      }
+    ],
+    "filterDef": {
+      "facets": {
+        "locations": [
+          [
+            "Current Location",
+            999998
+          ],
+          [
+            "Springfield, ST, Acmeland",
+            2
+          ]
+        ]
+      },
+      "smartFilters": [
+        "distance"
+      ],
+      "allFilters": [
+        "job_family",
+        "skills",
+        "seniority"
+      ]
+    },
+    "count": 4,
+    "sortBy": "timestamp",
+    "appliedFilters": {},
+    "debug": null,
+    "savedSearchMetadata": null,
+    "resultsMetaData": {
+      "usedFuzzSearch": false,
+      "mocTitle": null
+    }
+  },
+  "metadata": null
+}

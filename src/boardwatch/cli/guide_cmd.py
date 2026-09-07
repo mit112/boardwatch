@@ -109,7 +109,8 @@ SECTIONS: tuple[tuple[str, str], ...] = (
         "overview",
         """boardwatch is a job radar the person you are working with runs on their own machine.
 It fetches postings from employers' official ATS APIs (Greenhouse, Lever, Ashby, Workday,
-SmartRecruiters, Workable, iCIMS Jibe career sites, Oracle HCM) and from discovery lanes,
+SmartRecruiters, Workable, iCIMS Jibe career sites, Oracle HCM, Eightfold) and from discovery
+lanes,
 judges every posting against the person's profile with rules that quote the exact span of the
 posting they fired on, ranks what clears,
 and hands them a shortlist with a tailored one-page résumé PDF per lead. All of it stays local.

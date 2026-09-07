@@ -102,6 +102,12 @@ PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # listing URL. It is listed because PROVIDER_PRIORITY must cover the registry: an unranked
     # provider raises UnrankedProvider rather than being sorted quietly to the end.
     ("smartrecruiters", "oraclehcm", "phenom"),
+    # Behind even that tier, and not for want of measurement: eightfold is the only provider that
+    # cannot address its own API until an HTML career page has been fetched and parsed, and its
+    # listing page size is FIXED by the server at 10 (a 1,958-posting board measured live is 196
+    # list requests), before the same per-posting detail GET the tier above pays. Unwatched too,
+    # so it inherits smartrecruiters' reasoning and goes behind it.
+    ("eightfold",),
 )
 
 PROVIDER_PRIORITY: tuple[str, ...] = tuple(

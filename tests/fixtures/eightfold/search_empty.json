@@ -1,0 +1,31 @@
+{
+  "status": 200,
+  "error": {
+    "message": "",
+    "body": ""
+  },
+  "data": {
+    "positions": [],
+    "filterDef": {
+      "facets": {},
+      "smartFilters": [
+        "distance"
+      ],
+      "allFilters": [
+        "job_family",
+        "skills",
+        "seniority"
+      ]
+    },
+    "count": 0,
+    "sortBy": "timestamp",
+    "appliedFilters": {},
+    "debug": null,
+    "savedSearchMetadata": null,
+    "resultsMetaData": {
+      "usedFuzzSearch": false,
+      "mocTitle": null
+    }
+  },
+  "metadata": null
+}
