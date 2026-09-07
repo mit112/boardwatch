@@ -201,7 +201,19 @@ def names(
         (row, derive_employer_name(row.provider, row.slug))
         for row in rows
     ]
-    changing = [(row, derived) for row, derived in planned if derived and derived != row.name]
+    # CASEFOLDED, and that is the whole guard on this command's own promise above that a row
+    # already carrying an employer name is not touched. `companies_named_by_slug` matches
+    # `name == slug` case-INSENSITIVELY, so a registry row whose catalog name differs from its
+    # slug only in capitalisation (`OpenAI`/`openai`, `SpaceX`/`spacex`, `AbbVie`/`abbvie`) is
+    # in the population — and `derive_employer_name` cannot re-capitalise, so an exact `!=`
+    # planned to REWRITE 100 correct names down to their lowercase slug. `companies.name`
+    # reaches the delivered artifact and the résumé filename, so that is a visible regression,
+    # not a cosmetic one. Differing only by case means the name is already the employer's.
+    changing = [
+        (row, derived)
+        for row, derived in planned
+        if derived and derived.casefold() != row.name.casefold()
+    ]
     undecidable = [row for row, derived in planned if derived is None]
     unchanged = len(planned) - len(changing) - len(undecidable)
 
@@ -212,7 +224,7 @@ def names(
     for row, derived in planned:
         if derived is None:
             action = "left as is (not derivable)"
-        elif derived == row.name:
+        elif derived.casefold() == row.name.casefold():
             action = "already correct"
         else:
             action = "rewrite" if apply_ else "would rewrite"

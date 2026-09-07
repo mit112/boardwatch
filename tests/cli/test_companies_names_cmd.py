@@ -154,3 +154,34 @@ def test_the_sweep_says_so_when_there_is_nothing_to_repair(tmp_path: Path) -> No
     result = _cli(tmp_path, ["names"])
     assert result.exit_code == 0
     assert "nothing to repair" in result.output
+
+
+def test_the_sweep_never_downcases_a_registry_name_that_matches_its_slug(tmp_path: Path) -> None:
+    """A curated name differing from its slug ONLY in capitalisation is already the employer's.
+
+    `companies_named_by_slug` matches `name == slug` case-INSENSITIVELY — deliberately, because
+    that is the fact about how `companies add` wrote the row. But that also admits every registry
+    row whose catalog name is the slug re-capitalised, and `derive_employer_name` cannot
+    re-capitalise: it returns the lowercase slug token. Comparing exactly therefore planned a
+    REWRITE for each of them.
+
+    RED against an exact `derived != row.name`: this read `{'greenhouse:openai': 'openai'}` — and
+    on the live fleet that comparison planned 129 rewrites where only 31 rows are actually named
+    after a host, downcasing 100 curated names. `companies.name` reaches the delivered folder and
+    the résumé filename, so it is a visible regression.
+    """
+    _seed(tmp_path, [
+        # Capitalisation is the ONLY difference from the slug, exactly like a registry row.
+        {"name": "OpenAi", "provider": "greenhouse", "slug": "openai",
+         "source": "registry", "watched": True},
+        # A genuine host-named row, so the sweep is proven still to do its job in the same run.
+        {"name": "careers.acme.test", "provider": "eightfold", "slug": "careers.acme.test",
+         "source": "user", "watched": True},
+    ])
+    result = _cli(tmp_path, ["names", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert _names(tmp_path) == {
+        "greenhouse:openai": "OpenAi",
+        "eightfold:careers.acme.test": "acme",
+    }, "a name that differs from its slug only in case is already the employer's"
+    assert "rewrote 1 row(s)" in result.output.replace("\n", " ")
