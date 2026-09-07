@@ -116,6 +116,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
         review_by=date(2026, 10, 30),
         readme_pin="sha256:7da2fa0bc2c002798ce0eee0843f3699bab3cef964b8d2fed727bd87cab6e008",
     ),
+    "oraclehcm": FixtureProvenance(
+        captured=date(2026, 9, 6),
+        review_by=date(2026, 12, 5),
+        readme_pin="sha256:05ef5427a18e6a379320959310d07c79f55572ca950d19adf2702812c18a3b53",
+    ),
     "workday": FixtureProvenance(
         captured=date(2026, 8, 4),
         review_by=date(2026, 11, 2),

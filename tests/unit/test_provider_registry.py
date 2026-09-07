@@ -25,6 +25,7 @@ def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
     assert set(built) == {
         "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
+        "oraclehcm",
     }
     for name, inst in built.items():
         assert inst.name == name
@@ -32,7 +33,7 @@ def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
 
 def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
-        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe"}
+        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe", "oraclehcm"}
     )
 
 
@@ -63,6 +64,19 @@ def test_jibe_declares_a_custom_domain_and_therefore_no_hosts_and_no_suffix() ->
     assert "jibe" in registry.slug_normalizer_map()
     assert "jibe" not in registry.host_provider_map().values()
     assert "jibe" not in registry.host_suffix_provider_map().values()
+def test_oraclehcm_declares_a_suffix_and_no_exact_hosts() -> None:
+    from boardwatch.providers.oraclehcm import OracleHCMProvider
+
+    assert OracleHCMProvider().board_hosts == ()
+    assert OracleHCMProvider().board_host_suffixes == (".oraclecloud.com",)
+    assert registry.host_suffix_provider_map()[".oraclecloud.com"] == "oraclehcm"
+    # the suffix must be the extractor/help MAP KEY, not absent
+    assert ".oraclecloud.com" in registry.slug_extractor_map()
+    assert ".oraclecloud.com" in registry.slug_help_map()
+
+
+def test_composite_slug_providers_are_the_two_that_declare_it() -> None:
+    assert registry.composite_slug_providers() == frozenset({"workday", "oraclehcm"})
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:
