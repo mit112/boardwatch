@@ -21,6 +21,7 @@ from typing import Any, cast
 
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.base import Provider
+from boardwatch.providers.eightfold import EightfoldProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.jibe import JibeProvider
 from boardwatch.providers.lever import LeverProvider
@@ -37,6 +38,7 @@ PROVIDER_CLASSES = (
     GreenhouseProvider, LeverProvider, AshbyProvider, WorkableProvider,
     SmartRecruitersProvider, WorkdayProvider, JibeProvider, OracleHCMProvider,
     PhenomProvider,
+    EightfoldProvider,
 )
 
 

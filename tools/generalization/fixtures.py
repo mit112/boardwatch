@@ -91,6 +91,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
         review_by=date(2026, 9, 11),
         readme_pin="sha256:68a4536b3d10f9fb6eafe18aa1a0396ecbe77352a0693daee1770374bc120dd2",
     ),
+    "eightfold": FixtureProvenance(
+        captured=date(2026, 9, 6),
+        review_by=date(2026, 12, 5),
+        readme_pin="sha256:51f1ad65aa97b0512e6cf1ac0ca5e8cf4097042366be2eb0c91801d1db42cd52",
+    ),
     "greenhouse": FixtureProvenance(
         captured=date(2026, 6, 12),
         review_by=date(2026, 9, 10),

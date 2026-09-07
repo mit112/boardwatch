@@ -232,6 +232,41 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:446f441dffc8409dec293489639013c3f2afb21930b3fa8f17378c9df96aa000",
     ),
+    "tests/fixtures/eightfold/detail_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:5e1f4baf7256fb894c568fcb7c9b5a1f410253779dfb8a4a2d74ad5a3d178a25",
+    ),
+    "tests/fixtures/eightfold/detail_not_found.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:72d7be612c6535d65aa2b5afdad890f0313d606ac6d148755325c47c452ea3bd",
+    ),
+    "tests/fixtures/eightfold/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:f2a2052ca48f2144011ca0f180672fddac961efdc4d080fb47f30d45457a60e2",
+    ),
+    "tests/fixtures/eightfold/search_empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:7c2a9412590a42baee10f487255065ca38d7a6b335fce53d40a964515d4399b8",
+    ),
+    "tests/fixtures/eightfold/search_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:c35cb106fd444b6cf51d0c99cda9224c71da732d4b39d7a6c8825d66645ed2b5",
+    ),
+    "tests/fixtures/eightfold/search_page_full.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:3eed935ba6445180de24f5be2312f5a2c9cc0a411b5ddfcb473f2a287b4d7025",
+    ),
+    "tests/fixtures/eightfold/search_page_short.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:db716e4fdf5941616c692310188978089410a28319077406ae7b6b09c239d431",
+    ),
     "tests/fixtures/greenhouse/dead_404.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

@@ -5,6 +5,7 @@ import pytest
 
 from boardwatch.providers import registry
 from boardwatch.providers.ashby import AshbyProvider
+from boardwatch.providers.eightfold import EightfoldProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.jibe import JibeProvider
 from boardwatch.providers.lever import LeverProvider
@@ -15,6 +16,9 @@ from boardwatch.providers.workday import WorkdayProvider
 
 
 def test_each_provider_declares_public_board_hosts() -> None:
+    """Workday and Eightfold are ABSENT from this assertion, and that is the accommodation
+    their identity forces rather than an omission: neither has a bounded set of exact paste
+    hosts, so both declare `board_hosts = ()` and are pinned by the suffix tests below."""
     assert GreenhouseProvider().board_hosts == ("job-boards.greenhouse.io", "boards.greenhouse.io")
     assert LeverProvider().board_hosts == ("jobs.lever.co", "jobs.eu.lever.co")
     assert AshbyProvider().board_hosts == ("jobs.ashbyhq.com",)
@@ -26,7 +30,7 @@ def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
     assert set(built) == {
         "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-        "oraclehcm", "phenom",
+        "oraclehcm", "phenom", "eightfold",
     }
     for name, inst in built.items():
         assert inst.name == name
@@ -34,8 +38,10 @@ def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
 
 def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
-        {"greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-         "oraclehcm", "phenom"}
+        {
+            "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
+            "oraclehcm", "phenom", "eightfold",
+        }
     )
 
 
@@ -66,6 +72,8 @@ def test_jibe_declares_a_custom_domain_and_therefore_no_hosts_and_no_suffix() ->
     assert "jibe" in registry.slug_normalizer_map()
     assert "jibe" not in registry.host_provider_map().values()
     assert "jibe" not in registry.host_suffix_provider_map().values()
+
+
 def test_oraclehcm_declares_a_suffix_and_no_exact_hosts() -> None:
     from boardwatch.providers.oraclehcm import OracleHCMProvider
 
@@ -97,6 +105,21 @@ def test_phenom_declares_neither_an_exact_host_nor_a_suffix() -> None:
     assert "phenom" in registry.composite_slug_providers()
     assert "phenom" not in registry.host_provider_map().values()
     assert "phenom" not in registry.host_suffix_provider_map().values()
+
+def test_eightfold_declares_a_suffix_and_no_exact_hosts() -> None:
+    """The THIRD suffix-only provider, and for a stronger reason than workday's or oraclehcm's:
+    an Eightfold tenant usually sits on the EMPLOYER's own domain, which no suffix can
+    enumerate. Only the vendor-hosted form is claimable, which is why the suffix is declared
+    AND `board_hosts` is empty rather than one standing in for the other.
+    """
+    assert EightfoldProvider().board_hosts == ()
+    assert EightfoldProvider().board_host_suffixes == (".eightfold.ai",)
+    assert registry.host_suffix_provider_map()[".eightfold.ai"] == "eightfold"
+    # the suffix must be the extractor/help MAP KEY, not absent
+    assert ".eightfold.ai" in registry.slug_extractor_map()
+    assert ".eightfold.ai" in registry.slug_help_map()
+    # and it is NOT a composite slug: `eightfold:a/b` must keep getting the diagnostic
+    assert "eightfold" not in registry.composite_slug_providers()
 
 
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:

@@ -1,0 +1,253 @@
+{
+  "status": 200,
+  "error": {
+    "message": "",
+    "body": ""
+  },
+  "data": {
+    "positions": [
+      {
+        "id": 1000000000100,
+        "displayJobId": "AC-0100",
+        "name": "Systems Engineer 0",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0100",
+        "positionUrl": "/careers/job/1000000000100"
+      },
+      {
+        "id": 1000000000101,
+        "displayJobId": "AC-0101",
+        "name": "Systems Engineer 1",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0101",
+        "positionUrl": "/careers/job/1000000000101"
+      },
+      {
+        "id": 1000000000102,
+        "displayJobId": "AC-0102",
+        "name": "Systems Engineer 2",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0102",
+        "positionUrl": "/careers/job/1000000000102"
+      },
+      {
+        "id": 1000000000103,
+        "displayJobId": "AC-0103",
+        "name": "Systems Engineer 3",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0103",
+        "positionUrl": "/careers/job/1000000000103"
+      },
+      {
+        "id": 1000000000104,
+        "displayJobId": "AC-0104",
+        "name": "Systems Engineer 4",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0104",
+        "positionUrl": "/careers/job/1000000000104"
+      },
+      {
+        "id": 1000000000105,
+        "displayJobId": "AC-0105",
+        "name": "Systems Engineer 5",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0105",
+        "positionUrl": "/careers/job/1000000000105"
+      },
+      {
+        "id": 1000000000106,
+        "displayJobId": "AC-0106",
+        "name": "Systems Engineer 6",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0106",
+        "positionUrl": "/careers/job/1000000000106"
+      },
+      {
+        "id": 1000000000107,
+        "displayJobId": "AC-0107",
+        "name": "Systems Engineer 7",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0107",
+        "positionUrl": "/careers/job/1000000000107"
+      },
+      {
+        "id": 1000000000108,
+        "displayJobId": "AC-0108",
+        "name": "Systems Engineer 8",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0108",
+        "positionUrl": "/careers/job/1000000000108"
+      },
+      {
+        "id": 1000000000109,
+        "displayJobId": "AC-0109",
+        "name": "Systems Engineer 9",
+        "locations": [
+          "Springfield, ST, Acmeland"
+        ],
+        "standardizedLocations": [
+          "SPRINGFIELD, ST, ACMELAND"
+        ],
+        "postedTs": 1788652800,
+        "solrScore": null,
+        "stars": 0,
+        "department": "Systems Engineering",
+        "creationTs": 1788566400,
+        "isHot": 0,
+        "workLocationOption": "onsite",
+        "locationFlexibility": null,
+        "atsJobId": "AC-0109",
+        "positionUrl": "/careers/job/1000000000109"
+      }
+    ],
+    "filterDef": {
+      "facets": {
+        "locations": [
+          [
+            "Current Location",
+            999998
+          ],
+          [
+            "Springfield, ST, Acmeland",
+            2
+          ]
+        ]
+      },
+      "smartFilters": [
+        "distance"
+      ],
+      "allFilters": [
+        "job_family",
+        "skills",
+        "seniority"
+      ]
+    },
+    "count": 12,
+    "sortBy": "timestamp",
+    "appliedFilters": {},
+    "debug": null,
+    "savedSearchMetadata": null,
+    "resultsMetaData": {
+      "usedFuzzSearch": false,
+      "mocTitle": null
+    }
+  },
+  "metadata": null
+}
