@@ -182,7 +182,8 @@ def show(
         table.add_column("Weight")
         table.add_column("Weighted")
         table.add_column("Detail")
-        for entry in explain(score):
+        components = list(explain(score))
+        for entry in components:
             table.add_row(
                 entry.component,
                 "—" if entry.raw is None else f"{entry.raw:.2f}",
@@ -193,7 +194,7 @@ def show(
         out.print(table)
         payload["score"] = {
             "total": score.total,
-            "components": [asdict(entry) for entry in explain(score)],
+            "components": [asdict(entry) for entry in components],
         }
         # `show <id>` is the audit surface for the role gate: every posting says what the
         # gate made of its title, so a hidden row can always be looked up and checked.
@@ -259,7 +260,7 @@ def show(
         try:
             identity = current_identity(conn, settings)
         except ProfileRowInvalid as exc:
-            refuse_unusable_profile_row(exc)
+            refuse_unusable_profile_row(exc, out)
         profile_hash, rules_hash = identity if identity is not None else (None, None)
         audit = load_audit(
             conn,

@@ -4,6 +4,11 @@ The properties that matter: every command this program has is described, nothing
 missing from the program, every effect label is one of the closed set, and a label cannot claim
 less than the code does — a command whose source opens the store through the migrating context
 must say it touches the store, and a command that never opens the store must not claim to.
+
+Both of those last two are TEXTUAL proxies for a real property, and for the two commands that
+reach the store one frame down they certify the wrong answer. Those two carry an explicit
+`Entry.migrates`, are exempt from the proxies, and are pinned instead by
+`OVERRIDE_EVIDENCE` and `CORRECTED_EFFECTS` below, which were read off the commands' sources.
 """
 
 from __future__ import annotations
@@ -27,12 +32,48 @@ from boardwatch.cli.guide_cmd import (
     migrates,
     render_guide,
 )
+from boardwatch.store.applications import APPLIED_STATUSES
 
 runner = CliRunner()
 
 
+#: The two commands whose store access is one frame down, where `migrates()` and the
+#: `build_context(`-absence proxy below both read the wrong frame and answer wrong. An entry may
+#: override the derivation only if its own text says where the store is really reached — so the
+#: exemption below can never quietly certify a third command's wrong label.
+OVERRIDE_EVIDENCE = {
+    "settings toggle": "through `toggle_feature`, which opens the default context and migrates",
+    "web": (
+        "opens the store read-only through `get_readonly_engine`, never migrating; the four "
+        "mark routes write"
+    ),
+}
+
+#: Every effect label this branch's review corrected after reading the command's source:
+#: `companies discover` / `discover-grnh` (`companies_cmd.py` point-queries the store, and
+#: `grnh_resolve` fetches), `eligibility summary` / `abstain` (`run_eligibility` is called only
+#: from `eligibility run`, so neither writes a row), `settings toggle` (`toggle_feature` →
+#: `build_context`), `web` (`get_readonly_engine` plus four mark routes), `profile-bundle project`
+#: (serialises to stdout and takes no `--out`). Exact tuples: each was wrong in a direction an
+#: unattended agent would act on, so a regression toward the old label has to fail here.
+CORRECTED_EFFECTS = {
+    "companies discover": ("network", "reads store", "writes files"),
+    "companies discover-grnh": ("network", "reads store", "writes files"),
+    "eligibility summary": ("reads store",),
+    "eligibility abstain": ("reads store",),
+    "settings toggle": ("interactive", "writes files", "writes store"),
+    "web": ("reads store", "writes store", "writes files", "network"),
+    "profile-bundle project": ("pure",),
+}
+
+
 def _leaves() -> dict[str, TyperCommand | TyperGroup]:
     return dict(leaf_commands(app))
+
+
+def _flat(text: str) -> str:
+    """One entry's text with its wrapping collapsed, so a phrase can be asserted across lines."""
+    return " ".join(text.split())
 
 
 def test_every_command_has_an_entry_and_every_entry_names_a_command() -> None:
@@ -51,6 +92,8 @@ def test_every_effect_label_is_from_the_closed_set() -> None:
 
 def test_a_command_that_migrates_declares_a_store_effect() -> None:
     for name, command in _leaves().items():
+        if ENTRIES[name].migrates is not None:
+            continue  # the derivation reads the wrong frame here; see OVERRIDE_EVIDENCE
         if migrates(command):
             assert set(ENTRIES[name].effects) & STORE_EFFECTS, (
                 f"{name} opens the store through the default context but its entry says "
@@ -60,12 +103,47 @@ def test_a_command_that_migrates_declares_a_store_effect() -> None:
 
 def test_a_command_without_a_context_does_not_claim_the_store() -> None:
     for name, command in _leaves().items():
+        if ENTRIES[name].migrates is not None:
+            continue  # this proxy is exactly what it gets wrong; see OVERRIDE_EVIDENCE
         assert command.callback is not None, name
         source = inspect.getsource(inspect.unwrap(command.callback))
         if "build_context(" not in source:
             assert not set(ENTRIES[name].effects) & STORE_EFFECTS, (
                 f"{name} never opens the store but its entry says {ENTRIES[name].effects}"
             )
+
+
+def test_every_migration_override_says_where_the_store_is_really_reached() -> None:
+    """The exemption above is only sound while each override is justified in its own text."""
+    overridden = {name for name, entry in ENTRIES.items() if entry.migrates is not None}
+    assert overridden == set(OVERRIDE_EVIDENCE), overridden
+    for name, phrase in OVERRIDE_EVIDENCE.items():
+        assert phrase in _flat(ENTRIES[name].text), name
+
+
+def test_the_labels_the_source_disagreed_with_stay_corrected() -> None:
+    for name, effects in CORRECTED_EFFECTS.items():
+        assert ENTRIES[name].effects == effects, (name, ENTRIES[name].effects)
+
+
+def test_settings_toggle_carries_the_migration_note_and_web_does_not() -> None:
+    """The override reaches the rendered guide, in both directions."""
+    note = "applies pending schema migrations first"
+    assert note in render_guide(app, ["settings", "toggle"])
+    assert note not in render_guide(app, ["web"])
+
+
+def test_the_guide_only_teaches_a_status_that_actually_suppresses() -> None:
+    """`track add`'s default status is `interested`, which is deliberately outside
+    `APPLIED_STATUSES` — so the bare command the journey used to teach suppresses nothing and
+    the role re-surfaces on the next `top`."""
+    journey = dict(SECTIONS)["journey"]
+    line = next(line for line in journey.splitlines() if "track add" in line)
+    assert any(f"--status {status}" in line for status in APPLIED_STATUSES), line
+    entry = _flat(ENTRIES["track add"].text)
+    assert "`interested`" in entry and "suppresses nothing" in entry, entry
+    for status in APPLIED_STATUSES:
+        assert f"`{status}`" in entry, (status, entry)
 
 
 def test_the_guide_prints_every_command_and_section_in_order() -> None:

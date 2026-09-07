@@ -8,6 +8,10 @@ under a policy the user never set.
 
 The CLI's job is to say WHICH column and WHY, then exit 1. A traceback names a line in
 pydantic, which is not the thing the operator has to edit.
+
+The refusal is readable prose, so under `--json` it belongs on standard error like every other
+readable line: callers pass the console `narrative(as_json, ...)` handed them. It defaults to
+stdout so the human paths that never take `--json` read exactly as before.
 """
 
 from __future__ import annotations
@@ -22,9 +26,10 @@ from boardwatch.eligibility.facts import Facts, Policy, ProfileRowInvalid, parse
 console = Console()
 
 
-def refuse_unusable_profile_row(exc: ProfileRowInvalid) -> NoReturn:
-    console.print(f"profile row unusable — {exc.column}: {exc.reason}")
-    console.print(
+def refuse_unusable_profile_row(exc: ProfileRowInvalid, out: Console | None = None) -> NoReturn:
+    target = console if out is None else out
+    target.print(f"profile row unusable — {exc.column}: {exc.reason}")
+    target.print(
         "Correct the stored JSON in that column; every eligibility command reads it and "
         "none of them will guess at what it meant."
     )

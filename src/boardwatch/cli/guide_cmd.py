@@ -10,10 +10,12 @@ describe a command this copy of boardwatch does not have, and never omits one it
 The effect labels are the reason this file exists. Nothing in this CLI is read-only except the
 offline commands: any command that opens the store through the default context first applies every
 pending schema migration (`cli/context.py:build_context` calls `ensure_schema`), `show`/`stats`/
-`export` backfill extractions and verdicts on the way to their readout, `top` records a run even
-with `--no-record`, and `doctor` writes board health. An agent that inspects a live store by
-running "the show command" changes that store. The guide says so per command, and `migrates`
-derives the migration half from each command's own source so the label cannot drift from the code.
+`export` backfill extractions and verdicts on the way to their readout, `top` records what it
+surfaced unless `--no-record` says otherwise, and `doctor` writes board health. An agent that
+inspects a live store by running "the show command" changes that store. The guide says so per
+command, and `migrates` derives the migration half from each command's own source so the label
+cannot drift from the code — unless an entry overrides it, and an override must say why in its
+own text, because the two that need one reach the store a frame down inside a helper.
 
 `boardwatch skill` prints the short file an agent saves in its own skills folder. It names one
 command, `boardwatch guide`, and carries `SKILL_VERSION`; `guide --skill <n>` opens with a notice
@@ -87,10 +89,18 @@ STORE_EFFECTS = frozenset({"reads store", "writes store"})
 
 @dataclass(frozen=True)
 class Entry:
-    """One command's guide entry: what it touches, and what to know before typing it."""
+    """One command's guide entry: what it touches, and what to know before typing it.
+
+    `migrates` overrides what `migrates()` derives from the callback's own source. `None`, the
+    normal case, keeps the derivation. An explicit value is for the two commands that reach the
+    store one frame down — `settings toggle` through `toggle_feature`, `web` through
+    `get_readonly_engine` — where the textual derivation reads the wrong frame and answers wrong.
+    An override must say why in `text`; `tests/unit/test_guide_cmd.py` asserts that it does.
+    """
 
     effects: tuple[str, ...]
     text: str
+    migrates: bool | None = None
 
 
 # The parts of the guide that are not about any one command, in the order they print.
@@ -110,8 +120,9 @@ posting; `abstain` means a rule could not decide and is never folded into either
 Report them as three things, never two.
 
 boardwatch searches, judges, ranks and tailors. It does not fill in or submit applications, and
-that is deliberate. Recording that the person applied IS in scope (`track add`), because an
-applied role otherwise re-surfaces forever.
+that is deliberate. Recording that the person applied IS in scope (`track add <#> --status
+applied`), because an applied role otherwise re-surfaces forever — and the status is the whole
+of it: `track add`'s default, `interested`, records the lead and suppresses nothing.
 
 Everything below is generated from the commands this copy of boardwatch actually has.""",
     ),
@@ -123,7 +134,8 @@ Everything below is generated from the commands this copy of boardwatch actually
   boardwatch scan            fetch the watched boards
   boardwatch top             the ranked shortlist, best first
   boardwatch show <#>        one posting in full, with the eligibility evidence quoted
-  boardwatch track add <#>   record an application so the role stops re-surfacing
+  boardwatch track add <#> --status applied
+                             record the application, so the role stops re-surfacing
 
 `boardwatch run` does scan, eligibility, rank, tailor and delivery in one unattended pass; it is
 what a scheduler runs every morning. `boardwatch web` is the page the person reviews leads on.""",
@@ -132,13 +144,14 @@ what a scheduler runs every morning. `boardwatch web` is the page the person rev
         "store",
         """THE STORE IS WRITTEN BY ALMOST EVERY COMMAND. Read this before "just looking".
 
-Every command whose entry says `reads store` or `writes store` opens the SQLite store through the
-default context, and that context applies any pending schema migration before the command runs
-(the entries that say "no migration" open it without that step). `show`, `stats` and `export`
-backfill extractions and eligibility verdicts on the way to their readout. `top` records a run
-and what it surfaced, even with `--no-record`. `doctor` writes board health. So there is no
-boardwatch command that inspects a store and leaves it byte-identical, except the ones marked
-`pure`.
+Every command whose entry says `reads store` or `writes store` opens the SQLite store. The note
+`(default context: applies pending schema migrations first)` on a command's effect line is the
+only thing that says it migrates UP FRONT; a command without that note either migrates later
+(`scan` and `run`, inside the scan lock) or not at all (`doctor`, `coverage`, `seeds`,
+`companies discover`, `companies discover-grnh`, `web`). `show`, `stats` and `export` backfill
+extractions and eligibility verdicts on the way to their readout. `top` records what it surfaced,
+which is the part `--no-record` skips. `doctor` writes board health. So there is no boardwatch
+command that inspects a store and leaves it byte-identical, except the ones marked `pure`.
 
 To look at a store the person must keep pristine — a live store another process is writing, or
 one a newer boardwatch owns — do not run a command against it. Read the file yourself:
@@ -156,10 +169,11 @@ in a scratch data dir, never the person's own.""",
         "json",
         """Commands that hand back rows print one JSON object on standard output when you add
 `--json`, and nothing else goes to standard output, so the output can be piped into the next
-program. Anything a person needs to read but a pipe must not swallow — preflight notices,
-refusals, "nothing tracked yet" — goes to standard error. The commands that take `--json` are
-listed as such in their entries below. A command without it prints tables for a person; read
-them, do not parse them.
+program. `top --json` is the one exception to the shape: it hands back a bare ARRAY of rows, not
+an object, so `top --json | jq '.rows'` gives you `null`. Anything a person needs to read but a
+pipe must not swallow — preflight notices, refusals, "nothing tracked yet" — goes to standard
+error. Every command that takes `--json` names it in its own option list below. A command without
+it prints tables for a person; read them, do not parse them.
 
 Exit code 0 means the command did what it says. A refusal exits non-zero with its reason on
 standard error, and a refusal is not a negative result: confirm a check actually ran before
@@ -201,9 +215,12 @@ Pacing toward third-party hosts is a promise, not a knob: do not run several at 
         ("writes store",),
         """The ranked shortlist against the profile: eligibility, the role gate, the seniority band,
 the hard filters, dedup and the slate cap all applied, each hidden bucket counted and named.
-Takes `--json` (rows on stdout). Every `--include-*` flag shows one hidden bucket for audit.
-It RECORDS a run and what it surfaced, and `--no-record` still writes a run row, so `top` is not
-the way to peek at a store you must not change.""",
+Takes `--json`, and it is the ONE command whose `--json` is a bare ARRAY of rows rather than an
+object. Every `--include-*` flag shows one hidden bucket for audit. It WRITES on two counts: the
+eligibility preflight backfills extraction and evaluation rows whenever any are pending (minting
+a `runs` row only then, never merely because `top` was typed), and it records a `seen`
+disposition per surfaced posting. `--no-record` skips the dispositions and nothing else, so
+`top` is still not the way to peek at a store you must not change.""",
     ),
     "show": Entry(
         ("writes store",),
@@ -214,9 +231,12 @@ so it writes on the way to reading. A closed posting prints without a score.""",
     ),
     "track add": Entry(
         ("writes store",),
-        """Records that the person applied to a posting (or `--status` another stage), so the role
-and its duplicates stop re-surfacing. `--new-attempt` opens a second application to the same
-posting instead of refusing. Do this only when the person says they applied.""",
+        """Records an application against a posting. THE STATUS DECIDES WHETHER ANYTHING IS
+SUPPRESSED: the default is `interested`, which records the lead and suppresses nothing.
+Only `applied`, `interviewing`, `offer` and `rejected` remove the job and its duplicates from
+`top`, so type `--status applied` when the person applied; `track status <id> withdrawn` is the
+drain that puts the job back. `--new-attempt` opens a second application to the same posting
+instead of refusing. Do this only when the person says they applied.""",
     ),
     "track status": Entry(
         ("writes store",),
@@ -247,10 +267,13 @@ every row to one run id. This is what the scheduler runs. `--no-scan` skips the 
 Never start one beside a running scheduled run. Read the funnel afterwards (`verify`).""",
     ),
     "web": Entry(
-        ("writes files", "network"),
+        ("reads store", "writes store", "writes files", "network"),
         """Serves the review page on loopback only (never another interface) and opens it. It reads
 the run's artifacts under `--out-root` and the delivery queue; marking a lead applied from the
-page writes the queue. Leave it running only while the person is reviewing.""",
+page writes the queue. It touches the store, which nothing in its own body would tell you: it
+opens the store read-only through `get_readonly_engine`, never migrating; the four mark routes
+write. Leave it running only while the person is reviewing.""",
+        migrates=False,
     ),
     "digest": Entry(
         ("writes store",),
@@ -260,8 +283,10 @@ digest cursor. `--peek` shows the same digest and leaves the cursor where it was
     "notify": Entry(
         ("writes store", "sends"),
         """Sends the new profile matches since the last notify to every enabled channel (webhook,
-desktop) and advances the cursor only when delivery succeeded. `--dry-run` shows what would go
-and sends nothing. Ask the person before sending anything on their behalf.""",
+desktop). On the delivery path the cursor advances only when delivery succeeded; when nothing
+matched it advances past the non-matching events anyway, deliberately, so they are not rescanned.
+`--dry-run` shows what would go and sends nothing. Ask the person before sending anything on
+their behalf.""",
     ),
     "export": Entry(
         ("writes store", "writes files"),
@@ -272,8 +297,9 @@ evaluation rows. This is the bulk read path; `top --json` is the ranked one.""",
     "stats": Entry(
         ("writes store",),
         """One screen of counts: qualified / uncertain / ineligible / unevaluated over `--days`,
-and the discovery pipeline with each hidden bucket. Takes `--json`. Runs the preflight first,
-so it backfills rows on the way.""",
+and the discovery pipeline with each hidden bucket. Takes `--json`. Runs the extraction preflight
+AND eligibility first so the verdicts are current, which writes extraction and evaluation rows on
+the way to the readout.""",
     ),
     "verify": Entry(
         ("reads store",),
@@ -335,15 +361,16 @@ a board that does not answer. A board added here is scanned from the next `scan`
         "Validates registry-format YAML and watches each entry; `--verify` fetches each first.",
     ),
     "companies discover": Entry(
-        ("network", "writes files"),
+        ("network", "reads store", "writes files"),
         """Proposes boards from the two public GitHub new-grad lists, for the person to review;
 `--out` writes the proposal. Opens the store without migrating (no migration). It watches
 nothing by itself: review, then `companies import`.""",
     ),
     "companies discover-grnh": Entry(
-        ("reads store", "writes files"),
+        ("network", "reads store", "writes files"),
         """Proposes Greenhouse boards from stored `grnh.se` seeds, for review; `--out` writes the
-proposal. Opens the store without migrating (no migration). Watches nothing by itself.""",
+proposal. It reaches the network: resolving a `grnh.se` short link means fetching it. Opens the
+store without migrating (no migration). Watches nothing by itself.""",
     ),
     # ---- configuration ----------------------------------------------------------------------
     "config show": Entry(
@@ -360,8 +387,11 @@ back afterwards: an unknown key is not an error.""",
     ),
     "settings": Entry(("pure",), "The opt-in feature menu and each feature's state."),
     "settings toggle": Entry(
-        ("interactive", "writes files"),
-        "Flips opt-in features on and off through numbered prompts, writing config.toml.",
+        ("interactive", "writes files", "writes store"),
+        """Flips opt-in features on and off through numbered prompts, writing config.toml. It
+touches the store too, though nothing in its own body says so: through `toggle_feature`, which
+opens the default context and migrates.""",
+        migrates=True,
     ),
     # ---- profile ----------------------------------------------------------------------------
     "profile show": Entry(
@@ -406,14 +436,16 @@ Re-keys every verdict.""",
 this too.""",
     ),
     "eligibility summary": Entry(
-        ("writes store",),
+        ("reads store",),
         """Counts per family and disposition across the funnel, and how many open postings still
-lack a verdict. Runs eligibility first, so it writes evaluation rows.""",
+lack a verdict. It does NOT run eligibility first: a posting with no current verdict is counted
+as unevaluated rather than judged on the spot.""",
     ),
     "eligibility abstain": Entry(
-        ("writes store",),
+        ("reads store",),
         """Abstain rate for EVERY rule in the catalog, including rules that have never fired. A rule
-at 100% is a monitoring failure to report, never a feature. Runs eligibility first.""",
+at 100% is a monitoring failure to report, never a feature. It judges nothing: with `summary` it
+is the one pair that inspects the funnel without writing a verdict row.""",
     ),
     "eligibility extract": Entry(
         ("writes store", "llm"),
@@ -437,7 +469,9 @@ Opens the store for the settings and worksheet location on the way.""",
     "eligibility gate request": Entry(
         ("writes store", "writes files"),
         """Builds the final-gate judge request from the ranked shortlist's visible postings, `--top`
-of them, to `--out`. Ranks the shortlist first, so it writes like `top`.""",
+of them, to `--out`. Ranks the shortlist WITHOUT consuming the queue (`record_surfaced=False`),
+so unlike `top` it marks nothing `seen`; it still writes whatever the eligibility preflight
+backfills.""",
     ),
     "eligibility gate apply": Entry(
         ("writes store",),
@@ -607,8 +641,9 @@ the person types it, not you. A draft edited after approval is no longer approve
         "Promotes an approved draft into the next immutable revision and selects it.",
     ),
     "profile-bundle project": Entry(
-        ("writes files",),
-        "Serialises the JD-blind Stage 1 pool for the owner's review, to `--json` or the terminal.",
+        ("pure",),
+        """Serialises the JD-blind Stage 1 pool for the owner's review, to `--json` or the terminal.
+It writes nothing: `--out` is not one of its options, unlike `resume project`.""",
     ),
 }
 
@@ -619,7 +654,7 @@ the person types it, not you. A draft edited after approval is no longer approve
 
 
 def leaf_commands(app: typer.Typer) -> Iterator[tuple[str, TyperCommand | TyperGroup]]:
-    """Every runnable command, as (`"track add"`, command), in help order.
+    """Every runnable command, as (`"track add"`, command), alphabetically at every level.
 
     A group whose callback runs on its own (`eligibility facts`, `settings`) is a leaf too: it
     is something a person types and gets an answer from, so it needs an entry.
@@ -686,7 +721,8 @@ def render_command(name: str, command: TyperCommand | TyperGroup) -> str:
     if help_text:
         lines.append(f"  {help_text.splitlines()[0]}")
     effects = ", ".join(entry.effects)
-    if migrates(command):
+    migrating = migrates(command) if entry.migrates is None else entry.migrates
+    if migrating:
         effects += " (default context: applies pending schema migrations first)"
     lines.append(f"  effect: {effects}")
     lines.extend(f"  {line}" for line in entry.text.strip().splitlines())
@@ -735,7 +771,7 @@ def guide(
     from boardwatch.cli.app import app
 
     if skill_version is not None and skill_version < SKILL_VERSION:
-        sys.stdout.write(stale_skill_notice(skill_version, SKILL_VERSION) + "\n\n")
+        typer.echo(stale_skill_notice(skill_version, SKILL_VERSION) + "\n")
     try:
         text = render_guide(app, part)
     except KeyError as exc:
@@ -743,9 +779,9 @@ def guide(
             f"no command or section named {exc.args[0]!r}. Run `boardwatch guide` for all.\n"
         )
         raise typer.Exit(code=1) from None
-    sys.stdout.write(text + "\n")
+    typer.echo(text)
 
 
 def skill() -> None:
     """Print the short skill file for a coding agent to save in its own skills folder."""
-    sys.stdout.write(SKILL_TEXT)
+    typer.echo(SKILL_TEXT, nl=False)

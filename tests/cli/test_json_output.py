@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 from typer.testing import CliRunner, Result
 
 from boardwatch.cli.app import app
@@ -21,7 +21,7 @@ from boardwatch.cli.profile_cmd import persist_profile
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import companies, jobs, postings
+from boardwatch.store.tables import companies, jobs, postings, profile
 
 NOW = utcnow()
 runner = CliRunner()
@@ -111,6 +111,11 @@ def _json(data_dir: Path, args: list[str]) -> dict[str, Any]:
         (["profile", "show"], "skills"),
         (["ledger", "show"], "rows"),
         (["config", "show"], "llm.enabled"),
+        # The `--json` surfaces that predate this branch. `top` is deliberately absent: it is
+        # the one command that emits a bare array, which the guide's json section now says.
+        (["coverage"], "bucket_counts"),
+        (["seeds"], "unresolved"),
+        (["identities", "leakage"], "window_days"),
     ],
 )
 def test_json_is_the_whole_of_stdout_and_the_human_path_still_works(
@@ -161,6 +166,58 @@ def test_an_empty_answer_is_still_one_object_and_the_words_go_to_stderr(
     assert ledger.exit_code == 0
     assert json.loads(ledger.stdout) == {"rows": []}
     assert "ledger: nothing to show" in ledger.stderr
+
+
+def _make_the_policy_column_unusable(data_dir: Path) -> None:
+    """Store an `eligibility_policy_json` that is valid JSON but is not an object.
+
+    `parse_policy` refuses it with `ProfileRowInvalid`, which is the one refusal `show` and
+    `stats` reach through `refuse_unusable_profile_row` rather than through their own console —
+    so it is the one that used to print two prose lines onto stdout under `--json`.
+    """
+    eng = get_engine(data_dir)
+    with eng.begin() as conn:
+        conn.execute(update(profile).values(eligibility_policy_json="garbage"))
+    eng.dispose()
+
+
+def test_an_unusable_profile_row_refuses_on_stderr_under_json(store: tuple[Path, int]) -> None:
+    data_dir, posting_id = store
+    _make_the_policy_column_unusable(data_dir)
+    for args in (["show", str(posting_id)], ["stats"]):
+        result = _cli(data_dir, [*args, "--json"])
+        assert result.exit_code == 1, result.output
+        assert result.stdout == "", (args, result.stdout)
+        assert "profile row unusable — eligibility_policy_json" in result.stderr, args
+
+
+def test_a_schema_or_argument_refusal_under_json_leaves_stdout_empty(
+    store: tuple[Path, int],
+) -> None:
+    """The refusals `coverage` and `seeds` raise before they ever reach their `--json` branch."""
+    data_dir, _ = store
+    seeds = _cli(data_dir, ["seeds", "--limit", "-1", "--json"])
+    assert seeds.exit_code == 1
+    assert seeds.stdout == "", seeds.stdout
+    assert "--limit must be non-negative" in seeds.stderr
+    coverage = _cli(data_dir, ["coverage", "--run", "9999", "--json"])
+    assert coverage.exit_code == 1
+    assert coverage.stdout == "", coverage.stdout
+    assert "no such run: 9999" in coverage.stderr
+
+
+def test_config_show_json_gives_every_key_the_same_four_fields(empty_store: Path) -> None:
+    """One accessor for every key. Three shapes here meant `payload[k]["value"]` raised
+    `TypeError: string indices must be integers` on the llm flags and on both secrets."""
+    payload = _json(empty_store, ["config", "show"])
+    assert payload, payload
+    for key, shown in payload.items():
+        assert isinstance(shown, dict), (key, shown)
+        assert set(shown) == {"value", "default", "units", "effect"}, (key, sorted(shown))
+    assert payload["llm.api_key"]["value"] == "unset"
+    assert payload["llm.api_key"]["default"] is None
+    assert payload["notify.webhook_url"]["value"] == "unset"
+    assert payload["weights.title_match"]["units"] == "[0,1]"
 
 
 def test_a_refusal_under_json_leaves_stdout_empty(empty_store: Path) -> None:

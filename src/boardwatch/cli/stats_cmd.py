@@ -37,7 +37,7 @@ def stats(
             app_ctx.engine, app_ctx.settings, window_days=days, output_console=out
         )
     except ProfileRowInvalid as exc:
-        refuse_unusable_profile_row(exc)
+        refuse_unusable_profile_row(exc, out)
     if report is None:
         out.print("no profile yet — run `boardwatch init` first")
         raise typer.Exit(code=1)

@@ -14,6 +14,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from boardwatch.cli._json_out import narrative
 from boardwatch.cli.context import build_context
 from boardwatch.reports.seed_claims import (
     SEED_RESOLVERS,
@@ -39,13 +40,17 @@ def seeds(
     catalog, so nothing selects it, nothing attempts it, and the `attempts` ceiling never ages it
     out. This is the only thing that can see that population.
     """
-    # Validated BEFORE anything is read or printed. Below the `--json` return it never runs on
-    # that path at all, and below the summary lines a script sees plausible stdout followed by
-    # exit 1. `limit == 0` means every host, matching `--limit 0` elsewhere; a NEGATIVE value is
-    # Python's spelling of "all but the last N", which is not a bound at all, so it is refused
-    # rather than silently reinterpreted.
+    # Every readable line, refusals included, goes to stderr under `--json`: `boardwatch guide`
+    # promises the whole of stdout is the one JSON document, and these three refusals all run
+    # BEFORE the `if as_json:` return below, so on stdout they left a script plausible prose
+    # followed by exit 1.
+    out = narrative(as_json, console)
+
+    # Validated BEFORE anything is read. `limit == 0` means every host, matching `--limit 0`
+    # elsewhere; a NEGATIVE value is Python's spelling of "all but the last N", which is not a
+    # bound at all, so it is refused rather than silently reinterpreted.
     if limit < 0:
-        console.print("[red]--limit must be non-negative[/red]")
+        out.print("[red]--limit must be non-negative[/red]")
         raise typer.Exit(code=1)
 
     app_ctx = build_context(ctx.obj, ensure=False)
@@ -53,10 +58,10 @@ def seeds(
     with app_ctx.engine.connect() as conn:
         revision = db_revision(conn)
     if revision is None:
-        console.print("schema: ABSENT — run `boardwatch init` first")
+        out.print("schema: ABSENT — run `boardwatch init` first")
         raise typer.Exit(code=1)
     if revision != schema_revision():
-        console.print(
+        out.print(
             f"schema: STALE — run `boardwatch init` (db={revision}, code={schema_revision()})"
         )
         raise typer.Exit(code=1)

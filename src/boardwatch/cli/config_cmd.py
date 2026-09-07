@@ -274,6 +274,29 @@ def toggle_feature(settings: Settings, key: str, on: bool) -> tuple[bool, bool]:
     return old, on
 
 
+#: `llm.*`, in the order `show` prints them: leaf, units, effect. Units and effect are `None`
+#: where the setting has neither, which is what `_shown` writes into the JSON — one shape for
+#: every key beats a shape per group, because a consumer can only write one accessor.
+_LLM_KEYS: tuple[tuple[str, str | None, str | None], ...] = (
+    ("enabled", None, "opt-in LLM tier"),
+    ("provider", None, None),
+    ("model", None, None),
+    ("eligibility_extraction", None, None),
+    ("resume_tailoring", None, None),
+    ("resume_tailoring_via_agent", None, None),
+    ("max_calls_per_run", "≥1", None),
+)
+
+
+def _shown(
+    value: object, default: object, *, units: str | None = None, effect: str | None = None
+) -> dict[str, object]:
+    """One `config show --json` key. EVERY key has these four fields, `None` where one does not
+    apply, so `payload[k]["value"]` works for all of them; three shapes here meant a consumer
+    got `TypeError: string indices must be integers` on the secrets and the llm flags."""
+    return {"value": value, "default": default, "units": units, "effect": effect}
+
+
 @config_app.command("show")
 def show(
     ctx: typer.Context,
@@ -288,42 +311,38 @@ def show(
     payload: dict[str, object] = {}
     for key, (_caster, effect, units) in _SCALAR_KEYS.items():
         cur, dflt = getattr(settings, key), getattr(defaults, key)
-        payload[key] = {"value": cur, "default": dflt, "units": units, "effect": effect}
+        payload[key] = _shown(cur, dflt, units=units, effect=effect)
         out.print(f"{key} = {cur} (default {dflt}; {units}; {effect})")
     for key in sorted(_WEIGHT_KEYS):
         cur, dflt = getattr(settings.weights, key), getattr(defaults.weights, key)
-        payload[f"weights.{key}"] = {"value": cur, "default": dflt}
+        payload[f"weights.{key}"] = _shown(cur, dflt, units="[0,1]", effect="next top")
         out.print(f"weights.{key} = {cur} (default {dflt}; [0,1]; next top)")
-    llm = settings.llm
-    payload["llm.enabled"] = llm.enabled
-    payload["llm.provider"] = llm.provider
-    payload["llm.model"] = llm.model
+    llm, llm_defaults = settings.llm, defaults.llm
+    for leaf, llm_units, llm_effect in _LLM_KEYS:
+        cur, dflt = getattr(llm, leaf), getattr(llm_defaults, leaf)
+        payload[f"llm.{leaf}"] = _shown(cur, dflt, units=llm_units, effect=llm_effect)
     out.print(
         f"llm.enabled = {llm.enabled} (opt-in LLM tier; provider={llm.provider}, model={llm.model})"
     )
-    payload["llm.eligibility_extraction"] = llm.eligibility_extraction
-    payload["llm.resume_tailoring"] = llm.resume_tailoring
-    payload["llm.resume_tailoring_via_agent"] = llm.resume_tailoring_via_agent
-    payload["llm.max_calls_per_run"] = llm.max_calls_per_run
     out.print(f"llm.eligibility_extraction = {llm.eligibility_extraction}")
     out.print(f"llm.resume_tailoring = {llm.resume_tailoring}")
     out.print(f"llm.resume_tailoring_via_agent = {llm.resume_tailoring_via_agent}")
     out.print(f"llm.max_calls_per_run = {llm.max_calls_per_run} (default 50; ≥1)")
     present = "set" if resolve_secret(LLM_API_KEY_ENV) is not None else "unset"
-    payload["llm.api_key"] = present
+    payload["llm.api_key"] = _shown(present, None, effect=LLM_API_KEY_ENV)
     out.print(f"llm.api_key: {present} (via {LLM_API_KEY_ENV})")
     for leaf, note in _GATE_KEYS.items():
         cur, dflt = getattr(settings.gate, leaf), getattr(defaults.gate, leaf)
-        payload[f"gate.{leaf}"] = {"value": cur, "default": dflt, "effect": note}
+        payload[f"gate.{leaf}"] = _shown(cur, dflt, effect=note)
         out.print(f"gate.{leaf} = {cur} (default {dflt}; {note})")
     for key, effect in _NOTIFY_KEYS.items():
         leaf = key.split(".", 1)[1]
         cur = getattr(settings.notify, leaf)
         dflt = getattr(defaults.notify, leaf)
-        payload[key] = {"value": cur, "default": dflt, "effect": effect}
+        payload[key] = _shown(cur, dflt, units="true/false", effect=effect)
         out.print(f"{key} = {cur} (default {dflt}; true/false; {effect})")
     present = "set" if resolve_secret(WEBHOOK_URL_ENV) is not None else "unset"
-    payload["notify.webhook_url"] = present
+    payload["notify.webhook_url"] = _shown(present, None, effect=WEBHOOK_URL_ENV)
     out.print(f"notify.webhook_url: {present} (via {WEBHOOK_URL_ENV})")
     if as_json:
         emit_json(payload)

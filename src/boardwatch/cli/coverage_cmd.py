@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
 
+from boardwatch.cli._json_out import narrative
 from boardwatch.cli.context import build_context
 from boardwatch.reports.board_coverage import (
     BoardCoverage,
@@ -59,6 +60,10 @@ def coverage(
     Not resume keyword coverage (that is `tailor/coverage.py`, reported in the funnel).
     """
     app_ctx = build_context(ctx.obj, ensure=False)
+    # Every readable line, refusals included, goes to stderr under `--json`: `boardwatch guide`
+    # promises the whole of stdout is the one JSON document, and a schema refusal printed to
+    # stdout ahead of the `if as_json:` return below broke that promise on every failing path.
+    out = narrative(as_json, console)
 
     # `ensure=False` means nothing on this path ever migrates, so the schema can be absent OR
     # merely old, and BOTH end in a raw traceback out of the CLI: no `board_scans` table at all
@@ -70,10 +75,10 @@ def coverage(
     with app_ctx.engine.connect() as conn:
         revision = db_revision(conn)
     if revision is None:
-        console.print("schema: ABSENT — run `boardwatch init` first")
+        out.print("schema: ABSENT — run `boardwatch init` first")
         raise typer.Exit(code=1)
     if revision != schema_revision():
-        console.print(
+        out.print(
             f"schema: STALE — run `boardwatch init` "
             f"(db={revision}, code={schema_revision()})"
         )
@@ -85,7 +90,7 @@ def coverage(
         # per finding 1's LEFT JOIN fix, not as an empty one).
         run_exists = conn.execute(select(runs.c.id).where(runs.c.id == run)).first() is not None
         if run is not None and not run_exists:
-            console.print(f"[red]no such run: {run}[/red]")
+            out.print(f"[red]no such run: {run}[/red]")
             raise typer.Exit(code=1)
         report = build_report(load_board_coverage(conn, run_id=run))
 
