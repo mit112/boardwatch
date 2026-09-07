@@ -6,7 +6,7 @@ keeps UNIQUE(provider, slug) exactly correct — and load-bearing, because Sony 
 disjoint sites from one host with one tenant — and needs no migration. The triple never
 leaves this module.
 
-Five measured properties drive this design. Each has a regression test; none should be
+Six measured properties drive this design. Each has a regression test; none should be
 "simplified" away.
 
 1. POST ONLY. GET .../jobs returns 400 with or without query parameters. There is no GET
@@ -41,6 +41,28 @@ Five measured properties drive this design. Each has a regression test; none sho
 5. bulletFields IS VARIABLE-LENGTH (Sony returns 3: req id, country, legal entity), so
    bulletFields[0] is NOT universally the requisition id. The id comes from externalPath.
 
+6. THE 2000 CLAMP IS ON `total` ONLY, NOT ON THE FACETS, so a board larger than that is
+   enumerated blind and partially. Measured live 2026-09-07: Walmart's true 21,190 postings
+   report total=2000 and yield 1,998; Citi's 4,376 report 2000 and yield 1,988; Lowes reports
+   its real 12,307 and stops at _MAX_PAGES with 3,000. A slug may therefore name ONE facet
+   bucket to fetch instead of the whole board, carried as a FRAGMENT so that the three-part
+   slug every live board already uses is untouched:
+
+       host/tenant/site#jobFamilyGroup=Technology
+
+   Sliced, `total` reads the bucket's TRUE size (Citi's Technology bucket answered 1074, not
+   2000) and the pager enumerates all of it: 54 pages for every technology posting, against
+   the 100 pages a blind scan spends to reach 53% of them. The facet id is an OPAQUE,
+   TENANT-SPECIFIC hash, so it is never hardcoded and never cached across boards — ONE
+   unfiltered request per sliced board reads the live catalog and resolves descriptor -> id
+   at fetch time. Tenants expose DIFFERENT groups (Citi, Target and Lowes offer
+   `jobFamilyGroup` and no `jobFamily`), which is why the fragment names both the group and
+   the descriptor rather than the descriptor alone.
+
+   A named group or descriptor that is not in the live catalog is a board-level ERROR, NEVER
+   an unfiltered fetch. Falling back would restore the blind 2,000-row listing while the
+   operator believed the board was sliced — the same trap as an ignored facet parameter.
+
 Detail fetches are bounded and skip known postings (the SmartRecruiters pattern), so
 snapshot.postings is the newly-fetched subset and snapshot.listed_ids carries the FULL live
 inventory — otherwise apply_board would close every known-but-unrefreshed posting. The
@@ -55,7 +77,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
@@ -67,6 +89,11 @@ _HOST_SUFFIX = ".myworkdayjobs.com"
 _PAGE_LIMIT = 20  # HARD server maximum: limit=21 returns HTTP 400, it is not clamped
 # 150 pages x 20 = 3000, comfortably past the server's own 2000 `total` cap. A backstop
 # only: normal termination is a short page (trap 2 above).
+#
+# DO NOT RAISE IT. Lowes is the ONE live board that reaches it — 12,307 postings with no
+# server clamp at all — and paging to the end would cost 616 requests to gain 61 technology
+# postings. The fix for a board that large is a facet SLICE (property 6 above), which is
+# both complete and cheaper; a bigger backstop is neither.
 _MAX_PAGES = 150
 # Anything that would make the composite slug reinterpretable as a URL with a different
 # authority, path or query than the triple says.
@@ -81,6 +108,12 @@ def _is_locale(segment: str) -> bool:
     the third position would be read as one, and none exists in 113,074 measured URLs."""
     return len(segment) == 5 and segment[2] == "-"
 _SLUG_FORM = "expected host/tenant/site, e.g. acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
+# Peeled off the slug BEFORE the triple split, so it cannot be mistaken for a path component.
+_FACET_SEPARATOR = "#"
+_FACET_FORM = (
+    "expected host/tenant/site#{facetGroup}={descriptor}, e.g. "
+    "acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup=Technology"
+)
 
 
 def split_slug(slug: str) -> tuple[str, str, str]:
@@ -126,10 +159,79 @@ def _validated_host(host: str) -> str:
     return host
 
 
-def _search_body(offset: int) -> dict[str, Any]:
-    """The CXS search body. `limit` is PINNED at _PAGE_LIMIT: 21 returns HTTP 400."""
+class FacetSlice(NamedTuple):
+    """One facet bucket a board is narrowed to (property 6). `parameter` is the tenant's own
+    facet group key (`jobFamilyGroup`); `descriptor` is the bucket's human label
+    (`Technology`). The bucket's ID is deliberately NOT here: it is an opaque, tenant-specific
+    hash and is resolved from the live catalog at fetch time, never stored."""
+
+    parameter: str
+    descriptor: str
+
+
+def split_target(slug: str) -> tuple[str, str, str, FacetSlice | None]:
+    """(host, tenant, site, facet slice or None) from a stored slug.
+
+    The slice is a FRAGMENT, peeled off BEFORE the triple split rather than added as a fourth
+    path component: `normalize_slug` requires exactly three `/`-delimited parts and every
+    stored Workday slug uses that form, so a fourth component would collide with the invariant
+    and with 157 live boards at once. A slug with no `#` therefore takes exactly the path it
+    always took and produces the same triple, the same `board_url` and the same request body.
+
+        acme.wd5.myworkdayjobs.com/acme/AcmeCareers                             unsliced
+        acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup=Technology    sliced
+
+    The fragment is `{facetParameter}={descriptor}`, partitioned on the FIRST `=` only,
+    because a real descriptor contains spaces, `&` and `,` ("Software Engineering and
+    Architecture"). Nothing here decodes the remainder: the descriptor is compared to the live
+    catalog verbatim, so decoding it would break the comparison.
+
+    Case is preserved on BOTH halves, and for a stronger reason than `split_slug`'s: the
+    parameter is a tenant's own JSON key (`jobFamilyGroup`, `Country_and_Jurisdiction`) and
+    the descriptor is matched exactly against the live catalog, so folding either turns a real
+    slice into the board-level ERROR that an out-of-catalog descriptor earns.
+
+    `store/queries.py:stored_slug` folds case, so a MISSPELT-case slice is not stored a second
+    time alongside a correctly-spelt one — it resolves to the stored spelling. What it cannot
+    do is rescue a board whose FIRST insert had the wrong case: that board fails every scan,
+    with the descriptor and the group's real values named in the error. That is the intended
+    closed-catalog behaviour, not a gap to close by folding here.
+
+    Raises ValueError on anything malformed, which board_urls._normalize_slug turns into
+    UnknownBoardURL — the same contract `split_slug` has.
+    """
+    base, separator, fragment = slug.strip().partition(_FACET_SEPARATOR)
+    host, tenant, site = split_slug(base)
+    if not separator:
+        return host, tenant, site, None
+    raw_parameter, equals, raw_descriptor = fragment.partition("=")
+    parameter, descriptor = raw_parameter.strip(), raw_descriptor.strip()
+    if not equals or not parameter or not descriptor:
+        raise ValueError(_FACET_FORM)
+    for label, value in (("facet group", parameter), ("facet descriptor", descriptor)):
+        if any(ord(c) < 32 for c in value):
+            raise ValueError(f"{label} {value!r} contains a control character")
+    # A descriptor legitimately contains spaces; a facet group key never does — it is a JSON
+    # key the tenant itself names, and whitespace there is a malformed slug, not a real group.
+    if any(c.isspace() for c in parameter):
+        raise ValueError(f"facet group {parameter!r} contains whitespace")
+    return host, tenant, site, FacetSlice(parameter, descriptor)
+
+
+def _search_url(host: str, tenant: str, site: str) -> str:
+    """The CXS search endpoint. The SAME url for a sliced and an unsliced board: the slice
+    lives in the request BODY, and in `board_url`'s fragment, never in the wire target."""
+    return f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+
+
+def _search_body(offset: int, applied: dict[str, list[str]] | None = None) -> dict[str, Any]:
+    """The CXS search body. `limit` is PINNED at _PAGE_LIMIT: 21 returns HTTP 400.
+
+    `applied` defaulting to None and rendering as `{}` is what keeps an UNSLICED board's body
+    byte-identical to the one 157 live boards have always sent — the key was already there and
+    already empty, so slicing populates a field rather than adding one."""
     return {
-        "appliedFacets": {},
+        "appliedFacets": applied or {},
         "limit": _PAGE_LIMIT,
         "offset": offset,
         "searchText": "",
@@ -204,6 +306,105 @@ def _facet_sum(payload: dict[str, Any]) -> int | None:
     return max(non_zero) if non_zero else None
 
 
+class FacetUnavailable(Exception):
+    """The facet slice a slug names is not in the board's live facet catalog.
+
+    A TYPED failure at the raise site, so nothing downstream classifies it by string-matching
+    a message. It is caught in exactly one place — `fetch_board` — and turned into a
+    board-level `failed` snapshot with ZERO rows. It must never be turned into an unfiltered
+    fetch: that would silently restore the blind 2,000-row listing while the operator believed
+    the board was sliced, which is the failure this whole mechanism exists to remove.
+    """
+
+
+def _facet_catalog(payload: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """{facetParameter: {value descriptor: OPAQUE value id}} from an offset=0 payload.
+
+    Walked RECURSIVELY, because a facet group can nest another GROUP inside its `values`
+    instead of buckets: live Citi 2026-09-07 answers a `locationMainGroup` whose single value
+    is itself a group (`facetParameter: "locations"`) carrying the buckets. A top-level-only
+    read reports `locations` absent, and an absent group is a board-level ERROR here — so that
+    reading would refuse a slice the tenant really offers. The planning session's first probe
+    made the same class of mistake in the other direction by reading one group and concluding
+    three boards had no engineering roles.
+
+    Ragged shapes are skipped rather than raised on, for the reason `_facet_sum` records: a
+    live payload is not schema-validated and one odd entry must not fail the whole board.
+    """
+    catalog: dict[str, dict[str, str]] = {}
+    raw = payload.get("facets")
+    for group in raw if isinstance(raw, list) else []:
+        _collect_facet_group(group, catalog)
+    return catalog
+
+
+def _collect_facet_group(group: Any, catalog: dict[str, dict[str, str]]) -> None:
+    if not isinstance(group, dict):
+        return
+    values = group.get("values")
+    if not isinstance(values, list):
+        return
+    parameter = group.get("facetParameter")
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        if isinstance(value.get("values"), list):
+            _collect_facet_group(value, catalog)  # a nested GROUP, not a bucket
+            continue
+        descriptor, facet_id = value.get("descriptor"), value.get("id")
+        if not (isinstance(parameter, str) and parameter):
+            continue
+        if isinstance(descriptor, str) and descriptor and isinstance(facet_id, str) and facet_id:
+            catalog.setdefault(parameter, {})[descriptor] = facet_id
+
+
+def _named(items: list[str], limit: int = 6) -> str:
+    """A BOUNDED rendering of a catalog for an error message. `errors` is persisted into
+    board_scans, and one tenant offers 31 job categories and 55 provinces — spelling the whole
+    list out would bury the note in the column that has to carry it."""
+    if not items:
+        return "nothing sliceable at all"
+    shown = ", ".join(repr(item) for item in items[:limit])
+    return shown if len(items) <= limit else f"{shown} (+{len(items) - limit} more)"
+
+
+def _resolve_facet(fetcher: Fetcher, url: str, facet: FacetSlice) -> str:
+    """The tenant's opaque id for `facet`, read from ONE unfiltered request's facet catalog.
+
+    That request is the whole extra cost of a sliced board — one POST, then the sliced pager.
+    Its rows are DISCARDED: they are the unfiltered board's first page and enumerating them
+    would put non-slice postings into the slice's inventory.
+
+    The id is resolved on every fetch, from the board being fetched, and is never stored or
+    reused: `e32326e1...` is one tenant's id for "Technology" and means nothing on another.
+
+    Raises FacetUnavailable when the group or the descriptor is out of catalog. No fallback.
+    """
+    # Deliberately NO validators: the ones stored for a sliced board were observed on a
+    # FILTERED response, and a 304 here would decide "unchanged" from a request we never made.
+    # Inert either way — the CXS POST serves no validators at all (property 3).
+    page = fetcher.post_json(url, _search_body(0))
+    payload = _payload(page.content)
+    if payload is None:
+        raise FacetUnavailable(
+            f"facet catalog unreadable, cannot slice {facet.parameter}={facet.descriptor!r}"
+        )
+    catalog = _facet_catalog(payload)
+    values = catalog.get(facet.parameter)
+    if values is None:
+        raise FacetUnavailable(
+            f"facet group {facet.parameter!r} (named for descriptor {facet.descriptor!r}) is "
+            f"not offered by this board; it offers {_named(sorted(catalog))}"
+        )
+    facet_id = values.get(facet.descriptor)
+    if facet_id is None:
+        raise FacetUnavailable(
+            f"facet {facet.parameter}={facet.descriptor!r} is not in this board's catalog; "
+            f"that group offers {_named(sorted(values))}"
+        )
+    return facet_id
+
+
 def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
     """Return (board_total, censored). None means the board stated no total — never 0, and
     censored is itself None in that case: with no total there is nothing to have censored, so
@@ -246,7 +447,11 @@ class WorkdayProvider:
 
     @staticmethod
     def normalize_slug(slug: str) -> str:
-        return "/".join(split_slug(slug))
+        host, tenant, site, facet = split_target(slug)
+        triple = "/".join((host, tenant, site))
+        if facet is None:
+            return triple
+        return f"{triple}{_FACET_SEPARATOR}{facet.parameter}={facet.descriptor}"
 
     @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:
@@ -278,6 +483,11 @@ class WorkdayProvider:
         A path whose first non-locale segment IS `job`/`details` carries no career site at all,
         so it returns None rather than reading the location. `/wday/cxs` with nothing after it
         is likewise not a board.
+
+        A facet slice is NEVER derived here: `urlparse` splits a URL's fragment off before
+        `parts` is built, so a pasted career-site URL can only ever name the whole board. A
+        slice is asked for through the qualified `workday:host/tenant/site#group=Descriptor`
+        form, which is the only form that carries a fragment as far as `normalize_slug`.
         """
         tenant = host.split(".", 1)[0]
         lowered = [part.lower() for part in parts]
@@ -290,18 +500,46 @@ class WorkdayProvider:
 
     def board_url(self, slug: str) -> str:
         """Canonical fetch URL == the http_cache key. Raises ValueError on a malformed
-        stored slug; scan/coordinator.py and scan/health.py guard the call."""
-        host, tenant, site = split_slug(slug)
-        return f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
+        stored slug; scan/coordinator.py and scan/health.py guard the call.
+
+        A facet slice is carried here as a FRAGMENT so that two slices of one tenant are two
+        distinct cache keys instead of one row they would overwrite in turn. The fragment is
+        never sent on the wire — `fetch_board` posts to the part before it — and an UNSLICED
+        slug returns exactly the string it always returned, byte for byte."""
+        host, tenant, site, facet = split_target(slug)
+        url = _search_url(host, tenant, site)
+        if facet is None:
+            return url
+        return f"{url}{_FACET_SEPARATOR}{facet.parameter}={facet.descriptor}"
 
     def _detail_url(self, host: str, tenant: str, site: str, external_path: str) -> str:
         return f"https://{host}/wday/cxs/{tenant}/{site}{external_path}"
 
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         try:
-            host, tenant, site = split_slug(request.slug)
+            host, tenant, site, facet = split_target(request.slug)
         except ValueError as exc:
             return _failed(request.url, f"invalid workday slug: {exc}")
+
+        # The wire target is the url WITHOUT the facet fragment: the slice lives in the request
+        # BODY, and the fragment exists only so `board_url` yields distinct cache keys.
+        # `request.url` is that cache key, and an unsliced slug has no fragment, so for 157
+        # live boards this line is `request.url` unchanged.
+        #
+        # BELT AND BRACES, deliberately: httpx already drops a fragment when the client builds
+        # the request, so no test can distinguish this from posting `request.url` directly.
+        # Stripping it here keeps the invariant local instead of resting on that normalization.
+        post_url = request.url.partition(_FACET_SEPARATOR)[0]
+        applied: dict[str, list[str]] = {}
+        if facet is not None:
+            # ONE unfiltered POST, and NO fallback on either failure branch: an out-of-catalog
+            # descriptor must enumerate zero rows, not the blind unfiltered board.
+            try:
+                applied = {facet.parameter: [_resolve_facet(fetcher, post_url, facet)]}
+            except FetchFailure as exc:
+                return _failed(request.url, f"facet catalog: {exc}")
+            except FacetUnavailable as exc:
+                return _failed(request.url, str(exc))
 
         errors: list[str] = []
         listed: list[dict[str, Any]] = []
@@ -316,11 +554,13 @@ class WorkdayProvider:
 
         for page_index in range(_MAX_PAGES):
             offset = page_index * _PAGE_LIMIT
-            # every page POSTs to the SAME url (the cache key); only the body's offset moves
+            # every page POSTs to the SAME url; only the body's offset moves. That url is the
+            # cache key for an unsliced board and the key MINUS its fragment for a sliced one,
+            # which is why `request.url` — not `post_url` — is what the snapshot echoes back.
             try:
                 page = fetcher.post_json(
-                    request.url,
-                    _search_body(offset),
+                    post_url,
+                    _search_body(offset, applied),
                     validators=request.validators if page_index == 0 else None,
                 )
             except FetchFailure as exc:
@@ -461,13 +701,19 @@ class WorkdayProvider:
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         """404 is the wrong-site-slug signature (errorCode "S21"); 401/403/410 are a gated
-        or retired tenant, which is equally DEAD for our purposes."""
+        or retired tenant, which is equally DEAD for our purposes.
+
+        A slug naming a facet slice is additionally checked against the board's LIVE catalog,
+        which THIS response already carries — so it costs no extra request, and a slice whose
+        descriptor the tenant does not offer reads ERROR here instead of looking OK and then
+        failing every scan. Live, Workday omits a bucket entirely rather than listing it with
+        count 0, so presence in the catalog is the same answer as a non-empty slice."""
         try:
-            url = self.board_url(slug)
+            host, tenant, site, facet = split_target(slug)
         except ValueError:
             return BoardHealth.ERROR
         try:
-            result = fetcher.post_json(url, _search_body(0))
+            result = fetcher.post_json(_search_url(host, tenant, site), _search_body(0))
         except FetchFailure as exc:
             health = health_from_failure(exc)
             if exc.status_code in (401, 403, 410):
@@ -476,6 +722,13 @@ class WorkdayProvider:
         rows = _postings_list(result.content)
         if rows is None:
             return BoardHealth.ERROR
+        if facet is not None:
+            catalog = _facet_catalog(_payload(result.content) or {})
+            return (
+                BoardHealth.OK
+                if facet.descriptor in catalog.get(facet.parameter, {})
+                else BoardHealth.ERROR
+            )
         return BoardHealth.OK if rows else BoardHealth.EMPTY
 
 

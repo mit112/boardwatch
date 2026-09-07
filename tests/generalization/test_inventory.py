@@ -58,12 +58,15 @@ def test_scope_covers_data_files_repo_wide() -> None:
     # and the frontend's three build-config files, 81 -> 85. T14 deleted the Workday
     # workerSubType facet probe and its now-orphaned fixture, 85 -> 84. T64 added the jibe
     # provider's four fixtures, 84 -> 88; T65 added the oraclehcm provider's nine, 88 -> 97;
-    # T67 added the eightfold provider's seven, 97 -> 104. The count is pinned so
+    # T67 added the eightfold provider's seven, 97 -> 104. T71 added Workday's facet catalog
+    # and its two sliced pages, 109 -> 112 (the 104 -> 109 step is unnarrated above; the pin
+    # read 109 before this change). The count is pinned so
     # a data file cannot enter the wheel without someone acknowledging it here; bumping this
     # line IS that acknowledgement, and an addition must be paired with a SHIPPED_DATA entry
     # in allowlists.py.
     assert "src/boardwatch/rank/leveling.yaml" in scope
     assert "tests/fixtures/workday/list_censored_with_facets.json" in scope
+    assert "tests/fixtures/workday/list_facet_catalog.json" in scope
     assert "tests/fixtures/eightfold/search_normal.json" in scope
     # The answers example ships placeholders only and deliberately carries no work-authorisation
     # value; the three web files decide which third-party code is compiled into the committed
@@ -74,7 +77,7 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "web/tsconfig.json" in scope
     assert "tests/fixtures/oraclehcm/list_no_expand.json" in scope
     assert "tests/fixtures/phenom/list_normal.json" in scope
-    assert len(scope) == 109
+    assert len(scope) == 112
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:

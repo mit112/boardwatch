@@ -58,6 +58,43 @@ live:
    erroring, so a naive `while offset < total` loop never terminates. The pager must stop
    on a page-count or empty-page condition, not on `total`.
 
+## Facet slicing, and the extra request it costs
+
+Trap 3 means a board larger than 2,000 postings is enumerated **blind and partially**. Measured
+live on 2026-09-07 against five real tenants: one board of 21,190 postings reported
+`total: 2000` and yielded 1,998 rows; one of 4,376 reported 2000 and yielded 1,988; one of
+12,307 reported its real size and stopped at the provider's 150-page backstop with 3,000.
+
+**The facets are not capped** — `timeType`, `jobFamilyGroup` and `jobFamily` each sum to the
+board's true size even when `total` is censored, which is how those numbers were obtained. So a
+slug may name **one facet bucket** and fetch that instead of the whole board:
+
+    acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup=Technology
+
+Sliced, `total` reads the **bucket's own true size** and the pager enumerates all of it. On the
+4,376-posting board, slicing to its 1,074-posting technology bucket enumerated 1,074 distinct
+ids in 54 pages, against the 100 pages a blind scan spends to reach roughly half of them.
+
+Two properties of the live API force the design, and both are recorded in
+`list_facet_catalog.json`:
+
+1. **The bucket id is an opaque, tenant-specific hash.** One tenant's id for `Technology` is a
+   32-character hex string that means nothing on another tenant, and posting an id the tenant
+   does not know answers **HTTP 400**. It therefore cannot be hardcoded in a slug or a catalog:
+   the provider issues **ONE extra unfiltered POST per sliced board**, reads
+   `facets[] -> {facetParameter, values: [{descriptor, id, count}]}`, and resolves
+   `descriptor -> id` at fetch time. That request's own `jobPostings` rows are discarded — they
+   are the unfiltered board's first page.
+2. **A facet group can nest another group inside its `values`.** `locationMainGroup` returns a
+   single value that is itself a group (`facetParameter: "locations"`) with the buckets under
+   it and no `id`/`count` of its own. A top-level-only read reports `locations` absent.
+
+**Tenants expose different groups.** Three of the five probed boards offer `jobFamilyGroup` and
+**no `jobFamily` at all**, which is why the slug fragment names the group as well as the
+descriptor. A group or descriptor that is not in the live catalog is a **board-level ERROR with
+zero rows** and never an unfiltered fetch — a fallback would restore the blind 2,000-row
+listing while the operator believed the board was sliced.
+
 ## The dead-board signature
 
 A retired or mistyped site slug answers **HTTP 404** with body `{"errorCode": "S21", ...}`
@@ -75,6 +112,9 @@ A retired or mistyped site slug answers **HTTP 404** with body `{"errorCode": "S
 | `detail_normal.json` | A detail payload for the Senior Platform Engineer posting: full `jobPostingInfo` including `remoteType: "Fully Remote"`, `jobReqId: "JR1000001"` (bare), and `jobPostingId: "JR1000001-1"` (carries the instance suffix). |
 | `dead_s21.json` | The wrong-site-slug signature: HTTP 404 with `errorCode: "S21"`. |
 | `normal_response_headers.json` | `{"etag": null, "last_modified": null}` — Workday sends **neither** validator on the list endpoint; recorded explicitly so the absence is deliberate, not an oversight. |
+| `list_facet_catalog.json` | The **unfiltered** `offset=0` response of a censored board, i.e. the facet catalog a sliced fetch resolves against: `total: 2000` with facets summing to 4589, a `jobFamilyGroup` whose `Technology` bucket counts 25, a `timeType`, and a `locationMainGroup` that **nests** a `locations` group. Its 2 `jobPostings` rows carry ids no sliced fixture uses, so a test can prove they never enter the slice's inventory. The unknown-**descriptor** and unknown-**group** cases are read off this same file rather than getting fixtures of their own: each is an ABSENCE (no `Warehouse Operations` value, no `jobFamily` group at all), and a file whose only content is what it lacks records nothing a reader could check. |
+| `list_sliced_page_full.json` | The **sliced** `offset=0` response for that board's `Technology` bucket: `total: 25` — the bucket's TRUE size, **not** the 2000 censor — with a full 20-row page and facets re-aggregated over the slice. |
+| `list_sliced_page_short.json` | The slice's `offset=20` page: 5 rows, and `total: 0` / `facets: []` as trap 2 requires of any page past the first. 20 + 5 = 25 = the bucket's count, so the catalog count, the sliced `total` and the enumeration are three independent paths to one number. |
 | `list_censored_with_facets.json` | `total: 2000` (the censor value) with three facet dimensions summing to 3000+1589=4589, 4589, and 0 — pins that `_uncapped_total` returns a facet dimension's own sum (4589) rather than the sum of all dimensions (9178) when total is censored. The two non-zero dimensions tie at 4589, so this fixture cannot distinguish "largest" from "first", and dropping the zero dimension does not change the result either way, so it does not exercise the zero-skip (D-271). |
 
 The non-JSON maintenance-page case (a live signature seen on another tenant) is

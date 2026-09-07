@@ -342,7 +342,11 @@ the person before writing it over a copy they already have.""",
     "companies add": Entry(
         ("writes store", "network"),
         """Watches a board by `provider:slug` or by its URL. `--verify` fetches it first and refuses
-a board that does not answer. A board added here is scanned from the next `scan` on.""",
+a board that does not answer. A board added here is scanned from the next `scan` on.
+A Workday slug may end in `#<facetGroup>=<Descriptor>` (for example
+`workday:acme.wd5.myworkdayjobs.com/acme/AcmeCareers#jobFamilyGroup=Technology`) to watch ONE facet
+bucket instead of the whole board, which is the only way past Workday's 2,000-result ceiling; the
+descriptor must be one the board's own facets list, or every scan of it fails.""",
     ),
     "companies remove": Entry(("writes store",), "Stops watching one board. Its postings stay."),
     "companies list": Entry(

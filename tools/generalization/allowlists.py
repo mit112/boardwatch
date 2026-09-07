@@ -467,6 +467,11 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:3ab3f62d720d6cb3b5979758289474ece9c15c38c5c0c326b4216c1f6497287b",
     ),
+    "tests/fixtures/workday/list_facet_catalog.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:80f9ea922d13519e911443130260492582979c05a8dfb5472c6e59034c0258fd",
+    ),
     "tests/fixtures/workday/list_normal.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,
@@ -481,6 +486,16 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         kind="fixture",
         reason=_FIXTURE,
         pin="sha256:c4faf2d3125483286b95f80aabd381369ffdaac71c3bb9b2afe9789e74d91c60",
+    ),
+    "tests/fixtures/workday/list_sliced_page_full.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:78631a5bfa63460a193148cc2e64ca59f960260ebbd6ebc8145518a0135f99e7",
+    ),
+    "tests/fixtures/workday/list_sliced_page_short.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:ed66fa8267406a5ba1896163e6221192aa7363ff321ee683834e0b295f18662d",
     ),
     "tests/fixtures/workday/normal_response_headers.json": DataEntry(
         kind="fixture",

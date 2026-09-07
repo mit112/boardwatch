@@ -134,7 +134,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     "workday": FixtureProvenance(
         captured=date(2026, 8, 4),
         review_by=date(2026, 11, 2),
-        readme_pin="sha256:6ebb3344ca44c15810542b1661c61e3d91840081fcce0fc08ffd90067adebcf7",
+        readme_pin="sha256:920396215f3246d69ff2a0c1ac5a360ba7ac7f1a8531464e3fe686ab1b4de711",
     ),
 }
 
