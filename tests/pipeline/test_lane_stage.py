@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from threading import Barrier, Event, get_ident
+from threading import Barrier, BrokenBarrierError, Event, get_ident
 from time import monotonic, sleep
 from typing import Any
 
@@ -1866,18 +1866,57 @@ def _fake_run_scan_that_sleeps(delay: float) -> Callable[..., ScanSummary]:
     return fake
 
 
+def _fake_run_scan_that_rendezvous(
+    barrier: Barrier, *, start_lanes_first: bool = True
+) -> Callable[..., ScanSummary]:
+    """A fake scan that WAITS on `barrier` instead of sleeping a fixed time.
+
+    `start_lanes_first=False` models SERIALIZATION exactly -- the lane stage is not started
+    until the scan body has finished -- and is what proves this test is not vacuous.
+    """
+
+    def fake(
+        engine: Engine,
+        settings: Settings,
+        *,
+        fetcher: object | None = None,
+        providers: object | None = None,
+        company: str | None = None,
+        provider: str | None = None,
+        finish: bool = True,
+        on_run_started: Callable[[int], None] | None = None,
+    ) -> ScanSummary:
+        run_id = insert_run(engine)
+        if start_lanes_first and on_run_started is not None:
+            on_run_started(run_id)
+        try:
+            barrier.wait()
+        except BrokenBarrierError:
+            pass  # the test reads `barrier.broken`; a hang here would hide the failure
+        if not start_lanes_first and on_run_started is not None:
+            on_run_started(run_id)
+        # `companies=0`: an outage-free, genuinely empty scan, so nothing downstream refuses.
+        return ScanSummary(run_id=run_id)
+
+    return fake
+
+
 def test_the_lane_stage_overlaps_the_board_scan_instead_of_serializing_after_it(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole point of SP2, measured rather than inferred from the wiring: a fake scan and a
-    fake lane each sleep a fixed amount, so the run's wall clock landing well under their SUM is
-    only possible if they overlapped.
+    """The whole point of SP2, proved by RENDEZVOUS rather than by wall clock.
 
-    The run's own non-scan, non-lane cost (DB setup, an empty ranker pass) is measured directly,
-    right before the delayed run, rather than assumed as a constant -- this machine's own
-    baseline swung from ~0.5s to ~3s across this session depending on what else was running, and
-    a hard-coded margin against that would flake either direction. Both runs happen back to back
-    so they see roughly the same load, and what is asserted is the DELTA the delays add.
+    This test used to run the pipeline twice and assert that the delays added less wall clock
+    than their sum. That is a race against machine load, and it lost twice in two days on CI:
+    4.58s on 2026-09-06 and 4.63s on 2026-09-07, both against the same 4.5s bar, on a run whose
+    overlapped case should measure ~3.0s. The comment claiming the threshold was "generously
+    clear of both" was not true on a loaded runner.
+
+    A `Barrier(2)` cannot be crossed unless both parties are inside it simultaneously, so it
+    proves overlap EXACTLY and is immune to how slow the machine is. It also runs in a fraction
+    of the time, and it FAILS FAST AND LOUDLY when the stages serialize, instead of failing by a
+    tenth of a second for reasons nobody can reproduce. The file already used this pattern for
+    the two-lane case (`LANE_RENDEZVOUS_TIMEOUT`); this brings the scan/lane case onto it.
     """
     assert _cli(env, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(env, ["tailor", "init"]).exit_code == 0
@@ -1893,31 +1932,24 @@ def test_the_lane_stage_overlaps_the_board_scan_instead_of_serializing_after_it(
             resume_path=settings.config_dir / "resume.yaml",
         )
 
-    # Baseline: same run shape, both delays ~0 -- this run's own cost with nothing to overlap.
-    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(0.0))
-    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([], delay=0.0)})
-    baseline_started = monotonic()
-    baseline_summary = _run("baseline")
-    baseline_elapsed = monotonic() - baseline_started
-    assert baseline_summary.fatal is None, baseline_summary.errors
-
-    SCAN_DELAY = 3.0
-    LANE_DELAY = 3.0
-    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(SCAN_DELAY))
+    # The scan and the lane each WAIT ON THE SAME BARRIER. A barrier of 2 releases only when both
+    # parties have arrived, so it can only be crossed if the two stages were in flight AT THE SAME
+    # MOMENT. If the lane stage ran after the scan finished, the scan's wait times out, the barrier
+    # breaks, and `barrier.broken` records it. Nothing here is a wall-clock comparison.
+    LANE_DELAY = 0.2
+    barrier = Barrier(2, timeout=LANE_RENDEZVOUS_TIMEOUT)
+    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_rendezvous(barrier))
     monkeypatch.setattr(
-        runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: StubLane([], delay=LANE_DELAY)}
+        runner_mod,
+        "LANE_FACTORIES",
+        {"stub": lambda _ctx: StubLane([], delay=LANE_DELAY, on_collect=barrier.wait)},
     )
-    started = monotonic()
     summary = _run("apps")
-    elapsed = monotonic() - started
 
     assert summary.fatal is None, summary.errors
-    added = elapsed - baseline_elapsed
-    # Overlapped: added ~= max(SCAN_DELAY, LANE_DELAY) = 3.0s. Serial: added ~= their SUM = 6.0s.
-    # The threshold sits at the midpoint, generously clear of both.
-    assert added < (SCAN_DELAY + LANE_DELAY) * 0.75, (
-        f"the delays added {added:.2f}s of wall clock on top of this run's own {baseline_elapsed:.2f}s "
-        f"baseline -- scan ({SCAN_DELAY}s) and lanes ({LANE_DELAY}s) did not overlap"
+    assert not barrier.broken, (
+        "the scan and the lane stage never held the barrier at the same time -- the lane stage "
+        "serialized after the board scan instead of overlapping it"
     )
 
     # The stage's own cost survives the move to a background thread -- it is just no longer
