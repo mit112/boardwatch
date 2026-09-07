@@ -72,7 +72,8 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "web/package-lock.json" in scope
     assert "web/tsconfig.json" in scope
     assert "tests/fixtures/oraclehcm/list_no_expand.json" in scope
-    assert len(scope) == 97
+    assert "tests/fixtures/phenom/list_normal.json" in scope
+    assert len(scope) == 102
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:

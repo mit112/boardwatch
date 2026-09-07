@@ -1,0 +1,34 @@
+{
+  "jobDetail": {
+    "status": 200,
+    "hits": 1,
+    "totalHits": 1,
+    "eid": "acme-external",
+    "source": "widget",
+    "data": {
+      "job": {
+        "jobId": "100001BR",
+        "reqId": "100001BR",
+        "jobSeqNo": "ACME1US100001BREXTERNAL",
+        "title": "Senior Platform Engineer",
+        "descriptionTeaser": "Teaser for the platform role.",
+        "description": "<b>Job Description</b><p>Build synthetic platforms.</p><ul><li>Python</li><li>SQL</li></ul>",
+        "type": "Full-Time",
+        "category": "Engineering & Technology",
+        "city": "Springfield",
+        "state": "Ohio",
+        "country": "United States",
+        "cityStateCountry": "Springfield, Ohio, United States",
+        "location": "Springfield, Ohio, United States",
+        "postedDate": "2026-09-01T09:00:00.000+0000",
+        "jobUpdatedDate": "2026-09-04T09:00:00.000+0000",
+        "applyUrl": "https://ats.example.test/apply?jobid=100001",
+        "payRange": "",
+        "salaryMin": "",
+        "salaryMax": "",
+        "siteType": "external",
+        "visibilityType": "External"
+      }
+    }
+  }
+}

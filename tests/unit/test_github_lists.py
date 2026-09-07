@@ -393,15 +393,20 @@ def test_candidates_are_ordered_cheapest_provider_first():
     """The owner's ramp: the four one-request inline-body providers, then jibe, then workday,
     then smartrecruiters and oraclehcm.
 
-    Five of the seven providers serve every board from ONE host and `Fetcher` holds a per-host lock
-    for each request's full duration, so boards on one provider serialize and no worker count
-    compresses it. Only workday, smartrecruiters and oraclehcm additionally spend
+    Five of the seven ATS-hosted providers serve every board from ONE host and `Fetcher` holds a
+    per-host lock for each request's full duration, so boards on one provider serialize and no
+    worker count compresses it. Only workday, smartrecruiters and oraclehcm additionally spend
     `detail_fetch_budget` on a per-posting GET, and boardwatch watches ZERO smartrecruiters and
     ZERO oraclehcm boards, so those two paths have never run at scale.
+
+    `phenom` sits last and its position carries no cost claim: its career sites are on the
+    employer's own domain, so it declares no paste host and `parse_board_target` can never
+    return it from a listing URL. It is ranked only because an unranked registered provider
+    raises `UnrankedProvider` (see the test below).
     """
     assert PROVIDER_PRIORITY == (
         "greenhouse", "lever", "ashby", "workable", "jibe", "workday", "smartrecruiters",
-        "oraclehcm",
+        "oraclehcm", "phenom",
     )
     providers = [c.provider for c in discover(_sources()).candidates]
     inline_positions = [i for i, p in enumerate(providers) if p in _INLINE_BODY]
@@ -641,7 +646,7 @@ def test_the_ramp_ranks_every_registered_provider_and_no_others():
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     assert set(PROVIDER_PRIORITY) == set(PROVIDER_NAMES)
-    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 8
+    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 9
 
 
 def test_an_unranked_provider_is_a_failure_and_not_a_quiet_last_place():
