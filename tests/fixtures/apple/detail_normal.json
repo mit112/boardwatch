@@ -1,0 +1,96 @@
+{
+ "loaderData": {
+  "root": {
+   "appType": "external",
+   "isSessionAuthenticated": false,
+   "locale": {
+    "postLocationId": "postLocation-AAA",
+    "direction": "ltr",
+    "country": "AAA"
+   },
+   "baseUrl": "https://jobs.apple.com",
+   "talentId": null,
+   "countryCode": "AAA",
+   "searchPageUrl": "search?location=acmeland-AAA",
+   "currentUser": null
+  },
+  "jobDetails": {
+   "jobsData": {
+    "id": "CORP-900000002",
+    "positionId": "900000002",
+    "reqId": "REQ-900000002",
+    "jobNumber": "900000002",
+    "postingTitle": "Sprocket Design Lead",
+    "transformedPostingTitle": "sprocket-design-lead",
+    "jobSummary": "Acme Corp builds widgets for the Acmeland market.",
+    "description": "You will own the reliability of the widget line.\nPartner with the sprocket team on rollout.",
+    "minimumQualifications": "You should:\nHold a widget certification.\nBe available for occasional travel.",
+    "preferredQualifications": "You can:\nRead a sprocket schematic.",
+    "locations": [
+     {
+      "id": "postLocation-SHB",
+      "name": "Shelbyville",
+      "city": "Shelbyville",
+      "code": "SHB",
+      "stateProvince": "North Province",
+      "metro": "Shelbyville Metro Area",
+      "countryName": "Acmeland",
+      "countryID": "iso-country-AAA",
+      "zipCode": "00000",
+      "region": "North",
+      "level": 5,
+      "active": true,
+      "postLocationCountryID": "postLocation-AAA",
+      "postingIdentifier": "0001",
+      "showPayAndBenefits": false,
+      "promotedOnLinkedIn": false
+     },
+     {
+      "id": "postLocation-OGD",
+      "name": "Ogdenville",
+      "city": "Ogdenville",
+      "code": "OGD",
+      "stateProvince": "South Province",
+      "metro": "Ogdenville Metro Area",
+      "countryName": "Acmeland",
+      "countryID": "iso-country-AAA",
+      "zipCode": "00000",
+      "region": "North",
+      "level": 5,
+      "active": true,
+      "postLocationCountryID": "postLocation-AAA",
+      "postingIdentifier": "0001",
+      "showPayAndBenefits": false,
+      "promotedOnLinkedIn": false
+     }
+    ],
+    "teamNames": [
+     "Acme Widgets",
+     "Acme Sprockets"
+    ],
+    "jobType": "CORPORATE",
+    "homeOffice": true,
+    "postingDate": "Sep 07, 2026",
+    "postingDateMeta": "2026-09-07",
+    "longPostingDate": "2026-09-07T12:42:42.277+00:00",
+    "postDateInGMT": "2026-09-07T12:42:42.277+00:00",
+    "localizations": {},
+    "translations": {},
+    "localeInfo": {
+     "languageCode": "en_US",
+     "dateFormat": "MMM D, YYYY",
+     "defaultLocaleCode": "en-us"
+    },
+    "managedPipelineRole": false,
+    "type": "CORPORATE",
+    "roleLocationSelection": false,
+    "submitted": false,
+    "resubmitted": false
+   },
+   "requestUrl": "https://jobs.apple.com/en-us/details/900000002/sprocket-design-lead",
+   "metaLinks": []
+  }
+ },
+ "actionData": null,
+ "errors": null
+}

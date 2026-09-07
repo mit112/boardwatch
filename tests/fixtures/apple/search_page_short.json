@@ -1,0 +1,130 @@
+{
+ "loaderData": {
+  "root": {
+   "appType": "external",
+   "isSessionAuthenticated": false,
+   "locale": {
+    "postLocationId": "postLocation-AAA",
+    "direction": "ltr",
+    "country": "AAA"
+   },
+   "baseUrl": "https://jobs.apple.com",
+   "talentId": null,
+   "countryCode": "AAA",
+   "searchPageUrl": "search?location=acmeland-AAA",
+   "currentUser": null
+  },
+  "search": {
+   "searchResults": [
+    {
+     "id": "CORP-900100021",
+     "positionId": "900100021",
+     "reqId": "REQ-900100021",
+     "jobPositionId": "JOB-900100021",
+     "postingTitle": "Widget Engineer 21",
+     "transformedPostingTitle": "widget-engineer-21",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-SHB",
+       "city": "Shelbyville",
+       "stateProvince": "North Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Shelbyville",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    },
+    {
+     "id": "CORP-900100022",
+     "positionId": "900100022",
+     "reqId": "REQ-900100022",
+     "jobPositionId": "JOB-900100022",
+     "postingTitle": "Widget Engineer 22",
+     "transformedPostingTitle": "widget-engineer-22",
+     "jobSummary": "Acme Corp is hiring. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. This teaser is truncated by the listing endpoint. ",
+     "locations": [
+      {
+       "postLocationId": "postLocation-OGD",
+       "city": "Ogdenville",
+       "stateProvince": "South Province",
+       "countryName": "Acmeland",
+       "metro": "",
+       "region": "",
+       "name": "Ogdenville",
+       "countryID": "iso-country-AAA",
+       "level": 5
+      }
+     ],
+     "postingDate": "Sep 07, 2026",
+     "postDateInGMT": "2026-09-07T05:22:08.324174937Z",
+     "team": {
+      "teamName": "Acme Widgets",
+      "teamID": "teamsAndSubTeams-AWG",
+      "teamCode": "AWG"
+     },
+     "type": "CORPORATE",
+     "homeOffice": false,
+     "isMultiLocation": false,
+     "managedPipelineRole": false,
+     "standardWeeklyHours": 40,
+     "postExternal": true,
+     "localeInfo": {
+      "languageCode": "en_US",
+      "dateFormat": "MMM D, YYYY",
+      "defaultLocaleCode": "en-us"
+     }
+    }
+   ],
+   "totalRecords": 22,
+   "staticData": {
+    "refData": {
+     "roles": null,
+     "products": [],
+     "jobLevels": null
+    }
+   },
+   "talentRolesInfoById": {},
+   "queryParams": {
+    "location": "acmeland-AAA",
+    "page": "2"
+   },
+   "requestUrl": "https://jobs.apple.com/en-us/search",
+   "filters": {},
+   "search": "",
+   "sort": "",
+   "page": 2,
+   "searchMeta": {
+    "links": [
+     {
+      "rel": "canonical",
+      "href": "https://jobs.apple.com/en-us/search?"
+     }
+    ]
+   }
+  }
+ },
+ "actionData": null,
+ "errors": null
+}
