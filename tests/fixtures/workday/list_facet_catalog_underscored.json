@@ -1,0 +1,103 @@
+{
+  "total": 2000,
+  "jobPostings": [
+    {
+      "title": "Unfiltered Technician 1",
+      "externalPath": "/job/Springfield/Unfiltered-Technician-1_JR3000001",
+      "locationsText": "Springfield, Anystate",
+      "postedOn": "Posted Today",
+      "bulletFields": [
+        "JR3000001"
+      ]
+    }
+  ],
+  "facets": [
+    {
+      "facetParameter": "Job_Family_Group",
+      "descriptor": "Business Group",
+      "values": [
+        {
+          "id": "9c41ab7e604f01a2b1c0ee7712020001",
+          "descriptor": "Retail - Group",
+          "count": 1902
+        },
+        {
+          "id": "9c41ab7e604f01a2b1c0ee7712020002",
+          "descriptor": "Information Technology - Group",
+          "count": 30
+        },
+        {
+          "id": "9c41ab7e604f01a2b1c0ee7712020003",
+          "descriptor": "Finance - Group",
+          "count": 259
+        }
+      ]
+    },
+    {
+      "facetParameter": "timeType",
+      "descriptor": "Time Type",
+      "values": [
+        {
+          "id": "9c41ab7e604f01a2b1c0ee7712020004",
+          "descriptor": "Full time",
+          "count": 2191
+        }
+      ]
+    },
+    {
+      "facetParameter": "locationMainGroup",
+      "values": [
+        {
+          "facetParameter": "locationCountry",
+          "descriptor": "Location Country",
+          "values": [
+            {
+              "id": "9c41ab7e604f01a2b1c0ee7712020005",
+              "descriptor": "United States of America",
+              "count": 2191
+            }
+          ]
+        },
+        {
+          "facetParameter": "locations",
+          "descriptor": "Locations",
+          "values": [
+            {
+              "id": "9c41ab7e604f01a2b1c0ee7712020006",
+              "descriptor": "Springfield, Anystate",
+              "count": 3
+            },
+            {
+              "id": "9c41ab7e604f01a2b1c0ee7712020007",
+              "descriptor": "Shelbyville, Anystate",
+              "count": 2
+            }
+          ]
+        },
+        {
+          "facetParameter": "locationRegionStateProvince",
+          "descriptor": "Location Region/State/Province",
+          "values": [
+            {
+              "id": "9c41ab7e604f01a2b1c0ee7712020008",
+              "descriptor": "Anystate",
+              "count": 16
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "facetParameter": "distance",
+      "descriptor": "Distance",
+      "values": [
+        {
+          "id": "9c41ab7e604f01a2b1c0ee7712020009",
+          "descriptor": "5 miles",
+          "count": 0
+        }
+      ]
+    }
+  ],
+  "userAuthenticated": false
+}

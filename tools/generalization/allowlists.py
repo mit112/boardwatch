@@ -542,6 +542,11 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:80f9ea922d13519e911443130260492582979c05a8dfb5472c6e59034c0258fd",
     ),
+    "tests/fixtures/workday/list_facet_catalog_underscored.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:673e5a45d7f217f7b2ca14c6a5dcf703613031cb01158b56d0ae516cb2c34725",
+    ),
     "tests/fixtures/workday/list_normal.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

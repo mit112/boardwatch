@@ -85,9 +85,18 @@ Two properties of the live API force the design, and both are recorded in
    `facets[] -> {facetParameter, values: [{descriptor, id, count}]}`, and resolves
    `descriptor -> id` at fetch time. That request's own `jobPostings` rows are discarded — they
    are the unfiltered board's first page.
-2. **A facet group can nest another group inside its `values`.** `locationMainGroup` returns a
-   single value that is itself a group (`facetParameter: "locations"`) with the buckets under
-   it and no `id`/`count` of its own. A top-level-only read reports `locations` absent.
+2. **A facet group can nest another group inside its `values`.** `locationMainGroup` returns
+   values that are themselves groups, with the buckets under them and no `id`/`count` of their
+   own. A top-level-only read reports those groups absent. Re-probed 2026-09-07 on two more
+   tenants: it nests **three** of them, not one — `locationCountry`, `locations` and
+   `locationRegionStateProvince` — and one of those tenants answers **1,091 `locations`
+   buckets and 51 provinces**, which is why `boardwatch companies facets` bounds its default
+   output to the job-family groups and prints the rest only under `--all`.
+3. **The group parameter is the tenant's OWN JSON key and tenants spell it differently.**
+   Measured 2026-09-07: one tenant answers `jobFamilyGroup` and another answers
+   `Job_Family_Group` (descriptor `"Business Group"`) for the same dimension, so nothing may
+   match that spelling literally. Some tenants also expose a `distance` group, which carries
+   counts and ids like any other but partitions nothing — slicing on it is meaningless.
 
 **Tenants expose different groups.** Three of the five probed boards offer `jobFamilyGroup` and
 **no `jobFamily` at all**, which is why the slug fragment names the group as well as the
@@ -113,6 +122,7 @@ A retired or mistyped site slug answers **HTTP 404** with body `{"errorCode": "S
 | `dead_s21.json` | The wrong-site-slug signature: HTTP 404 with `errorCode: "S21"`. |
 | `normal_response_headers.json` | `{"etag": null, "last_modified": null}` — Workday sends **neither** validator on the list endpoint; recorded explicitly so the absence is deliberate, not an oversight. |
 | `list_facet_catalog.json` | The **unfiltered** `offset=0` response of a censored board, i.e. the facet catalog a sliced fetch resolves against: `total: 2000` with facets summing to 4589, a `jobFamilyGroup` whose `Technology` bucket counts 25, a `timeType`, and a `locationMainGroup` that **nests** a `locations` group. Its 2 `jobPostings` rows carry ids no sliced fixture uses, so a test can prove they never enter the slice's inventory. The unknown-**descriptor** and unknown-**group** cases are read off this same file rather than getting fixtures of their own: each is an ABSENCE (no `Warehouse Operations` value, no `jobFamily` group at all), and a file whose only content is what it lacks records nothing a reader could check. |
+| `list_facet_catalog_underscored.json` | A SECOND tenant's unfiltered `offset=0` catalog, in the shape measured live 2026-09-07: the job-family group spelt `Job_Family_Group` with descriptor `"Business Group"`, a `locationMainGroup` nesting **three** groups (`locationCountry`, `locations`, `locationRegionStateProvince`), and a `distance` group whose one bucket counts 0. `total` is the 2000 censor while `Job_Family_Group`, `timeType` and `locationCountry` each sum to the true 2191 — three independent paths to one number. It exists because `list_facet_catalog.json` carries a single spelling and a single nested group, so against it neither the spelling-independence of `companies facets`' default view nor its bound could be pinned. |
 | `list_sliced_page_full.json` | The **sliced** `offset=0` response for that board's `Technology` bucket: `total: 25` — the bucket's TRUE size, **not** the 2000 censor — with a full 20-row page and facets re-aggregated over the slice. |
 | `list_sliced_page_short.json` | The slice's `offset=20` page: 5 rows, and `total: 0` / `facets: []` as trap 2 requires of any page past the first. 20 + 5 = 25 = the bucket's count, so the catalog count, the sliced `total` and the enumeration are three independent paths to one number. |
 | `list_censored_with_facets.json` | `total: 2000` (the censor value) with three facet dimensions summing to 3000+1589=4589, 4589, and 0 — pins that `_uncapped_total` returns a facet dimension's own sum (4589) rather than the sum of all dimensions (9178) when total is censored. The two non-zero dimensions tie at 4589, so this fixture cannot distinguish "largest" from "first", and dropping the zero dimension does not change the result either way, so it does not exercise the zero-skip (D-271). |

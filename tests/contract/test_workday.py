@@ -20,11 +20,13 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.workday import (
+    FacetBucket,
     WorkdayProvider,
     _facet_catalog,
     _facet_sum,
     _posting_id,
     _uncapped_total,
+    facet_buckets,
     parse_posting,
     split_slug,
     split_target,
@@ -1138,6 +1140,65 @@ def test_the_facet_catalog_reads_a_group_nested_inside_another_groups_values() -
     assert "locations" in catalog
     assert catalog["locations"]["1 ACME WAY  SPRINGFIELD"]
 
+
+def test_the_facet_catalog_carries_every_buckets_count_through_the_nesting() -> None:
+    """T75. `_facet_catalog` dropped the count, and `companies facets` cannot answer "which
+    bucket holds engineering" without it — a blanket `Technology` slice was WRONG on 7 of 10
+    live boards probed 2026-09-07.
+
+    The count has to survive the NESTED read as well as the top-level one, which is the half a
+    projection could plausibly lose: `locations` is reached one level down, inside
+    `locationMainGroup`'s values."""
+    buckets = facet_buckets(_fx("list_facet_catalog.json"))
+    assert [(b.descriptor, b.postings) for b in buckets["jobFamilyGroup"]] == [
+        ("Technology", 25),
+        ("Operations, Sales & Marketing", 4564),
+    ]
+    # the nested group, count intact and the opaque id still attached to it
+    assert buckets["locations"] == [
+        FacetBucket("1 ACME WAY  SPRINGFIELD", "3f2c9a1e708d01575bddff0c12010004", 4589)
+    ]
+
+
+def test_the_widened_catalog_resolves_a_descriptor_to_exactly_the_same_opaque_ids() -> None:
+    """THE REGRESSION PIN. `_facet_catalog` is now a projection of `facet_buckets`, and
+    `_resolve_facet` posts whatever it returns: 13 sliced boards are live, and an id this
+    view got wrong would be sent to the tenant, which answers HTTP 400 for an id it does not
+    know. Pinned as the WHOLE dict, so a projection that yielded a bucket, a tuple or a count
+    where an id belongs fails here rather than in production."""
+    assert _facet_catalog(_fx("list_facet_catalog.json")) == {
+        "jobFamilyGroup": {
+            "Technology": "3f2c9a1e708d01575bddff0c12010001",
+            "Operations, Sales & Marketing": "3f2c9a1e708d01575bddff0c12010002",
+        },
+        "timeType": {"Full time": "3f2c9a1e708d01575bddff0c12010003"},
+        "locations": {"1 ACME WAY  SPRINGFIELD": "3f2c9a1e708d01575bddff0c12010004"},
+    }
+
+
+def test_a_group_with_no_usable_bucket_of_its_own_gets_no_key_at_all() -> None:
+    """Live `locationMainGroup` carries three nested groups and no bucket of its own (measured
+    2026-09-07), so it must not appear as an EMPTY group. `_resolve_facet` distinguishes an
+    absent key ("that group is not offered by this board") from a present one ("that group
+    offers ..."), and an empty key would claim the tenant offers a group holding nothing."""
+    catalog = facet_buckets(_fx("list_facet_catalog.json"))
+    assert "locationMainGroup" not in catalog
+    assert "locationMainGroup" not in _facet_catalog(_fx("list_facet_catalog.json"))
+
+
+def test_a_bucket_count_that_is_absent_null_or_not_a_number_reads_as_unknown() -> None:
+    # None, not 0: `.get("count", 0)` would claim the board stated a count of zero. `True` is
+    # an `int` and must not read as a count of 1, the same exclusion `_facet_sum` makes.
+    payload = {"facets": [{"facetParameter": "g", "values": [
+        {"id": "a", "descriptor": "Absent"},
+        {"id": "b", "descriptor": "Null", "count": None},
+        {"id": "c", "descriptor": "Text", "count": "12"},
+        {"id": "d", "descriptor": "Bool", "count": True},
+        {"id": "e", "descriptor": "Real", "count": 7},
+    ]}]}
+    assert [(b.descriptor, b.postings) for b in facet_buckets(payload)["g"]] == [
+        ("Absent", None), ("Null", None), ("Text", None), ("Bool", None), ("Real", 7),
+    ]
 
 def test_the_facet_catalog_never_raises_on_a_ragged_payload() -> None:
     # same defensive contract as `_facet_sum`: a live payload is not schema-validated and one
