@@ -20,6 +20,16 @@
 
 ## Current standing
 
+### Session 2026-09-07 (review + run 43; the mid session REVIEWED, three rulings taken, run 43 CLEAN on the sliced fleet): **D-495.**
+
+**T74's merge STANDS** — the exposure the ruling guarded against is THREE lane-row Qualcomm postings against 1,588 on the watched board; the 14–18% queue duplicate rate is a job-grouping failure (D-337) that board naming never touched. **The largest cross-board duplicate pair is HPE, not Northrop:** `hpe/acjobsite` + `hpe/Jobsathpe` share 1,013 `cross_host` groups over 2,227 open postings, pre-existing. **The slice `#` fragment broke `companies names`** for the two sliced boards whose name was the host: BAH 1486 and Leidos 1488 (2,027 open) deliver host-named. **Thales' three slice rows held 405 requisitions twice** at review time (row 256 had not reached `complete` before its siblings were added) — **run 43 then resolved it** (row 256 `complete`, 1,786 closed, duplicates 0). Rule kept: reach `complete` on the narrowed slug BEFORE adding a sibling slice row.
+
+**Run 43 (the 12th pipeline run) — hand-launched 11:29 CDT on Mit's call, does NOT count toward the confirm.** `ok`, 36 min, 341 boards, 0 failed, RECONCILES, 1,459 new, 2,463 closed, 136,808 open, reach **92.7%**, censored 1 (Abbott). Gate 53 judged (36 / 6 / 11), 0 failed open; **8 PDFs** + 32 review. Queue 40 new / 18 moved / 0 failed, name mismatches 0. Every new instrument read: `throttle_retries` 48 with four eightfold boards still `partial` on the 12-retry board budget, `hidden_cluster_cap` 0, `shortlist_rank` on 53 of 53 judge rows. **First rank-band table:** `uncertain` 91–120 = 73% (8/11), 121–150 = 66% (19/29) — flat, no evidence 150 is too deep; accumulate ≥ 3 runs before moving `gate.depth`.
+
+**Rulings taken 11:24 CDT ("we'll do your recommendations"), not to be re-asked:** (a) HPE — measure which site enumerates completely, then drain-then-drop the other; (b) `companies names` — match on the slug with its fragment stripped, then `names --apply` + `identities backfill` for BAH/Leidos; (c) the Thales closing-rule ticket is WITHDRAWN (moot after run 43). Full review: `.agent/2026-09-07b/REVIEW-BY-FABLE.md`.
+
+**Next action.** (1) Read the 06:00 tick on 09-08 = **confirm day 3**; watch the four `throttle_exhausted` eightfold boards (is the 12-retry budget right?) and the rank table's n. (2) Rulings (b) then (a), after the tick — never merge while a run is in flight. (3) Mit's 0-B call on B8 (17.2% vs ≤ 16%) is the one failing bar. (4) T35 Gate 1 re-measure ~09-09. Still open from D-494: seed the cluster cap from the standing queue; a "network, read-only" effect marker; ratify `apple`'s `board_reported_total = None`; the Windows fake-claude CI class.
+
 ### Session 2026-09-07 (mid; ALL FIVE RULED CALLS EXECUTED — 15,640 postings closed, zero censored boards, four executors merged): **D-494.**
 
 **The PDF drop 21 -> 5 is BENIGN and the question is closed.** The PDF stage converted 100% on both
