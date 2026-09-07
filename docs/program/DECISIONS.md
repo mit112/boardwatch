@@ -27465,6 +27465,27 @@ rank alongside the gate verdict — and until that ships, any claim about the sh
 beyond "56.6% at depth 150 vs 85% at depth ~40" is unfounded.** Recorded so the next session does
 not spend the time discovering the data is absent.
 
+**Addendum 07:08 CDT — the owner ruled on all five open calls: "we'll do your recommendations."
+None of these is to be re-asked or re-litigated.**
+1. **Big Workday boards: REPLACE the whole-board entry with a facet slice.** Citi's Technology slice
+   (1,073 of 1,073) replaces the blind 2,000-of-4,411 walk, and costs fewer requests. **This is an
+   authorized production MASS-CLOSE** — the ~1,500 non-tech Citi postings become `closed`. Do it one
+   board at a time, read the closed count back, and state it. Then Walmart / Target / PNC / NVIDIA /
+   Thales / Abbott / T-Mobile / Leidos / BAH.
+2. **Northrop: MEASURE, THEN DROP.** Slice the workday board once and read what it enumerates; if it
+   matches or beats eightfold's 3,817 more cheaply, drop the eightfold row. The ruling is "measure
+   then drop", not "drop eightfold now".
+3. **T70 `apple`: approved to BUILD.** The standing usage rule still applies at launch — **ask the
+   seat's usage reading before starting the executor.** Approving a ticket is not approving spend.
+4. **Delivered-slate concentration: a RANKING CAP, sequenced last** (run 11 did not reproduce the
+   Goldman pile-up). Explicitly NOT a suppressor — a `company_title_location` suppressor was measured
+   and rejected because it would collapse 42 real Capital One openings.
+5. **The eightfold 405 retry ships WITH a duplicate sweep, in ONE change, never alone** — truncation
+   is currently hiding duplicates that fixing coverage would expose.
+**Execution order set with the owner: (0) chase the PDF drop 21 -> 5, which he asked for explicitly;
+(1) instrument the shortlist rank, without which the depth question stays unanswerable; then 1, 2,
+5, 3, 4 above.**
+
 **Cross-references.** D-492 (phenom/eightfold, the teaser-body defect, the budget ruling), D-491
 (the depth decision and the 85% it rests on), D-271 (`board_enumerated` off raw rows), D-314, D-343,
 D-103.
