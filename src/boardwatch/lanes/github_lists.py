@@ -108,7 +108,12 @@ PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # domain, so it declares no paste host and `parse_board_target` can never return it from a
     # listing URL. It is listed because PROVIDER_PRIORITY must cover the registry: an unranked
     # provider raises UnrankedProvider rather than being sorted quietly to the end.
-    ("smartrecruiters", "oraclehcm", "phenom"),
+    # `apple` joins them on both counts. Its cost is the dearest measured: the listing is a
+    # 320 KB HTML document per 20 rows (the largest country board is 4,509 rows / 226 pages)
+    # AND it then spends a per-posting GET on another such document for every unseen posting.
+    # Like amazon it can never be reached from a listing URL -- a board is one COUNTRY and a
+    # country is a query parameter -- so it is ranked for coverage, not for traversal.
+    ("smartrecruiters", "oraclehcm", "phenom", "apple"),
     # Behind even that tier, and not for want of measurement: eightfold is the only provider that
     # cannot address its own API until an HTML career page has been fetched and parsed, and its
     # listing page size is FIXED by the server at 10 (a 1,958-posting board measured live is 196

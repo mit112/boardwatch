@@ -252,6 +252,46 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:8deb20aa7bb90721b8a371d4f5fcc3fb5bf6c04726f3087361d9e3f1875d51f3",
     ),
+    "tests/fixtures/apple/detail_missing.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:4b45d5ea5fa59d40910b07eedd8ed17c40e5d74eb393882330020e125d609b14",
+    ),
+    "tests/fixtures/apple/detail_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:6601d1d2e92e96631402ddf380353f84e07f541d5743396ae013785aee0443f9",
+    ),
+    "tests/fixtures/apple/normal_response_headers.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:ef9bc80dd5f4172ac166117a8fff1956277112f703ae79c246cf9262a3581d18",
+    ),
+    "tests/fixtures/apple/search_empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:e14f0455c538d6a71d7bb9ede2aad0a08c4a3980551afa84cd74e0ec02af3aa2",
+    ),
+    "tests/fixtures/apple/search_idless.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:bb6c8bca8c8ce16e6db469f9e910558a5a7496241f44aebc958f36232cb27e74",
+    ),
+    "tests/fixtures/apple/search_normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:e66a2d4019f6e6c2162890e0975b9a5c7d09114569218d1307fb539e9d8da449",
+    ),
+    "tests/fixtures/apple/search_page_full.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:c20e78ce2ef8717fd5a3b3664336bd6b351df571ac56e8af5791b839d11fa989",
+    ),
+    "tests/fixtures/apple/search_page_short.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:12c71aaf411e0bb1b934ff2387dccad351a17a9fe17f370eb073477095330cde",
+    ),
     "tests/fixtures/ashby/normal.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

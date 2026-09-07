@@ -5,6 +5,7 @@ import pytest
 
 from boardwatch.providers import registry
 from boardwatch.providers.amazon import AmazonProvider
+from boardwatch.providers.apple import AppleProvider
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.eightfold import EightfoldProvider
 from boardwatch.providers.greenhouse import GreenhouseProvider
@@ -26,13 +27,14 @@ def test_each_provider_declares_public_board_hosts() -> None:
     assert WorkableProvider().board_hosts == ("apply.workable.com",)
     assert SmartRecruitersProvider().board_hosts == ("jobs.smartrecruiters.com",)
     assert AmazonProvider().board_hosts == ("www.amazon.jobs", "amazon.jobs")
+    assert AppleProvider().board_hosts == ("jobs.apple.com",)
 
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
     assert set(built) == {
         "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-        "oraclehcm", "phenom", "eightfold", "amazon",
+        "oraclehcm", "phenom", "eightfold", "amazon", "apple",
     }
     for name, inst in built.items():
         assert inst.name == name
@@ -42,7 +44,7 @@ def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
         {
             "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-            "oraclehcm", "phenom", "eightfold", "amazon",
+            "oraclehcm", "phenom", "eightfold", "amazon", "apple",
         }
     )
 
@@ -153,6 +155,35 @@ def test_amazon_declares_exact_hosts_whose_paths_can_never_carry_a_slug() -> Non
     assert "amazon" not in registry.composite_slug_providers()
 
 
+def test_apple_declares_one_exact_host_whose_paths_can_never_carry_a_slug() -> None:
+    """The SECOND provider in amazon's position, for the same structural reason: a
+    jobs.apple.com board is one COUNTRY and a country is a query parameter
+    (`?location=united-states-USA`), so no path segment names one -- the only segment before
+    `search` is the locale (`en-us`), which is exactly the word the default first-segment
+    extractor would hand `normalize_slug`.
+
+    The catalog guard is load-bearing here in a way it is not for most providers: an unknown
+    location code is answered with HTTP 200 and `totalRecords: 0` rather than an error, so an
+    out-of-catalog slug would be watched forever as a board that is merely empty today.
+    """
+    assert AppleProvider().board_hosts == ("jobs.apple.com",)
+    assert getattr(AppleProvider, "board_host_suffixes", ()) == ()
+    assert AppleProvider.slug_from_path("jobs.apple.com", ["en-us", "search"]) is None
+    assert AppleProvider.slug_from_path(
+        "jobs.apple.com", ["en-us", "details", "900000001", "x"]
+    ) is None
+    assert "jobs.apple.com" in registry.slug_extractor_map()
+    assert "apple:united-states" in registry.slug_help_map()["jobs.apple.com"]
+    # the identity is `apple:<country token>`, and the token is a CLOSED catalog
+    assert AppleProvider.normalize_slug("United-States") == "united-states"
+    for outside in ("en-us", "united-states-USA", "usa"):
+        with pytest.raises(ValueError):
+            AppleProvider.normalize_slug(outside)
+    assert "apple" in registry.slug_normalizer_map()
+    # and it is NOT a composite slug: `apple:a/b` must keep getting the diagnostic
+    assert "apple" not in registry.composite_slug_providers()
+
+
 def test_host_provider_map_covers_all_hosts_without_collision() -> None:
     hosts = registry.host_provider_map()
     assert hosts["job-boards.greenhouse.io"] == "greenhouse"
@@ -164,6 +195,7 @@ def test_host_provider_map_covers_all_hosts_without_collision() -> None:
     assert hosts["jobs.smartrecruiters.com"] == "smartrecruiters"
     assert hosts["www.amazon.jobs"] == "amazon"
     assert hosts["amazon.jobs"] == "amazon"
+    assert hosts["jobs.apple.com"] == "apple"
     total = sum(len(cls().board_hosts) for cls in registry.PROVIDER_CLASSES)
     assert len(hosts) == total  # no host maps to two providers
 

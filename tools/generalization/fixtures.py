@@ -91,6 +91,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
         review_by=date(2026, 12, 6),
         readme_pin="sha256:d2bc07ee4df6909510cb69944a4a9ae25efd24153a1557932c7af7efdd906016",
     ),
+    "apple": FixtureProvenance(
+        captured=date(2026, 9, 7),
+        review_by=date(2026, 12, 6),
+        readme_pin="sha256:93e4f94e20a0f12a39728e8b31aae1a88cf9f5e920a804b087b034d62cd55d9f",
+    ),
     "ashby": FixtureProvenance(
         captured=date(2026, 6, 13),
         review_by=date(2026, 9, 11),

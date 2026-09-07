@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from boardwatch.providers.amazon import AmazonProvider
+from boardwatch.providers.apple import AppleProvider
 from boardwatch.providers.ashby import AshbyProvider
 from boardwatch.providers.base import Provider
 from boardwatch.providers.eightfold import EightfoldProvider
@@ -41,6 +42,7 @@ PROVIDER_CLASSES = (
     PhenomProvider,
     EightfoldProvider,
     AmazonProvider,
+    AppleProvider,
 )
 
 
