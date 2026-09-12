@@ -33,7 +33,12 @@ from boardwatch.reports.resume_gate import RenderToolMissingError
 from boardwatch.store.db import get_engine
 from boardwatch.tailor.render.latex import resolve_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
-from tests.pipeline.test_gate_stage import EVIDENCE, FAKE_CLAUDE, _arm_gate
+from tests.pipeline.test_gate_stage import (
+    EVIDENCE,
+    FAKE_CLAUDE,
+    _arm_gate,
+    _needs_an_executable_fake,
+)
 from tests.pipeline.test_gate_stage import _seed as _seed_gate_posting
 from tests.pipeline.test_lane_split_before_tailor import _seed_review_posting
 from tests.pipeline.test_ledger_advances_the_queue import _ready
@@ -198,6 +203,7 @@ def test_a_projected_run_that_routed_a_lead_to_review_reconciles(
     assert "DOES NOT RECONCILE" not in markdown
 
 
+@_needs_an_executable_fake
 def test_a_projected_run_with_a_judge_rejection_and_a_review_lead_reconciles(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
