@@ -1,0 +1,59 @@
+# TEMPORARY PROBE for T78 (D-497): how often does the two-writer concurrency test read
+# `database is locked` on windows-latest / 3.13, alone and under -n auto load? Lives only on the
+# t78-probe branch; never merge.
+name: t78-probe
+on:
+  push:
+    branches: [t78-probe]
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - name: alone x20
+        shell: bash
+        run: |
+          fails=0
+          for i in $(seq 1 20); do
+            if uv run pytest tests/pipeline/test_two_writer_concurrency.py -n 0 --no-cov -q -p no:cacheprovider > "alone-$i.log" 2>&1; then echo "alone $i: pass"; else echo "alone $i: FAIL"; fails=$((fails+1)); grep -m1 -E 'locked|Error' "alone-$i.log" || true; fi
+          done
+          echo "ALONE FAILS=$fails/20"
+      - name: writer timing x10
+        shell: bash
+        run: |
+          uv run python - <<'PY'
+          import subprocess, sys, time, tempfile
+          from pathlib import Path
+          sys.path.insert(0, "src")
+          from boardwatch.store.db import ensure_schema, get_engine
+          W = """
+          import sys, time
+          from pathlib import Path
+          from boardwatch.store.db import get_engine
+          from boardwatch.store.queries import insert_run
+          e = get_engine(Path(sys.argv[1])); t0=time.perf_counter(); worst=0.0
+          for _ in range(200):
+              t=time.perf_counter(); insert_run(e); worst=max(worst, time.perf_counter()-t)
+          print(f"OK total={time.perf_counter()-t0:.2f}s worst_commit={worst*1000:.0f}ms", flush=True)
+          """
+          for i in range(10):
+              d = Path(tempfile.mkdtemp()) / "store"; eng = get_engine(d); ensure_schema(eng); eng.dispose()
+              ps = [subprocess.Popen([sys.executable, "-c", W, str(d)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
+              outs = [p.communicate(timeout=180) for p in ps]
+              print(i, [o[0].strip() or o[1].strip().splitlines()[-1][:80] for o in outs], flush=True)
+          PY
+      - name: under -n auto load x5
+        shell: bash
+        run: |
+          fails=0
+          for i in $(seq 1 5); do
+            uv run pytest tests/pipeline --no-cov -q -n auto -p no:cacheprovider > "load-$i.log" 2>&1 || true
+            if grep -q 'FAILED tests/pipeline/test_two_writer' "load-$i.log"; then echo "load $i: two-writer FAIL"; fails=$((fails+1)); else echo "load $i: two-writer ok ($(grep -oE '[0-9]+ passed' "load-$i.log" | tail -1))"; fi
+            grep -E '^FAILED' "load-$i.log" | head -5 || true
+          done
+          echo "LOAD FAILS=$fails/5"
