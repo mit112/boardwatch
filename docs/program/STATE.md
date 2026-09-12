@@ -57,7 +57,7 @@ independent recall** (was 23.8% on 09-02); greenhouse 91.5%, ashby 92.6%, workda
 ≥ 85% employer-board bar, **lever 70.0% on n = 10 does not** — SUPERSEDED by D-499 below, lever is 100%;
 linkedin 42.3%, indeed 24.7%, hiring.cafe 20.2%.
 
-**Next action.** (1) Read the 04:00 tick on 09-13 (run 49 = confirm day 8): expect `partly failed
+**Next action.** (1) Read the 04:00 tick on 09-13 (**run 57** = confirm day 8 — runs 49–56 are today's eight single-board drain scans, each of which writes a `runs` row, not pipeline runs): expect `partly failed
 open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 480, and check that no
 lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
 in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
