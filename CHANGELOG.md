@@ -484,6 +484,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lane could re-add a whole Workday board beside its slice.** A facet slice (`…#jobFamilyGroup=…`)
+  is an in-place edit of the watched row, and the slug guard compared the whole stored slug, fragment
+  included — so when a lane converged onto the plain board it saw no row and inserted the full board
+  again. Live: BAH and NVIDIA each gained a second, censored 2,000-row copy three days after being
+  sliced. An unsliced slug now resolves to a stored sliced row of the same board (one direction only —
+  a slug that carries its own fragment is a deliberate sibling slice and still matches exactly).
+
+- **`companies names` stopped seeing a host-named row once its slug was sliced.** The repair sweep
+  selected `name == slug`; the slice fragment made the two differ, so BAH and Leidos kept delivering
+  under their hostname. The sweep now compares the name against the slug without its fragment.
+
+- **One skipped verdict no longer fails a whole judge batch open.** The final gate demanded exactly one
+  verdict per lead by count; when the model answered 12 of 13 the batch's 12 sound verdicts were thrown
+  away (three batches, 39 leads, across two runs). Verdicts now bind to their lead by `label`; a lead the
+  answer skipped is the only one left unjudged, reported as `partly failed open` with its label. A label
+  the batch never asked about, a label answered twice, or more verdicts than leads still fails the whole
+  batch open.
+
 - **`test_indeed_lane`'s control test was reaching Indeed's live API on every run** — the only test
   in its file without `@respx.mock`; it failed whenever a live hit carried a malformed URL. It is
   mocked now and the whole file refuses a real socket.

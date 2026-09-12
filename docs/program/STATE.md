@@ -12,13 +12,53 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks). Nothing was deleted on any of the three passes. Do not narrate a decision here that
+> blocks), and **on 2026-09-12** (the four settled 2026-09-06 session blocks). Nothing was deleted on any of the four passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
 ---
 
 ## Current standing
+
+### Session 2026-09-12 (Mit back after five days; runs 44–48 READ, rulings (b) and (a) EXECUTED, the lanes' re-added sliced boards found, the judge's 12-of-13 failure fixed, Gate 1 re-measured): **D-496.**
+
+**Five unattended ticks, all `ok`, all funnels reconcile — confirm days 3–7 (run 48 = day 7 of 14).**
+No code, config or rules change since 09-07, so the count holds. The 09-09 reboot moved the tick from
+06:00 to **04:00 CDT**, exactly as predicted below; `launchctl` reads `runs = 3` since the reboot. The
+fleet grew itself 341 → 486 by lane admission (113 boards, 32,402 open) and the open corpus 137k →
+184k; run wall clock 36 → 55–102 min; censored boards 1 → 7. Numbers per run in `METRICS.md`.
+
+**Ruling (b) DONE.** `companies names` matches a sliced row by its slug without the fragment; BAH 1486
+→ `bah`, Leidos 1488 → `leidos`, the drained Northrop 1487 → `ngc`; `identities backfill` 2,238.
+**Ruling (a) DONE, on a measurement the ruling's condition could not make:** BOTH HPE sites enumerate
+completely. Keyed on the base requisition number, `Jobsathpe`'s 60 unique postings are ALL interns or
+graduates (13 US, every one an intern) against `acjobsite`'s 257; neither ever delivered. `Jobsathpe`
+drained to 1 and unwatched (D-494's mechanism). **The lanes had RE-ADDED the whole BAH and NVIDIA
+boards beside their slices on 09-10** — two censored 2,000-row duplicates — because `stored_slug`
+compared the fragment too. Fixed one-directionally (a plain slug resolves to its sliced row; a sibling
+slice is still a second row), both drained and unwatched, 4,312 closed. **Every failed-open judge
+batch on runs 45 and 48 was a 12-of-13 answer** (39 leads lost); verdicts now bind by `label`, a
+skipped lead is reported `partly failed open` and is the only one unjudged. Three fixture reviews
+(ashby/greenhouse/lever) extended to 2026-12-11 after a live shape re-check. `ashby:whatnot` (404)
+and `vhr-otsuka/Pharmavite` (422) unwatched. **Fleet 481 watched.**
+
+**Rank band, 308 ranked judge rows over runs 43–48: FLAT.** Deterministic `uncertain` converts 31 /
+56 / 46 / 47 / **62%** across the five 30-rank bands; the deepest band is the best. `gate.depth = 150`
+stands; whether deeper pays is unmeasured and a cost call. **Gate 1 (T35) re-measured: 34.8%
+independent recall** (was 23.8% on 09-02); greenhouse 91.5%, ashby 92.6%, workday 96.6% clear the
+≥ 85% employer-board bar, **lever 70.0% on n = 10 does not**; linkedin 42.3%, indeed 24.7%,
+hiring.cafe 20.2%.
+
+**Next action.** (1) Read the 04:00 tick on 09-13 (run 49 = confirm day 8): expect `partly failed
+open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 481, and check that no
+lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
+in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
+bar); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
+Cushman & Wakefield · Applied Materials · Abbott); the lever bar on n = 10. (3) The Indeed and
+hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) The nightly Windows
+CI class (red 09-08..09-12, `push` green) is still worth a ticket. Still open from D-494: seed the
+cluster cap from the standing queue; a "network, read-only" effect marker; ratify `apple`'s
+`board_reported_total = None`.
 
 ### Session 2026-09-07 (review + run 43; the mid session REVIEWED, three rulings taken, run 43 CLEAN on the sliced fleet): **D-495.**
 
@@ -101,20 +141,6 @@ by a global `scan.lock`, so a multi-board slicing pass is wall-clock bound and c
 **Run 11 (06:00 tick) READ — `ok`, 43 min, `reconciles`, `boards_failed` 0, `runs = 6`.** Both new boards work live: `amazon:software-development` **complete 2,598 of 2,598** and `greenhouse:janestreet` complete 231 of 231. **The depth cost AMORTIZES: 145 judged on run 10, only 62 on run 11** (a judged-undelivered lead keeps its verdict and is not re-judged) — so `gate.depth = 150` is cheaper after the first run than run 10 implied; read that beside the 56.6% conversion. Discovery reach **91.1%**. The slate is strong (LinkedIn, OpenAI, Apple, TikTok x3, Figma, Ramp, Audible) and run 10's 12-lead Goldman concentration is gone. Unexplained and NOT investigated: pdf 21 -> 5.
 
 **Next action: SUPERSEDED — all five rulings were executed on 2026-09-07 (mid); see D-494 and the block above.** One claim in the removed text was WRONG and is corrected there: `exact_quad` keys on `company_id`, not `normalize_company`, and the hostname-named board count was 35 of 338, not 28 of 337.
-
-### Session 2026-09-06 (late; phenom and eightfold LANDED): **D-492.** T66 `phenom` and T67 `eightfold` resumed ONE AT A TIME on the enterprise seat after Mit's go-ahead ($17.50 together), each reviewed, mutation-checked, live-verified in a scratch store and gated green; merged `0165a43e` / `67989c30`, integration `f17f11bc`, pushed. T67 found and fixed an id-less-row minting bug; its own "largest board is 1,958" correction was WRONG — Northrop Grumman is 3,817 live and the 300-page backstop cut it at 3,000, so the backstop is now 600 (rescan 3,817 = 3,817). **Fleet 332 watched** (+3 phenom: BAE Systems, P&G, Battelle; +4 eightfold: Qualcomm, Northrop, Applied Materials, Boston Scientific). Not started: SuccessFactors (no public JSON found), the bespoke majors (Amazon, Apple, Meta, Google, Jane Street). No `rules_hash`/`engine_version` change. (Run 10 was read in the session above.)
-
-**Next action.** Read run 10 (06:00 CDT 09-07): the first depth run — expect `gate: ~150 judged … ~110 beyond the delivered slate`, gate stage ~15 min, `RECONCILES`; the first scans of 30 new boards (`boards_failed` 0; Oracle/Phenom/Eightfold boards `partial` on the 50-detail budget is by design; Northrop alone is ~10 min of paced requests). If judged ≠ ~150 or the funnel does not reconcile, read `.agent/2026-09-06-exec/RESULT-t63.md` §"reconciliation definition" first. Then the bespoke majors, one ticket each, after asking Mit the seat's usage. Mit ruled 23:53: runs may be as long as full coverage needs — `detail_fetch_budget` ceiling raised to 10,000 (`04e000bb`) and the live value set to 5,000, Northrop kept. Owner calls still pending: whether `config set` should reach gate keys (it does not); the phenom teaser-body rows have no drain.
-
-### Session 2026-09-06 (evening; the Pinloop replacement begun on the enterprise seat): **D-490 + D-491.** Six branches merged and pushed, CI green: **t62** (generated `boardwatch guide` + `skill`, `--json` on eight read commands, 22 wrong claims corrected after a $6 review), **T63 `gate.depth`** (judge deeper than the run delivers; **LIVE at `gate.depth = 150`** in config.toml), **T64 `jibe`** and **T65 `oraclehcm`** providers (live-verified in scratch stores), **T68** (the Indeed control test was hitting the live API). Fleet 325 at that close (+18 Workday tenants, +AMD/JHU APL on jibe, +Oracle/AmEx/Goldman-campus on oraclehcm). Item 3 was REVERSED by measurement: tier-1 leads the judge sees convert 85%, so depth, not a pre-screen. The seat's window died under five parallel executors (~$103); the standing rule is one executor at a time after asking Mit the usage reading.
-
-### Session 2026-09-06c (run 9 READ; B6 found NOT reconciling on runs 7–9 → T60; nightly Windows CI → T61; the B8 lever measured): **run 9 is a clean tick on the restored config** — `runs = 5`, exit 0, every hash identical to runs 6–8, LinkedIn admitted 50, Indeed 57, `jsonld` present (0 attempted is lane ordering, D-422), 37 judged / 31 eligible / 1 ineligible, 36 delivered = **7 apply (all PDF) + 29 review**. **But its funnel reads `DOES NOT RECONCILE`, and so do runs 7 and 8** — the 09-05 (later) session recorded the provisional pass from the run status without reading that line. Cause is REPORTING: `build_run_funnel` never learned T43's review lane or T54's judge rejection; the unnamed remainder is exactly `judge-rejected + review leads` on every run. **T60** (reports only; `rules_hash`/`engine_version` untouched, so the confirm is NOT restarted) adds `gate_rejected` and `routed_to_review_lane` to the projection stage and merges the review leads into the tailor stage's `entered`; `ARTIFACT_VERSION` 8. **T61** fixes the nightly Windows jobs, red every day since ≥ 09-01 on nine tests. Both built by headless Opus executors on the enterprise seat, reviewed and gated here: t60 gate green (9,604 passed); merged tree green (9,604); t61 gate green (9,595 passed); Windows verification run 34061956555: Windows 3.11 and 3.12, macOS and every Linux shard GREEN; 3.13 red on one unrelated wall-clock overlap test (4.58 s vs 4.5 s margin); attempt 2 re-ran that job GREEN, so the whole run is green and the overlap test is a flake. Both merged to `main` (`b240698d`, `67cba250`) and pushed after a green gate on the merged tree. Decision **D-489**; numbers in `METRICS.md`, `Session — 2026-09-06c`.
-
-**The B8 lever, measured read-only:** `delivery/review_gate.classify` never reads the judge. 24 of run 9's 29 review holds carry a judge `eligible`; 46 of the 123 in the lane do. Tier 0 (`eligible`+`swe`) is DRAINED (171, 4 undelivered), so the `--top 40` cap bites on tier 1 only. Promoting on a judge `eligible` is **owner-gated (0-B below)** — it makes the judge an evidence source for `ELIGIBLE` with no span. **Owner ruling owed: whether runs 7 and 8 count toward the pass** (recommendation: they stand — the instrument was wrong, the pipeline was not). The `taxonomy changed — re-extracting N` line on every run is `preflight.py:53`'s wording for new postings, not drift.
-
-### Session 2026-09-06 (planning → the reset's SECOND config loss found and RESTORED; the apply lane blind-audited for B8): **the recovered config had also dropped `jsonld` + `indeed`, the seven LinkedIn hubs (33 combos/run), the caps `linkedin = 50` / `indeed = 50` and `pace_from_request_start`** — D-486 caught only the jobapps half, and runs 6–8 ran LinkedIn at the 10-company default. The last pre-reset `config.toml` was recovered VERBATIM from the transcript archive (2026-09-03T23:55Z) and restored 00:15 CDT on Mit's call ("before it"), read back through the loader; discovery only, the count holds. **Run 9 (06:00 CDT tick) is the first run on the restored five-lane config AND day 1 of the 14-day confirm.** Decision **D-487**; numbers in `METRICS.md`, `Session — 2026-09-06 · the pre-reset config…`.
-
-**B8 measured for the first time (n = 128, the whole apply lane, two blind Sonnet passes, 40/40 inter-rater on the unapplyable axis): 22 of 128 UNAPPLYABLE = 17.2% against the ≤ 16% bar; 14.7% on the 95 gate-judged leads (runs 5–8), 24.2% on the 33 delivered before the judge existed; `jobapps:` targets 2.1% vs board fleet 26.2%.** Causes: six-family `ineligible` 10 (work_auth 4 — PayPal's "Visa Sponsorship … is not available … now or any time in the future" ×3; experience 5 — two U.S. Bank bars in WORDS, "Two to three years"), seniority 6 (Inferact "Member of Technical Staff" ×4), role 5 (Giant Eagle "Front End Lead" ×3), location 1. Report and key: `.agent/2026-09-06-audit/`. **The tier-0 headline is that same board: 46 of the 49 undelivered `eligible`+`swe` are Giant Eagle "Front End Lead Trainee" (`role_verdict` matches "Front End Lead"); tier 0 is drained and the slate already draws from tier 1 (1,644; 1,323 zero-row).** 46 of the 48 `jobapps:` apply leads were already promoted by job-apps itself — parity, not new reach.
 
 ### Owed, and specifically NOT done
 
@@ -210,4 +236,4 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
-| **Run 9 (2026-09-06) tick-fired CLEAN on the restored five-lane config (D-487, read D-489); run 10 is the first whose funnel can reconcile a split slate (T60)** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run. The tick fires **06:00 CDT until a reboot** — launchd keeps its boot zone, and the zone was set five minutes after the 09-03 boot — so a reboot moves it to 04:00. Verify a tick by `runs = N` in `launchctl print` and the log mtime, never by the run row alone: a hand run proves the code, only a tick proves the plist | **Mit** (reboot); every session (discipline) |
+| **Run 9 (2026-09-06) tick-fired CLEAN on the restored five-lane config (D-487, read D-489); run 10 is the first whose funnel can reconcile a split slate (T60)** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run. The tick fired 06:00 CDT until the 09-09 reboot and **04:00 CDT since** — launchd keeps its boot zone, and the plist's hour is 4. Verify a tick by `runs = N` in `launchctl print` and the log mtime, never by the run row alone: a hand run proves the code, only a tick proves the plist | **Mit** (reboot); every session (discipline) |
