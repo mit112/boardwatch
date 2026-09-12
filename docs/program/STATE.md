@@ -99,8 +99,9 @@ read-only" marker question is answered (D-497 §4): the vocabulary already says 
 
 **0-D. EXTEND D-414(a)'S SECONDHAND DECLARATION TO THE JOBAPPS AND HIRING.CAFE LANES (D-500).** Only
 Indeed declares; the other lanes overwrite a board's row when they converge onto it. 512 open board
-postings are also lane-observed and 478 currently carry the lane's latest version as the document the
-engine quotes (jobapps 176, hiring.cafe 172, indeed 130); 50 delivered, 41 judged on it; 301 rows'
+postings are also lane-observed; **117 currently carry a lane's OVERWRITE of a different board body** as
+the document the engine quotes (jobapps 112, hiring.cafe 5; the other 361 are lane-first captures the
+board later matched verbatim, benign); ≤ 50 delivered, ≤ 41 judged on such a body; 301 rows'
 `raw_json` is the lane payload (drops Greenhouse pay ranges, blocks `reparse-bodies`). Same change
 D-414 made for Indeed; `rules_hash` unmoved. **Not built. Mit's call** — the jobapps lane is his own
 harvest, so which rendering wins is his.

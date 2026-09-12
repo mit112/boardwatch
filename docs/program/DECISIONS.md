@@ -27944,6 +27944,16 @@ display half: 301 board rows carry the jobapps whitelist as `raw_json` (D-499), 
 Greenhouse `pay_input_ranges` (kept only in `raw_json`, D25) and makes `postings reparse-bodies`
 refuse those rows.
 
+**Correction, same session, before the numbers propagated.** Splitting the 478 by the current
+version's `capture_reason`: **117 are true overwrites** — a lane's `revised` version replaced a
+board body with a DIFFERENT hash (jobapps 112, hiring.cafe 5) — and **361 are lane-first `new`
+captures** (hiring.cafe 167, indeed 130, jobapps 64) that a later board scan matched with identical
+text and therefore never revised: benign, the store holds the employer's text under the lane's
+name. So the verdict-affecting exposure is 117 open postings, not 478; the 50 delivered / 41 judged
+figures above are over the 478 and are an upper bound. The Indeed 130 are all `new`, i.e. its
+declaration works as designed. Across the whole store, lanes have written 691 `revised` versions
+onto board postings (jobapps 575, hiring.cafe 116) against 2,450 by boards.
+
 **The change, if ruled:** the jobapps and hiring.cafe (and jsonld) lanes declare
 `secondhand = {"title", "url", "locations", "remote_policy", "department", "posted_at",
 "updated_at", "salary", "raw_json", "body_text"}` exactly as Indeed does, so a converged hit records
