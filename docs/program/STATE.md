@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), and **on 2026-09-12** (the four settled 2026-09-06 session blocks). Nothing was deleted on any of the four passes. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks) and **on 2026-09-12b** (the 2026-09-07 early and mid blocks). Nothing was deleted on any of the five passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -79,78 +79,6 @@ read-only" marker question is answered (D-497 §4): the vocabulary already says 
 **Rulings taken 11:24 CDT ("we'll do your recommendations"), not to be re-asked:** (a) HPE — measure which site enumerates completely, then drain-then-drop the other; (b) `companies names` — match on the slug with its fragment stripped, then `names --apply` + `identities backfill` for BAH/Leidos; (c) the Thales closing-rule ticket is WITHDRAWN (moot after run 43). Full review: `.agent/2026-09-07b/REVIEW-BY-FABLE.md`.
 
 **Next action.** (1) Read the 06:00 tick on 09-08 = **confirm day 3**; watch the four `throttle_exhausted` eightfold boards (is the 12-retry budget right?) and the rank table's n. (2) Rulings (b) then (a), after the tick — never merge while a run is in flight. (3) Mit's 0-B call on B8 (17.2% vs ≤ 16%) is the one failing bar. (4) T35 Gate 1 re-measure ~09-09. Still open from D-494: seed the cluster cap from the standing queue; a "network, read-only" effect marker; ratify `apple`'s `board_reported_total = None`; the Windows fake-claude CI class.
-
-### Session 2026-09-07 (mid; ALL FIVE RULED CALLS EXECUTED — 15,640 postings closed, zero censored boards, four executors merged): **D-494.**
-
-**The PDF drop 21 -> 5 is BENIGN and the question is closed.** The PDF stage converted 100% on both
-runs (`21 in, 21 out`; `5 in, 5 out`; `no_pdf: 0`). The whole delta is the apply/review lane split
-(`routed_to_review_lane` 19 -> 35): `review_gate.classify` promotes a deterministic `eligible` lead
-unconditionally, run 10's slate carried **21** and run 11's carried **zero**. Cause: `new_count` was
-779 on run 9, **30,706 on run 10**, 4,852 on run 11, and all 21 of run 10's `eligible` leads were
-first seen on 09-07 — run 10 discovered them itself. It was the first-fill of the ~30 boards added
-09-06 plus `amazon` and Jane Street. **~5 PDFs a run is the STEADY STATE; the apply lane is bounded
-by the arrival rate of new `eligible`+`swe`+in-band postings, not by a backlog.**
-
-**Fleet: 15,640 postings CLOSED by the slicing and censored boards 10 -> 0.** Workday facet slicing is applied
-live to 13 slices across nine boards; open postings ~150,000 -> **137,810**; ~2,650 postings the
-blind 2,000-walks had never seen. Per-board closes: Northrop 2,938 · Walmart 2,266 · Target 2,051 ·
-T-Mobile 1,988 · PNC 1,897 · Citi 1,529 · Leidos 1,220 · BAH 1,008 · NVIDIA 743. **The ruling's
-premise did not survive measurement:** `jobFamilyGroup=Technology` is the right descriptor for only
-**3 of the 10** boards — T-Mobile uses a different PARAMETER (`Job_Family_Group`) and Abbott's biggest technology group is only 61 of 2,589, so Abbott is deliberately not sliced. **Northrop's workday row lost the
-comparison** (3,000 of 3,791 on a page cap; its Engineering group is 2,182, above the 2,000 clamp,
-so slicing does not fix it) and was DRAINED to 91 then unwatched — 2,938 closed through the absence
-rule first, leaving 91 unclosable instead of 3,010. Eightfold keeps 3,424. **Fleet 341 watched.**
-
-**Merged and pushed, six commits, final gate 10,090 passed:** `0e1690ac` **T72** (each judged lead's
-shortlist rank recorded with its gate verdict, captured off the ranker's order BEFORE liveness;
-`engine_version` unmoved, **no ledger drain owed**) · `aaa4aefc` **T70 `apple`** · `ad215b45` **T73**
-(the ranking cap, 2 per company+title+location) · `f3466988` **T74** (the eightfold 405 retry +
-employer naming) · `92781ce7` **T75** (`companies facets`) · `60e3efa2` the integration fix.
-
-**T74 proved the planning session's own ticket WRONG, and it changes what item 4 delivers.**
-`exact_quad` keys on **`company_id`**, not `normalize_company` — two boards are two `companies` rows,
-so **no naming change can ever make it fire across them**. `cross_host` is the one keyed on the name
-and it does not suppress, by design (§3.1). **So the cross-board duplicate is now GROUPED, not
-SUPPRESSED: the 14-18% queue duplicate rate will NOT fall from this.** Acceptable because the
-largest pair (Northrop) was dropped this session and the Qualcomm pair, the one the coverage fix
-exposes, does group.
-
-**Two defects found here that four green branch gates did not catch.** (a) T74's backfill selected
-`name == slug` case-insensitively, which admits registry rows whose curated name is the slug
-re-capitalised; it planned **129 rewrites, downcasing 100 names** (`OpenAI`, `SpaceX`, `AbbVie`) that
-reach the résumé filename. Fixed casefolded: **31 rows**. (b) The MERGED-tree gate caught that
-`apple` had no declared employer-name shape (T74 predates T70), so it would have named the company
-after a COUNTRY. Backfill applied here: 31 rows renamed, `identities backfill` wrote 24,466.
-
-**Next action.** (1) **Read run 12, the 06:00 tick on 09-08** — the first run carrying the shortlist
-rank, the ranking cap, the sliced fleet and the eightfold retry. Then the rank-band measurement that
-D-493 could not do becomes possible: read conversion by rank band out of
-`raw_output_json.$.shortlist_rank` and answer whether `gate.depth = 150` is right. Expect a much
-smaller corpus (137,810 open, not 150,000) and watch `hidden_cluster_cap` and the new
-`throttle_retries` / `throttle_exhausted` lines. (2) **Thales may never close**: it serves 2-3 rows
-with no `externalPath` on every scan, forcing `partial`, so its ~1,800 non-SOFTWARE postings are
-stuck open — pre-existing provider behaviour that slicing exposed. (3) **The nightly WINDOWS CI has
-failed every day since at least 08-31** on the fake-claude-on-PATH class; `push` CI is green on the
-same shas. T61 fixed nine; this class remains and is worth a ticket. (4) Open questions the
-executors raised and nobody has ruled on: whether to seed the cluster cap from the standing queue
-(D-439's pattern) so a five-member group does not eventually deliver every member; whether 2 is the
-right cap once `hidden_cluster_cap` has been observed live; and whether the guide needs a
-"network, read-only" effect marker (T75 registered `("network",)` rather than invent one).
-
-**Process note.** Three executors + a full gate + a scan pass at once drove load to 65 and memory
-pressure killed six background waiters. Nothing was lost, but a gate under memory pressure can be
-OOM-killed into a false red. **Gate BETWEEN executors, not across them.** Also: scans are serialized
-by a global `scan.lock`, so a multi-board slicing pass is wall-clock bound and cannot be parallelized.
-
-### Session 2026-09-07 (early; run 10 READ, the depth bet MEASURED, `amazon` and Workday FACET SLICING landed): **D-493.** Run 10 was launched BY HAND at 00:09 CDT on Mit's ruling (the handoff's "read run 10" was not actionable — `runs = 5`, no artifact dir; the tick had not fired). It ran **2h 40m** and came back **`ok`**: the first `gate.depth = 150` run reads `150 checked, 5 gone` → **145 judged (76 eligible, 22 ineligible, 47 uncertain), 0 batches failed open, 83 beyond the delivered slate**, funnel **`reconciles: True`**, `boards_failed` 0, `detail_deferred` 0 everywhere. **T63 has no first-live defect.** A manual run does NOT count toward the confirm streak, so the 06:00 tick still fires as run 11 and is the countable one. **T69 `amazon`** (merged `81fc956a`, CI green) — 22,282 postings over 38 categories, bodies INLINE so a 2,597-posting category costs 26 requests. **T71 Workday facet slicing** (merged `c3a5bc1e`) — `…/site#jobFamilyGroup=Technology`; live, sliced Citi enumerates **1,073 of 1,073 uncensored** against the unsliced board's `total: 2000` censor and 1,988 blind rows of a true 4,411. **Fleet 337** (+`amazon:software-development`, +`greenhouse:janestreet`, +3 lane-discovered). The recurring CI wall-clock flake (4.58 s on 09-06, 4.63 s on 09-07, both vs the same 4.5 s bar) is FIXED by rendezvous, not re-run (`1afd7d0f`).
-
-**The depth bet is measured and it is NOT D-491's number.** Judge rows joined to the deterministic verdict on `input_id`: tier 1 (`uncertain`) **122 judged → 69 eligible = 56.6%**; tier 0 (`eligible`) **23 judged → 7 = 30.4%**. D-491's 85% was measured on the SHALLOW slate. The decision stands (69 judge-eligible leads no shallower run would have seen) but **the right value of `gate.depth` needs conversion BY RANK BAND, which needs each judged lead's rank — **not measured, and NOT computable retroactively: `score` is NULL on all 145 judge rows and no table persists a rank, so this needs a small instrumentation change (persist the shortlist rank with the gate verdict) before it can be answered.**
-
-**Coverage — quote the run's own numbers.** `morning-10.md`: **discovery reach 90.4%** (109,065 of 120,606 stated, across 224 of 335 boards), and **10 censored boards short 35,645 postings** reported SEPARATELY with no ratio. A "67.7%" figure computed mid-session folded censored totals into one ratio and is WITHDRAWN. boardwatch already recovers true totals via facets; T71 extends that from totals to ENUMERATION.
-
-**Run 11 (06:00 tick) READ — `ok`, 43 min, `reconciles`, `boards_failed` 0, `runs = 6`.** Both new boards work live: `amazon:software-development` **complete 2,598 of 2,598** and `greenhouse:janestreet` complete 231 of 231. **The depth cost AMORTIZES: 145 judged on run 10, only 62 on run 11** (a judged-undelivered lead keeps its verdict and is not re-judged) — so `gate.depth = 150` is cheaper after the first run than run 10 implied; read that beside the 56.6% conversion. Discovery reach **91.1%**. The slate is strong (LinkedIn, OpenAI, Apple, TikTok x3, Figma, Ramp, Audible) and run 10's 12-lead Goldman concentration is gone. Unexplained and NOT investigated: pdf 21 -> 5.
-
-**Next action: SUPERSEDED — all five rulings were executed on 2026-09-07 (mid); see D-494 and the block above.** One claim in the removed text was WRONG and is corrected there: `exact_quad` keys on `company_id`, not `normalize_company`, and the hostname-named board count was 35 of 338, not 28 of 337.
 
 ### Owed, and specifically NOT done
 
