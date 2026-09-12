@@ -98,8 +98,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "ashby": FixtureProvenance(
         captured=date(2026, 6, 13),
-        review_by=date(2026, 9, 11),
+        review_by=date(2026, 12, 11),
         readme_pin="sha256:68a4536b3d10f9fb6eafe18aa1a0396ecbe77352a0693daee1770374bc120dd2",
+        extensions=(
+            Extension(on=date(2026, 9, 12), reason="live shape re-checked 2026-09-12, unchanged"),
+        ),
     ),
     "eightfold": FixtureProvenance(
         captured=date(2026, 9, 6),
@@ -108,8 +111,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "greenhouse": FixtureProvenance(
         captured=date(2026, 6, 12),
-        review_by=date(2026, 9, 10),
+        review_by=date(2026, 12, 11),
         readme_pin="sha256:dca8ddf164d773e3f8a75842071cf53e26b15653f9405357f261602b689341d5",
+        extensions=(
+            Extension(on=date(2026, 9, 12), reason="live shape re-checked 2026-09-12, unchanged"),
+        ),
     ),
     "jibe": FixtureProvenance(
         captured=date(2026, 9, 6),
@@ -118,8 +124,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "lever": FixtureProvenance(
         captured=date(2026, 6, 13),
-        review_by=date(2026, 9, 11),
+        review_by=date(2026, 12, 11),
         readme_pin="sha256:622d35d9b72fd239bd1f143ee18bb043df8d6b5f332a85ec61d008b1f129dc97",
+        extensions=(
+            Extension(on=date(2026, 9, 12), reason="live shape re-checked 2026-09-12, unchanged"),
+        ),
     ),
     "phenom": FixtureProvenance(
         captured=date(2026, 9, 6),
