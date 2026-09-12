@@ -66,7 +66,7 @@ Cushman & Wakefield · Abbott — 8 software titles among ~6,850 open on the thr
 hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) **The nightly Windows class is CLOSED (D-497)** — the unmarked judge test is skipped and a dispatched full
 matrix is green; **T78 is FIXED in the test (D-501)** — a Windows probe measured the busy handler
 starving one writer for all 200 of its competitor's commits, the guard's writers now carry 60 s, green on
-Windows 3.11/3.12/3.13 in a dispatched matrix; **closes after ≥ 10 clean 3.13 Windows nightlies** (the
+Windows 3.11/3.12/3.13 in a dispatched matrix — the t81 matrix is **fully green, all 27 jobs**, the first since 08-31; **closes after ≥ 10 clean 3.13 Windows nightlies** (the
 `t78-probe` branch and its temporary workflow stay until then, never merge). `nightly-watch` (#95) will keep opening on it. Still open from D-494: seed the
 cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`. The "network,
 read-only" marker question is answered (D-497 §4): the vocabulary already says it.
