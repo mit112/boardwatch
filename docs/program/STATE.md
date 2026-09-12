@@ -53,7 +53,7 @@ hiring.cafe 20.2%.
 open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 481, and check that no
 lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
 in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
-bar); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
+bar); 0-C (D-498, the lane-copy suppression); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
 Cushman & Wakefield · Applied Materials · Abbott); the lever bar on n = 10. (3) The Indeed and
 hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) **The nightly Windows class is CLOSED (D-497)** — the unmarked judge test is skipped and a dispatched full
 matrix is green except **T78**: Windows 3.13's two-writer test reads `database is locked` on 2 of the
@@ -160,6 +160,14 @@ by a global `scan.lock`, so a multi-board slicing pass is wall-clock bound and c
   actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+**0-C. SUPPRESS A LANE COPY WHEN THE EMPLOYER BOARD'S POSTING IS IN ITS GROUP (D-498).** The queue
+duplicate rate is 10.1% apply / 12.8% review after the cap; 45 of the 71 redundant leads are already
+grouped under `cross_host` and delivered by design. Rule (a): drop a lane member of a `cross_host`
+group when an employer-board member is in it — up to 28 of 71, never hides a board posting. Rule (b):
+collapse lanes-only groups to one — +11. Refuse (c), suppressing within any `cross_host` group: that
+is Microsoft's four real Redmond requisitions. Delivery policy only; no `rules_hash` move. **Not
+built. Mit's call.**
 
 **0-B. JUDGE → LANE PROMOTION (D-489).** The review gate routes on the engine verdict alone; 46 of
 the 123 review holds carry a judge `eligible` (16 `experience_requirement`, 21 `no_requirements_found`,

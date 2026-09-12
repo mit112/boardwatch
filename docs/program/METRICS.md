@@ -13801,4 +13801,6 @@ By run (judged → eligible): 43 53→36 68% · 44 50→32 64% · 45 33→17 52%
 
 **Gate:** run 1 red on R15 only (three fixture reviews overdue); run 2 10,097 passed, 1 failed (deadline test pinned on greenhouse); run 3 green, 10,098 passed.
 
+**Queue duplicates re-measured 2026-09-12 (D-498), `(company, normalised title)` groups over the queue folders:** apply 207 leads / 186 groups / 21 redundant = **10.1%** (09-03: 14.0%) · review 351 / 306 / 45 = **12.8%** (18.1%). All 66 per-lane redundant leads are different job ids with different JD hashes. Across both lanes 71 redundant: lane+board 37 (store-grouped 28) · lanes-only 19 (11) · boards-only 15 (6). Biggest: Microsoft "Software Engineer" ×4 (2 boards, Redmond), Abbott "Clinical Associate" ×4 (one board, four states), Caesars ×3 (oraclehcm + jobapps), Giftogram ×3 (greenhouse + indeed + jobapps), OpenAI ×3, Humana ×3, HP ×3.
+
 **Nightly Windows (D-497).** Dispatched full matrix on t77 (run 34709963160): 27 jobs, all green except Windows 3.13 on `test_two_writer_concurrency` (`database is locked`). That test on the Windows 3.13 job across the last six full-matrix runs: 09-08 pass · 09-09 pass · 09-10 **fail** · 09-11 pass · 09-12 nightly pass · 09-12 dispatch **fail** = 2 of 6. The fake-claude test is absent from every Windows failure list on the dispatch. Local gate on t77: 10,098 passed, 8 min 29 s.
