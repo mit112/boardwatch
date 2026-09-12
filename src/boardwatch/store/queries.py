@@ -18,6 +18,7 @@ from sqlalchemy import (
     Engine,
     Row,
     Select,
+    case,
     func,
     insert,
     literal_column,
@@ -545,10 +546,19 @@ def companies_named_by_slug(conn: Connection) -> list[Row[Any]]:
     would also catch a registry name and a lane-discovered one — the two names that are already
     correct and that `upsert_lane_company` documents as unrecoverable once overwritten.
     """
+    # Compared against the slug WITHOUT its facet fragment. A Workday slice (T71) is an
+    # in-place slug edit that appends `#group=descriptor` after the row was named, so a
+    # host-named row that was later sliced carries the UNSLICED slug as its name; an exact
+    # `name == slug` test stopped seeing exactly those rows and they stayed host-named.
+    fragment_at = func.instr(companies.c.slug, "#")
+    unsliced_slug = case(
+        (fragment_at > 0, func.substr(companies.c.slug, 1, fragment_at - 1)),
+        else_=companies.c.slug,
+    )
     return list(
         conn.execute(
             select(companies.c.id, companies.c.provider, companies.c.slug, companies.c.name)
-            .where(func.lower(companies.c.name) == func.lower(companies.c.slug))
+            .where(func.lower(companies.c.name) == func.lower(unsliced_slug))
             .order_by(companies.c.id)
         ).all()
     )

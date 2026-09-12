@@ -185,3 +185,24 @@ def test_the_sweep_never_downcases_a_registry_name_that_matches_its_slug(tmp_pat
         "eightfold:careers.acme.test": "acme",
     }, "a name that differs from its slug only in case is already the employer's"
     assert "rewrote 1 row(s)" in result.output.replace("\n", " ")
+
+
+def test_the_sweep_still_matches_a_host_named_row_after_its_slug_was_sliced(tmp_path: Path) -> None:
+    """A Workday facet slice (T71) is an IN-PLACE slug edit that appends `#group=descriptor`.
+    Applied to a row an earlier `add` named after its slug, the name is now the slug WITHOUT
+    its fragment, so an exact `name == slug` test no longer sees the row and it stays
+    host-named — and `companies.name` reaches the delivered folder and the résumé filename.
+
+    RED before the fix: the sweep reported "nothing to repair" and left the host as the name.
+    """
+    _seed(tmp_path, [
+        {"name": "acme.wd1.myworkdayjobs.com/acme/Acme_External_Site", "provider": "workday",
+         "slug": "acme.wd1.myworkdayjobs.com/acme/Acme_External_Site#jobFamilyGroup=Technology",
+         "source": "user", "watched": True},
+    ])
+    result = _cli(tmp_path, ["names", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert _names(tmp_path) == {
+        "workday:acme.wd1.myworkdayjobs.com/acme/Acme_External_Site#jobFamilyGroup=Technology":
+            "acme",
+    }
