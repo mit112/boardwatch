@@ -61,7 +61,7 @@ linkedin 42.3%, indeed 24.7%, hiring.cafe 20.2%.
 open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 480, and check that no
 lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
 in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
-bar); 0-C (D-498, the lane-copy suppression); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
+bar); 0-C (D-498, the lane-copy suppression); 0-D (D-500, the lanes' secondhand declaration); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
 Cushman & Wakefield · Abbott — none has a technology group worth a slice, D-499 §2). (3) The Indeed and
 hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) **The nightly Windows class is CLOSED (D-497)** — the unmarked judge test is skipped and a dispatched full
 matrix is green except **T78**: Windows 3.13's two-writer test reads `database is locked` on 2 of the
@@ -96,6 +96,14 @@ read-only" marker question is answered (D-497 §4): the vocabulary already says 
   actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
 
 ## Owner-gated — do NOT start or decide unilaterally
+
+**0-D. EXTEND D-414(a)'S SECONDHAND DECLARATION TO THE JOBAPPS AND HIRING.CAFE LANES (D-500).** Only
+Indeed declares; the other lanes overwrite a board's row when they converge onto it. 512 open board
+postings are also lane-observed and 478 currently carry the lane's latest version as the document the
+engine quotes (jobapps 176, hiring.cafe 172, indeed 130); 50 delivered, 41 judged on it; 301 rows'
+`raw_json` is the lane payload (drops Greenhouse pay ranges, blocks `reparse-bodies`). Same change
+D-414 made for Indeed; `rules_hash` unmoved. **Not built. Mit's call** — the jobapps lane is his own
+harvest, so which rendering wins is his.
 
 **0-C. SUPPRESS A LANE COPY WHEN THE EMPLOYER BOARD'S POSTING IS IN ITS GROUP (D-498).** The queue
 duplicate rate is 10.1% apply / 12.8% review after the cap; 45 of the 71 redundant leads are already

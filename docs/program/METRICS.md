@@ -13811,4 +13811,6 @@ By run (judged → eligible): 43 53→36 68% · 44 50→32 64% · 45 33→17 52%
 
 **Gate on t79 (two review fixes): 10,100 passed, 7 min 31 s.**
 
+**Lane overwrite of board rows (D-500), read-only:** watched board postings also lane-observed 538 (512 open); latest version source a lane's for 478 open (jobapps 176 · hiring.cafe 172 · indeed 130 · board 34); of those delivered 50, gate-judged 41; board rows with the jobapps payload as `raw_json` 301 (workday 134 · greenhouse 59 · ashby 48 · smartrecruiters 18 · eightfold 17 · lever 12 · oraclehcm 9 · workable 4).
+
 **Nightly Windows (D-497).** Dispatched full matrix on t77 (run 34709963160): 27 jobs, all green except Windows 3.13 on `test_two_writer_concurrency` (`database is locked`). That test on the Windows 3.13 job across the last six full-matrix runs: 09-08 pass · 09-09 pass · 09-10 **fail** · 09-11 pass · 09-12 nightly pass · 09-12 dispatch **fail** = 2 of 6. The fake-claude test is absent from every Windows failure list on the dispatch. Local gate on t77: 10,098 passed, 8 min 29 s.
