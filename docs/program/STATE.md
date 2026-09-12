@@ -55,10 +55,12 @@ lane re-adds a sliced board (`select … from companies where slug not like '%#%
 in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
 bar); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
 Cushman & Wakefield · Applied Materials · Abbott); the lever bar on n = 10. (3) The Indeed and
-hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) The nightly Windows
-CI class (red 09-08..09-12, `push` green) is still worth a ticket. Still open from D-494: seed the
-cluster cap from the standing queue; a "network, read-only" effect marker; ratify `apple`'s
-`board_reported_total = None`.
+hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) **The nightly Windows class is CLOSED (D-497)** — the unmarked judge test is skipped and a dispatched full
+matrix is green except **T78**: Windows 3.13's two-writer test reads `database is locked` on 2 of the
+last 6 runs (busy-handler starvation; ticketed, not fixed — a flake fix needs Windows fan-out, Mit's
+call on the seat). `nightly-watch` (#95) will keep opening on it. Still open from D-494: seed the
+cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`. The "network,
+read-only" marker question is answered (D-497 §4): the vocabulary already says it.
 
 ### Session 2026-09-07 (review + run 43; the mid session REVIEWED, three rulings taken, run 43 CLEAN on the sliced fleet): **D-495.**
 

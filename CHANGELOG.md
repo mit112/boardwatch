@@ -513,6 +513,11 @@ All notable changes to this project are documented here. The format follows
   now names `gate_rejected` (absent when the judge is disarmed) and `routed_to_review_lane`
   (delivered, not lost), the tailor stage enters at what projection advanced plus the review leads,
   and the `projected_leads` cross-check counts the apply lane only. Funnel artifact version 8.
+- **The one judge test T60 added after the Windows skip landed is now skipped on Windows too**
+  (`test_run_funnel_projection_stage`): it needs the fake `claude` to run, Windows cannot spawn the
+  extensionless script, and the assertion "the gate never called the fake claude at all" was the
+  nightly matrix's one steady red from 09-08 onward.
+
 - **The nightly Windows CI jobs are green again.** Red on every scheduled run since at least
   2026-09-01 on nine tests. A lane that fails to collect now names its path readably
   (`Type: message`, not a repr that doubled every Windows backslash); two config tests and a PDF

@@ -13800,3 +13800,5 @@ By run (judged → eligible): 43 53→36 68% · 44 50→32 64% · 45 33→17 52%
 **Names:** `companies names` plan 3 rewrites / 430 correct / 562 not derivable; applied 3; `identities backfill` 2,238 rows; `identities verify` 182,808.
 
 **Gate:** run 1 red on R15 only (three fixture reviews overdue); run 2 10,097 passed, 1 failed (deadline test pinned on greenhouse); run 3 green, 10,098 passed.
+
+**Nightly Windows (D-497).** Dispatched full matrix on t77 (run 34709963160): 27 jobs, all green except Windows 3.13 on `test_two_writer_concurrency` (`database is locked`). That test on the Windows 3.13 job across the last six full-matrix runs: 09-08 pass · 09-09 pass · 09-10 **fail** · 09-11 pass · 09-12 nightly pass · 09-12 dispatch **fail** = 2 of 6. The fake-claude test is absent from every Windows failure list on the dispatch. Local gate on t77: 10,098 passed, 8 min 29 s.
