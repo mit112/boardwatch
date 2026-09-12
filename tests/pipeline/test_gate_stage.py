@@ -69,7 +69,9 @@ if mode == "garbage":
     print("not json at all {{{")
     sys.exit(0)
 
-if mode == "wrongcount":
+if mode == "empty":
+    verdicts = []
+elif mode == "wrongcount":
     verdicts = (
         [{"label": labels[0], "decision": "eligible", "reason": None, "evidence": "",
           "confidence": "high"}]
@@ -367,6 +369,28 @@ def test_gate_wrong_item_count_fails_open(
     partial = [e for e in summary.errors if "partly failed open" in e]
     assert len(partial) == 1, summary.errors
     assert "1 of 2 verdicts missing" in partial[0]
+
+
+@_needs_an_executable_fake
+def test_an_empty_verdict_array_fails_the_whole_batch_open(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`[]` answers nobody. Label-keyed parsing (2026-09-12) would read it as "every label
+    missing" and call the batch PARTIAL, leaving `failed_open_batches` at 0 — which silences the
+    one alert whose job is to say the judge never ran. It must count as a failed batch."""
+    _ready(env)
+    first = _seed(env, slug="acme-gate-a")
+    second = _seed(env, slug="acme-gate-b")
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "empty")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None
+    assert summary.gate_failed_open == 1, "an empty answer is a failed batch, not a partial one"
+    assert summary.gate_judged == 0
+    tailored_ids = [lead.posting_id for lead in summary.tailored]
+    assert first in tailored_ids and second in tailored_ids
 
 
 # ---------------------------------------------------------------------------

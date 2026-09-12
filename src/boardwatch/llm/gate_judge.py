@@ -220,6 +220,10 @@ def _judge_batch(
         verdicts, missing = _parse_verdicts(stdout, [str(item["label"]) for item in batch])
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OracleVerdictError) as exc:
         return None, f"unusable response ({type(exc).__name__}): {exc}"
+    if not verdicts:
+        # An empty array answers NOBODY: that is the "judge never ran" shape the batch count
+        # exists to make visible, not a partial answer, so it fails the whole batch open.
+        return None, f"unusable response: the array carried none of the {len(batch)} verdicts"
     if missing:
         return verdicts, (
             f"{len(missing)} of {len(batch)} verdicts missing (labels {', '.join(missing)}); "
