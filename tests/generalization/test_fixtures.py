@@ -308,11 +308,21 @@ def test_an_overdue_review_fails() -> None:
 
 
 def test_the_deadline_is_still_green_on_the_due_date_itself() -> None:
-    """`today > review_by`, not `>=`: the due date is the last green day, as documented."""
-    due = FIXTURE_PROVENANCE["greenhouse"].review_by
+    """`today > review_by`, not `>=`: the due date is the last green day, as documented.
+
+    Pinned on the EARLIEST deadline in the table, not on one named provider: the day one
+    provider's review is extended (`fixture_refresh --extend`), a later date is no longer a
+    green day for the providers whose reviews still fall before it.
+    """
+    due = min(entry.review_by for entry in FIXTURE_PROVENANCE.values())
+    first_due = {
+        readme_path(provider)
+        for provider, entry in FIXTURE_PROVENANCE.items()
+        if entry.review_by == due
+    }
     assert check_fixture_review_due(_real(), today=due) == []
     overdue = check_fixture_review_due(_real(), today=date.fromordinal(due.toordinal() + 1))
-    assert [v.path for v in overdue] == [readme_path("greenhouse")]
+    assert {v.path for v in overdue} == first_due
 
 
 def test_a_registered_provider_with_no_provenance_entry_fails(
