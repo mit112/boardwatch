@@ -9,6 +9,7 @@ Every name here is synthetic (`acme.test`, "Acme Corp"). No real employer, host 
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -218,7 +219,10 @@ def test_add_of_the_whole_board_lands_on_its_slice_and_says_so(tmp_path: Path) -
     ])
     result = _cli(tmp_path, ["add", "workday:acme.wd1.myworkdayjobs.com/acme/External"])
     assert result.exit_code == 0, result.output
-    flat = result.output.replace("\n", " ")
+    # Collapse ALL whitespace, not just newlines: Rich wraps a long note at the console width and
+    # on Windows leaves a trailing space before the break, so a newline-only flatten reads
+    # "watched as  the facet slice" and the phrase check fails there alone (matrix run 34714236194).
+    flat = re.sub(r"\s+", " ", result.output)
     assert "already watched as the facet slice" in flat
     assert "differs only in slug case" not in flat
     assert _names(tmp_path) == {f"workday:{sliced}": "acme"}, "a second row was added"
