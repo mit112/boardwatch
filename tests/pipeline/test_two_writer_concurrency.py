@@ -42,7 +42,14 @@ from boardwatch.store.queries import insert_run
 
 data_dir = Path(sys.argv[1])
 count = int(sys.argv[2])
-engine = get_engine(data_dir)
+# 60 s, not the production 5 s (T78, D-501). SQLite's busy handler does not interleave two
+# tight-loop writers: measured on windows-latest with NO other load, one writer's single commit
+# waited ~1.1 s -- the whole time its competitor took to run all 200 of its commits -- and under
+# the full suite on a saturated runner that same wait passed 5 s and read `database is locked`
+# (2 of 6 full-matrix runs on 3.13). The property under test is WAL + busy_timeout -> no
+# corruption and no lost write; a fair handoff within 5 s is not it. A real SQLITE_BUSY escape
+# still fails loudly below, and a store that ignored the timeout would fail at the 5 s default.
+engine = get_engine(data_dir, busy_timeout_ms=60_000)
 for _ in range(count):
     insert_run(engine)
 print("OK", count, flush=True)
