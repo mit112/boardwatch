@@ -4,9 +4,11 @@ Every test drives a fake `claude` on PATH — real headless claude is never invo
 suite. The fake MUST NOT read stdin (a stdin-reading fake would hang the suite forever); it
 exits immediately, reading its canned behaviour from environment variables the test sets.
 
-Fails open at every seam (D-074): the fake's failure modes below (`exit1`, `garbage`,
-`wrongcount`) each drop exactly one BATCH's verdicts and must never make the run fatal or
-drop a real lead from the slate.
+Fails open at every seam (D-074): the fake's failure modes below (`exit1`, `garbage`) each
+drop exactly one BATCH's verdicts and must never make the run fatal or drop a real lead from
+the slate. `wrongcount` answers ONE lead of the batch: the answered lead is judged and the
+rest stay unjudged on the slate — a skipped lead fails open, a batch that skipped one does
+not (runs 45 and 48 each lost 13 leads to a 12-verdict answer before this).
 
 The `fenced` mode is NOT a failure mode -- it is the shape real headless haiku actually
 returned on run 4, and it must be JUDGED, not failed open. It exists because this fake
@@ -358,10 +360,13 @@ def test_gate_wrong_item_count_fails_open(
     summary = _pipeline(env, tmp_path / "apps")
 
     assert summary.fatal is None
-    assert summary.gate_failed_open == 1
-    assert summary.gate_judged == 0
+    assert summary.gate_failed_open == 0, "a batch that answered some leads did not fail"
+    assert summary.gate_judged == 1, "the one answered lead is judged on its own label"
     tailored_ids = [lead.posting_id for lead in summary.tailored]
     assert first in tailored_ids and second in tailored_ids
+    partial = [e for e in summary.errors if "partly failed open" in e]
+    assert len(partial) == 1, summary.errors
+    assert "1 of 2 verdicts missing" in partial[0]
 
 
 # ---------------------------------------------------------------------------

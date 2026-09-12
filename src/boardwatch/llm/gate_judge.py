@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
@@ -143,12 +143,23 @@ def _unfence(text: str) -> str:
     return "\n".join(lines[1:-1])
 
 
-def _parse_verdicts(stdout: str, expected_count: int) -> list[OracleVerdict]:
+def _parse_verdicts(
+    stdout: str, expected_labels: Sequence[str]
+) -> tuple[list[OracleVerdict], tuple[str, ...]]:
     """The two-stage envelope `--output-format json` wraps every headless response in: the
     outer JSON's `result` key holds the model's text, which is itself the JSON array this
     stage asked for (2026-09-08 calibration harness, `calib/*/batch-*.json`). Raises
     (`json.JSONDecodeError`, `KeyError`, `TypeError`, `ValueError`, `OracleVerdictError`) on
     anything that does not conform — the caller treats every one of those as fail-open.
+
+    Returns the verdicts the response carried and the labels it did NOT carry. Keyed on
+    `label`, not on position or count: runs 45 and 48 (2026-09-09, -12) each lost a whole
+    batch of 13 because the model answered 12 — one lead skipped — and an exact count check
+    failed all 13 open. Every verdict names its lead and `apply_gate_verdicts` binds on that
+    name, never on position, so the 12 are as sound as any batch's and only the skipped lead
+    is left unjudged. The WHOLE batch still fails open on a label the batch never asked
+    about, a label answered twice, or more verdicts than items: those are responses this
+    stage cannot trust, and coercing one is the direction that drops a real job.
     """
     envelope = json.loads(stdout)
     if envelope.get("is_error"):
@@ -157,12 +168,12 @@ def _parse_verdicts(stdout: str, expected_count: int) -> list[OracleVerdict]:
     if not isinstance(result_text, str):
         raise TypeError(f"expected envelope['result'] to be a string, got {type(result_text)}")
     parsed = json.loads(_unfence(result_text))
-    if not isinstance(parsed, list) or len(parsed) != expected_count:
+    if not isinstance(parsed, list) or len(parsed) > len(expected_labels):
         raise ValueError(
-            f"expected a JSON array of {expected_count} verdicts, got "
+            f"expected a JSON array of at most {len(expected_labels)} verdicts, got "
             f"{len(parsed) if isinstance(parsed, list) else type(parsed).__name__}"
         )
-    return [
+    verdicts = [
         OracleVerdict(
             label=str(item["label"]),
             decision=str(item["decision"]),
@@ -172,6 +183,14 @@ def _parse_verdicts(stdout: str, expected_count: int) -> list[OracleVerdict]:
         )
         for item in parsed
     ]
+    answered = [verdict.label for verdict in verdicts]
+    unknown = sorted(set(answered) - set(expected_labels))
+    if unknown:
+        raise ValueError(f"verdicts for labels the batch did not contain: {unknown}")
+    if len(set(answered)) != len(answered):
+        raise ValueError("the same label was answered more than once")
+    missing = tuple(label for label in expected_labels if label not in set(answered))
+    return verdicts, missing
 
 
 def _judge_batch(
@@ -179,7 +198,9 @@ def _judge_batch(
 ) -> tuple[list[OracleVerdict] | None, str | None]:
     """Run one batch through headless claude. `(verdicts, None)` on success, `(None, note)`
     on any failure this stage must fail open on — a note describing WHAT failed, never a
-    traceback, so the run's soft alert and funnel error line are readable."""
+    traceback, so the run's soft alert and funnel error line are readable — and
+    `(verdicts, note)` when the response answered SOME of the batch: the note names the
+    leads it skipped, which stay unjudged and on the slate exactly as a failed batch's do."""
     prompt = _prompt(judging_policy, batch)
     try:
         stdout = _call_claude(
@@ -196,9 +217,15 @@ def _judge_batch(
         stderr = (exc.stderr or "").strip()[:300]
         return None, f"claude exited {exc.returncode}: {stderr}"
     try:
-        return _parse_verdicts(stdout, len(batch)), None
+        verdicts, missing = _parse_verdicts(stdout, [str(item["label"]) for item in batch])
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OracleVerdictError) as exc:
         return None, f"unusable response ({type(exc).__name__}): {exc}"
+    if missing:
+        return verdicts, (
+            f"{len(missing)} of {len(batch)} verdicts missing (labels {', '.join(missing)}); "
+            "those leads were left unchanged, never dropped"
+        )
+    return verdicts, None
 
 
 def run_gate_stage(
@@ -264,6 +291,8 @@ def run_gate_stage(
             failed_batches += 1
             errors.append(f"gate: batch {index + 1}/{len(batches)} failed open: {note}")
             continue
+        if note is not None:
+            errors.append(f"gate: batch {index + 1}/{len(batches)} partly failed open: {note}")
         verdicts.extend(batch_verdicts)
 
     if not verdicts:
