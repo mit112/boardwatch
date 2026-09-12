@@ -407,10 +407,29 @@ def stored_slug(conn: Connection, *, provider: str, slug: str) -> str | None:
 
     Oldest row wins (`ORDER BY id`), so a store that already holds a collided pair resolves to
     the same row every time instead of alternating.
+
+    An UNSLICED slug also resolves to a stored SLICED row of the same board — the stored slug
+    with its `#facet=descriptor` fragment (T71) stripped. A slice is an in-place edit of the
+    watched row, so the whole board is deliberately no longer watched; when a lane then
+    converged onto the plain board it saw no row and added the whole board back beside its
+    slice (BAH and NVIDIA, 2026-09-10: two censored 2,000-row copies of boards sliced three
+    days earlier). One direction only: a slug that CARRIES a fragment still matches exactly,
+    because a sibling slice (`…#group=B` beside `…#group=A`) is a deliberate second row.
     """
+    fragment_at = func.instr(companies.c.slug, "#")
+    unsliced_stored = case(
+        (fragment_at > 0, func.substr(companies.c.slug, 1, fragment_at - 1)),
+        else_=companies.c.slug,
+    )
+    wanted = func.lower(slug)
+    matches = (
+        func.lower(companies.c.slug) == wanted
+        if "#" in slug
+        else func.lower(unsliced_stored) == wanted
+    )
     return conn.execute(
         select(companies.c.slug)
-        .where(companies.c.provider == provider, func.lower(companies.c.slug) == func.lower(slug))
+        .where(companies.c.provider == provider, matches)
         .order_by(companies.c.id)
         .limit(1)
     ).scalar_one_or_none()

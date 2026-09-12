@@ -391,3 +391,41 @@ def test_a_company_with_a_blank_name_yields_no_ring_entry(engine: Engine) -> Non
     _add(engine, name="Real Co", provider="ashby", slug="real", watched=True)
     with engine.connect() as conn:
         assert watched_company_names(conn) == ("Real Co",)
+
+
+def test_a_lane_find_of_the_whole_board_converges_onto_its_sliced_row(engine: Engine) -> None:
+    """The live incident of 2026-09-10. BAH and NVIDIA had been sliced on 09-07 — an in-place
+    slug edit appending `#jobFamilyGroup=…` (T71) — and three days later a lane converged onto
+    each PLAIN board, found no row spelt that way, and added the whole board back beside its
+    slice: two censored 2,000-row copies of what the slice had deliberately narrowed.
+
+    RED before: `stored_slug` compared the whole stored slug, fragment included.
+    """
+    sliced = "acme.wd1.myworkdayjobs.com/acme/External#jobFamilyGroup=Technology"
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="workday", slug=sliced, name="acme", source="user")
+    original = _row(engine, provider="workday", slug=sliced).id
+
+    with engine.begin() as conn:
+        landed = upsert_lane_company(
+            conn, provider="workday", slug="acme.wd1.myworkdayjobs.com/acme/external",
+            name="Acme", watch=True,
+        )
+
+    assert landed == original, "the lane find did not converge onto the sliced board"
+    with engine.connect() as conn:
+        rows = conn.execute(select(companies.c.slug)).scalars().all()
+    assert rows == [sliced], "the whole board was stored as a second row beside its slice"
+
+
+def test_a_sibling_slice_is_still_a_second_row(engine: Engine) -> None:
+    """The one direction the convergence above must NOT take: a slug that carries its own
+    fragment is a deliberate sibling slice (Thales runs three), never the same board."""
+    first = "acme.wd1.myworkdayjobs.com/acme/External#jobFamilyGroup=Technology"
+    sibling = "acme.wd1.myworkdayjobs.com/acme/External#jobFamilyGroup=Engineering"
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="workday", slug=first, name="acme", source="user")
+        upsert_watch(conn, provider="workday", slug=sibling, name="acme", source="user")
+    with engine.connect() as conn:
+        rows = conn.execute(select(companies.c.slug)).scalars().all()
+    assert sorted(rows) == sorted([first, sibling])
