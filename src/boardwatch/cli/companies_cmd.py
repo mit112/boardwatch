@@ -152,6 +152,17 @@ def add(
         watched = upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
     if watched == slug:
         console.print(f"Watching {provider}:{slug} (source={source}).")
+    elif "#" in watched and "#" not in slug:
+        # The whole board resolved onto its facet SLICE (T71): the slice is an in-place narrowing
+        # of this very row, so watching the plain board again would list everything the slice
+        # was made to exclude. Nothing here widens it back — that is the slice's slug, edited
+        # in place — so say exactly that rather than call a fragment a case difference.
+        console.print(
+            f"[yellow]note:[/yellow] {provider}:{slug} is already watched as the facet slice "
+            f"{provider}:{watched}; no second board was added. To watch the whole board again, "
+            "replace the slice's slug in place."
+        )
+        console.print(f"Watching {provider}:{watched}.")
     else:
         # A silent no-op would leave the operator believing a new board was added. Say which
         # row the watch landed on, and do not claim `source`: the stored row keeps its own.

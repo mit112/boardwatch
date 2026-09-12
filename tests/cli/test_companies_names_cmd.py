@@ -206,3 +206,20 @@ def test_the_sweep_still_matches_a_host_named_row_after_its_slug_was_sliced(tmp_
         "workday:acme.wd1.myworkdayjobs.com/acme/Acme_External_Site#jobFamilyGroup=Technology":
             "acme",
     }
+
+
+def test_add_of_the_whole_board_lands_on_its_slice_and_says_so(tmp_path: Path) -> None:
+    """A facet slice is an in-place narrowing of the watched row, so `add` of the plain board
+    resolves onto it (no second row). The message must name the slice, not call a `#` fragment
+    a case difference — the widen-back path is editing the slice's slug, which it now says."""
+    sliced = "acme.wd1.myworkdayjobs.com/acme/External#jobFamilyGroup=Technology"
+    _seed(tmp_path, [
+        {"name": "acme", "provider": "workday", "slug": sliced, "source": "user", "watched": True},
+    ])
+    result = _cli(tmp_path, ["add", "workday:acme.wd1.myworkdayjobs.com/acme/External"])
+    assert result.exit_code == 0, result.output
+    flat = result.output.replace("\n", " ")
+    assert "already watched as the facet slice" in flat
+    assert "differs only in slug case" not in flat
+    assert _names(tmp_path) == {f"workday:{sliced}": "acme"}, "a second row was added"
+
