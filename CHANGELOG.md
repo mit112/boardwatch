@@ -518,6 +518,12 @@ All notable changes to this project are documented here. The format follows
   now names `gate_rejected` (absent when the judge is disarmed) and `routed_to_review_lane`
   (delivered, not lost), the tailor stage enters at what projection advanced plus the review leads,
   and the `projected_leads` cross-check counts the apply lane only. Funnel artifact version 8.
+- **The two-writer concurrency test no longer reads `database is locked` on a slow Windows runner.**
+  Measured on windows-latest: SQLite's busy handler does not interleave two tight-loop writers, so one
+  waits for all 200 of the other's commits; under full-suite load that passed the 5 s production timeout
+  (2 of 6 full-matrix runs, 3.13 only). The test's writers now carry a 60 s timeout; what the guard proves
+  (WAL + busy_timeout lose nothing and corrupt nothing) is unchanged and a real escape still fails loudly.
+
 - **The one judge test T60 added after the Windows skip landed is now skipped on Windows too**
   (`test_run_funnel_projection_stage`): it needs the fake `claude` to run, Windows cannot spawn the
   extensionless script, and the assertion "the gate never called the fake claude at all" was the

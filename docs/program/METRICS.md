@@ -13811,6 +13811,12 @@ By run (judged → eligible): 43 53→36 68% · 44 50→32 64% · 45 33→17 52%
 
 **Gate on t79 (two review fixes): 10,100 passed, 7 min 31 s.**
 
+**T78 Windows probe (D-501, run 34712779833, windows-latest / 3.13, branch `t78-probe`):** solo 0 of 20 failed · `tests/pipeline -n auto` 0 of 5 failed (2,287 passed each) · timed races (200 commits per writer, no other load), worst single commit per writer, ms: (1130, 19) (1170, 48) (736, 56) (824, 837) (1113, 22) (20, 1171) (325, 1064) (1049, 37) (955, 68) (38, 1093); totals 2.1–2.4 s vs 1.0–1.2 s. **Dispatched matrix on t80 (34714236194):** two-writer test green on Windows 3.11 / 3.12 / 3.13 and macOS ×3; the one red was the new slice-note CLI test on all three Windows jobs (Rich trailing-space wrap), fixed on t81. Gates: t80 10,100 passed (9 min 32 s); t81 10,100 passed (7 min 16 s).
+
+**Eightfold retry budget, runs 44–48 (`board_enumerated` / `board_reported_total`):** bostonscientific complete ×5 (548–552) · northropgrumman complete ×5 (3,790–3,821) · qualcomm 1,811/1,894 · 1,928/1,940 · 1,948/1,956 · 1,939/1,965 · **1,976/1,976 complete** · appliedmaterials 1,908/1,910 · 1,924/1,936 · 1,937/1,941 · 1,932/1,937 · 1,944/1,945.
+
+**Retail boards the lanes admitted (open postings / software-titled):** Advance Auto 2,571 / 4 · Cushman & Wakefield 2,149 / 4 · Five Below 2,137 / 0 · Abbott 2,570 / 51.
+
 **Lane overwrite of board rows (D-500), read-only:** watched board postings also lane-observed 538 (512 open); current version written by a lane for 478 open, of which TRUE OVERWRITES (`revised`, different hash) **117** (jobapps 112 · hiring.cafe 5) and lane-first `new` captures later matched verbatim 361 (hiring.cafe 167 · indeed 130 · jobapps 64); delivered ≤ 50, gate-judged ≤ 41 over the 478; lane-written `revised` versions on board postings store-wide: jobapps 575 · hiring.cafe 116 vs board 2,450; board rows with the jobapps payload as `raw_json` 301 (workday 134 · greenhouse 59 · ashby 48 · smartrecruiters 18 · eightfold 17 · lever 12 · oraclehcm 9 · workable 4).
 
 **Nightly Windows (D-497).** Dispatched full matrix on t77 (run 34709963160): 27 jobs, all green except Windows 3.13 on `test_two_writer_concurrency` (`database is locked`). That test on the Windows 3.13 job across the last six full-matrix runs: 09-08 pass · 09-09 pass · 09-10 **fail** · 09-11 pass · 09-12 nightly pass · 09-12 dispatch **fail** = 2 of 6. The fake-claude test is absent from every Windows failure list on the dispatch. Local gate on t77: 10,098 passed, 8 min 29 s.
