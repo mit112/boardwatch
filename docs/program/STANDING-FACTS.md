@@ -551,6 +551,13 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 
 ## The live store
 
+- **A 5 s `busy_timeout` can be STARVED by a competitor that commits in a tight loop (D-501, measured
+  2026-09-12 on windows-latest).** SQLite's busy handler is sleep-and-retry on a fixed back-off; it does not
+  interleave two writers, so the loser waits until the winner has run ALL of its commits (~1.1 s for 200
+  unloaded, past 5 s under full-suite load). The scan applies ONE board per transaction, so production's
+  shape is one long hold, not 200 short ones, and no production path has read `database is locked`; the
+  two-writer guard's subprocesses carry 60 s for this reason and prove no corruption and no loss, not fairness.
+
 - **Slice 2 IS APPLIED, and the ledger and regrouping both run on real data.** Corrected 2026-08-23d
   against the store (D-289); this bullet previously said the opposite and offered a read-only proof that no
   longer holds. Measured: head **`p_lane_companies`**, **both** Slice 2 tables present
