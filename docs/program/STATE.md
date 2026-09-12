@@ -42,19 +42,27 @@ skipped lead is reported `partly failed open` and is the only one unjudged. Thre
 (ashby/greenhouse/lever) extended to 2026-12-11 after a live shape re-check. `ashby:whatnot` (404)
 and `vhr-otsuka/Pharmavite` (422) unwatched. **Fleet 481 watched.**
 
+**Later the same day (D-499): the Gate 1 instrument was WRONG in boardwatch's disfavour** — it read provenance
+off `raw_json`, which the jobapps lane's revision replaces. Corrected (v2, per version source):
+**greenhouse 97.2%, ashby 100%, workday 96.6%, lever 100%** — every employer-board bar is cleared and the
+lever question below is withdrawn; overall 35.2%, LinkedIn 42.6%, Indeed 24.9%, hiring.cafe 22.1%.
+Applied Materials' censored Workday row was drained and dropped beside its Eightfold board (**fleet 480**);
+two review-found defects in the morning's code were fixed and gated (empty verdict array = failed batch;
+`companies add` over a slice says so). `hidden_cluster_cap` read 0 on all five runs.
+
 **Rank band, 308 ranked judge rows over runs 43–48: FLAT.** Deterministic `uncertain` converts 31 /
 56 / 46 / 47 / **62%** across the five 30-rank bands; the deepest band is the best. `gate.depth = 150`
 stands; whether deeper pays is unmeasured and a cost call. **Gate 1 (T35) re-measured: 34.8%
 independent recall** (was 23.8% on 09-02); greenhouse 91.5%, ashby 92.6%, workday 96.6% clear the
-≥ 85% employer-board bar, **lever 70.0% on n = 10 does not**; linkedin 42.3%, indeed 24.7%,
-hiring.cafe 20.2%.
+≥ 85% employer-board bar, **lever 70.0% on n = 10 does not** — SUPERSEDED by D-499 below, lever is 100%;
+linkedin 42.3%, indeed 24.7%, hiring.cafe 20.2%.
 
 **Next action.** (1) Read the 04:00 tick on 09-13 (run 49 = confirm day 8): expect `partly failed
-open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 481, and check that no
+open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 480, and check that no
 lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
 in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
 bar); 0-C (D-498, the lane-copy suppression); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
-Cushman & Wakefield · Applied Materials · Abbott); the lever bar on n = 10. (3) The Indeed and
+Cushman & Wakefield · Abbott — none has a technology group worth a slice, D-499 §2). (3) The Indeed and
 hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) **The nightly Windows class is CLOSED (D-497)** — the unmarked judge test is skipped and a dispatched full
 matrix is green except **T78**: Windows 3.13's two-writer test reads `database is locked` on 2 of the
 last 6 runs (busy-handler starvation; ticketed, not fixed — a flake fix needs Windows fan-out, Mit's

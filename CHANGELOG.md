@@ -500,7 +500,12 @@ All notable changes to this project are documented here. The format follows
   away (three batches, 39 leads, across two runs). Verdicts now bind to their lead by `label`; a lead the
   answer skipped is the only one left unjudged, reported as `partly failed open` with its label. A label
   the batch never asked about, a label answered twice, or more verdicts than leads still fails the whole
-  batch open.
+  batch open. An EMPTY array answers nobody and is a failed batch, not a partial one, so the
+  "judge never ran" alert still fires.
+
+- **`companies add` of a whole board that is watched as a facet slice now says so.** The watch lands on
+  the slice (no second row); the note used to call the `#` fragment a case difference. It now names the
+  slice and says that widening back means replacing the slice's slug in place.
 
 - **`test_indeed_lane`'s control test was reaching Indeed's live API on every run** — the only test
   in its file without `@respx.mock`; it failed whenever a live hit carried a malformed URL. It is

@@ -13803,4 +13803,12 @@ By run (judged → eligible): 43 53→36 68% · 44 50→32 64% · 45 33→17 52%
 
 **Queue duplicates re-measured 2026-09-12 (D-498), `(company, normalised title)` groups over the queue folders:** apply 207 leads / 186 groups / 21 redundant = **10.1%** (09-03: 14.0%) · review 351 / 306 / 45 = **12.8%** (18.1%). All 66 per-lane redundant leads are different job ids with different JD hashes. Across both lanes 71 redundant: lane+board 37 (store-grouped 28) · lanes-only 19 (11) · boards-only 15 (6). Biggest: Microsoft "Software Engineer" ×4 (2 boards, Redmond), Abbott "Clinical Associate" ×4 (one board, four states), Caesars ×3 (oraclehcm + jobapps), Giftogram ×3 (greenhouse + indeed + jobapps), OpenAI ×3, Humana ×3, HP ×3.
 
+**Gate 1 CORRECTED (D-499), v2 instrument reading provenance per version source.** 14 d (08-30..09-12): drawn-from **6,481 of 18,409 = 35.2%**; greenhouse_api 138/142 = 97.2% · ashby_api 54/54 = 100% · workday_api 28/29 = 96.6% · lever_api 10/10 = 100% · linkedin 4,173/9,793 = 42.6% · indeed 1,997/8,015 = 24.9% · hiringcafe 81/366 = 22.1%. 9 d post-reset (09-04..09-12): 4,783 of 12,114 = 39.5%; greenhouse 88/89 · ashby 39/39 · workday 19/19 · lever 8/8 · linkedin 46.8% · indeed 29.2%. The 09-02-rule figures above (34.8%, lever 70.0%) are superseded. Board-provider rows whose `raw_json` is the lane payload: 301.
+
+**Applied Materials (D-499 §2):** workday 156 censored 2,298/2,000, 2,069 open · eightfold 1513 1,944/1,945, 2,124 open · title+city overlap 1,997 · workday-only 72 (30 tech-ish) · eightfold-only 127 (45). Drained 2,069 → 1 open, unwatched; **fleet 480**.
+
+**Queue duplicates, cluster cap:** `hidden_cluster_cap` 0 on runs 44, 45, 46, 47, 48.
+
+**Gate on t79 (two review fixes): 10,100 passed, 7 min 31 s.**
+
 **Nightly Windows (D-497).** Dispatched full matrix on t77 (run 34709963160): 27 jobs, all green except Windows 3.13 on `test_two_writer_concurrency` (`database is locked`). That test on the Windows 3.13 job across the last six full-matrix runs: 09-08 pass · 09-09 pass · 09-10 **fail** · 09-11 pass · 09-12 nightly pass · 09-12 dispatch **fail** = 2 of 6. The fake-claude test is absent from every Windows failure list on the dispatch. Local gate on t77: 10,098 passed, 8 min 29 s.
