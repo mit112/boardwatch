@@ -71,7 +71,7 @@ from pathlib import Path
 from typing import Any
 
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
-from boardwatch.core.models import RawPosting
+from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting, SecondhandField
 from boardwatch.core.politeness import Fetcher
 from boardwatch.lanes.base import (
     CompanyAdmission,
@@ -170,6 +170,13 @@ class _Identity:
     provider: str
     slug: str
     posting_ref: str
+    # What this hit is NOT the record of truth for (D-414(a), D-500). It rides WITH the identity
+    # because the two are decided by the same fact: a tier-1 reference is the board's OWN posting
+    # key, so the board scan is the record of truth and this lane refreshes liveness only. Tiers 2
+    # and 3 file under a `pst_` key of their own and declare nothing -- there, this lane is the
+    # only observer the row will ever have, and freezing its columns would pin whatever landed
+    # first forever.
+    secondhand: frozenset[SecondhandField] = frozenset()
 
 
 def is_direct_apply(primary_acquisition: str) -> bool:
@@ -247,13 +254,21 @@ def posting_identity(record: _Record) -> _Identity:
     `posting_id` is job-apps' own stable `pst_<hex>`, present on 737 of 737 records, and it is
     the fallback reference in tiers 2 and 3 rather than the URL: a reference has to be stable
     per posting, and a URL with a tracking query is not.
+
+    **TIER 1 ALONE DECLARES `CONVERGED_SECONDHAND` (D-500).** Convergence is the point of the
+    ladder, and it cuts both ways: the tier-1 row is one a board scan also writes, so this lane's
+    rendering of the employer's page must not replace the employer's own on the columns the scan
+    owns -- above all `body_text`, which is the document every eligibility rule quotes. Tiers 2
+    and 3 declare nothing because no board scan ever reaches those rows.
     """
     try:
         target = parse_posting_target(record.direct_url)
     except (UnknownBoardURL, UnresolvablePostingURL):
         pass
     else:
-        return _Identity(target.provider, target.slug, target.posting_ref)
+        return _Identity(
+            target.provider, target.slug, target.posting_ref, CONVERGED_SECONDHAND
+        )
     try:
         provider, slug = parse_board_target(record.direct_url)
     except UnknownBoardURL:
@@ -303,6 +318,7 @@ def _raw_posting(identity: _Identity, record: _Record, *, body_text: str) -> Raw
     """
     return RawPosting(
         provider_posting_id=identity.posting_ref,
+        secondhand=identity.secondhand,
         title=record.title,
         # The employer's own apply page -- what the user clicks, and in the tier-1 convergence
         # case the same URL the provider itself would have recorded.

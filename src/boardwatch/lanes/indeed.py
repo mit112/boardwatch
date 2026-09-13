@@ -175,7 +175,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import zip_longest
-from typing import Any, get_args
+from typing import Any
 
 from boardwatch.core.board_urls import (
     UnknownBoardURL,
@@ -184,7 +184,7 @@ from boardwatch.core.board_urls import (
 )
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
-from boardwatch.core.models import RawPosting, SecondhandField
+from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting, SecondhandField
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
 from boardwatch.lanes.dereference import (
@@ -362,10 +362,9 @@ class UnidentifiableHit(ValueError):
 
 # EVERY declarable field this lane carries -- the JD body included -- is Indeed's rendering of the
 # employer's listing, not the employer's own record, so a hit that CONVERGES onto a real provider's
-# key declares the lot secondhand. Derived from `SecondhandField` rather than spelled out: a field
-# added later must default to "Indeed does not own this on a converged row", and a hand-written
-# list would silently default it the other way -- the direction that deletes a lead.
-CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
+# key declares the lot secondhand. The set itself lives in `core.models` because the job-apps
+# lane reaches the same conclusion about its own tier-1 hits; it is imported rather than
+# redefined so the two lanes can never drift apart on what "converged" withholds.
 
 
 @dataclass(frozen=True)

@@ -457,6 +457,53 @@ def test_tier_three_falls_back_to_the_lane_namespace(tmp_path):
     assert snapshot.snapshot.postings[0].provider_posting_id == "pst_y"
 
 
+def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):
+    """D-500: a tier-1 hit lands on the BOARD's own `(company_id, provider_posting_id)`.
+
+    `scan/apply.py`'s D25 rule refreshes every provider-sourced column on any positive
+    observation regardless of `content_hash`, so without a declaration this lane's rendering
+    replaces the employer's on the row every rule quotes. Measured on the live store before this
+    landed: 612 `revised` versions written by this lane onto board postings, ALL of them tier 1,
+    and the board's very next reading reverted 87 of 436 (20.0%) by more than half the body.
+
+    The expected set is spelled out as a LITERAL rather than compared against
+    `CONVERGED_SECONDHAND`, which is derived from `SecondhandField` and would agree with itself
+    however either one changes. A new declarable field reddens this test on purpose.
+    """
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a")
+    (posting,) = _postings(_collect(root, tmp_path))
+    assert posting.secondhand == frozenset(
+        {
+            "title", "url", "locations", "remote_policy", "department",
+            "posted_at", "updated_at", "body_text", "salary", "raw_json",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "direct_url,posting_id",
+    [
+        ("https://jobs.ashbyhq.com/openai", "pst_x"),          # tier 2: board, no posting ref
+        ("https://lifeattiktok.com/search/123", "pst_y"),      # tier 3: the lane namespace
+    ],
+)
+def test_a_record_filed_under_its_own_key_declares_nothing_secondhand(
+    tmp_path, direct_url, posting_id
+):
+    """Tiers 2 and 3, and the reason the declaration rides on the IDENTITY rather than the lane.
+
+    Neither tier converges onto a board's posting key -- both file under job-apps' own `pst_`
+    reference -- so this lane is the ONLY observer those rows will ever have. Declaring there
+    would freeze whatever landed first and never refresh it, which is the failure mode
+    `SecondhandField`'s reason 1 rejects a per-lane precedence rule for.
+    """
+    root = tmp_path / "queue"
+    _write(root, "Other", "a", direct_url=direct_url, posting_id=posting_id)
+    (posting,) = _postings(_collect(root, tmp_path))
+    assert posting.secondhand == frozenset()
+
+
 def test_two_spellings_of_one_lane_company_still_collapse_to_one_slug(tmp_path):
     root = tmp_path / "queue"
     for index, spelling in enumerate(("Acme Corp", "acme  corp")):
