@@ -2052,6 +2052,7 @@ def run_pipeline(
             hidden_slate_cap=ranked.hidden_slate_cap,
             slate_cap_standing=ranked.hidden_slate_cap_standing,
             hidden_cluster_cap=ranked.hidden_cluster_cap,
+            hidden_lane_copy=ranked.hidden_lane_copy,
             hidden_handled=ranked.hidden_handled,
             hidden_applied=ranked.hidden_applied,
             hidden_over_seniority=ranked.hidden_over_seniority,

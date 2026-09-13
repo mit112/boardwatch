@@ -33,6 +33,7 @@ from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
     HardFilterClause,
@@ -57,7 +58,11 @@ from boardwatch.rank.seniority_gate import (
 )
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.applications import applied_job_ids
-from boardwatch.store.delivery_queries import EMPTY_BODY_HASH, standing_slate_keys
+from boardwatch.store.delivery_queries import (
+    EMPTY_BODY_HASH,
+    standing_board_cross_host_keys,
+    standing_slate_keys,
+)
 from boardwatch.store.identity_queries import (
     identities_complete,
     load_identities,
@@ -65,9 +70,16 @@ from boardwatch.store.identity_queries import (
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
+from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.regroup import job_anchors
 from boardwatch.store.run_funnel_queries import posting_ids_judged_this_run
-from boardwatch.store.tables import companies, extractions, posting_events, postings
+from boardwatch.store.tables import (
+    companies,
+    extractions,
+    posting_events,
+    posting_identities,
+    postings,
+)
 
 console = Console()
 
@@ -136,6 +148,11 @@ class RankedPosting:
     # than a bool: a cap the operator cannot trace to a row is not auditable. One id is
     # enough to locate the group — company, title and place are all shared.
     cluster_capped_by: int | None = None
+    # The EMPLOYER-BOARD posting that made this lane copy redundant (D-498 rule (a)), set only
+    # when the row is surfaced by the `--include-lane-copy` drain. A normally-visible posting
+    # has None. Carries an id rather than a bool for the reason every other drain field does: a
+    # suppression the operator cannot trace to the row that displaced it is not auditable.
+    lane_copy_of: int | None = None
 
 
 @dataclass(frozen=True)
@@ -146,8 +163,8 @@ class RankedResults:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
     hidden_zero_signal + hidden_over_seniority + hidden_ineligible + hidden_duplicate +
     hidden_applied + hidden_handled + hidden_slate_cap + hidden_cluster_cap +
-    hidden_below_cutoff`. Each is its own counter, incremented where the posting actually
-    leaves, never a remainder by subtraction —
+    hidden_lane_copy + hidden_below_cutoff`. Each is its own counter, incremented where the
+    posting actually leaves, never a remainder by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
 
@@ -294,6 +311,16 @@ class RankedResults:
     # that is the pre-D-439 semantics and it is deliberate at a cap of 2, where the group
     # bleeds two members per run instead of taking a whole slate at once.
     hidden_cluster_cap: int = 0
+    # D-498 rule (a): a LANE copy of a job whose employer-board copy is in the same `cross_host`
+    # group and is either on this slate or standing in the owner's queue. A genuine DROP and part
+    # of the identity above.
+    #
+    # **Never folded into `hidden_duplicate`.** That bucket asserts the dedup subsystem elected a
+    # survivor under a SUPPRESSING identity kind; `cross_host` suppresses nothing and this makes
+    # no identity claim at all -- it says only that the employer's own rendering of this job is
+    # already in front of the owner, so the aggregator's copy of it is not worth a second slot.
+    # Not gated on identity completeness, so 0 here means 0.
+    hidden_lane_copy: int = 0
     # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
     # caller that forgets to set it gets "suppression disabled" rather than silently
     # claiming the subsystem ran. `hidden_duplicate == 0` on its own is ambiguous — it means
@@ -420,6 +447,7 @@ def rank_open_postings(
     include_duplicates: bool = False,
     include_slate_cap: bool = False,
     include_cluster_cap: bool = False,
+    include_lane_copy: bool = False,
     include_handled: bool = False,
     include_applied: bool = False,
     only_new: bool = False,
@@ -521,6 +549,13 @@ def rank_open_postings(
         # per candidate, and inside the existing connection so no second reader is opened.
         applied = applied_job_ids(conn)
         standing_slate = standing_slate_keys(conn, applied=applied)
+        # D-498 rule (a)'s seed: the `cross_host` keys an EMPLOYER-BOARD lead already standing in
+        # the owner's queue holds. Read in the same connection and the same snapshot as the slate
+        # seed above, for the reason that one gives — two reads are two snapshots, and a lead
+        # actioned between them would leave one seed holding what the other had released.
+        standing_board_keys = standing_board_cross_host_keys(
+            conn, skipped=set(skipped_job_ids(conn))
+        )
     scored: list[RankedPosting] = []
     # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
     slate_keys: dict[int, tuple[int, str, str]] = {}
@@ -808,6 +843,8 @@ def rank_open_postings(
     hidden_applied_this_run = 0
     hidden_duplicate_this_run = 0
     surfaced_job_ids: list[int] = []
+    # posting_id -> the job id appended to `surfaced_job_ids` for it.
+    surfaced_job_of: dict[int, int] = {}
     for posting in eligible:
         suppression = suppressions.get(posting.posting_id)
         if suppression is not None and not include_duplicates:
@@ -940,6 +977,10 @@ def rank_open_postings(
                 and posting.zero_signal != "veto"
             ):
                 surfaced_job_ids.append(job_id)
+                # The reverse link `RankedPosting` does not carry. `_suppress_lane_copies`
+                # runs after this loop and has to take a dropped row back OUT of
+                # `surfaced_job_ids`, or the row is written `seen` and never re-enters.
+                surfaced_job_of[posting.posting_id] = job_id
             if slate_key is not None:
                 # `not in` guards the seed: a standing lead that is still rankable is
                 # self-excluded above and then delivered, and appending it again would make
@@ -963,6 +1004,29 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
+    # D-498 rule (a), and it sits HERE rather than inside the fill loop because the rule is not a
+    # cap. A cap asks "has this key had its allowance?", which accumulates in slate order; this
+    # asks "is the EMPLOYER's own copy of this job in front of the owner?", and on a slate ordered
+    # by rank the board copy can sit below the lane copy. Deciding it after the loop is what makes
+    # the answer independent of which copy happened to rank higher. It also costs one query over
+    # at most `limit` ids instead of a `cross_host` key for every one of the ~178k candidates the
+    # loop never surfaces.
+    #
+    # **Before `_record_surfaced`, and that is load-bearing.** A dropped row must not be written
+    # `seen`, or the deferral would not re-enter on the run after the board copy is actioned and
+    # the drain would close behind the operator (the rule the block comment above states).
+    visible, hidden_lane_copy, lane_copy_ids = _suppress_lane_copies(
+        engine,
+        visible,
+        standing_board_keys=standing_board_keys,
+        include_lane_copy=include_lane_copy,
+    )
+    lane_copy_job_ids = {
+        surfaced_job_of[posting_id]
+        for posting_id in lane_copy_ids
+        if posting_id in surfaced_job_of
+    }
+    surfaced_job_ids = [j for j in surfaced_job_ids if j not in lane_copy_job_ids]
     if record_surfaced:
         _record_surfaced(engine, settings, surfaced_job_ids, now=now, run_id=run_id)
     return RankedResults(
@@ -983,6 +1047,7 @@ def rank_open_postings(
         hidden_slate_cap=hidden_slate_cap,
         hidden_slate_cap_standing=hidden_slate_cap_standing,
         hidden_cluster_cap=hidden_cluster_cap,
+        hidden_lane_copy=hidden_lane_copy,
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
         hidden_applied=hidden_applied,
@@ -992,6 +1057,84 @@ def rank_open_postings(
         hidden_duplicate_this_run=hidden_duplicate_this_run,
         suppressions=tuple(suppressions.values()),
     )
+
+
+def _suppress_lane_copies(
+    engine: Engine,
+    visible: list[RankedPosting],
+    *,
+    standing_board_keys: dict[str, tuple[int, ...]],
+    include_lane_copy: bool,
+) -> tuple[list[RankedPosting], int, set[int]]:
+    """D-498 rule (a): drop a lane copy whose employer-board copy is in front of the owner.
+
+    Returns the surviving slate, the drop count, and the POSTING ids dropped — the caller maps
+    those back to job ids and keeps them out of `_record_surfaced`, because a row written `seen`
+    would not re-enter after the board copy is actioned.
+
+    **A board copy holds only if it is ON THIS SLATE or STANDING IN THE QUEUE.** Not "exists in
+    the store": that would defer a lane copy behind a board row nobody is ever shown, and a
+    quarantine whose release condition can never fire is a leak, not a filter. Both halves have a
+    live end — a slate member is being delivered right now, and a standing member stops holding
+    when it is applied to, skipped, reported or closed (`standing_board_cross_host_keys`).
+
+    **It can never hide a board posting, and it can never hide a JOB.** Only rows on a lane
+    company are eligible to drop, and only when a board row for the same `cross_host` group is
+    demonstrably in front of the owner. Microsoft's four same-title Redmond requisitions -- the
+    counterexample §3.1 refuses `cross_host` suppression for -- are four EMPLOYER-BOARD rows, so
+    no rule here looks at them.
+    """
+    if not visible:
+        return visible, 0, set()
+    ids = [p.posting_id for p in visible]
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                posting_identities.c.posting_id,
+                posting_identities.c.identity_key,
+                companies.c.provider,
+            )
+            .join(postings, postings.c.id == posting_identities.c.posting_id)
+            .join(companies, companies.c.id == postings.c.company_id)
+            .where(
+                posting_identities.c.kind == "cross_host",
+                posting_identities.c.posting_id.in_(ids),
+            )
+        ).all()
+    key_of: dict[int, str] = {}
+    board_on_slate: dict[str, list[int]] = {}
+    lane_rows: set[int] = set()
+    for row in rows:
+        posting_id, key = int(row.posting_id), str(row.identity_key)
+        key_of[posting_id] = key
+        # Which ROW a posting sits on, never the URL host: the job-apps lane writes the
+        # employer's own apply URL, so `classify_host` reads a lane copy as `ats`.
+        if str(row.provider) in PROVIDER_NAMES:
+            board_on_slate.setdefault(key, []).append(posting_id)
+        else:
+            lane_rows.add(posting_id)
+    kept: list[RankedPosting] = []
+    dropped: set[int] = set()
+    hidden = 0
+    for posting in visible:
+        group = key_of.get(posting.posting_id)
+        if group is None or posting.posting_id not in lane_rows:
+            kept.append(posting)
+            continue
+        holders = [
+            held
+            for held in (*board_on_slate.get(group, ()), *standing_board_keys.get(group, ()))
+            if held != posting.posting_id
+        ]
+        if not holders:
+            kept.append(posting)
+            continue
+        if include_lane_copy:
+            kept.append(replace(posting, lane_copy_of=holders[0]))
+            continue
+        hidden += 1
+        dropped.add(posting.posting_id)
+    return kept, hidden, dropped
 
 
 def _record_surfaced(
@@ -1104,6 +1247,8 @@ def _why_cell(posting: RankedPosting) -> str:
         notes.append(
             f"cluster cap: same company, title and location as {posting.cluster_capped_by}"
         )
+    if posting.lane_copy_of is not None:
+        notes.append(f"lane copy: the employer's own board posting is {posting.lane_copy_of}")
     if posting.duplicate_of is not None:
         notes.append(f"duplicate of {posting.duplicate_of}")
     elif posting.applied_as is not None:
@@ -1135,6 +1280,7 @@ def _print_hidden_notices(
     include_duplicates: bool,
     include_slate_cap: bool,
     include_cluster_cap: bool,
+    include_lane_copy: bool,
     include_handled: bool,
     include_applied: bool,
 ) -> None:
@@ -1243,6 +1389,18 @@ def _print_hidden_notices(
             "--include-cluster-cap.",
             markup=False,
         )
+    if results.hidden_lane_copy and not include_lane_copy:
+        # A different claim again, and the operator acts on it differently: nothing was deferred
+        # and nothing was called a duplicate — the employer's own posting for this job is already
+        # in front of them, so an aggregator's rendering of it is not worth a second slot.
+        target.print(
+            f"{results.hidden_lane_copy} aggregator-lane cop(ies) removed because the "
+            "employer's own board posting for the same job is already in front of you — on this "
+            "slate or standing in the queue. No board posting is ever removed this way, and they "
+            "return once the board copy is applied to, skipped or closed. See them with "
+            "--include-lane-copy.",
+            markup=False,
+        )
     if results.hidden_duplicate and not include_duplicates:
         target.print(
             f"{results.hidden_duplicate} hidden as duplicates — see them with "
@@ -1324,6 +1482,12 @@ def top(
         help=f"Show leads the cluster cap deferred (more than {CLUSTER_CAP_PER_KEY} leads for "
         "one company, title and location on this slate).",
     ),
+    include_lane_copy: bool = typer.Option(
+        False,
+        "--include-lane-copy",
+        help="Show aggregator-lane leads removed because the employer's own board posting for "
+        "the same job is already in front of you (D-498).",
+    ),
     include_handled: bool = typer.Option(
         False,
         "--include-handled",
@@ -1361,6 +1525,7 @@ def top(
             include_duplicates=include_duplicates,
             include_slate_cap=include_slate_cap,
             include_cluster_cap=include_cluster_cap,
+            include_lane_copy=include_lane_copy,
             include_handled=include_handled,
             include_applied=include_applied,
             only_new=new,
@@ -1393,6 +1558,7 @@ def top(
             include_duplicates=include_duplicates,
             include_slate_cap=include_slate_cap,
             include_cluster_cap=include_cluster_cap,
+            include_lane_copy=include_lane_copy,
             include_handled=include_handled,
             include_applied=include_applied,
         )
@@ -1457,6 +1623,7 @@ def top(
             include_duplicates=include_duplicates,
             include_slate_cap=include_slate_cap,
             include_cluster_cap=include_cluster_cap,
+            include_lane_copy=include_lane_copy,
             include_handled=include_handled,
             include_applied=include_applied,
         )
@@ -1486,6 +1653,7 @@ def top(
         include_duplicates=include_duplicates,
         include_slate_cap=include_slate_cap,
         include_cluster_cap=include_cluster_cap,
+        include_lane_copy=include_lane_copy,
         include_handled=include_handled,
         include_applied=include_applied,
     )
