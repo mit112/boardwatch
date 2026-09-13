@@ -8,7 +8,7 @@ stable ordering — byte-equality is the cache contract.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -93,6 +93,18 @@ SecondhandField = Literal[
     "salary",
     "raw_json",
 ]
+
+# The declaration a lane makes when its hit CONVERGES onto a real provider's
+# `(company_id, provider_posting_id)`: every declarable field it carries is its own rendering of
+# a posting the board scan is the record of truth for, so it declares the lot and refreshes only
+# liveness. Derived from `SecondhandField` rather than spelled out: a field added later must
+# default to "the converging lane does not own this", and a hand-written list would silently
+# default it the other way -- the direction that deletes a lead.
+#
+# It is NOT a property of a lane, it is a property of ONE HIT. Fidelity varies within a single
+# `collect()` (see reason 1 above), so a lane declares this on its converged tier and nothing on
+# the tiers where it files under its own key and is the only observer that row will ever have.
+CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
 
 
 class RawPosting(BaseModel):

@@ -352,7 +352,7 @@ def test_the_notice_names_the_bucket_and_its_drain(env: Path) -> None:
         console, results,
         include_ineligible=False, include_non_swe=False, include_zero_signal=False,
         include_over_seniority=False, include_hard_filter=False, include_duplicates=False,
-        include_slate_cap=False, include_cluster_cap=False, include_handled=False,
+        include_slate_cap=False, include_cluster_cap=False, include_lane_copy=False, include_handled=False,
         include_applied=False,
     )
     text = console.export_text()

@@ -214,6 +214,13 @@ def test_a_projected_run_with_a_judge_rejection_and_a_review_lead_reconciles(
     The judge is the fake `claude` T42's own tests drive — no real model call — targeting one
     posting by label with a span quoted verbatim out of its JD, which is what makes the rejection
     PERSIST as `ineligible` rather than fail open to `uncertain`.
+
+    **The review lead is judged `uncertain`, and that is load-bearing since 0-B (D-489).** Its hold
+    is `no_requirements_found`, which a judge `eligible` now RELEASES — so with the fake's default
+    verdict this run has no review lead at all and the terminal state under test is unreachable.
+    Naming it `GATE_FAKE_UNCERTAIN_LABEL` keeps the run's shape (apply / gate-rejected / review)
+    while the promotion stays armed, which is the honest fixture: the judge cleared one lead, could
+    not decide another, and rejected a third.
     """
     apply_ids = _ready(env, 1)
     rejected_id = _seed_gate_posting(env, slug="t60-rejected")
@@ -222,6 +229,7 @@ def test_a_projected_run_with_a_judge_rejection_and_a_review_lead_reconciles(
     _arm_gate(env)
     monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
     monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(rejected_id))
+    monkeypatch.setenv("GATE_FAKE_UNCERTAIN_LABEL", str(review_id))
     monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
     _use(monkeypatch, _SelectRunner())
 
@@ -250,6 +258,53 @@ def test_a_projected_run_with_a_judge_rejection_and_a_review_lead_reconciles(
     assert _stages(payload)["tailor"]["entered"] == 2
     assert _stages(payload)["tailor"]["advanced"] == 2
     assert _stages(payload)["tailor"]["reconciled"] is True
+
+
+def test_a_judge_eligible_promotes_a_requirement_hold_out_of_review_end_to_end(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """0-B (D-489), through the WHOLE pipeline rather than through `classify` alone.
+
+    Byte for byte the run above, minus the `GATE_FAKE_UNCERTAIN_LABEL` line: the same posting,
+    held for the same `no_requirements_found`, now judged `eligible` by the same fake gate. It
+    must come out of review and be TAILORED — a PDF built, `pending_tailor` false, the projection
+    stage's `routed_to_review_lane` drop gone and `advanced` up by one.
+
+    The unit tests pin the classifier and an AST guard pins the five call sites, but neither can
+    show that the gate verdict actually REACHES the lane split under the right identity. This is
+    the only test that does, and it is the difference between a promotion that works and one whose
+    `current_gate_verdicts` read silently returns `{}` because the identity moved.
+    """
+    apply_ids = _ready(env, 1)
+    rejected_id = _seed_gate_posting(env, slug="t82-rejected")
+    promoted_id = _seed_review_posting(env, slug="t82promoted")
+    _projected_env(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
+    monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(rejected_id))
+    monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
+    _use(monkeypatch, _SelectRunner())
+
+    summary = _pipeline(env, tmp_path / "apps", top_n=3)
+
+    assert fake_claude.exists(), "the gate never called the fake claude at all"
+    assert summary.fatal is None, summary.errors
+    assert summary.gate_excluded_ids == [rejected_id]
+    # The promotion itself: nothing is left pending-tailor, and the once-held lead has a PDF.
+    assert [lead.posting_id for lead in summary.tailored if lead.pending_tailor] == []
+    assert sorted(lead.posting_id for lead in summary.tailored if lead.pdf_built) == sorted(
+        [*apply_ids, promoted_id]
+    )
+
+    assert summary.funnel is not None
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["reconciles"] is True
+    projection = _stages(payload)["projection"]
+    assert projection["entered"] == 3
+    assert projection["advanced"] == 2
+    assert _drops(projection) == {
+        "withheld_not_live": 0, "gate_rejected": 1, "routed_to_review_lane": 0,
+    }
 
 
 def test_a_refused_projected_run_still_carries_an_UNMEASURED_stage(

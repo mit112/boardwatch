@@ -59,15 +59,23 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     RequirementFlags,
+    current_gate_verdicts,
     current_requirement_flags,
     current_verdicts,
 )
+from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
-from boardwatch.store.tables import artifacts, companies, posting_versions, postings
+from boardwatch.store.tables import (
+    artifacts,
+    companies,
+    posting_identities,
+    posting_versions,
+    postings,
+)
 
 #: The audit's requirement view, reused rather than re-shaped. `load_audit` already slices each
 #: quote from the frozen `posting_versions.body_text` and version-gates the label; a second
@@ -127,6 +135,12 @@ class QueueRow:
     #: it had already resolved. Defaulted so a row built without it — every test fixture that
     #: predates the lane gates — behaves as before.
     requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS
+    #: The FINAL GATE's verdict on this lead's current version, read in the same call and under
+    #: the same identity as `verdict` and `requirement_flags` above (0-B, D-489). `review_gate`
+    #: uses it to release the two requirement holds and nothing else. Defaulted to None -- with
+    #: the gate disarmed, or for a fixture built before this field existed, the lane is exactly
+    #: what it was.
+    judge_verdict: str | None = None
 
     @property
     def closed(self) -> bool:
@@ -297,6 +311,7 @@ def _queue_row(
     verdict: str | None,
     now: datetime,
     requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS,
+    judge_verdict: str | None = None,
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -320,6 +335,7 @@ def _queue_row(
         pdf_uri=str(row.pdf_uri) if row.pdf_uri is not None else None,
         target_flag=_target_flag(row.tags_json),
         requirement_flags=requirement_flags,
+        judge_verdict=judge_verdict,
     )
 
 
@@ -483,6 +499,73 @@ def standing_slate_keys(
     return {key: tuple(ids) for key, ids in held.items()}
 
 
+def standing_board_cross_host_keys(
+    conn: Connection, *, skipped: set[int]
+) -> dict[str, tuple[int, ...]]:
+    """`cross_host` identity key -> the EMPLOYER-BOARD posting ids standing in the owner's queue.
+
+    The seed for D-498 rule (a): a lane's copy of a posting is redundant when the employer's OWN
+    board copy of the same job is already in front of the owner. Measured 2026-09-13 over the
+    standing 209 apply + 380 review leads: 34 `cross_host` groups with more than one member, of
+    which rule (a) resolves 17.
+
+    **`cross_host` GROUPS AND NEVER SUPPRESSES (§3.1, D-494), and nothing here changes that.**
+    `cross_host.suppresses` stays False and `core/dedup.py` stays unreachable from
+    `resolve_duplicates`; this is a DELIVERY policy that reads the same grouping to decide which
+    of two already-grouped leads to put in front of the owner. No identity claim is made and no
+    posting is suppressed in the store — which is why it is safe here and would not be there:
+    the counterexample §3.1 refuses is Microsoft's four same-title Redmond requisitions, and they
+    are all EMPLOYER-BOARD rows, so rule (a) cannot touch them.
+
+    **The employer-board test is `companies.provider in PROVIDER_NAMES`, not the URL host class.**
+    `core/host_class.classify_host` reads the URL, and the job-apps lane writes the employer's own
+    apply URL — so URL classification calls a lane copy `ats` and elects nothing. Which ROW a
+    posting sits on is the fact that decides this, and the provider registry is the closed catalog
+    that names it.
+
+    **Only OPEN standing leads hold, and that is the drain.** The same ladder `standing_slate_keys`
+    had to settle: `applied`, `skipped` and `reported` mean the owner has acted, and `closed` means
+    the requisition is gone — in every one of those cases the board copy stops holding and the lane
+    copy ranks again on the very next run. `status == 'open'` is the right filter for the same
+    reason it is there: `STATUS_UNVERIFIABLE` is derived at the read boundary, so an unverifiable
+    posting is stored `open` and correctly keeps holding (D-324).
+
+    **Reached by a JOIN outward from `artifacts`, never by collecting ids and binding them.** This
+    module binds no id list at all — that shape hit SQLite's 32,766 bound-parameter cap at six call
+    sites on 2026-08-23 and killed every scheduled run from that day on — so the drain sets and the
+    provider test are applied in Python over the joined rows.
+    """
+    applied = applied_job_ids(conn)
+    reported = reported_job_ids(conn)
+    rows = conn.execute(
+        _delivered_select()
+        .add_columns(
+            companies.c.provider,
+            posting_identities.c.identity_key,
+        )
+        .join(
+            posting_identities,
+            (posting_identities.c.posting_id == postings.c.id)
+            & (posting_identities.c.kind == "cross_host"),
+        )
+        .where(postings.c.status == "open", postings.c.job_id.is_not(None))
+    ).all()
+    held: dict[str, list[int]] = {}
+    for row in rows:
+        job_id = int(row.job_id)
+        if job_id in applied or job_id in skipped or job_id in reported:
+            continue
+        # Which ROW the posting sits on, never the URL host class: the job-apps lane writes the
+        # employer's own apply URL, so `classify_host` reads a lane copy as `ats`.
+        if str(row.provider) not in PROVIDER_NAMES:
+            continue
+        key = str(row.identity_key)
+        posting_id = int(row.posting_id)
+        if posting_id not in held.setdefault(key, []):
+            held[key].append(posting_id)
+    return {key: tuple(ids) for key, ids in held.items()}
+
+
 def closed_job_ids(conn: Connection) -> set[int]:
     """`job_id` for every delivered lead whose posting the store now reports closed.
 
@@ -528,6 +611,7 @@ def review_job_ids(conn: Connection) -> set[int]:
             experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
             eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
             no_requirement_rows=row.requirement_flags.no_requirement_rows,
+            judge_eligible=row.judge_verdict == "eligible",
             posting_closed=row.closed,
         )
         == REVIEW_DIR
@@ -582,6 +666,7 @@ def apply_lane_placements(
                 experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
                 eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
                 no_requirement_rows=row.requirement_flags.no_requirement_rows,
+            judge_eligible=row.judge_verdict == "eligible",
                 posting_closed=row.closed,
             )
             == ""
@@ -640,6 +725,9 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # Same identity and same version list as the verdicts above, so each row's summary and its
     # verdict come from ONE evaluation. Absent posting -> the all-False default.
     flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
+    # Same identity and same version list again, so a lead's lane can never be decided by a gate
+    # verdict from a different evaluation than the requirement summary it is releasing.
+    gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
     now = utcnow()
     return [
         _queue_row(
@@ -647,6 +735,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             verdict=verdicts.get(int(row.posting_id)),
             now=now,
             requirement_flags=flags.get(int(row.posting_id), NO_REQUIREMENT_FLAGS),
+            judge_verdict=gate.get(int(row.posting_id)),
         )
         for row in ordered
     ]

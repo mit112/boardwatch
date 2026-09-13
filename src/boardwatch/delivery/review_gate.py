@@ -131,6 +131,7 @@ def classify(
     no_requirement_rows: bool = False,
     posting_closed: bool = False,
     seniority_above_band: bool = False,
+    judge_eligible: bool = False,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the nine reasons held the lead.
 
@@ -235,14 +236,43 @@ def classify(
     # ranking's only job is to decide what a caller who passes both is told.
     if verdict is None:
         return LaneDecision(REVIEW_DIR, "unevaluated")
-    if no_requirement_rows:
+    if no_requirement_rows and not judge_eligible:
         return LaneDecision(REVIEW_DIR, "no_requirements_found")
+    # `judge_eligible` RELEASES THE TWO REQUIREMENT HOLDS AND NOTHING ELSE (0-B, D-489).
+    #
+    # It is the FINAL GATE's verdict on this lead's current version under this identity, and it
+    # releases exactly `no_requirement_rows` and `experience_requirement` -- the two holds that
+    # say the engine could not read a requirement, which is the one thing an independent reader
+    # of the same JD can answer. It is deliberately powerless against every gate above it: a
+    # closed posting, an `ineligible` verdict, a non-US location, a vetoed or unconfirmed role,
+    # an above-band title and an unevaluated verdict all still route to review, because none of
+    # those is a question about requirements and the judge was never asked them.
+    #
+    # It does NOT release `eligibility_unconfirmed` below, and that is the sharp edge. That flag
+    # says a BLOCKING family (work_auth, clearance) ABSTAINED. The keystone forbids spending an
+    # abstain as though it were evidence, and a judge `eligible` with no quoted span is exactly
+    # that -- so the hold stands and only a rule that reads the JD can clear it.
+    #
+    # MEASURED BEFORE IT SHIPPED, which is what the owner's ruling required. Blind two-judge
+    # audit, 2026-09-13, three arms of 56 shuffled into one pool, judges sonnet and opus (never
+    # haiku, the production judge under test), 96.4% inter-rater agreement, `unapplyable` defined
+    # exactly as the 2026-09-06 audit defined it:
+    #
+    #   the apply lane as it stands           21.4% unapplyable   (the control)
+    #   `experience_requirement` + judge       1.8%
+    #   `no_requirements_found` + judge       16.1%
+    #
+    # Both released classes are BETTER than the lane they join, so promotion does not dilute it:
+    # 209 leads at 21.4% plus 248 at 11.9% is 457 at 16.3%. D-458 priced the silent-clear class at
+    # 32% with no judge verdict attached; the same class filtered to a judge `eligible` reads
+    # 16.1%, so the verdict does identify the applyable subset rather than re-import the defect.
+    #
     # The hard-family abstain outranks the experience bar: it says a BLOCKING rule could not be
     # decided, which is a stronger reason to read the JD than a bar the engine did decide and the
     # lead simply may not clear. Reporting the weaker one when both hold would understate the hold.
     if eligibility_unconfirmed:
         return LaneDecision(REVIEW_DIR, "eligibility_unconfirmed")
-    if experience_unconfirmed:
+    if experience_unconfirmed and not judge_eligible:
         return LaneDecision(REVIEW_DIR, "experience_requirement")
     return LaneDecision("", None)
 
@@ -257,6 +287,7 @@ def lane(
     no_requirement_rows: bool = False,
     posting_closed: bool = False,
     seniority_above_band: bool = False,
+    judge_eligible: bool = False,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -274,4 +305,5 @@ def lane(
         no_requirement_rows=no_requirement_rows,
         posting_closed=posting_closed,
         seniority_above_band=seniority_above_band,
+        judge_eligible=judge_eligible,
     ).lane

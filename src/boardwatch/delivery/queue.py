@@ -424,6 +424,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
             eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
             no_requirement_rows=row.requirement_flags.no_requirement_rows,
+            judge_eligible=row.judge_verdict == "eligible",
             posting_closed=row.closed,
         )
         for row in rows

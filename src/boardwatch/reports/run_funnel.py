@@ -158,6 +158,13 @@ _TOP_MISSING = 10
 # was invisible is that the reason was a throttle and WHICH boards it hit; a consumer that
 # ignores the added keys reads every old key correctly.
 #
+# **D-498's `shortlist.hidden_lane_copy` does NOT bump it either**, on the same two tests. No new
+# top-level section — `shortlist` has been here since v1 — and no existing key changes MEANING:
+# `considered` counts what it always counted, and `advanced` still means "what the ranker
+# surfaced". What is new is a reason it can be smaller, and it is published as its own `Drop` in
+# the same stage rather than folded into a neighbour, so the reconciliation identity a consumer
+# checks still adds up from keys it can read.
+#
 # **v8 is T60's two terminal states, and it bumps for the v5 reason rather than the v6 one.** It
 # adds no top-level section — `gate_rejected` and `routed_to_review_lane` are drop reasons inside
 # the `projection` and `tailor` stages, which have been in `stages` since v5 and v1 — but on a
@@ -374,6 +381,15 @@ class ShortlistCounts:
     # `company_title_location` SUPPRESSOR was refused (D-295); this defers instead, and the
     # deferral ends on the next run because no `seen` row is written.
     hidden_cluster_cap: int = 0
+    # D-498 rule (a): a LANE copy of a job whose employer-board copy is in the same `cross_host`
+    # group and is either on this slate or standing in the owner's queue. A genuine DROP and part
+    # of the identity above.
+    #
+    # **Never folded into `hidden_duplicate`.** That one asserts the dedup subsystem elected a
+    # survivor under a suppressing identity kind; `cross_host` suppresses nothing (§3.1) and this
+    # makes no identity claim — it says only that the employer's own rendering of this job is
+    # already in front of the owner. Not gated on identity completeness, so 0 here means 0.
+    hidden_lane_copy: int = 0
     # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
     # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
     # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
@@ -1403,6 +1419,19 @@ def build_run_funnel(
                         "written several ways, deferred so it cannot take the day. NOT a "
                         "duplicate claim and nothing is dropped: no `seen` row is written, so "
                         "it returns on the next run. Inspect with `top --include-cluster-cap`"
+                    ),
+                ),
+                Drop(
+                    reason="hidden_lane_copy",
+                    count=shortlist.hidden_lane_copy,
+                    note=(
+                        "an aggregator lane's copy of a job whose EMPLOYER-BOARD copy is in the "
+                        "same `cross_host` group and is already in front of the owner — on this "
+                        "slate or standing in the queue (D-498 rule (a)). The board's JD is the "
+                        "canonical one, so the lane copy is redundant, not merely deferred. No "
+                        "identity claim is made and no board posting can ever be dropped; no "
+                        "`seen` row is written, so it returns once the board copy is applied to, "
+                        "skipped or closed. Inspect with `top --include-lane-copy`"
                     ),
                 ),
                 Drop(
