@@ -685,3 +685,140 @@ def test_lane_projects_the_seniority_gate_too() -> None:
                 seniority_above_band=above_band,
             )
             assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# ------------------------------------------------------------------------------------------
+# 0-B (D-489): a FINAL GATE `eligible` releases the two requirement holds, and nothing else.
+# ------------------------------------------------------------------------------------------
+
+_US_SWE = {"locations": ["Austin, TX"], "title": "Software Engineer"}
+
+
+def test_a_judge_eligible_releases_the_two_requirement_holds() -> None:
+    """The promotion itself, on the two populations the 2026-09-13 blind audit measured.
+
+    Blind two-judge audit, three arms of 56 shuffled into one pool, judges sonnet and opus (never
+    haiku, the production judge under test), 96.4% inter-rater agreement: the apply lane as it
+    stands reads 21.4% unapplyable, `experience_requirement` + judge 1.8%, `no_requirements_found`
+    + judge 16.1%. Both released classes are BETTER than the lane they join.
+    """
+    for flag in ("no_requirement_rows", "experience_unconfirmed"):
+        assert classify(verdict="uncertain", **_US_SWE, **{flag: True}).lane == REVIEW_DIR
+        assert classify(
+            verdict="uncertain", **_US_SWE, judge_eligible=True, **{flag: True}
+        ) == LaneDecision("", None)
+
+
+def test_a_judge_eligible_does_NOT_release_the_hard_family_abstain() -> None:
+    """The sharp edge, and the keystone is why.
+
+    `eligibility_unconfirmed` says a BLOCKING family (work_auth, clearance) ABSTAINED. An abstain
+    must never be spent as though it were evidence, and a judge `eligible` carries no quoted span
+    — so this hold stands and only a rule that reads the JD can clear it. It was also NOT one of
+    the arms the audit measured, so releasing it would be a ruling made on no evidence.
+    """
+    assert classify(
+        verdict="uncertain", **_US_SWE, eligibility_unconfirmed=True, judge_eligible=True
+    ) == LaneDecision(REVIEW_DIR, "eligibility_unconfirmed")
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({"verdict": "uncertain", "posting_closed": True}, CLOSED_DIR),
+        ({"verdict": "ineligible"}, REVIEW_DIR),
+        ({"verdict": None}, REVIEW_DIR),
+        ({"verdict": "uncertain", "seniority_above_band": True}, REVIEW_DIR),
+    ],
+)
+def test_a_judge_eligible_is_powerless_against_every_gate_above_the_requirement_holds(
+    kwargs: dict[str, object], expected: str
+) -> None:
+    """None of these is a question about requirements, and the judge was never asked them.
+
+    A closed posting cannot be applied to; an `ineligible` verdict carries a quoted span the
+    judge's does not; an unevaluated verdict is the same silence the zero-row gate refuses, one
+    step earlier; an above-band title is a seniority reading the six families say nothing about.
+    """
+    assert classify(**_US_SWE, judge_eligible=True, **kwargs).lane == expected  # type: ignore[arg-type]
+
+
+def test_a_judge_eligible_is_powerless_against_the_location_and_role_gates() -> None:
+    """The R1 line, held from the other side: promotion must not re-open what R1 closed."""
+    assert classify(
+        verdict="uncertain", locations=["Kaunas, Lithuania"], title="Software Engineer",
+        no_requirement_rows=True, judge_eligible=True,
+    ) == LaneDecision(REVIEW_DIR, "non_us_location")
+    assert classify(
+        verdict="uncertain", locations=["Austin, TX"], title="Field Auto Adjuster",
+        no_requirement_rows=True, judge_eligible=True,
+    ) == LaneDecision(REVIEW_DIR, "role_unconfirmed")
+
+
+def test_the_promotion_is_inert_when_the_caller_states_no_judge_verdict() -> None:
+    """The default is False, so a disarmed gate and every un-updated call site are unchanged."""
+    for verdict, locations, title in _CASES:
+        for flags in ({}, {"no_requirement_rows": True}, {"experience_unconfirmed": True}):
+            assert classify(
+                verdict=verdict, locations=locations, title=title, **flags
+            ) == classify(
+                verdict=verdict, locations=locations, title=title,
+                judge_eligible=False, **flags,
+            )
+
+
+def test_lane_projects_the_promotion_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
+    for verdict in ("uncertain", "eligible", None):
+        for promoted in (False, True):
+            kwargs = {
+                "verdict": verdict, **_US_SWE,
+                "no_requirement_rows": True, "judge_eligible": promoted,
+            }
+            decision = classify(**kwargs)  # type: ignore[arg-type]
+            assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
+            assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
+    """The lane and the folder tree must not disagree about a lead (D-332).
+
+    `review_gate.lane` is called from FIVE places — the runner's pre-tailor split, `sync_queue`'s
+    folder placement, the web API (twice for the page, once for the detail), the standing-queue
+    `review_job_ids` drain and `apply_lane_placements`. A call site that omits `judge_eligible`
+    does not fail: it silently routes a promoted lead the OTHER way, so the run tailors a PDF for
+    the apply lane and `sync_queue` then files the folder under `_review`, or the reverse. That is
+    exactly the second opinion `_review` exists to prevent, and nothing else in the suite would
+    catch it — every one of those call sites has its own fixtures.
+
+    Enumerated by AST rather than by grep so a renamed keyword or a call split over lines is still
+    seen. A new call site added without the argument reddens this on purpose.
+    """
+    import ast  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    import boardwatch  # noqa: PLC0415
+
+    root = Path(boardwatch.__file__).parent
+    missing: list[str] = []
+    seen = 0
+    for path in sorted(root.rglob("*.py")):
+        if path.name == "review_gate.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if name not in {"classify", "lane", "review_lane"}:
+                continue
+            kwargs = {k.arg for k in node.keywords}
+            # Only the lane classifier takes these; any other `classify`/`lane` in the tree is a
+            # different function and must not be dragged in by name alone.
+            if "no_requirement_rows" not in kwargs:
+                continue
+            seen += 1
+            if "judge_eligible" not in kwargs:
+                missing.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert seen >= 5, f"expected at least five call sites, found {seen}"
+    assert not missing, f"call sites missing judge_eligible: {missing}"

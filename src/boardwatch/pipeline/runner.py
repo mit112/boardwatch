@@ -50,7 +50,11 @@ from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import current_identity
-from boardwatch.eligibility.read import NO_REQUIREMENT_FLAGS, current_requirement_flags
+from boardwatch.eligibility.read import (
+    NO_REQUIREMENT_FLAGS,
+    current_gate_verdicts,
+    current_requirement_flags,
+)
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneContext, LaneResult
 from boardwatch.lanes.facets import (
@@ -1371,6 +1375,10 @@ def _lead_lanes(
         versions = current_posting_versions(conn, posting_ids)
         version_ids = [v.posting_version_id for v in versions.values()]
         flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
+        # 0-B (D-489): the FINAL GATE's verdict, read under the SAME identity and the SAME
+        # version list as the verdict and the requirement summary beside it, so the lane this
+        # run tailors for can never disagree with the one `sync_queue` files the folder under.
+        gate_verdicts = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
         locations_by_posting = {
             int(row.id): tuple(
                 str(loc) for loc in (row.locations_json or []) if str(loc).strip()
@@ -1423,6 +1431,7 @@ def _lead_lanes(
                 experience_unconfirmed=posting_flags.experience_unconfirmed,
                 eligibility_unconfirmed=posting_flags.eligibility_unconfirmed,
                 no_requirement_rows=posting_flags.no_requirement_rows,
+                judge_eligible=gate_verdicts.get(posting.posting_id) == "eligible",
                 posting_closed=False,
             ),
             posting_version_id,

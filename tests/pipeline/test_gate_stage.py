@@ -86,12 +86,20 @@ elif mode == "nospan":
     ]
 elif mode == "ineligible_span":
     target = os.environ.get("GATE_FAKE_TARGET_LABEL")
+    # 0-B (D-489): a judge `eligible` now RELEASES the two requirement holds, so with this mode's
+    # default a review-lane lead in the same batch is promoted out of review. A caller that needs
+    # the lead to stay held names it here -- `uncertain` is a real gate outcome (run 9 judged 37:
+    # 31 eligible, 1 ineligible, 5 uncertain) and it is the one that clears nothing.
+    unsure = os.environ.get("GATE_FAKE_UNCERTAIN_LABEL")
     evidence = os.environ.get("GATE_FAKE_EVIDENCE", "")
     verdicts = []
     for l in labels:
         if l == target:
             verdicts.append({"label": l, "decision": "ineligible", "reason": "work_auth",
                               "evidence": evidence, "confidence": "high"})
+        elif l == unsure:
+            verdicts.append({"label": l, "decision": "uncertain", "reason": None,
+                              "evidence": "", "confidence": "low"})
         else:
             verdicts.append({"label": l, "decision": "eligible", "reason": None,
                               "evidence": "", "confidence": "high"})
