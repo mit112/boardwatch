@@ -8,6 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A final-gate `eligible` promotes a requirement-held lead into the apply lane (0-B, D-503).**
+  `review_gate.classify` takes `judge_eligible`, and it releases exactly two holds:
+  `no_requirements_found` and `experience_requirement` — the two that say the engine could not read
+  a requirement, which is the one question an independent reader of the same JD can answer. It
+  releases nothing else. `eligibility_unconfirmed` stands, because that flag says a BLOCKING family
+  abstained and the keystone forbids spending an abstain as evidence when the judge carries no
+  quoted span; a closed posting, an `ineligible` verdict, a foreign location, a vetoed or
+  unconfirmed role, an above-band title and an unevaluated verdict are all untouched. Measured
+  before it shipped by a blind three-arm audit (56 per arm, judges sonnet and opus — never haiku,
+  the production judge under test — 96.4% inter-rater agreement): the apply lane as it stands reads
+  **21.4%** unapplyable, `experience_requirement` + judge **1.8%**, `no_requirements_found` + judge
+  **16.1%**, so promoting 248 leads into 209 gives 457 at **16.3%**. `QueueRow` carries the gate
+  verdict read under the same identity as the verdict and requirement summary it releases, so all
+  five call sites of the one lane definition agree, and an AST guard reddens if a new one omits it.
+
+- **`shortlist.hidden_lane_copy` and the `top --include-lane-copy` drain (0-C, D-498 rule (a)).** An
+  aggregator lane's copy of a job is removed from the slate when an employer-board member of the
+  same `cross_host` group is on that slate or standing open in the owner's queue. A delivery-policy
+  read of an existing grouping and NOT an identity change — `cross_host.suppresses` stays `False`.
+  The employer-board test is `companies.provider in PROVIDER_NAMES`, not the URL host class, because
+  the job-apps lane writes the employer's own apply URL. The dropped row is taken back out of
+  `surfaced_job_ids`, so it is never written `seen` and returns once the board copy is applied to,
+  skipped or closed. 17 of the 34 multi-member groups on a 589-lead standing queue.
+
 - **A new provider: `apple` (the jobs.apple.com hydration payload).** `apple:<country>` names one of
   35 country boards. There is no JSON API: the data is a double-encoded
   `window.__staticRouterHydrationData` blob, and `jobSummary` on the listing is a 626-1,055 char
@@ -483,6 +507,20 @@ All notable changes to this project are documented here. The format follows
   this change: approve once more after upgrading.**
 
 ### Fixed
+
+- **A converged job-apps hit no longer replaces the employer's own body (0-D, D-502).** The lane's
+  tier-1 identity is the board's own `(company_id, provider_posting_id)`, so D25 refreshed every
+  provider-sourced column from job-apps' rendering of the employer's page — `body_text` included,
+  which is the document every eligibility rule quotes. Measured: 612 `revised` versions written onto
+  board postings, **all of them tier 1**, and the board's very next reading reverted **87 of 436
+  (20.0%)** by more than half the body. Tier 1 now declares `CONVERGED_SECONDHAND`; tiers 2 and 3
+  declare nothing, because they file under job-apps' own `pst_` reference and this lane is the only
+  observer those rows will ever have. `CONVERGED_SECONDHAND` moves to `core.models` so the two lanes
+  that reach this conclusion share one definition. The hiring.cafe and `jsonld` lanes are
+  deliberately NOT declared: hiring.cafe appends the provider's own `RawPosting` verbatim (only its
+  recorded `source_url` is the aggregator's) and `jsonld` has never converged onto a board posting
+  at all.
+
 
 - **A lane could re-add a whole Workday board beside its slice.** A facet slice (`…#jobFamilyGroup=…`)
   is an in-place edit of the watched row, and the slug guard compared the whole stored slug, fragment

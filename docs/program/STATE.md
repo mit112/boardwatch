@@ -20,6 +20,49 @@
 
 ## Current standing
 
+### 2026-09-13 close (b) — MIT'S FOUR OWNER CALLS TAKEN AT SESSION START AND ALL FOUR EXECUTED: **D-502, D-503.** PR #374.
+
+**The batch, and the answers.** 0-B promote the two requirement holds, blind-audit first. 0-C rule (a)
+only. 0-D declare on the converging lanes. Retail: drain and drop. Every one is now shipped, gated
+(`make check` exit 0, zero failures) and on PR #374. **Nothing moved `engine_version` or `rules_hash`,
+so the 14-day confirm is NOT restarted.**
+
+**0-D shipped NARROWER than the ruling, because D-500's premise was wrong for two of the three lanes
+(D-502).** hiring.cafe appends the PROVIDER's own `RawPosting` verbatim — only its recorded
+`source_url` is the aggregator's, because the lane owns the GET — and `jsonld` has never converged
+onto a board posting at all; declaring either would freeze firsthand data. **job-apps IS the defect**:
+612 `revised` versions onto board postings, ALL tier 1, and the board's very next reading reverted
+**87 of 436 (20.0%)** by more than half the body. Tier 1 declares `CONVERGED_SECONDHAND`; tiers 2 and
+3 declare nothing. The REPAIR half (117 overwritten bodies, 301 lane-payload `raw_json` rows) is NOT
+done — Mit chose the declaration, not the repair, and it stays available.
+
+**0-B shipped BEHIND the audit Mit required, and the audit is the reason it is safe (D-503).** Three
+arms of 56 shuffled into one pool, judges **sonnet and opus** (never haiku, the production judge under
+test), 96.4% inter-rater agreement: **the apply lane as it stands 21.4% unapplyable, `experience_requirement` + judge 1.8%, `no_requirements_found` + judge 16.1%** — so promoting 248
+leads into 209 gives **457 at 16.3%**, moving B8 toward its ≤ 16% bar instead of away from it. D-458's
+**32%** for the same silent-clear class collapses to **16.1%** once the judge filters it, which is the
+claim that was under test. It releases those two holds ONLY; `eligibility_unconfirmed` stands because
+an abstain is not evidence. **No seniority refinement exists** — 13 of the 14 `nrf` failures are
+`seniority_fit` and every item in all three arms reads `in_band`, so the title ladder cannot see them.
+Report: `.agent/2026-09-13-session/promotion-audit/REPORT.md`.
+
+**0-C shipped as rule (a):** 17 of the 34 multi-member `cross_host` groups on the 589-lead standing
+queue, own bucket `shortlist.hidden_lane_copy`, `top --include-lane-copy` drain, keyed on
+`PROVIDER_NAMES` and not `classify_host`.
+
+**The three retail boards are GONE. Fleet 487 → 484, 6,884 postings closed, 3 residual open.** Measured
+first against a control: 0 leads ever delivered from any of the three. Abbott stays (7 delivered).
+
+**Next action.** (1) Merge PR #374 when CI is green, then read the 04:00 tick on 09-14 (**run 58** =
+confirm day 9) — and read it knowing THREE delivery behaviours changed: expect a bigger apply lane and
+a smaller review lane (0-B), `hidden_lane_copy` non-zero in the funnel (0-C), and 484 watched boards.
+Also still on the list for run 58: the reach line's `stale` (139 on run 57, 26–42 before) and the T78
+nightly count (2 of 10 if green). (2) **The Indeed and hiring.cafe per-source THRESHOLD is the only
+M4 item left and is still Mit's** — the numbers are in hand (24.9% / 22.1%, D-499) and the
+recommendation put to him is NO BAR on either, same as LinkedIn, on the ground that they are reach
+lanes into employers no board covers. (3) Still open from D-494: seed the cluster cap from the standing
+queue; ratify `apple`'s `board_reported_total = None`.
+
 ### 2026-09-13 close (run 57 READ — the first tick on everything the 09-12 session shipped; the first GREEN NIGHTLY since 08-31)
 
 **Run 57, the 04:00 tick, `ok` in 58 min: 480 boards, 0 failed, 5,098 new, 4,108 closed, 177,958 open,
@@ -109,42 +152,11 @@ read-only" marker question is answered (D-497 §4): the vocabulary already says 
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-**0-D. EXTEND D-414(a)'S SECONDHAND DECLARATION TO THE JOBAPPS AND HIRING.CAFE LANES (D-500).** Only
-Indeed declares; the other lanes overwrite a board's row when they converge onto it. 512 open board
-postings are also lane-observed; **117 currently carry a lane's OVERWRITE of a different board body** as
-the document the engine quotes (jobapps 112, hiring.cafe 5; the other 361 are lane-first captures the
-board later matched verbatim, benign); ≤ 50 delivered, ≤ 41 judged on such a body; 301 rows'
-`raw_json` is the lane payload (drops Greenhouse pay ranges, blocks `reparse-bodies`). Same change
-D-414 made for Indeed; `rules_hash` unmoved. **Not built. Mit's call** — the jobapps lane is his own
-harvest, so which rendering wins is his.
-
-**0-C. SUPPRESS A LANE COPY WHEN THE EMPLOYER BOARD'S POSTING IS IN ITS GROUP (D-498).** The queue
-duplicate rate is 10.1% apply / 12.8% review after the cap; 45 of the 71 redundant leads are already
-grouped under `cross_host` and delivered by design. Rule (a): drop a lane member of a `cross_host`
-group when an employer-board member is in it — up to 28 of 71, never hides a board posting. Rule (b):
-collapse lanes-only groups to one — +11. Refuse (c), suppressing within any `cross_host` group: that
-is Microsoft's four real Redmond requisitions. Delivery policy only; no `rules_hash` move. **Not
-built. Mit's call.**
-
-**0-B. JUDGE → LANE PROMOTION (D-489).** The review gate routes on the engine verdict alone; 46 of
-the 123 review holds carry a judge `eligible` (16 `experience_requirement`, 21 `no_requirements_found`,
-9 `role_unconfirmed`). Run 9 would have delivered ~31 apply-lane leads instead of 7. Promoting on a
-judge `eligible` makes the judge an evidence source for `ELIGIBLE` with no quoted span (keystone,
-D-458). Recommended: promote the two requirement holds only, never the role holds, blind-audit the
-promoted cohort first. **Not built. Mit's call.**
-
-**0-A. THE LANE STAGE'S THIRD-PARTY PACING IS WEAKENED ON THREE SCAN HOSTS, AND IT IS LIVE
-NOW.** Found by the 09-06 review, re-sized by D-474 choice 1 from run 3's funnel, **not
-introduced by anything shipped since SP2** (already on `main`, run in production twice).
-`Fetcher._host_locks` and `_last_request_at` are PER INSTANCE and the lane stage's own instance
-overlaps the scan, so a host both reach can see 2 in flight and 2 req/s. **The only such
-traffic is hiringcafe's one GET per admitted board** — 94 in run 3: 40 to
-`boards-api.greenhouse.io` (the scan spends 90.0 s there), 44 to `api.ashbyhq.com` (10.1 s),
-10 to `api.lever.co` (12.0 s) — so the exposure is ≤ ~90 s on one host per run, not the lane
-stage's 352 s. `grnh_seeds` is a CLI command and `jsonld`'s hosts are not scan hosts. **The
-fix is T41** (shared pacing STATE, not a shared client — the client's default UA is what
-linkedin and github_lists rely on). **Mit's call, and it is a pacing promise to third parties,
-not a performance knob.**
+**0-B, 0-C and 0-D are ALL SHIPPED (2026-09-13, D-502/D-503) and are no longer owner-gated.** 0-D
+shipped narrower than the ruling and the correction is in D-502; 0-D's REPAIR half (117 overwritten
+bodies, 301 lane-payload `raw_json` rows) was not part of the ruling and remains available if Mit
+wants it. D-498's rule (b) — collapsing a lanes-only group to one member, +18 on today's queue — was
+not ruled on and is not built; rule (c) stays refused.
 
 **0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), ALL DECISIONS TAKEN (D-480).** D1 = T47
 (per-user policy data). D2 = floor first, then arm the judge, both before run 4. D3 = above-band
