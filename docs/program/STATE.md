@@ -20,6 +20,17 @@
 
 ## Current standing
 
+### 2026-09-13 close (run 57 READ — the first tick on everything the 09-12 session shipped; the first GREEN NIGHTLY since 08-31)
+
+**Run 57, the 04:00 tick, `ok` in 58 min: 480 boards, 0 failed, 5,098 new, 4,108 closed, 177,958 open,
+funnel reconciles — confirm day 8 of 14.** Gate 58 judged (30 / 6 / 22), **0 batches failed open**, and the
+new partial path worked live: batch 3/5 answered 12 of 13 and the run reads `partly failed open: 1 of 13
+verdicts missing` with the 12 kept. 9 PDFs + 31 review, 10 withheld as gone, 6 gate-rejected; queue 40 new,
+12 moved. No watched unsliced copy of a sliced board (the D-496 query is empty). The lanes admitted 32 more
+boards → **watched 487**; censored 4 (short 15,242). One number to read again on run 58: the reach line's
+`stale` jumped to 139 (26–42 on runs 44–48) — likely a quiet Sunday of 304s, unverified. **Nightly CI
+2026-09-13 (34757609598): GREEN — the first scheduled green since 08-31; T78 clean-nightly count 1 of 10.**
+
 ### Session 2026-09-12 (Mit back after five days; runs 44–48 READ, rulings (b) and (a) EXECUTED, the lanes' re-added sliced boards found, the judge's 12-of-13 failure fixed, Gate 1 re-measured): **D-496.**
 
 **Five unattended ticks, all `ok`, all funnels reconcile — confirm days 3–7 (run 48 = day 7 of 14).**
@@ -57,7 +68,7 @@ independent recall** (was 23.8% on 09-02); greenhouse 91.5%, ashby 92.6%, workda
 ≥ 85% employer-board bar, **lever 70.0% on n = 10 does not** — SUPERSEDED by D-499 below, lever is 100%;
 linkedin 42.3%, indeed 24.7%, hiring.cafe 20.2%.
 
-**Next action.** (1) Read the 04:00 tick on 09-13 (**run 57** = confirm day 8 — runs 49–56 are today's eight single-board drain scans, each of which writes a `runs` row, not pipeline runs): expect `partly failed
+**Next action.** (1) Run 57 is READ (above). Read the 04:00 tick on 09-14 (**run 58** = confirm day 9): the `stale` count on the reach line, the T78 nightly count (2 of 10 if green), and expect `partly failed
 open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 480, and check that no
 lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
 in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
