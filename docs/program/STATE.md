@@ -51,7 +51,9 @@ fall toward 0.** Residual: 5 postings on unwatched boards, measured and accepted
 
 **D-498 rule (b) shipped** (highest-ranked lane copy survives a lanes-only group).
 
-**Next action.** (1) Merge PR #375 when CI is green. (2) Read the 04:00 tick — **run 64**, confirm
+**PR #375 is MERGED.** `main` carries all of it and the editable venv the tick runs is on it.
+
+**Next action.** (1) Read the 04:00 tick — **run 308, NOT run 64** — confirm
 day 9 — and read it against four changed behaviours: a bigger apply lane and smaller review lane
 (0-B), `hidden_lane_copy` non-zero (0-C + rule (b)), 484 boards, and the 0-D drain prediction above.
 `seniority_judged_above_band` should be an EMPTY bucket until Mit arms it. (3) **Arm
@@ -97,9 +99,12 @@ first against a control: 0 leads ever delivered from any of the three. Abbott st
 **PR #374 is MERGED and main's CI is green.** `main` is `78068ef9`; the editable venv the tick runs
 carries all three changes.
 
-**Next action.** (1) Read the 04:00 tick on 09-14. **It is run 64, NOT run 58** — this session's
-retail drain wrote runs 58–63 (six `boardwatch scan` invocations, 18:39–18:40 UTC), exactly as the
-09-12 session's drain wrote 49–56. It is **confirm day 9** whichever number it carries; only the tick
+**Next action.** (1) Read the 04:00 tick on 09-14. **It is run 308** — superseded twice in one day:
+the retail drain wrote 58–63 (six `boardwatch scan` invocations) and the 243 promoted renders then
+wrote **64–307**, because **`resume project` and `tailor run` each open a run row too**. That is the
+wider rule, and it is the second time in two sessions the tick's number was predicted wrong: **any
+CLI command that builds a context writes a run**, not just `scan`, so predict the next tick's number
+by reading `max(runs.id)` at the END of a session, never by adding one to the last tick. It is **confirm day 9** whichever number it carries; only the tick
 counts toward the confirm, a hand scan never does. Read it knowing THREE delivery behaviours changed:
 expect a bigger apply lane and a smaller review lane (0-B — **244 standing folders move `_review` →
 apply on the first reconcile, all with `pdf_missing`**, see the résumé item below), `hidden_lane_copy`
