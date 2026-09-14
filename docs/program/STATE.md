@@ -50,6 +50,16 @@ which nothing scans.
 against a 26–42 band on runs 44–48 — a quiet Sunday of 304s, not a regression. The `gate` stage is
 the run's largest single cost at **373.7 s (17.1%)**.
 
+**The 2026-09-14 NIGHTLY WAS RED and half of it was MINE — fixed and verified (`b762b9fe`).** A new
+end-to-end test failed on Windows 3.11/3.12/3.13 STEADILY because it lacked the
+`@_needs_an_executable_fake` marker every judge-driving test in its module carries; **Windows runs on
+the SCHEDULED matrix only**, so `make check` and the PR's CI both passed while it was broken. A
+dispatched matrix (34896114619) is **green on all three Windows jobs**. The standing rule this
+leaves: **dispatch `gh workflow run ci --ref <branch>` by hand before merging anything that spawns a
+subprocess, writes a path, or drives the fake `claude`.** T78's own two-writer test failed on 3.11 in
+that nightly and passed in the dispatch — its >= 10-clean-3.13-NIGHTLY count (was 1 of 10) is left
+unresolved on purpose; a dispatch is not a nightly.
+
 **Next action.** (1) Read the 04:00 tick on 09-15 — **read `max(runs.id)` for its number, do not
 guess it**; this session ran no CLI batches, so it should be 309, but that rule exists because the
 number was mispredicted twice on 09-13. It is **confirm day 10 of 14**. Watch 0-D's residual halve
