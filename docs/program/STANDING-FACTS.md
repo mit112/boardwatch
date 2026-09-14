@@ -3059,6 +3059,20 @@ Windows 3.11/3.12/3.13 in a dispatched matrix — the t81 matrix is **fully gree
 cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`. The "network,
 read-only" marker question is answered (D-497 §4): the vocabulary already says it.
 
+## Run 57 (2026-09-13 tick) — settled, moved WHOLE out of `STATE.md` on 2026-09-14
+
+Superseded twice: run 308 read the fleet and the drain behind it, and the `stale` spike this
+block flagged as unverified is answered (139 → 51, transient).
+
+**Run 57, the 04:00 tick, `ok` in 58 min: 480 boards, 0 failed, 5,098 new, 4,108 closed, 177,958 open,
+funnel reconciles — confirm day 8 of 14.** Gate 58 judged (30 / 6 / 22), **0 batches failed open**, and the
+new partial path worked live: batch 3/5 answered 12 of 13 and the run reads `partly failed open: 1 of 13
+verdicts missing` with the 12 kept. 9 PDFs + 31 review, 10 withheld as gone, 6 gate-rejected; queue 40 new,
+12 moved. No watched unsliced copy of a sliced board (the D-496 query is empty). The lanes admitted 32 more
+boards → **watched 487**; censored 4 (short 15,242). One number to read again on run 58: the reach line's
+`stale` jumped to 139 (26–42 on runs 44–48) — likely a quiet Sunday of 304s, unverified. **Nightly CI
+2026-09-13 (34757609598): GREEN — the first scheduled green since 08-31; T78 clean-nightly count 1 of 10.**
+
 ## Next action
 
 **0. THE 06:00 TICK IS STILL UNLOADED, AND RUN 4 HAS NOT HAPPENED — ON PURPOSE, until

@@ -12,13 +12,52 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) and **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session). Nothing was deleted on any of the six passes. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice). Nothing was deleted on any of the seven passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
 ---
 
 ## Current standing
+
+### RUN 308 READ — 2026-09-14, confirm day 9: the first tick on everything the 09-13 sessions shipped, and ALL FIVE predictions held
+
+**`ok` in 36 min. 484 boards, 0 failed, 1,648 new, 825 closed, 172,451 open, funnel RECONCILES**
+(all three instrumented stages). Gate 47 judged — 30 / 7 / 10, **0 batches failed open**. Numbers in
+`METRICS.md`.
+
+| prediction | read | |
+|---|---|---|
+| fleet 484 | 484 attempted, 0 failed; **censored 4 → 1** | ✅ |
+| apply lane up, review lane down (0-B) | apply **209 → 478**, review **380 → 151** | ✅ |
+| `hidden_lane_copy` non-zero (0-C + rule (b)) | **5**, first live reading | ✅ |
+| 0-D drains itself | overwrites **123 → 66**, `raw_json` **302 → 245** | ✅ |
+| `seniority_judged_above_band` empty while disarmed | absent entirely | ✅ |
+
+**The review lane's composition is the sharpest confirmation, because the CONTROL held.** The two
+promoted classes collapsed — `no_requirements_found` 254 → 93, `experience_requirement` 91 → 23 —
+while `role_unconfirmed` sat at **33 → 33** and `role_vetoed` at **2 → 2**. Those are precisely the
+reasons D-503 must NOT release, and they did not move by one lead.
+
+**One correction to D-502, and it is a rate not a direction: 0-D halves per run, it does not zero in
+one.** A scan only revises a posting it re-read with a differing hash, and **51 of 484 boards came
+back `unchanged`**. Expect continued halving; the floor is the ~3 remaining on unwatched boards,
+which nothing scans.
+
+**Run 57's open question is ANSWERED: the `stale` spike was transient.** 139 on run 57, **51** here,
+against a 26–42 band on runs 44–48 — a quiet Sunday of 304s, not a regression. The `gate` stage is
+the run's largest single cost at **373.7 s (17.1%)**.
+
+**Next action.** (1) Read the 04:00 tick on 09-15 — **read `max(runs.id)` for its number, do not
+guess it**; this session ran no CLI batches, so it should be 309, but that rule exists because the
+number was mispredicted twice on 09-13. It is **confirm day 10 of 14**. Watch 0-D's residual halve
+again and `hidden_lane_copy` on a second reading. (2) **Arm `gate.seniority_hold`?** — Mit's, still
+open, **recommended YES**: projected 457 @ 16.3% → 364 @ 9.0% unapplyable against a ≤ 16% bar, at
+−20% apply-lane volume (D-504 carries the validation table). (3) **The second Gate 1 reading is owed
+~09-19 and is the LAST condition on M4** — D-505 ruled no bar for Indeed and hiring.cafe, so the
+employer-board half alone decides and all four already clear 85%. If it holds, **job-apps switches
+off.** (4) Still open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
+`board_reported_total = None`.
 
 ### 2026-09-13 close (c) — THE SENIORITY LEVER, RULE (b), THE 243 RENDERS, AND THE THRESHOLDS RULED: **D-504, D-505.** PR #375.
 
@@ -52,8 +91,7 @@ fall toward 0.** Residual: 5 postings on unwatched boards, measured and accepted
 **D-498 rule (b) shipped** (highest-ranked lane copy survives a lanes-only group).
 
 **PR #375 is MERGED.** `main` carries all of it and the editable venv the tick runs is on it.
-
-**Next action.** (1) Read the 04:00 tick — **run 308, NOT run 64** — confirm
+**Run 308 read it — see the block above.** What that close asked for: (1) the 04:00 tick, confirm
 day 9 — and read it against four changed behaviours: a bigger apply lane and smaller review lane
 (0-B), `hidden_lane_copy` non-zero (0-C + rule (b)), 484 boards, and the 0-D drain prediction above.
 `seniority_judged_above_band` should be an EMPTY bucket until Mit arms it. (3) **Arm
@@ -120,17 +158,6 @@ Held because **Mit's per-lens formatting session is still owed** (open questions
 D-494: seed the cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`.
 (5) D-498's rule (b) (+18) and 0-D's REPAIR half (117 bodies, 301 `raw_json` rows) are sized and
 unbuilt — neither was ruled on.
-
-### 2026-09-13 close (run 57 READ — the first tick on everything the 09-12 session shipped; the first GREEN NIGHTLY since 08-31)
-
-**Run 57, the 04:00 tick, `ok` in 58 min: 480 boards, 0 failed, 5,098 new, 4,108 closed, 177,958 open,
-funnel reconciles — confirm day 8 of 14.** Gate 58 judged (30 / 6 / 22), **0 batches failed open**, and the
-new partial path worked live: batch 3/5 answered 12 of 13 and the run reads `partly failed open: 1 of 13
-verdicts missing` with the 12 kept. 9 PDFs + 31 review, 10 withheld as gone, 6 gate-rejected; queue 40 new,
-12 moved. No watched unsliced copy of a sliced board (the D-496 query is empty). The lanes admitted 32 more
-boards → **watched 487**; censored 4 (short 15,242). One number to read again on run 58: the reach line's
-`stale` jumped to 139 (26–42 on runs 44–48) — likely a quiet Sunday of 304s, unverified. **Nightly CI
-2026-09-13 (34757609598): GREEN — the first scheduled green since 08-31; T78 clean-nightly count 1 of 10.**
 
 ### Owed, and specifically NOT done
 
