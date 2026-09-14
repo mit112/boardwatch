@@ -121,6 +121,23 @@ export interface QueueRow {
    * software, so most review leads carry a reason and no badge.
    */
   review_reason: ReviewReason | null;
+  /**
+   * The final gate's BODY-seniority reading: `true` exactly when the judge read the job
+   * description as describing a role above the target band.
+   *
+   * On a REVIEW row the same reading already arrives as `review_reason:
+   * "seniority_judged_above_band"`, so what this field is FOR is the apply-lane row — the case
+   * that exists only while `gate.seniority_hold` is off, where D-504 records the reading but
+   * does not act on it. The server has always sent this; nothing rendered it, so a recorded
+   * reading was invisible on the page. A signal that cannot be seen is a monitoring failure,
+   * not a conservatism feature.
+   *
+   * Optional on the wire for the same reason `locations` is: `boardwatch web` serves the bundle
+   * from DISK while running the Python it imported at STARTUP, so a long-lived viewer can serve
+   * a bundle newer than its own API. An older server omits the field, and the honest render for
+   * "the server cannot say" is no badge.
+   */
+  judge_seniority_above_band?: boolean;
 }
 
 export interface QueueCounts {
