@@ -133,6 +133,14 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # `claude_config_dir` is machine-local (None ships inert, same reasoning as
     # jobapps_discovery_dir); `model`/`batch_size`/`call_timeout_s`/`depth` are cost knobs that
     # say nothing about roles, seniority, geography or field.
+    #
+    # `seniority_hold` is OFF for the same reason `enabled` is, and it is NEUTRAL despite its
+    # name: it does not encode a view about which seniority anyone should target — the target
+    # band is per-user profile data — it only decides whether the judge's reading of a JD's
+    # seniority may HOLD a lead for review. Acting on it trades apply-lane volume for precision
+    # (measured 2026-09-13: the reading catches the senior bodies two stronger judges found and
+    # also calls ~18% of entry-level bodies senior), and that trade is the operator's to make on
+    # their own queue, never one a fresh install inherits.
     "Settings.gate": {
         "enabled": False,
         "claude_config_dir": None,
@@ -140,6 +148,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
         "batch_size": 13,
         "call_timeout_s": 300,
         "depth": 0,
+        "seniority_hold": False,
     },
     "GateTier.enabled": False,
     "GateTier.claude_config_dir": None,
@@ -147,6 +156,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "GateTier.batch_size": 13,
     "GateTier.call_timeout_s": 300,
     "GateTier.depth": 0,
+    "GateTier.seniority_hold": False,
 }
 
 SETTINGS_FIELD_CLASS: dict[str, str] = {
@@ -203,6 +213,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "GateTier.batch_size": "operational",
     "GateTier.call_timeout_s": "operational",
     "GateTier.depth": "operational",
+    "GateTier.seniority_hold": "capability",
 }
 
 # Preference-bearing parameter defaults, which live outside the settings models.

@@ -264,6 +264,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
                 eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
                 no_requirement_rows=r.requirement_flags.no_requirement_rows,
                 judge_eligible=r.judge_verdict == "eligible",
+                judge_seniority_above_band=r.judge_seniority_fit == "no",
                 posting_closed=r.closed,
             )
             == ""
@@ -282,6 +283,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
                 eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
                 no_requirement_rows=r.requirement_flags.no_requirement_rows,
                 judge_eligible=r.judge_verdict == "eligible",
+                judge_seniority_above_band=r.judge_seniority_fit == "no",
                 posting_closed=r.closed,
             )
             != ""
@@ -387,6 +389,7 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
         no_requirement_rows=row.requirement_flags.no_requirement_rows,
         judge_eligible=row.judge_verdict == "eligible",
+        judge_seniority_above_band=row.judge_seniority_fit == "no",
     ).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
     locations = _unique_locations(row.locations)

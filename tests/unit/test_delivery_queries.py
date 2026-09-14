@@ -20,6 +20,7 @@ computed against whatever `rules.yaml` override sits in the developer's own conf
 from __future__ import annotations
 
 import ast
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -912,3 +913,49 @@ def test_a_lead_whose_JD_yields_no_requirement_row_is_flagged_and_routed_to_revi
     # folder is, so this is the drain's own answer and not a second opinion (D-332).
     assert seeded["silent"].job_id in held
     assert seeded["stated"].job_id not in held
+
+
+def test_the_seniority_hold_is_off_by_default_and_the_column_stays_inert() -> None:
+    """The arming flag, and the two halves of its claim.
+
+    **Default off.** Acting on the judge's `seniority_fit` trades apply-lane VOLUME for precision:
+    validated against the audit's two strong judges on the same items, haiku caught the senior
+    bodies they found AND called ~18% of entry-level bodies senior. That trade is the operator's,
+    so the repo ships it disarmed.
+
+    **Inert means `"unclear"`, never absent.** Every consumer reads
+    `row.judge_seniority_fit == "no"`, so the disarmed column has to carry a value that answers
+    that question `False` — a `None` would raise or, worse, compare unequal and read as a hold.
+    """
+    from boardwatch.core.settings import GateTier  # noqa: PLC0415
+    from boardwatch.store.delivery_queries import QueueRow  # noqa: PLC0415
+
+    assert GateTier().seniority_hold is False
+    assert QueueRow.__dataclass_fields__["judge_seniority_fit"].default == "unclear"
+
+
+def test_a_disarmed_hold_never_reads_the_seniority_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disarmed, the query is not merely ignored — it is not RUN.
+
+    The flag gates one place per side on purpose (`delivered_unapplied` here, `_lead_lanes` in the
+    runner) so no call site can drift from another. Asserting the reader is never called is what
+    pins the gate to that one place: a second check added downstream would leave this one running
+    the query and the two could then disagree about which lead is held.
+    """
+    import boardwatch.store.delivery_queries as dq  # noqa: PLC0415
+
+    called = False
+
+    def _spy(*args: object, **kwargs: object) -> dict[int, str]:
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(dq, "current_gate_seniority", _spy)
+    engine = get_engine(Path(tempfile.mkdtemp()) / "data")
+    ensure_schema(engine)
+    with engine.connect() as conn:
+        dq.delivered_unapplied(conn, skipped=set())
+    assert called is False

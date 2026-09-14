@@ -34,7 +34,13 @@ from boardwatch.lanes.quality import is_employer_body
 
 # Verdict-cache invalidation knobs, ported from job-apps judge.py:14-15. Bump either to
 # force a clean re-judge of every JD once later tasks wire the cache key.
-POLICY_VERSION = "p5-oracle-1"
+# Bumped 2026-09-13 for the `seniority_fit` question added to the policy below. The bump is
+# HONEST BOOKKEEPING, not an invalidation: `read.current_gate_verdicts` matches
+# `engine_version LIKE 'final_gate:%'` on the PREFIX and takes max(id) per version, so every
+# verdict recorded under `p5-oracle-1` stays readable and a re-judge simply wins. Nothing owes a
+# ledger drain — the six-family `decision` this version records is byte-for-byte the judgment the
+# previous one recorded; what is new rides BESIDE it and no rule reads it as eligibility.
+POLICY_VERSION = "p5-oracle-2"
 PROMPT_VERSION = "p5-oracle-1"
 
 # Multi-tenant rewrite of job-apps' F-1/OPT-hardcoded prompt (`~/dev/Job apps/eligibility/
@@ -89,12 +95,22 @@ policy.
 out of scope for this six-family judgment; they belong to `uncertain`, not to the nearest
 available reason.)
 
+SENIORITY IS ASKED SEPARATELY, AND IT NEVER TOUCHES `decision`. Answer `seniority_fit` for every
+item, independently of everything above: is this an entry-level / new-grad / early-career role
+for a candidate with the `facts`' years of experience? Read the BODY, not the title. A title
+reading "Software Engineer" over a body describing ownership of a platform, a team to lead, or
+several years of production practice is `no`. Senior, Staff, Principal, Lead, Manager, Director
+and Architect are `no`. When the body gives you nothing either way, answer `unclear` — that is a
+real answer and must not be rounded to `yes`. A `no` here never makes a posting `ineligible`; it
+is recorded beside the verdict and read by a different gate.
+
 Return one verdict object per item, using ONLY this schema:
   decision: "eligible" | "ineligible" | "uncertain"
   reason: one of the reason_catalog family ids, or null (null unless decision is "ineligible")
   evidence: the verbatim decisive sentence from the JD (required whenever decision is
     "ineligible"; the exact substring must appear in the JD text, not a paraphrase)
   confidence: "high" | "medium" | "low"
+  seniority_fit: "yes" | "no" | "unclear"
 """
 )
 
@@ -163,6 +179,15 @@ class OracleVerdict:
     reason: str | None
     evidence: str
     confidence: str
+    #: The judge's SEPARATE reading of whether the BODY describes an entry-level role, in the
+    #: closed vocabulary {"yes", "no", "unclear"}. It rides beside `decision` and is never folded
+    #: into it: seniority is out of scope for the six-family judgment, and a `no` here is a
+    #: delivery-lane hold, never an `ineligible`.
+    #:
+    #: **Defaults to `"unclear"`, the inert value.** A verdict recorded before this field existed,
+    #: a judge that omits it, and a gate answering under the old policy all read the same way —
+    #: as no seniority signal — so nothing is held on a field's absence.
+    seniority_fit: str = "unclear"
 
 
 @dataclass(frozen=True)

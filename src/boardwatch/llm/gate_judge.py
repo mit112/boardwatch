@@ -87,7 +87,8 @@ def _prompt(judging_policy: str, batch: list[dict[str, object]]) -> str:
         'the form {"label": <the item\'s label>, "decision": "eligible"|"ineligible"|'
         '"uncertain", "reason": <a reason_catalog family id or null>, "evidence": <verbatim '
         'substring of jd_text, required when ineligible, else "">, "confidence": '
-        '"high"|"medium"|"low"}. No prose before or after, no code fences.\n\n'
+        '"high"|"medium"|"low", "seniority_fit": "yes"|"no"|"unclear"}. No prose before or '
+        "after, no code fences.\n\n"
         f"ITEMS:\n{json.dumps(slim)}"
     )
 
@@ -143,6 +144,19 @@ def _unfence(text: str) -> str:
     return "\n".join(lines[1:-1])
 
 
+#: The closed vocabulary the judge may answer `seniority_fit` in. Out-of-catalog is `"unclear"`,
+#: the inert value — NOT a raise. Every other field in this parser fails the whole batch open
+#: because it decides a VERDICT; this one only decides which lane a lead is delivered to, and a
+#: gate that answered the six families correctly must not have its whole batch thrown away over a
+#: tenth field it spelled oddly. The direction is the safe one either way: an unreadable answer
+#: withholds nothing.
+_SENIORITY_FIT = frozenset({"yes", "no", "unclear"})
+
+
+def _seniority_fit(value: object) -> str:
+    return str(value) if str(value) in _SENIORITY_FIT else "unclear"
+
+
 def _parse_verdicts(
     stdout: str, expected_labels: Sequence[str]
 ) -> tuple[list[OracleVerdict], tuple[str, ...]]:
@@ -180,6 +194,7 @@ def _parse_verdicts(
             reason=item.get("reason"),
             evidence=str(item["evidence"]),
             confidence=str(item["confidence"]),
+            seniority_fit=_seniority_fit(item.get("seniority_fit")),
         )
         for item in parsed
     ]

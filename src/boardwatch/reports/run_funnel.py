@@ -1425,13 +1425,15 @@ def build_run_funnel(
                     reason="hidden_lane_copy",
                     count=shortlist.hidden_lane_copy,
                     note=(
-                        "an aggregator lane's copy of a job whose EMPLOYER-BOARD copy is in the "
-                        "same `cross_host` group and is already in front of the owner — on this "
-                        "slate or standing in the queue (D-498 rule (a)). The board's JD is the "
-                        "canonical one, so the lane copy is redundant, not merely deferred. No "
-                        "identity claim is made and no board posting can ever be dropped; no "
-                        "`seen` row is written, so it returns once the board copy is applied to, "
-                        "skipped or closed. Inspect with `top --include-lane-copy`"
+                        "an aggregator lane's copy of a job this slate already carries under "
+                        "the same `cross_host` group (D-498 rules (a) and (b)). The survivor is "
+                        "the EMPLOYER'S OWN board posting where one exists — on this slate or "
+                        "standing in the queue, and its JD is the canonical one — and otherwise "
+                        "the highest-ranked LANE copy, which is the weaker claim of the two; "
+                        "`lane_copy_of` on the row says which. No identity claim is made and no "
+                        "board posting can ever be dropped; no `seen` row is written, so a "
+                        "dropped copy returns once the survivor is applied to, skipped or "
+                        "closed. Inspect with `top --include-lane-copy`"
                     ),
                 ),
                 Drop(

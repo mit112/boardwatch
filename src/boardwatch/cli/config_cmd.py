@@ -209,6 +209,10 @@ _GATE_KEYS: dict[str, str] = {
     "batch_size": "leads per call, ≥1; next run",
     "call_timeout_s": "seconds per call, ≥1; next run",
     "depth": "leads JUDGED, against --top delivered; 0 = only the shortlist; next run",
+    "seniority_hold": (
+        "hold a lead for review when the judge reads its BODY as above the target band; "
+        "off = the reading is still recorded, just not acted on; next run"
+    ),
 }
 
 _SECRET_LEAF_NAMES = frozenset({"api_key", "token", "secret", "password", "webhook_url"})

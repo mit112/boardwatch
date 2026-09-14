@@ -84,6 +84,17 @@ class GateTier(BaseModel):
     batch_size: int = Field(default=13, ge=1)
     call_timeout_s: int = Field(default=300, ge=1)
     depth: int = Field(default=0, ge=0)
+    #: Whether the judge's `seniority_fit` reading HOLDS a lead for review (2026-09-13).
+    #:
+    #: **Off by default, and the default is a measurement, not caution.** The reading is always
+    #: asked for and always recorded — the cost of asking is a tenth field on a call already being
+    #: made — but acting on it trades apply-lane VOLUME for precision, and that trade is the
+    #: operator's. Validated against the audit's two strong judges (sonnet and opus) on the same
+    #: items: haiku caught the senior bodies they found, and it also called ~18% of entry-level
+    #: bodies senior. Armed, that parks good leads in review; disarmed,
+    #: `seniority_judged_above_band` stays an empty bucket and the reading is still recorded, so
+    #: the trade can be re-measured without re-judging anything.
+    seniority_hold: bool = False
 
 
 class NotifyTier(BaseModel):
