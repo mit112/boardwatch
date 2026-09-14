@@ -73,6 +73,20 @@ function Flags({ row }: { row: QueueRow }) {
         reason={row.review_reason}
         detailReason={row.review_reason === "role_vetoed" ? row.off_target_reason : null}
       />
+      {/* The BODY-seniority reading on an APPLY row. Suppressed when the badge above already
+          says it: on a review row the same reading arrives as `seniority_judged_above_band` and
+          rendering both would show one decision twice, the way `off target` is suppressed on a
+          `role_vetoed` row. So this chip appears exactly where the reading is otherwise
+          invisible — the apply lane, which is where it lands while `gate.seniority_hold` is off.
+          `=== true` rather than a bare truthiness test because an older server omits the field
+          (see the type), and `undefined` must render nothing rather than throw. */}
+      {row.judge_seniority_above_band === true &&
+      row.review_reason !== "seniority_judged_above_band" ? (
+        <Badge
+          label="body reads senior"
+          reason="The title looks entry-level but an independent read of the job description describes a more senior role. The hold that would act on this is off, so this lead is still in the apply lane. Read the JD before applying."
+        />
+      ) : null}
       {row.thin_jd ? (
         <Badge label="thin JD" reason="No coverage fraction could be computed." />
       ) : null}
