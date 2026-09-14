@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The judge is asked whether the BODY reads senior, and can hold on it (D-504).**
+  `seniority_fit ∈ {yes,no,unclear}` rides beside the gate's verdict and never inside it, so no
+  verdict, `rules_hash` or `engine_version` moves. A `no` holds the lead for review under its own
+  reason `seniority_judged_above_band` — reviewable, never dropped. It exists because after the
+  promotion below, seniority is the DOMINANT residual defect in the apply lane: 60% of the
+  2026-09-13 audit's unapplyable calls and 13 of 14 in the promoted cohort — and invisible to the
+  title ladder, since every audited item read `in_band`. **Off by default
+  (`gate.seniority_hold = false`)**: validated against the audit's sonnet and opus on the same 149
+  items, haiku caught 14 of 15 senior bodies and called 18 of 134 entry-level bodies senior, so
+  arming it projects the apply lane from 457 leads at 16.3% unapplyable to 364 at 9.0% — a fifth of
+  the volume traded for most of the defect, which is the operator's call. The reading is always
+  recorded even when disarmed, so the trade can be re-measured with no re-judge.
+
 - **A final-gate `eligible` promotes a requirement-held lead into the apply lane (0-B, D-503).**
   `review_gate.classify` takes `judge_eligible`, and it releases exactly two holds:
   `no_requirements_found` and `experience_requirement` — the two that say the engine could not read
@@ -23,9 +36,11 @@ All notable changes to this project are documented here. The format follows
   verdict read under the same identity as the verdict and requirement summary it releases, so all
   five call sites of the one lane definition agree, and an AST guard reddens if a new one omits it.
 
-- **`shortlist.hidden_lane_copy` and the `top --include-lane-copy` drain (0-C, D-498 rule (a)).** An
-  aggregator lane's copy of a job is removed from the slate when an employer-board member of the
-  same `cross_host` group is on that slate or standing open in the owner's queue. A delivery-policy
+- **`shortlist.hidden_lane_copy` and the `top --include-lane-copy` drain (D-498 rules (a) and (b)).**
+  An aggregator lane's copy of a job is removed from the slate when the slate already carries that
+  job: under rule (a) the survivor is the employer's own board posting, on that slate or standing
+  open in the owner's queue; under rule (b), where no employer board covers the company at all, it
+  is the highest-ranked lane copy. `lane_copy_of` on the row says which. A delivery-policy
   read of an existing grouping and NOT an identity change — `cross_host.suppresses` stays `False`.
   The employer-board test is `companies.provider in PROVIDER_NAMES`, not the URL host class, because
   the job-apps lane writes the employer's own apply URL. The dropped row is taken back out of

@@ -12,13 +12,54 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks) and **on 2026-09-12b** (the 2026-09-07 early and mid blocks). Nothing was deleted on any of the five passes. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) and **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session). Nothing was deleted on any of the six passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
 ---
 
 ## Current standing
+
+### 2026-09-13 close (c) — THE SENIORITY LEVER, RULE (b), THE 243 RENDERS, AND THE THRESHOLDS RULED: **D-504, D-505.** PR #375.
+
+**Mit gave full authority for everything on the previous close's list, and all of it is done.**
+
+**The apply lane's bottleneck MOVED, and that is the session's real finding (D-504).** After 0-B,
+the dominant residual defect is not eligibility at all — **`seniority_fit` is 60% of the audit's
+unapplyable calls and 13 of the 14 in the promoted cohort** — and the title ladder cannot see it,
+because **every audited item read `in_band`**. So the judge that already reads the whole JD is asked
+`seniority_fit` beside its verdict (never inside it: no verdict, no `rules_hash`, **the confirm is
+not restarted**), and a `no` holds under its own reason `seniority_judged_above_band`.
+**SHIPPED DISARMED** — validated against sonnet and opus on 149 items, haiku catches **14 of 15**
+senior bodies and invents **18 of 134**, so arming projects **457 @ 16.3% → 364 @ 9.0%, volume
+−20%**. That trade is Mit's; `gate.seniority_hold = true` is one line, needs no re-judge, and the
+reading accumulates either way so it can be re-measured live first. **This is the open
+recommendation: ARM IT** — 9.0% clears B8's ≤ 16% bar with room, and a held lead is still delivered.
+
+**The 243 promoted leads all have résumés now, and the drain was recorded WRONG.**
+`boardwatch tailor run <id>` alone returns `page_limit_exceeded` on every lead — it renders the
+authored résumé, which does not fit the page budget. The real drain is **two** commands
+(`resume project` then `tailor run --resume`), ~5.1 s. Ran over all 243: **243 ok, 0 failed**;
+verified through `delivered_unapplied` at **244 with a PDF, 0 missing**. The `runner.py` comment is
+corrected.
+
+**0-D's repair half needs NO CODE.** Re-measured, the population GREW through run 57 (112 → 123
+overwrites, 301 → 302 `raw_json`) — but **118 of the 123 are on WATCHED boards**, where the scan
+already revises them every run and the lane simply overwrote it again afterwards. With the
+declaration shipped the board body wins, so it drains itself. **Prediction for run 64: both counts
+fall toward 0.** Residual: 5 postings on unwatched boards, measured and accepted.
+
+**D-498 rule (b) shipped** (highest-ranked lane copy survives a lanes-only group).
+
+**Next action.** (1) Merge PR #375 when CI is green. (2) Read the 04:00 tick — **run 64**, confirm
+day 9 — and read it against four changed behaviours: a bigger apply lane and smaller review lane
+(0-B), `hidden_lane_copy` non-zero (0-C + rule (b)), 484 boards, and the 0-D drain prediction above.
+`seniority_judged_above_band` should be an EMPTY bucket until Mit arms it. (3) **Arm
+`gate.seniority_hold`?** — Mit's, recommended yes, numbers above. (4) **The second Gate 1 reading is
+owed ~09-19** and it is the LAST condition on M4: with D-505 ruling no bar for Indeed and
+hiring.cafe, the employer-board half alone decides, and all four boards already clear 85%. If the
+second reading holds, **job-apps switches off**. (5) Still open from D-494: seed the cluster cap
+from the standing queue; ratify `apple`'s `board_reported_total = None`.
 
 ### 2026-09-13 close (b) — MIT'S FOUR OWNER CALLS TAKEN AT SESSION START AND ALL FOUR EXECUTED: **D-502, D-503.** PR #374.
 
@@ -86,67 +127,6 @@ boards → **watched 487**; censored 4 (short 15,242). One number to read again 
 `stale` jumped to 139 (26–42 on runs 44–48) — likely a quiet Sunday of 304s, unverified. **Nightly CI
 2026-09-13 (34757609598): GREEN — the first scheduled green since 08-31; T78 clean-nightly count 1 of 10.**
 
-### Session 2026-09-12 (Mit back after five days; runs 44–48 READ, rulings (b) and (a) EXECUTED, the lanes' re-added sliced boards found, the judge's 12-of-13 failure fixed, Gate 1 re-measured): **D-496.**
-
-**Five unattended ticks, all `ok`, all funnels reconcile — confirm days 3–7 (run 48 = day 7 of 14).**
-No code, config or rules change since 09-07, so the count holds. The 09-09 reboot moved the tick from
-06:00 to **04:00 CDT**, exactly as predicted below; `launchctl` reads `runs = 3` since the reboot. The
-fleet grew itself 341 → 486 by lane admission (113 boards, 32,402 open) and the open corpus 137k →
-184k; run wall clock 36 → 55–102 min; censored boards 1 → 7. Numbers per run in `METRICS.md`.
-
-**Ruling (b) DONE.** `companies names` matches a sliced row by its slug without the fragment; BAH 1486
-→ `bah`, Leidos 1488 → `leidos`, the drained Northrop 1487 → `ngc`; `identities backfill` 2,238.
-**Ruling (a) DONE, on a measurement the ruling's condition could not make:** BOTH HPE sites enumerate
-completely. Keyed on the base requisition number, `Jobsathpe`'s 60 unique postings are ALL interns or
-graduates (13 US, every one an intern) against `acjobsite`'s 257; neither ever delivered. `Jobsathpe`
-drained to 1 and unwatched (D-494's mechanism). **The lanes had RE-ADDED the whole BAH and NVIDIA
-boards beside their slices on 09-10** — two censored 2,000-row duplicates — because `stored_slug`
-compared the fragment too. Fixed one-directionally (a plain slug resolves to its sliced row; a sibling
-slice is still a second row), both drained and unwatched, 4,312 closed. **Every failed-open judge
-batch on runs 45 and 48 was a 12-of-13 answer** (39 leads lost); verdicts now bind by `label`, a
-skipped lead is reported `partly failed open` and is the only one unjudged. Three fixture reviews
-(ashby/greenhouse/lever) extended to 2026-12-11 after a live shape re-check. `ashby:whatnot` (404)
-and `vhr-otsuka/Pharmavite` (422) unwatched. **Fleet 481 watched.**
-
-**Later the same day (D-499): the Gate 1 instrument was WRONG in boardwatch's disfavour** — it read provenance
-off `raw_json`, which the jobapps lane's revision replaces. Corrected (v2, per version source):
-**greenhouse 97.2%, ashby 100%, workday 96.6%, lever 100%** — every employer-board bar is cleared and the
-lever question below is withdrawn; overall 35.2%, LinkedIn 42.6%, Indeed 24.9%, hiring.cafe 22.1%.
-Applied Materials' censored Workday row was drained and dropped beside its Eightfold board (**fleet 480**);
-two review-found defects in the morning's code were fixed and gated (empty verdict array = failed batch;
-`companies add` over a slice says so). `hidden_cluster_cap` read 0 on all five runs.
-
-**Rank band, 308 ranked judge rows over runs 43–48: FLAT.** Deterministic `uncertain` converts 31 /
-56 / 46 / 47 / **62%** across the five 30-rank bands; the deepest band is the best. `gate.depth = 150`
-stands; whether deeper pays is unmeasured and a cost call. **Gate 1 (T35) re-measured: 34.8%
-independent recall** (was 23.8% on 09-02); greenhouse 91.5%, ashby 92.6%, workday 96.6% clear the
-≥ 85% employer-board bar, **lever 70.0% on n = 10 does not** — SUPERSEDED by D-499 below, lever is 100%;
-linkedin 42.3%, indeed 24.7%, hiring.cafe 20.2%.
-
-**Next action.** (1) Run 57 is READ (above). Read the 04:00 tick on 09-14 (**run 58** = confirm day 9): the `stale` count on the reach line, the T78 nightly count (2 of 10 if green), and expect `partly failed
-open` lines instead of failed batches, BAH/NVIDIA/HPE-Jobsathpe absent, watched 480, and check that no
-lane re-adds a sliced board (`select … from companies where slug not like '%#%' and lower(slug)
-in (…sliced bases…)` must stay empty). (2) Mit's calls, in one batch: 0-B (unchanged, the one failing
-bar); 0-C (D-498, the lane-copy suppression); 0-D (D-500, the lanes' secondhand declaration); whether to slice or drop the five new censored retail boards (Advance Auto 16,869 · Five Below ·
-Cushman & Wakefield · Abbott — 8 software titles among ~6,850 open on the three retail ones, D-501). (3) The Indeed and
-hiring.cafe per-source THRESHOLDS at ~09-17, against today's 24.7% / 20.2%. (4) **The nightly Windows class is CLOSED (D-497)** — the unmarked judge test is skipped and a dispatched full
-matrix is green; **T78 is FIXED in the test (D-501)** — a Windows probe measured the busy handler
-starving one writer for all 200 of its competitor's commits, the guard's writers now carry 60 s, green on
-Windows 3.11/3.12/3.13 in a dispatched matrix — the t81 matrix is **fully green, all 27 jobs**, the first since 08-31; **closes after ≥ 10 clean 3.13 Windows nightlies** (the
-`t78-probe` branch and its temporary workflow stay until then, never merge). `nightly-watch` (#95) will keep opening on it. Still open from D-494: seed the
-cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`. The "network,
-read-only" marker question is answered (D-497 §4): the vocabulary already says it.
-
-### Session 2026-09-07 (review + run 43; the mid session REVIEWED, three rulings taken, run 43 CLEAN on the sliced fleet): **D-495.**
-
-**T74's merge STANDS** — the exposure the ruling guarded against is THREE lane-row Qualcomm postings against 1,588 on the watched board; the 14–18% queue duplicate rate is a job-grouping failure (D-337) that board naming never touched. **The largest cross-board duplicate pair is HPE, not Northrop:** `hpe/acjobsite` + `hpe/Jobsathpe` share 1,013 `cross_host` groups over 2,227 open postings, pre-existing. **The slice `#` fragment broke `companies names`** for the two sliced boards whose name was the host: BAH 1486 and Leidos 1488 (2,027 open) deliver host-named. **Thales' three slice rows held 405 requisitions twice** at review time (row 256 had not reached `complete` before its siblings were added) — **run 43 then resolved it** (row 256 `complete`, 1,786 closed, duplicates 0). Rule kept: reach `complete` on the narrowed slug BEFORE adding a sibling slice row.
-
-**Run 43 (the 12th pipeline run) — hand-launched 11:29 CDT on Mit's call, does NOT count toward the confirm.** `ok`, 36 min, 341 boards, 0 failed, RECONCILES, 1,459 new, 2,463 closed, 136,808 open, reach **92.7%**, censored 1 (Abbott). Gate 53 judged (36 / 6 / 11), 0 failed open; **8 PDFs** + 32 review. Queue 40 new / 18 moved / 0 failed, name mismatches 0. Every new instrument read: `throttle_retries` 48 with four eightfold boards still `partial` on the 12-retry board budget, `hidden_cluster_cap` 0, `shortlist_rank` on 53 of 53 judge rows. **First rank-band table:** `uncertain` 91–120 = 73% (8/11), 121–150 = 66% (19/29) — flat, no evidence 150 is too deep; accumulate ≥ 3 runs before moving `gate.depth`.
-
-**Rulings taken 11:24 CDT ("we'll do your recommendations"), not to be re-asked:** (a) HPE — measure which site enumerates completely, then drain-then-drop the other; (b) `companies names` — match on the slug with its fragment stripped, then `names --apply` + `identities backfill` for BAH/Leidos; (c) the Thales closing-rule ticket is WITHDRAWN (moot after run 43). Full review: `.agent/2026-09-07b/REVIEW-BY-FABLE.md`.
-
-**Next action.** (1) Read the 06:00 tick on 09-08 = **confirm day 3**; watch the four `throttle_exhausted` eightfold boards (is the 12-retry budget right?) and the rank table's n. (2) Rulings (b) then (a), after the tick — never merge while a run is in flight. (3) Mit's 0-B call on B8 (17.2% vs ≤ 16%) is the one failing bar. (4) T35 Gate 1 re-measure ~09-09. Still open from D-494: seed the cluster cap from the standing queue; a "network, read-only" effect marker; ratify `apple`'s `board_reported_total = None`; the Windows fake-claude CI class.
-
 ### Owed, and specifically NOT done
 
 - **T51 SHIPPED (D-484) before the freeze.** Its residual: a hedged bar carrying a domain noun has no
@@ -180,11 +160,13 @@ and only the per-source THRESHOLD is still owed; job-apps keeps running until it
 (`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410, re-scoped by D-450). **Do not
 re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
 
-1. **PER-SOURCE THRESHOLDS — STRUCTURE RULED (D-482):** employer-board sources ≥ 85% independent
-   recall; LinkedIn no bar. **Owed: the Indeed and hiring.cafe numbers at the first post-reset
-   reading (~2026-09-17)**, with D-450 on the page again. The instrument
-   (`.agent/2026-09-02-session/per_source_recall.py`) still points at the OLD account home for
-   job-apps' ledger — a one-line fix before it runs.
+1. **PER-SOURCE THRESHOLDS — FULLY RULED (D-482 structure, D-505 the last two).** Employer-board
+   sources ≥ 85%; **LinkedIn, Indeed and hiring.cafe: NO BAR** — a reach lane's recall against
+   job-apps' ledger measures its OVERLAP with the system it exists to go beyond, so a bar there
+   would mean job-apps runs forever. **Nothing is owed here any more.** M4's exit is the
+   employer-board half alone and all four already clear it (greenhouse 97.2 / ashby 100 /
+   workday 96.6 / lever 100, D-499); the only condition left is D-482's SECOND reading a week
+   after D-499, owed **~2026-09-19**.
 2. **TRACK 1 — CLOSED (D-482): accept the loss**, per D-453. Do not re-raise it from the 382 or
    the 113.
 3. **Mit's résumé calls** — whether to send a document at all; the D-220 prose rewrite of the submitted "sole iOS developer" answer (outside the bundle); the per-lens formatting session.
