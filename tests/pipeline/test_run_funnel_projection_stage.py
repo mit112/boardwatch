@@ -260,6 +260,7 @@ def test_a_projected_run_with_a_judge_rejection_and_a_review_lead_reconciles(
     assert _stages(payload)["tailor"]["reconciled"] is True
 
 
+@_needs_an_executable_fake
 def test_a_judge_eligible_promotes_a_requirement_hold_out_of_review_end_to_end(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
