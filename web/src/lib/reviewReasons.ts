@@ -25,6 +25,7 @@ export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   role_unconfirmed: "role unconfirmed",
   role_vetoed: "role vetoed",
   seniority_above_band: "above the target band",
+  seniority_judged_above_band: "body reads senior",
   unevaluated: "not evaluated",
 };
 

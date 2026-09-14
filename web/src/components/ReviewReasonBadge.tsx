@@ -73,6 +73,16 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: the title alone levels above the target seniority band. That is a title-only reading, not a judgement on the job description.",
   },
+  seniority_judged_above_band: {
+    label: "body reads senior",
+    // The TITLE half above says what the title said; this one says what the BODY said, and the
+    // wording has to keep them apart because the reader checks them differently — one is visible
+    // at a glance in the title, the other needs the JD open. States what the judge read, never
+    // what the candidate is: D-477 refused a deterministic body-seniority family, so this is one
+    // independent reading of the description and not a rule that can quote a span.
+    reason:
+      "Held for review: the title looks entry-level but an independent read of the job description describes a more senior role. Read the JD before applying.",
+  },
   unevaluated: {
     label: "not evaluated",
     reason:

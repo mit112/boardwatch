@@ -783,7 +783,8 @@ def test_lane_projects_the_promotion_too() -> None:
 def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
     """The lane and the folder tree must not disagree about a lead (D-332).
 
-    `review_gate.lane` is called from FIVE places — the runner's pre-tailor split, `sync_queue`'s
+    Both judge arguments are required at every site. `review_gate.lane` is called from FIVE
+    places — the runner's pre-tailor split, `sync_queue`'s
     folder placement, the web API (twice for the page, once for the detail), the standing-queue
     `review_job_ids` drain and `apply_lane_placements`. A call site that omits `judge_eligible`
     does not fail: it silently routes a promoted lead the OTHER way, so the run tailors a PDF for
@@ -818,7 +819,73 @@ def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
             if "no_requirement_rows" not in kwargs:
                 continue
             seen += 1
-            if "judge_eligible" not in kwargs:
-                missing.append(f"{path.relative_to(root)}:{node.lineno}")
+            for required in ("judge_eligible", "judge_seniority_above_band"):
+                if required not in kwargs:
+                    missing.append(f"{path.relative_to(root)}:{node.lineno} ({required})")
     assert seen >= 5, f"expected at least five call sites, found {seen}"
-    assert not missing, f"call sites missing judge_eligible: {missing}"
+    assert not missing, f"call sites missing a judge argument: {missing}"
+
+
+# ------------------------------------------------------------------------------------------
+# The BODY seniority reader: the judge's `seniority_fit`, beside the title ladder.
+# ------------------------------------------------------------------------------------------
+
+
+def test_a_judged_senior_body_is_held_under_its_OWN_reason() -> None:
+    """The lever, and the measurement that justifies it.
+
+    In the 2026-09-13 blind audit `seniority_fit` was **18 of the 30 unapplyable calls (60%)** and
+    13 of the 14 in the promoted `no_requirements_found` cohort — after 0-B it is the dominant
+    residual defect in the apply lane, ahead of every eligibility family combined. And **every
+    item in all three arms read `in_band`**: the title ladder reads the TITLE, and these postings
+    wear an entry-level title over a senior body, so the gate beside this one cannot see them.
+
+    Its own reason, not a second route to `seniority_above_band`: the two are found by different
+    instruments, and the lane-composition report is the only way to tell whether the body reader
+    is earning its keep.
+    """
+    assert classify(
+        verdict="eligible", **_US_SWE, judge_seniority_above_band=True
+    ) == LaneDecision(REVIEW_DIR, "seniority_judged_above_band")
+
+
+def test_the_title_ladder_outranks_the_body_reader_when_both_fire() -> None:
+    """Attribution. A title the operator can read at a glance is the stronger, cheaper claim, so
+    a lead both gates catch is reported as the one that needs no LLM to verify."""
+    assert classify(
+        verdict="eligible", **_US_SWE,
+        seniority_above_band=True, judge_seniority_above_band=True,
+    ) == LaneDecision(REVIEW_DIR, "seniority_above_band")
+
+
+def test_the_body_reader_holds_an_eligible_lead_and_outranks_the_promotion() -> None:
+    """0-B promotes on a judge `eligible`; this must still hold such a lead. Both readings come
+    from the SAME judge in the same call — it cleared the six families and said the body is
+    senior — and the hold is the conservative half."""
+    assert classify(
+        verdict="uncertain", **_US_SWE,
+        no_requirement_rows=True, judge_eligible=True, judge_seniority_above_band=True,
+    ) == LaneDecision(REVIEW_DIR, "seniority_judged_above_band")
+
+
+def test_the_body_reader_is_inert_by_default_so_an_unjudged_lead_is_unchanged() -> None:
+    """`unclear` and absent are the same thing at the call sites (`== "no"`), and False here.
+
+    This is the fail-open direction a reading no rule can quote a span for is owed (D-380): a
+    lead judged before the field existed, under `p5-oracle-1`, or by a judge that omitted it,
+    is never withheld because the reading is MISSING.
+    """
+    for verdict, locations, title in _CASES:
+        assert classify(verdict=verdict, locations=locations, title=title) == classify(
+            verdict=verdict, locations=locations, title=title,
+            judge_seniority_above_band=False,
+        )
+
+
+def test_lane_projects_the_body_reader_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
+    for held in (False, True):
+        kwargs = {"verdict": "eligible", **_US_SWE, "judge_seniority_above_band": held}
+        decision = classify(**kwargs)  # type: ignore[arg-type]
+        assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
+        assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)

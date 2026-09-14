@@ -177,14 +177,16 @@ def test_the_lane_copy_is_removed_and_the_employer_board_copy_survives(env: Path
 
 
 def test_a_lane_copy_with_no_board_member_in_its_group_is_delivered(env: Path) -> None:
-    """The null control. Same lane row, same group key, no employer-board member — nothing fires.
+    """The null control. A lane row, a real group key, and nothing else in its group — delivered.
 
     Without this, every assertion above would also pass against a rule that simply deleted every
-    lane row it saw.
+    lane row it saw. **ONE lane row, deliberately**: two of them in one group is rule (b)'s own
+    case, pinned separately below, and seeding two here would make this control fail for the
+    right reason and stop being a control.
     """
-    results = _rank(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    results = _rank(env, [_lane(0), *FILLER])
     assert results.hidden_lane_copy == 0
-    assert _providers(env, results) == ["jobapps", "indeed", "greenhouse", "greenhouse"]
+    assert _providers(env, results) == ["jobapps", "greenhouse", "greenhouse"]
 
 
 def test_four_same_title_board_requisitions_are_untouched(env: Path) -> None:
@@ -280,3 +282,42 @@ def test_the_employer_board_test_is_the_company_row_not_the_url_host(env: Path) 
     results = rank_open_postings(engine, _settings(env), limit=10)
     assert results.hidden_lane_copy == 1
     assert _providers(env, results) == ["greenhouse", "greenhouse", "greenhouse"]
+
+
+# ------------------------------------------------------- rule (b): a lanes-only group
+
+
+def test_a_lanes_only_group_keeps_the_highest_ranked_copy(env: Path) -> None:
+    """D-498 rule (b). No employer board covers this company at all, so no rule-(a) survivor
+    exists — the highest-ranked LANE copy is kept and the rest are deferred.
+
+    `_seed` makes `posted_at` descend with row order and the ranker is recency-dominated, so the
+    FIRST-seeded row outranks the others; asserting which id survived is what separates this from
+    a rule that merely counted.
+    """
+    results = _rank(env, [_lane(0), _lane(1, provider="indeed"), _lane(2, provider="linkedin"),
+                          *FILLER])
+    assert results.hidden_lane_copy == 2
+    assert _providers(env, results) == ["jobapps", "greenhouse", "greenhouse"]
+
+
+def test_rule_b_never_fires_when_a_board_member_is_present(env: Path) -> None:
+    """Attribution: with a board member in the group every lane copy is rule (a), and the
+    survivor is the BOARD posting — not the highest-ranked lane copy rule (b) would have kept."""
+    results = _rank(env, [_lane(0), _lane(1, provider="indeed"), _board(2), *FILLER],
+                    include_lane_copy=True)
+    surfaced = [p for p in results.visible if p.lane_copy_of is not None]
+    assert len(surfaced) == 2
+    board_id = next(
+        p.posting_id for p in results.visible
+        if p.lane_copy_of is None and p.company == "Acme"
+    )
+    assert {p.lane_copy_of for p in surfaced} == {board_id}
+
+
+def test_two_lane_rows_in_DIFFERENT_groups_are_both_delivered(env: Path) -> None:
+    """The null control for rule (b): same providers, same shape, different `cross_host` key."""
+    results = _rank(env, [_lane(0), _lane(1, provider="indeed", key="other|backend engineer|x"),
+                          *FILLER])
+    assert results.hidden_lane_copy == 0
+    assert sorted(_providers(env, results)) == ["greenhouse", "greenhouse", "indeed", "jobapps"]

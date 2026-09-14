@@ -52,6 +52,7 @@ from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
+    current_gate_seniority,
     current_gate_verdicts,
     current_requirement_flags,
 )
@@ -359,10 +360,18 @@ class TailoredLead:
     # T43. True for a review-lane lead delivered with no PDF: the tailor loop skipped the render
     # (`review_gate.lane` routed it to `_review` BEFORE the loop ran) rather than attempted and
     # failed it. Distinct from `degraded`, which always carries a real, if untailored, PDF — a
-    # `pending_tailor` lead carries none. Cleared the moment `boardwatch tailor run` renders the
-    # lead for real: that writes a fresh `resume_tailored` artifact row with no such marker, which
+    # `pending_tailor` lead carries none.
+    #
+    # **THE DRAIN IS TWO COMMANDS, NOT ONE, AND THIS COMMENT USED TO NAME ONLY THE SECOND.**
+    # Measured 2026-09-13 on three real pending-tailor leads: `boardwatch tailor run <id>` alone
+    # renders the AUTHORED résumé, which does not fit `resume_max_pages`, so all three came back
+    # `no shippable résumé PDF (tailored=page_limit_exceeded, untailored=page_limit_exceeded)` —
+    # the path, not the lead. Projection is what fits the page budget, and `cli/projection_cmd.py`
+    # says so in its own help: **`resume project --posting <id> --out <dir>` THEN
+    # `tailor run <id> --resume <dir>/resume.projected.yaml`**, ~3.8 s + ~1.3 s. Either half
+    # renders the fresh `resume_tailored` artifact row with no marker, which
     # `delivered_unapplied`'s recency ordering (`_supersedes`) picks up as the new winner with no
-    # further code needed here.
+    # further code needed here — but only the pair produces one that ships.
     pending_tailor: bool = False
 
 
@@ -1379,6 +1388,13 @@ def _lead_lanes(
         # version list as the verdict and the requirement summary beside it, so the lane this
         # run tailors for can never disagree with the one `sync_queue` files the folder under.
         gate_verdicts = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+        # The runner's twin of `delivery_queries`' gate point: same flag, same inert default, so
+        # the lane this run tailors for cannot disagree with the one `sync_queue` files under.
+        gate_seniority = (
+            current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
+            if settings.gate.seniority_hold
+            else {}
+        )
         locations_by_posting = {
             int(row.id): tuple(
                 str(loc) for loc in (row.locations_json or []) if str(loc).strip()
@@ -1432,6 +1448,9 @@ def _lead_lanes(
                 eligibility_unconfirmed=posting_flags.eligibility_unconfirmed,
                 no_requirement_rows=posting_flags.no_requirement_rows,
                 judge_eligible=gate_verdicts.get(posting.posting_id) == "eligible",
+                judge_seniority_above_band=(
+                    gate_seniority.get(posting.posting_id) == "no"
+                ),
                 posting_closed=False,
             ),
             posting_version_id,

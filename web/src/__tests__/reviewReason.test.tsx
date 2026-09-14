@@ -86,6 +86,8 @@ describe("the requirement-hold badges", () => {
       "experience_requirement",
       "no_requirements_found",
       "unevaluated",
+      "seniority_above_band",
+      "seniority_judged_above_band",
     ];
     const labels = reasons.map((reason) => {
       const { container, unmount } = render(<ReviewReasonBadge reason={reason} />);

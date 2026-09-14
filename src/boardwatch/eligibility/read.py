@@ -237,6 +237,64 @@ def current_requirement_flags(
     return out
 
 
+def current_gate_seniority(
+    conn: Connection, posting_version_ids: list[int],
+    profile_hash: str | None, rules_hash: str | None,
+) -> dict[int, str]:
+    """posting_id -> the LATEST final-gate `seniority_fit` reading, in {yes, no, unclear}.
+
+    A SIBLING of `current_gate_verdicts` rather than a second return value on it, and the reason
+    is diff size, not design: eight test modules and four call sites read that function's
+    `dict[int, str]`, and re-typing it to carry a second field would rewrite all of them to buy
+    one saved query over at most a few hundred ids, once per run, off the ranking hot path. The
+    two are kept in step by construction — same identity scoping, same `engine_version LIKE`
+    prefix, same max(id)-per-version rule — so a lead cannot get its verdict from one evaluation
+    and its seniority reading from another.
+
+    **Absent reads `"unclear"`, never `"no"`.** A verdict recorded before the field existed, a
+    gate judged under `p5-oracle-1`, a judge that omitted it, and a malformed value all arrive
+    here the same way, and a lead must never be withheld because a reading is MISSING — that is
+    the fail-open direction a body-seniority hold is owed (D-380), and the direction the
+    keystone's abstain rule points in.
+    """
+    if profile_hash is None or rules_hash is None or not posting_version_ids:
+        return {}
+    reading_by_version: dict[int, str] = {}
+    for chunk in id_chunks(posting_version_ids):
+        latest = (
+            select(eligibility_inputs.c.posting_version_id,
+                   func.max(eligibility_evaluations.c.id).label("eid"))
+            .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+            .where(
+                eligibility_inputs.c.posting_version_id.in_(chunk),
+                eligibility_inputs.c.profile_hash == profile_hash,
+                eligibility_inputs.c.rules_hash == rules_hash,
+                eligibility_evaluations.c.engine_kind == "llm",
+                eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+            )
+            .group_by(eligibility_inputs.c.posting_version_id)
+            .subquery()
+        )
+        rows = conn.execute(
+            select(
+                eligibility_inputs.c.posting_version_id,
+                eligibility_evaluations.c.raw_output_json,
+            )
+            .join(latest, eligibility_evaluations.c.id == latest.c.eid)
+            .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+        ).all()
+        for row in rows:
+            raw = row.raw_output_json
+            gate = raw.get("gate_verdict") if isinstance(raw, dict) else None
+            value = gate.get("seniority_fit") if isinstance(gate, dict) else None
+            reading_by_version[int(row.posting_version_id)] = (
+                str(value) if value in {"yes", "no", "unclear"} else "unclear"
+            )
+    v2p = _posting_by_version(conn, posting_version_ids)
+    return {v2p[vid]: reading
+            for vid, reading in reading_by_version.items() if vid in v2p}
+
+
 def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int],
     profile_hash: str | None, rules_hash: str | None,

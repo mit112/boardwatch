@@ -165,6 +165,14 @@ _GATE_IRRELEVANT: frozenset[str] = frozenset(
         # persisted the same way. Restamping `policy_version` for it would invalidate every
         # stored disposition for a scheduling knob.
         "depth",
+        # Changes which LANE a delivered lead lands in, never whether it is a lead. The rule
+        # above is "can change which postings become leads"; a held lead is still delivered,
+        # still carries a disposition, and still reaches the owner — it lands in `_review`
+        # instead of the apply root. This is the same reasoning that kept 0-B's judge promotion
+        # (D-503) out of this hash: it moves the same leads between lanes and creates none. A
+        # relevant classification would also re-stamp every stored disposition the moment the
+        # field was ADDED, at its inert default, for a routing knob nothing had yet turned on.
+        "seniority_hold",
     }
 )
 

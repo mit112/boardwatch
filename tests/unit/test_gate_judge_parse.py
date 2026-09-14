@@ -51,3 +51,48 @@ def test_an_answer_this_stage_cannot_trust_fails_the_whole_batch_open(
 ) -> None:
     with pytest.raises(ValueError):
         _parse_verdicts(_stdout([_verdict(label) for label in answered]), ["1", "2"])
+
+
+# ---------------------------------------------------------------- `seniority_fit`, fail-open
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param({}, id="absent — a judge under the old policy"),
+        pytest.param({"seniority_fit": None}, id="null"),
+        pytest.param({"seniority_fit": "NO"}, id="wrong case"),
+        pytest.param({"seniority_fit": "senior"}, id="out of catalog"),
+        pytest.param({"seniority_fit": 0}, id="wrong type"),
+        pytest.param({"seniority_fit": "unclear"}, id="the inert value itself"),
+    ],
+)
+def test_an_unreadable_seniority_answer_reads_unclear_and_never_no(
+    answer: dict[str, object],
+) -> None:
+    """**The direction is the whole point, and nothing else in the suite pins it.**
+
+    `seniority_fit == "no"` WITHHOLDS a lead from the apply lane. If an absent, null, misspelled
+    or wrongly-typed answer defaulted to `"no"` instead of `"unclear"`, then every lead judged
+    before this field existed — every row under `p5-oracle-1`, which is the entire live store at
+    the moment this ships — would be withheld on a reading nobody ever made. A mutation flipping
+    the default to `"no"` passes the rest of this suite and the whole gate-stage suite; it fails
+    here.
+
+    Out-of-catalog is `"unclear"` and NOT a raise, unlike every other field this parser reads:
+    those decide a VERDICT, and this one only decides a delivery lane. A batch that answered the
+    six families correctly must not be thrown away over a tenth field it spelled oddly.
+    """
+    verdicts, missing = _parse_verdicts(_stdout([{**_verdict("1"), **answer}]), ["1"])
+    assert missing == ()
+    assert verdicts[0].seniority_fit == "unclear"
+
+
+def test_a_well_formed_seniority_answer_is_carried_through() -> None:
+    """The other half: the control that keeps the test above from passing on a parser that
+    hard-codes `"unclear"` for everything."""
+    for value in ("yes", "no", "unclear"):
+        verdicts, _ = _parse_verdicts(
+            _stdout([{**_verdict("1"), "seniority_fit": value}]), ["1"]
+        )
+        assert verdicts[0].seniority_fit == value

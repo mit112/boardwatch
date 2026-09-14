@@ -89,6 +89,13 @@ CLOSED_DIR = "_closed"
 #: `rank.seniority_gate.seniority_verdict` and passes the one bit that ever moves a lead —
 #: ``uncertain``/``in_band`` are indistinguishable to this gate on purpose, matching how the two
 #: requirement flags above already travel as a summary rather than a re-derivation.
+#:
+#: ``seniority_judged_above_band`` is its BODY-READING sibling and is deliberately a SEPARATE
+#: member rather than a second way to reach the same one. The two are found by different
+#: instruments and the difference is what the reader acts on: the title one is a token in the
+#: title the operator can see at a glance, and this one is an LLM's reading of a body whose title
+#: looks entry-level. Folding them together would also make the lane-composition report unable to
+#: show whether the body reader is earning its keep, which is the only way to tell.
 ReviewReason = Literal[
     "ineligible_verdict",
     "non_us_location",
@@ -99,6 +106,7 @@ ReviewReason = Literal[
     "eligibility_unconfirmed",
     "experience_requirement",
     "seniority_above_band",
+    "seniority_judged_above_band",
 ]
 
 
@@ -132,6 +140,7 @@ def classify(
     posting_closed: bool = False,
     seniority_above_band: bool = False,
     judge_eligible: bool = False,
+    judge_seniority_above_band: bool = False,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the nine reasons held the lead.
 
@@ -212,6 +221,24 @@ def classify(
     # gate already put it.
     if seniority_above_band:
         return LaneDecision(REVIEW_DIR, "seniority_above_band")
+    # THE BODY READER, and it sits here — beside the title gate and ABOVE the `eligible`
+    # short-circuit — for the same reason T44 does: eligibility answers the blocker families and
+    # says nothing about seniority, so an `eligible` verdict must not let a lead whose BODY reads
+    # as a multi-year practitioner role ride into the blind-apply queue either.
+    #
+    # **Measured 2026-09-13, and it is why this exists.** In the blind three-arm audit,
+    # `seniority_fit` accounted for **18 of the 30 unapplyable calls (60%)** and for 13 of the 14
+    # in the promoted `no_requirements_found` cohort — so after 0-B it is the DOMINANT residual
+    # defect in the apply lane, ahead of every eligibility family combined. And it is invisible to
+    # the gate above: **every item in all three arms read `in_band`**, because the ladder reads the
+    # TITLE and these postings wear an entry-level title over a senior body.
+    #
+    # It HOLDS, never drops — review is reviewable, and the fail-open direction D-380 requires for
+    # a reading no rule can quote a span for. D-477 refused a DETERMINISTIC body-seniority family
+    # and that refusal stands: this is not a rule, it is the judge that already reads the whole JD
+    # every run being asked one more question and answering it beside its verdict, never inside it.
+    if judge_seniority_above_band:
+        return LaneDecision(REVIEW_DIR, "seniority_judged_above_band")
     # R1. `eligible` used to short-circuit ABOVE the two gates above, so an eligible posting was
     # blindly-appliable however foreign or however far from software it was — the 2026-08-30 audit
     # found a "Field Auto Adjuster" marked eligible sitting in the apply queue, and an independent
@@ -288,6 +315,7 @@ def lane(
     posting_closed: bool = False,
     seniority_above_band: bool = False,
     judge_eligible: bool = False,
+    judge_seniority_above_band: bool = False,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -306,4 +334,5 @@ def lane(
         posting_closed=posting_closed,
         seniority_above_band=seniority_above_band,
         judge_eligible=judge_eligible,
+        judge_seniority_above_band=judge_seniority_above_band,
     ).lane

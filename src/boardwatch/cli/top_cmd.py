@@ -1066,7 +1066,19 @@ def _suppress_lane_copies(
     standing_board_keys: dict[str, tuple[int, ...]],
     include_lane_copy: bool,
 ) -> tuple[list[RankedPosting], int, set[int]]:
-    """D-498 rule (a): drop a lane copy whose employer-board copy is in front of the owner.
+    """D-498 rules (a) and (b): drop a lane copy of a job this slate already carries.
+
+    ONE claim, two ways of establishing it, and `lane_copy_of` is what tells them apart on a row.
+    **Rule (a)** — the survivor is the EMPLOYER'S OWN board posting, on this slate or standing in
+    the queue; the board's JD is canonical, so the aggregator's rendering of it is redundant.
+    **Rule (b)** — no board member exists anywhere, and the survivor is the HIGHEST-RANKED LANE
+    copy of the same job on this slate. That is the weaker claim: nothing points at the employer's
+    own rendering, only at a copy the ranker already put in front of the owner.
+
+    **Rule (c) is REFUSED and is not implemented here** (D-498): suppressing within ANY
+    `cross_host` group would take Microsoft's four real Redmond requisitions, which are four
+    EMPLOYER-BOARD rows — so no rule above can reach them, and that is by construction rather
+    than by a guard.
 
     Returns the surviving slate, the drop count, and the POSTING ids dropped — the caller maps
     those back to job ids and keeps them out of `_record_surfaced`, because a row written `seen`
@@ -1078,11 +1090,15 @@ def _suppress_lane_copies(
     live end — a slate member is being delivered right now, and a standing member stops holding
     when it is applied to, skipped, reported or closed (`standing_board_cross_host_keys`).
 
-    **It can never hide a board posting, and it can never hide a JOB.** Only rows on a lane
-    company are eligible to drop, and only when a board row for the same `cross_host` group is
-    demonstrably in front of the owner. Microsoft's four same-title Redmond requisitions -- the
-    counterexample §3.1 refuses `cross_host` suppression for -- are four EMPLOYER-BOARD rows, so
-    no rule here looks at them.
+    **It can never hide a board posting.** Only rows on a LANE company are ever dropped, under
+    either rule.
+
+    **Under rule (b) it can defer a lane row whose twin is a genuinely different requisition** --
+    the residual rule (c) makes unacceptable at employer-board scale. It is bounded three ways:
+    the survivor is always delivered, so the job is never hidden; no `seen` row is written, so the
+    deferred copy ranks again on the very next run; and it reaches only groups where NO employer
+    board covers the company at all, which is where two aggregators indexing one posting is far
+    likelier than one employer running two identical openings only aggregators can see.
     """
     if not visible:
         return visible, 0, set()
@@ -1116,6 +1132,10 @@ def _suppress_lane_copies(
     kept: list[RankedPosting] = []
     dropped: set[int] = set()
     hidden = 0
+    # Rule (b)'s survivors: the lane member of each lanes-only group that was kept FIRST. `visible`
+    # is in rank order, so "first" is "highest-ranked" with no sorting and no tie-break — the
+    # survivor is the copy the ranker already chose to put in front of the owner.
+    lane_survivor: dict[str, int] = {}
     for posting in visible:
         group = key_of.get(posting.posting_id)
         if group is None or posting.posting_id not in lane_rows:
@@ -1126,7 +1146,15 @@ def _suppress_lane_copies(
             for held in (*board_on_slate.get(group, ()), *standing_board_keys.get(group, ()))
             if held != posting.posting_id
         ]
+        # Rule (b): no employer-board member anywhere, but a HIGHER-RANKED LANE copy of the same
+        # job is already on this slate. A weaker claim than rule (a) — nothing here can point at
+        # the employer's own rendering — and `lane_copy_of` is what tells the two apart on a row.
+        if not holders and group in lane_survivor:
+            holders = [lane_survivor[group]]
         if not holders:
+            # Unconditional, and it cannot overwrite: this branch runs only when the group has no
+            # holder yet, and once it has a survivor every later member finds one above.
+            lane_survivor[group] = posting.posting_id
             kept.append(posting)
             continue
         if include_lane_copy:
@@ -1394,11 +1422,11 @@ def _print_hidden_notices(
         # and nothing was called a duplicate — the employer's own posting for this job is already
         # in front of them, so an aggregator's rendering of it is not worth a second slot.
         target.print(
-            f"{results.hidden_lane_copy} aggregator-lane cop(ies) removed because the "
-            "employer's own board posting for the same job is already in front of you — on this "
-            "slate or standing in the queue. No board posting is ever removed this way, and they "
-            "return once the board copy is applied to, skipped or closed. See them with "
-            "--include-lane-copy.",
+            f"{results.hidden_lane_copy} aggregator-lane cop(ies) removed because this slate "
+            "already carries the same job — the employer's own board posting for it (on this "
+            "slate or standing in the queue), or failing that a higher-ranked lane copy. No "
+            "board posting is ever removed this way, and they return once the survivor is "
+            "applied to, skipped or closed. See them with --include-lane-copy.",
             markup=False,
         )
     if results.hidden_duplicate and not include_duplicates:

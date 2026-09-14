@@ -59,6 +59,7 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     RequirementFlags,
+    current_gate_seniority,
     current_gate_verdicts,
     current_requirement_flags,
     current_verdicts,
@@ -141,6 +142,10 @@ class QueueRow:
     #: the gate disarmed, or for a fixture built before this field existed, the lane is exactly
     #: what it was.
     judge_verdict: str | None = None
+    #: The final gate's SEPARATE `seniority_fit` reading, in {yes, no, unclear}, read in the same
+    #: call and under the same identity as everything above it. `"unclear"` is the inert default,
+    #: so a row judged before the field existed withholds nothing.
+    judge_seniority_fit: str = "unclear"
 
     @property
     def closed(self) -> bool:
@@ -312,6 +317,7 @@ def _queue_row(
     now: datetime,
     requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS,
     judge_verdict: str | None = None,
+    judge_seniority_fit: str = "unclear",
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -336,6 +342,7 @@ def _queue_row(
         target_flag=_target_flag(row.tags_json),
         requirement_flags=requirement_flags,
         judge_verdict=judge_verdict,
+        judge_seniority_fit=judge_seniority_fit,
     )
 
 
@@ -612,6 +619,7 @@ def review_job_ids(conn: Connection) -> set[int]:
             eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
             no_requirement_rows=row.requirement_flags.no_requirement_rows,
             judge_eligible=row.judge_verdict == "eligible",
+            judge_seniority_above_band=row.judge_seniority_fit == "no",
             posting_closed=row.closed,
         )
         == REVIEW_DIR
@@ -667,6 +675,7 @@ def apply_lane_placements(
                 eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
                 no_requirement_rows=row.requirement_flags.no_requirement_rows,
             judge_eligible=row.judge_verdict == "eligible",
+            judge_seniority_above_band=row.judge_seniority_fit == "no",
                 posting_closed=row.closed,
             )
             == ""
@@ -728,6 +737,16 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # Same identity and same version list again, so a lead's lane can never be decided by a gate
     # verdict from a different evaluation than the requirement summary it is releasing.
     gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # Gated HERE and nowhere else on this side. Every consumer below reads
+    # `row.judge_seniority_fit == "no"`, so leaving the column at its inert `"unclear"` when the
+    # hold is disarmed is what keeps `sync_queue`, the web page and both drains agreeing — the
+    # alternative, each call site checking the flag itself, is exactly the second opinion
+    # `_review` exists to prevent (D-332). It also skips the query entirely when off.
+    seniority = (
+        current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
+        if load_settings().gate.seniority_hold
+        else {}
+    )
     now = utcnow()
     return [
         _queue_row(
@@ -736,6 +755,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             now=now,
             requirement_flags=flags.get(int(row.posting_id), NO_REQUIREMENT_FLAGS),
             judge_verdict=gate.get(int(row.posting_id)),
+            judge_seniority_fit=seniority.get(int(row.posting_id), "unclear"),
         )
         for row in ordered
     ]
