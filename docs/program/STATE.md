@@ -29,6 +29,8 @@
 | prediction | read | |
 |---|---|---|
 | fleet 484 | 484 attempted, 0 failed; **censored 4 → 1** | ✅ |
+
+**The fleet has grown since that reading: `watched` is 493 as of 2026-09-14 15:40**, the lanes having admitted 9 more during and after the run. 484 is what run 308 ATTEMPTED, not today's baseline — read `select count(*) from companies where watched=1` rather than carrying 484 forward.
 | apply lane up, review lane down (0-B) | apply **209 → 478**, review **380 → 151** | ✅ |
 | `hidden_lane_copy` non-zero (0-C + rule (b)) | **5**, first live reading | ✅ |
 | 0-D drains itself | overwrites **123 → 66**, `raw_json` **302 → 245** | ✅ |
