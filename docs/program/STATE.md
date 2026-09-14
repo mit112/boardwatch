@@ -53,15 +53,27 @@ queue, own bucket `shortlist.hidden_lane_copy`, `top --include-lane-copy` drain,
 **The three retail boards are GONE. Fleet 487 → 484, 6,884 postings closed, 3 residual open.** Measured
 first against a control: 0 leads ever delivered from any of the three. Abbott stays (7 delivered).
 
-**Next action.** (1) Merge PR #374 when CI is green, then read the 04:00 tick on 09-14 (**run 58** =
-confirm day 9) — and read it knowing THREE delivery behaviours changed: expect a bigger apply lane and
-a smaller review lane (0-B), `hidden_lane_copy` non-zero in the funnel (0-C), and 484 watched boards.
-Also still on the list for run 58: the reach line's `stale` (139 on run 57, 26–42 before) and the T78
-nightly count (2 of 10 if green). (2) **The Indeed and hiring.cafe per-source THRESHOLD is the only
+**PR #374 is MERGED and main's CI is green.** `main` is `78068ef9`; the editable venv the tick runs
+carries all three changes.
+
+**Next action.** (1) Read the 04:00 tick on 09-14. **It is run 64, NOT run 58** — this session's
+retail drain wrote runs 58–63 (six `boardwatch scan` invocations, 18:39–18:40 UTC), exactly as the
+09-12 session's drain wrote 49–56. It is **confirm day 9** whichever number it carries; only the tick
+counts toward the confirm, a hand scan never does. Read it knowing THREE delivery behaviours changed:
+expect a bigger apply lane and a smaller review lane (0-B — **244 standing folders move `_review` →
+apply on the first reconcile, all with `pdf_missing`**, see the résumé item below), `hidden_lane_copy`
+non-zero in the funnel (0-C), and 484 watched boards. Also on the list: the reach line's `stale` (139
+on run 57, 26–42 before) and the T78 nightly count (2 of 10 if green). (2) **The Indeed and hiring.cafe per-source THRESHOLD is the only
 M4 item left and is still Mit's** — the numbers are in hand (24.9% / 22.1%, D-499) and the
 recommendation put to him is NO BAR on either, same as LinkedIn, on the ground that they are reach
-lanes into employers no board covers. (3) Still open from D-494: seed the cluster cap from the standing
-queue; ratify `apple`'s `board_reported_total = None`.
+lanes into employers no board covers. (3) **The 244 promoted folders carry no résumé and were deliberately NOT rendered.** They were
+delivered `pending_tailor`, and the tailor loop only renders the current run's shortlist, so no run
+will pick them up. The drain is `boardwatch tailor run <posting_id>`, ~4.35 s each (~18 min for 244).
+Held because **Mit's per-lens formatting session is still owed** (open questions item 3) — rendering
+244 documents in a format he has not signed off is the wrong order. His call. (4) Still open from
+D-494: seed the cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`.
+(5) D-498's rule (b) (+18) and 0-D's REPAIR half (117 bodies, 301 `raw_json` rows) are sized and
+unbuilt — neither was ruled on.
 
 ### 2026-09-13 close (run 57 READ — the first tick on everything the 09-12 session shipped; the first GREEN NIGHTLY since 08-31)
 
