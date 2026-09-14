@@ -50,6 +50,7 @@ from boardwatch.delivery.queue import (
     DETAILS_FILE,
     INELIGIBLE_DIR,
     JD_FILE,
+    LANE_COPY_DIR,
     LINK_FILE,
     LOCK_FILE,
     REPORTED_DIR,
@@ -83,6 +84,7 @@ from boardwatch.store.tables import (
     artifacts,
     companies,
     jobs,
+    posting_identities,
     posting_versions,
     postings,
     quarantined_bodies,
@@ -236,6 +238,7 @@ def _deliver(
     delivered_at: datetime = NOW,
     watched: bool = True,
     locations: tuple[str, ...] = ("Boston, MA",),
+    provider: str = "greenhouse",
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact, disk folder.
 
@@ -259,7 +262,7 @@ def _deliver(
         conn.execute(
             insert(companies).values(
                 name=company,
-                provider="greenhouse",
+                provider=provider,
                 slug=f"slug-{key}",
                 source="user",
                 watched=watched,
@@ -1401,6 +1404,7 @@ def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
         INELIGIBLE_DIR,
         REVIEW_DIR,
         CLOSED_DIR,
+        LANE_COPY_DIR,
     }
 
 
@@ -1437,8 +1441,8 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     """The ordering inside `_wanted_location`, tested directly.
 
     The two integration tests above cannot both reach this: `ineligible_job_ids` never reports an
-    APPLIED job, so that path is decided upstream. Calling the function with all five sets
-    populated is the only way to pin the branch order, and reordering the branches fails this.
+    APPLIED job, so that path is decided upstream. Calling the function with every set populated
+    is the only way to pin the branch order, and reordering the branches fails this.
     """
     entry = queue._Entry(
         path=Path("x"), location="", posting_id=1, job_id=7, content_hash=None
@@ -1447,13 +1451,14 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     verdict = {7: "ineligible"}
     review = {7}
     closed = {7}
+    lane_copy = {7}
     assert queue._wanted_location(
         entry, applied=both, skipped=both, reported=both, closed=closed,
-        ineligible=verdict, review=review,
+        ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == APPLIED_DIR
     assert queue._wanted_location(
         entry, applied={}, skipped=both, reported=both, closed=closed,
-        ineligible=verdict, review=review,
+        ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == SKIPPED_DIR
     # `reported` is an owner statement, so it outranks both derived drains AND `closed` -- but it
     # ranks below the two statements about what the owner DID with the lead. Nothing is lost by
@@ -1461,27 +1466,33 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     # survives whichever folder holds the copy (D-427).
     assert queue._wanted_location(
         entry, applied={}, skipped={}, reported=both, closed=closed,
-        ineligible=verdict, review=review,
+        ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == REPORTED_DIR
     # closed ranks below BOTH owner statements and above both derived drains: the employer taking
     # the requisition down does not un-say what the owner already decided, but it does settle a
     # lead the gate could only have held for a second look.
     assert queue._wanted_location(
         entry, applied={}, skipped={}, reported={}, closed=closed,
-        ineligible=verdict, review=review,
+        ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == CLOSED_DIR
     assert queue._wanted_location(
         entry, applied={}, skipped={}, reported={}, closed=set(),
-        ineligible=verdict, review=review,
+        ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == INELIGIBLE_DIR
-    # review ranks below ineligible (a lead that is both is ineligible) and above the apply queue.
+    # `lane_copy` ranks below `ineligible` -- a verdict about the LEAD beats a fact about
+    # REDUNDANCY -- and above `review`, because a lead whose employer-board twin is already in
+    # front of the owner is not a second thing to look at.
     assert queue._wanted_location(
         entry, applied={}, skipped={}, reported={}, closed=set(),
-        ineligible={}, review=review,
+        ineligible={}, review=review, lane_copy=lane_copy,
+    ) == LANE_COPY_DIR
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, reported={}, closed=set(),
+        ineligible={}, review=review, lane_copy=set(),
     ) == REVIEW_DIR
     assert queue._wanted_location(
         entry, applied={}, skipped={}, reported={}, closed=set(),
-        ineligible={}, review=set(),
+        ineligible={}, review=set(), lane_copy=set(),
     ) == ""
 
 
@@ -2061,7 +2072,10 @@ def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     assert (root / REPORTED_DIR).is_dir()
     assert _folders(root) == []
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
-        [APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR, REPORTED_DIR]
+        [
+            APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR, REPORTED_DIR,
+            LANE_COPY_DIR,
+        ]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks
     # it, and `profile_bundle/locking.py` is explicit that its presence is not a signal.
@@ -2486,3 +2500,121 @@ def test_a_review_lead_returns_to_the_apply_queue_when_it_becomes_software(
         sync_queue(conn, root=root, owner_name=OWNER)
     assert len(_folders(root)) == 1
     assert _folders(root / REVIEW_DIR) == []
+
+
+# --------------------------------------------------------------------- D-498 rule (a)'s drain
+
+
+def _cross_host(conn: Connection, posting_id: int, key: str) -> None:
+    """One `cross_host` identity row. Written by hand because `_deliver` writes none, and this
+    drain is defined entirely by that grouping."""
+    conn.execute(
+        insert(posting_identities).values(
+            posting_id=posting_id,
+            kind="cross_host",
+            identity_key=key,
+            algorithm_version=1,
+            created_at=NOW,
+        )
+    )
+
+
+def test_a_lane_copy_drains_when_the_employer_board_twin_is_standing(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """D-498 rule (a) runs in the RANKER, so it stops a redundant copy being delivered and does
+    nothing about the ones already delivered. Measured 2026-09-14: 17 such leads standing.
+    """
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 2
+
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert (drained.to_lane_copy, drained.moved, drained.failed) == (1, 1, 0)
+    assert len(_folders(root / LANE_COPY_DIR)) == 1
+    # The EMPLOYER's copy is the one left in front of the owner.
+    assert len(_folders(root)) == 1
+
+
+def test_two_employer_board_copies_of_one_job_BOTH_stay(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """§3.1's counterexample, and the case this drain must never touch.
+
+    `cross_host` groups and never suppresses precisely because Microsoft's four same-title
+    Redmond postings are four real requisitions under one key. They are all EMPLOYER-BOARD rows,
+    so the provider test excludes every one of them. Without that test this drain would delete
+    three of the four, which is the failure §3.1 refuses — so this is the discriminating case,
+    not a redundant one.
+    """
+    with engine.begin() as conn:
+        first_id, _ = _deliver(conn, apps, "reqA", provider="greenhouse")
+        second_id, _ = _deliver(conn, apps, "reqB", provider="workday")
+        _cross_host(conn, first_id, "same-title")
+        _cross_host(conn, second_id, "same-title")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_lane_copy == 0
+    assert _folders(root / LANE_COPY_DIR) == []
+    assert len(_folders(root)) == 2
+
+
+def test_the_lane_copy_returns_when_the_board_twin_stops_holding(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The re-entry path, designed in the same change as the quarantine and running on both
+    sides of the gate. A drain without one is a trapdoor: the lane copy would be filed forever
+    behind a board lead the owner has already dealt with.
+    """
+    with engine.begin() as conn:
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_lane_copy == 1
+
+    # The owner skips the board copy: it stops holding, so the lane copy is work again.
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=board_job, at=NOW)
+    with engine.connect() as conn:
+        restored = reconcile_queue(conn, root=root)
+    assert restored.to_queue == 1
+    assert _folders(root / LANE_COPY_DIR) == []
+    assert len(_folders(root)) == 1
+
+
+def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Precedence. An ineligible verdict is a statement about the LEAD; a lane copy is only a
+    statement about REDUNDANCY, so filing the rejected lead under `_lane_copy` would hide the
+    stronger fact behind the weaker one.
+    """
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps", body=INELIGIBLE_JD)
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _make_ineligible(conn, lane_id)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    # Both facts hold at once: the lead IS a lane copy, and it files under the stronger claim.
+    assert drained.to_lane_copy == 0
+    assert drained.to_ineligible == 1
+    assert len(_folders(root / INELIGIBLE_DIR)) == 1
+    assert _folders(root / LANE_COPY_DIR) == []

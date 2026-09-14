@@ -82,6 +82,7 @@ from boardwatch.store.delivery_queries import (
     closed_job_ids,
     delivered_unapplied,
     ineligible_job_ids,
+    lane_copy_job_ids,
     queue_detail,
     review_job_ids,
 )
@@ -100,6 +101,8 @@ APPLIED_DIR = "_applied"
 SKIPPED_DIR = "_skipped"
 REPORTED_DIR = "_reported"
 INELIGIBLE_DIR = "_ineligible"
+#: D-498 rule (a)'s standing-queue drain. Registered in ``delivery.names.DRAIN_DIRS``.
+LANE_COPY_DIR = "_lane_copy"
 DETAILS_FILE = "details.json"
 JD_FILE = "job_description.txt"
 WEBLOC_FILE = "apply.webloc"
@@ -213,6 +216,7 @@ class ReconcileReport:
     to_ineligible: int = 0
     to_review: int = 0
     to_closed: int = 0
+    to_lane_copy: int = 0
     to_queue: int = 0
     unclassified: tuple[str, ...] = ()
     failures: tuple[FolderFailure, ...] = ()
@@ -231,6 +235,7 @@ class ReconcileReport:
             + self.to_ineligible
             + self.to_review
             + self.to_closed
+            + self.to_lane_copy
             + self.to_queue
         )
 
@@ -849,6 +854,9 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
+    # Passed the SAME withheld set the other drains derive from, so a lead the owner already
+    # skipped or reported cannot be re-filed as a lane copy behind their statement.
+    lane_copy = lane_copy_job_ids(conn, skipped=set(skipped) | set(reported))
     entries, unclassified = _index(root)
     # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
     # would otherwise be filed against the identity it was written under rather than the one it
@@ -865,6 +873,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
         INELIGIBLE_DIR: 0,
         REVIEW_DIR: 0,
         CLOSED_DIR: 0,
+        LANE_COPY_DIR: 0,
         "": 0,
     }
     failures: list[FolderFailure] = []
@@ -877,6 +886,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
             closed=closed,
             ineligible=ineligible,
             review=review,
+            lane_copy=lane_copy,
         )
         if wanted == entry.location:
             continue
@@ -903,6 +913,7 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
         to_ineligible=counts[INELIGIBLE_DIR],
         to_review=counts[REVIEW_DIR],
         to_closed=counts[CLOSED_DIR],
+        to_lane_copy=counts[LANE_COPY_DIR],
         to_queue=counts[""],
         unclassified=unclassified,
         failures=tuple(failures),
@@ -918,6 +929,7 @@ def _wanted_location(
     closed: set[int],
     ineligible: dict[int, str],
     review: set[int],
+    lane_copy: set[int],
 ) -> str:
     """Precedence, and it is not arbitrary.
 
@@ -937,6 +949,15 @@ def _wanted_location(
     `_ineligible` — reconcile pulls those back out the moment the verdict clears, and a reported
     lead's verdict is still `eligible`, so it would return to the queue on the very next run.
 
+    `lane_copy` ranks just ABOVE `review` and just BELOW `ineligible`, and both boundaries are
+    deliberate. Above `review`, because a lead whose employer-board twin is already in front of the
+    owner is not work to look at — the twin is, and asking for a second look at the aggregator's
+    copy of one job is the redundancy this drain exists to end. Below `ineligible`, because an
+    ineligible verdict is a statement about the LEAD and this is only a statement about
+    REDUNDANCY: filing a rejected lead under `_lane_copy` would hide the verdict behind the
+    weaker fact. It ranks below every owner statement and below `closed` for the same reasons
+    those outrank the derived verdicts.
+
     `closed` sits between the owner statements and the derived verdicts, and both boundaries are
     deliberate. It ranks BELOW them because an application the owner already sent is a fact about
     what they did and does not stop being true when the requisition comes down. It ranks ABOVE
@@ -954,6 +975,8 @@ def _wanted_location(
         return CLOSED_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
+    if entry.job_id in lane_copy:
+        return LANE_COPY_DIR
     if entry.job_id in review:
         return REVIEW_DIR
     return ""
@@ -1181,6 +1204,7 @@ __all__ = [
     "DEFAULT_QUEUE_ROOT",
     "DETAILS_FILE",
     "INELIGIBLE_DIR",
+    "LANE_COPY_DIR",
     "REVIEW_DIR",
     "DETAILS_SCHEMA",
     "JD_FILE",

@@ -832,6 +832,11 @@ def test_every_drain_has_a_recorded_answer_on_whether_it_holds_a_slot() -> None:
         "_ineligible": True,
         # KEPT: a lead awaiting the owner's look is, definitionally, in front of the owner.
         "_review": True,
+        # EXCLUDED, and for the opposite reason to `_ineligible`. The lead is NOT in front of the
+        # owner; its employer-board twin is, and that twin is itself a delivered lead holding the
+        # slot. Letting both hold would give one job two slots and suppress a second, distinct
+        # posting for as long as the pair stood.
+        "_lane_copy": False,
     }
     assert set(holds_a_slot) == set(DRAIN_DIRS), (
         "a drain was added or renamed without deciding whether a lead in it may still hold a "
