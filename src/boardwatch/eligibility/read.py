@@ -298,6 +298,7 @@ def current_gate_seniority(
 def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int],
     profile_hash: str | None, rules_hash: str | None,
+    *, engine_version: str | None = None,
 ) -> dict[int, str | None]:
     """posting_id -> the LATEST final-gate verdict for its current version under this identity.
 
@@ -305,6 +306,16 @@ def current_gate_verdicts(
     advisory extract_llm lane ('llm:%'), and the deterministic read (engine_kind='deterministic')
     never picks up either. The gate lane has no unique index; max(id) per posting_version means the
     most recent apply wins (a re-judge overrides), which is the intended semantics.
+
+    **`engine_version` narrows that prefix to one EXACT version, and only the freshness test wants
+    it (D-512).** The prefix default is right for every DISPLAY reader: a verdict recorded under a
+    superseded policy is still the best thing known about that lead, and dropping it would blank
+    the viewer rather than inform it. It is wrong for the one caller asking "does this lead already
+    have a CURRENT-policy verdict?" — `gate_judge.run_gate_stage`'s never-re-judge filter (D-477
+    pt 5). Sharing the prefix read there made a policy bump unreachable: `p5-oracle-2` added
+    `seniority_fit` on 2026-09-13, every lead holding a `p5-oracle-1` row counted as already
+    judged, and the re-judge that `oracle.POLICY_VERSION`'s note assumed "simply wins" could never
+    be triggered — 434 of 505 standing apply-lane leads read `unclear` forever.
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
@@ -323,7 +334,9 @@ def current_gate_verdicts(
                 eligibility_inputs.c.profile_hash == profile_hash,
                 eligibility_inputs.c.rules_hash == rules_hash,
                 eligibility_evaluations.c.engine_kind == "llm",
-                eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+                eligibility_evaluations.c.engine_version == engine_version
+                if engine_version is not None
+                else eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
             )
             .group_by(eligibility_inputs.c.posting_version_id)
             .subquery()

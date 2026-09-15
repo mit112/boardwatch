@@ -786,3 +786,77 @@ def test_the_recorded_rank_is_the_rankers_own_and_not_a_post_liveness_index(
     )
     assert set(ranks.values()) < {1, 2, 3, 4, 5}
     assert len(set(ranks.values())) == 4, f"ranks must stay distinct: {ranks}"
+
+
+# ---------------------------------------------------------------------------
+# (i) a SUPERSEDED gate row is not "already judged" — D-512
+# ---------------------------------------------------------------------------
+
+
+def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The converse of (e), and the case that shipped broken.
+
+    `run_gate_stage`'s never-re-judge filter used to share the DISPLAY read, which matches
+    `engine_version LIKE 'final_gate:%'`. So a row written under a superseded
+    `oracle.POLICY_VERSION` counted as already judged and the lead could never be re-judged —
+    `p5-oracle-2` added `seniority_fit` on 2026-09-13 and 434 of 505 standing apply-lane leads
+    were still holding `p5-oracle-1` rows, reading `unclear` forever. The freshness test is now
+    keyed on the EXACT `gate_engine_version()`, so a superseded row no longer blocks a re-judge
+    while staying readable everywhere else.
+    """
+    from boardwatch.eligibility import final_gate as final_gate_mod
+    from boardwatch.eligibility.catalog import load_rules
+    from boardwatch.eligibility.facts import parse_facts, parse_policy
+    from boardwatch.eligibility.final_gate import record_gate_verdict
+    from boardwatch.eligibility.oracle import OracleVerdict
+    from boardwatch.store.queries import current_posting_versions, get_profile
+
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+
+    settings = load_settings(data_dir=env)
+    engine = get_engine(env)
+    catalog = load_rules(settings.config_dir)
+    with engine.connect() as conn:
+        versions = current_posting_versions(conn, [posting_id])
+        profile_row = get_profile(conn)
+    assert profile_row is not None
+    facts = parse_facts(profile_row.eligibility_facts_json)
+    policy = parse_policy(profile_row.eligibility_policy_json)
+    current = versions[posting_id]
+
+    stale_version = f"{final_gate_mod.GATE_VERSION_PREFIX}p5-oracle-0:p5-oracle-1"
+    with monkeypatch.context() as patched:
+        # Plant the row as a PRIOR POLICY would have written it. Patched on `final_gate` rather
+        # than `oracle` because `gate_engine_version` closes over this module's own binding.
+        patched.setattr(final_gate_mod, "POLICY_VERSION", "p5-oracle-0")
+        assert final_gate_mod.gate_engine_version() == stale_version
+        with engine.begin() as conn:
+            record_gate_verdict(
+                conn,
+                posting_version_id=current.posting_version_id,
+                jd_text=current.body_text,
+                facts=facts,
+                policy=policy,
+                catalog=catalog,
+                verdict=OracleVerdict(
+                    label=str(posting_id), decision="eligible", reason=None, evidence="",
+                    confidence="high",
+                ),
+            )
+    assert final_gate_mod.gate_engine_version() != stale_version, "patch must not leak"
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert fake_claude.exists(), (
+        "a lead whose only gate row is a SUPERSEDED policy must reach a request — sharing the "
+        "prefix-matched display read here is what stranded 434 leads on p5-oracle-1"
+    )
+    assert summary.gate_judged == 1, summary.gate_judged
+
+    # And the superseded row stays readable: the DISPLAY read is unchanged, still prefix-matched.
+    assert _current_gate_verdict(env, posting_id) is not None

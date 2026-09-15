@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, AND THE GATE BACKFILLED: **D-506 … D-511.** PRs #377, #378 both MERGED.
+### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, THE GATE BACKFILLED AND ITS FRESHNESS TEST FIXED: **D-506 … D-512.** PRs #377, #378 both MERGED.
 
 **Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
 Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
@@ -73,8 +73,15 @@ haiku / parser, two occasions: **`seniority_fit` 68.2%, `decision` 65.6%** agree
 stable, membership churns. **So D-507's 116 (23.0%) and tonight's 144 (28.5%) are the same
 measurement with different dice — neither is a stable list.** Confound named and testable: batch
 composition differs between runs. **Vindicates demote-not-delete; argues AGAINST `seniority_hold`
-actually withholding.** **Owed a ruling: fix the prefix match** so the nightly self-heals — residual
-cost is now only **~36 leads**.
+actually withholding.**
+
+**THE PREFIX MATCH IS FIXED — D-512.** D-511 called it a defect too broadly: the prefix is
+DELIBERATE and RIGHT for a display reader. The defect was ONE read serving TWO questions, so
+`current_gate_verdicts` now takes a keyword-only `engine_version` and **only `run_gate_stage`
+passes it**; the five display call sites and `current_gate_seniority` are untouched. Red-first test
+verified to FAIL against the reverted fix. **A `POLICY_VERSION` bump now RE-OPENS every lead for
+re-judging — the semantics the knob always claimed and never had, so bump it only when the corpus
+should be re-judged.** Residual ~36 leads.
 
 **Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 365 Tier 1 rows of
 which **345 are distinct work** (20 are rendered but marked duplicates — the sheet's "345" is that
