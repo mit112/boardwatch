@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, THE GATE BACKFILLED AND ITS FRESHNESS TEST FIXED: **D-506 … D-512.** PRs #377, #378 both MERGED.
+### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, THE GATE BACKFILLED, ITS FRESHNESS TEST FIXED, AND B8 RE-READ: **D-506 … D-513.** PRs #377, #378 both MERGED.
 
 **Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
 Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
@@ -82,6 +82,22 @@ passes it**; the five display call sites and `current_gate_seniority` are untouc
 verified to FAIL against the reverted fix. **A `POLICY_VERSION` bump now RE-OPENS every lead for
 re-judging — the semantics the knob always claimed and never had, so bump it only when the corpus
 should be re-judged.** Residual ~36 leads.
+
+**B8 IS NOT MET, AND WHAT IT READS WAS MIS-QUOTED — D-513.** `17.2%` (D-487, whole lane, 22/128) is
+the BAR reading; the `14.7%` this file quoted is a gate-judged SUB-CUT, so **B8 has never been
+cleared**. Re-read on D-503's sonnet+opus instrument over 160 standing apply-lane leads, **run twice
+on the IDENTICAL sample: 16.2% then 18.8%** — both FAIL. **The instrument's own spread is 2.6pp, so
+a ≤16% bar cannot be adjudicated by one reading**; inter-rater agreement (98.1% / 96.2%) shows the
+two models are ALIKE, not that the measurement is STABLE. **The miss is 28 seniority / 2 work_auth —
+93% seniority**, the least reliable signal in the system. Batch composition is RULED OUT as the
+cause of the judge's churn (same-grouping ≈ shuffled); it is model nondeterminism.
+
+**THE DECISION IS OPEN AND IS MIT'S — three options put to him 2026-09-15, none answered:**
+(1) apply `gate.seniority_hold` retroactively to the 505 standing leads (the same rule it already
+applies to NEW leads; would read ~1.5%, but costs ~140 leads out of his Tier 1 mid-apply-session, so
+**not done unilaterally**); (2) record B8 NOT MET and call done on D-280's provisional pass (B1–B7 +
+P5b, met on runs 6–8), carrying B8 as debt; (3) re-set the bar, his under D-477. **Nothing was
+mutated** — the lane, queue and config are untouched.
 
 **Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 365 Tier 1 rows of
 which **345 are distinct work** (20 are rendered but marked duplicates — the sheet's "345" is that
@@ -173,7 +189,7 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
   armed and WORKING**, and its 50-board sample is **reverted** (D-456) — watched boards 482 → 432,
   then 490 after run 149's Indeed convergences. Remaining tier-D lanes are **DECIDED AGAINST**, not
   deferred (D-451).
-- **Provisional pass: recorded MET on runs 6, 7, 8 (D-483) — but runs 7 and 8's own funnels read `DOES NOT RECONCILE` (B6) through the reporting gap T60 closes (D-489); whether they stand is Mit's ruling.** 14-day confirm: day 1 = run 9 (2026-09-06 06:00 CDT, clean tick, same gap), passive. **B8 first reading (D-487): 17.2% on n = 128, 14.7% gate-judged; bar ≤ 16%.**
+- **Provisional pass: recorded MET on runs 6, 7, 8 (D-483) — but runs 7 and 8's own funnels read `DOES NOT RECONCILE` (B6) through the reporting gap T60 closes (D-489); whether they stand is Mit's ruling.** 14-day confirm: day 1 = run 9 (2026-09-06 06:00 CDT, clean tick, same gap), passive. **B8 (D-487): 17.2% on n = 128 is the BAR reading; 14.7% is a gate-judged SUB-CUT, not the bar (D-513). Re-read 2026-09-15: 16.2% then 18.8% on the same 160. NOT MET.**
   Not chased (D-351 item 2: work comes first), and every `rules_hash` bump restarts the count.
 
 ## Live blockers and carried gaps
