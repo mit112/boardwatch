@@ -3157,3 +3157,110 @@ alternative that actually bounds it.
 `.agent/2026-09-02-session/per_source_recall.py`. Standing at **28.8%** (5,838/20,289), lane-only
 7,984, absent 7,508.
 
+---
+
+## The two 2026-09-13 close blocks, moved WHOLE from STATE.md on 2026-09-14b
+
+Settled: run 308 read every prediction in them and tonight's session superseded the open items.
+Nothing was deleted or summarised.
+
+### 2026-09-13 close (c) — THE SENIORITY LEVER, RULE (b), THE 243 RENDERS, AND THE THRESHOLDS RULED: **D-504, D-505.** PR #375.
+
+**Mit gave full authority for everything on the previous close's list, and all of it is done.**
+
+**The apply lane's bottleneck MOVED, and that is the session's real finding (D-504).** After 0-B,
+the dominant residual defect is not eligibility at all — **`seniority_fit` is 60% of the audit's
+unapplyable calls and 13 of the 14 in the promoted cohort** — and the title ladder cannot see it,
+because **every audited item read `in_band`**. So the judge that already reads the whole JD is asked
+`seniority_fit` beside its verdict (never inside it: no verdict, no `rules_hash`, **the confirm is
+not restarted**), and a `no` holds under its own reason `seniority_judged_above_band`.
+**SHIPPED DISARMED** — validated against sonnet and opus on 149 items, haiku catches **14 of 15**
+senior bodies and invents **18 of 134**, so arming projects **457 @ 16.3% → 364 @ 9.0%, volume
+−20%**. That trade is Mit's; `gate.seniority_hold = true` is one line, needs no re-judge, and the
+reading accumulates either way so it can be re-measured live first. **This is the open
+recommendation: ARM IT** — 9.0% clears B8's ≤ 16% bar with room, and a held lead is still delivered.
+
+**The 243 promoted leads all have résumés now, and the drain was recorded WRONG.**
+`boardwatch tailor run <id>` alone returns `page_limit_exceeded` on every lead — it renders the
+authored résumé, which does not fit the page budget. The real drain is **two** commands
+(`resume project` then `tailor run --resume`), ~5.1 s. Ran over all 243: **243 ok, 0 failed**;
+verified through `delivered_unapplied` at **244 with a PDF, 0 missing**. The `runner.py` comment is
+corrected.
+
+**0-D's repair half needs NO CODE.** Re-measured, the population GREW through run 57 (112 → 123
+overwrites, 301 → 302 `raw_json`) — but **118 of the 123 are on WATCHED boards**, where the scan
+already revises them every run and the lane simply overwrote it again afterwards. With the
+declaration shipped the board body wins, so it drains itself. **Prediction for run 64: both counts
+fall toward 0.** Residual: 5 postings on unwatched boards, measured and accepted.
+
+**D-498 rule (b) shipped** (highest-ranked lane copy survives a lanes-only group).
+
+**PR #375 is MERGED.** `main` carries all of it and the editable venv the tick runs is on it.
+**Run 308 read it — see the block above.** What that close asked for: (1) the 04:00 tick, confirm
+day 9 — and read it against four changed behaviours: a bigger apply lane and smaller review lane
+(0-B), `hidden_lane_copy` non-zero (0-C + rule (b)), 484 boards, and the 0-D drain prediction above.
+`seniority_judged_above_band` should be an EMPTY bucket until Mit arms it. (3) **Arm
+`gate.seniority_hold`?** — Mit's, recommended yes, numbers above. (4) **The second Gate 1 reading is
+owed ~09-19** and it is the LAST condition on M4: with D-505 ruling no bar for Indeed and
+hiring.cafe, the employer-board half alone decides, and all four boards already clear 85%. If the
+second reading holds, **job-apps switches off**. (5) Still open from D-494: seed the cluster cap
+from the standing queue; ratify `apple`'s `board_reported_total = None`.
+
+### 2026-09-13 close (b) — MIT'S FOUR OWNER CALLS TAKEN AT SESSION START AND ALL FOUR EXECUTED: **D-502, D-503.** PR #374.
+
+**The batch, and the answers.** 0-B promote the two requirement holds, blind-audit first. 0-C rule (a)
+only. 0-D declare on the converging lanes. Retail: drain and drop. Every one is now shipped, gated
+(`make check` exit 0, zero failures) and on PR #374. **Nothing moved `engine_version` or `rules_hash`,
+so the 14-day confirm is NOT restarted.**
+
+**0-D shipped NARROWER than the ruling, because D-500's premise was wrong for two of the three lanes
+(D-502).** hiring.cafe appends the PROVIDER's own `RawPosting` verbatim — only its recorded
+`source_url` is the aggregator's, because the lane owns the GET — and `jsonld` has never converged
+onto a board posting at all; declaring either would freeze firsthand data. **job-apps IS the defect**:
+612 `revised` versions onto board postings, ALL tier 1, and the board's very next reading reverted
+**87 of 436 (20.0%)** by more than half the body. Tier 1 declares `CONVERGED_SECONDHAND`; tiers 2 and
+3 declare nothing. The REPAIR half (117 overwritten bodies, 301 lane-payload `raw_json` rows) is NOT
+done — Mit chose the declaration, not the repair, and it stays available.
+
+**0-B shipped BEHIND the audit Mit required, and the audit is the reason it is safe (D-503).** Three
+arms of 56 shuffled into one pool, judges **sonnet and opus** (never haiku, the production judge under
+test), 96.4% inter-rater agreement: **the apply lane as it stands 21.4% unapplyable, `experience_requirement` + judge 1.8%, `no_requirements_found` + judge 16.1%** — so promoting 248
+leads into 209 gives **457 at 16.3%**, moving B8 toward its ≤ 16% bar instead of away from it. D-458's
+**32%** for the same silent-clear class collapses to **16.1%** once the judge filters it, which is the
+claim that was under test. It releases those two holds ONLY; `eligibility_unconfirmed` stands because
+an abstain is not evidence. **No seniority refinement exists** — 13 of the 14 `nrf` failures are
+`seniority_fit` and every item in all three arms reads `in_band`, so the title ladder cannot see them.
+Report: `.agent/2026-09-13-session/promotion-audit/REPORT.md`.
+
+**0-C shipped as rule (a):** 17 of the 34 multi-member `cross_host` groups on the 589-lead standing
+queue, own bucket `shortlist.hidden_lane_copy`, `top --include-lane-copy` drain, keyed on
+`PROVIDER_NAMES` and not `classify_host`.
+
+**The three retail boards are GONE. Fleet 487 → 484, 6,884 postings closed, 3 residual open.** Measured
+first against a control: 0 leads ever delivered from any of the three. Abbott stays (7 delivered).
+
+**PR #374 is MERGED and main's CI is green.** `main` is `78068ef9`; the editable venv the tick runs
+carries all three changes.
+
+**Next action.** (1) Read the 04:00 tick on 09-14. **It is run 308** — superseded twice in one day:
+the retail drain wrote 58–63 (six `boardwatch scan` invocations) and the 243 promoted renders then
+wrote **64–307**, because **`resume project` and `tailor run` each open a run row too**. That is the
+wider rule, and it is the second time in two sessions the tick's number was predicted wrong: **any
+CLI command that builds a context writes a run**, not just `scan`, so predict the next tick's number
+by reading `max(runs.id)` at the END of a session, never by adding one to the last tick. It is **confirm day 9** whichever number it carries; only the tick
+counts toward the confirm, a hand scan never does. Read it knowing THREE delivery behaviours changed:
+expect a bigger apply lane and a smaller review lane (0-B — **244 standing folders move `_review` →
+apply on the first reconcile, all with `pdf_missing`**, see the résumé item below), `hidden_lane_copy`
+non-zero in the funnel (0-C), and 484 watched boards. Also on the list: the reach line's `stale` (139
+on run 57, 26–42 before) and the T78 nightly count (2 of 10 if green). (2) **The Indeed and hiring.cafe per-source THRESHOLD is the only
+M4 item left and is still Mit's** — the numbers are in hand (24.9% / 22.1%, D-499) and the
+recommendation put to him is NO BAR on either, same as LinkedIn, on the ground that they are reach
+lanes into employers no board covers. (3) **The 244 promoted folders carry no résumé and were deliberately NOT rendered.** They were
+delivered `pending_tailor`, and the tailor loop only renders the current run's shortlist, so no run
+will pick them up. The drain is `boardwatch tailor run <posting_id>`, ~4.35 s each (~18 min for 244).
+Held because **Mit's per-lens formatting session is still owed** (open questions item 3) — rendering
+244 documents in a format he has not signed off is the wrong order. His call. (4) Still open from
+D-494: seed the cluster cap from the standing queue; ratify `apple`'s `board_reported_total = None`.
+(5) D-498's rule (b) (+18) and 0-D's REPAIR half (117 bodies, 301 `raw_json` rows) are sized and
+unbuilt — neither was ruled on.
+

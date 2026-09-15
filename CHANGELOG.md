@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A delivered lane copy whose employer-board twin is standing now DRAINS (D-506).** D-498 rule
+  (a) drops the aggregator's copy of a job when the employer's own board copy is in front of the
+  owner — but it runs in the ranker, so it only ever stopped a redundant copy being *delivered*.
+  The ones delivered before it shipped stayed. Measured over 670 standing leads: **17 lane copies
+  whose board twin is also standing**, 15 of them sharing a byte-identical `postings.url` and none
+  sharing a `companies` row, which is why `exact_quad` — keyed on `company_id` — structurally
+  cannot fire. They now drain to `_lane_copy`, seeded by the same
+  `standing_board_cross_host_keys` rule (a) uses rather than a second definition of "the employer's
+  own copy". `cross_host` still suppresses nothing (§3.1): the provider test excludes every
+  employer-board row, so four same-title Redmond requisitions are untouched, and that case is the
+  pinned discriminating test. The drain runs on both sides — when the board twin stops holding
+  (applied, skipped, reported, or closed) the lane copy returns on the next reconcile. It ranks
+  below `ineligible` and above `review`, and holds no slate slot.
+- **The gate's body-seniority reading is rendered on an apply-lane row.**
+  `judge_seniority_above_band` had been on the wire since D-504 and nothing displayed it — the
+  TypeScript row type did not even declare the field. On a review row the reading already arrives
+  as `review_reason`, so this only ever mattered on an apply row, which is exactly the case that
+  exists while `gate.seniority_hold` is off and the reading is recorded without being acted on.
+  There it was invisible, and a recorded reading nobody can see is a monitoring failure. The badge
+  is suppressed where the review badge already says the same thing, and the field is optional on
+  the wire because a long-lived viewer can serve a bundle newer than its own API.
+
 - **The judge is asked whether the BODY reads senior, and can hold on it (D-504).**
   `seniority_fit ∈ {yes,no,unclear}` rides beside the gate's verdict and never inside it, so no
   verdict, `rules_hash` or `engine_version` moves. A `no` holds the lead for review under its own
