@@ -57,6 +57,23 @@ lane was **505 → 488**, and `yes`/`eligible` were each one low. **`116/505 = 2
 headline and D-507's framing are UNCHANGED, and the owner's worklist audits CLEAN** (tier `1b` is
 exactly the union of 116 + 32 + 17 = 140, zero unexplained, zero leak into tier 1). No code changed.
 
+**WEB IS NOW AT PARITY WITH THE SHEET, AND THE REASON IT WAS NOT IS A DEFECT — D-511.**
+`current_gate_verdicts` matches `engine_version` by **PREFIX** (`final_gate:%`) and `run_gate_stage`
+uses it as the never-re-judge test, so the 09-13 `seniority_fit` policy bump left **434 of 505
+apply-lane leads and 686 store-wide permanently unreachable** — reading `unclear` forever, and **no
+nightly run would ever have fixed it.** Owner ruled judge-the-lane-now; **797 judged, 0 failed
+open** (runs **427–430**), store-wide stale **686 → 36**. Web serves apply lane **144** above band
+(was 11), review lane 101. **19 apply-lane leads are now gate-`ineligible` and will drain on the
+next reconcile while the sheet still lists them.**
+
+**THE JUDGE DOES NOT REPRODUCE, and this outranks the parity work.** Same 462 leads, same prompt /
+haiku / parser, two occasions: **`seniority_fit` 68.2%, `decision` 65.6%** agreement. Marginals are
+stable, membership churns. **So D-507's 116 (23.0%) and tonight's 144 (28.5%) are the same
+measurement with different dice — neither is a stable list.** Confound named and testable: batch
+composition differs between runs. **Vindicates demote-not-delete; argues AGAINST `seniority_hold`
+actually withholding.** **Owed a ruling: fix the prefix match** so the nightly self-heals — residual
+cost is now only **~36 leads**.
+
 **Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 365 Tier 1 rows of
 which **345 are distinct work** (20 are rendered but marked duplicates — the sheet's "345" is that
 net figure, verified correct on review) / 140
@@ -64,7 +81,7 @@ Tier 1b demoted / 163 Tier 2, artifacts copied locally so links survive a reconc
 do NOT reach boardwatch — applications need `boardwatch track add <posting_id>`.
 
 **Next action.** (1) **Read the 04:00 tick on 09-15 — read `max(runs.id)` for its number, do not
-guess it**; this session's renders, harvest and import took it to **426**, so expect **427**. It is
+guess it**; the gate backfill minted **427–430**, so expect **431**. It is
 **confirm day 10 of 14**. Watch `seniority_judged_above_band` now the hold is ARMED, and
 `to_lane_copy` on the first unattended reconcile. (2) **The second Gate 1 reading is owed ~09-19 and
 is the LAST condition on M4** — D-505 ruled no bar for Indeed and hiring.cafe, so the employer-board
