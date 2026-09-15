@@ -405,6 +405,12 @@ def standing_slate_keys(
       deferral with a live end condition and not a hole.
     * **`review` is KEPT** for the plainest reason of all: a lead awaiting the owner's look IS in
       front of the owner. It is what the phrase means.
+    * **`lane_copy` is EXCLUDED**, and for the opposite reason to `ineligible`. The lead is not in
+      front of the owner — its employer-board twin is, and that twin is a delivered lead holding
+      the slot itself. Keeping both would let one job hold two slots and suppress a second,
+      distinct posting for as long as the pair stood. The release condition is live: the moment
+      the board twin stops holding, `lane_copy_job_ids` stops returning the lane copy and it
+      ranks again.
 
     **That list is `delivery.names.DRAIN_DIRS`, and this is the SECOND place the program decides
     what a drain means** — `queue._wanted_location` ranks the same six into folders. Two ladders
@@ -571,6 +577,68 @@ def standing_board_cross_host_keys(
         if posting_id not in held.setdefault(key, []):
             held[key].append(posting_id)
     return {key: tuple(ids) for key, ids in held.items()}
+
+
+def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
+    """`job_id` for every delivered LANE copy whose employer-board twin is also standing.
+
+    D-498 rule (a)'s missing half. That rule drops a lane's copy of a posting when the employer's
+    own board copy is on the slate or standing in the queue — but it runs in the RANKER, so it
+    stops a redundant copy being delivered and does nothing about the ones delivered before it
+    shipped. Measured 2026-09-14 over 670 standing leads: **17 lane copies whose employer-board
+    twin is also standing**, every one of them a `jobapps` row beside a greenhouse / eightfold /
+    oraclehcm row. A quarantine with no drain on the standing side is the gap this closes.
+
+    **The seed is `standing_board_cross_host_keys`, reused rather than restated**, so the ranker
+    and the queue answer "is the employer's own copy already in front of the owner?" from ONE
+    definition. Everything that docstring settles holds here unchanged: the employer-board test is
+    `companies.provider in PROVIDER_NAMES` and never the URL host class, because the job-apps lane
+    writes the employer's own apply URL and `classify_host` therefore reads a lane copy as `ats`.
+
+    **`cross_host` still suppresses nothing (§3.1, D-494).** No identity claim is made and no
+    posting is suppressed in the store; this reads the same grouping to decide which of two
+    already-grouped leads to put in front of the owner. §3.1's counterexample — Microsoft's four
+    same-title Redmond requisitions — is four EMPLOYER-BOARD rows, and the provider test excludes
+    every one of them, so this can no more collapse them than rule (a) can.
+
+    **It self-heals in both directions with no extra machinery**, which is the property that makes
+    it a deferral and not a hole. The set is recomputed every reconcile from
+    `standing_board_cross_host_keys`, whose own ladder stops a board copy holding once the owner
+    applies, skips or reports it, or the requisition closes. When the board copy stops holding, the
+    lane copy is drawn straight back out of `_lane_copy` on the next pass — the same shape
+    `closed_job_ids` has.
+
+    A bare set, like `closed_job_ids` and `review_job_ids`: `_wanted_location` asks only whether
+    the job is in it. Naming WHICH lead supersedes this one would be better for a reader auditing
+    the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is versioned, so
+    it is left for whoever wants it rather than carried unused here.
+    """
+    held = standing_board_cross_host_keys(conn, skipped=skipped)
+    if not held:
+        return set()
+    holder_of: dict[str, int] = {key: ids[0] for key, ids in held.items() if ids}
+    # Joined outward from the delivered rows, binding no id list: this module hit SQLite's
+    # 32,766 bound-parameter cap at six call sites on 2026-08-23 and the drain sets have been
+    # applied in Python over joined rows ever since.
+    rows = conn.execute(
+        _delivered_select()
+        .add_columns(companies.c.provider, posting_identities.c.identity_key)
+        .join(
+            posting_identities,
+            (posting_identities.c.posting_id == postings.c.id)
+            & (posting_identities.c.kind == "cross_host"),
+        )
+        .where(postings.c.status == "open", postings.c.job_id.is_not(None))
+    ).all()
+    out: set[int] = set()
+    for row in rows:
+        if str(row.provider) in PROVIDER_NAMES:
+            continue
+        holder = holder_of.get(str(row.identity_key))
+        if holder is None or holder == int(row.posting_id):
+            continue
+        out.add(int(row.job_id))
+    return out
 
 
 def closed_job_ids(conn: Connection) -> set[int]:
