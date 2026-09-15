@@ -545,6 +545,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A gate policy bump now actually reaches the leads it should re-judge (D-512).**
+  `run_gate_stage`'s never-re-judge filter (D-477 pt 5) shared the DISPLAY read
+  `current_gate_verdicts`, which matches `engine_version LIKE 'final_gate:%'`. That prefix is
+  deliberate and correct for a display reader — a verdict recorded under a superseded policy is
+  still the best thing known about a lead, and dropping it would blank `judge_verdict` in the
+  viewer rather than inform it. It is wrong for the one caller asking *"does this lead already hold
+  a CURRENT-POLICY verdict?"*. Sharing it there meant a bump to `oracle.POLICY_VERSION` could never
+  reach a lead judged under the old one, so the re-judge that bump's own note assumed would "simply
+  win" could not be triggered at all. When `p5-oracle-2` added `seniority_fit` on 2026-09-13,
+  **434 of 505 standing apply-lane leads and 686 store-wide on open postings** were stranded
+  reading `seniority_fit = unclear` (fail-open), and **no nightly run would ever have reached
+  them** — a run's "judged N" counts new arrivals, so the number looks like backlog progress when
+  there is none. `current_gate_verdicts` now takes a keyword-only `engine_version`; `None` keeps
+  the prefix and **only `run_gate_stage` passes the exact `gate_engine_version()`**. The five
+  display call sites and the `current_gate_seniority` sibling are untouched. **Consequence worth
+  stating: a `POLICY_VERSION` bump now re-opens every lead for re-judging** — the semantics the
+  knob always advertised ("bump either to force a clean re-judge") and never had — so bump it only
+  when the corpus should be re-judged; the comment at the bump site now says so.
+
 - **A converged job-apps hit no longer replaces the employer's own body (0-D, D-502).** The lane's
   tier-1 identity is the board's own `(company_id, provider_posting_id)`, so D25 refreshed every
   provider-sourced column from job-apps' rendering of the employer's page — `body_text` included,

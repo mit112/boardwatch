@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, THE GATE BACKFILLED, ITS FRESHNESS TEST FIXED, AND B8 RE-READ AND NOW MET: **D-506 … D-514.** PRs #377, #378 both MERGED.
+### 2026-09-14b → 2026-09-15 — **B8 IS MET, SO EVERY BAR IS NOW CLEAR EXCEPT TWO DATED READINGS ON 09-19.** The apply lane read end to end; ≤1-YoE harvested; applied history imported; rule (a) drained; the session then REVIEWED, the gate BACKFILLED, its freshness test FIXED, and B8 re-read and MET: **D-506 … D-514.** PRs #377, #378, #379 all MERGED.
 
 **Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
 Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
@@ -114,16 +114,29 @@ net figure, verified correct on review) / 140
 Tier 1b demoted / 163 Tier 2, artifacts copied locally so links survive a reconcile. Its checkboxes
 do NOT reach boardwatch — applications need `boardwatch track add <posting_id>`.
 
-**Next action.** (1) **Read the 04:00 tick on 09-15 — read `max(runs.id)` for its number, do not
-guess it**; the gate backfill minted **427–430**, so expect **431**. It is
-**confirm day 10 of 14**. Watch `seniority_judged_above_band` now the hold is ARMED, and
-`to_lane_copy` on the first unattended reconcile. (2) **The second Gate 1 reading is owed ~09-19 and
-is the LAST condition on M4** — D-505 ruled no bar for Indeed and hiring.cafe, so the employer-board
-half alone decides and all four already clear 85%. If it holds, **job-apps switches off.** (3) Still
-open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
-`board_reported_total = None`. (4) NOT built, sized only: ATS sort in `boardwatch web` needs
-`provider` carried store → API → type → sort (never the URL host class, `delivery_queries.py:527`);
-and `details.json` naming WHICH lead supersedes a drained lane copy (`DETAILS_SCHEMA` is versioned).
+**Next action — THE PROGRAM IS DOWN TO TWO DATED READINGS, BOTH 2026-09-19. BUILD NOTHING UNTIL
+THEY LAND; M5's exit says so explicitly.**
+
+1. **Read the 04:00 tick each morning. Read `max(runs.id)` for its number, do not guess it** — run
+   431 (09-15) was the last, so expect **432** on 09-16 unless a hand command minted one.
+   **Run 432 is the first tick carrying D-512**, so it should re-judge the ~36 remaining stale
+   leads and then find none — that is the observable proof the fix works, and it is worth checking
+   once rather than assuming.
+2. **M4: the second Gate 1 reading, owed ~09-19, is the LAST condition.** D-505 ruled no bar for
+   Indeed, LinkedIn and hiring.cafe, so the employer-board half alone decides and all four already
+   clear 85% (D-499). **If it holds, job-apps switches off.**
+3. **M5: confirm day 14 is 09-19.** Day 10 read clean on 09-15 with no missing day and
+   reconciliation `True` on every run since 09-07. Nothing to do but let ticks accumulate.
+4. **FIRST THING AFTER 09-19, and not before:** move the gate judge off haiku. **D-477 already
+   specified Sonnet**, with haiku conditional on ≥ 90% agreement with the 95 stored verdicts — a
+   test haiku would **not** pass today (D-511 measured it at 65.6% self-agreement on `decision`).
+   The cost is live: the seniority hold demotes **~26 applyable leads per 160** alongside the
+   unapplyable ones (D-514). This is a BUILD, so it waits for the window to close.
+5. Still open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
+   `board_reported_total = None`. NOT built, sized only: ATS sort in `boardwatch web` needs
+   `provider` carried store → API → type → sort (never the URL host class,
+   `delivery_queries.py:527`); and `details.json` naming WHICH lead supersedes a drained lane copy
+   (`DETAILS_SCHEMA` is versioned).
 
 ### Owed, and specifically NOT done
 
