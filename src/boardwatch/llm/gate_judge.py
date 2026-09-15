@@ -27,6 +27,7 @@ from sqlalchemy import Engine
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts, parse_policy
+from boardwatch.eligibility.final_gate import gate_engine_version
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import OracleVerdict, OracleVerdictError, accept_oracle_verdict
 from boardwatch.eligibility.preflight import current_identity
@@ -289,10 +290,17 @@ def run_gate_stage(
             return leads, GateStageResult()
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
         already_gated = current_gate_verdicts(
-            conn, [v.posting_version_id for v in versions.values()], *identity
+            conn, [v.posting_version_id for v in versions.values()], *identity,
+            engine_version=gate_engine_version(),
         )
     # Never re-judge (D-477 point 5): a lead with a current gate row under this identity is
     # skipped entirely — it never enters a request, let alone a `claude` call.
+    #
+    # `engine_version` is EXACT here, not the prefix the display readers use (D-512). "Current"
+    # has to mean current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that
+    # was judged under the old one — which is what stranded 434 of 505 apply-lane leads on
+    # `p5-oracle-1` after `seniority_fit` shipped. A superseded verdict stays readable everywhere
+    # else; it just no longer counts as "already judged".
     to_judge = [p for p in leads if p.posting_id not in already_gated]
     if not to_judge:
         return leads, GateStageResult()

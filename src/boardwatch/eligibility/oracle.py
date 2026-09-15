@@ -40,6 +40,16 @@ from boardwatch.lanes.quality import is_employer_body
 # verdict recorded under `p5-oracle-1` stays readable and a re-judge simply wins. Nothing owes a
 # ledger drain — the six-family `decision` this version records is byte-for-byte the judgment the
 # previous one recorded; what is new rides BESIDE it and no rule reads it as eligibility.
+#
+# CORRECTED 2026-09-15 (D-512). The paragraph above is right about READABILITY and about the
+# drain, and wrong about "a re-judge simply wins" — nothing could trigger one.
+# `gate_judge.run_gate_stage` used that same prefix-matched read as its never-re-judge filter
+# (D-477 pt 5), so a `p5-oracle-1` row counted as already judged and the lead was never offered to
+# the judge again. Measured cost: 434 of 505 standing apply-lane leads, and 686 store-wide on open
+# postings, sat on the superseded policy reading `seniority_fit = unclear` (fail-open) for two
+# days, and no nightly run would ever have reached them. The freshness test is now keyed on the
+# EXACT `gate_engine_version()`; the display readers keep the prefix. So a bump here DOES now
+# invalidate for re-judging purposes — bump it only when the new policy should re-open every lead.
 POLICY_VERSION = "p5-oracle-2"
 PROMPT_VERSION = "p5-oracle-1"
 
