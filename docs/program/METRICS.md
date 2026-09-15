@@ -243,7 +243,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 13832 | Session — 2026-09-13 · four owner rulings taken at session start and all four EXECUTED: the retail boards drained and dropped, 0-D corrected to job-apps alone, 0-C shipped, and 0-B shipped behind a three-arm blind audit that moves B8 from 21.4% to 16.3% |
 | METRICS.md | 13894 | Session — 2026-09-13b · the seniority lever built and validated (and shipped disarmed), rule (b), the 243 promoted renders, and the thresholds ruled |
 | METRICS.md | 14013 | Session — 2026-09-15 · the gate backfill, the freshness fix, and B8 re-read on the calibrated instrument |
-| METRICS.md | 14066 | Session — 2026-09-14b · the whole apply lane read by the judge, the ≤1-YoE harvest, the applied-history import, and rule (a)'s standing-side drain |
+| METRICS.md | 14088 | Session — 2026-09-14b · the whole apply lane read by the judge, the ≤1-YoE harvest, the applied-history import, and rule (a)'s standing-side drain |
 | METRICS.md | 13945 | Run 308 — 2026-09-14 04:00 tick, confirm day 9: the first tick on 0-B, 0-C, rule (b), 0-D and the retail drop, and every one of the session's five predictions held |
 | METRICS.md | 13983 | Nightly 2026-09-14 RED, decomposed and half of it FIXED — a Windows-only regression the merge gate structurally could not see |
 
@@ -14012,7 +14012,7 @@ the count is a call the next session should make and write down. Count stood at 
 
 ## Session — 2026-09-15 · the gate backfill, the freshness fix, and B8 re-read on the calibrated instrument
 
-### B8's precision half — SECOND and THIRD readings (D-513)
+### B8's precision half — four readings, and it is MET after the drain (D-513, D-514)
 
 Instrument: D-503's, verbatim — sonnet + opus, blind, `--tools ""`, `unapplyable` = the 2026-09-06
 definition (`ineligible` carrying a resolving quote, OR any fit `no`), counted only when **both**
@@ -14024,8 +14024,30 @@ persisted, no run minted.
 | D-487 (2026-09-06, two sonnet passes) | 128 | — | **17.2%** | FAIL |
 | this session, first | 160 | 98.1% | **16.2%** | FAIL |
 | this session, second — IDENTICAL SAMPLE | 160 | 96.2% | **18.8%** | FAIL |
+| **post-drain, first** (lane 366) | 160 | 98.1% | **6.9%** | **PASS** |
+| **post-drain, second — IDENTICAL SAMPLE** | 160 | 96.2% | **5.6%** | **PASS** |
 
-**0 batches dropped in either reading.** `14.7%` is NOT the bar — it is D-487's gate-judged sub-cut.
+**0 batches dropped in any of the four readings.** `14.7%` is NOT the bar — it is D-487's
+gate-judged sub-cut.
+
+**B8's precision half is MET.** The two post-drain readings sit ~10pp under the bar and 1.3pp apart,
+so unlike the pre-drain pair (16.2% / 18.8%, straddling it) this one survives the instrument's own
+spread. **The drain was decided by haiku (production) and measured by sonnet + opus (independent),
+so the audit is not fitted to the change it scores.**
+
+**Nothing was done by hand to achieve it.** Run 431's 04:00 reconcile moved the leads itself: the
+2026-09-14 backfill persisted the `seniority_fit` readings the armed `gate.seniority_hold` had never
+had, and the hold then routed them. **Apply lane 488 → 366; `_review` 163 → 340, of which 244 carry
+`seniority_judged_above_band`.** This repeats nightly rather than being a one-off intervention.
+
+| post-drain driver | n |
+|---|---:|
+| seniority (`fit = no`) | 8–10 |
+| `ineligible` | 1 (`clearance`) |
+
+**Cost, stated because it is real:** the hold also demotes ~26 applyable leads per 160 — haiku's
+68% self-consistency cuts both ways. They keep their rendered résumés and sit in review, so the
+lane is smaller than it strictly needs to be rather than the leads being lost.
 
 **The instrument's own spread is 2.6pp on identical inputs**, so a ≤ 16% bar cannot be adjudicated
 by a single reading. High inter-rater agreement (96–98%) measures that the two models are ALIKE,

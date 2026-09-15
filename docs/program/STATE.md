@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, THE GATE BACKFILLED, ITS FRESHNESS TEST FIXED, AND B8 RE-READ: **D-506 … D-513.** PRs #377, #378 both MERGED.
+### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, THE GATE BACKFILLED, ITS FRESHNESS TEST FIXED, AND B8 RE-READ AND NOW MET: **D-506 … D-514.** PRs #377, #378 both MERGED.
 
 **Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
 Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
@@ -92,12 +92,21 @@ two models are ALIKE, not that the measurement is STABLE. **The miss is 28 senio
 93% seniority**, the least reliable signal in the system. Batch composition is RULED OUT as the
 cause of the judge's churn (same-grouping ≈ shuffled); it is model nondeterminism.
 
-**THE DECISION IS OPEN AND IS MIT'S — three options put to him 2026-09-15, none answered:**
-(1) apply `gate.seniority_hold` retroactively to the 505 standing leads (the same rule it already
-applies to NEW leads; would read ~1.5%, but costs ~140 leads out of his Tier 1 mid-apply-session, so
-**not done unilaterally**); (2) record B8 NOT MET and call done on D-280's provisional pass (B1–B7 +
-P5b, met on runs 6–8), carrying B8 as debt; (3) re-set the bar, his under D-477. **Nothing was
-mutated** — the lane, queue and config are untouched.
+**RESOLVED — B8 IS NOW MET (D-514), AND THE PRODUCTION PATH DID IT UNPROMPTED.** Mit ruled "go with
+your rec" (apply the hold retroactively); reading the queue first showed **run 431's 04:00 reconcile
+had already done it** — D-511's backfill gave the armed hold the readings it had never had. **Apply
+lane 488 → 366; `_review` 163 → 340, of which 244 are `seniority_judged_above_band`.** No folders
+were moved by hand and **it repeats nightly**.
+
+**Post-drain B8: 6.9% then 5.6%** on the identical 160-lead sample, 0 batches dropped, ~10pp clear
+of the ≤16% bar and 1.3pp apart — where the pre-drain pair (16.2% / 18.8%) straddled it. **The drain
+is decided by haiku (production) and measured by sonnet+opus (independent), so the audit is not
+fitted to the change it scores.** Residual: 8–10 seniority + 1 `clearance`.
+
+**The cost is real: the hold also demotes ~26 APPLYABLE leads per 160** — a 68%-consistent signal
+cuts both ways. They keep their rendered résumés in `_review`. **The principled fix is a stronger
+gate judge** (D-477 specified Sonnet; haiku was conditional on ≥90% agreement it would fail today)
+— **not built, because M5's exit forbids building in the confirm window.**
 
 **Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 365 Tier 1 rows of
 which **345 are distinct work** (20 are rendered but marked duplicates — the sheet's "345" is that
@@ -189,7 +198,7 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
   armed and WORKING**, and its 50-board sample is **reverted** (D-456) — watched boards 482 → 432,
   then 490 after run 149's Indeed convergences. Remaining tier-D lanes are **DECIDED AGAINST**, not
   deferred (D-451).
-- **Provisional pass: recorded MET on runs 6, 7, 8 (D-483) — but runs 7 and 8's own funnels read `DOES NOT RECONCILE` (B6) through the reporting gap T60 closes (D-489); whether they stand is Mit's ruling.** 14-day confirm: day 1 = run 9 (2026-09-06 06:00 CDT, clean tick, same gap), passive. **B8 (D-487): 17.2% on n = 128 is the BAR reading; 14.7% is a gate-judged SUB-CUT, not the bar (D-513). Re-read 2026-09-15: 16.2% then 18.8% on the same 160. NOT MET.**
+- **Provisional pass: recorded MET on runs 6, 7, 8 (D-483) — but runs 7 and 8's own funnels read `DOES NOT RECONCILE` (B6) through the reporting gap T60 closes (D-489); whether they stand is Mit's ruling.** 14-day confirm: day 1 = run 9 (2026-09-06 06:00 CDT, clean tick, same gap), passive. **B8 (D-487): 17.2% on n = 128 is the BAR reading; 14.7% was a gate-judged SUB-CUT (D-513). Pre-drain re-read 16.2% / 18.8% = NOT MET; POST-DRAIN 6.9% / 5.6% = **MET** (D-514).**
   Not chased (D-351 item 2: work comes first), and every `rules_hash` bump restarts the count.
 
 ## Live blockers and carried gaps
