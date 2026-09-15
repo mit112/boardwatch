@@ -14016,14 +14016,18 @@ actually opens, not the `eligible` verdict.
 
 ### The apply lane, read END TO END by the production judge
 
-506 leads, 39 batches of 13, same prompt / model / parser / `CLAUDE_CONFIG_DIR` as the armed gate.
+505 leads, 39 batches of 13, same prompt / model / parser / `CLAUDE_CONFIG_DIR` as the armed gate.
 **0 batches failed open.** NOT persisted — D-477 point 5 forbids re-judging and 476 already carried
 a gate row, so this is a reading (D-507).
 
+**Three figures in this block were corrected on review — see D-510.** The lane was **505**, not 506
+(an empty `.staging-` directory was counted as a lead); `yes` is **286**, not 285; `eligible` is
+**368**, not 367. Both columns now sum to 505. **`116 / 505 = 22.97%`, so 23.0% is unchanged.**
+
 | `seniority_fit` | n | | `decision` | n |
 |---|---:|---|---|---:|
-| **no (above band)** | **116 (23.0%)** | | eligible | 367 |
-| yes | 285 | | uncertain | 105 |
+| **no (above band)** | **116 (23.0%)** | | eligible | 368 |
+| yes | 286 | | uncertain | 105 |
 | unclear (no reading) | 103 | | **ineligible** | **32** |
 
 **Do not quote 23% as a defect rate.** D-503's 16.3% used TWO judges at 96.4% inter-rater agreement
@@ -14033,7 +14037,7 @@ the 116 are genuine.
 ### `gate.seniority_hold` armed — first live reading
 
 Run 419 judged 70 and **held 7** as `seniority_judged_above_band` (Apple Bluetooth, Tesla, Wispr
-Flow, three founding-engineer roles, Cyrad). Before arming, 471 of 506 carried no seniority reading
+Flow, three founding-engineer roles, Cyrad). Before arming, 471 of 505 carried no seniority reading
 at all: the field only began recording on 09-13 and the gate reads `depth = 150` per run.
 
 ### The ≤ 1-YoE harvest (D-509)
@@ -14067,7 +14071,7 @@ moved: the value is forward-looking suppression, not a queue cleanup.
 
 ### Rule (a)'s standing-side drain (D-506) — verified against the LIVE queue
 
-17 folders moved to `_lane_copy`, 0 failed. **Apply lane 506 → 489.** `make check` exit 0 (10,143
+17 folders moved to `_lane_copy`, 0 failed. **Apply lane 505 → 488** (D-510). `make check` exit 0 (10,143
 passed). `boardwatch web`'s ~28 s startup did NOT complete the reconcile on two attempts; the direct
 `reconcile_queue` call did.
 

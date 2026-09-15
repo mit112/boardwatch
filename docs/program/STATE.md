@@ -20,12 +20,12 @@
 
 ## Current standing
 
-### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED: **D-506 … D-509.** PRs #377, #378 both MERGED.
+### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED: **D-506 … D-510.** PRs #377, #378 both MERGED.
 
 **Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
 Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
 
-**The apply lane is no longer unverified.** All 506 leads read by the PRODUCTION judge (same prompt,
+**The apply lane is no longer unverified.** All 505 leads read by the PRODUCTION judge (same prompt,
 model, parser, config dir), 39 batches, **0 failed open**, deliberately NOT persisted — D-477 pt 5
 forbids re-judging and 476 already carried a gate row. **116 above band (23.0%), 32 now `ineligible`.**
 **Do NOT quote 23% as a defect rate** (D-507): D-503's 16.3% used two judges at 96.4% agreement over
@@ -35,7 +35,7 @@ ALL causes; this is one model over one cause, and ~13% of its flags are false.
 on run 419**, its first live reading.
 
 **Rule (a)'s standing-side drain SHIPPED (D-506, PR #378) and is verified against the LIVE queue:
-17 folders moved to `_lane_copy`, 0 failed, apply lane 506 → 489.** `cross_host` still suppresses
+17 folders moved to `_lane_copy`, 0 failed, apply lane 505 → 488.** `cross_host` still suppresses
 nothing; the discriminating test is §3.1's board-vs-board pair, mutation-verified.
 
 **The ≤1-YoE slice of `_skipped` is harvested (D-509): 298 of 304 landed (98.0%).** The refresher
@@ -49,7 +49,17 @@ rows were correctly refused as `ambiguous` (D-488's fix holding).
 2026-09-09; the 35,941-row figure that said otherwise was an UNSCOPED count over
 `eligibility_requirements`, which carries no identity column. **Confirm INTACT at day 9.**
 
-**Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 345 Tier 1 / 140
+**THE SESSION WAS THEN REVIEWED AGAINST THE LIVE STORE AND QUEUE — D-510.** Every identity-scoped
+claim reproduces, including D-508's own correction (**zero `met` rows at any low end ≥ 2, so the
+≤1-YoE floor IS in force**), `476`, `471`, all five store totals and `59 still-open`. **The FOLDER
+counts were the ones that were wrong**: an empty `.staging-` leftover was counted as a lead, so the
+lane was **505 → 488**, and `yes`/`eligible` were each one low. **`116/505 = 22.97%` — the 23.0%
+headline and D-507's framing are UNCHANGED, and the owner's worklist audits CLEAN** (tier `1b` is
+exactly the union of 116 + 32 + 17 = 140, zero unexplained, zero leak into tier 1). No code changed.
+
+**Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 365 Tier 1 rows of
+which **345 are distinct work** (20 are rendered but marked duplicates — the sheet's "345" is that
+net figure, verified correct on review) / 140
 Tier 1b demoted / 163 Tier 2, artifacts copied locally so links survive a reconcile. Its checkboxes
 do NOT reach boardwatch — applications need `boardwatch track add <posting_id>`.
 
