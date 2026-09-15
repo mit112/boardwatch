@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED: **D-506 … D-510.** PRs #377, #378 both MERGED.
+### 2026-09-14b — THE WHOLE APPLY LANE READ BY THE JUDGE; ≤1-YoE HARVESTED; APPLIED HISTORY IMPORTED; RULE (a) DRAINED; THEN REVIEWED, AND THE GATE BACKFILLED: **D-506 … D-511.** PRs #377, #378 both MERGED.
 
 **Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
 Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
@@ -63,8 +63,10 @@ uses it as the never-re-judge test, so the 09-13 `seniority_fit` policy bump lef
 apply-lane leads and 686 store-wide permanently unreachable** — reading `unclear` forever, and **no
 nightly run would ever have fixed it.** Owner ruled judge-the-lane-now; **797 judged, 0 failed
 open** (runs **427–430**), store-wide stale **686 → 36**. Web serves apply lane **144** above band
-(was 11), review lane 101. **19 apply-lane leads are now gate-`ineligible` and will drain on the
-next reconcile while the sheet still lists them.**
+(was 11), review lane 101. **19 apply-lane leads are now gate-`ineligible`. A drain for them was
+PREDICTED AND THE PREDICTION WAS WRONG** — `ineligible_job_ids` filters on `verdict` (the
+DETERMINISTIC lane), not `judge_verdict`, so **0 of the 19 drain**. A gate `ineligible` filters
+FUTURE shortlists; it never evicts a STANDING delivered lead.
 
 **THE JUDGE DOES NOT REPRODUCE, and this outranks the parity work.** Same 462 leads, same prompt /
 haiku / parser, two occasions: **`seniority_fit` 68.2%, `decision` 65.6%** agreement. Marginals are
