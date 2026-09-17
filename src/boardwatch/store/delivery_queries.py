@@ -194,7 +194,6 @@ class AppliedRow:
     company: str | None
     title: str | None
     location: str | None
-    locations: tuple[str, ...]
     apply_url: str | None
     #: `open`, `closed` or `unverifiable`, from `_status` — the same three the queue renders.
     posting_status: str | None
@@ -933,7 +932,6 @@ def _applied_row(
         company=None if posting is None else str(posting.company),
         title=None if posting is None else str(posting.title),
         location=None if posting is None else _location(posting.locations_json),
-        locations=() if posting is None else _locations_list(posting.locations_json),
         apply_url=(
             None if posting is None or posting.url is None else str(posting.url)
         ),

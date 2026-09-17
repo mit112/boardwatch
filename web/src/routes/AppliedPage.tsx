@@ -8,6 +8,7 @@ import {
   EM_DASH,
   formatDateWithYear,
   formatTimestampWithYear,
+  isSafeHttpUrl,
   pathFromFileUri,
 } from "../lib/format";
 import { matchesAppliedQuery, sortAppliedRows } from "../lib/sort";
@@ -39,6 +40,36 @@ function appliedLabel(row: AppliedRow): string {
  *  a key entirely, so the read is `undefined` and a tightened guard would print "undefined". */
 function text(value: string | null | undefined): string {
   return value == null || value === "" ? EM_DASH : value;
+}
+
+/**
+ * The title, linked at the board's own page where there is a safe URL to link at.
+ *
+ * `apply_url` was emitted and rendered nowhere, so an applied row offered no route back to the
+ * requisition — which is what a reader on a recruiter call reaches for first. The TITLE carries it
+ * rather than a fourth button: it already names the lead, so the link needs no second label and the
+ * row grows no control.
+ *
+ * `isSafeHttpUrl` is the app's ONE decision about a third-party URL (see `ApplyLink`): anything
+ * that is not `http(s)` — a `javascript:` URL above all — is shown as inert text.
+ */
+function TitleCell({ row }: { row: AppliedRow }) {
+  const label = text(row.title);
+  const url = row.apply_url ?? null;
+  if (!isSafeHttpUrl(url) || url === null) {
+    return <span {...(url === null ? {} : { title: `Not an http(s) URL: ${url}` })}>{label}</span>;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open the board's page for this posting, in a new tab."
+      className="rounded-sm underline decoration-divider underline-offset-2 transition-colors duration-[120ms] ease-snap hover:decoration-fg-2 hover:text-fg"
+    >
+      {label}
+    </a>
+  );
 }
 
 function SortHeader({
@@ -397,7 +428,9 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                     {appliedLabel(row)}
                   </td>
                   <td className="px-3 py-1.5 text-fg">{text(row.company)}</td>
-                  <td className="px-3 py-1.5 text-fg-2">{text(row.title)}</td>
+                  <td className="px-3 py-1.5 text-fg-2">
+                    <TitleCell row={row} />
+                  </td>
                   <td className="px-3 py-1.5 text-fg-3">{text(row.location)}</td>
                   <td className="px-3 py-1.5">
                     {/* Verbatim off the wire and never indexed into a map, so a status this

@@ -244,6 +244,37 @@ describe("the row's controls", () => {
   });
 });
 
+  it("links the title at the board's apply page, in a new tab", async () => {
+    /*
+     * `apply_url` was on the wire and rendered nowhere, so an applied row offered no way back to
+     * the posting — the thing a reader on a recruiter call reaches for. The title carries it: it
+     * already names the lead, so the link needs no second label.
+     */
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ title: "Backend Engineer", apply_url: "https://careers.acme.test/apply" }),
+      ]),
+    );
+
+    const link = screen.getByRole("link", { name: "Backend Engineer" });
+    expect(link.getAttribute("href")).toBe("https://careers.acme.test/apply");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel") ?? "").toContain("noreferrer");
+  });
+
+  it("renders the title as inert text when the apply URL is not http(s)", async () => {
+    // The same one decision `isSafeHttpUrl` makes everywhere else: a `javascript:` URL off a
+    // third-party board is shown, never made clickable.
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ title: "Backend Engineer", apply_url: "javascript:alert(1)" }),
+      ]),
+    );
+
+    expect(screen.queryByRole("link", { name: "Backend Engineer" })).toBeNull();
+    expect(screen.getByText("Backend Engineer")).toBeTruthy();
+  });
+
   it("offers the unmark only on the attempt the write would act on", async () => {
     /*
      * `mark_job_unapplied` resolves posting -> job -> latest attempt, so the control is offered
