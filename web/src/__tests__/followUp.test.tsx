@@ -547,31 +547,60 @@ describe("the write path", () => {
 });
 
 describe("the follow-up due facet", () => {
-  it("filters BOTH lanes to the leads that are due", async () => {
+  /*
+   * The cell and the filter read DIFFERENT scopes, deliberately, and this is the app's
+   * precedent rather than this feature's quirk: every band cell is counted over the APPLY lane
+   * (`api.py::_counts` is handed `rows`, which is that lane; `QueuePage` recomputes it over
+   * `filtered`, which is the same lane), while every row-predicate facet filters BOTH lanes —
+   * the three `judge_*` cells and the two verdict cells included.
+   *
+   * So the two are asserted SEPARATELY below, each naming the lane it comes from. Asserting
+   * them together — "the cell says 1 and clicking it shows 1 row" — is what would have to be
+   * rewritten the day either scope changed, and it is not what either one promises.
+   */
+  const lanes = () => {
     const due = isoDaysFromToday(-1);
     const later = isoDaysFromToday(10);
-    vi.mocked(getQueue).mockResolvedValue(
-      queueResponse(
-        [
-          queueRow({ title: "APPLY-DUE", follow_up: due }),
-          queueRow({ title: "APPLY-LATER", follow_up: later }),
-          queueRow({ title: "APPLY-NONE", follow_up: null }),
-        ],
-        [queueRow({ title: "REVIEW-DUE", follow_up: due, review_reason: "non_us_location" })],
-      ),
-    );
+    return {
+      due,
+      applyLane: [
+        queueRow({ title: "APPLY-DUE", follow_up: due }),
+        queueRow({ title: "APPLY-LATER", follow_up: later }),
+        queueRow({ title: "APPLY-NONE", follow_up: null }),
+      ],
+      reviewLane: [
+        queueRow({ title: "REVIEW-DUE", follow_up: due, review_reason: "non_us_location" }),
+      ],
+    };
+  };
+
+  it("counts the APPLY lane alone, so a due review lead is not in the number", async () => {
+    const { applyLane, reviewLane } = lanes();
+    vi.mocked(getQueue).mockResolvedValue(queueResponse(applyLane, reviewLane));
+    render(<App />);
+    await screen.findByRole("grid", { name: "Queue" });
+
+    // One due row in the apply lane and one in the review lane; the cell reads the apply lane's
+    // figure, exactly as `eligible` and the `judge_*` cells do.
+    expect(screen.getByRole("button", { name: /^follow-up due 1 —/i })).toBeTruthy();
+  });
+
+  it("filters BOTH lanes to the leads that are due, which is more rows than the cell counts", async () => {
+    const { applyLane, reviewLane } = lanes();
+    vi.mocked(getQueue).mockResolvedValue(queueResponse(applyLane, reviewLane));
     render(<App />);
     await screen.findByRole("grid", { name: "Queue" });
     fireEvent.click(screen.getByRole("button", { name: "show" }));
 
-    // The cell counts the apply lane, exactly as `eligible` does: one due row there.
     fireEvent.click(screen.getByRole("button", { name: /^follow-up due 1 —/i }));
 
+    // The APPLY lane: the due one survives, the pinned-but-not-due and the unpinned do not.
     const queue = within(screen.getByRole("grid", { name: "Queue" }));
     expect(queue.queryByText("APPLY-DUE")).not.toBeNull();
     expect(queue.queryByText("APPLY-LATER")).toBeNull();
     expect(queue.queryByText("APPLY-NONE")).toBeNull();
-    // The review lane is reached too: a due review lead is work for today just as much.
+    // The REVIEW lane is reached too — a due review lead is work for today just as much — so
+    // two rows are showing against a cell that read 1.
     const review = within(screen.getByRole("grid", { name: "Review" }));
     expect(review.queryByText("REVIEW-DUE")).not.toBeNull();
   });

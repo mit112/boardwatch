@@ -769,10 +769,12 @@ export function QueuePage({
       // `== null`, never `=== null`: an older server omits the field, and "the server cannot say"
       // reads as "the gate has not spoken" rather than throwing off the count.
       judge_unjudged: filtered.filter((row) => row.judge_verdict == null).length,
-      // Recomputed against the active filter like the five above, and for the same reason: this
-      // cell is a facet, so it has to agree with the list clicking it produces. The server sends
-      // its own figure over the same lane; recomputing keeps the cell honest while a write is
-      // still optimistic and the payload has not been re-fetched.
+      // Recomputed against the active filter like the five above, and over the APPLY lane like
+      // every cell here: `filtered` is that lane. The FACET reaches both lanes, as the verdict
+      // and `judge_*` facets do, so clicking this cell can show MORE rows than the number on
+      // it — the count answers "how much of the work list is due", and the filter answers "show
+      // me everything that is due". Recomputing keeps the cell honest while a write is still
+      // optimistic and the payload has not been re-fetched.
       follow_up_due: filtered.filter((row) => isFollowUpDue(row.follow_up)).length,
       // Passed through, NOT recomputed: an ineligible lead is never in `rows`, so no
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
