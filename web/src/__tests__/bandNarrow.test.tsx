@@ -19,6 +19,7 @@ function renderBand() {
   return render(
     <StatusBand
       counts={COUNTS}
+      newSince={0}
       showing={2}
       total={2}
       reviewNote="Held for a look, not blindly appliable."
@@ -59,6 +60,9 @@ describe("the status band below 40rem", () => {
     expect(screen.getByText("in queue")).toBeTruthy();
     expect(screen.getByRole("button", { name: /^eligible /i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^review /i })).toBeTruthy();
+    // The fourth, added with the facet: "what arrived since I last looked" is the same question
+    // the three above answer, for the leads that are the reason the page is opened.
+    expect(screen.getByRole("button", { name: /^new since last visit /i })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("Showing 2 of 2");
 
     const details = container.querySelector("details");
@@ -67,6 +71,11 @@ describe("the status band below 40rem", () => {
     // Folded, not dropped: every remaining cell is inside the disclosure.
     const folded = [
       "uncertain",
+      // The final gate's three. Folded, like `uncertain`, rather than dropped: a facet whose cell
+      // is absent below 40rem is a filter a phone reader cannot reach or clear.
+      "gate eligible",
+      "gate uncertain",
+      "not judged",
       "ineligible",
       "closed",
       "applied ever",

@@ -21,7 +21,7 @@ import type {
   QueueRow,
   ReviewReason,
 } from "../api/types";
-import { TOKEN_EVENT } from "../api/token";
+import { TOKEN_EVENT, readWatermark, writeWatermark } from "../api/token";
 import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -128,6 +128,57 @@ const encodeText = (value: string): string => value;
 const decodeFacet = (raw: string | null): QueueFacet | null =>
   (QUEUE_FACETS as readonly string[]).includes(raw ?? "") ? (raw as QueueFacet) : null;
 const encodeFacet = (value: QueueFacet | null): string => value ?? "";
+
+/**
+ * What a facet is called in prose — the "Showing …" sentence and the empty-list hint. The wire
+ * member is not the words: `judge_unjudged only` is a field name, and the reader clicked a cell
+ * labelled `not judged`.
+ */
+const FACET_LABELS: Record<QueueFacet, string> = {
+  eligible: "eligible",
+  uncertain: "uncertain",
+  review: "review",
+  judge_eligible: "gate eligible",
+  judge_uncertain: "gate uncertain",
+  judge_unjudged: "not judged",
+  new: "new since last visit",
+};
+
+/** The frozen "new since last visit" set before the first response has arrived. A module constant
+ *  so the identity is stable and no memo re-runs for a new empty set every render. */
+const NOTHING_NEW: ReadonlySet<number> = new Set();
+
+/**
+ * Whether one row passes a ROW-LEVEL facet. `review` is excluded from the parameter because it is
+ * a LANE rather than a row predicate — both call sites answer it before they ever reach here — so
+ * this switch stays exhaustive over the closed catalog and a member added to `QUEUE_FACETS` is a
+ * compile error rather than a silent `false` that empties the list.
+ */
+function matchesFacet(
+  row: QueueRow,
+  facet: Exclude<QueueFacet, "review">,
+  newIds: ReadonlySet<number>,
+): boolean {
+  switch (facet) {
+    case "eligible":
+    case "uncertain":
+      return row.verdict === facet;
+    case "judge_eligible":
+      return row.judge_verdict === "eligible";
+    case "judge_uncertain":
+      return row.judge_verdict === "uncertain";
+    /* `== null`, never `=== null`: an older server omits `judge_verdict` entirely, and "the
+       server cannot say" is the same statement as "the gate has not spoken". */
+    case "judge_unjudged":
+      return row.judge_verdict == null;
+    /* Membership, never a re-derivation from `delivered_run_id`: the set is computed ONCE per
+       load (see `adopt`) precisely so it cannot move under the reader, and comparing against a
+       watermark here would re-answer the question on every render against a watermark that has
+       already advanced. */
+    case "new":
+      return newIds.has(row.posting_id);
+  }
+}
 
 const decodeReason = (raw: string | null): ReviewReason | null =>
   raw !== null && raw in REVIEW_REASON_LABELS ? (raw as ReviewReason) : null;
@@ -338,6 +389,24 @@ export function QueuePage({
 
   const knownIds = useRef<Set<number>>(new Set());
 
+  /*
+   * "NEW SINCE LAST VISIT", as posting ids: computed ONCE per page load and then frozen for the
+   * life of the tab.
+   *
+   * Frozen is the REQUIREMENT, not an optimisation. The reader works down a list of 20-30 leads;
+   * a set recomputed against a watermark the load had already advanced would empty the moment
+   * anything re-fetched, and a set recomputed against a stale watermark would silently grow while
+   * the page sat open. So the only thing that moves it is a RELOAD — the `refresh` button
+   * re-enters `adopt` and the latch below leaves the set exactly as it is.
+   *
+   * State, so the facet memos can depend on it honestly, plus a one-way LATCH that says whether
+   * it has been computed. The latch is a ref because it is read and written inside `adopt`, never
+   * during render, and it is what makes "once" a property of this code rather than of the order
+   * the fetches happen to land in.
+   */
+  const [newIds, setNewIds] = useState<ReadonlySet<number>>(NOTHING_NEW);
+  const newIdsComputed = useRef(false);
+
   const adopt = useCallback((response: QueueResponse) => {
     /*
      * `review` is normalised ONCE, here, and never again — eight places downstream read it, five
@@ -358,6 +427,32 @@ export function QueuePage({
     knownIds.current = new Set(
       [...normalised.rows, ...normalised.review].map((row) => row.posting_id),
     );
+    if (!newIdsComputed.current) {
+      newIdsComputed.current = true;
+      // BOTH lanes, exactly as `knownIds` above and as every row-level facet: a lead delivered
+      // last night that landed in `review` is new work too, and a watermark taken from the apply
+      // lane alone would stop advancing the night every new lead was held.
+      const everyRow = [...normalised.rows, ...normalised.review];
+      const runs = everyRow
+        .map((row) => row.delivered_run_id)
+        .filter((id): id is number => id != null);
+      const watermark = readWatermark();
+      // `null` — a first visit — marks NOTHING new. Marking all 392 would be a page that opens
+      // shouting on the one load where the reader has no way to know it is wrong.
+      setNewIds(
+        new Set(
+          watermark === null
+            ? []
+            : everyRow
+                .filter((row) => row.delivered_run_id != null && row.delivered_run_id > watermark)
+                .map((row) => row.posting_id),
+        ),
+      );
+      // Advanced AFTER the set is computed, never before, or the comparison is against its own
+      // answer. Skipped when no row carries a run at all, so a momentarily empty queue cannot
+      // ratchet the watermark backwards.
+      if (runs.length > 0) writeWatermark(Math.max(...runs));
+    }
     setStashed(null);
     setNewCount(0);
     setRemoved(new Map());
@@ -535,6 +630,16 @@ export function QueuePage({
     });
   }, [data, removed, runFilter, query, minScore]);
 
+  /*
+   * Facet-blind and filter-scoped, exactly like `eligible` and `uncertain`: counted over
+   * `filtered`, so the cell agrees with the list the reader is looking at without collapsing to
+   * whatever they have already selected.
+   */
+  const newSinceCount = useMemo(
+    () => filtered.filter((row) => newIds.has(row.posting_id)).length,
+    [filtered, newIds],
+  );
+
   const visible = useMemo(() => {
     // `review` selects a LANE, not a verdict: the apply queue is hidden entirely for it, so its
     // list is empty. The verdict facets narrow it; `null` shows all.
@@ -543,9 +648,9 @@ export function QueuePage({
         ? []
         : facet === null
           ? filtered
-          : filtered.filter((row) => row.verdict === facet);
+          : filtered.filter((row) => matchesFacet(row, facet, newIds));
     return sortRows(base, sort, rankOf);
-  }, [filtered, facet, sort, rankOf]);
+  }, [filtered, facet, newIds, sort, rankOf]);
 
   /*
    * The toolbar's search and score floor apply to BOTH lanes. A filter that silently skipped the
@@ -572,13 +677,13 @@ export function QueuePage({
     const byVerdict =
       facet === null || facet === "review"
         ? filteredReview
-        : filteredReview.filter((row) => row.verdict === facet);
+        : filteredReview.filter((row) => matchesFacet(row, facet, newIds));
     const base =
       reasonFacet === null
         ? byVerdict
         : byVerdict.filter((row) => row.review_reason === reasonFacet);
     return sortRows(base, reviewSort, reviewRankOf);
-  }, [filteredReview, facet, reasonFacet, reviewSort, reviewRankOf]);
+  }, [filteredReview, facet, reasonFacet, newIds, reviewSort, reviewRankOf]);
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -594,6 +699,15 @@ export function QueuePage({
       in_queue: filtered.length,
       eligible: filtered.filter((row) => row.verdict === "eligible").length,
       uncertain: filtered.filter((row) => row.verdict === "uncertain").length,
+      // Recomputed against the active filter, exactly as the two above are and for the same
+      // reason: the cell has to agree with the list the reader is looking at. Facet-BLIND, like
+      // every cell here — `filtered` is the text, score-floor and run filters, never the facet,
+      // so clicking one cell cannot drop the cell the reader clicks next to zero.
+      judge_eligible: filtered.filter((row) => row.judge_verdict === "eligible").length,
+      judge_uncertain: filtered.filter((row) => row.judge_verdict === "uncertain").length,
+      // `== null`, never `=== null`: an older server omits the field, and "the server cannot say"
+      // reads as "the gate has not spoken" rather than throwing off the count.
+      judge_unjudged: filtered.filter((row) => row.judge_verdict == null).length,
       // Passed through, NOT recomputed: an ineligible lead is never in `rows`, so no
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
       // contradict the server.
@@ -1017,11 +1131,15 @@ export function QueuePage({
   const emptyHint =
     facet === null
       ? "Clear the text box or lower the minimum score."
-      : `Clear the text box, lower the minimum score, or turn off the ${facet}-only filter.`;
+      : `Clear the text box, lower the minimum score, or turn off the ${FACET_LABELS[facet]} filter.`;
 
   /* What the reader turned on, in words, so "Show all" is obviously the way back out. */
   const activeFilters = [
-    facet === null ? null : facet === "review" ? "the review lane only" : `${facet} only`,
+    facet === null
+      ? null
+      : facet === "review"
+        ? "the review lane only"
+        : `${FACET_LABELS[facet]} only`,
     reasonFacet === null ? null : `${REVIEW_REASON_LABELS[reasonFacet]} only`,
   ].filter((entry): entry is string => entry !== null);
 
@@ -1058,6 +1176,7 @@ export function QueuePage({
       <div className="flex flex-col gap-4" inert={sheetOpen}>
         <StatusBand
           counts={bandCounts}
+          newSince={newSinceCount}
           /*
            * What is VISIBLE ON THE PAGE, which is both lanes whenever both are drawn. Counting the
            * apply lane alone printed "Showing 0 of 0" above 149 listed review leads on the day the

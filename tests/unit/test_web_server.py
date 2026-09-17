@@ -62,7 +62,9 @@ from boardwatch.delivery.server import (
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
 from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
+from boardwatch.eligibility.final_gate import record_gate_verdict
 from boardwatch.eligibility.hashing import build_identity
+from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
@@ -368,6 +370,49 @@ def _judge(
         result=result,
     )
     return result.verdict
+
+
+def _gate(
+    conn: Connection,
+    posting_id: int,
+    body: str,
+    decision: str,
+    *,
+    facts: Facts | None = None,
+    policy: Policy | None = None,
+) -> None:
+    """One FINAL-GATE verdict for `posting_id`'s current version, under the live identity.
+
+    Through `record_gate_verdict` rather than a hand-inserted `engine_kind='llm'` row: the read
+    behind `QueueRow.judge_verdict` is scoped to `engine_version LIKE 'final_gate:%'`, so a
+    hand-written version constant here would read back under any implementation that hand-wrote
+    the same constant — the vacuous shape `_judge` above avoids for the same reason.
+
+    `confidence="low"` and `reason=None` keep an `ineligible` decision on the fail-open path
+    (`accept_oracle_verdict` downgrades it to `uncertain`), which is why no caller below asks this
+    for an `ineligible`.
+    """
+    catalog = load_rules(load_settings().config_dir)
+    version_id = int(
+        conn.execute(
+            select(posting_versions.c.id).where(posting_versions.c.posting_id == posting_id)
+        ).scalar_one()
+    )
+    record_gate_verdict(
+        conn,
+        posting_version_id=version_id,
+        jd_text=body,
+        facts=Facts() if facts is None else facts,
+        policy=Policy() if policy is None else policy,
+        catalog=catalog,
+        verdict=OracleVerdict(
+            label="synthetic",
+            decision=decision,
+            reason=None,
+            evidence="",
+            confidence="low",
+        ),
+    )
 
 
 def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | None = None) -> None:
@@ -1435,6 +1480,58 @@ def test_counts_report_ineligible_as_its_own_cell_and_keep_it_out_of_the_queue(
     # Its own cell, never folded into a neighbour: an implementation that added it to `uncertain`
     # or left it inside `in_queue` reports 2 here and passes any `>= 1` check.
     assert counts["in_queue"] == counts["eligible"] + counts["uncertain"]
+
+
+def test_every_row_carries_the_gates_own_verdict_and_it_is_counted_apart_from_the_rules_one(
+    live: Live, engine: Engine
+) -> None:
+    """The final gate's verdict on the ROW and in its own three cells.
+
+    The store has carried it since T42 and `classify` has read it since D-489; nothing emitted it,
+    so a lead the gate read as `uncertain` was indistinguishable on the page from one it cleared.
+
+    Three leads with the SAME body and therefore the same RULES verdict, so the only thing that
+    differs between them is the gate. That is what makes this test discriminating: an
+    implementation that echoed `verdict` into `judge_verdict` reports `eligible` three times and
+    fails on the `uncertain` row, and one that treated "no gate row" as a clear reports
+    `judge_eligible: 2`.
+
+    The gate verdicts are written through `record_gate_verdict` and asserted on the payload rather
+    than read back through the same query that produced them.
+    """
+    with engine.begin() as conn:
+        _profile(conn)
+        held, _ = _deliver(conn, "held", body=JD_ELIGIBLE)
+        cleared, _ = _deliver(conn, "cleared", body=JD_ELIGIBLE)
+        silent, _ = _deliver(conn, "silent", body=JD_ELIGIBLE)
+        _gate(conn, held, JD_ELIGIBLE, "uncertain")
+        _gate(conn, cleared, JD_ELIGIBLE, "eligible")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    rows = {row["posting_id"]: row for row in payload["rows"]}
+    assert set(rows) == {held, cleared, silent}
+    assert rows[held]["judge_verdict"] == "uncertain"
+    assert rows[cleared]["judge_verdict"] == "eligible"
+    # `None`, never omitted and never "eligible": no gate row exists for this lead, and "the gate
+    # has not spoken" is not "the gate cleared it".
+    assert rows[silent]["judge_verdict"] is None
+    # The RULES verdict is untouched on all three, which is what makes the two columns two
+    # opinions rather than one renamed twice.
+    assert [rows[pid]["verdict"] for pid in (held, cleared, silent)] == ["eligible"] * 3
+
+    counts = payload["counts"]
+    assert counts["judge_uncertain"] == 1
+    assert counts["judge_eligible"] == 1
+    assert counts["judge_unjudged"] == 1
+    # Stated out loud because the sum is the specific defect: an implementation that folded the
+    # gate's uncertain into its eligible reports `judge_eligible: 2` and passes any `>= 1` check.
+    assert counts["judge_eligible"] != counts["eligible"]
+    assert counts["eligible"] == 3
+
+    # `detail_payload` serializes one row with no list around it, through the same `_row_json`.
+    # Asserted here so the field cannot exist on the list and be absent in the pane.
+    detail = call(live, f"/api/queue/{held}", bearer=live.token).json()
+    assert detail["row"]["judge_verdict"] == "uncertain"
 
 
 def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None:

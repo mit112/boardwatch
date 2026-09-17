@@ -864,12 +864,13 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # opening a later connection would let the body and its quarantine status come from different
     # SQLite snapshots.
     quarantined = version is not None and is_quarantined(conn, version.posting_version_id)
-    verdicts = current_verdicts(
-        conn,
-        [] if version is None else [version.posting_version_id],
-        profile_hash,
-        rules_hash,
-    )
+    version_ids = [] if version is None else [version.posting_version_id]
+    verdicts = current_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # The FINAL GATE's verdict, under the same identity and the same version as the rules verdict
+    # above, so the pane and the list row for one lead cannot report two different gate readings.
+    # `delivered_unapplied` reads it for every row; without it here the detail served `None` for a
+    # lead the list served `uncertain` — the same field, the same lead, two answers.
+    gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
     audit = load_audit(
         conn,
         posting_id,
@@ -879,7 +880,12 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     )
     provenance = lead_provenance(conn, [posting_id]).get(posting_id)
     return QueueDetail(
-        row=_queue_row(row, verdict=verdicts.get(posting_id), now=utcnow()),
+        row=_queue_row(
+            row,
+            verdict=verdicts.get(posting_id),
+            now=utcnow(),
+            judge_verdict=gate.get(posting_id),
+        ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(
             JD_ABSENT_NO_CURRENT_VERSION

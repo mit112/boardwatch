@@ -22,8 +22,31 @@ export const BAND_WIDE = "(min-width: 40rem)";
  * `review` is a LANE, not a verdict, so it behaves differently: it shows the review lane alone and
  * hides the apply queue, the way opening only that section would. `ineligible` is deliberately NOT a
  * facet: it is drained, never listed, so a toggle there could only ever show an empty list.
+ *
+ * The three `judge_*` members are the FINAL GATE's reading of the same rows, and they are row
+ * predicates exactly like `eligible` and `uncertain` — they reach both lanes and are applied after
+ * the counts, so switching from one to another never finds the cell you want at zero. They are
+ * separate members rather than a second facet dimension because the reader picks ONE lens at a
+ * time and two independent facets would need two "clear" affordances to describe one view.
+ *
+ * `judge_unjudged` is `judge_verdict == null` exactly, which is "the gate has not spoken". It is
+ * not the complement of the other two: a gate `ineligible` is in none of the three, so the three
+ * cells do not sum to the lane and are not meant to.
+ *
+ * `new` is the only member the SERVER knows nothing about. It is per-viewer and frontend-only —
+ * the leads delivered by a run later than the highest this viewer had seen when the page last
+ * loaded — so its count arrives as its own prop rather than through `counts`, which is the wire
+ * contract and must not grow a field no server sends.
  */
-export const QUEUE_FACETS = ["eligible", "uncertain", "review"] as const;
+export const QUEUE_FACETS = [
+  "eligible",
+  "uncertain",
+  "review",
+  "judge_eligible",
+  "judge_uncertain",
+  "judge_unjudged",
+  "new",
+] as const;
 export type QueueFacet = (typeof QUEUE_FACETS)[number];
 
 /*
@@ -113,6 +136,7 @@ function Metric({
 
 export function StatusBand({
   counts,
+  newSince,
   showing,
   total,
   reviewNote,
@@ -120,6 +144,9 @@ export function StatusBand({
   onToggleFacet,
 }: {
   counts: QueueCounts;
+  /* The `new` facet's count. Its own prop, not a `counts` field: it is per-viewer, computed from
+     `localStorage`, and no server sends it. */
+  newSince: number;
   showing: number;
   total: number;
   /* The `review` cell's tooltip, GENERATED from the lane's own reason counts by the caller. It
@@ -132,7 +159,8 @@ export function StatusBand({
   /*
    * Ten cells at 44px-plus each stacked to a 496px band on a phone — the entire first screen was
    * counters, and the reader had to scroll past all of it to reach a lead. The three that answer
-   * "is there work here" stay out with the readout; the rest fold into a `<details>`.
+   * "is there work here" stay out with the readout; the rest fold into a `<details>`, and every
+   * cell added since — the final gate's three — went into the fold for the same reason.
    */
   const wide = useMediaQuery(BAND_WIDE);
 
@@ -178,27 +206,93 @@ export function StatusBand({
       }}
     />
   );
+  /*
+   * The FINAL GATE's three, in the foldable group rather than out with the headline cells: the
+   * four that stay out answer "is there work here", and these answer "which of it did the other
+   * engine flag" — the next question, not the first one. They are still facets, and `uncertain`
+   * has been a folded facet since the fold existed, so folding a facet is not hiding a control.
+   *
+   * Prefixed `gate` for the reason `JudgeVerdictBadge`'s labels are: a cell reading `uncertain`
+   * beside a cell reading `uncertain` is two numbers and no way to tell which engine produced
+   * either.
+   */
+  const judge = (
+    <>
+      <Metric
+        label="gate eligible"
+        value={counts.judge_eligible.toLocaleString()}
+        note="The final gate read the job description independently and cleared it. A second opinion beside the rules verdict, never the same one twice. Click to show only these."
+        order={5}
+        active={activeFacet === "judge_eligible"}
+        onToggle={() => {
+          onToggleFacet("judge_eligible");
+        }}
+      />
+      <Metric
+        label="gate uncertain"
+        value={counts.judge_uncertain.toLocaleString()}
+        note="The final gate could not decide, on leads the rules engine may well have cleared. Its own bucket, never folded into gate eligible. Click to show only these."
+        order={6}
+        active={activeFacet === "judge_uncertain"}
+        onToggle={() => {
+          onToggleFacet("judge_uncertain");
+        }}
+      />
+      <Metric
+        label="not judged"
+        value={counts.judge_unjudged.toLocaleString()}
+        note="No final-gate verdict exists for these leads. That is the gate not having spoken, never the gate clearing them. Click to show only these."
+        order={7}
+        active={activeFacet === "judge_unjudged"}
+        onToggle={() => {
+          onToggleFacet("judge_unjudged");
+        }}
+      />
+    </>
+  );
+  /*
+   * "What arrived since I last looked", in one click. It stays OUT of the fold with the three
+   * above it because it answers the band's own criterion for staying out — is there work here —
+   * for the 20-30 leads a night that are the reason the page is opened at all; the run filter it
+   * replaces needed the reader to know a run number first.
+   *
+   * Clickable at zero, like every other facet cell on this band: `eligible 0` and `review 0` are
+   * pressable today, and one cell that goes dead at zero while its neighbours do not is a band
+   * that looks broken rather than one that reads clearly.
+   */
+  const newSinceCell = (
+    <Metric
+      label="new since last visit"
+      value={newSince.toLocaleString()}
+      note="Leads delivered by a run later than the newest this browser had seen when the page last loaded. Fixed for as long as the page is open — a reload moves it, a refresh does not. Click to show only these."
+      order={4}
+      active={activeFacet === "new"}
+      onToggle={() => {
+        onToggleFacet("new");
+      }}
+    />
+  );
   const rest = (
     <>
       <Metric
         label="ineligible"
         value={counts.ineligible.toLocaleString()}
         note="Rejected by the eligibility gate, so not in the queue. Folders drain to _ineligible."
-        order={4}
+        order={8}
       />
       <Metric
         label="closed"
         value={counts.closed.toLocaleString()}
         note="The employer took the posting down; drained to _closed, never judged."
-        order={5}
+        order={9}
       />
-      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={6} />
-      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={7} />
+      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={10} />
+      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={11} />
       <Metric
         label="reported"
         value={counts.reported.toLocaleString()}
         note="Flagged as wrongly-eligible and held for investigation. Its own cell, never folded into skipped, and taken out of the queue like a skip."
-        order={8}
+        order={12}
       />
       <Metric
         label="last run"
@@ -208,7 +302,7 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
-        order={9}
+        order={13}
       />
     </>
   );
@@ -237,6 +331,8 @@ export function StatusBand({
       {eligible}
       {wide ? uncertain : null}
       {review}
+      {newSinceCell}
+      {wide ? judge : null}
       {wide ? rest : null}
       {readout}
       {wide ? null : (
@@ -246,6 +342,7 @@ export function StatusBand({
           </summary>
           <div className="flex flex-wrap items-stretch divide-x divide-divider">
             {uncertain}
+            {judge}
             {rest}
           </div>
         </details>
