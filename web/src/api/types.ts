@@ -170,6 +170,23 @@ export interface QueueRow {
    * "the server cannot say" is no badge.
    */
   judge_seniority_above_band?: boolean;
+  /**
+   * The date this lead is to be looked at again, `YYYY-MM-DD`, or `null` when none is pinned.
+   *
+   * A NOTE on a lead rather than a disposition: it changes no lane, no verdict and no
+   * applied/skipped/reported state, and it deliberately survives the lead being marked applied —
+   * an applied lead is exactly the one that gets followed up on.
+   *
+   * A plain date and never an instant, because that is what it means: the server writes and
+   * compares it in ITS OWN local zone, so "today" is due from 00:00 local rather than from 19:00
+   * the previous evening. The frontend compares against the BROWSER's local date for the same
+   * reason, and the two agree on the machine this viewer actually runs on — loopback only.
+   *
+   * Optional on the wire for the same reason `provider` is: `boardwatch web` serves this bundle
+   * from DISK while answering from the Python it imported at STARTUP, so an older server omits
+   * the key and the read is `undefined`. Every guard on it is `== null`.
+   */
+  follow_up?: string | null;
 }
 
 export interface QueueCounts {
@@ -217,6 +234,15 @@ export interface QueueCounts {
    * `rows` like a skip, so it is counted here rather than left an unexplained remainder.
    */
   reported: number;
+  /**
+   * Leads in the APPLY lane whose follow-up date has arrived (`<= today`, in the server's local
+   * date). Counted over the lane rather than over every stored follow-up because the cell is a
+   * FACET: the number on it has to be the number of rows clicking it shows.
+   *
+   * Optional on the wire, and typed that way on purpose: a server older than the field omits it,
+   * and the honest render for a count nobody took is `0`, not `NaN`.
+   */
+  follow_up_due?: number;
   delivered_last_run: number;
   last_run_finished: string | null;
 }
@@ -247,6 +273,86 @@ export interface QueueResponse {
   meta?: { reveal_supported: boolean };
 }
 
+/**
+ * One row of `GET /api/applied`: one application ATTEMPT, newest first.
+ *
+ * Every posting-derived field is nullable, and that is the shape of the data rather than
+ * defensiveness. An application imported from another tool's history matched a posting the store
+ * holds, but nothing ever tailored a résumé for it, so the delivery queue never offered it —
+ * `posting_id` is `null` for exactly those rows. It is the id every existing control keys on
+ * (`/api/pdf/<id>`, `/api/queue/<id>/unapplied`), so a row without one gets no PDF and no unmark
+ * rather than a button pointed at a sibling posting the queue never delivered.
+ *
+ * `status` is typed `string`, not a closed union, deliberately: it is rendered VERBATIM and never
+ * indexed into a map, so a member this bundle has never heard of reads as itself instead of
+ * throwing. The catalogs that ARE unions here (`Verdict`, `ReviewReason`) are the ones a component
+ * looks up, which is what makes a closed type worth its containment cost.
+ */
+export interface AppliedRow {
+  /** The stable list key. `job_id` is not one — a job can carry several attempts. */
+  application_id: number;
+  job_id: number;
+  posting_id: number | null;
+  company: string | null;
+  title: string | null;
+  location: string | null;
+  apply_url: string | null;
+  status: string;
+  /** When the application was MADE. `null` for an attempt that never reached `applied`. */
+  submitted_at: string | null;
+  /** When boardwatch LEARNED of it, which is a different quantity and never a substitute. */
+  created_at: string | null;
+  posting_status: PostingStatus | null;
+  /** When the employer took the posting down. `null` on a posting that is not closed. */
+  closed_at: string | null;
+  /** True exactly when `GET /api/pdf/<posting_id>` would serve the bytes. */
+  pdf_available: boolean;
+  pdf_uri: string | null;
+  /** `application_events.source` for the event that set the current status: "web", "import". */
+  source: string | null;
+  /**
+   * Whether `POST /api/queue/<posting_id>/unapplied` would act on THIS attempt.
+   *
+   * The route is per JOB — it withdraws the job's latest attempt — while this page is one row per
+   * attempt, so the control is offered on the row the server names and nowhere else. Read as
+   * `=== true`: an older server omits the key, and `undefined` must withhold the control rather
+   * than offer one that acts on a different row.
+   */
+  can_unmark: boolean;
+  /**
+   * The follow-up date pinned to this lead, `YYYY-MM-DD`, or `null` where none is.
+   *
+   * Resolved on `job_id` — the store's key is `queue.followup.<job_id>` — so every attempt on one
+   * job carries the same date, and setting it from any of their rows moves all of them.
+   */
+  follow_up: string | null;
+}
+
+/**
+ * The applied page's band. `by_status` carries EVERY member of the store's application-status
+ * catalog on every response, zeros included, so a 0 is a measurement rather than a key the reader
+ * has to guess was absent.
+ *
+ * `posting_closed` is applied-and-since-closed: it counts only the attempts that are still in a
+ * submitted state, so a withdrawn attempt against a dead requisition is not reported as an
+ * application waiting on an employer.
+ */
+export interface AppliedCounts {
+  total: number;
+  by_status: Record<string, number>;
+  posting_closed: number;
+  /** Applications whose pinned date has arrived, counted once per JOB however many attempts it
+   *  holds, and gated on the submitted statuses exactly as `posting_closed` is. */
+  follow_up_due: number;
+}
+
+/** `GET /api/applied`. Named for the history, not for the mark: `AppliedResponse` above is the
+ *  POST route's answer and the two are different shapes. */
+export interface AppliedHistoryResponse {
+  rows: AppliedRow[];
+  counts: AppliedCounts;
+}
+
 export interface RequirementView {
   requirement: string;
   covered: boolean;
@@ -275,7 +381,9 @@ export type MarkOutcome =
   | "skipped"
   | "unskipped"
   | "reported"
-  | "unreported";
+  | "unreported"
+  | "follow_up_set"
+  | "follow_up_cleared";
 
 export interface AppliedResponse {
   outcome: MarkOutcome;
@@ -303,6 +411,15 @@ export interface BatchSkipResponse {
 
 export interface ReportResponse {
   outcome: MarkOutcome;
+}
+
+/**
+ * `POST /api/queue/{id}/followup` and `/unfollowup`. `follow_up` is the date the STORE now holds,
+ * echoed back rather than assumed, so an optimistic row is reconciled against what was written.
+ */
+export interface FollowUpResponse {
+  outcome: MarkOutcome;
+  follow_up: string | null;
 }
 
 export interface RevealResponse {

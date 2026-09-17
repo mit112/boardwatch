@@ -5,6 +5,7 @@ import type { Answers, QueueDetail, RequirementView } from "../api/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   EM_DASH,
+  followUpWindow,
   formatAge,
   formatFraction,
   formatScore,
@@ -35,6 +36,14 @@ export const SIDE_BY_SIDE = "(min-width: 64rem)";
 const TITLE_ID = "lead-detail-title";
 
 /**
+ * The follow-up date input. Exported because `QueuePage`'s `f` shortcut moves the cursor here,
+ * and a shortcut that looked the element up by a hand-written selector would be a second copy of
+ * this id. One pane is open at a time, so a constant id is unambiguous — the same reason
+ * `TITLE_ID` is one.
+ */
+export const FOLLOW_UP_INPUT_ID = "lead-detail-follow-up";
+
+/**
  * `note` is the server's own sentence about the number above it — the score's `why`, and nothing
  * else so far. It is prose rather than an instrument reading, so it is NOT `tabular-nums`.
  */
@@ -61,12 +70,16 @@ function ActionButton({
   onClick,
   emphasis = "normal",
   title,
+  ariaLabel,
   disabled = false,
 }: {
   label: string;
   onClick: () => void;
   emphasis?: "normal" | "strong";
   title?: string;
+  /* Only where the visible label is not a name on its own. It STARTS with the label wherever it
+     is set, so Label in Name holds (SC 2.5.3). */
+  ariaLabel?: string;
   disabled?: boolean;
 }) {
   const skin =
@@ -79,6 +92,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       {...(title ? { title } : {})}
+      {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
       className={`inline-flex min-h-11 items-center rounded-sm border px-3 text-sm transition-colors duration-150 ease-in-out disabled:border-divider disabled:text-fg-3 ${skin}`}
     >
       {label}
@@ -182,6 +196,7 @@ export function DetailPane({
   onApplied,
   onSkip,
   onReport,
+  onFollowUp,
   onToast,
   revealSupported = true,
 }: {
@@ -193,6 +208,8 @@ export function DetailPane({
   onApplied: () => void;
   onSkip: () => void;
   onReport: () => void;
+  /** A `YYYY-MM-DD` date to pin, or `null` to clear the one this lead carries. */
+  onFollowUp: (date: string | null) => void;
   onToast: (message: string, tone: "info" | "error") => void;
   /**
    * Whether THIS server can open a file manager at all. `false` omits the button rather than
@@ -258,6 +275,47 @@ export function DetailPane({
       window.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
+
+  /*
+   * The follow-up input's DRAFT, and the one commit path out of it.
+   *
+   * A commit per `onChange` wrote one POST per intermediate date: `<input type="date">` fires
+   * `input` on every segment edit that leaves the value COMPLETE, so typing the year of
+   * `2026-09-20` walked through `0002-09-20`, `0020-09-20` and `0202-09-20` first — four writes,
+   * four stacked toasts whose undo carried an intermediate date, and a stored value decided by
+   * response ordering rather than by the last keystroke. Commit on blur or Enter instead, which
+   * is where a field's value is settled (`ux-interaction/forms/ux-form-validation-timing`).
+   *
+   * The PICKER still commits where it lands: one click in the browser's calendar is one whole
+   * date and one intention, and making it wait for a blur would be a confirm step on the one
+   * control here whose point is that it has none. The two are told apart by `typing`, which a
+   * `keydown` on the input sets — the calendar popup is browser chrome, outside the document, so
+   * a click in it dispatches no key event. Arrow keys inside the popup DO, and those fall to the
+   * blur path, which is the safe direction: a deferred write, never a wrong one.
+   *
+   * `null` is "no edit in progress", NOT the empty string, and that is what keeps this to one
+   * piece of state and no synchronising effect: with no draft the field simply renders the row,
+   * so a rolled-back write, an undo and the reconciled echo all show through on their own. A
+   * string means the reader is mid-edit and the draft wins until it is committed or abandoned.
+   */
+  const stored = detail?.row?.follow_up ?? "";
+  const [draft, setDraft] = useState<string | null>(null);
+  const shownFollowUp = draft ?? stored;
+  const typing = useRef(false);
+  const followUpBounds = followUpWindow();
+  /* Takes the value rather than reading `shownFollowUp`, because the picker path commits from
+     inside the same `onChange` that sets the draft and would read the render's stale copy. */
+  const commitFollowUp = (value: string) => {
+    typing.current = false;
+    // Back to following the row, which is also why Enter and then a blur is ONE write: after
+    // the first the field renders `stored`, so the second sees nothing to send.
+    setDraft(null);
+    // An EMPTY value writes nothing and the field snaps back: clearing is the button beside it,
+    // never an emptied input. A date input reports "" for any INCOMPLETE date, so routing ""
+    // to a clear would let an abandoned edit silently drop the stored date.
+    if (value === "" || value === stored) return;
+    onFollowUp(value);
+  };
 
   const row = detail?.row ?? null;
   const requirements = detail?.requirements ?? [];
@@ -473,6 +531,66 @@ export function DetailPane({
               <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
               <ActionButton label="Skip" onClick={onSkip} />
               <ActionButton label="Report" onClick={onReport} />
+            </span>
+
+            {/*
+              * The follow-up date, in the SAME action strip and behind its own rule, because it
+              * is the one control here that writes without removing the lead: applied, skipped
+              * and reported all take the row off the list, and this one pins a note to a row
+              * that stays. No dialog and no confirm step — the platform's own date picker in
+              * place, which is what a non-blocking input is for
+              * (`anti-patterns/anti-modal-overuse`).
+              *
+              * A real `<label>` rather than an `aria-label`, so the words are visible and the
+              * 44px hit target includes them. `?? ""` and never `?? undefined`: an uncontrolled
+              * input that later becomes controlled is a React warning and a lost keystroke, and
+              * an older server omits the field entirely. Clearing is the button, never the empty
+              * input — see the `onChange` below.
+              */}
+            <span className="flex flex-wrap items-center gap-2 border-l border-divider pl-2">
+              <label
+                htmlFor={FOLLOW_UP_INPUT_ID}
+                className="label-micro text-fg-3"
+              >
+                Follow up on
+              </label>
+              <input
+                id={FOLLOW_UP_INPUT_ID}
+                type="date"
+                value={shownFollowUp}
+                /* The same two-sided window the route enforces, so the picker cannot offer a
+                   date that comes back a 400 — see `followUpWindow`. */
+                min={followUpBounds.min}
+                max={followUpBounds.max}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    // Enter settles the value without leaving the field, which is what a reader
+                    // who typed a date expects of it. No `preventDefault`: there is no form to
+                    // submit and the browser's own Enter handling here is a no-op.
+                    commitFollowUp(shownFollowUp);
+                    return;
+                  }
+                  typing.current = true;
+                }}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setDraft(next);
+                  if (!typing.current) commitFollowUp(next);
+                }}
+                onBlur={() => {
+                  commitFollowUp(shownFollowUp);
+                }}
+                className="min-h-11 rounded-sm border border-control bg-surface px-2 text-sm text-fg tabular-nums"
+              />
+              <ActionButton
+                label="Clear"
+                title="Remove this lead's follow-up date."
+                ariaLabel="Clear follow-up"
+                disabled={row.follow_up == null}
+                onClick={() => {
+                  onFollowUp(null);
+                }}
+              />
             </span>
           </section>
 

@@ -46,10 +46,12 @@ from boardwatch.delivery.answers import (
     WORK_AUTH_JURISDICTION_WORDS,
     WORK_AUTH_STATUS_WORDS,
 )
-from boardwatch.delivery.api import ApiContext
+from boardwatch.delivery.api import ApiContext, local_today
 from boardwatch.delivery.queue import SKIPPED_DIR, sync_queue
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
+    FOLLOWUP_DATE_REASON,
+    FOLLOWUP_RANGE_REASON,
     TOKEN_FILENAME,
     WRITE_BUSY_TIMEOUT_MS,
     BundleMissingError,
@@ -66,8 +68,10 @@ from boardwatch.eligibility.final_gate import record_gate_verdict
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.store.applications import create_application
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
+from boardwatch.store.queue_state import followup_job_dates
 from boardwatch.store.tables import (
     application_events,
     applications,
@@ -436,6 +440,48 @@ def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | N
         save_eligibility(
             conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")
         )
+
+
+def _undelivered(conn: Connection, key: str, *, title: str = "Data Engineer") -> int:
+    """A company and a posting with NO tailored artifact, returning the posting's canonical job.
+
+    This is the shape of the applications imported from another tool's history: `import_history`
+    matches a row against a real posting, so the job EXISTS, but nothing ever tailored a résumé
+    for it — so the delivery queue never offered it and there is no `posting_id` for the web page
+    to key a PDF or an unmark on.
+    """
+    company_id = int(
+        conn.execute(
+            insert(companies).values(
+                name=f"Acme {key}",
+                provider="greenhouse",
+                slug=f"acme-{key}",
+                source="user",
+                watched=True,
+            )
+        ).inserted_primary_key[0]
+    )
+    job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+    conn.execute(
+        insert(postings).values(
+            company_id=company_id,
+            job_id=job,
+            provider_posting_id=key,
+            title=title,
+            normalized_title=title.casefold(),
+            url="https://careers.acme.test/apply",
+            locations_json=["Austin, TX"],
+            remote_policy="remote",
+            posted_at=NOW - timedelta(days=9),
+            first_seen_at=NOW,
+            last_seen_at=NOW,
+            status="open",
+            consecutive_missing=0,
+            content_hash=f"hash-{key}",
+            body_text=JD_ELIGIBLE,
+        )
+    )
+    return job
 
 
 def _queue_folders(base: Path) -> list[str]:
@@ -1401,6 +1447,346 @@ def test_marking_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engi
     )
 
 
+def test_the_applied_history_names_a_closed_lead_and_one_that_never_reached_the_queue(
+    live: Live, engine: Engine
+) -> None:
+    """`GET /api/applied`, the third page's whole payload.
+
+    Two applications, chosen because they are the two shapes the live store actually holds: one
+    the queue delivered and the owner marked, whose posting the employer has since taken down,
+    and one imported from another tool's history, whose job never reached the delivery queue at
+    all. The second is what `posting_id: null` is FOR — the page has to say what was applied to
+    without claiming a delivery that never happened, and a row that invented a posting id would
+    hand the PDF and unmark controls an id the queue never offered.
+
+    `posting_closed` counts the first and not the second, which is what makes it answerable at a
+    recruiter call: applied, and the requisition is gone.
+    """
+    with engine.begin() as conn:
+        closed_posting, _closed_job = _deliver(conn, "one", pdf_uri=None)
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == closed_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        never_queued = _undelivered(conn, "two")
+        create_application(
+            conn,
+            job_id=never_queued,
+            status="applied",
+            source="import",
+            occurred_at=NOW - timedelta(days=5),
+        )
+
+    # Through the route the queue page uses, so the mark under test is the one it writes.
+    marked = call(live, f"/api/queue/{closed_posting}/applied", method="POST", bearer=live.token)
+    assert marked.status == 200
+
+    response = call(live, "/api/applied", bearer=live.token)
+    assert response.status == 200
+    payload = response.json()
+    # Newest first, and the imported row was applied to five days earlier.
+    assert [row["posting_id"] for row in payload["rows"]] == [closed_posting, None]
+    lead, imported = payload["rows"]
+
+    assert lead["company"] == "Acme one"
+    assert lead["title"] == "Software Engineer"
+    assert lead["status"] == "applied"
+    assert lead["posting_status"] == "closed"
+    assert lead["closed_at"] == "2026-08-26T12:00:00+00:00"
+    assert lead["source"] == "web"
+    # No PDF was ever built for this lead, so the control the page offers must not claim one.
+    assert lead["pdf_available"] is False
+    assert lead["pdf_uri"] is None
+
+    assert imported["company"] == "Acme two"
+    assert imported["title"] == "Data Engineer"
+    assert imported["location"] == "Austin, TX"
+    assert imported["apply_url"] == "https://careers.acme.test/apply"
+    assert imported["posting_status"] == "open"
+    assert imported["closed_at"] is None
+    assert imported["source"] == "import"
+    # An explicit offset, never a naive timestamp: the store holds naive UTC and a browser reads
+    # a bare timestamp as LOCAL time (D-485 finding 1).
+    assert imported["submitted_at"] == "2026-08-21T12:00:00+00:00"
+
+    counts = payload["counts"]
+    assert counts["total"] == 2
+    # The whole closed catalog every time, so a 0 here is a measurement rather than an absence.
+    assert counts["by_status"] == {
+        "interested": 0,
+        "applied": 2,
+        "interviewing": 0,
+        "offer": 0,
+        "rejected": 0,
+        "withdrawn": 0,
+    }
+    assert counts["posting_closed"] == 1
+
+
+def test_the_applied_row_describes_the_posting_the_application_was_made_against(
+    live: Live, engine: Engine
+) -> None:
+    """`applications.posting_version_id` decides the row's posting, not `_supersedes`.
+
+    The eBay shape `_supersedes` exists for: one job holding two delivered postings, an open
+    requisition and a dead copy. `_delivered_winners` prefers the LIVE one (D-432), which is right
+    for the queue — it is looking for work — and wrong here, because the owner applied against the
+    copy that is now closed. Without this the page answers `posting_status: "open"`,
+    `closed_at: null` and serves the résumé tailored for a requisition nobody applied to.
+
+    `_deliver` mints a company per delivery, so the two postings here sit on sibling company rows;
+    every assertion below is keyed on the posting id and its standing rather than on the name.
+    """
+    with engine.begin() as conn:
+        live_posting, job = _deliver(conn, "live", pdf_uri="file:///out/live.pdf")
+        dead_posting, _same = _deliver(
+            conn,
+            "dead",
+            job_id=job,
+            pdf_uri="file:///out/dead.pdf",
+            delivered_at=NOW + timedelta(hours=1),
+        )
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == dead_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        applied_against = int(
+            conn.execute(
+                select(posting_versions.c.id).where(posting_versions.c.posting_id == dead_posting)
+            ).scalar_one()
+        )
+        create_application(
+            conn, job_id=job, posting_version_id=applied_against, status="applied"
+        )
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["posting_id"] == dead_posting
+    assert row["posting_status"] == "closed"
+    assert row["closed_at"] == "2026-08-26T12:00:00+00:00"
+    # The résumé that went out, which is the one tailored for the requisition applied to.
+    assert row["pdf_uri"] == "file:///out/dead.pdf"
+    # The live sibling is still there and is still what the QUEUE would offer — this changed the
+    # applied page's reading of one application, not the delivery rule.
+    assert live_posting != dead_posting
+
+
+def test_an_unresolvable_applied_version_keeps_the_delivery_queues_own_choice(
+    live: Live, engine: Engine
+) -> None:
+    """The fallback, asserted so the branch above cannot be the only path that works.
+
+    Two applications that name no usable version: one with `posting_version_id` NULL — every row
+    `mark_job_applied` wrote before A4, and every row whose posting had no version — and one
+    naming a version on a posting the queue never DELIVERED, which has no artifact and therefore
+    no résumé or delivered id to offer. Both keep `_supersedes`' live winner.
+    """
+    with engine.begin() as conn:
+        live_posting, job = _deliver(conn, "live", pdf_uri="file:///out/live.pdf")
+        dead_posting, _same = _deliver(
+            conn, "dead", job_id=job, delivered_at=NOW + timedelta(hours=1)
+        )
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == dead_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        create_application(conn, job_id=job, status="applied")
+
+        undelivered_job = _undelivered(conn, "two")
+        undelivered_version = int(
+            conn.execute(
+                insert(posting_versions).values(
+                    posting_id=int(
+                        conn.execute(
+                            select(postings.c.id).where(postings.c.job_id == undelivered_job)
+                        ).scalar_one()
+                    ),
+                    content_hash="v-two",
+                    body_text=JD_ELIGIBLE,
+                    captured_at=NOW,
+                    capture_reason="new",
+                )
+            ).inserted_primary_key[0]
+        )
+        create_application(
+            conn,
+            job_id=undelivered_job,
+            posting_version_id=undelivered_version,
+            status="applied",
+            occurred_at=NOW - timedelta(days=5),
+        )
+
+    rows = call(live, "/api/applied", bearer=live.token).json()["rows"]
+    unnamed, never_delivered = rows
+    assert unnamed["posting_id"] == live_posting
+    assert unnamed["posting_status"] == "open"
+    assert unnamed["pdf_uri"] == "file:///out/live.pdf"
+    # Never delivered, so no posting id and no résumé — the posting's own facts still answer
+    # "what was applied to".
+    assert never_delivered["posting_id"] is None
+    assert never_delivered["title"] == "Data Engineer"
+    assert never_delivered["pdf_uri"] is None
+
+
+def test_only_a_jobs_latest_submitted_attempt_offers_the_unmark(
+    live: Live, engine: Engine
+) -> None:
+    """`can_unmark` per ROW, because the write behind it is per JOB.
+
+    `mark_job_unapplied` resolves posting -> job -> `attempts[-1]`, so a control offered on an
+    earlier attempt makes a promise about a row the reader did not click. Both orders are seeded
+    here because they fail differently: with the submitted attempt FIRST the click answers
+    `unchanged` and nothing happens, and with it SECOND the click withdraws an attempt further
+    down the page.
+    """
+    with engine.begin() as conn:
+        first_posting, first_job = _deliver(conn, "one")
+        second_posting, second_job = _deliver(conn, "two")
+        # Submitted attempt, then a `track add --new-attempt` row sitting at `interested`.
+        early_applied = create_application(
+            conn, job_id=first_job, status="applied", occurred_at=NOW - timedelta(days=5)
+        )
+        later_interested = create_application(conn, job_id=first_job, status="interested")
+        # The inverted order: a dead earlier attempt under a live one.
+        early_rejected = create_application(
+            conn, job_id=second_job, status="rejected", occurred_at=NOW - timedelta(days=5)
+        )
+        later_applied = create_application(
+            conn, job_id=second_job, status="applied", occurred_at=NOW - timedelta(days=1)
+        )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    offered = {row["application_id"]: row["can_unmark"] for row in payload["rows"]}
+
+    # Neither row on the first job: the latest attempt does not read as submitted, so there is
+    # nothing to withdraw, and the earlier one is not the row the write would reach.
+    assert offered[early_applied] is False
+    assert offered[later_interested] is False
+    # And on the second job exactly the row the write acts on, and only that row.
+    assert offered[early_rejected] is False
+    assert offered[later_applied] is True
+    # The ids the page would key the control on are the delivered postings, not a sibling's.
+    postings_by_application = {row["application_id"]: row["posting_id"] for row in payload["rows"]}
+    assert postings_by_application[later_applied] == second_posting
+    assert postings_by_application[later_interested] == first_posting
+
+
+def test_an_undelivered_application_never_offers_the_unmark(live: Live, engine: Engine) -> None:
+    """No posting id, so no control: every existing write route keys on one."""
+    with engine.begin() as conn:
+        never_queued = _undelivered(conn, "two")
+        create_application(conn, job_id=never_queued, status="applied")
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["posting_id"] is None
+    assert row["can_unmark"] is False
+
+
+def test_an_applied_leads_follow_up_reaches_the_applied_history_and_its_band(
+    live: Live, engine: Engine
+) -> None:
+    """The gap T83 left: a follow-up SURVIVES `mark_job_applied` in the store, but `queue_payload`
+    is built on `delivered_unapplied`, so an applied lead was in neither lane and no surface
+    showed its date or let the owner set one — and the applied lead is exactly the one the owner
+    follows up on.
+
+    The count is per JOB, not per attempt: two attempts on one job carry the same date (the key is
+    `queue.followup.<job_id>`), and counting both would report two pieces of work where there is
+    one. `<=` today, so a date that slipped past unread is counted.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+        # Two attempts, both reading as submitted, so the dedup is exercised rather than asserted
+        # on a shape that cannot distinguish the two rules.
+        create_application(
+            conn, job_id=job_id, status="applied", occurred_at=NOW - timedelta(days=5)
+        )
+        create_application(conn, job_id=job_id, status="interviewing")
+    today = local_today()
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+
+    overdue = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=3)).isoformat()},
+    )
+    assert overdue.status == 200, overdue.body[:200]
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    # Resolved on `job_id`, so every attempt on the job carries it — the store holds one date.
+    assert [row["follow_up"] for row in payload["rows"]] == [
+        (today - timedelta(days=3)).isoformat()
+    ] * 2
+    assert payload["counts"]["follow_up_due"] == 1
+
+    # Tomorrow's date is pinned but not due, and the same two rows now count for nothing.
+    later = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=1)).isoformat()},
+    )
+    assert later.status == 200, later.body[:200]
+    future = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in future["rows"]] == [
+        (today + timedelta(days=1)).isoformat()
+    ] * 2
+    assert future["counts"]["follow_up_due"] == 0
+
+    cleared = call(
+        live, f"/api/queue/{posting_id}/unfollowup", method="POST", bearer=live.token
+    )
+    assert cleared.status == 200
+    gone = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in gone["rows"]] == [None, None]
+    assert gone["counts"]["follow_up_due"] == 0
+
+
+def test_a_withdrawn_attempts_follow_up_is_not_counted_as_due(
+    live: Live, engine: Engine
+) -> None:
+    """`follow_up_due` is gated on `APPLIED_STATUSES`, exactly as `posting_closed` is: a withdrawn
+    attempt is not an application anybody is waiting on, so its date is shown and not counted."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+        create_application(conn, job_id=job_id, status="withdrawn")
+    today = local_today()
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": today.isoformat()},
+    )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    # Shown on the row — the date is still pinned to the lead, which is the queue's business.
+    assert payload["rows"][0]["follow_up"] == today.isoformat()
+    assert payload["counts"]["follow_up_due"] == 0
+
+
+def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine: Engine) -> None:
+    """A read, through `_read`, like `/api/queue`: no token is a 401 and a POST is not a route.
+
+    The paired 200 is in the same test on purpose — a server that answered 401 or 404 to
+    everything would pass both refusals on its own.
+    """
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+
+    assert call(live, "/api/applied", bearer=None).status == 401
+    assert call(live, "/api/applied", method="POST", bearer=live.token).status == 404
+    served = call(live, "/api/applied", bearer=live.token)
+    assert served.status == 200
+    assert len(served.json()["rows"]) == 1
+
+
 # -------------------------------------------------------------------------------------- counts
 
 
@@ -2100,3 +2486,279 @@ def test_a_semicolon_joined_location_entry_is_split_into_places(tmp_path: Path) 
         "Bozeman, Montana, United States",
         "Free Solo",
     ]
+
+
+# ----------------------------------------------------------------------------------- follow-up
+
+
+def test_a_follow_up_date_is_set_read_back_on_the_row_and_the_detail_and_cleared(
+    live: Live, engine: Engine
+) -> None:
+    """The whole round trip in one test, on this module's standing rule: a route that answered
+    `null` for everything would pass a "clearing works" test on its own."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+
+    before = call(live, "/api/queue", bearer=live.token).json()
+    assert before["rows"][0]["follow_up"] is None
+
+    set_ = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+    assert set_.status == 200, set_.body[:200]
+    assert set_.json() == {"outcome": "follow_up_set", "follow_up": "2026-09-20"}
+
+    after = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["follow_up"] for row in after["rows"]] == ["2026-09-20"]
+    detail = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()
+    assert detail["row"]["follow_up"] == "2026-09-20"
+    # A note, not a disposition: the lead is still in the lane it was in, and no other dimension
+    # moved. This is what makes follow-up NOT a fourth kind of skip.
+    assert [row["posting_id"] for row in after["rows"]] == [posting_id]
+    assert after["counts"]["skipped"] == 0
+    assert after["counts"]["reported"] == 0
+    assert after["counts"]["applied_ever"] == 0
+
+    cleared = call(
+        live, f"/api/queue/{posting_id}/unfollowup", method="POST", bearer=live.token
+    )
+    assert cleared.status == 200, cleared.body[:200]
+    assert cleared.json() == {"outcome": "follow_up_cleared", "follow_up": None}
+    back = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["follow_up"] for row in back["rows"]] == [None]
+    assert [row["posting_id"] for row in back["rows"]] == [posting_id]
+
+
+def test_a_follow_up_survives_the_lead_being_marked_applied(live: Live, engine: Engine) -> None:
+    """The reason the feature exists: an applied lead is exactly the one the owner follows up on.
+
+    Counted through the STORE rather than through the queue payload that would have claimed it —
+    an applied lead is no longer a row, so the payload cannot answer this question at all.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+    applied = call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    assert applied.status == 200, applied.body[:200]
+
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert page["rows"] == []
+    assert page["counts"]["applied_ever"] == 1
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: "2026-09-20"}
+    # And the detail still serves it, which is the only surface that can still show it.
+    detail = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()
+    assert detail["row"]["follow_up"] == "2026-09-20"
+
+
+def test_setting_a_follow_up_moves_no_folder(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """A follow-up is a note ON a lead. Skip and report each drain a folder; this must not, and
+    the filesystem is what says so rather than the response that claimed it."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 1, "a folder has to exist or a no-move assertion is unfalsifiable"
+
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+
+    assert _queue_folders(ctx.queue_root) == standing
+    for drain in DRAIN_DIRS:
+        assert _queue_folders(ctx.queue_root / drain) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"date": "tomorrow"},           # prose
+        {"date": "2026-13-01"},         # out of range
+        {"date": "2026-09-20T09:00"},   # an instant, not a date
+        {"date": "20/09/2026"},         # a different notation
+        {"date": ""},                   # empty: clearing is its own route
+        {"date": None},                 # null: clearing is its own route
+        {"date": 20260920},             # a number
+        {"when": "2026-09-20"},         # the wrong key
+        {},                             # no key at all
+    ],
+)
+def test_a_malformed_follow_up_date_is_refused_with_a_named_reason(
+    live: Live, engine: Engine, body: Any
+) -> None:
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+
+    refused = call(
+        live, f"/api/queue/{posting_id}/followup", method="POST", bearer=live.token, body=body
+    )
+
+    assert refused.status == 400, refused.body[:200]
+    assert refused.json()["error"] == FOLLOWUP_DATE_REASON
+    # Nothing was written. A parser that refuses AFTER writing is the failure worth naming.
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {}
+    # The paired success, in the same test: a route that answered 400 to everything would pass
+    # every case above on its own.
+    ok = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+    assert ok.status == 200, ok.body[:200]
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: "2026-09-20"}
+
+
+def test_a_follow_up_more_than_a_year_out_is_refused_as_a_fat_finger(
+    live: Live, engine: Engine
+) -> None:
+    """A mistyped year is the realistic slip — `2036` for `2026` — and it would park a lead's
+    follow-up a decade away where nothing would ever surface it again. 366 days is the bound, so
+    "this time next year" on a leap year is still accepted."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    today = local_today()
+
+    too_far = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=367)).isoformat()},
+    )
+    assert too_far.status == 400, too_far.body[:200]
+    assert too_far.json()["error"] == FOLLOWUP_RANGE_REASON
+
+    edge = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=366)).isoformat()},
+    )
+    assert edge.status == 200, edge.body[:200]
+
+
+def test_a_follow_up_more_than_a_year_in_the_PAST_is_refused_in_the_same_words(
+    live: Live, engine: Engine
+) -> None:
+    """The guard is two-sided because the slip is: a mistyped year lands in the past as readily as
+    in the future (`2016` for `2026`), and the date input's own segment order makes `0202-09-20` a
+    value the keyboard walks through on the way to `2026-09-20`. A date that far back is `<= today`,
+    so it would render as "follow-up due 0202-09-20" and count in `follow_up_due` forever.
+
+    A RECENT past date is still accepted: overdue is a real state and the count exists to surface
+    it."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    today = local_today()
+
+    too_old = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=367)).isoformat()},
+    )
+    assert too_old.status == 400, too_old.body[:200]
+    # The SAME named reason in both directions: one guard, one sentence to reword.
+    assert too_old.json()["error"] == FOLLOWUP_RANGE_REASON
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {}
+
+    overdue = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=3)).isoformat()},
+    )
+    assert overdue.status == 200, overdue.body[:200]
+    edge = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=366)).isoformat()},
+    )
+    assert edge.status == 200, edge.body[:200]
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: (today - timedelta(days=366)).isoformat()}
+
+
+def test_the_follow_up_due_count_is_dates_up_to_today_and_no_further(
+    live: Live, engine: Engine
+) -> None:
+    """`follow_up_due` is "what is due", so it is `<= today` and never `== today`: a date that
+    slipped past unread is the one the owner most needs counted."""
+    with engine.begin() as conn:
+        overdue, _ = _deliver(conn, "overdue")
+        today_row, _ = _deliver(conn, "today")
+        later, _ = _deliver(conn, "later")
+    today = local_today()
+    for posting_id, on in (
+        (overdue, today - timedelta(days=3)),
+        (today_row, today),
+        (later, today + timedelta(days=1)),
+    ):
+        answer = call(
+            live,
+            f"/api/queue/{posting_id}/followup",
+            method="POST",
+            bearer=live.token,
+            body={"date": on.isoformat()},
+        )
+        assert answer.status == 200, answer.body[:200]
+
+    counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
+
+    # Two of three: the overdue one and today's. Tomorrow's is pinned but not due.
+    assert counts["follow_up_due"] == 2
+    assert counts["in_queue"] == 3
+
+
+def test_local_today_is_the_servers_own_zone_and_never_utc() -> None:
+    """The date a follow-up is written in is the one on the owner's wall calendar.
+
+    UTC+14 and UTC-12 are 26 hours apart, so their local dates ALWAYS differ — which is exactly
+    what `utcnow().date()` cannot produce, since it answers the same date in both. That is the
+    assertion: a UTC implementation makes these two equal.
+    """
+    original = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = "Pacific/Kiritimati"  # UTC+14
+        time.tzset()
+        ahead = local_today()
+        os.environ["TZ"] = "Etc/GMT+12"  # UTC-12
+        time.tzset()
+        behind = local_today()
+    finally:
+        if original is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original
+        time.tzset()
+
+    assert ahead != behind
+    assert 1 <= (ahead - behind).days <= 2

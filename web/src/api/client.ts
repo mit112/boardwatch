@@ -20,8 +20,10 @@
 import { authHeaders, forgetToken } from "./token";
 import type {
   Answers,
+  AppliedHistoryResponse,
   AppliedResponse,
   BatchSkipResponse,
+  FollowUpResponse,
   QueueDetail,
   QueueResponse,
   ReportResponse,
@@ -132,8 +134,22 @@ export const report = (postingId: number): Promise<ReportResponse> =>
 export const unreport = (postingId: number): Promise<ReportResponse> =>
   request<ReportResponse>(`/api/queue/${String(postingId)}/unreport`, "POST");
 
+/**
+ * Pin a follow-up date to a lead, and its inverse. `date` is `YYYY-MM-DD` and is validated
+ * server-side; the input that produces it is a native `<input type="date">`, so the only way to
+ * reach here with anything else is a stale bundle, which the 400 names.
+ */
+export const setFollowUp = (postingId: number, date: string): Promise<FollowUpResponse> =>
+  request<FollowUpResponse>(`/api/queue/${String(postingId)}/followup`, "POST", { date });
+
+export const clearFollowUp = (postingId: number): Promise<FollowUpResponse> =>
+  request<FollowUpResponse>(`/api/queue/${String(postingId)}/unfollowup`, "POST");
+
 export const revealFolder = (postingId: number): Promise<RevealResponse> =>
   request<RevealResponse>(`/api/queue/${String(postingId)}/reveal`, "POST");
+
+export const getApplied = (): Promise<AppliedHistoryResponse> =>
+  request<AppliedHistoryResponse>("/api/applied");
 
 export const getAnswers = (): Promise<Answers> => request<Answers>("/api/answers");
 

@@ -10,7 +10,13 @@
  *   - `reveal` reports `ok: false` for one posting, which is what a platform with no file-manager
  *     handler looks like on the wire.
  */
-import type { QueueCounts, QueueResponse, QueueRow } from "../api/types";
+import type {
+  AppliedHistoryResponse,
+  AppliedRow,
+  QueueCounts,
+  QueueResponse,
+  QueueRow,
+} from "../api/types";
 import { ANSWERS } from "./answers";
 import { LATE_ROWS, QUEUE_ROWS, byRank, detailFor } from "./data";
 import { FUNNELS, RUNS } from "./runs";
@@ -24,6 +30,34 @@ const bootedAt = Date.now();
 const appliedJobIds = new Set<number>();
 const skippedPostingIds = new Set<number>();
 const reportedPostingIds = new Set<number>();
+/*
+ * Follow-up dates, by posting. Seeded relative to TODAY rather than to a fixed date, so the
+ * due marker and the "follow-up due" facet are demonstrable on any day the fixtures are opened —
+ * a hard-coded 2026-09-20 stops being due the moment the calendar passes it.
+ */
+const followUpByPosting = new Map<number, string>();
+
+function isoDaysFromToday(days: number): string {
+  const when = new Date();
+  when.setDate(when.getDate() + days);
+  const month = String(when.getMonth() + 1).padStart(2, "0");
+  const day = String(when.getDate()).padStart(2, "0");
+  return `${String(when.getFullYear())}-${month}-${day}`;
+}
+
+/** The row as the API serves it: the follow-up is state this module holds, not a row field. */
+function withFollowUp(row: QueueRow): QueueRow {
+  return { ...row, follow_up: followUpByPosting.get(row.posting_id) ?? null };
+}
+
+// Two seeds, one arrived and one not, so both states are on the page before anything is clicked.
+for (const [index, offset] of [
+  [0, -2],
+  [1, 9],
+] as const) {
+  const seeded = QUEUE_ROWS[index];
+  if (seeded !== undefined) followUpByPosting.set(seeded.posting_id, isoDaysFromToday(offset));
+}
 
 function pool(): QueueRow[] {
   const released = Date.now() - bootedAt > HOLD_MS;
@@ -61,11 +95,11 @@ function isReviewLane(row: QueueRow): boolean {
 }
 
 function applyRows(): QueueRow[] {
-  return visibleRows().filter((row) => !isReviewLane(row));
+  return visibleRows().filter((row) => !isReviewLane(row)).map(withFollowUp);
 }
 
 function reviewRows(): QueueRow[] {
-  return visibleRows().filter(isReviewLane);
+  return visibleRows().filter(isReviewLane).map(withFollowUp);
 }
 
 /** Counted from the pool, the way the server counts before filtering — never a constant. */
@@ -104,8 +138,77 @@ function counts(rows: QueueRow[]): QueueCounts {
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     reported: reportedPostingIds.size,
+    // Over the apply lane, exactly as the server counts it: the cell is a facet, so its number
+    // has to be the number of rows clicking it shows.
+    follow_up_due: rows.filter(
+      (row) => row.follow_up != null && row.follow_up <= isoDaysFromToday(0),
+    ).length,
     delivered_last_run: rows.filter((row) => row.delivered_run_id === (lastRun?.id ?? -1)).length,
     last_run_finished: lastRun?.finished ?? null,
+  };
+}
+
+/*
+ * `GET /api/applied`, derived from the same `appliedJobIds` the mark route writes — so marking a
+ * lead applied in the queue makes it appear here on the next load, which is the behaviour the page
+ * exists for. The seeded set is empty, matching `data.ts`' own note that `applications` has never
+ * held a row on the live store: an empty applied page is the honest starting state.
+ *
+ * `application_id` is synthesised from the job id (one attempt per job is all this fixture models)
+ * and `posting_id` is the fixture row's own, because every fixture lead was delivered. The
+ * `posting_id: null` case — an application whose job never reached the queue — has no fixture row
+ * to hang off and is exercised in `web/src/__tests__/appliedPage.test.tsx` instead.
+ */
+function appliedResponse(): AppliedHistoryResponse {
+  const rows: AppliedRow[] = [...appliedJobIds]
+    .map((jobId) => ALL_ROWS.find((candidate) => candidate.job_id === jobId))
+    .filter((row): row is QueueRow => row !== undefined)
+    .map((row) => ({
+      application_id: row.job_id,
+      job_id: row.job_id,
+      posting_id: row.posting_id,
+      company: row.company,
+      title: row.title,
+      location: row.location,
+      apply_url: row.apply_url,
+      status: "applied",
+      submitted_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      posting_status: row.status,
+      closed_at: row.status === "closed" ? row.first_seen : null,
+      pdf_available: row.pdf_available,
+      pdf_uri: row.pdf_uri,
+      source: "web",
+      // One attempt per job is all this fixture models, and it reads as applied, so it IS the
+      // attempt the unapply route acts on. The earlier-attempt row — the one with no control —
+      // has no fixture lead to hang off and is exercised in `appliedPage.test.tsx`.
+      can_unmark: true,
+      // From the SAME map the queue fixture serves, so `npm run dev` shows the two surfaces
+      // agreeing about one lead: pin a date in the queue, mark it applied, and the date is here.
+      follow_up: followUpByPosting.get(row.posting_id) ?? null,
+    }));
+  return {
+    rows,
+    counts: {
+      total: rows.length,
+      // The whole catalog every time, zeros included, exactly as the server sends it.
+      by_status: {
+        interested: 0,
+        applied: rows.length,
+        interviewing: 0,
+        offer: 0,
+        rejected: 0,
+        withdrawn: 0,
+      },
+      posting_closed: rows.filter((row) => row.posting_status === "closed").length,
+      // Per JOB, exactly as the server counts it — one attempt per job here, so the set is the
+      // shape rather than the arithmetic — and `<=` today, so an overdue date is counted.
+      follow_up_due: new Set(
+        rows
+          .filter((row) => row.follow_up != null && row.follow_up <= isoDaysFromToday(0))
+          .map((row) => row.job_id),
+      ).size,
+    },
   };
 }
 
@@ -166,6 +269,7 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/queue") return queueResponse();
   if (method === "POST" && path === "/api/queue/skip") return batchSkip(body, true);
   if (method === "POST" && path === "/api/queue/unskip") return batchSkip(body, false);
+  if (method === "GET" && path === "/api/applied") return appliedResponse();
   if (method === "GET" && path === "/api/answers") return ANSWERS;
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
 
@@ -177,10 +281,12 @@ function route(method: string, path: string, body: unknown): unknown {
   }
 
   const detailMatch = /^\/api\/queue\/(\d+)$/.exec(path);
-  if (method === "GET" && detailMatch) return detailFor(findRow(Number(detailMatch[1])));
+  if (method === "GET" && detailMatch) {
+    return detailFor(withFollowUp(findRow(Number(detailMatch[1]))));
+  }
 
   const actionMatch =
-    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|reveal)$/.exec(
+    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|followup|unfollowup|reveal)$/.exec(
       path,
     );
   if (method === "POST" && actionMatch) {
@@ -216,6 +322,20 @@ function route(method: string, path: string, body: unknown): unknown {
     if (action === "reported") {
       reportedPostingIds.add(row.posting_id);
       return { outcome: "reported" };
+    }
+    if (action === "followup") {
+      // The same strict parse the real route makes, so a bundle bug shows up here too rather
+      // than only against a live server.
+      const date = (body as { date?: unknown } | null)?.date;
+      if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new FixtureError(400, 'expected {"date": "YYYY-MM-DD"}');
+      }
+      followUpByPosting.set(row.posting_id, date);
+      return { outcome: "follow_up_set", follow_up: date };
+    }
+    if (action === "unfollowup") {
+      followUpByPosting.delete(row.posting_id);
+      return { outcome: "follow_up_cleared", follow_up: null };
     }
     reportedPostingIds.delete(row.posting_id);
     return { outcome: "unreported" };

@@ -51,8 +51,98 @@ export function formatTimestamp(iso: string | null): string {
   });
 }
 
+/** The two helpers below share this. `== null` and the `NaN` check for the usual reason: an older
+ *  server omits the key entirely, and an unparseable string is absence rather than a thrown render. */
+function localeWhen(iso: string | null | undefined, options: Intl.DateTimeFormatOptions): string {
+  if (iso == null) return EM_DASH;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return EM_DASH;
+  return when.toLocaleString(undefined, options);
+}
+
+/**
+ * A stored instant WITH its year, for the applied history.
+ *
+ * Its own helper rather than a widening of `formatTimestamp`: the queue and the runs pages show
+ * days-old rows, where a year on every line is noise. The applied history is the one list built to
+ * hold several years of it and is sorted by that column by default, so `Sep 10, 03:30 PM` labelled
+ * 2025-09-10 and 2026-09-10 identically — the list read as mis-sorted and "when did I apply" had
+ * no answer on the page that exists to give it.
+ */
+export function formatTimestampWithYear(iso: string | null | undefined): string {
+  return localeWhen(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * A stored instant as a DATE with its year and no clock.
+ *
+ * `postings.closed_at` answers "which day did the employer take this down", and the hour it was
+ * noticed is the scan's timing rather than the employer's — printing it claims a precision the
+ * column does not have.
+ */
+export function formatDateWithYear(iso: string | null | undefined): string {
+  return localeWhen(iso, { year: "numeric", month: "short", day: "numeric" });
+}
+
 export function formatCount(value: number | null): string {
   return value == null ? EM_DASH : value.toLocaleString();
+}
+
+/**
+ * Today as `YYYY-MM-DD` in the BROWSER's local zone, built from the local parts.
+ *
+ * Never `toISOString().slice(0, 10)`, which is UTC: west of Greenwich that answers tomorrow's
+ * date for the whole evening, so every follow-up pinned for tomorrow would read as due tonight.
+ * The server answers the same question in its own local zone (`delivery/api.local_today`), and
+ * this viewer only ever talks to loopback, so the two are the same wall calendar.
+ */
+export function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${String(now.getFullYear())}-${month}-${day}`;
+}
+
+/**
+ * Whether a pinned follow-up has arrived. `<=`, never `==`: a date that slipped past unread is
+ * the one that most needs surfacing. ISO-8601 dates compare lexicographically exactly as they
+ * compare chronologically, so this needs no `Date` parse and no zone.
+ *
+ * `== null` for the usual reason — an older server omits the field entirely.
+ */
+export function isFollowUpDue(followUp: string | null | undefined): boolean {
+  if (followUp == null) return false;
+  return followUp <= todayIso();
+}
+
+/**
+ * The window a follow-up may be pinned in, as the `min`/`max` a date input takes.
+ *
+ * The same 366 days as `delivery/server.FOLLOWUP_MAX_DAYS`, and two-sided for the same reason
+ * that guard is: a date input fills its segments left to right, so typing the year of a date
+ * walks the value through `0002-…`, `0020-…` and `0202-…`, and every one of those is `<= today`
+ * and therefore due forever. A control that offers a value the route refuses is a 400 the reader
+ * could not have predicted. A recent PAST date is inside the window — overdue is a real state.
+ *
+ * Local parts, never `toISOString()`, for the reason `todayIso` gives.
+ */
+const FOLLOW_UP_MAX_DAYS = 366;
+
+export function followUpWindow(): { min: string; max: string } {
+  const bound = (days: number): string => {
+    const when = new Date();
+    when.setDate(when.getDate() + days);
+    const month = String(when.getMonth() + 1).padStart(2, "0");
+    const day = String(when.getDate()).padStart(2, "0");
+    return `${String(when.getFullYear())}-${month}-${day}`;
+  };
+  return { min: bound(-FOLLOW_UP_MAX_DAYS), max: bound(FOLLOW_UP_MAX_DAYS) };
 }
 
 /**

@@ -48,6 +48,7 @@ function renderPane(detail: QueueDetail, extra: { revealSupported?: boolean } = 
       onApplied={() => undefined}
       onSkip={() => undefined}
       onReport={() => undefined}
+      onFollowUp={() => undefined}
       onToast={() => undefined}
       {...extra}
     />,
