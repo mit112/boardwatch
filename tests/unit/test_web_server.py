@@ -46,10 +46,12 @@ from boardwatch.delivery.answers import (
     WORK_AUTH_JURISDICTION_WORDS,
     WORK_AUTH_STATUS_WORDS,
 )
-from boardwatch.delivery.api import ApiContext
+from boardwatch.delivery.api import ApiContext, local_today
 from boardwatch.delivery.queue import SKIPPED_DIR, sync_queue
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
+    FOLLOWUP_DATE_REASON,
+    FOLLOWUP_RANGE_REASON,
     TOKEN_FILENAME,
     WRITE_BUSY_TIMEOUT_MS,
     BundleMissingError,
@@ -68,6 +70,7 @@ from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
+from boardwatch.store.queue_state import followup_job_dates
 from boardwatch.store.tables import (
     application_events,
     applications,
@@ -2100,3 +2103,232 @@ def test_a_semicolon_joined_location_entry_is_split_into_places(tmp_path: Path) 
         "Bozeman, Montana, United States",
         "Free Solo",
     ]
+
+
+# ----------------------------------------------------------------------------------- follow-up
+
+
+def test_a_follow_up_date_is_set_read_back_on_the_row_and_the_detail_and_cleared(
+    live: Live, engine: Engine
+) -> None:
+    """The whole round trip in one test, on this module's standing rule: a route that answered
+    `null` for everything would pass a "clearing works" test on its own."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+
+    before = call(live, "/api/queue", bearer=live.token).json()
+    assert before["rows"][0]["follow_up"] is None
+
+    set_ = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+    assert set_.status == 200, set_.body[:200]
+    assert set_.json() == {"outcome": "follow_up_set", "follow_up": "2026-09-20"}
+
+    after = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["follow_up"] for row in after["rows"]] == ["2026-09-20"]
+    detail = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()
+    assert detail["row"]["follow_up"] == "2026-09-20"
+    # A note, not a disposition: the lead is still in the lane it was in, and no other dimension
+    # moved. This is what makes follow-up NOT a fourth kind of skip.
+    assert [row["posting_id"] for row in after["rows"]] == [posting_id]
+    assert after["counts"]["skipped"] == 0
+    assert after["counts"]["reported"] == 0
+    assert after["counts"]["applied_ever"] == 0
+
+    cleared = call(
+        live, f"/api/queue/{posting_id}/unfollowup", method="POST", bearer=live.token
+    )
+    assert cleared.status == 200, cleared.body[:200]
+    assert cleared.json() == {"outcome": "follow_up_cleared", "follow_up": None}
+    back = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["follow_up"] for row in back["rows"]] == [None]
+    assert [row["posting_id"] for row in back["rows"]] == [posting_id]
+
+
+def test_a_follow_up_survives_the_lead_being_marked_applied(live: Live, engine: Engine) -> None:
+    """The reason the feature exists: an applied lead is exactly the one the owner follows up on.
+
+    Counted through the STORE rather than through the queue payload that would have claimed it —
+    an applied lead is no longer a row, so the payload cannot answer this question at all.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+    applied = call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    assert applied.status == 200, applied.body[:200]
+
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert page["rows"] == []
+    assert page["counts"]["applied_ever"] == 1
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: "2026-09-20"}
+    # And the detail still serves it, which is the only surface that can still show it.
+    detail = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()
+    assert detail["row"]["follow_up"] == "2026-09-20"
+
+
+def test_setting_a_follow_up_moves_no_folder(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """A follow-up is a note ON a lead. Skip and report each drain a folder; this must not, and
+    the filesystem is what says so rather than the response that claimed it."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 1, "a folder has to exist or a no-move assertion is unfalsifiable"
+
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+
+    assert _queue_folders(ctx.queue_root) == standing
+    for drain in DRAIN_DIRS:
+        assert _queue_folders(ctx.queue_root / drain) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"date": "tomorrow"},           # prose
+        {"date": "2026-13-01"},         # out of range
+        {"date": "2026-09-20T09:00"},   # an instant, not a date
+        {"date": "20/09/2026"},         # a different notation
+        {"date": ""},                   # empty: clearing is its own route
+        {"date": None},                 # null: clearing is its own route
+        {"date": 20260920},             # a number
+        {"when": "2026-09-20"},         # the wrong key
+        {},                             # no key at all
+    ],
+)
+def test_a_malformed_follow_up_date_is_refused_with_a_named_reason(
+    live: Live, engine: Engine, body: Any
+) -> None:
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+
+    refused = call(
+        live, f"/api/queue/{posting_id}/followup", method="POST", bearer=live.token, body=body
+    )
+
+    assert refused.status == 400, refused.body[:200]
+    assert refused.json()["error"] == FOLLOWUP_DATE_REASON
+    # Nothing was written. A parser that refuses AFTER writing is the failure worth naming.
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {}
+    # The paired success, in the same test: a route that answered 400 to everything would pass
+    # every case above on its own.
+    ok = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20"},
+    )
+    assert ok.status == 200, ok.body[:200]
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: "2026-09-20"}
+
+
+def test_a_follow_up_more_than_a_year_out_is_refused_as_a_fat_finger(
+    live: Live, engine: Engine
+) -> None:
+    """A mistyped year is the realistic slip — `2036` for `2026` — and it would park a lead's
+    follow-up a decade away where nothing would ever surface it again. 366 days is the bound, so
+    "this time next year" on a leap year is still accepted."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    today = local_today()
+
+    too_far = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=367)).isoformat()},
+    )
+    assert too_far.status == 400, too_far.body[:200]
+    assert too_far.json()["error"] == FOLLOWUP_RANGE_REASON
+
+    edge = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=366)).isoformat()},
+    )
+    assert edge.status == 200, edge.body[:200]
+
+
+def test_the_follow_up_due_count_is_dates_up_to_today_and_no_further(
+    live: Live, engine: Engine
+) -> None:
+    """`follow_up_due` is "what is due", so it is `<= today` and never `== today`: a date that
+    slipped past unread is the one the owner most needs counted."""
+    with engine.begin() as conn:
+        overdue, _ = _deliver(conn, "overdue")
+        today_row, _ = _deliver(conn, "today")
+        later, _ = _deliver(conn, "later")
+    today = local_today()
+    for posting_id, on in (
+        (overdue, today - timedelta(days=3)),
+        (today_row, today),
+        (later, today + timedelta(days=1)),
+    ):
+        answer = call(
+            live,
+            f"/api/queue/{posting_id}/followup",
+            method="POST",
+            bearer=live.token,
+            body={"date": on.isoformat()},
+        )
+        assert answer.status == 200, answer.body[:200]
+
+    counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
+
+    # Two of three: the overdue one and today's. Tomorrow's is pinned but not due.
+    assert counts["follow_up_due"] == 2
+    assert counts["in_queue"] == 3
+
+
+def test_local_today_is_the_servers_own_zone_and_never_utc() -> None:
+    """The date a follow-up is written in is the one on the owner's wall calendar.
+
+    UTC+14 and UTC-12 are 26 hours apart, so their local dates ALWAYS differ — which is exactly
+    what `utcnow().date()` cannot produce, since it answers the same date in both. That is the
+    assertion: a UTC implementation makes these two equal.
+    """
+    original = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = "Pacific/Kiritimati"  # UTC+14
+        time.tzset()
+        ahead = local_today()
+        os.environ["TZ"] = "Etc/GMT+12"  # UTC-12
+        time.tzset()
+        behind = local_today()
+    finally:
+        if original is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original
+        time.tzset()
+
+    assert ahead != behind
+    assert 1 <= (ahead - behind).days <= 2

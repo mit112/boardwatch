@@ -53,6 +53,7 @@ import re
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -72,6 +73,7 @@ from boardwatch.delivery.api import (
     answers_payload,
     detail_payload,
     funnel_payload,
+    local_today,
     queue_payload,
     resolve_pdf,
     reveal,
@@ -93,8 +95,10 @@ from boardwatch.store.db import (
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
 from boardwatch.store.queue_state import (
+    clear_job_followup,
     mark_job_reported,
     mark_job_skipped,
+    set_job_followup,
     unmark_job_reported,
     unmark_job_skipped,
 )
@@ -135,6 +139,15 @@ WRITE_ATTEMPTS = 3
 WRITE_BUSY_TIMEOUT_MS = 300
 READ_BUSY_TIMEOUT_MS = 500
 
+#: The two named refusals the follow-up route answers with, as constants because the client and
+#: the tests both assert on the exact string and a reworded copy in either place is a silent pass.
+FOLLOWUP_DATE_REASON = 'expected {"date": "YYYY-MM-DD"}'
+#: A fat-finger guard, not a policy: the realistic slip is a mistyped YEAR, which parks a lead's
+#: follow-up a decade out where nothing will ever surface it again. 366 rather than 365 so "this
+#: time next year" across a leap year is still accepted.
+FOLLOWUP_MAX_DAYS = 366
+FOLLOWUP_RANGE_REASON = f"a follow-up date may be at most {FOLLOWUP_MAX_DAYS} days from today"
+
 #: Cap on a request body, in bytes. Only the batch routes read one. 64 KiB carries roughly 7,000
 #: ids against a queue measured at 392, and the point of the cap is that a claimed
 #: `Content-Length` can never make this handler allocate what it says.
@@ -152,7 +165,8 @@ _QUEUE_ITEM = re.compile(r"^/api/queue/(\d+)$")
 #: a posting id, so `skip` can never be read as one.
 _QUEUE_BATCH = re.compile(r"^/api/queue/(skip|unskip)$")
 _QUEUE_ACTION = re.compile(
-    r"^/api/queue/(\d+)/(applied|unapplied|skipped|unskip|reported|unreport|reveal)$"
+    r"^/api/queue/(\d+)/"
+    r"(applied|unapplied|skipped|unskip|reported|unreport|followup|unfollowup|reveal)$"
 )
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
@@ -494,6 +508,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if action in ("reported", "unreport"):
             self._report(posting_id, report=action == "reported")
             return
+        if action in ("followup", "unfollowup"):
+            self._followup(posting_id, clearing=action == "unfollowup")
+            return
         result = self._write(
             lambda conn: (
                 mark_job_applied(conn, posting_id=posting_id, source="web")
@@ -639,6 +656,85 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "reported" if report else "unreported"})
+
+    def _followup(self, posting_id: int, *, clearing: bool) -> None:
+        """Pin a follow-up date to a lead, or drop the one it has.
+
+        The same `job_id` keying and the same bounded retry as skip and report, and deliberately
+        NOT the same aftermath: there is no `_reconcile` call below, because a follow-up moves no
+        folder. It is a note ON a lead — it changes no lane, no verdict and no
+        applied/skipped/reported state, so a lead that is marked applied keeps it, which is the
+        case the feature exists for.
+        """
+        on = None if clearing else self._followup_date()
+        if not clearing and on is None:
+            return
+
+        def work(conn: Connection) -> MarkResult:
+            job_id = job_id_for_posting(conn, posting_id)
+            if job_id is None:
+                return MarkResult(MarkOutcome.NO_POSTING)
+            if on is None:
+                clear_job_followup(conn, job_id=job_id)
+            else:
+                set_job_followup(conn, job_id=job_id, on=on)
+            return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id)
+
+        result = self._write(work)
+        if result is None:
+            return
+        if result.outcome is MarkOutcome.NO_POSTING:
+            self._error(HTTPStatus.NOT_FOUND, "no such posting")
+            return
+        self._json(
+            HTTPStatus.OK,
+            {
+                "outcome": "follow_up_cleared" if on is None else "follow_up_set",
+                # Echoed so the optimistic client renders the date the STORE holds rather than
+                # the one it sent, which are the same string only while this parser stays strict.
+                "follow_up": None if on is None else on.isoformat(),
+            },
+        )
+
+    def _followup_date(self) -> date | None:
+        """`{"date": "YYYY-MM-DD"}` as a `date`, or None once this has already answered with a 4xx.
+
+        Strict on purpose. `date.fromisoformat` accepts a `YYYY-MM-DDTHH:MM` instant in 3.11+, so
+        the parsed value is compared back against its own `isoformat()`: a follow-up is a day, and
+        an instant silently truncated to one is a different value from the one the caller sent.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, "Content-Length is not a number")
+            return None
+        if length < 0 or length > MAX_BODY_BYTES:
+            # Not drained, for the reason `_batch_ids` states: `protocol_version` is HTTP/1.1, so
+            # an unread body is parsed as the next request line on a kept-alive connection.
+            self.close_connection = True
+            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "the body is too large")
+            return None
+        try:
+            parsed = json.loads(self.rfile.read(length) or b"null")
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, "the body is not JSON")
+            return None
+        raw = parsed.get("date") if isinstance(parsed, dict) else None
+        if not isinstance(raw, str):
+            self._error(HTTPStatus.BAD_REQUEST, FOLLOWUP_DATE_REASON)
+            return None
+        try:
+            on = date.fromisoformat(raw)
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, FOLLOWUP_DATE_REASON)
+            return None
+        if on.isoformat() != raw:
+            self._error(HTTPStatus.BAD_REQUEST, FOLLOWUP_DATE_REASON)
+            return None
+        if on > local_today() + timedelta(days=FOLLOWUP_MAX_DAYS):
+            self._error(HTTPStatus.BAD_REQUEST, FOLLOWUP_RANGE_REASON)
+            return None
+        return on
 
     def _write(self, work: Callable[[Connection], _T]) -> _T | None:
         """The only write path. A bounded retry on a busy store, then 503 — never a five-second

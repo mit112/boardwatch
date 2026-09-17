@@ -65,7 +65,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -99,7 +99,11 @@ from boardwatch.store.delivery_queries import (
 )
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
-from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
+from boardwatch.store.queue_state import (
+    followup_job_dates,
+    reported_job_ids,
+    skipped_job_ids,
+)
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts, extractions, postings, runs
 from boardwatch.tailor.coverage import (
@@ -187,6 +191,17 @@ class PdfFile:
 # ------------------------------------------------------------------------------------- the queue
 
 
+def local_today() -> date:
+    """Today in the SERVER's own zone, which is what a follow-up date means.
+
+    `date.today()` and never `utcnow().date()`. A follow-up is a day on the owner's wall calendar,
+    so one set for today has to read as due from 00:00 local — whereas a UTC date reads as due
+    from 19:00 the previous evening in CDT, which would surface the whole of tomorrow's list one
+    working day early, every day.
+    """
+    return date.today()
+
+
 def _iso_utc(dt: datetime | None) -> str | None:
     """A stored datetime as ISO-8601 carrying an explicit `+00:00`, or None.
 
@@ -222,6 +237,10 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # `queue.reported.*` key — so `delivered_unapplied` excludes both sets at once. Its own count
     # cell below keeps `in_queue` free of an unexplained remainder, the same rule skip follows.
     excluded = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    # NOT an exclusion, and it is here beside the two that are so the contrast is visible: a
+    # follow-up is a note ON a lead, so it filters nothing. Read ONCE for the whole page, like
+    # every other `app_state` prefix scan on this path.
+    follow_ups = followup_job_dates(conn)
     every = delivered_unapplied(conn, skipped=excluded)
     # An ineligible lead is not work: it is drained to `_ineligible` on disk, so the page must
     # not list it either, or the folder tree and the page disagree about the same lead. It is
@@ -290,19 +309,26 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         key=rank_key,
     )
     return {
-        "rows": [_row_json(row, facts[row.posting_id], ctx) for row in apply_rows],
+        "rows": [
+            _row_json(row, facts[row.posting_id], ctx, follow_ups.get(row.job_id))
+            for row in apply_rows
+        ],
         # Its own list, NOT an exclusion. These leads are real work — they are held for a look
         # rather than blind-applied — so dropping them from the payload would hide ~30% of the
         # delivered set behind a folder the page never mentions. `off_target` cannot stand in for
         # this: it is `not_swe` ONLY, never `uncertain` (see this module's docstring), so most
         # review leads carry no flag at all and were previously indistinguishable on the page.
-        "review": [_row_json(row, facts[row.posting_id], ctx) for row in review_rows],
+        "review": [
+            _row_json(row, facts[row.posting_id], ctx, follow_ups.get(row.job_id))
+            for row in review_rows
+        ],
         "counts": _counts(
             conn,
             apply_rows,
             ineligible=drained,
             review=len(review_rows),
             closed=len(closed_rows),
+            follow_ups=follow_ups,
         ),
         # A capability flag, not a preference: the button is hidden where the platform has no
         # file-manager handler, because a control that can only fail is worse than no control.
@@ -322,8 +348,12 @@ def detail_payload(conn: Connection, ctx: ApiContext, posting_id: int) -> dict[s
     if detail is None:
         return None
     facts = _live_facts(conn, ctx, [detail.row])[detail.row.posting_id]
+    # The same prefix scan the queue uses. `queue_detail` is deliberately not filtered by
+    # applied or skipped, and neither is this: the pane is the only surface that can still
+    # show the follow-up on a lead that has left the list.
+    follow_up = followup_job_dates(conn).get(detail.row.job_id)
     return {
-        "row": _row_json(detail.row, facts, ctx),
+        "row": _row_json(detail.row, facts, ctx, follow_up),
         "jd_body": detail.jd_body,
         "requirements": _requirements_json(detail, facts),
         "board_target": detail.board_target,
@@ -356,7 +386,9 @@ def _unique_locations(locations: Sequence[str]) -> list[str]:
     return unique
 
 
-def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any]:
+def _row_json(
+    row: QueueRow, facts: LiveFacts, ctx: ApiContext, follow_up: str | None
+) -> dict[str, Any]:
     """One `QueueRow` as the frontend's `QueueRow` interface.
 
     `coverage` is the fraction and nothing else. The covered/missing term LISTS are not here: the
@@ -438,6 +470,10 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "score": facts.score,
         "why": facts.why,
         "coverage": fraction,
+        # Keyed on the canonical `job_id`, exactly as skip, report and applied are, so a
+        # follow-up survives its posting being revised, closed or regrouped. `None` is "no
+        # follow-up pinned" and is never a date the client has to interpret.
+        "follow_up": follow_up,
     }
 
 
@@ -503,6 +539,7 @@ def _counts(
     ineligible: int = 0,
     review: int = 0,
     closed: int = 0,
+    follow_ups: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
 
@@ -526,6 +563,13 @@ def _counts(
     verdict the gate did not give.
     """
     last = _last_finished_run(conn)
+    today = local_today().isoformat()
+    # Over `rows` — the APPLY lane — and never over every stored follow-up, for the reason
+    # `eligible` and the three `judge_*` cells are: this cell is a FACET, so the number on it
+    # has to be the number of rows clicking it shows. A count over the whole `app_state`
+    # namespace would include leads already applied to, which are not rows at all, and the
+    # facet would then offer a figure the list beside it cannot reach.
+    due = {} if follow_ups is None else follow_ups
     return {
         "in_queue": len(rows),
         "eligible": sum(1 for row in rows if row.verdict == "eligible"),
@@ -555,6 +599,12 @@ def _counts(
         # wrongly-eligible, investigate"), not a disinterest. Excluded from `rows`, so without a
         # cell of its own it would be an unexplained remainder against the delivered set.
         "reported": len(reported_job_ids(conn)),
+        # `<=`, never `==`: a date that slipped past unread is the one the owner most needs
+        # counted. ISO-8601 dates compare lexicographically exactly as they compare
+        # chronologically, so this needs no parse per row.
+        "follow_up_due": sum(
+            1 for row in rows if (on := due.get(row.job_id)) is not None and on <= today
+        ),
         "delivered_last_run": (
             0 if last is None else sum(1 for row in rows if row.delivered_run_id == int(last.id))
         ),
