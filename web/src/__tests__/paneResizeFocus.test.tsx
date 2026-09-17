@@ -102,7 +102,9 @@ describe("the pane across a resize", () => {
         onToast={() => undefined}
       />,
     );
-    const pane = screen.getByRole("complementary", { name: "Lead detail" });
+    // `dialog`, not `complementary`: below `lg` the pane announces itself as the modal it is, and
+    // it is rendered at that tier from the first paint here.
+    const pane = screen.getByRole("dialog");
     expect(document.activeElement).toBe(pane);
 
     // Growing across the line is not a close, but the sheet is gone — so the cursor goes back

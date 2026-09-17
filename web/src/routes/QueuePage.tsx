@@ -69,6 +69,31 @@ function writeSession(key: string, value: string): void {
   }
 }
 
+/*
+ * The cursor, put back on a lead's row after its pane closes — looked up by POSTING ID at the
+ * moment it is needed, never remembered as an element.
+ *
+ * A remembered element is the bug this replaces. `DetailPane` captured `document.activeElement`
+ * when it mounted and refocused it on unmount, which restores nothing unless the cursor was on the
+ * trigger row at that instant: opening a lead assigns `window.location.hash`, a fragment navigation
+ * resolving to no element, and a browser answers that by moving focus to the body. So the pane
+ * captured `<body>` and dutifully put it back (D-348 measured exactly that, and ruled out `inert`
+ * by stripping it and reproducing anyway). An id survives all of it, including a row element that
+ * was re-rendered or moved lists while the pane was up.
+ *
+ * Deferred a tick because the row is not reachable until React has committed the close: below `lg`
+ * the list behind the sheet is `inert`, and `.focus()` inside an inert subtree does nothing.
+ * Falls back to the filter box when the lead is no longer listed — the row can be gone (marked
+ * applied, filtered out), and `<body>` is where a keyboard reader gets stranded.
+ */
+function focusRow(postingId: number): void {
+  window.setTimeout(() => {
+    const row = document.querySelector<HTMLElement>(`[data-row-id="${String(postingId)}"]`);
+    if (row === null) document.getElementById(FILTER_INPUT_ID)?.focus();
+    else row.focus();
+  }, 0);
+}
+
 /** A stored flag, or `null` when nothing is stored — which is NOT the same as `false`, because a
  *  default only applies while the reader has expressed no preference. */
 function readStoredFlag(key: string): boolean | null {
@@ -1148,13 +1173,7 @@ export function QueuePage({
                */
               const opener = selected;
               openLead(null);
-              window.setTimeout(() => {
-                const row = document.querySelector<HTMLElement>(
-                  `[data-row-id="${String(opener)}"]`,
-                );
-                if (row === null) document.getElementById(FILTER_INPUT_ID)?.focus();
-                else row.focus();
-              }, 0);
+              focusRow(opener);
             }}
             resetKeys={[selected]}
           >
@@ -1165,7 +1184,11 @@ export function QueuePage({
               error={shownError}
               answers={answers}
               onClose={() => {
+                /* Escape and the ✕ both land here, and both have to leave the cursor somewhere a
+                   keyboard reader can carry on from — see `focusRow`. */
+                const opener = selected;
                 openLead(null);
+                focusRow(opener);
               }}
               onApplied={() => {
                 const row = shownDetail?.row;

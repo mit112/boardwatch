@@ -105,7 +105,6 @@ from boardwatch.store.tables import artifacts, extractions, postings, runs
 from boardwatch.tailor.coverage import (
     CoverageReport,
     coverage_report,
-    coverage_to_dict,
     requirement_terms,
     resume_fact_skills,
 )
@@ -360,9 +359,9 @@ def _unique_locations(locations: Sequence[str]) -> list[str]:
 def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any]:
     """One `QueueRow` as the frontend's `QueueRow` interface.
 
-    `coverage` is the fraction, matching the client that is already written against it, and the
-    covered/missing lists travel beside it as `coverage_detail` through `coverage_to_dict` — the
-    serializer the funnel artifact already uses, so the two surfaces cannot drift apart.
+    `coverage` is the fraction and nothing else. The covered/missing term LISTS are not here: the
+    only place the client renders them is the detail pane, which reads them from
+    `_requirements_json`, so a second copy on every row of every render was built and dropped.
 
     `thin_jd` is `fraction is None`, which is true both for a JD carrying no recognised
     requirement at all and for a store with no master résumé to measure against. Both are
@@ -423,7 +422,6 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "score": facts.score,
         "why": facts.why,
         "coverage": fraction,
-        "coverage_detail": coverage_to_dict(facts.coverage),
     }
 
 
