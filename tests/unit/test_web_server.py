@@ -380,6 +380,7 @@ def _gate(
     *,
     facts: Facts | None = None,
     policy: Policy | None = None,
+    seniority_fit: str = "unclear",
 ) -> None:
     """One FINAL-GATE verdict for `posting_id`'s current version, under the live identity.
 
@@ -411,6 +412,7 @@ def _gate(
             reason=None,
             evidence="",
             confidence="low",
+            seniority_fit=seniority_fit,
         ),
     )
 
@@ -1532,6 +1534,39 @@ def test_every_row_carries_the_gates_own_verdict_and_it_is_counted_apart_from_th
     # Asserted here so the field cannot exist on the list and be absent in the pane.
     detail = call(live, f"/api/queue/{held}", bearer=live.token).json()
     assert detail["row"]["judge_verdict"] == "uncertain"
+
+
+def test_every_row_carries_the_gates_seniority_reading_the_badge_is_keyed_on(
+    live: Live, engine: Engine
+) -> None:
+    """`judge_seniority_above_band` on the wire, as the boolean `QueueRowItem` keys its badge on.
+
+    `types.ts` has said "the server has always sent this" since D-504. It never had: `_row_json`
+    fed the reading into `classify` and dropped it, so the badge could not render against any
+    real server and the test that covered it set the field in a fixture by hand.
+
+    The hold is ARMED here because the store deliberately leaves the column at its inert
+    `"unclear"` while it is off (`delivered_unapplied` does not run the seniority read at all),
+    so an armed hold is the only state in which the wire can carry a `True`. Under it the
+    above-band lead is held for review, and the field rides on THAT row too — `_row_json`
+    serializes both lanes — while the cleared lead reads `False`, never an omitted key.
+    """
+    with engine.begin() as conn:
+        _profile(conn)
+        senior, _ = _deliver(conn, "senior", body=JD_ELIGIBLE)
+        junior, _ = _deliver(conn, "junior", body=JD_ELIGIBLE)
+        _gate(conn, senior, JD_ELIGIBLE, "eligible", seniority_fit="no")
+        _gate(conn, junior, JD_ELIGIBLE, "eligible", seniority_fit="yes")
+    config = live.server.deps.ctx.settings.config_dir / "config.toml"
+    config.write_text("[gate]\nseniority_hold = true\n", encoding="utf-8")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    apply_rows = {row["posting_id"]: row for row in payload["rows"]}
+    review_rows = {row["posting_id"]: row for row in payload["review"]}
+    # The control: the hold really is armed, or the `True` below could not be reached.
+    assert review_rows[senior]["review_reason"] == "seniority_judged_above_band"
+    assert review_rows[senior]["judge_seniority_above_band"] is True
+    assert apply_rows[junior]["judge_seniority_above_band"] is False
 
 
 def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None:

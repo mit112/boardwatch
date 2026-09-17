@@ -420,6 +420,11 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         # Beside `verdict`, never merged into it: the rules engine and the final gate are two
         # engines and the page has to be able to say which one said what.
         "judge_verdict": row.judge_verdict,
+        # The gate's separate seniority reading, as the boolean the row's badge is keyed on.
+        # `classify` has read it since D-504; the wire never carried it, so the badge was dead.
+        "judge_seniority_above_band": row.judge_seniority_fit == "no",
+        # The gate's separate seniority reading, as the boolean the row's badge is keyed on.
+        # `classify` has read it since D-504; the wire never carried it, so the badge was dead.
         "apply_url": row.apply_url,
         "delivered_run_id": row.delivered_run_id,
         "tex_uri": row.tex_uri,
