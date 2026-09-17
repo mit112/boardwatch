@@ -5,6 +5,7 @@ import type { Answers, QueueDetail, RequirementView } from "../api/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   EM_DASH,
+  followUpWindow,
   formatAge,
   formatFraction,
   formatScore,
@@ -275,6 +276,47 @@ export function DetailPane({
     };
   }, [onClose]);
 
+  /*
+   * The follow-up input's DRAFT, and the one commit path out of it.
+   *
+   * A commit per `onChange` wrote one POST per intermediate date: `<input type="date">` fires
+   * `input` on every segment edit that leaves the value COMPLETE, so typing the year of
+   * `2026-09-20` walked through `0002-09-20`, `0020-09-20` and `0202-09-20` first — four writes,
+   * four stacked toasts whose undo carried an intermediate date, and a stored value decided by
+   * response ordering rather than by the last keystroke. Commit on blur or Enter instead, which
+   * is where a field's value is settled (`ux-interaction/forms/ux-form-validation-timing`).
+   *
+   * The PICKER still commits where it lands: one click in the browser's calendar is one whole
+   * date and one intention, and making it wait for a blur would be a confirm step on the one
+   * control here whose point is that it has none. The two are told apart by `typing`, which a
+   * `keydown` on the input sets — the calendar popup is browser chrome, outside the document, so
+   * a click in it dispatches no key event. Arrow keys inside the popup DO, and those fall to the
+   * blur path, which is the safe direction: a deferred write, never a wrong one.
+   *
+   * `null` is "no edit in progress", NOT the empty string, and that is what keeps this to one
+   * piece of state and no synchronising effect: with no draft the field simply renders the row,
+   * so a rolled-back write, an undo and the reconciled echo all show through on their own. A
+   * string means the reader is mid-edit and the draft wins until it is committed or abandoned.
+   */
+  const stored = detail?.row?.follow_up ?? "";
+  const [draft, setDraft] = useState<string | null>(null);
+  const shownFollowUp = draft ?? stored;
+  const typing = useRef(false);
+  const followUpBounds = followUpWindow();
+  /* Takes the value rather than reading `shownFollowUp`, because the picker path commits from
+     inside the same `onChange` that sets the draft and would read the render's stale copy. */
+  const commitFollowUp = (value: string) => {
+    typing.current = false;
+    // Back to following the row, which is also why Enter and then a blur is ONE write: after
+    // the first the field renders `stored`, so the second sees nothing to send.
+    setDraft(null);
+    // An EMPTY value writes nothing and the field snaps back: clearing is the button beside it,
+    // never an emptied input. A date input reports "" for any INCOMPLETE date, so routing ""
+    // to a clear would let an abandoned edit silently drop the stored date.
+    if (value === "" || value === stored) return;
+    onFollowUp(value);
+  };
+
   const row = detail?.row ?? null;
   const requirements = detail?.requirements ?? [];
   /*
@@ -515,22 +557,28 @@ export function DetailPane({
               <input
                 id={FOLLOW_UP_INPUT_ID}
                 type="date"
-                value={row.follow_up ?? ""}
+                value={shownFollowUp}
+                /* The same two-sided window the route enforces, so the picker cannot offer a
+                   date that comes back a 400 — see `followUpWindow`. */
+                min={followUpBounds.min}
+                max={followUpBounds.max}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    // Enter settles the value without leaving the field, which is what a reader
+                    // who typed a date expects of it. No `preventDefault`: there is no form to
+                    // submit and the browser's own Enter handling here is a no-op.
+                    commitFollowUp(shownFollowUp);
+                    return;
+                  }
+                  typing.current = true;
+                }}
                 onChange={(event) => {
                   const next = event.target.value;
-                  /*
-                   * An EMPTY value writes nothing, and clearing is the button beside this.
-                   *
-                   * That split is not tidiness. A date input reports `value === ""` for any
-                   * incomplete date, and browsers differ on whether editing one segment of an
-                   * already-set date fires a `change` at "" on the way through — so routing ""
-                   * to a clear would let an in-progress edit silently drop the stored date and
-                   * then write a second one, two writes and two toasts for one intention. The
-                   * field snaps back to the stored date if the picker is emptied, which is what
-                   * a controlled input does, and `Clear` is immediately to its right.
-                   */
-                  if (next === "") return;
-                  onFollowUp(next);
+                  setDraft(next);
+                  if (!typing.current) commitFollowUp(next);
+                }}
+                onBlur={() => {
+                  commitFollowUp(shownFollowUp);
                 }}
                 className="min-h-11 rounded-sm border border-control bg-surface px-2 text-sm text-fg tabular-nums"
               />

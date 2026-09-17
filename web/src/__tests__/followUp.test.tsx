@@ -53,6 +53,24 @@ function isoDaysFromToday(days: number): string {
   return `${String(when.getFullYear())}-${month}-${day}`;
 }
 
+/**
+ * The KEYBOARD path. A native date input fires `input` (React's `onChange`) on every segment edit
+ * that leaves the value COMPLETE, so each of these is one keystroke landing on a whole date — and
+ * a keystroke always reaches the input before the value it produced.
+ */
+function typeDate(input: HTMLElement, value: string): void {
+  fireEvent.keyDown(input, { key: "2" });
+  fireEvent.change(input, { target: { value } });
+}
+
+/**
+ * The PICKER path. A click in the browser's own calendar popup dispatches no `keydown` to the
+ * input — the popup is browser chrome and not in the document — so the value simply arrives.
+ */
+function pickDate(input: HTMLElement, value: string): void {
+  fireEvent.change(input, { target: { value } });
+}
+
 function renderRow(row: Parameters<typeof QueueRowItem>[0]["row"]) {
   return render(
     <QueueRowItem
@@ -136,7 +154,7 @@ describe("the due marker on a row", () => {
 });
 
 describe("the detail pane's date input", () => {
-  it("sends the typed date up", () => {
+  it("sends a date PICKED from the calendar up with no extra step", () => {
     const onFollowUp = vi.fn();
     renderPane(detailFor(), onFollowUp);
 
@@ -144,8 +162,70 @@ describe("the detail pane's date input", () => {
     // A NATIVE date input, not a modal and not a text box: the platform's own picker in place
     // (`anti-patterns/anti-modal-overuse`).
     expect(input.getAttribute("type")).toBe("date");
-    fireEvent.change(input, { target: { value: "2026-09-20" } });
+    // One click in the calendar is one whole date and one intention, so it commits where it
+    // lands: making the picker path wait for a blur as well would be a confirm step on a control
+    // whose entire point is that it has none.
+    pickDate(input, "2026-09-20");
+    expect(onFollowUp).toHaveBeenCalledTimes(1);
     expect(onFollowUp).toHaveBeenCalledWith("2026-09-20");
+  });
+
+  it("commits a TYPED date once, on blur, and not once per segment", () => {
+    // The defect this is written against: typing the year last walks the value through four
+    // COMPLETE dates, and a commit per `onChange` wrote all four — four POSTs, four stacked
+    // toasts whose undo carries an intermediate date, and a stored value decided by response
+    // ordering rather than by the last keystroke. Commit on blur, per
+    // `ux-interaction/forms/ux-form-validation-timing`.
+    const onFollowUp = vi.fn();
+    renderPane(detailFor(), onFollowUp);
+    const input = screen.getByLabelText("Follow up on");
+
+    for (const partial of ["0002-09-20", "0020-09-20", "0202-09-20", "2026-09-20"]) {
+      typeDate(input, partial);
+    }
+    expect(onFollowUp).not.toHaveBeenCalled();
+    // The draft is what the reader sees while typing — the field does not snap back mid-edit.
+    expect(screen.getByLabelText<HTMLInputElement>("Follow up on").value).toBe("2026-09-20");
+
+    fireEvent.blur(input);
+    expect(onFollowUp).toHaveBeenCalledTimes(1);
+    expect(onFollowUp).toHaveBeenCalledWith("2026-09-20");
+  });
+
+  it("commits a typed date on Enter, without waiting for the field to be left", () => {
+    const onFollowUp = vi.fn();
+    renderPane(detailFor(), onFollowUp);
+    const input = screen.getByLabelText("Follow up on");
+
+    typeDate(input, "2026-09-20");
+    expect(onFollowUp).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onFollowUp).toHaveBeenCalledTimes(1);
+    expect(onFollowUp).toHaveBeenCalledWith("2026-09-20");
+    // And the commit is not repeated when the field is then left: one intention, one write.
+    fireEvent.blur(input);
+    expect(onFollowUp).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes nothing when the value settles back on the date already stored", () => {
+    const onFollowUp = vi.fn();
+    renderPane(detailFor({ follow_up: "2026-09-20" }), onFollowUp);
+    const input = screen.getByLabelText("Follow up on");
+
+    typeDate(input, "2026-10-20");
+    typeDate(input, "2026-09-20");
+    fireEvent.blur(input);
+    expect(onFollowUp).not.toHaveBeenCalled();
+  });
+
+  it("bounds the picker to the window the server accepts, in BOTH directions", () => {
+    // The same bound as `server.FOLLOWUP_MAX_DAYS`, and two-sided for the same reason: a
+    // mistyped year is as likely to land in the past as in the future, and a control that
+    // offers a date the route refuses is a 400 the reader cannot have predicted.
+    renderPane(detailFor(), vi.fn());
+    const input = screen.getByLabelText("Follow up on");
+    expect(input.getAttribute("min")).toBe(isoDaysFromToday(-366));
+    expect(input.getAttribute("max")).toBe(isoDaysFromToday(366));
   });
 
   it("sends null from Clear, and offers Clear only where there is one to clear", () => {
@@ -168,8 +248,14 @@ describe("the detail pane's date input", () => {
     // progress and not a clear. Routing it to a clear would silently drop a stored date.
     const onFollowUp = vi.fn();
     renderPane(detailFor({ follow_up: "2026-09-20" }), onFollowUp);
-    fireEvent.change(screen.getByLabelText("Follow up on"), { target: { value: "" } });
+    const input = screen.getByLabelText("Follow up on");
+    typeDate(input, "");
     expect(onFollowUp).not.toHaveBeenCalled();
+    // And the field snaps back to the stored date once the edit is abandoned, so an emptied
+    // input never leaves the pane claiming there is no follow-up when the store holds one.
+    fireEvent.blur(input);
+    expect(onFollowUp).not.toHaveBeenCalled();
+    expect(screen.getByLabelText<HTMLInputElement>("Follow up on").value).toBe("2026-09-20");
   });
 
   it("shows the date the lead already carries", () => {

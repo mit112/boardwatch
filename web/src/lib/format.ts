@@ -83,6 +83,30 @@ export function isFollowUpDue(followUp: string | null | undefined): boolean {
 }
 
 /**
+ * The window a follow-up may be pinned in, as the `min`/`max` a date input takes.
+ *
+ * The same 366 days as `delivery/server.FOLLOWUP_MAX_DAYS`, and two-sided for the same reason
+ * that guard is: a date input fills its segments left to right, so typing the year of a date
+ * walks the value through `0002-…`, `0020-…` and `0202-…`, and every one of those is `<= today`
+ * and therefore due forever. A control that offers a value the route refuses is a 400 the reader
+ * could not have predicted. A recent PAST date is inside the window — overdue is a real state.
+ *
+ * Local parts, never `toISOString()`, for the reason `todayIso` gives.
+ */
+const FOLLOW_UP_MAX_DAYS = 366;
+
+export function followUpWindow(): { min: string; max: string } {
+  const bound = (days: number): string => {
+    const when = new Date();
+    when.setDate(when.getDate() + days);
+    const month = String(when.getMonth() + 1).padStart(2, "0");
+    const day = String(when.getDate()).padStart(2, "0");
+    return `${String(when.getFullYear())}-${month}-${day}`;
+  };
+  return { min: bound(-FOLLOW_UP_MAX_DAYS), max: bound(FOLLOW_UP_MAX_DAYS) };
+}
+
+/**
  * Only `http:` and `https:` may become a link. Apply URLs come from third-party boards, so
  * anything else — `javascript:`, `data:`, a relative path — is rendered as inert text instead.
  */

@@ -2414,6 +2414,53 @@ def test_a_follow_up_more_than_a_year_out_is_refused_as_a_fat_finger(
     assert edge.status == 200, edge.body[:200]
 
 
+def test_a_follow_up_more_than_a_year_in_the_PAST_is_refused_in_the_same_words(
+    live: Live, engine: Engine
+) -> None:
+    """The guard is two-sided because the slip is: a mistyped year lands in the past as readily as
+    in the future (`2016` for `2026`), and the date input's own segment order makes `0202-09-20` a
+    value the keyboard walks through on the way to `2026-09-20`. A date that far back is `<= today`,
+    so it would render as "follow-up due 0202-09-20" and count in `follow_up_due` forever.
+
+    A RECENT past date is still accepted: overdue is a real state and the count exists to surface
+    it."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    today = local_today()
+
+    too_old = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=367)).isoformat()},
+    )
+    assert too_old.status == 400, too_old.body[:200]
+    # The SAME named reason in both directions: one guard, one sentence to reword.
+    assert too_old.json()["error"] == FOLLOWUP_RANGE_REASON
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {}
+
+    overdue = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=3)).isoformat()},
+    )
+    assert overdue.status == 200, overdue.body[:200]
+    edge = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=366)).isoformat()},
+    )
+    assert edge.status == 200, edge.body[:200]
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: (today - timedelta(days=366)).isoformat()}
+
+
 def test_the_follow_up_due_count_is_dates_up_to_today_and_no_further(
     live: Live, engine: Engine
 ) -> None:
