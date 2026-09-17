@@ -7,9 +7,11 @@ import {
   markApplied,
   markSkipped,
   report,
+  skipMany,
   unapply,
   unreport,
   unskip,
+  unskipMany,
 } from "../api/client";
 import type {
   Answers,
@@ -24,6 +26,7 @@ import { openApplyUrl } from "../components/ApplyLink";
 import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
+import type { Selection } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
 import { QUEUE_FACETS, StatusBand } from "../components/StatusBand";
 import type { QueueFacet } from "../components/StatusBand";
@@ -209,6 +212,14 @@ export function QueuePage({
   const [collapsing, setCollapsing] = useState<Set<number>>(new Set());
   const [stashed, setStashed] = useState<QueueResponse | null>(null);
   const [newCount, setNewCount] = useState(0);
+  /*
+   * The bulk selection, by `posting_id` so it keys the same way `removed`, `collapsing` and the
+   * roving stop do. PER PAGE and never persisted: `useSessionState` is for "what am I looking
+   * for", and a selection is "what am I about to do" — restoring one after a reload would offer a
+   * Skip over rows the reader last looked at yesterday. A route change unmounts this component,
+   * which is what clears it.
+   */
+  const [marked, setMarked] = useState<ReadonlySet<number>>(() => new Set());
 
   /*
    * Collapsed by default while there is an apply queue to work down, and that IS the feature: the
@@ -732,6 +743,170 @@ export function QueuePage({
   );
 
   /*
+   * The selection, INTERSECTED with what the apply table is currently showing. `marked` is a set
+   * of ids, and a row can leave the list under it — the filter text changes, a facet goes on, a
+   * poll refreshes. Taking the intersection is what makes "N selected" and "Skip N" describe the
+   * rows the reader can see, rather than a count that includes leads behind a filter they have
+   * since turned on.
+   */
+  const markedRows = useMemo(
+    () => visible.filter((row) => marked.has(row.posting_id)),
+    [visible, marked],
+  );
+
+  const selection: Selection = useMemo(
+    () => ({
+      marked,
+      onMark: (postingId) => {
+        setMarked((current) => {
+          const next = new Set(current);
+          if (!next.delete(postingId)) next.add(postingId);
+          return next;
+        });
+      },
+      onMarkMany: (postingIds, on) => {
+        setMarked((current) => {
+          const next = new Set(current);
+          for (const id of postingIds) {
+            if (on) next.add(id);
+            else next.delete(id);
+          }
+          return next;
+        });
+      },
+    }),
+    [marked],
+  );
+
+  const clearSelection = useCallback(() => {
+    setMarked(new Set());
+  }, []);
+
+  /*
+   * Bulk skip: ONE write for the whole selection and ONE for its undo.
+   *
+   * The optimistic shape is `act`'s, applied to a block — collapse, then remove after the
+   * animation — so a bulk skip looks like N single skips that happened at once rather than a new
+   * kind of event. What it CANNOT share with `act` is the write: the point of this ticket is that
+   * 40 rows are 40 `mark_job_skipped` calls inside one transaction, not 40 requests.
+   *
+   * The call is keyed on `job_id` because skip state is, server-side. `byJob` is how a `failed`
+   * id from the response gets back to the row that has to be restored.
+   */
+  const skipSelected = useCallback(() => {
+    if (markedRows.length === 0) return;
+    const postingIds = markedRows.map((row) => row.posting_id);
+    const jobIds = markedRows.map((row) => row.job_id);
+    const byJob = new Map(markedRows.map((row) => [row.job_id, row.posting_id]));
+    const leaving = new Set(postingIds);
+
+    /*
+     * Where the cursor lands. The Skip button is IN the bulk bar, and the bar unmounts the moment
+     * the selection is spent — so without this, focus falls to `<body>` and a reader who triaged
+     * by keyboard is back at the top of the document. The first surviving row below the block,
+     * else the last surviving row, else the filter box.
+     */
+    const surviving = visible.filter((row) => !leaving.has(row.posting_id));
+    const lastLeaving = Math.max(
+      ...postingIds.map((id) => visible.findIndex((row) => row.posting_id === id)),
+    );
+    const successor =
+      visible.slice(lastLeaving + 1).find((row) => !leaving.has(row.posting_id)) ??
+      surviving[surviving.length - 1];
+
+    clearSelection();
+    setCollapsing((current) => {
+      const next = new Set(current);
+      for (const id of postingIds) next.add(id);
+      return next;
+    });
+    /*
+     * `leaving`, not `postingIds` — and it is MUTABLE on purpose. The write can resolve on either
+     * side of this timer: an immediate answer lands first, a slow one lands after. So the two
+     * closures share one set, the response deletes from it whatever the server refused, and the
+     * removal below marks only what is still in it. Reading `postingIds` here instead would let a
+     * fast `failed` restore be immediately re-removed by this very callback.
+     */
+    window.setTimeout(() => {
+      setRemoved((current) => {
+        const next = new Map(current);
+        for (const id of leaving) next.set(id, "skipped");
+        return next;
+      });
+      setCollapsing((current) => {
+        const next = new Set(current);
+        for (const id of postingIds) next.delete(id);
+        return next;
+      });
+      if (successor === undefined) {
+        setActiveId(null);
+        document.getElementById(FILTER_INPUT_ID)?.focus();
+        return;
+      }
+      setActiveId(successor.posting_id);
+      document
+        .querySelector<HTMLElement>(`[data-row-id="${String(successor.posting_id)}"]`)
+        ?.focus();
+    }, COLLAPSE_MS);
+    if (selected !== null && leaving.has(selected)) openLead(null);
+
+    void skipMany(jobIds)
+      .then((result) => {
+        /*
+         * `?? []` on both, not `[]` on neither: the viewer serves this bundle from disk and
+         * answers from the Python it imported at start-up, so a server that has the route but
+         * omits a field must degrade to "nothing here" rather than throw (D-360).
+         */
+        const wrote = result.skipped ?? [];
+        const refused = result.failed ?? [];
+        // Only the server knows which ids it actually wrote, and the optimistic removal covered
+        // the whole selection — so anything it refused comes straight back into the list.
+        for (const jobId of refused) {
+          const postingId = byJob.get(jobId);
+          if (postingId === undefined) continue;
+          leaving.delete(postingId);
+          restore(postingId);
+        }
+        const message =
+          refused.length === 0
+            ? `Skipped ${String(wrote.length)}`
+            : `Skipped ${String(wrote.length)}, ${String(refused.length)} failed`;
+        if (wrote.length === 0) {
+          push({ message, tone: "error" });
+          return;
+        }
+        push({
+          message,
+          // The undo covers the ids the server WROTE and no others: offering to un-skip an id it
+          // refused would report a reversal of something that never happened.
+          undo: () => {
+            void unskipMany(wrote)
+              .then(() => {
+                for (const jobId of wrote) {
+                  const postingId = byJob.get(jobId);
+                  if (postingId !== undefined) restore(postingId);
+                }
+              })
+              .catch((caught: unknown) => {
+                push({
+                  message: errorMessage(caught, "Could not un-skip those leads."),
+                  tone: "error",
+                });
+              });
+          },
+        });
+      })
+      .catch((caught: unknown) => {
+        leaving.clear();
+        for (const id of postingIds) restore(id);
+        push({
+          message: errorMessage(caught, "The write failed and the rows were restored."),
+          tone: "error",
+        });
+      });
+  }, [markedRows, visible, clearSelection, selected, openLead, push, restore]);
+
+  /*
    * The one shortcut that is safe on `window`: it only moves focus. Everything that WRITES is
    * handled on the grid, where a row must already be focused, so no keystroke aimed at the filter
    * box can mark a lead applied. Guarded against firing while the reader is typing.
@@ -924,6 +1099,9 @@ export function QueuePage({
           onQuery={setQuery}
           minScore={minScore}
           onMinScore={setMinScore}
+          selectedCount={markedRows.length}
+          onSkipSelected={skipSelected}
+          onClearSelection={clearSelection}
         />
 
         {/* The active facet stated in words next to a plain clear, so it is obvious a filter is on
@@ -1014,6 +1192,9 @@ export function QueuePage({
               rankOf={rankOf}
               sort={sort}
               onSort={onSort}
+              /* The APPLY lane alone. The review lane below is deliberately left single-row: its
+                 leads are held for a look, so "skip the whole block" is not what it is for. */
+              selection={selection}
               emptyHint={emptyHint}
               selectedId={selected}
               activeId={activeId}

@@ -52,6 +52,23 @@ export const GRID_TEMPLATE =
   "@min-[52rem]:grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_4.5rem_7.5rem_16rem] " +
   "@min-[78rem]:grid-cols-[3rem_minmax(0,2.4fr)_minmax(0,1.2fr)_4rem_4.5rem_7.5rem_13rem_16rem]";
 
+/** The width of the selection track. Fixed, like every other non-flexible track here. */
+export const SELECT_TRACK = "2.25rem_";
+
+/**
+ * `GRID_TEMPLATE` with the selection checkbox's track prepended to every tier.
+ *
+ * It is written out rather than derived from `GRID_TEMPLATE`, and that is not laziness: Tailwind
+ * generates a class only for a candidate that appears LITERALLY in the source, so a template built
+ * by string surgery at runtime would produce four class names no stylesheet contains. The
+ * `templatesAgree` assertion in `bulkSkip.test.tsx` is what keeps the two from drifting.
+ */
+export const SELECT_GRID_TEMPLATE =
+  "grid-cols-[2.25rem_minmax(0,1fr)_7.5rem] " +
+  "@min-[40rem]:grid-cols-[2.25rem_minmax(0,1fr)_4.5rem_7.5rem] " +
+  "@min-[52rem]:grid-cols-[2.25rem_minmax(0,2.4fr)_minmax(0,1.2fr)_4.5rem_7.5rem_16rem] " +
+  "@min-[78rem]:grid-cols-[2.25rem_3rem_minmax(0,2.4fr)_minmax(0,1.2fr)_4rem_4.5rem_7.5rem_13rem_16rem]";
+
 /** Rank, age and coverage · flags: the wide tier alone. */
 export const WIDE_ONLY = "hidden @min-[78rem]:block";
 
@@ -117,6 +134,43 @@ function Flags({ row }: { row: QueueRow }) {
 }
 
 /*
+ * The selection checkbox. `tabIndex={-1}` for the same reason every other per-row control is —
+ * the row is the tab stop — and its single-key equivalent is `x` on the focused row.
+ *
+ * The checkbox IS the second channel selection is carried by (SC 1.4.1): the row's fill and left
+ * rule are colour, and a checked box is not. Its name carries the row's identity rather than a
+ * bare "Select", so a reader tabbing a screen reader down the column hears which lead each box
+ * belongs to.
+ */
+export function SelectCell({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <span role="gridcell" className="flex items-center">
+      <input
+        type="checkbox"
+        tabIndex={-1}
+        checked={checked}
+        aria-label={`Select: ${label}`}
+        title="Select this lead for a bulk action. Key: x"
+        onClick={(event) => {
+          // The row's own `onClick` opens the detail pane; selecting a row must not.
+          event.stopPropagation();
+        }}
+        onChange={onToggle}
+        className="size-4 cursor-pointer accent-accent"
+      />
+    </span>
+  );
+}
+
+/*
  * `tabIndex={-1}`, always, and that is deliberate — see `QueueTable`. The row is the tab stop; a
  * per-row button that were also one would put four stops on every row, which measured 1,399 on a
  * 347-lead queue. Every one of these has a single-key equivalent on the focused row, so nothing
@@ -161,9 +215,12 @@ export function QueueRowItem({
   onApplied,
   onSkip,
   onReport,
+  marked,
+  onMark,
 }: {
   row: QueueRow;
   rank: number;
+  /** Open in the detail pane. Reported as `aria-current`, NOT as `aria-selected` — see below. */
   selected: boolean;
   /** Carries the roving tab stop. Exactly one row per table is `true`. */
   active: boolean;
@@ -172,6 +229,9 @@ export function QueueRowItem({
   onApplied: () => void;
   onSkip: () => void;
   onReport: () => void;
+  /** Picked out for a BULK action. `undefined` on a table with no selection column at all. */
+  marked?: boolean;
+  onMark?: () => void;
 }) {
   /*
    * `location` is the PRIMARY location and `locations` is the whole list, so the cell reads
@@ -198,14 +258,27 @@ export function QueueRowItem({
           role="row"
           data-row-id={row.posting_id}
           tabIndex={active ? 0 : -1}
-          aria-selected={selected}
-          className={`grid ${GRID_TEMPLATE} min-h-11 cursor-default items-center gap-3 border-b border-divider px-4 transition-colors duration-[120ms] ease-snap focus-visible:outline-offset-[-2px] ${
+          /*
+           * `aria-selected` is the BULK selection and `aria-current` is the row the detail pane is
+           * showing. One attribute cannot carry both, and in a `role="grid"` `aria-selected` means
+           * selection — so the pane's row, which is "the one you are looking at" rather than "one
+           * of the ones you picked", is the reading that moves. Nothing visual changes for it.
+           */
+          aria-selected={marked === undefined ? undefined : marked}
+          {...(selected ? { "aria-current": true as const } : {})}
+          className={`grid ${marked === undefined ? GRID_TEMPLATE : SELECT_GRID_TEMPLATE} min-h-11 cursor-default items-center gap-3 border-b border-divider px-4 transition-colors duration-[120ms] ease-snap focus-visible:outline-offset-[-2px] ${
             selected
               ? "bg-surface-3 shadow-[inset_2px_0_0_0_var(--color-accent)]"
-              : "hover:bg-surface-2/60"
+              : marked
+                ? "bg-surface-2"
+                : "hover:bg-surface-2/60"
           }`}
           onClick={onSelect}
         >
+          {marked === undefined || onMark === undefined ? null : (
+            <SelectCell label={named} checked={marked} onToggle={onMark} />
+          )}
+
           <span role="gridcell" className={`${WIDE_ONLY} text-sm text-fg-3 tabular-nums`}>
             {rank}
           </span>

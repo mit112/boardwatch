@@ -21,6 +21,7 @@ import { authHeaders, forgetToken } from "./token";
 import type {
   Answers,
   AppliedResponse,
+  BatchSkipResponse,
   QueueDetail,
   QueueResponse,
   ReportResponse,
@@ -50,11 +51,17 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, method: "GET" | "POST" = "GET"): Promise<T> {
+async function request<T>(
+  path: string,
+  method: "GET" | "POST" = "GET",
+  /* A JSON request body. Only the batch routes send one; `undefined` sends no body and no
+     `Content-Type`, so every other call's request is byte-identical to what it always was. */
+  body?: unknown,
+): Promise<T> {
   if (import.meta.env.DEV && FIXTURE_MODE) {
     const { FixtureError, fixtureFetch } = await import("../fixtures/server");
     try {
-      return (await fixtureFetch(path, method)) as T;
+      return (await fixtureFetch(path, method, body)) as T;
     } catch (error) {
       if (error instanceof FixtureError) throw new ApiError(error.status, error.message);
       throw error;
@@ -62,7 +69,12 @@ async function request<T>(path: string, method: "GET" | "POST" = "GET"): Promise
   }
   const response = await fetch(path, {
     method,
-    headers: { ...authHeaders(), Accept: "application/json" },
+    headers: {
+      ...authHeaders(),
+      Accept: "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     // Loopback, same origin, no cookies: the bearer header is the only credential.
     credentials: "omit",
     mode: "same-origin",
@@ -100,6 +112,19 @@ export const markSkipped = (postingId: number): Promise<SkipResponse> =>
 
 export const unskip = (postingId: number): Promise<SkipResponse> =>
   request<SkipResponse>(`/api/queue/${String(postingId)}/unskip`, "POST");
+
+/**
+ * A whole selection in ONE write, and `unskipMany` is its ONE-write undo.
+ *
+ * Keyed on `job_id` rather than `posting_id` because that is what skip state itself is keyed on
+ * server-side: a skip survives its posting being revised, closed or regrouped. Every queue row
+ * carries its `job_id`, so the caller never has to resolve one.
+ */
+export const skipMany = (jobIds: number[]): Promise<BatchSkipResponse> =>
+  request<BatchSkipResponse>("/api/queue/skip", "POST", { job_ids: jobIds });
+
+export const unskipMany = (jobIds: number[]): Promise<BatchSkipResponse> =>
+  request<BatchSkipResponse>("/api/queue/unskip", "POST", { job_ids: jobIds });
 
 export const report = (postingId: number): Promise<ReportResponse> =>
   request<ReportResponse>(`/api/queue/${String(postingId)}/reported`, "POST");
