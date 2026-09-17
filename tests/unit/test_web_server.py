@@ -949,14 +949,54 @@ def test_coverage_is_a_live_fraction_and_thin_jd_is_derived_from_it(
 
     assert rows[measured]["thin_jd"] is False
     assert rows[measured]["coverage"] == 1.0
-    detail = rows[measured]["coverage_detail"]
-    assert detail["covered"] and detail["total_count"] == detail["covered_count"]
-    assert detail["fraction"] == rows[measured]["coverage"]
 
     assert rows[thin]["thin_jd"] is True
     assert rows[thin]["coverage"] is None
-    assert rows[thin]["coverage_detail"]["total_count"] == 0
-    assert rows[thin]["coverage_detail"]["fraction"] is None
+
+    # Non-vacuity, read on the surface the PAGE takes the terms from: the measured lead's detail
+    # lists covered terms and none missing, which is what a fraction of 1.0 claims, and the thin
+    # one lists no coverage terms at all — a fraction of 1.0 over nothing would be the same number
+    # about a different thing. (The row itself carries the fraction alone; the term lists live on
+    # the detail payload, where `_requirements_json` puts them.)
+    assert _detail_coverage_terms(live, measured)[0], "premise: something was recognised"
+    assert _detail_coverage_terms(live, measured)[1] == []
+    assert _detail_coverage_terms(live, thin) == ([], [])
+
+
+def _detail_coverage_terms(live: Live, posting_id: int) -> tuple[list[str], list[str]]:
+    """The covered and missing résumé terms as the page receives them: the `rule`-less entries of
+    the detail payload's requirement list, which is where `_requirements_json` puts them."""
+    entries = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()["requirements"]
+    terms = [entry for entry in entries if entry["rule"] is None]
+    return (
+        [entry["requirement"] for entry in terms if entry["covered"]],
+        [entry["requirement"] for entry in terms if not entry["covered"]],
+    )
+
+
+def test_the_row_payload_carries_no_coverage_detail(live: Live, engine: Engine) -> None:
+    """`coverage_detail` was serialised on every row and read by nothing.
+
+    The covered/missing terms the client actually renders come from `_requirements_json` on the
+    DETAIL payload; `QueueRow` in `web/src/api/types.ts` never declared this key, so the lists were
+    built and shipped for every row of every render and then dropped on the floor. Asserted as an
+    ABSENT key rather than a null, because a null would still be a field the client could start
+    reading.
+    """
+    resume = live.server.deps.ctx.settings.config_dir / "resume.yaml"
+    resume.parent.mkdir(parents=True, exist_ok=True)
+    resume.write_text(scaffold_template(), encoding="utf-8")
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, "python", body=JD_ELIGIBLE)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    (row,) = [r for r in payload["rows"] + payload["review"] if r["posting_id"] == posting_id]
+    detail_row = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()["row"]
+
+    assert "coverage_detail" not in row
+    assert "coverage_detail" not in detail_row
+    # The information is not lost: it reaches the page through the detail's requirement list.
+    assert _detail_coverage_terms(live, posting_id)[0]
 
 
 # ------------------------------------------------------------------------------- a locked store
