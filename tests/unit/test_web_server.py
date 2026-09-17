@@ -39,9 +39,11 @@ import pytest
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
+from boardwatch.delivery import DRAIN_DIRS
 from boardwatch.delivery import server as server_mod
 from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
 from boardwatch.delivery.api import ApiContext
+from boardwatch.delivery.queue import SKIPPED_DIR, sync_queue
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
     TOKEN_FILENAME,
@@ -184,15 +186,23 @@ def call(
     bearer: str | None = None,
     host: str | None = None,
     extra: dict[str, str] | None = None,
+    body: Any | None = None,
 ) -> Response:
-    """One request. `bearer=None` sends no `Authorization` header at all."""
+    """One request. `bearer=None` sends no `Authorization` header at all.
+
+    `body` is serialised as JSON and sent with a `Content-Type`, which is what the batch routes
+    read. `None` sends no body at all, so every existing caller's request is byte-identical.
+    """
     headers = {"Host": live.authority if host is None else host}
     if bearer is not None:
         headers["Authorization"] = f"Bearer {bearer}"
     headers.update(extra or {})
+    payload = None if body is None else json.dumps(body).encode("utf-8")
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
     conn = http.client.HTTPConnection(live.authority, timeout=15)
     try:
-        conn.request(method, path, headers=headers)
+        conn.request(method, path, body=payload, headers=headers)
         raw = conn.getresponse()
         return Response(
             status=raw.status,
@@ -373,6 +383,17 @@ def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | N
         save_eligibility(
             conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")
         )
+
+
+def _queue_folders(base: Path) -> list[str]:
+    """Lead folders directly under `base`, sorted. Drain directories and dotfiles are not leads."""
+    if not base.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in base.iterdir()
+        if path.is_dir() and not path.name.startswith(".") and path.name not in DRAIN_DIRS
+    )
 
 
 def _event_count(engine: Engine) -> int:
@@ -1118,6 +1139,133 @@ def test_skip_removes_a_lead_and_unskip_restores_it(live: Live, engine: Engine) 
     back = call(live, "/api/queue", bearer=live.token).json()
     assert [row["posting_id"] for row in back["rows"]] == [posting_id]
     assert back["counts"]["skipped"] == 0
+
+
+def test_a_batch_skip_is_one_write_that_drains_what_it_can_and_names_what_it_could_not(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """The bulk-skip contract, all of it: 200 for a batch that is only partly skippable, the two
+    standing jobs in `skipped`, the id that is in no lane in `failed`, and BOTH folders under
+    `_skipped/` — counted through the filesystem rather than through the response that claimed it.
+
+    The unskippable id is checked in the same test as the skippable ones on this module's standing
+    rule: a route that answered `failed` for everything would pass a refusal test on its own.
+    """
+    with engine.begin() as conn:
+        one, job_one = _deliver(conn, "one")
+        two, job_two = _deliver(conn, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 2, "two folders have to exist or the move below is unfalsifiable"
+
+    answer = call(
+        live,
+        "/api/queue/skip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, 999999, job_two]},
+    )
+
+    assert answer.status == 200, answer.body[:200]
+    # Request order is preserved in both lists, so a client can pair an id with its outcome.
+    assert answer.json() == {"skipped": [job_one, job_two], "failed": [999999]}
+    # The FOLDERS, not the response: the drain is the deliverable and the response is the claim.
+    assert _queue_folders(ctx.queue_root) == []
+    assert _queue_folders(ctx.queue_root / SKIPPED_DIR) == standing
+
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["posting_id"] for row in page["rows"] if row["posting_id"] in (one, two)] == []
+    assert page["counts"]["skipped"] == 2
+    # A skip is not an application, in a batch exactly as it is one at a time.
+    assert page["counts"]["applied_ever"] == 0
+
+
+def test_a_batch_unskip_returns_every_id_it_was_given_to_the_queue(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """The undo half. One call, so the toast's Undo is one write and not N."""
+    with engine.begin() as conn:
+        one, job_one = _deliver(conn, "one")
+        two, job_two = _deliver(conn, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+
+    call(
+        live,
+        "/api/queue/skip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, job_two]},
+    )
+    undone = call(
+        live,
+        "/api/queue/unskip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, job_two]},
+    )
+
+    assert undone.status == 200, undone.body[:200]
+    assert undone.json() == {"skipped": [job_one, job_two], "failed": []}
+    assert _queue_folders(ctx.queue_root) == standing
+    assert _queue_folders(ctx.queue_root / SKIPPED_DIR) == []
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert sorted(row["posting_id"] for row in page["rows"]) == sorted([one, two])
+    assert page["counts"]["skipped"] == 0
+
+
+def test_a_batch_skip_obeys_the_same_bearer_and_host_checks_as_every_other_route(
+    live: Live, engine: Engine
+) -> None:
+    """The checks live in the dispatcher, so this asserts the batch route did not arrive with its
+    own. Each refusal carries the request that SUCCEEDS, this module's standing rule."""
+    with engine.begin() as conn:
+        _one, job_one = _deliver(conn, "one")
+    payload = {"job_ids": [job_one]}
+
+    assert call(live, "/api/queue/skip", method="POST", bearer=None, body=payload).status == 401
+    assert (
+        call(
+            live,
+            "/api/queue/skip",
+            method="POST",
+            bearer=live.token,
+            host="evil.test",
+            body=payload,
+        ).status
+        == 403
+    )
+    assert (
+        call(live, "/api/queue/skip", method="POST", bearer=live.token, body=payload).status == 200
+    )
+
+
+def test_a_batch_skip_refuses_a_body_that_is_not_a_list_of_job_ids(
+    live: Live, engine: Engine
+) -> None:
+    """A malformed batch is a 400 and writes nothing — never a 500, and never a partial skip from
+    a body the route could not read. `true` is rejected with the integers because Python reads a
+    bool as an `int`, so a bare `isinstance` check would skip job 1."""
+    with engine.begin() as conn:
+        _one, job_one = _deliver(conn, "one")
+
+    for body in ([job_one], {"job_ids": job_one}, {"job_ids": ["1"]}, {"job_ids": [True]}, {}):
+        answer = call(live, "/api/queue/skip", method="POST", bearer=live.token, body=body)
+        assert answer.status == 400, (body, answer.status, answer.body[:200])
+    assert call(live, "/api/queue", bearer=live.token).json()["counts"]["skipped"] == 0
+
+    assert (
+        call(
+            live,
+            "/api/queue/skip",
+            method="POST",
+            bearer=live.token,
+            body={"job_ids": [job_one]},
+        ).status
+        == 200
+    )
 
 
 def test_report_removes_a_lead_and_unreport_restores_it(live: Live, engine: Engine) -> None:

@@ -51,12 +51,13 @@ import mimetypes
 import os
 import re
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 from urllib.parse import quote, urlsplit
 
 from sqlalchemy import Connection, Engine
@@ -89,6 +90,7 @@ from boardwatch.store.db import (
     get_engine,
     get_readonly_engine,
 )
+from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
 from boardwatch.store.queue_state import (
     mark_job_reported,
@@ -133,9 +135,22 @@ WRITE_ATTEMPTS = 3
 WRITE_BUSY_TIMEOUT_MS = 300
 READ_BUSY_TIMEOUT_MS = 500
 
+#: Cap on a request body, in bytes. Only the batch routes read one. 64 KiB carries roughly 7,000
+#: ids against a queue measured at 392, and the point of the cap is that a claimed
+#: `Content-Length` can never make this handler allocate what it says.
+MAX_BODY_BYTES = 64 * 1024
+
+#: What one unit of work handed to `_write` returns. The bounded-retry path is shared by the
+#: per-item marks, which answer with a `MarkResult`, and by the batch routes, which answer with
+#: two lists of ids; a generic keeps ONE write path rather than a second copy of the retry.
+_T = TypeVar("_T")
+
 _ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _QUEUE = re.compile(r"^/api/queue$")
 _QUEUE_ITEM = re.compile(r"^/api/queue/(\d+)$")
+#: The BATCH skip and its undo. Disjoint from `_QUEUE_ACTION` by construction: that one requires
+#: a posting id, so `skip` can never be read as one.
+_QUEUE_BATCH = re.compile(r"^/api/queue/(skip|unskip)$")
 _QUEUE_ACTION = re.compile(
     r"^/api/queue/(\d+)/(applied|unapplied|skipped|unskip|reported|unreport|reveal)$"
 )
@@ -382,6 +397,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     return
                 self._json(HTTPStatus.OK, payload)
                 return
+        if method == "POST" and (batch := _QUEUE_BATCH.match(path)) is not None:
+            self._skip_batch(skip=batch.group(1) == "skip")
+            return
         if method == "POST" and (action := _QUEUE_ACTION.match(path)) is not None:
             self._action(int(action.group(1)), action.group(2))
             return
@@ -517,6 +535,84 @@ class ReviewHandler(BaseHTTPRequestHandler):
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "skipped" if skip else "unskipped"})
 
+    def _skip_batch(self, *, skip: bool) -> None:
+        """Skip — or un-skip — a whole selection in ONE transaction.
+
+        Nothing here is a second skip implementation. It is the per-item route's own work, called
+        per id: `mark_job_skipped` / `unmark_job_skipped` keyed on the canonical `job_id`, inside
+        the same `_write` bounded retry, followed by the same `_reconcile` folder move. So a batch
+        and a single row cannot mean different things, and the undo is one write rather than N.
+
+        An id that names no standing lead is REPORTED in `failed` rather than refused. A 404 for
+        the whole batch would throw away the decision the owner made about every other id in it,
+        and the owner's selection is the expensive part. The standing set is `delivered_unapplied`
+        — the queue page's own definition of a lead still in front of the owner — so this mints no
+        second opinion about which leads exist, and no `queue.skipped.<id>` key is ever written
+        for an id that is not one. It is read ONCE per batch, not once per id.
+        """
+        job_ids = self._batch_ids()
+        if job_ids is None:
+            return
+
+        def work(conn: Connection) -> tuple[list[int], list[int]]:
+            standing = {row.job_id for row in delivered_unapplied(conn, skipped=set())}
+            done: list[int] = []
+            unknown: list[int] = []
+            at = utcnow()
+            for job_id in job_ids:
+                if job_id not in standing:
+                    unknown.append(job_id)
+                    continue
+                if skip:
+                    mark_job_skipped(conn, job_id=job_id, at=at)
+                else:
+                    unmark_job_skipped(conn, job_id=job_id)
+                done.append(job_id)
+            return done, unknown
+
+        result = self._write(work)
+        if result is None:
+            return
+        self._reconcile()
+        # `skipped` for both directions, exactly as the request path names both `skip` and
+        # `unskip`: the key means "the ids this call acted on", so one client shape covers both
+        # and the undo needs no second parser.
+        self._json(HTTPStatus.OK, {"skipped": result[0], "failed": result[1]})
+
+    def _batch_ids(self) -> list[int] | None:
+        """`{"job_ids": [...]}` as a de-duplicated list of ints in request order, or None once
+        this has already answered with a 4xx.
+
+        A bool is rejected explicitly. `isinstance(True, int)` is True in Python, so the plain
+        type check alone would read `true` as job 1 and skip whichever lead holds that id — a
+        malformed body writing to the store is the one outcome a parser must not have.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, "Content-Length is not a number")
+            return None
+        if length < 0 or length > MAX_BODY_BYTES:
+            # Deliberately NOT drained. `protocol_version` is HTTP/1.1, so a body left unread
+            # would be parsed as the next request line on a kept-alive connection.
+            self.close_connection = True
+            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "the batch is too large")
+            return None
+        try:
+            parsed = json.loads(self.rfile.read(length) or b"null")
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, "the body is not JSON")
+            return None
+        ids = parsed.get("job_ids") if isinstance(parsed, dict) else None
+        if not isinstance(ids, list) or any(
+            not isinstance(entry, int) or isinstance(entry, bool) for entry in ids
+        ):
+            self._error(HTTPStatus.BAD_REQUEST, 'expected {"job_ids": [<integer>, ...]}')
+            return None
+        # De-duplicated because the response pairs an id with an outcome, and an id listed twice
+        # would be reported twice for one decision.
+        return list(dict.fromkeys(cast("list[int]", ids)))
+
     def _report(self, posting_id: int, *, report: bool) -> None:
         """Flag a lead as wrongly-called-eligible (or clear that flag). Keys on the canonical
         `job_id`, exactly like skip, so the flag survives its posting being revised or regrouped.
@@ -544,7 +640,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "reported" if report else "unreported"})
 
-    def _write(self, work: Any) -> MarkResult | None:
+    def _write(self, work: Callable[[Connection], _T]) -> _T | None:
         """The only write path. A bounded retry on a busy store, then 503 — never a five-second
         stall ending in a traceback.
 
@@ -558,7 +654,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             engine = get_engine(deps.ctx.settings.data_dir, busy_timeout_ms=WRITE_BUSY_TIMEOUT_MS)
             try:
                 with engine.begin() as conn:
-                    result: MarkResult = work(conn)
+                    result: _T = work(conn)
                     return result
             except OperationalError as exc:
                 if not _is_locked(exc):
