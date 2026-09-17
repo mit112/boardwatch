@@ -86,6 +86,24 @@ export interface QueueRow {
   first_seen: string;
   status: PostingStatus;
   verdict: Verdict | null;
+  /**
+   * The FINAL GATE's own verdict on this lead — a SECOND opinion beside `verdict`, never a
+   * component of it. `verdict` is the deterministic rules engine's roll-up; this is an
+   * independent read of the job description, and the whole value of showing both is that they
+   * can disagree: on the measured apply lane 42 of 390 judged leads read `uncertain` here while
+   * the rules engine had cleared them.
+   *
+   * `null` is "the gate has not spoken" — no gate row exists for this lead under the current
+   * identity — and is never "the gate cleared it". The honest render for it is NOTHING: an
+   * "unjudged" chip on every row would be a chip on every row of an older server's queue, which
+   * says nothing about any lead.
+   *
+   * Optional on the wire for the same reason `judge_seniority_above_band` is: `boardwatch web`
+   * serves the bundle from DISK while running the Python it imported at STARTUP, so a long-lived
+   * viewer can serve a bundle newer than its own API. An older server omits the field, and
+   * `undefined` must read the same as `null` — hence `== null` at every use, never `=== null`.
+   */
+  judge_verdict?: Verdict | null;
   apply_url: string | null;
   delivered_run_id: number | null;
   tex_uri: string;
@@ -160,6 +178,16 @@ export interface QueueCounts {
    * this the difference between it and the delivered set is an unexplained remainder.
    */
   review: number;
+  /**
+   * The FINAL GATE's reading of the same apply lane `eligible` and `uncertain` count, in three
+   * cells that are never folded into each other or into those two. `judge_unjudged` is
+   * `judge_verdict == null` EXACTLY — "the gate has not spoken" — and is not a catch-all: a lead
+   * the gate called `ineligible` is in none of the three, the way a lead with no rules verdict is
+   * in neither `eligible` nor `uncertain`.
+   */
+  judge_eligible: number;
+  judge_uncertain: number;
+  judge_unjudged: number;
   /**
    * Delivered leads whose posting the employer has since taken down. They are NOT in `rows` and
    * NOT in `in_queue`: a closed posting is not work, and its folder is drained to `_closed`. Its

@@ -86,6 +86,12 @@ function counts(rows: QueueRow[]): QueueCounts {
     // Affirmatively eligible only. `uncertain` is counted separately and never added in.
     eligible: rows.filter((row) => row.verdict === "eligible").length,
     uncertain: rows.filter((row) => row.verdict === "uncertain").length,
+    // The final gate's three, counted from the same `rows` and never folded into each other or
+    // into the two above. `judge_unjudged` is `judge_verdict == null` exactly — the fixture pool
+    // carries rows the gate has not spoken on, and they are not a clear.
+    judge_eligible: rows.filter((row) => row.judge_verdict === "eligible").length,
+    judge_uncertain: rows.filter((row) => row.judge_verdict === "uncertain").length,
+    judge_unjudged: rows.filter((row) => row.judge_verdict == null).length,
     // Drained, not listed: `rows` never carries an ineligible lead, so this counts the pool.
     ineligible: ineligibleCount(),
     // Listed under `review`, not dropped — so unlike `ineligible` this counts a list the reader

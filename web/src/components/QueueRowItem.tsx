@@ -2,6 +2,7 @@ import type { QueueRow } from "../api/types";
 import { EM_DASH, formatAge, formatFraction, formatScore } from "../lib/format";
 import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
+import { JudgeVerdictBadge } from "./JudgeVerdictBadge";
 import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
 
@@ -73,6 +74,16 @@ function Flags({ row }: { row: QueueRow }) {
         reason={row.review_reason}
         detailReason={row.review_reason === "role_vetoed" ? row.off_target_reason : null}
       />
+      {/* WHAT THE FINAL GATE SAID, which is not what the `VerdictChip` beside this cell says.
+          On the measured apply lane 42 of 390 judged leads read `uncertain` here on rows the
+          rules engine had cleared, and the page showed them identically — the strongest signal in
+          the system, hidden. Unconditional and self-labelling: it renders nothing where the gate
+          has not spoken (see the component), so there is no case to suppress it for. It sits
+          here, in `Flags`, rather than inside the verdict cell because that cell is a MEASURED
+          7.5rem track in every tier and a second chip would overflow it; `Flags` is the app's
+          existing home for every per-row marker and, in the wide tier, the column immediately
+          beside the verdict. */}
+      <JudgeVerdictBadge verdict={row.judge_verdict} />
       {/* The BODY-seniority reading on an APPLY row. Suppressed when the badge above already
           says it: on a review row the same reading arrives as `seniority_judged_above_band` and
           rendering both would show one decision twice, the way `off target` is suppressed on a

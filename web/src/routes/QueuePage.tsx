@@ -101,6 +101,42 @@ const decodeFacet = (raw: string | null): QueueFacet | null =>
   (QUEUE_FACETS as readonly string[]).includes(raw ?? "") ? (raw as QueueFacet) : null;
 const encodeFacet = (value: QueueFacet | null): string => value ?? "";
 
+/**
+ * What a facet is called in prose — the "Showing …" sentence and the empty-list hint. The wire
+ * member is not the words: `judge_unjudged only` is a field name, and the reader clicked a cell
+ * labelled `not judged`.
+ */
+const FACET_LABELS: Record<QueueFacet, string> = {
+  eligible: "eligible",
+  uncertain: "uncertain",
+  review: "review",
+  judge_eligible: "gate eligible",
+  judge_uncertain: "gate uncertain",
+  judge_unjudged: "not judged",
+};
+
+/**
+ * Whether one row passes a ROW-LEVEL facet. `review` is excluded from the parameter because it is
+ * a LANE rather than a row predicate — both call sites answer it before they ever reach here — so
+ * this switch stays exhaustive over the closed catalog and a member added to `QUEUE_FACETS` is a
+ * compile error rather than a silent `false` that empties the list.
+ */
+function matchesFacet(row: QueueRow, facet: Exclude<QueueFacet, "review">): boolean {
+  switch (facet) {
+    case "eligible":
+    case "uncertain":
+      return row.verdict === facet;
+    case "judge_eligible":
+      return row.judge_verdict === "eligible";
+    case "judge_uncertain":
+      return row.judge_verdict === "uncertain";
+    /* `== null`, never `=== null`: an older server omits `judge_verdict` entirely, and "the
+       server cannot say" is the same statement as "the gate has not spoken". */
+    case "judge_unjudged":
+      return row.judge_verdict == null;
+  }
+}
+
 const decodeReason = (raw: string | null): ReviewReason | null =>
   raw !== null && raw in REVIEW_REASON_LABELS ? (raw as ReviewReason) : null;
 const encodeReason = (value: ReviewReason | null): string => value ?? "";
@@ -507,7 +543,7 @@ export function QueuePage({
         ? []
         : facet === null
           ? filtered
-          : filtered.filter((row) => row.verdict === facet);
+          : filtered.filter((row) => matchesFacet(row, facet));
     return sortRows(base, sort, rankOf);
   }, [filtered, facet, sort, rankOf]);
 
@@ -536,7 +572,7 @@ export function QueuePage({
     const byVerdict =
       facet === null || facet === "review"
         ? filteredReview
-        : filteredReview.filter((row) => row.verdict === facet);
+        : filteredReview.filter((row) => matchesFacet(row, facet));
     const base =
       reasonFacet === null
         ? byVerdict
@@ -558,6 +594,15 @@ export function QueuePage({
       in_queue: filtered.length,
       eligible: filtered.filter((row) => row.verdict === "eligible").length,
       uncertain: filtered.filter((row) => row.verdict === "uncertain").length,
+      // Recomputed against the active filter, exactly as the two above are and for the same
+      // reason: the cell has to agree with the list the reader is looking at. Facet-BLIND, like
+      // every cell here — `filtered` is the text, score-floor and run filters, never the facet,
+      // so clicking one cell cannot drop the cell the reader clicks next to zero.
+      judge_eligible: filtered.filter((row) => row.judge_verdict === "eligible").length,
+      judge_uncertain: filtered.filter((row) => row.judge_verdict === "uncertain").length,
+      // `== null`, never `=== null`: an older server omits the field, and "the server cannot say"
+      // reads as "the gate has not spoken" rather than throwing off the count.
+      judge_unjudged: filtered.filter((row) => row.judge_verdict == null).length,
       // Passed through, NOT recomputed: an ineligible lead is never in `rows`, so no
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
       // contradict the server.
@@ -817,11 +862,15 @@ export function QueuePage({
   const emptyHint =
     facet === null
       ? "Clear the text box or lower the minimum score."
-      : `Clear the text box, lower the minimum score, or turn off the ${facet}-only filter.`;
+      : `Clear the text box, lower the minimum score, or turn off the ${FACET_LABELS[facet]}-only filter.`;
 
   /* What the reader turned on, in words, so "Show all" is obviously the way back out. */
   const activeFilters = [
-    facet === null ? null : facet === "review" ? "the review lane only" : `${facet} only`,
+    facet === null
+      ? null
+      : facet === "review"
+        ? "the review lane only"
+        : `${FACET_LABELS[facet]} only`,
     reasonFacet === null ? null : `${REVIEW_REASON_LABELS[reasonFacet]} only`,
   ].filter((entry): entry is string => entry !== null);
 

@@ -61,6 +61,11 @@ export function queueResponse(rows: QueueRow[], review: QueueRow[] = []): QueueR
     in_queue: rows.length,
     eligible: rows.length,
     uncertain: 0,
+    // Present so the shape stays the wire contract, and inert: `QueuePage` recomputes all three
+    // from the rows it is showing, exactly as it recomputes `eligible` and `uncertain` above.
+    judge_eligible: 0,
+    judge_uncertain: 0,
+    judge_unjudged: 0,
     ineligible: 0,
     review: review.length,
     closed: 0,

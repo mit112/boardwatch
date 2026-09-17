@@ -16,6 +16,7 @@ import { AnswersPanel } from "./AnswersPanel";
 import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
 import { CopyButton } from "./CopyButton";
+import { JudgeVerdictBadge } from "./JudgeVerdictBadge";
 import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
 
@@ -320,6 +321,13 @@ export function DetailPane({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <VerdictChip verdict={row.verdict} />
+              {/* Directly beside the rules verdict, because the pane is opened to decide and the
+                  two engines disagreeing is the fact that decides it. `showReason` for the reason
+                  `unverifiable` and `thin JD` carry theirs visibly here: this chip asserts which
+                  engine said what, and a bare `gate uncertain` invites the reader to read it as a
+                  second opinion with the same standing as the chip beside it. It is not — a gate
+                  `uncertain` does not move a lead out of the apply lane. */}
+              <JudgeVerdictBadge verdict={row.judge_verdict} showReason />
               {row.status === "closed" ? (
                 <Badge
                   label="closed"

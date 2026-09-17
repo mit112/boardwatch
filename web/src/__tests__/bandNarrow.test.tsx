@@ -67,6 +67,11 @@ describe("the status band below 40rem", () => {
     // Folded, not dropped: every remaining cell is inside the disclosure.
     const folded = [
       "uncertain",
+      // The final gate's three. Folded, like `uncertain`, rather than dropped: a facet whose cell
+      // is absent below 40rem is a filter a phone reader cannot reach or clear.
+      "gate eligible",
+      "gate uncertain",
+      "not judged",
       "ineligible",
       "closed",
       "applied ever",
