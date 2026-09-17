@@ -71,6 +71,7 @@ describe("the pane across a resize", () => {
         onApplied={() => undefined}
         onSkip={() => undefined}
         onReport={() => undefined}
+        onFollowUp={() => undefined}
         onToast={() => undefined}
       />,
     );
@@ -99,6 +100,7 @@ describe("the pane across a resize", () => {
         onApplied={() => undefined}
         onSkip={() => undefined}
         onReport={() => undefined}
+        onFollowUp={() => undefined}
         onToast={() => undefined}
       />,
     );

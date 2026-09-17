@@ -1,10 +1,14 @@
-"""Review-queue skip and report state, stored on the generic `app_state` KV table.
+"""Review-queue skip, report and follow-up state, stored on the generic `app_state` KV table.
 
 Two independent queue-exclusion dimensions share this file because they share one mechanism:
 a **skip** is "not interested", a **report** is "this looks wrongly-eligible, hold it for
 investigation". Both take a lead out of the review queue, both key on the canonical `job_id`,
 and both are recoverable (`unmark_*`). Neither is an application. See the report functions
 below the skip ones.
+
+A **follow-up** is the third key here and the one that excludes NOTHING: it is a date pinned to a
+lead, so it changes no lane and no state. It shares this file only because it shares the
+mechanism. See the follow-up functions at the bottom.
 
 Skip deliberately does NOT live in `applications`. Two independent reasons, and either one
 alone would be enough:
@@ -26,7 +30,7 @@ Functions take the caller's open Connection and never begin or commit.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Connection, delete, select
 
@@ -122,3 +126,60 @@ def reported_job_ids(conn: Connection) -> dict[int, str]:
             continue
         reported[int(suffix)] = "" if row.value is None else str(row.value)
     return reported
+
+
+# ------------------------------------------------------------------------------------- follow-up
+#
+# The same mechanism again on a THIRD key, and the one that is not a queue exclusion: a follow-up
+# is a NOTE on a lead ("look at this again on <date>"), so it moves nothing. It does not change the
+# lane, the verdict, or the applied / skipped / reported state, and `queue_payload` never filters
+# on it — an applied lead keeps its follow-up, which is the whole point, because an applied lead is
+# exactly the one the owner follows up on.
+#
+# `queue.followup.<job_id>` -> an ISO-8601 DATE (`YYYY-MM-DD`), not an instant. A follow-up is a
+# day on a wall calendar rather than a moment, and storing an instant would force every reader to
+# re-answer "in which zone" (see `delivery/api.local_today`).
+
+FOLLOWUP_KEY_PREFIX = "queue.followup."
+
+
+def _followup_key(job_id: int) -> str:
+    return f"{FOLLOWUP_KEY_PREFIX}{job_id}"
+
+
+def set_job_followup(conn: Connection, *, job_id: int, on: date) -> None:
+    """Pin a follow-up date to a job. Idempotent: a repeat replaces the date."""
+    set_state(conn, _followup_key(job_id), on.isoformat())
+
+
+def clear_job_followup(conn: Connection, *, job_id: int) -> None:
+    """Drop a job's follow-up. A job that had none is a no-op, not an error."""
+    conn.execute(delete(app_state).where(app_state.c.key == _followup_key(job_id)))
+
+
+def followup_job_dates(conn: Connection) -> dict[int, str]:
+    """job_id -> the ISO-8601 date it is to be looked at again, for every job carrying one.
+
+    ONE statement for the whole set, with the same prefix-scoping and `isdecimal` guard the two
+    readers above use — see `skipped_job_ids` for why each of those matters.
+
+    Unlike skip and report, the VALUE is the state here rather than a timestamp beside it, so a
+    value that does not parse as a date is dropped the same way a non-integer suffix is: a
+    hand-edited row must not reach the wire claiming to be a date the client can render.
+    """
+    rows = conn.execute(
+        select(app_state.c.key, app_state.c.value).where(
+            app_state.c.key.like(f"{FOLLOWUP_KEY_PREFIX}%")
+        )
+    ).all()
+    follow_ups: dict[int, str] = {}
+    for row in rows:
+        suffix = str(row.key)[len(FOLLOWUP_KEY_PREFIX) :]
+        if not suffix.isdecimal() or row.value is None:
+            continue
+        try:
+            on = date.fromisoformat(str(row.value))
+        except ValueError:
+            continue
+        follow_ups[int(suffix)] = on.isoformat()
+    return follow_ups

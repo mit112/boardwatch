@@ -24,6 +24,34 @@ const bootedAt = Date.now();
 const appliedJobIds = new Set<number>();
 const skippedPostingIds = new Set<number>();
 const reportedPostingIds = new Set<number>();
+/*
+ * Follow-up dates, by posting. Seeded relative to TODAY rather than to a fixed date, so the
+ * due marker and the "follow-up due" facet are demonstrable on any day the fixtures are opened —
+ * a hard-coded 2026-09-20 stops being due the moment the calendar passes it.
+ */
+const followUpByPosting = new Map<number, string>();
+
+function isoDaysFromToday(days: number): string {
+  const when = new Date();
+  when.setDate(when.getDate() + days);
+  const month = String(when.getMonth() + 1).padStart(2, "0");
+  const day = String(when.getDate()).padStart(2, "0");
+  return `${String(when.getFullYear())}-${month}-${day}`;
+}
+
+/** The row as the API serves it: the follow-up is state this module holds, not a row field. */
+function withFollowUp(row: QueueRow): QueueRow {
+  return { ...row, follow_up: followUpByPosting.get(row.posting_id) ?? null };
+}
+
+// Two seeds, one arrived and one not, so both states are on the page before anything is clicked.
+for (const [index, offset] of [
+  [0, -2],
+  [1, 9],
+] as const) {
+  const seeded = QUEUE_ROWS[index];
+  if (seeded !== undefined) followUpByPosting.set(seeded.posting_id, isoDaysFromToday(offset));
+}
 
 function pool(): QueueRow[] {
   const released = Date.now() - bootedAt > HOLD_MS;
@@ -61,11 +89,11 @@ function isReviewLane(row: QueueRow): boolean {
 }
 
 function applyRows(): QueueRow[] {
-  return visibleRows().filter((row) => !isReviewLane(row));
+  return visibleRows().filter((row) => !isReviewLane(row)).map(withFollowUp);
 }
 
 function reviewRows(): QueueRow[] {
-  return visibleRows().filter(isReviewLane);
+  return visibleRows().filter(isReviewLane).map(withFollowUp);
 }
 
 /** Counted from the pool, the way the server counts before filtering — never a constant. */
@@ -104,6 +132,11 @@ function counts(rows: QueueRow[]): QueueCounts {
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     reported: reportedPostingIds.size,
+    // Over the apply lane, exactly as the server counts it: the cell is a facet, so its number
+    // has to be the number of rows clicking it shows.
+    follow_up_due: rows.filter(
+      (row) => row.follow_up != null && row.follow_up <= isoDaysFromToday(0),
+    ).length,
     delivered_last_run: rows.filter((row) => row.delivered_run_id === (lastRun?.id ?? -1)).length,
     last_run_finished: lastRun?.finished ?? null,
   };
@@ -177,10 +210,12 @@ function route(method: string, path: string, body: unknown): unknown {
   }
 
   const detailMatch = /^\/api\/queue\/(\d+)$/.exec(path);
-  if (method === "GET" && detailMatch) return detailFor(findRow(Number(detailMatch[1])));
+  if (method === "GET" && detailMatch) {
+    return detailFor(withFollowUp(findRow(Number(detailMatch[1]))));
+  }
 
   const actionMatch =
-    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|reveal)$/.exec(
+    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|followup|unfollowup|reveal)$/.exec(
       path,
     );
   if (method === "POST" && actionMatch) {
@@ -216,6 +251,20 @@ function route(method: string, path: string, body: unknown): unknown {
     if (action === "reported") {
       reportedPostingIds.add(row.posting_id);
       return { outcome: "reported" };
+    }
+    if (action === "followup") {
+      // The same strict parse the real route makes, so a bundle bug shows up here too rather
+      // than only against a live server.
+      const date = (body as { date?: unknown } | null)?.date;
+      if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new FixtureError(400, 'expected {"date": "YYYY-MM-DD"}');
+      }
+      followUpByPosting.set(row.posting_id, date);
+      return { outcome: "follow_up_set", follow_up: date };
+    }
+    if (action === "unfollowup") {
+      followUpByPosting.delete(row.posting_id);
+      return { outcome: "follow_up_cleared", follow_up: null };
     }
     reportedPostingIds.delete(row.posting_id);
     return { outcome: "unreported" };

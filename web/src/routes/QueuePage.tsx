@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  clearFollowUp,
   getAnswers,
   getDetail,
   getQueue,
   markApplied,
   markSkipped,
   report,
+  setFollowUp,
   skipMany,
   unapply,
   unreport,
@@ -23,7 +25,7 @@ import type {
 } from "../api/types";
 import { TOKEN_EVENT, readWatermark, writeWatermark } from "../api/token";
 import { openApplyUrl } from "../components/ApplyLink";
-import { DetailPane, SIDE_BY_SIDE } from "../components/DetailPane";
+import { DetailPane, FOLLOW_UP_INPUT_ID, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import type { Selection } from "../components/QueueTable";
@@ -39,6 +41,7 @@ import {
   reviewBreakdown,
   reviewLaneSentence,
 } from "../lib/reviewReasons";
+import { isFollowUpDue } from "../lib/format";
 import { matchesQuery, parseSortState, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
 
@@ -141,6 +144,7 @@ const FACET_LABELS: Record<QueueFacet, string> = {
   judge_eligible: "gate eligible",
   judge_uncertain: "gate uncertain",
   judge_unjudged: "not judged",
+  follow_up_due: "follow-up due",
   new: "new since last visit",
 };
 
@@ -171,6 +175,10 @@ function matchesFacet(
        server cannot say" is the same statement as "the gate has not spoken". */
     case "judge_unjudged":
       return row.judge_verdict == null;
+    /* `<=` today on the BROWSER's calendar, which is the server's own: the viewer only ever
+       talks to loopback. `isFollowUpDue` guards `== null` for a server that omits the field. */
+    case "follow_up_due":
+      return isFollowUpDue(row.follow_up);
     /* Membership, never a re-derivation from `delivered_run_id`: the set is computed ONCE per
        load (see `adopt`) precisely so it cannot move under the reader, and comparing against a
        watermark here would re-answer the question on every render against a watermark that has
@@ -554,6 +562,39 @@ export function QueuePage({
   const detailLoading = selected !== null && shownDetail === null && shownError === null;
 
   /*
+   * `f` on a row: open the lead and put the cursor in the pane's date input. It never writes a
+   * date — see `QueueTable`'s key handler for why a blind one would be a guess.
+   *
+   * A ref plus an effect rather than a focus call here, because the pane's detail is FETCHED: at
+   * the moment this runs the input does not exist yet on any lead but the open one. The ref is
+   * written in an event handler and read in an effect, never during render.
+   */
+  const followUpFocus = useRef<number | null>(null);
+  const focusFollowUp = useCallback(
+    (row: QueueRow) => {
+      if (selected === row.posting_id) {
+        document.getElementById(FOLLOW_UP_INPUT_ID)?.focus();
+        return;
+      }
+      followUpFocus.current = row.posting_id;
+      openLead(row.posting_id);
+    },
+    [selected, openLead],
+  );
+
+  /*
+   * The other half of `f`: the pane's detail arrives asynchronously, so the input the keystroke
+   * asked for does not exist until this lands. Keyed on `shownDetail` and guarded on the id the
+   * keystroke recorded, so a pane opened by a CLICK never steals the cursor off the list.
+   */
+  useEffect(() => {
+    if (followUpFocus.current === null || shownDetail === null) return;
+    if (shownDetail.row.posting_id !== followUpFocus.current) return;
+    followUpFocus.current = null;
+    document.getElementById(FOLLOW_UP_INPUT_ID)?.focus();
+  }, [shownDetail]);
+
+  /*
    * A `lead` the page cannot show — a stale bookmark, or a lead applied to since the link was sent
    * — is dropped from the URL rather than left to open a pane on a posting in neither lane. Runs
    * only once the queue has loaded: before that, EVERY id is unknown.
@@ -708,6 +749,11 @@ export function QueuePage({
       // `== null`, never `=== null`: an older server omits the field, and "the server cannot say"
       // reads as "the gate has not spoken" rather than throwing off the count.
       judge_unjudged: filtered.filter((row) => row.judge_verdict == null).length,
+      // Recomputed against the active filter like the five above, and for the same reason: this
+      // cell is a facet, so it has to agree with the list clicking it produces. The server sends
+      // its own figure over the same lane; recomputing keeps the cell honest while a write is
+      // still optimistic and the payload has not been re-fetched.
+      follow_up_due: filtered.filter((row) => isFollowUpDue(row.follow_up)).length,
       // Passed through, NOT recomputed: an ineligible lead is never in `rows`, so no
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
       // contradict the server.
@@ -740,6 +786,71 @@ export function QueuePage({
       return next;
     });
   }, []);
+
+  /*
+   * The optimistic half of a follow-up, applied to BOTH copies of the row: the one in the lane
+   * and the one the open pane is rendering. They are two objects for one lead, so patching only
+   * `data` would leave the pane's date input showing the old value until the next fetch.
+   *
+   * A follow-up removes nothing, so there is no `removed`/`collapsing` dance here and no
+   * successor to focus: the row stays exactly where it is and gains a chip.
+   */
+  const applyFollowUp = useCallback((postingId: number, value: string | null) => {
+    const patch = (row: QueueRow): QueueRow =>
+      row.posting_id === postingId ? { ...row, follow_up: value } : row;
+    setData((current) =>
+      current === null
+        ? current
+        : { ...current, rows: current.rows.map(patch), review: current.review.map(patch) },
+    );
+    setDetail((current) =>
+      current === null || current.row.posting_id !== postingId
+        ? current
+        : { ...current, row: patch(current.row) },
+    );
+  }, []);
+
+  /*
+   * Pin a follow-up date, or clear one. The undo restores the PREVIOUS value through the same
+   * two routes rather than a local repaint, so a toast that says it put the old date back has
+   * actually written it — the rule `unapply` established for the applied toast.
+   */
+  const followUp = useCallback(
+    (row: QueueRow, next: string | null) => {
+      const previous = row.follow_up ?? null;
+      if (previous === next) return;
+      applyFollowUp(row.posting_id, next);
+      const write = (value: string | null): Promise<unknown> =>
+        value === null ? clearFollowUp(row.posting_id) : setFollowUp(row.posting_id, value);
+      void write(next)
+        .then(() => {
+          push({
+            message:
+              next === null
+                ? `Cleared the follow-up on ${row.company} — ${row.title}`
+                : `Follow up on ${row.company} — ${row.title} on ${next}`,
+            undo: () => {
+              applyFollowUp(row.posting_id, previous);
+              void write(previous).catch((caught: unknown) => {
+                applyFollowUp(row.posting_id, next);
+                push({
+                  message: errorMessage(caught, "Could not undo that follow-up."),
+                  tone: "error",
+                });
+              });
+            },
+          });
+        })
+        .catch((caught: unknown) => {
+          applyFollowUp(row.posting_id, previous);
+          push({
+            message: errorMessage(caught, "The write failed and the date was restored."),
+            tone: "error",
+          });
+        });
+    },
+    [applyFollowUp, push],
+  );
 
   const act = useCallback(
     (row: QueueRow, kind: Removal) => {
@@ -1336,6 +1447,7 @@ export function QueuePage({
               onReport={(row) => {
                 act(row, "reported");
               }}
+              onFollowUp={focusFollowUp}
             />
           )}
 
@@ -1436,6 +1548,7 @@ export function QueuePage({
                           onReport={(row) => {
                             act(row, "reported");
                           }}
+                          onFollowUp={focusFollowUp}
                       />
                     )}
                   </div>
@@ -1501,6 +1614,10 @@ export function QueuePage({
               onReport={() => {
                 const row = shownDetail?.row;
                 if (row) act(row, "reported");
+              }}
+              onFollowUp={(date) => {
+                const row = shownDetail?.row;
+                if (row) followUp(row, date);
               }}
               onToast={(message, tone) => {
                 push({ message, tone });

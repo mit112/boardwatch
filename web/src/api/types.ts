@@ -170,6 +170,23 @@ export interface QueueRow {
    * "the server cannot say" is no badge.
    */
   judge_seniority_above_band?: boolean;
+  /**
+   * The date this lead is to be looked at again, `YYYY-MM-DD`, or `null` when none is pinned.
+   *
+   * A NOTE on a lead rather than a disposition: it changes no lane, no verdict and no
+   * applied/skipped/reported state, and it deliberately survives the lead being marked applied —
+   * an applied lead is exactly the one that gets followed up on.
+   *
+   * A plain date and never an instant, because that is what it means: the server writes and
+   * compares it in ITS OWN local zone, so "today" is due from 00:00 local rather than from 19:00
+   * the previous evening. The frontend compares against the BROWSER's local date for the same
+   * reason, and the two agree on the machine this viewer actually runs on — loopback only.
+   *
+   * Optional on the wire for the same reason `provider` is: `boardwatch web` serves this bundle
+   * from DISK while answering from the Python it imported at STARTUP, so an older server omits
+   * the key and the read is `undefined`. Every guard on it is `== null`.
+   */
+  follow_up?: string | null;
 }
 
 export interface QueueCounts {
@@ -217,6 +234,15 @@ export interface QueueCounts {
    * `rows` like a skip, so it is counted here rather than left an unexplained remainder.
    */
   reported: number;
+  /**
+   * Leads in the APPLY lane whose follow-up date has arrived (`<= today`, in the server's local
+   * date). Counted over the lane rather than over every stored follow-up because the cell is a
+   * FACET: the number on it has to be the number of rows clicking it shows.
+   *
+   * Optional on the wire, and typed that way on purpose: a server older than the field omits it,
+   * and the honest render for a count nobody took is `0`, not `NaN`.
+   */
+  follow_up_due?: number;
   delivered_last_run: number;
   last_run_finished: string | null;
 }
@@ -275,7 +301,9 @@ export type MarkOutcome =
   | "skipped"
   | "unskipped"
   | "reported"
-  | "unreported";
+  | "unreported"
+  | "follow_up_set"
+  | "follow_up_cleared";
 
 export interface AppliedResponse {
   outcome: MarkOutcome;
@@ -303,6 +331,15 @@ export interface BatchSkipResponse {
 
 export interface ReportResponse {
   outcome: MarkOutcome;
+}
+
+/**
+ * `POST /api/queue/{id}/followup` and `/unfollowup`. `follow_up` is the date the STORE now holds,
+ * echoed back rather than assumed, so an optimistic row is reconciled against what was written.
+ */
+export interface FollowUpResponse {
+  outcome: MarkOutcome;
+  follow_up: string | null;
 }
 
 export interface RevealResponse {

@@ -128,6 +128,7 @@ function ariaSort(sort: SortState, ...keys: SortKey[]): "ascending" | "descendin
  *   Home    first row         a       mark applied
  *   End     last row          s       skip
  *   x       select the row    shift+x extend the selection from the anchor
+ *   r       report the lead   f       focus the pane's follow-up date input
  *
  * The keys are handled HERE, on the grid, not on `window`: `a` and `s` write, and a global
  * listener would fire them while the reader was typing a company name into the filter box.
@@ -147,6 +148,7 @@ export function QueueTable({
   onApplied,
   onSkip,
   onReport,
+  onFollowUp,
   selection,
   emptyHint = "Clear the text box or lower the minimum score.",
 }: {
@@ -164,6 +166,8 @@ export function QueueTable({
   onApplied: (row: QueueRow) => void;
   onSkip: (row: QueueRow) => void;
   onReport: (row: QueueRow) => void;
+  /** `f`: move the cursor INTO the pane's date input. Never sets a date by itself — see below. */
+  onFollowUp: (row: QueueRow) => void;
   /** Omitted on a table with no multi-select: no checkbox column, no `x`. */
   selection?: Selection;
   /* Names the levers that would bring rows back. A verdict facet is a lever the two default
@@ -269,6 +273,19 @@ export function QueueTable({
           }
           anchor.current = row.posting_id;
           return selection.onMark(row.posting_id);
+        /*
+         * `f` opens the pane and puts the cursor in its date input. It deliberately writes
+         * NOTHING: every other acting key here has one obvious value to write and this one does
+         * not — a blind "+7 days" would be a guess, and the only undo is a toast that expires.
+         * So the keystroke buys the reader the control, and the control takes the date.
+         *
+         * Auto-repeat is refused like every other acting key: a held `f` would re-open and
+         * re-focus on every repeat, stealing the cursor back out of the input it just gave it.
+         */
+        case "f":
+          event.preventDefault();
+          if (event.repeat) return;
+          return onFollowUp(row);
         // Refuses auto-repeat for the same reason `a` and `s` do: the row leaves the list on the
         // first press, so a held `r` would walk a report down the queue onto its successors.
         case "r":
@@ -279,7 +296,17 @@ export function QueueTable({
           return;
       }
     },
-    [rows, onActivate, onSelect, onOpenApply, onApplied, onSkip, onReport, selection],
+    [
+      rows,
+      onActivate,
+      onSelect,
+      onOpenApply,
+      onApplied,
+      onSkip,
+      onReport,
+      onFollowUp,
+      selection,
+    ],
   );
 
   return (
@@ -347,8 +374,22 @@ export function QueueTable({
           <span role="columnheader" className="px-1 label-micro text-fg-3">
             verdict
           </span>
-          <span role="columnheader" aria-sort={ariaSort(sort, "coverage")} className={WIDE_ONLY}>
+          {/* Two controls in ONE columnheader, exactly as title/company/ats share theirs: the
+              follow-up chip is rendered in this cell, beside the flags, so its sort control
+              belongs on the header above it rather than on a column the reader is not looking
+              at. `ariaSort` is variadic for this case. */}
+          <span
+            role="columnheader"
+            aria-sort={ariaSort(sort, "coverage", "follow_up")}
+            /* Not `WIDE_ONLY`: that is `block`, and `block` and `flex` at equal specificity
+               would be decided by stylesheet order rather than by this file. */
+            className="hidden items-center gap-2 @min-[78rem]:flex"
+          >
             <SortButton label="coverage · flags" sortKey="coverage" sort={sort} onSort={onSort} />
+            <span aria-hidden="true" className="text-divider">
+              |
+            </span>
+            <SortButton label="follow-up" sortKey="follow_up" sort={sort} onSort={onSort} />
           </span>
           <span
             role="columnheader"

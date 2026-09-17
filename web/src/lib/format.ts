@@ -56,6 +56,33 @@ export function formatCount(value: number | null): string {
 }
 
 /**
+ * Today as `YYYY-MM-DD` in the BROWSER's local zone, built from the local parts.
+ *
+ * Never `toISOString().slice(0, 10)`, which is UTC: west of Greenwich that answers tomorrow's
+ * date for the whole evening, so every follow-up pinned for tomorrow would read as due tonight.
+ * The server answers the same question in its own local zone (`delivery/api.local_today`), and
+ * this viewer only ever talks to loopback, so the two are the same wall calendar.
+ */
+export function todayIso(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${String(now.getFullYear())}-${month}-${day}`;
+}
+
+/**
+ * Whether a pinned follow-up has arrived. `<=`, never `==`: a date that slipped past unread is
+ * the one that most needs surfacing. ISO-8601 dates compare lexicographically exactly as they
+ * compare chronologically, so this needs no `Date` parse and no zone.
+ *
+ * `== null` for the usual reason — an older server omits the field entirely.
+ */
+export function isFollowUpDue(followUp: string | null | undefined): boolean {
+  if (followUp == null) return false;
+  return followUp <= todayIso();
+}
+
+/**
  * Only `http:` and `https:` may become a link. Apply URLs come from third-party boards, so
  * anything else — `javascript:`, `data:`, a relative path — is rendered as inert text instead.
  */

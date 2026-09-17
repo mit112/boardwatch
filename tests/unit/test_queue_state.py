@@ -11,7 +11,7 @@ consults `applications` — skip and applied are independent dimensions, and a j
 both.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,11 +23,15 @@ from boardwatch.store.app_state import set_digest_cursor, set_notify_cursor, set
 from boardwatch.store.applications import create_application, get_application
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queue_state import (
+    FOLLOWUP_KEY_PREFIX,
     REPORT_KEY_PREFIX,
     SKIP_KEY_PREFIX,
+    clear_job_followup,
+    followup_job_dates,
     mark_job_reported,
     mark_job_skipped,
     reported_job_ids,
+    set_job_followup,
     skipped_job_ids,
     unmark_job_reported,
     unmark_job_skipped,
@@ -276,3 +280,112 @@ def test_report_and_skip_are_independent_dimensions(engine: Engine) -> None:
         assert skipped_job_ids(conn) == {}
         assert reported_job_ids(conn) == {job_id: NOW.isoformat()}
     _assert_fks_clean(engine)
+
+
+# ------------------------------------------------------------------------------------- follow-up
+
+
+def test_a_follow_up_round_trips_as_an_iso_date(engine: Engine) -> None:
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        set_job_followup(conn, job_id=job_id, on=date(2026, 9, 20))
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: "2026-09-20"}
+        stored = conn.execute(
+            select(app_state.c.key).where(app_state.c.key == f"{FOLLOWUP_KEY_PREFIX}{job_id}")
+        ).scalar_one()
+    assert stored == f"queue.followup.{job_id}"
+    _assert_fks_clean(engine)
+
+
+def test_nothing_has_a_follow_up_on_a_fresh_store(engine: Engine) -> None:
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {}
+
+
+def test_setting_a_follow_up_twice_replaces_the_date(engine: Engine) -> None:
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        set_job_followup(conn, job_id=job_id, on=date(2026, 9, 20))
+        set_job_followup(conn, job_id=job_id, on=date(2026, 10, 1))
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {job_id: "2026-10-01"}
+        assert conn.execute(select(func.count()).select_from(app_state)).scalar_one() == 1
+
+
+def test_clearing_a_follow_up_removes_only_that_job(engine: Engine) -> None:
+    with engine.begin() as conn:
+        kept = _job(conn)
+        dropped = _job(conn)
+        set_job_followup(conn, job_id=kept, on=date(2026, 9, 20))
+        set_job_followup(conn, job_id=dropped, on=date(2026, 9, 21))
+    with engine.begin() as conn:
+        clear_job_followup(conn, job_id=dropped)
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {kept: "2026-09-20"}
+    _assert_fks_clean(engine)
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "",                       # a hand-cleared value
+        "tomorrow",               # prose
+        "2026-13-01",             # out of range
+        "2026-09-20T09:00:00",    # an instant, not a date
+    ],
+)
+def test_a_follow_up_value_that_is_not_an_iso_date_is_ignored_not_fatal(
+    engine: Engine, bad_value: str
+) -> None:
+    """The KEY is not the follow-up here — the VALUE is, so an unparseable one is not a date and
+    must not reach the wire as though it were. Mirrors the `isdecimal` guard on the skip keys."""
+    with engine.begin() as conn:
+        good = _job(conn)
+        bad = _job(conn)
+        set_job_followup(conn, job_id=good, on=date(2026, 9, 20))
+        set_state(conn, f"{FOLLOWUP_KEY_PREFIX}{bad}", bad_value)
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {good: "2026-09-20"}
+
+
+def test_a_follow_up_is_independent_of_skip_report_and_applied(engine: Engine) -> None:
+    """A follow-up is a NOTE on a lead, not a disposition: it shares a job with all three of the
+    others, on its own key, and clearing it leaves every one of them standing."""
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        create_application(conn, job_id=job_id, status="applied", source="user")
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+        set_job_followup(conn, job_id=job_id, on=date(2026, 9, 20))
+    with engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(app_state)).scalar_one() == 3
+    with engine.begin() as conn:
+        clear_job_followup(conn, job_id=job_id)
+    with engine.connect() as conn:
+        assert followup_job_dates(conn) == {}
+        assert skipped_job_ids(conn) == {job_id: NOW.isoformat()}
+        assert reported_job_ids(conn) == {job_id: NOW.isoformat()}
+    _assert_fks_clean(engine)
+
+
+def test_every_follow_up_is_read_in_one_statement(engine: Engine) -> None:
+    with engine.begin() as conn:
+        job_ids = [_job(conn) for _ in range(120)]
+        for job_id in job_ids:
+            set_job_followup(conn, job_id=job_id, on=date(2026, 9, 20))
+    statements: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _record(
+        conn: Any, cursor: Any, statement: str, params: Any, context: Any, executemany: bool
+    ) -> None:
+        statements.append(statement)
+
+    try:
+        with engine.connect() as conn:
+            found = followup_job_dates(conn)
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
+    assert sorted(found) == sorted(job_ids)
+    assert len([s for s in statements if s.lstrip().upper().startswith("SELECT")]) == 1

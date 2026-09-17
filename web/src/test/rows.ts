@@ -52,6 +52,10 @@ export function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     why: null,
     off_target_reason: null,
     review_reason: null,
+    // `null`, deliberately: the default row is the one that has to render with NO follow-up chip.
+    // A test that wants one says so, and `withoutFields` is how a server that never sent the key
+    // is modelled.
+    follow_up: null,
     ...overrides,
   };
 }
@@ -72,6 +76,9 @@ export function queueResponse(rows: QueueRow[], review: QueueRow[] = []): QueueR
     applied_ever: 0,
     skipped: 0,
     reported: 0,
+    // Inert like the three `judge_*` cells above: `QueuePage` recomputes it from the rows it is
+    // showing, so the wire value is here only to keep this the wire contract.
+    follow_up_due: 0,
     delivered_last_run: rows.length + review.length,
     last_run_finished: "2026-08-28T09:00:00Z",
   };

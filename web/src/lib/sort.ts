@@ -14,6 +14,7 @@ export const SORT_KEYS = [
   "score",
   "coverage",
   "provider",
+  "follow_up",
 ] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
@@ -109,6 +110,12 @@ export function sortRows(
         return compareNullable(a.coverage, b.coverage, sort.direction);
       case "provider":
         return compareProvider(a, b, sort.direction, rankOf);
+      /* ISO-8601 dates sort lexicographically exactly as they sort chronologically, so this is
+         `compareText` and not a `Date` parse per comparison. `?? null` because an older server
+         omits the field, and `compareText` is what puts an absent value LAST in BOTH directions:
+         a lead with no follow-up is not the soonest one. */
+      case "follow_up":
+        return compareText(a.follow_up ?? null, b.follow_up ?? null, sort.direction);
     }
   });
   return copy;
