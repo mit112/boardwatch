@@ -141,6 +141,9 @@ export function appliedRow(overrides: Partial<AppliedRow> = {}): AppliedRow {
     pdf_available: true,
     pdf_uri: "file:///queue/acme/resume.pdf",
     source: "web",
+    // `true`, deliberately: the default row is a job's one attempt, still reading as submitted,
+    // which is exactly the row the unapply route acts on. A test about an earlier attempt says so.
+    can_unmark: true,
     ...overrides,
   };
 }

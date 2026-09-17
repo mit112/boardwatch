@@ -65,7 +65,7 @@ from boardwatch.eligibility.read import (
     current_verdicts,
 )
 from boardwatch.providers.registry import PROVIDER_NAMES
-from boardwatch.store.applications import applied_job_ids
+from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
 from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
@@ -199,6 +199,12 @@ class AppliedRow:
     posting_status: str | None
     closed_at: datetime | None
     pdf_uri: str | None
+    #: Whether `mark_job_unapplied` would act on THIS attempt. The write is per JOB — it resolves
+    #: posting -> job -> latest attempt — while this page is one row per attempt, so a control
+    #: offered on every row promises something the route cannot do. True exactly when this row is
+    #: its job's latest attempt, its status still reads as submitted, and a delivered
+    #: `posting_id` exists to key the route on.
+    can_unmark: bool
 
 
 #: Why `QueueDetail.jd_body` is absent. A CLOSED set, declared where the value is produced so
@@ -901,7 +907,12 @@ def _job_posting_select() -> Select[Any]:
 
 
 def _applied_row(
-    row: Row[Any], posting: Row[Any] | None, *, delivered: bool, source: str | None
+    row: Row[Any],
+    posting: Row[Any] | None,
+    *,
+    delivered: bool,
+    source: str | None,
+    can_unmark: bool,
 ) -> AppliedRow:
     """One application, with the posting that identifies it.
 
@@ -932,6 +943,7 @@ def _applied_row(
             if posting is not None and posting.pdf_uri is not None
             else None
         ),
+        can_unmark=can_unmark,
     )
 
 
@@ -1033,6 +1045,15 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
     delivered = _delivered_winners(conn, {int(row.job_id) for row in rows})
     fallback = _applied_postings(conn)
     sources = _mark_sources(conn)
+    # The attempt `mark_job_unapplied` would reach for each job: `get_applications` orders by
+    # `attempt_no` and takes the last, so this is that same row named here rather than re-derived
+    # from the delivery order, which is not the same ordering.
+    latest_attempt: dict[int, tuple[int, int]] = {}
+    for row in rows:
+        job_id = int(row.job_id)
+        incumbent = latest_attempt.get(job_id)
+        if incumbent is None or int(row.attempt_no) > incumbent[0]:
+            latest_attempt[job_id] = (int(row.attempt_no), int(row.id))
     built: list[AppliedRow] = []
     for row in rows:
         job_id = int(row.job_id)
@@ -1043,6 +1064,11 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
                 posting if posting is not None else fallback.get(job_id),
                 delivered=posting is not None,
                 source=sources.get(int(row.id)),
+                can_unmark=(
+                    posting is not None
+                    and str(row.status) in APPLIED_STATUSES
+                    and latest_attempt[job_id][1] == int(row.id)
+                ),
             )
         )
     return built

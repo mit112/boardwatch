@@ -434,7 +434,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                         <span className="text-xs text-fg-3">
                           never delivered — no résumé, no unmark
                         </span>
-                      ) : (
+                      ) : row.can_unmark === true ? (
                         <RowAction
                           label="Unmark applied"
                           title="Withdraws the application record and returns the lead to the queue. Undoable from the toast."
@@ -443,6 +443,19 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                             onUnmark(row);
                           }}
                         />
+                      ) : (
+                        /* The write is per JOB — it withdraws the job's LATEST attempt — so on any
+                           other attempt the control would act on a row the reader did not click.
+                           The server's own answer decides (`can_unmark`), and `=== true` withholds
+                           it for a server that never learned to send the field. The RULE is stated
+                           rather than which half of it this row failed: the page cannot tell an
+                           earlier attempt from a latest one that no longer reads as submitted, and
+                           guessing between them would put words on the row the payload cannot
+                           support. */
+                        <span className="text-xs text-fg-3">
+                          no unmark — only a job&apos;s latest attempt, still reading as submitted,
+                          can be withdrawn
+                        </span>
                       )}
                     </span>
                   </td>

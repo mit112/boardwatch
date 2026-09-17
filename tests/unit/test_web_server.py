@@ -1524,6 +1524,60 @@ def test_the_applied_history_names_a_closed_lead_and_one_that_never_reached_the_
     assert counts["posting_closed"] == 1
 
 
+def test_only_a_jobs_latest_submitted_attempt_offers_the_unmark(
+    live: Live, engine: Engine
+) -> None:
+    """`can_unmark` per ROW, because the write behind it is per JOB.
+
+    `mark_job_unapplied` resolves posting -> job -> `attempts[-1]`, so a control offered on an
+    earlier attempt makes a promise about a row the reader did not click. Both orders are seeded
+    here because they fail differently: with the submitted attempt FIRST the click answers
+    `unchanged` and nothing happens, and with it SECOND the click withdraws an attempt further
+    down the page.
+    """
+    with engine.begin() as conn:
+        first_posting, first_job = _deliver(conn, "one")
+        second_posting, second_job = _deliver(conn, "two")
+        # Submitted attempt, then a `track add --new-attempt` row sitting at `interested`.
+        early_applied = create_application(
+            conn, job_id=first_job, status="applied", occurred_at=NOW - timedelta(days=5)
+        )
+        later_interested = create_application(conn, job_id=first_job, status="interested")
+        # The inverted order: a dead earlier attempt under a live one.
+        early_rejected = create_application(
+            conn, job_id=second_job, status="rejected", occurred_at=NOW - timedelta(days=5)
+        )
+        later_applied = create_application(
+            conn, job_id=second_job, status="applied", occurred_at=NOW - timedelta(days=1)
+        )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    offered = {row["application_id"]: row["can_unmark"] for row in payload["rows"]}
+
+    # Neither row on the first job: the latest attempt does not read as submitted, so there is
+    # nothing to withdraw, and the earlier one is not the row the write would reach.
+    assert offered[early_applied] is False
+    assert offered[later_interested] is False
+    # And on the second job exactly the row the write acts on, and only that row.
+    assert offered[early_rejected] is False
+    assert offered[later_applied] is True
+    # The ids the page would key the control on are the delivered postings, not a sibling's.
+    postings_by_application = {row["application_id"]: row["posting_id"] for row in payload["rows"]}
+    assert postings_by_application[later_applied] == second_posting
+    assert postings_by_application[later_interested] == first_posting
+
+
+def test_an_undelivered_application_never_offers_the_unmark(live: Live, engine: Engine) -> None:
+    """No posting id, so no control: every existing write route keys on one."""
+    with engine.begin() as conn:
+        never_queued = _undelivered(conn, "two")
+        create_application(conn, job_id=never_queued, status="applied")
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["posting_id"] is None
+    assert row["can_unmark"] is False
+
+
 def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine: Engine) -> None:
     """A read, through `_read`, like `/api/queue`: no token is a 401 and a POST is not a route.
 

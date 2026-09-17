@@ -179,6 +179,10 @@ function appliedResponse(): AppliedHistoryResponse {
       pdf_available: row.pdf_available,
       pdf_uri: row.pdf_uri,
       source: "web",
+      // One attempt per job is all this fixture models, and it reads as applied, so it IS the
+      // attempt the unapply route acts on. The earlier-attempt row — the one with no control —
+      // has no fixture lead to hang off and is exercised in `appliedPage.test.tsx`.
+      can_unmark: true,
     }));
   return {
     rows,

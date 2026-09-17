@@ -958,6 +958,10 @@ def _applied_json(row: AppliedRow, ctx: ApiContext) -> dict[str, Any]:
         "pdf_available": _pdf_path(row.pdf_uri, ctx.out_root) is not None,
         "pdf_uri": row.pdf_uri,
         "source": row.source,
+        # Whether the EXISTING unapply route would act on this attempt. Per row, because the
+        # route is per job: it withdraws the job's latest attempt, so a page offering the control
+        # on every row would promise a write it cannot make (see `AppliedRow.can_unmark`).
+        "can_unmark": row.can_unmark,
     }
 
 

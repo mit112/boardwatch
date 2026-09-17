@@ -217,6 +217,25 @@ describe("the row's controls", () => {
   });
 });
 
+  it("offers the unmark only on the attempt the write would act on", async () => {
+    /*
+     * `mark_job_unapplied` resolves posting -> job -> latest attempt, so the control is offered
+     * exactly where the server says that attempt is (`can_unmark`). A row that does not get it
+     * SAYS SO: two rows for one job, one with a button and one with nothing, is a difference the
+     * reader cannot otherwise account for.
+     */
+    const job = 4242;
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ job_id: job, company: "Acme Corp", status: "applied", can_unmark: false }),
+        appliedRow({ job_id: job, company: "Acme Corp", status: "interviewing", can_unmark: true }),
+      ]),
+    );
+
+    expect(screen.getAllByRole("button", { name: "Unmark applied" })).toHaveLength(1);
+    expect(screen.getByText(/only a job's latest attempt/)).toBeTruthy();
+  });
+
 describe("a server older than this bundle", () => {
   it("still draws the row, and still offers the PDF, with no pdf_uri on the wire", async () => {
     /*
@@ -231,6 +250,18 @@ describe("a server older than this bundle", () => {
     expect(dataRows()).toHaveLength(1);
     expect(screen.getByText("Acme Corp")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open PDF" })).toBeTruthy();
+  });
+
+  it("offers no unmark at all when the server never learned to say which attempt", async () => {
+    // `can_unmark` absent arrives as `undefined`. The control is withheld rather than offered on
+    // every row: an older server's unapply still acts on the job's latest attempt, so a button
+    // here would make the same wrong promise this field exists to stop.
+    const row = withoutFields(appliedRow({ company: "Acme Corp" }), ["can_unmark"]);
+    await renderApplied(appliedResponse([row]));
+
+    expect(dataRows()).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Unmark applied" })).toBeNull();
+    expect(screen.getByText(/only a job's latest attempt/)).toBeTruthy();
   });
 
   it("draws every other cell when the dates and the posting status are absent", async () => {

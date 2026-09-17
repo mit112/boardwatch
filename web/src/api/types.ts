@@ -310,6 +310,15 @@ export interface AppliedRow {
   pdf_uri: string | null;
   /** `application_events.source` for the event that set the current status: "web", "import". */
   source: string | null;
+  /**
+   * Whether `POST /api/queue/<posting_id>/unapplied` would act on THIS attempt.
+   *
+   * The route is per JOB — it withdraws the job's latest attempt — while this page is one row per
+   * attempt, so the control is offered on the row the server names and nowhere else. Read as
+   * `=== true`: an older server omits the key, and `undefined` must withhold the control rather
+   * than offer one that acts on a different row.
+   */
+  can_unmark: boolean;
 }
 
 /**
