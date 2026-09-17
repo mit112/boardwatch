@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice). Nothing was deleted on any of the seven passes. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers). Nothing was deleted on any of the eight passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,123 +20,62 @@
 
 ## Current standing
 
-### 2026-09-14b → 2026-09-15 — **B8 IS MET, SO EVERY BAR IS NOW CLEAR EXCEPT TWO DATED READINGS ON 09-19.** The apply lane read end to end; ≤1-YoE harvested; applied history imported; rule (a) drained; the session then REVIEWED, the gate BACKFILLED, its freshness test FIXED, and B8 re-read and MET: **D-506 … D-514.** PRs #377, #378, #379 all MERGED.
+### 2026-09-16 — **RUN 432 CLEAN (confirm day 11), D-512's PROOF HELD, AND WEB WAVE 1 SHIPPED UNDER THE FREEZE ON THE OWNER'S RULING: D-515, D-516. PR #381 MERGED.**
 
-**Owner is mid-preparation for a mass-apply session.** Everything below is about the lane he opens.
-Run 308's readout (confirm day 9, all five predictions held) moved to `METRICS.md`.
+**Owner rulings (D-515).** `boardwatch web` is the ONLY UI — never publish an artifact, sheet or
+CSV of the queue again. Web work CONTINUES through the confirm window: `delivery/`,
+`store/delivery_queries.py` and `web/` are outside the four digested engine modules, so nothing
+the bars read moves. **The gate judge's move to Sonnet is NOT web work and stays parked until
+09-19.** The below-the-cap "rest" view stays deferred (spec D5, it needs the ranker path the daily
+driver calls).
 
-**The apply lane is no longer unverified.** All 505 leads read by the PRODUCTION judge (same prompt,
-model, parser, config dir), 39 batches, **0 failed open**, deliberately NOT persisted — D-477 pt 5
-forbids re-judging and 476 already carried a gate row. **116 above band (23.0%), 32 now `ineligible`.**
-**Do NOT quote 23% as a defect rate** (D-507): D-503's 16.3% used two judges at 96.4% agreement over
-ALL causes; this is one model over one cause, and ~13% of its flags are false.
+**Run 432 (D-516, readout in `METRICS.md`).** 04:00 tick, `ok`, 61 min, RECONCILES, `runs = 7`
+exit 0. 42,327 seen / 10,532 new / 192,408 open; 71 shortlisted, 40 tailored, 26 PDFs; gate 39
+judged (20/12/7), 0 failed open. **Stale-policy gate rows on open postings 36 → 5** — the fix
+works. job-apps ran at 08:55. **The lane the owner opens: apply 392 (rules 156 `eligible` / 236
+`uncertain`; gate 347 / 42 / 1 / 2 unjudged), review 350 (255 above band), applied 61. 48 leads
+are new since the 09-14 worklist.** Folders, API and store agree.
 
-**`gate.seniority_hold` is ARMED** — read back through `load_settings()`, not the file. It held **7
-on run 419**, its first live reading.
+**Web wave 1 shipped (PR #381, merge commit).** Gate verdict on every row + three band cells;
+"new since last visit" facet; ATS (`provider`) sort; bulk skip with batch routes and one undo;
+`jurisdiction` in words; orphan `coverage_detail` removed; dialog role + focus-by-posting-id on
+the narrow sheet. **And `judge_seniority_above_band` had NEVER been on the wire** — the 09-14
+CHANGELOG entry and `types.ts` were both wrong; fixed red-first under an armed hold.
+`make check` green twice (10,146 on `t80`; 10,161 on the union).
 
-**Rule (a)'s standing-side drain SHIPPED (D-506, PR #378) and is verified against the LIVE queue:
-17 folders moved to `_lane_copy`, 0 failed, apply lane 505 → 488.** `cross_host` still suppresses
-nothing; the discriminating test is §3.1's board-vs-board pair, mutation-verified.
+**The running viewer is STALE until restarted** (bundle from disk, API from startup, D-360): the
+one started this session at `127.0.0.1:59592` predates the merge. Restart it from the primary
+checkout on `main`; the port changes.
 
-**The ≤1-YoE slice of `_skipped` is harvested (D-509): 298 of 304 landed (98.0%).** The refresher
-now maintains `_eligibility_review`, `_review_later` and both `min_1_year_*` buckets on FUTURE
-dates, so **tomorrow only the new cohort is left**. Every other skip reason stays unlinked.
+**Enterprise seat: 0% → 60% in 37 min** under four Opus executors + one audit. Owner: *"dont spawn
+new tasks."* **Wave 2 is ticketed and NOT dispatched** — T83 follow-up dates, T84 applied-history
+page (drafts in the 09-16 session scratchpad, not the repo; re-derive from D-516 if lost).
 
-**Applied history imported: applications 18 → 61**, 59 on still-open postings. The 83 Indeed `jk=`
-rows were correctly refused as `ambiguous` (D-488's fix holding).
+**Next action — unchanged in substance: the two dated readings on 09-19 decide M4 and M5.**
 
-**A REPORTED NUMBER WAS WRONG AND IS CORRECTED IN D-508.** The ≤1-YoE floor had already shipped
-2026-09-09; the 35,941-row figure that said otherwise was an UNSCOPED count over
-`eligibility_requirements`, which carries no identity column. **Confirm INTACT at day 9.**
+1. **Read the 04:00 tick each morning by `max(runs.id)`** — 432 was 09-16, expect 433 on 09-17.
+   Confirm day 12.
+2. **M4: second Gate 1 reading ~09-19** is the last condition; if it holds, job-apps switches off.
+3. **M5: confirm day 14 is 09-19.** Reconciliation `True` on every run since 09-07.
+4. **First thing after 09-19:** the gate judge off haiku onto Sonnet (D-477, D-514).
+5. **Web wave 2 when the seat allows** (owner's call on scale): T83, T84. Restart the viewer
+   after every web merge.
+6. **Owner calls from D-516's executors**, each one line if reversed: batch `failed` = "not a
+   standing lead" (review-lane ids are skippable); `x` refuses auto-repeat; `ats` sort opens
+   descending; no `judge_ineligible` band cell; pane `review_reason` from default flags
+   (pre-existing); no scroll lock on the sheet.
+7. Still open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
+   `board_reported_total = None`; `details.json` naming which lead supersedes a drained lane copy.
 
-**THE SESSION WAS THEN REVIEWED AGAINST THE LIVE STORE AND QUEUE — D-510.** Every identity-scoped
-claim reproduces, including D-508's own correction (**zero `met` rows at any low end ≥ 2, so the
-≤1-YoE floor IS in force**), `476`, `471`, all five store totals and `59 still-open`. **The FOLDER
-counts were the ones that were wrong**: an empty `.staging-` leftover was counted as a lead, so the
-lane was **505 → 488**, and `yes`/`eligible` were each one low. **`116/505 = 22.97%` — the 23.0%
-headline and D-507's framing are UNCHANGED, and the owner's worklist audits CLEAN** (tier `1b` is
-exactly the union of 116 + 32 + 17 = 140, zero unexplained, zero leak into tier 1). No code changed.
+### 2026-09-14b → 2026-09-15 — B8 MET; every bar clear except the two dated readings on 09-19. **Held WHOLE in D-506 … D-514 and `METRICS.md` (sessions 2026-09-14b and 2026-09-15); do not re-derive.**
 
-**WEB IS NOW AT PARITY WITH THE SHEET, AND THE REASON IT WAS NOT IS A DEFECT — D-511.**
-`current_gate_verdicts` matches `engine_version` by **PREFIX** (`final_gate:%`) and `run_gate_stage`
-uses it as the never-re-judge test, so the 09-13 `seniority_fit` policy bump left **434 of 505
-apply-lane leads and 686 store-wide permanently unreachable** — reading `unclear` forever, and **no
-nightly run would ever have fixed it.** Owner ruled judge-the-lane-now; **797 judged, 0 failed
-open** (runs **427–430**), store-wide stale **686 → 36**. Web serves apply lane **144** above band
-(was 11), review lane 101. **19 apply-lane leads are now gate-`ineligible`. A drain for them was
-PREDICTED AND THE PREDICTION WAS WRONG** — `ineligible_job_ids` filters on `verdict` (the
-DETERMINISTIC lane), not `judge_verdict`, so **0 of the 19 drain**. A gate `ineligible` filters
-FUTURE shortlists; it never evicts a STANDING delivered lead.
-
-**THE JUDGE DOES NOT REPRODUCE, and this outranks the parity work.** Same 462 leads, same prompt /
-haiku / parser, two occasions: **`seniority_fit` 68.2%, `decision` 65.6%** agreement. Marginals are
-stable, membership churns. **So D-507's 116 (23.0%) and tonight's 144 (28.5%) are the same
-measurement with different dice — neither is a stable list.** Confound named and testable: batch
-composition differs between runs. **Vindicates demote-not-delete; argues AGAINST `seniority_hold`
-actually withholding.**
-
-**THE PREFIX MATCH IS FIXED — D-512.** D-511 called it a defect too broadly: the prefix is
-DELIBERATE and RIGHT for a display reader. The defect was ONE read serving TWO questions, so
-`current_gate_verdicts` now takes a keyword-only `engine_version` and **only `run_gate_stage`
-passes it**; the five display call sites and `current_gate_seniority` are untouched. Red-first test
-verified to FAIL against the reverted fix. **A `POLICY_VERSION` bump now RE-OPENS every lead for
-re-judging — the semantics the knob always claimed and never had, so bump it only when the corpus
-should be re-judged.** Residual ~36 leads.
-
-**B8 IS NOT MET, AND WHAT IT READS WAS MIS-QUOTED — D-513.** `17.2%` (D-487, whole lane, 22/128) is
-the BAR reading; the `14.7%` this file quoted is a gate-judged SUB-CUT, so **B8 has never been
-cleared**. Re-read on D-503's sonnet+opus instrument over 160 standing apply-lane leads, **run twice
-on the IDENTICAL sample: 16.2% then 18.8%** — both FAIL. **The instrument's own spread is 2.6pp, so
-a ≤16% bar cannot be adjudicated by one reading**; inter-rater agreement (98.1% / 96.2%) shows the
-two models are ALIKE, not that the measurement is STABLE. **The miss is 28 seniority / 2 work_auth —
-93% seniority**, the least reliable signal in the system. Batch composition is RULED OUT as the
-cause of the judge's churn (same-grouping ≈ shuffled); it is model nondeterminism.
-
-**RESOLVED — B8 IS NOW MET (D-514), AND THE PRODUCTION PATH DID IT UNPROMPTED.** Mit ruled "go with
-your rec" (apply the hold retroactively); reading the queue first showed **run 431's 04:00 reconcile
-had already done it** — D-511's backfill gave the armed hold the readings it had never had. **Apply
-lane 488 → 366; `_review` 163 → 340, of which 244 are `seniority_judged_above_band`.** No folders
-were moved by hand and **it repeats nightly**.
-
-**Post-drain B8: 6.9% then 5.6%** on the identical 160-lead sample, 0 batches dropped, ~10pp clear
-of the ≤16% bar and 1.3pp apart — where the pre-drain pair (16.2% / 18.8%) straddled it. **The drain
-is decided by haiku (production) and measured by sonnet+opus (independent), so the audit is not
-fitted to the change it scores.** Residual: 8–10 seniority + 1 `clearance`.
-
-**The cost is real: the hold also demotes ~26 APPLYABLE leads per 160** — a 68%-consistent signal
-cuts both ways. They keep their rendered résumés in `_review`. **The principled fix is a stronger
-gate judge** (D-477 specified Sonnet; haiku was conditional on ≥90% agreement it would fail today)
-— **not built, because M5's exit forbids building in the confirm window.**
-
-**Owner's worklist is `~/boardwatch-apply-2026-09-14/`** (not a repo artifact): 365 Tier 1 rows of
-which **345 are distinct work** (20 are rendered but marked duplicates — the sheet's "345" is that
-net figure, verified correct on review) / 140
-Tier 1b demoted / 163 Tier 2, artifacts copied locally so links survive a reconcile. Its checkboxes
-do NOT reach boardwatch — applications need `boardwatch track add <posting_id>`.
-
-**Next action — THE PROGRAM IS DOWN TO TWO DATED READINGS, BOTH 2026-09-19. BUILD NOTHING UNTIL
-THEY LAND; M5's exit says so explicitly.**
-
-1. **Read the 04:00 tick each morning. Read `max(runs.id)` for its number, do not guess it** — run
-   431 (09-15) was the last, so expect **432** on 09-16 unless a hand command minted one.
-   **Run 432 is the first tick carrying D-512**, so it should re-judge the ~36 remaining stale
-   leads and then find none — that is the observable proof the fix works, and it is worth checking
-   once rather than assuming.
-2. **M4: the second Gate 1 reading, owed ~09-19, is the LAST condition.** D-505 ruled no bar for
-   Indeed, LinkedIn and hiring.cafe, so the employer-board half alone decides and all four already
-   clear 85% (D-499). **If it holds, job-apps switches off.**
-3. **M5: confirm day 14 is 09-19.** Day 10 read clean on 09-15 with no missing day and
-   reconciliation `True` on every run since 09-07. Nothing to do but let ticks accumulate.
-4. **FIRST THING AFTER 09-19, and not before:** move the gate judge off haiku. **D-477 already
-   specified Sonnet**, with haiku conditional on ≥ 90% agreement with the 95 stored verdicts — a
-   test haiku would **not** pass today (D-511 measured it at 65.6% self-agreement on `decision`).
-   The cost is live: the seniority hold demotes **~26 applyable leads per 160** alongside the
-   unapplyable ones (D-514). This is a BUILD, so it waits for the window to close.
-5. Still open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
-   `board_reported_total = None`. NOT built, sized only: ATS sort in `boardwatch web` needs
-   `provider` carried store → API → type → sort (never the URL host class,
-   `delivery_queries.py:527`); and `details.json` naming WHICH lead supersedes a drained lane copy
-   (`DETAILS_SCHEMA` is versioned).
+The apply lane read end to end by the production judge (D-507: 23% is NOT a defect rate); rule
+(a)'s standing-side drain (D-506); the ≤1-YoE harvest (D-509); applied history imported 18 → 61;
+D-508's corrected count; D-510's review of the live store; D-511's prefix-match defect and the
+797-lead re-judge; **the judge does not reproduce (65.6% self-agreement on `decision`)**; D-512's
+exact-version freshness fix; D-513's B8 mis-quote; **D-514: B8 MET post-drain at 6.9% / 5.6%**,
+the hold demoting ~26 applyable leads per 160 as its cost. Owner's worklist
+`~/boardwatch-apply-2026-09-14/` is superseded by the web app (D-515).
 
 ### Owed, and specifically NOT done
 
