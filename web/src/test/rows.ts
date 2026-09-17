@@ -8,6 +8,7 @@ import type {
   RunFunnel,
   RunSummary,
 } from "../api/types";
+import { todayIso } from "../lib/format";
 
 /*
  * Queue rows for the frontend tests, built here rather than imported from `src/fixtures/`.
@@ -141,9 +142,26 @@ export function appliedRow(overrides: Partial<AppliedRow> = {}): AppliedRow {
     pdf_available: true,
     pdf_uri: "file:///queue/acme/resume.pdf",
     source: "web",
+    // `true`, deliberately: the default row is a job's one attempt, still reading as submitted,
+    // which is exactly the row the unapply route acts on. A test about an earlier attempt says so.
+    can_unmark: true,
+    // `null`, deliberately, exactly as the queue row's is: the default row renders NO follow-up
+    // chip, and a test that wants one says so.
+    follow_up: null,
     ...overrides,
   };
 }
+
+/**
+ * The statuses the server counts as a submission, transcribed from
+ * `store/applications.APPLIED_STATUSES`.
+ *
+ * `interested` is outside it because it is `create_application`'s default and means only that a
+ * lead was tracked, and `withdrawn` because it cannot distinguish withdrawing an application from
+ * withdrawing interest before applying. A "not withdrawn" test here let a fixture band claim a
+ * `posting_closed` figure the server would never send.
+ */
+const APPLIED_STATUSES = ["applied", "interviewing", "offer", "rejected"];
 
 /** The counts the server computes, computed the same way here so a fixture band cannot claim a
  *  total the rows beside it do not add up to. */
@@ -163,8 +181,20 @@ export function appliedResponse(rows: AppliedRow[]): AppliedHistoryResponse {
       total: rows.length,
       by_status,
       posting_closed: rows.filter(
-        (row) => row.posting_status === "closed" && row.status !== "withdrawn",
+        (row) => row.posting_status === "closed" && APPLIED_STATUSES.includes(row.status),
       ).length,
+      // Per JOB and gated on the submitted statuses, the way the server counts it: two attempts
+      // on one job hold ONE date, so a fixture band cannot claim two calls to make.
+      follow_up_due: new Set(
+        rows
+          .filter(
+            (row) =>
+              row.follow_up != null &&
+              row.follow_up <= todayIso() &&
+              APPLIED_STATUSES.includes(row.status),
+          )
+          .map((row) => row.job_id),
+      ).size,
     },
   };
 }

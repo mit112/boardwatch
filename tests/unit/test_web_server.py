@@ -1524,6 +1524,252 @@ def test_the_applied_history_names_a_closed_lead_and_one_that_never_reached_the_
     assert counts["posting_closed"] == 1
 
 
+def test_the_applied_row_describes_the_posting_the_application_was_made_against(
+    live: Live, engine: Engine
+) -> None:
+    """`applications.posting_version_id` decides the row's posting, not `_supersedes`.
+
+    The eBay shape `_supersedes` exists for: one job holding two delivered postings, an open
+    requisition and a dead copy. `_delivered_winners` prefers the LIVE one (D-432), which is right
+    for the queue — it is looking for work — and wrong here, because the owner applied against the
+    copy that is now closed. Without this the page answers `posting_status: "open"`,
+    `closed_at: null` and serves the résumé tailored for a requisition nobody applied to.
+
+    `_deliver` mints a company per delivery, so the two postings here sit on sibling company rows;
+    every assertion below is keyed on the posting id and its standing rather than on the name.
+    """
+    with engine.begin() as conn:
+        live_posting, job = _deliver(conn, "live", pdf_uri="file:///out/live.pdf")
+        dead_posting, _same = _deliver(
+            conn,
+            "dead",
+            job_id=job,
+            pdf_uri="file:///out/dead.pdf",
+            delivered_at=NOW + timedelta(hours=1),
+        )
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == dead_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        applied_against = int(
+            conn.execute(
+                select(posting_versions.c.id).where(posting_versions.c.posting_id == dead_posting)
+            ).scalar_one()
+        )
+        create_application(
+            conn, job_id=job, posting_version_id=applied_against, status="applied"
+        )
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["posting_id"] == dead_posting
+    assert row["posting_status"] == "closed"
+    assert row["closed_at"] == "2026-08-26T12:00:00+00:00"
+    # The résumé that went out, which is the one tailored for the requisition applied to.
+    assert row["pdf_uri"] == "file:///out/dead.pdf"
+    # The live sibling is still there and is still what the QUEUE would offer — this changed the
+    # applied page's reading of one application, not the delivery rule.
+    assert live_posting != dead_posting
+
+
+def test_an_unresolvable_applied_version_keeps_the_delivery_queues_own_choice(
+    live: Live, engine: Engine
+) -> None:
+    """The fallback, asserted so the branch above cannot be the only path that works.
+
+    Two applications that name no usable version: one with `posting_version_id` NULL — every row
+    `mark_job_applied` wrote before A4, and every row whose posting had no version — and one
+    naming a version on a posting the queue never DELIVERED, which has no artifact and therefore
+    no résumé or delivered id to offer. Both keep `_supersedes`' live winner.
+    """
+    with engine.begin() as conn:
+        live_posting, job = _deliver(conn, "live", pdf_uri="file:///out/live.pdf")
+        dead_posting, _same = _deliver(
+            conn, "dead", job_id=job, delivered_at=NOW + timedelta(hours=1)
+        )
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == dead_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        create_application(conn, job_id=job, status="applied")
+
+        undelivered_job = _undelivered(conn, "two")
+        undelivered_version = int(
+            conn.execute(
+                insert(posting_versions).values(
+                    posting_id=int(
+                        conn.execute(
+                            select(postings.c.id).where(postings.c.job_id == undelivered_job)
+                        ).scalar_one()
+                    ),
+                    content_hash="v-two",
+                    body_text=JD_ELIGIBLE,
+                    captured_at=NOW,
+                    capture_reason="new",
+                )
+            ).inserted_primary_key[0]
+        )
+        create_application(
+            conn,
+            job_id=undelivered_job,
+            posting_version_id=undelivered_version,
+            status="applied",
+            occurred_at=NOW - timedelta(days=5),
+        )
+
+    rows = call(live, "/api/applied", bearer=live.token).json()["rows"]
+    unnamed, never_delivered = rows
+    assert unnamed["posting_id"] == live_posting
+    assert unnamed["posting_status"] == "open"
+    assert unnamed["pdf_uri"] == "file:///out/live.pdf"
+    # Never delivered, so no posting id and no résumé — the posting's own facts still answer
+    # "what was applied to".
+    assert never_delivered["posting_id"] is None
+    assert never_delivered["title"] == "Data Engineer"
+    assert never_delivered["pdf_uri"] is None
+
+
+def test_only_a_jobs_latest_submitted_attempt_offers_the_unmark(
+    live: Live, engine: Engine
+) -> None:
+    """`can_unmark` per ROW, because the write behind it is per JOB.
+
+    `mark_job_unapplied` resolves posting -> job -> `attempts[-1]`, so a control offered on an
+    earlier attempt makes a promise about a row the reader did not click. Both orders are seeded
+    here because they fail differently: with the submitted attempt FIRST the click answers
+    `unchanged` and nothing happens, and with it SECOND the click withdraws an attempt further
+    down the page.
+    """
+    with engine.begin() as conn:
+        first_posting, first_job = _deliver(conn, "one")
+        second_posting, second_job = _deliver(conn, "two")
+        # Submitted attempt, then a `track add --new-attempt` row sitting at `interested`.
+        early_applied = create_application(
+            conn, job_id=first_job, status="applied", occurred_at=NOW - timedelta(days=5)
+        )
+        later_interested = create_application(conn, job_id=first_job, status="interested")
+        # The inverted order: a dead earlier attempt under a live one.
+        early_rejected = create_application(
+            conn, job_id=second_job, status="rejected", occurred_at=NOW - timedelta(days=5)
+        )
+        later_applied = create_application(
+            conn, job_id=second_job, status="applied", occurred_at=NOW - timedelta(days=1)
+        )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    offered = {row["application_id"]: row["can_unmark"] for row in payload["rows"]}
+
+    # Neither row on the first job: the latest attempt does not read as submitted, so there is
+    # nothing to withdraw, and the earlier one is not the row the write would reach.
+    assert offered[early_applied] is False
+    assert offered[later_interested] is False
+    # And on the second job exactly the row the write acts on, and only that row.
+    assert offered[early_rejected] is False
+    assert offered[later_applied] is True
+    # The ids the page would key the control on are the delivered postings, not a sibling's.
+    postings_by_application = {row["application_id"]: row["posting_id"] for row in payload["rows"]}
+    assert postings_by_application[later_applied] == second_posting
+    assert postings_by_application[later_interested] == first_posting
+
+
+def test_an_undelivered_application_never_offers_the_unmark(live: Live, engine: Engine) -> None:
+    """No posting id, so no control: every existing write route keys on one."""
+    with engine.begin() as conn:
+        never_queued = _undelivered(conn, "two")
+        create_application(conn, job_id=never_queued, status="applied")
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["posting_id"] is None
+    assert row["can_unmark"] is False
+
+
+def test_an_applied_leads_follow_up_reaches_the_applied_history_and_its_band(
+    live: Live, engine: Engine
+) -> None:
+    """The gap T83 left: a follow-up SURVIVES `mark_job_applied` in the store, but `queue_payload`
+    is built on `delivered_unapplied`, so an applied lead was in neither lane and no surface
+    showed its date or let the owner set one — and the applied lead is exactly the one the owner
+    follows up on.
+
+    The count is per JOB, not per attempt: two attempts on one job carry the same date (the key is
+    `queue.followup.<job_id>`), and counting both would report two pieces of work where there is
+    one. `<=` today, so a date that slipped past unread is counted.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+        # Two attempts, both reading as submitted, so the dedup is exercised rather than asserted
+        # on a shape that cannot distinguish the two rules.
+        create_application(
+            conn, job_id=job_id, status="applied", occurred_at=NOW - timedelta(days=5)
+        )
+        create_application(conn, job_id=job_id, status="interviewing")
+    today = local_today()
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+
+    overdue = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=3)).isoformat()},
+    )
+    assert overdue.status == 200, overdue.body[:200]
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    # Resolved on `job_id`, so every attempt on the job carries it — the store holds one date.
+    assert [row["follow_up"] for row in payload["rows"]] == [
+        (today - timedelta(days=3)).isoformat()
+    ] * 2
+    assert payload["counts"]["follow_up_due"] == 1
+
+    # Tomorrow's date is pinned but not due, and the same two rows now count for nothing.
+    later = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=1)).isoformat()},
+    )
+    assert later.status == 200, later.body[:200]
+    future = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in future["rows"]] == [
+        (today + timedelta(days=1)).isoformat()
+    ] * 2
+    assert future["counts"]["follow_up_due"] == 0
+
+    cleared = call(
+        live, f"/api/queue/{posting_id}/unfollowup", method="POST", bearer=live.token
+    )
+    assert cleared.status == 200
+    gone = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in gone["rows"]] == [None, None]
+    assert gone["counts"]["follow_up_due"] == 0
+
+
+def test_a_withdrawn_attempts_follow_up_is_not_counted_as_due(
+    live: Live, engine: Engine
+) -> None:
+    """`follow_up_due` is gated on `APPLIED_STATUSES`, exactly as `posting_closed` is: a withdrawn
+    attempt is not an application anybody is waiting on, so its date is shown and not counted."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+        create_application(conn, job_id=job_id, status="withdrawn")
+    today = local_today()
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": today.isoformat()},
+    )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    # Shown on the row — the date is still pinned to the lead, which is the queue's business.
+    assert payload["rows"][0]["follow_up"] == today.isoformat()
+    assert payload["counts"]["follow_up_due"] == 0
+
+
 def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine: Engine) -> None:
     """A read, through `_read`, like `/api/queue`: no token is a 401 and a POST is not a route.
 

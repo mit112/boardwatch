@@ -1,13 +1,8 @@
 import type { QueueRow } from "../api/types";
-import {
-  EM_DASH,
-  formatAge,
-  formatFraction,
-  formatScore,
-  isFollowUpDue,
-} from "../lib/format";
+import { EM_DASH, formatAge, formatFraction, formatScore } from "../lib/format";
 import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
+import { FollowUpBadge } from "./FollowUpBadge";
 import { JudgeVerdictBadge } from "./JudgeVerdictBadge";
 import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
@@ -121,21 +116,9 @@ function Flags({ row }: { row: QueueRow }) {
           reason="The title looks entry-level but an independent read of the job description describes a more senior role. The hold that would act on this is off, so this lead is still in the apply lane. Read the JD before applying."
         />
       ) : null}
-      {/* The pinned follow-up, and whether it has arrived. DUE is carried by the WORD "due" in
-          the label and by the strong treatment — two channels, never colour alone (SC 1.4.1), so
-          the state survives grayscale and a glance. `== null` because an older server omits the
-          field entirely, and the honest render for "the server cannot say" is no chip. */}
-      {row.follow_up == null ? null : (
-        <Badge
-          label={`follow-up ${isFollowUpDue(row.follow_up) ? "due " : ""}${row.follow_up}`}
-          emphasis={isFollowUpDue(row.follow_up) ? "strong" : "normal"}
-          reason={
-            isFollowUpDue(row.follow_up)
-              ? `Pinned to look at again on ${row.follow_up} — that date has arrived.`
-              : `Pinned to look at again on ${row.follow_up}.`
-          }
-        />
-      )}
+      {/* The pinned follow-up, and whether it has arrived. The applied history renders the same
+          component: one date, one wording, one place it is decided. */}
+      <FollowUpBadge followUp={row.follow_up} />
       {row.thin_jd ? (
         <Badge label="thin JD" reason="No coverage fraction could be computed." />
       ) : null}

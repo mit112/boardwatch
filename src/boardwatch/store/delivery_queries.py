@@ -44,6 +44,7 @@ write: `load_settings` creates no directory, and neither does `load_rules`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -65,7 +66,7 @@ from boardwatch.eligibility.read import (
     current_verdicts,
 )
 from boardwatch.providers.registry import PROVIDER_NAMES
-from boardwatch.store.applications import applied_job_ids
+from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
 from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
@@ -193,12 +194,17 @@ class AppliedRow:
     company: str | None
     title: str | None
     location: str | None
-    locations: tuple[str, ...]
     apply_url: str | None
     #: `open`, `closed` or `unverifiable`, from `_status` — the same three the queue renders.
     posting_status: str | None
     closed_at: datetime | None
     pdf_uri: str | None
+    #: Whether `mark_job_unapplied` would act on THIS attempt. The write is per JOB — it resolves
+    #: posting -> job -> latest attempt — while this page is one row per attempt, so a control
+    #: offered on every row promises something the route cannot do. True exactly when this row is
+    #: its job's latest attempt, its status still reads as submitted, and a delivered
+    #: `posting_id` exists to key the route on.
+    can_unmark: bool
 
 
 #: Why `QueueDetail.jd_body` is absent. A CLOSED set, declared where the value is produced so
@@ -901,7 +907,12 @@ def _job_posting_select() -> Select[Any]:
 
 
 def _applied_row(
-    row: Row[Any], posting: Row[Any] | None, *, delivered: bool, source: str | None
+    row: Row[Any],
+    posting: Row[Any] | None,
+    *,
+    delivered: bool,
+    source: str | None,
+    can_unmark: bool,
 ) -> AppliedRow:
     """One application, with the posting that identifies it.
 
@@ -921,7 +932,6 @@ def _applied_row(
         company=None if posting is None else str(posting.company),
         title=None if posting is None else str(posting.title),
         location=None if posting is None else _location(posting.locations_json),
-        locations=() if posting is None else _locations_list(posting.locations_json),
         apply_url=(
             None if posting is None or posting.url is None else str(posting.url)
         ),
@@ -932,21 +942,27 @@ def _applied_row(
             if posting is not None and posting.pdf_uri is not None
             else None
         ),
+        can_unmark=can_unmark,
     )
 
 
-def _delivered_winners(conn: Connection, job_ids: set[int]) -> dict[int, Row[Any]]:
+def _deliveries(conn: Connection) -> list[Row[Any]]:
+    """Every tailored delivery, ASCENDING by delivery, which is the order `_supersedes` reads.
+
+    Reached by a join out of `artifacts` rather than by binding an id list, exactly as
+    `delivered_unapplied` is, so no list is built over the corpus. Executed once and handed to
+    both readers below: `applied_rows` needs the same scan keyed two ways — by job, for the
+    queue's own choice, and by posting, for the one an application names.
+    """
+    return list(conn.execute(_delivered_select().order_by(artifacts.c.created_at, artifacts.c.id)))
+
+
+def _delivered_winners(rows: Sequence[Row[Any]], job_ids: set[int]) -> dict[int, Row[Any]]:
     """The posting the delivery queue offered for each of `job_ids`, by the SAME rule the queue
     uses: `_supersedes` over the delivered artifacts, ascending, so a live posting wins and
     delivery recency only breaks its ties (D-432).
-
-    Reached by a join out of `artifacts` rather than by binding the job ids, exactly as
-    `delivered_unapplied` is, so no list is built over the corpus.
     """
     winners: dict[int, Row[Any]] = {}
-    rows = conn.execute(
-        _delivered_select().order_by(artifacts.c.created_at, artifacts.c.id)
-    ).all()
     for row in rows:
         if row.job_id is None:
             continue
@@ -957,6 +973,35 @@ def _delivered_winners(conn: Connection, job_ids: set[int]) -> dict[int, Row[Any
         if incumbent is None or _supersedes(row, incumbent):
             winners[job_id] = row
     return winners
+
+
+def _delivered_by_posting(rows: Sequence[Row[Any]]) -> dict[int, Row[Any]]:
+    """The same deliveries keyed by POSTING, most recent artifact per posting winning.
+
+    `rows` is ascending, so plain assignment keeps the latest delivery for each posting — which is
+    the one `queue_detail` resolves for that posting id, so the applied page and the detail pane
+    cannot name two different résumés for one requisition.
+    """
+    return {int(row.posting_id): row for row in rows if row.job_id is not None}
+
+
+def _applied_versions(conn: Connection) -> dict[int, int]:
+    """application_id -> the posting its `posting_version_id` names, for the rows that name one.
+
+    `applications.posting_version_id` records the version the application was MADE against
+    (`mark_job_applied`, comment A4), and it is the only column that says WHICH of a job's
+    postings the owner actually applied to. An INNER join, so a NULL column and a version row
+    that has since gone are both simply absent here rather than a None to test for.
+
+    A join OUTWARD from `applications` — a handful of rows per job the owner acted on — and never
+    an `.in_()` over an id list, per this module's rule.
+    """
+    rows = conn.execute(
+        select(applications.c.id, posting_versions.c.posting_id).join(
+            posting_versions, applications.c.posting_version_id == posting_versions.c.id
+        )
+    ).all()
+    return {int(row.id): int(row.posting_id) for row in rows}
 
 
 def _applied_postings(conn: Connection) -> dict[int, Row[Any]]:
@@ -1030,19 +1075,46 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
     ).all()
     if not rows:
         return []
-    delivered = _delivered_winners(conn, {int(row.job_id) for row in rows})
+    deliveries = _deliveries(conn)
+    delivered = _delivered_winners(deliveries, {int(row.job_id) for row in rows})
+    by_posting = _delivered_by_posting(deliveries)
+    applied_against = _applied_versions(conn)
     fallback = _applied_postings(conn)
     sources = _mark_sources(conn)
+    # The attempt `mark_job_unapplied` would reach for each job: `get_applications` orders by
+    # `attempt_no` and takes the last, so this is that same row named here rather than re-derived
+    # from the delivery order, which is not the same ordering.
+    latest_attempt: dict[int, tuple[int, int]] = {}
+    for row in rows:
+        job_id = int(row.job_id)
+        incumbent = latest_attempt.get(job_id)
+        if incumbent is None or int(row.attempt_no) > incumbent[0]:
+            latest_attempt[job_id] = (int(row.attempt_no), int(row.id))
     built: list[AppliedRow] = []
     for row in rows:
         job_id = int(row.job_id)
-        posting = delivered.get(job_id)
+        # The posting the application NAMES, where it names one that was delivered for this same
+        # job. It beats `_supersedes`' choice because the two answer different questions: the
+        # queue's rule prefers a LIVE posting, which is right for finding work and wrong for
+        # reporting an application made against a sibling the employer has since taken down. The
+        # same-job check is what keeps a regrouped or mis-linked version from pulling in another
+        # job's requisition, and the delivered-only check is what keeps `posting_id` an id every
+        # existing web control can act on.
+        named = by_posting.get(applied_against.get(int(row.id), -1))
+        posting = named if named is not None and int(named.job_id) == job_id else None
+        if posting is None:
+            posting = delivered.get(job_id)
         built.append(
             _applied_row(
                 row,
                 posting if posting is not None else fallback.get(job_id),
                 delivered=posting is not None,
                 source=sources.get(int(row.id)),
+                can_unmark=(
+                    posting is not None
+                    and str(row.status) in APPLIED_STATUSES
+                    and latest_attempt[job_id][1] == int(row.id)
+                ),
             )
         )
     return built

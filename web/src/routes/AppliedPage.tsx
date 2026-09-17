@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getApplied, markApplied, openPdf, unapply } from "../api/client";
+import {
+  clearFollowUp,
+  getApplied,
+  markApplied,
+  openPdf,
+  setFollowUp,
+  unapply,
+} from "../api/client";
 import type { AppliedCounts, AppliedRow } from "../api/types";
 import { Badge } from "../components/Badge";
+import { FollowUpBadge } from "../components/FollowUpBadge";
 import type { ToastRequest } from "../hooks/useToasts";
-import { EM_DASH, formatTimestamp, pathFromFileUri } from "../lib/format";
+import {
+  EM_DASH,
+  formatDateWithYear,
+  formatTimestampWithYear,
+  isFollowUpDue,
+  isSafeHttpUrl,
+  pathFromFileUri,
+} from "../lib/format";
 import { matchesAppliedQuery, sortAppliedRows } from "../lib/sort";
 import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
 
@@ -25,13 +40,45 @@ import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
  *  only stands in where the first is absent, which is an attempt that never reached `applied`. */
 function appliedLabel(row: AppliedRow): string {
   const stamp = row.submitted_at ?? row.created_at ?? null;
-  return formatTimestamp(stamp);
+  // WITH the year: this list spans years and is sorted by this column, so a label without one
+  // prints the same text for two applications twelve months apart.
+  return formatTimestampWithYear(stamp);
 }
 
 /** A text field off the wire, or an em dash. `== null` and never `=== null`: an older server omits
  *  a key entirely, so the read is `undefined` and a tightened guard would print "undefined". */
 function text(value: string | null | undefined): string {
   return value == null || value === "" ? EM_DASH : value;
+}
+
+/**
+ * The title, linked at the board's own page where there is a safe URL to link at.
+ *
+ * `apply_url` was emitted and rendered nowhere, so an applied row offered no route back to the
+ * requisition — which is what a reader on a recruiter call reaches for first. The TITLE carries it
+ * rather than a fourth button: it already names the lead, so the link needs no second label and the
+ * row grows no control.
+ *
+ * `isSafeHttpUrl` is the app's ONE decision about a third-party URL (see `ApplyLink`): anything
+ * that is not `http(s)` — a `javascript:` URL above all — is shown as inert text.
+ */
+function TitleCell({ row }: { row: AppliedRow }) {
+  const label = text(row.title);
+  const url = row.apply_url ?? null;
+  if (!isSafeHttpUrl(url) || url === null) {
+    return <span {...(url === null ? {} : { title: `Not an http(s) URL: ${url}` })}>{label}</span>;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open the board's page for this posting, in a new tab."
+      className="rounded-sm underline decoration-divider underline-offset-2 transition-colors duration-[120ms] ease-snap hover:decoration-fg-2 hover:text-fg"
+    >
+      {label}
+    </a>
+  );
 }
 
 function SortHeader({
@@ -94,7 +141,7 @@ function PostingStanding({ row }: { row: AppliedRow }) {
     const when = row.closed_at ?? null;
     return (
       <Badge
-        label={when == null ? "closed" : `closed ${formatTimestamp(when)}`}
+        label={when == null ? "closed" : `closed ${formatDateWithYear(when)}`}
         emphasis="strong"
         reason="The employer has taken this requisition down since the application was sent."
       />
@@ -113,7 +160,17 @@ function PostingStanding({ row }: { row: AppliedRow }) {
 
 /** The counts band. Every member of the server's status catalog, zeros included, so a 0 here is a
  *  measurement rather than a bucket the reader has to guess was absent. */
-function CountsBand({ counts, showing }: { counts: AppliedCounts; showing: number }) {
+function CountsBand({
+  counts,
+  showing,
+  dueOnly,
+  onToggleDue,
+}: {
+  counts: AppliedCounts;
+  showing: number;
+  dueOnly: boolean;
+  onToggleDue: () => void;
+}) {
   /* `?? {}` and `?? 0`: a server older than a field omits it, and the band must draw the cells it
      CAN fill rather than blanking the page over the one it cannot. */
   const byStatus = counts.by_status ?? {};
@@ -146,6 +203,45 @@ function CountsBand({ counts, showing }: { counts: AppliedCounts; showing: numbe
             </dd>
           </div>
         ))}
+        {/*
+          * The one cell on this band that is a FILTER, so it is a real `<button>`: role, keyboard
+          * operation and the app's focus ring come for free, and `aria-pressed` carries the on/off
+          * state that no visual treatment conveys to a screen reader. The pressed treatment is the
+          * app's own active idiom — a fill plus an inset accent bar plus brighter text, three
+          * channels and never colour alone (SC 1.4.1).
+          *
+          * The accessible name STARTS with the label and the value, so Label in Name holds
+          * (SC 2.5.3), and then names the action.
+          *
+          * Drawn only when the server sent the figure. `== null` and never `=== null`: a server
+          * older than the field omits it, and the honest render for a count nobody took is no cell
+          * — not a zero, which would claim a measurement, and not a crash.
+          */}
+        {counts.follow_up_due == null ? null : (
+          <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
+            <dt className={`label-micro ${dueOnly ? "text-fg-2" : "text-fg-3"}`}>
+              follow-up due
+            </dt>
+            <dd>
+              <button
+                type="button"
+                aria-pressed={dueOnly}
+                aria-label={`follow-up due ${counts.follow_up_due.toLocaleString()} — ${
+                  dueOnly ? "showing only these, activate to clear" : "show only these"
+                }`}
+                title="Applications whose pinned follow-up date has arrived — today or earlier, on this machine's calendar. Counted once per job, however many attempts it holds. Click to show only these."
+                onClick={onToggleDue}
+                className={`inline-flex min-h-11 w-full cursor-pointer items-center rounded-sm px-1 font-display text-lg tabular-nums transition-colors duration-[120ms] ease-snap ${
+                  dueOnly
+                    ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+                    : "text-fg-2 hover:bg-surface-2"
+                }`}
+              >
+                {counts.follow_up_due.toLocaleString()}
+              </button>
+            </dd>
+          </div>
+        )}
         {/* The only cell that answers "did my search match anything", so it is announced: a count
             that changes silently is a change a screen-reader reader never learns about (SC 4.1.3). */}
         <div
@@ -164,23 +260,99 @@ function RowAction({
   title,
   busy,
   onClick,
+  ariaLabel,
+  disabled = false,
 }: {
   label: string;
   title: string;
   busy: boolean;
   onClick: () => void;
+  /* Names the row in the accessible name. A column of 60 buttons all called "Clear" tells a
+     screen-reader reader nothing about which application it would act on. */
+  ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={busy}
+      disabled={busy || disabled}
       aria-busy={busy}
+      {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
       title={title}
       className="inline-flex min-h-11 items-center rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg disabled:text-fg-3"
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * The follow-up column: what is pinned, and the controls to pin or drop it.
+ *
+ * This is the surface the feature was missing. A follow-up survives `mark_job_applied` in the
+ * store, but `queue_payload` is built on `delivered_unapplied` — so an applied lead was in neither
+ * lane and nothing showed its date or let the owner set one, while the applied lead ("applied
+ * 09-17, chase on 10-01") is exactly the one a follow-up is for.
+ *
+ * **The write is on BLUR and on Enter, not on every keystroke.** A `<input type="date">` fires
+ * `change` for every value that is momentarily COMPLETE, so typing the year after the month and
+ * day fires at `0002-09-20`, `0020-09-20`, `0202-09-20` and only then `2026-09-20` — four writes
+ * and four undo toasts for one intention, with the stored value decided by response ordering. The
+ * input is therefore uncontrolled and remounted (`key`) whenever the STORED date changes, so it
+ * always shows what the store holds without a keystroke being able to write an intermediate one.
+ *
+ * A row the queue never delivered gets no input at all: both follow-up routes key on a posting id,
+ * so there would be nothing to write with. Said in words, the way that row already accounts for
+ * its missing unmark.
+ */
+function FollowUpCell({
+  row,
+  onCommit,
+  onClear,
+}: {
+  row: AppliedRow;
+  onCommit: (row: AppliedRow, date: string) => void;
+  onClear: (row: AppliedRow) => void;
+}) {
+  const pinned = row.follow_up ?? null;
+  const named = `${text(row.company)} — ${text(row.title)}`;
+  if (row.posting_id == null) {
+    return (
+      <span className="text-xs text-fg-3">no posting — nothing to pin a date to</span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <FollowUpBadge followUp={row.follow_up} />
+      {/* No visible label per row — the column header names the field and 60 repeated "Follow up
+          on" labels would be noise — so the accessible name carries the company and the title,
+          which is what tells a screen-reader reader WHICH row this input belongs to. */}
+      <input
+        key={pinned ?? ""}
+        type="date"
+        defaultValue={pinned ?? ""}
+        aria-label={`Follow up on ${named}`}
+        onBlur={(event) => {
+          onCommit(row, event.target.value);
+        }}
+        onKeyDown={(event) => {
+          // Enter commits, so the keyboard path does not depend on moving focus away.
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        className="min-h-11 rounded-sm border border-control bg-surface px-2 text-sm text-fg tabular-nums"
+      />
+      <RowAction
+        label="Clear"
+        ariaLabel={`Clear follow-up for ${named}`}
+        title="Remove this application's follow-up date."
+        busy={false}
+        disabled={pinned == null}
+        onClick={() => {
+          onClear(row);
+        }}
+      />
+    </span>
   );
 }
 
@@ -195,6 +367,9 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
   /* The applications a write is in flight for. Drives the button's disabled + `aria-busy` state,
      so a click has visible feedback before the round trip returns (Nielsen #1). */
   const [busy, setBusy] = useState<ReadonlySet<number>>(new Set());
+  /* The band's one facet. Not stored in the URL or `sessionStorage`: the queue's facets are, and
+     this page has no deep-link contract to keep — one piece of state, cleared by a reload. */
+  const [dueOnly, setDueOnly] = useState(false);
 
   const load = useCallback(
     () =>
@@ -236,6 +411,96 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
       });
     },
     [],
+  );
+
+  /*
+   * The optimistic half of a follow-up, patched on the JOB and not on the row. The store holds ONE
+   * date per job (`queue.followup.<job_id>`), so a job with two attempts shows two rows that must
+   * move together — patching only the clicked row would put two dates on screen for one stored
+   * value.
+   */
+  const applyFollowUp = useCallback((jobId: number, value: string | null) => {
+    setRows((current) =>
+      current === null
+        ? current
+        : current.map((row) => (row.job_id === jobId ? { ...row, follow_up: value } : row)),
+    );
+  }, []);
+
+  /*
+   * Pin a follow-up date, or drop one, through the queue's EXISTING routes — no new write path
+   * reaches this page. The undo restores the PREVIOUS value through the same two routes rather
+   * than repainting the row, so a toast that says it put the old date back has actually written
+   * it: the rule `unapply` established for the applied toast.
+   *
+   * `load()` follows a settled write because the band's `follow_up_due` is the SERVER's figure,
+   * counted once per job and gated on the submitted statuses — a client-side recount here would
+   * be a second copy of that rule, and this page already refetches after its other write.
+   */
+  const writeFollowUp = useCallback(
+    (row: AppliedRow, next: string | null) => {
+      const postingId = row.posting_id;
+      /* Both routes key on a posting id, and the cell offers no input without one — this is the
+         guard for the path the render already refuses. */
+      if (postingId == null) return;
+      /*
+       * An EMPTY value writes nothing, and clearing is the button beside the input. A date input
+       * reports `value === ""` for any incomplete date, so routing "" to a clear would let an
+       * in-progress edit silently drop the stored date and then write a second one.
+       */
+      if (next === "") return;
+      const previous = row.follow_up ?? null;
+      if (previous === next) return;
+      applyFollowUp(row.job_id, next);
+      const named = `${text(row.company)} — ${text(row.title)}`;
+      const write = (value: string | null): Promise<unknown> =>
+        value === null ? clearFollowUp(postingId) : setFollowUp(postingId, value);
+      void write(next)
+        .then(() => {
+          push({
+            message:
+              next === null
+                ? `Cleared the follow-up on ${named}`
+                : `Follow up on ${named} on ${next}`,
+            undo: () => {
+              applyFollowUp(row.job_id, previous);
+              void write(previous)
+                .then(() => load())
+                .catch((caught: unknown) => {
+                  applyFollowUp(row.job_id, next);
+                  push({
+                    message:
+                      caught instanceof Error
+                        ? caught.message
+                        : "Could not undo that follow-up.",
+                    tone: "error",
+                  });
+                });
+            },
+          });
+          return load();
+        })
+        .catch((caught: unknown) => {
+          applyFollowUp(row.job_id, previous);
+          push({
+            message:
+              caught instanceof Error
+                ? caught.message
+                : "The write failed and the date was restored.",
+            tone: "error",
+          });
+        });
+    },
+    [applyFollowUp, load, push],
+  );
+
+  /** Clearing is its own control, so it is its own callback rather than an inline arrow that
+   *  would be a new identity on every render of every row. */
+  const onClearFollowUp = useCallback(
+    (row: AppliedRow) => {
+      writeFollowUp(row, null);
+    },
+    [writeFollowUp],
   );
 
   /*
@@ -296,9 +561,16 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
 
   const visible = useMemo(() => {
     const needle = query.trim();
-    const matched = (rows ?? []).filter((row) => matchesAppliedQuery(row, needle.toLowerCase()));
+    const matched = (rows ?? []).filter(
+      (row) =>
+        matchesAppliedQuery(row, needle.toLowerCase()) &&
+        // `isFollowUpDue` is `<= today` on the BROWSER's calendar, which is the server's own: the
+        // viewer only ever talks to loopback. It guards `== null`, so a row from a server that
+        // omits the field is simply not due rather than a throw.
+        (!dueOnly || isFollowUpDue(row.follow_up)),
+    );
     return sortAppliedRows(matched, sort);
-  }, [rows, query, sort]);
+  }, [rows, query, sort, dueOnly]);
 
   if (error !== null) {
     // Announced, not merely printed: this replaces the whole page with no other signal.
@@ -318,7 +590,14 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
 
   return (
     <div className="flex flex-col gap-4">
-      <CountsBand counts={counts} showing={visible.length} />
+      <CountsBand
+        counts={counts}
+        showing={visible.length}
+        dueOnly={dueOnly}
+        onToggleDue={() => {
+          setDueOnly((current) => !current);
+        }}
+      />
 
       <label className="flex min-w-64 max-w-md flex-col gap-1.5">
         <span className="label-micro text-fg-3">Filter company, title, location</span>
@@ -371,6 +650,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
               <th scope="col" className="px-3 py-2 text-left font-normal">
                 source
               </th>
+              <SortHeader label="follow up" sortKey="follow_up" sort={sort} onSort={onSort} />
               <th scope="col" className="px-3 py-2 text-right font-normal">
                 actions
               </th>
@@ -390,7 +670,9 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                     {appliedLabel(row)}
                   </td>
                   <td className="px-3 py-1.5 text-fg">{text(row.company)}</td>
-                  <td className="px-3 py-1.5 text-fg-2">{text(row.title)}</td>
+                  <td className="px-3 py-1.5 text-fg-2">
+                    <TitleCell row={row} />
+                  </td>
                   <td className="px-3 py-1.5 text-fg-3">{text(row.location)}</td>
                   <td className="px-3 py-1.5">
                     {/* Verbatim off the wire and never indexed into a map, so a status this
@@ -401,6 +683,9 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                     <PostingStanding row={row} />
                   </td>
                   <td className="px-3 py-1.5 text-fg-3">{text(row.source)}</td>
+                  <td className="px-3 py-1.5">
+                    <FollowUpCell row={row} onCommit={writeFollowUp} onClear={onClearFollowUp} />
+                  </td>
                   <td className="px-3 py-1.5">
                     <span className="flex flex-wrap items-center justify-end gap-2">
                       {/* Offered exactly when `GET /api/pdf/<posting_id>` would serve it: the
@@ -434,7 +719,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                         <span className="text-xs text-fg-3">
                           never delivered — no résumé, no unmark
                         </span>
-                      ) : (
+                      ) : row.can_unmark === true ? (
                         <RowAction
                           label="Unmark applied"
                           title="Withdraws the application record and returns the lead to the queue. Undoable from the toast."
@@ -443,6 +728,19 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                             onUnmark(row);
                           }}
                         />
+                      ) : (
+                        /* The write is per JOB — it withdraws the job's LATEST attempt — so on any
+                           other attempt the control would act on a row the reader did not click.
+                           The server's own answer decides (`can_unmark`), and `=== true` withholds
+                           it for a server that never learned to send the field. The RULE is stated
+                           rather than which half of it this row failed: the page cannot tell an
+                           earlier attempt from a latest one that no longer reads as submitted, and
+                           guessing between them would put words on the row the payload cannot
+                           support. */
+                        <span className="text-xs text-fg-3">
+                          no unmark — only a job&apos;s latest attempt, still reading as submitted,
+                          can be withdrawn
+                        </span>
                       )}
                     </span>
                   </td>
@@ -451,10 +749,16 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
             })}
             {visible.length > 0 ? null : (
               <tr>
-                <td colSpan={8} className="mx-auto px-4 py-10 text-center text-sm text-fg-2">
+                <td colSpan={9} className="mx-auto px-4 py-10 text-center text-sm text-fg-2">
+                  {/* The lever that would bring rows back, named for the filter that hid them.
+                      The search box is tested first because it is the one the reader typed into;
+                      with no text in it and rows on the wire, the facet is the only thing left
+                      that can have emptied the list. */}
                   {rows.length === 0
                     ? "Nothing applied yet — mark a lead applied from the queue, or `boardwatch track add <posting_id>`."
-                    : "No application matches that search. Clear the text box to see them all."}
+                    : query.trim() !== ""
+                      ? "No application matches that search. Clear the text box to see them all."
+                      : "No application's follow-up date has arrived. Take the follow-up due cell again to see them all."}
                 </td>
               </tr>
             )}

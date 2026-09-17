@@ -310,6 +310,22 @@ export interface AppliedRow {
   pdf_uri: string | null;
   /** `application_events.source` for the event that set the current status: "web", "import". */
   source: string | null;
+  /**
+   * Whether `POST /api/queue/<posting_id>/unapplied` would act on THIS attempt.
+   *
+   * The route is per JOB — it withdraws the job's latest attempt — while this page is one row per
+   * attempt, so the control is offered on the row the server names and nowhere else. Read as
+   * `=== true`: an older server omits the key, and `undefined` must withhold the control rather
+   * than offer one that acts on a different row.
+   */
+  can_unmark: boolean;
+  /**
+   * The follow-up date pinned to this lead, `YYYY-MM-DD`, or `null` where none is.
+   *
+   * Resolved on `job_id` — the store's key is `queue.followup.<job_id>` — so every attempt on one
+   * job carries the same date, and setting it from any of their rows moves all of them.
+   */
+  follow_up: string | null;
 }
 
 /**
@@ -325,6 +341,9 @@ export interface AppliedCounts {
   total: number;
   by_status: Record<string, number>;
   posting_closed: number;
+  /** Applications whose pinned date has arrived, counted once per JOB however many attempts it
+   *  holds, and gated on the submitted statuses exactly as `posting_closed` is. */
+  follow_up_due: number;
 }
 
 /** `GET /api/applied`. Named for the history, not for the mark: `AppliedResponse` above is the
