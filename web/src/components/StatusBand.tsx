@@ -32,6 +32,11 @@ export const BAND_WIDE = "(min-width: 40rem)";
  * `judge_unjudged` is `judge_verdict == null` exactly, which is "the gate has not spoken". It is
  * not the complement of the other two: a gate `ineligible` is in none of the three, so the three
  * cells do not sum to the lane and are not meant to.
+ *
+ * `new` is the only member the SERVER knows nothing about. It is per-viewer and frontend-only —
+ * the leads delivered by a run later than the highest this viewer had seen when the page last
+ * loaded — so its count arrives as its own prop rather than through `counts`, which is the wire
+ * contract and must not grow a field no server sends.
  */
 export const QUEUE_FACETS = [
   "eligible",
@@ -40,6 +45,7 @@ export const QUEUE_FACETS = [
   "judge_eligible",
   "judge_uncertain",
   "judge_unjudged",
+  "new",
 ] as const;
 export type QueueFacet = (typeof QUEUE_FACETS)[number];
 
@@ -130,6 +136,7 @@ function Metric({
 
 export function StatusBand({
   counts,
+  newSince,
   showing,
   total,
   reviewNote,
@@ -137,6 +144,9 @@ export function StatusBand({
   onToggleFacet,
 }: {
   counts: QueueCounts;
+  /* The `new` facet's count. Its own prop, not a `counts` field: it is per-viewer, computed from
+     `localStorage`, and no server sends it. */
+  newSince: number;
   showing: number;
   total: number;
   /* The `review` cell's tooltip, GENERATED from the lane's own reason counts by the caller. It
@@ -240,6 +250,28 @@ export function StatusBand({
       />
     </>
   );
+  /*
+   * "What arrived since I last looked", in one click. It stays OUT of the fold with the three
+   * above it because it answers the band's own criterion for staying out — is there work here —
+   * for the 20-30 leads a night that are the reason the page is opened at all; the run filter it
+   * replaces needed the reader to know a run number first.
+   *
+   * Clickable at zero, like every other facet cell on this band: `eligible 0` and `review 0` are
+   * pressable today, and one cell that goes dead at zero while its neighbours do not is a band
+   * that looks broken rather than one that reads clearly.
+   */
+  const newSinceCell = (
+    <Metric
+      label="new since last visit"
+      value={newSince.toLocaleString()}
+      note="Leads delivered by a run later than the newest this browser had seen when the page last loaded. Fixed for as long as the page is open — a reload moves it, a refresh does not. Click to show only these."
+      order={4}
+      active={activeFacet === "new"}
+      onToggle={() => {
+        onToggleFacet("new");
+      }}
+    />
+  );
   const rest = (
     <>
       <Metric
@@ -299,6 +331,7 @@ export function StatusBand({
       {eligible}
       {wide ? uncertain : null}
       {review}
+      {newSinceCell}
       {wide ? judge : null}
       {wide ? rest : null}
       {readout}
