@@ -100,6 +100,20 @@ WORK_AUTH_STATUS_WORDS: dict[str, str] = {
     "prefer_not_to_say": "Prefer not to say",
 }
 
+#: Closed catalog over the eligibility catalog's declared `work_auth.jurisdiction` choices
+#: (`eligibility/rules.yaml`), in the words a form expects. `us` is this program's token for a
+#: country, and a two-letter code pasted into "which country is that authorisation for?" is the
+#: same failure `WORK_AUTH_STATUS_WORDS` exists to close. Coverage of the catalog is asserted in
+#: `tests/unit/test_web_server.py`, against the catalog rather than a retyped list.
+WORK_AUTH_JURISDICTION_WORDS: dict[str, str] = {
+    "ca": "Canada",
+    "eu": "European Union",
+    "other": "Another country",
+    "uk": "United Kingdom",
+    "unspecified": "Not specified",
+    "us": "United States",
+}
+
 #: `missing` names `education` as a whole, not per line: the résumé is the unit that is present
 #: or absent.
 EDUCATION_FIELD = "education"
@@ -373,9 +387,14 @@ def _profile_work_auth(conn: Connection | None) -> dict[str, str]:
         answer = _scalar(value, where=f"profile.work_authorization.{name}")
         if answer is None:
             continue
-        # `needs_sponsorship` is already "yes"/"no" out of `_scalar`; only `status` is a catalog
-        # token, and only it is restated.
-        resolved[name] = _status_words(answer) if name == "status" else answer
+        # `needs_sponsorship` is already "yes"/"no" out of `_scalar`; `status` and `jurisdiction`
+        # are both catalog tokens and are both restated.
+        if name == "status":
+            resolved[name] = _status_words(answer)
+        elif name == "jurisdiction":
+            resolved[name] = _jurisdiction_words(answer)
+        else:
+            resolved[name] = answer
     return resolved
 
 
@@ -389,6 +408,19 @@ def _status_words(status: str) -> str:
             where="profile.work_authorization.status",
         )
     return words
+
+
+def _jurisdiction_words(jurisdiction: str) -> str:
+    """One declared `work_auth.jurisdiction` in the words a form expects.
+
+    Out-of-catalog is PASSED THROUGH here, where `_status_words` refuses it, and the asymmetry is
+    deliberate: `ead_or_similar` means nothing outside this program, so a status the catalog does
+    not declare is a corrupt row that must not reach a clipboard, while a jurisdiction it does not
+    declare is a value this panel already served verbatim before it was restated at all. Refusing
+    it would turn restating into a new 422 over a field that was working. Never dropped either — a
+    blank would hide the stored fact rather than report it.
+    """
+    return WORK_AUTH_JURISDICTION_WORDS.get(jurisdiction, jurisdiction)
 
 
 def _education(config_dir: Path) -> list[str]:

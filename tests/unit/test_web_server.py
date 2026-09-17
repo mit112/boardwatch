@@ -40,7 +40,10 @@ from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import server as server_mod
-from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
+from boardwatch.delivery.answers import (
+    WORK_AUTH_JURISDICTION_WORDS,
+    WORK_AUTH_STATUS_WORDS,
+)
 from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
@@ -1592,6 +1595,48 @@ def test_the_answers_panel_serves_work_auth_words_not_enum_tokens(
     assert work_auth["needs_sponsorship"] == "no"
 
 
+def test_the_answers_panel_serves_the_jurisdiction_in_words_too(
+    live: Live, engine: Engine
+) -> None:
+    """`us` is this catalog's token for a country, not the answer a form asks for.
+
+    The same argument as the status above, on the field beside it: the panel exists to be COPIED,
+    and a two-letter code pasted into "which country is that authorisation for?" is this program's
+    vocabulary reaching an employer.
+    """
+    facts = Facts(
+        work_authorization=WorkAuthFact(status="citizen", jurisdiction="us", needs_sponsorship=False)
+    )
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    work_auth = call(live, "/api/answers", bearer=live.token).json()["work_auth"]
+
+    assert work_auth["jurisdiction"] == "United States"
+
+
+def test_a_jurisdiction_outside_the_catalog_is_passed_through_rather_than_refused(
+    live: Live, engine: Engine
+) -> None:
+    """The one place this field parts company with `status`, asserted so the asymmetry is
+    deliberate rather than an omission.
+
+    An unrecognised `status` is refused because `ead_or_similar` has no meaning outside this
+    program and a corrupt one must not reach a form. A jurisdiction the catalog does not declare is
+    a stored value the panel already served verbatim before it was restated at all, so refusing it
+    would take a working panel to a 422 over a field restating was only ever meant to improve.
+    Passed through unchanged, and never dropped: a blank would hide the stored fact entirely.
+    """
+    facts = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction="zz"))
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    response = call(live, "/api/answers", bearer=live.token)
+
+    assert response.status == 200, response.body[:400]
+    assert response.json()["work_auth"]["jurisdiction"] == "zz"
+
+
 #: The catalog's own `work_auth.status` vocabulary, read from the BUNDLED rules rather than
 #: respelled here: the choice vocabulary belongs to the catalog (D-P2-4), and a list retyped in a
 #: test would go on passing after the catalog gained a sixth member.
@@ -1609,6 +1654,25 @@ def test_every_declared_work_auth_status_has_words(status: str) -> None:
     employer's form as a raw token, which is the bug this closes."""
     assert status in WORK_AUTH_STATUS_WORDS
     assert WORK_AUTH_STATUS_WORDS[status] != status
+
+
+#: The catalog's own `work_auth.jurisdiction` vocabulary, read from the BUNDLED rules for the same
+#: reason the status list above is.
+WORK_AUTH_JURISDICTION_CHOICES: tuple[str, ...] = next(
+    field.choices
+    for field in load_rules(Path("/nonexistent")).family("work_auth").fields
+    if field.name == "jurisdiction"
+)
+
+
+@pytest.mark.parametrize("jurisdiction", WORK_AUTH_JURISDICTION_CHOICES)
+def test_every_declared_work_auth_jurisdiction_has_words(jurisdiction: str) -> None:
+    """Closed over the catalog's declared choices, so a new member ships with words. Unlike the
+    status mapping this one does not REFUSE an unlisted value, which is exactly why its coverage
+    has to be asserted here: a missing member would otherwise be served as a raw token forever
+    instead of failing."""
+    assert jurisdiction in WORK_AUTH_JURISDICTION_WORDS
+    assert WORK_AUTH_JURISDICTION_WORDS[jurisdiction] != jurisdiction
 
 
 def test_a_work_auth_status_outside_the_catalog_is_refused_not_copied(
