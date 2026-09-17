@@ -20,6 +20,7 @@
 import { authHeaders, forgetToken } from "./token";
 import type {
   Answers,
+  AppliedHistoryResponse,
   AppliedResponse,
   BatchSkipResponse,
   QueueDetail,
@@ -134,6 +135,9 @@ export const unreport = (postingId: number): Promise<ReportResponse> =>
 
 export const revealFolder = (postingId: number): Promise<RevealResponse> =>
   request<RevealResponse>(`/api/queue/${String(postingId)}/reveal`, "POST");
+
+export const getApplied = (): Promise<AppliedHistoryResponse> =>
+  request<AppliedHistoryResponse>("/api/applied");
 
 export const getAnswers = (): Promise<Answers> => request<Answers>("/api/answers");
 

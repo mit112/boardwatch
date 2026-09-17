@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Two routes. Hash-based, so the loopback server needs no SPA fallback and no dependency is
- * added for what is a switch between two pages. */
-export type Route = "queue" | "runs";
+/** Three routes. Hash-based, so the loopback server needs no SPA fallback and no dependency is
+ * added for what is a switch between three pages. */
+export type Route = "queue" | "runs" | "applied";
 
 /**
  * The queue's ADDRESSABLE state, carried as a query string on the hash:
@@ -35,15 +35,15 @@ function parse(): { route: Route; params: RouteParams } {
   const path = separator === -1 ? raw : raw.slice(0, separator);
   const query = new URLSearchParams(separator === -1 ? "" : raw.slice(separator + 1));
   return {
-    route: path === "/runs" ? "runs" : "queue",
+    route: path === "/runs" ? "runs" : path === "/applied" ? "applied" : "queue",
     params: { run: readId(query, "run"), lead: readId(query, "lead") },
   };
 }
 
-/** `#/runs` stays bare — the params belong to the queue, and a runs URL carrying a queue's lead id
- *  would be a URL that means something different from what it shows. */
+/** `#/runs` and `#/applied` stay bare — the params belong to the queue, and either URL carrying a
+ *  queue's lead id would be a URL that means something different from what it shows. */
 function href(route: Route, params: RouteParams): string {
-  if (route === "runs") return "#/runs";
+  if (route !== "queue") return `#/${route}`;
   const query = new URLSearchParams();
   if (params.run !== null) query.set("run", String(params.run));
   if (params.lead !== null) query.set("lead", String(params.lead));
@@ -73,12 +73,15 @@ export function useHashRoute(): [
       setState((current) => {
         const next = parse();
         /*
-         * The queue's params are REMEMBERED across a visit to Runs, whose URL cannot carry them.
-         * Without this, taking the Runs tab and coming straight back closed the open lead and
-         * dropped the run filter — the "a tab switch discards all working state" complaint, for
-         * the two pieces of state that do not live in `sessionStorage`.
+         * The queue's params are REMEMBERED across a visit to either other page, neither of whose
+         * URLs can carry them. Without this, taking the Runs tab and coming straight back closed
+         * the open lead and dropped the run filter — the "a tab switch discards all working state"
+         * complaint, for the two pieces of state that do not live in `sessionStorage`.
+         *
+         * Keyed on "is this the queue" rather than on a list of the others, so a fourth route
+         * cannot be added that silently drops the params it was never able to carry.
          */
-        return next.route === "runs" ? { route: next.route, params: current.params } : next;
+        return next.route === "queue" ? next : { route: next.route, params: current.params };
       });
     };
     window.addEventListener("hashchange", onChange);

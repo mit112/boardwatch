@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Toaster } from "./components/Toaster";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useToasts } from "./hooks/useToasts";
+import { AppliedPage } from "./routes/AppliedPage";
 import { QueuePage } from "./routes/QueuePage";
 import { RunsPage } from "./routes/RunsPage";
 
@@ -93,6 +94,16 @@ export function App() {
                 setRoute("runs");
               }}
             />
+            {/* The third view. It is a READ of what has already been sent rather than work to do,
+                so it sits last: the tab order is "what is there to apply to", "what did the runs
+                produce", "what have I already sent". */}
+            <NavTab
+              label="Applied"
+              active={route === "applied"}
+              onClick={() => {
+                setRoute("applied");
+              }}
+            />
           </nav>
           {/* Dev-only by construction: `FIXTURE_MODE` is always false in a production build, so
               the `import.meta.env.DEV` literal folds this badge — and its mention of the fixture
@@ -130,7 +141,13 @@ export function App() {
           action="Draw this view again"
           resetKeys={[route]}
         >
-          {route === "queue" ? <QueuePage push={push} onSheet={setSheet} /> : <RunsPage />}
+          {route === "queue" ? (
+            <QueuePage push={push} onSheet={setSheet} />
+          ) : route === "applied" ? (
+            <AppliedPage push={push} />
+          ) : (
+            <RunsPage />
+          )}
         </ErrorBoundary>
       </main>
 
