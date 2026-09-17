@@ -86,6 +86,12 @@ function counts(rows: QueueRow[]): QueueCounts {
     // Affirmatively eligible only. `uncertain` is counted separately and never added in.
     eligible: rows.filter((row) => row.verdict === "eligible").length,
     uncertain: rows.filter((row) => row.verdict === "uncertain").length,
+    // The final gate's three, counted from the same `rows` and never folded into each other or
+    // into the two above. `judge_unjudged` is `judge_verdict == null` exactly — the fixture pool
+    // carries rows the gate has not spoken on, and they are not a clear.
+    judge_eligible: rows.filter((row) => row.judge_verdict === "eligible").length,
+    judge_uncertain: rows.filter((row) => row.judge_verdict === "uncertain").length,
+    judge_unjudged: rows.filter((row) => row.judge_verdict == null).length,
     // Drained, not listed: `rows` never carries an ineligible lead, so this counts the pool.
     ineligible: ineligibleCount(),
     // Listed under `review`, not dropped — so unlike `ineligible` this counts a list the reader
@@ -131,8 +137,35 @@ function findRow(postingId: number): QueueRow {
   return row;
 }
 
-function route(method: string, path: string): unknown {
+/**
+ * The batch skip and its undo. Keyed on `job_id` on the wire, exactly as the real route is, and
+ * translated to this module's posting-keyed bookkeeping here — a job id that no fixture row
+ * carries is `failed`, which is how the "M failed" toast is demonstrable without a real server.
+ */
+function batchSkip(body: unknown, skip: boolean): unknown {
+  const ids = (body as { job_ids?: unknown } | null)?.job_ids;
+  if (!Array.isArray(ids) || ids.some((entry) => typeof entry !== "number")) {
+    throw new FixtureError(400, 'expected {"job_ids": [<integer>, ...]}');
+  }
+  const skipped: number[] = [];
+  const failed: number[] = [];
+  for (const jobId of ids as number[]) {
+    const row = ALL_ROWS.find((candidate) => candidate.job_id === jobId);
+    if (row === undefined) {
+      failed.push(jobId);
+      continue;
+    }
+    if (skip) skippedPostingIds.add(row.posting_id);
+    else skippedPostingIds.delete(row.posting_id);
+    skipped.push(jobId);
+  }
+  return { skipped, failed };
+}
+
+function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/queue") return queueResponse();
+  if (method === "POST" && path === "/api/queue/skip") return batchSkip(body, true);
+  if (method === "POST" && path === "/api/queue/unskip") return batchSkip(body, false);
   if (method === "GET" && path === "/api/answers") return ANSWERS;
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
 
@@ -191,10 +224,14 @@ function route(method: string, path: string): unknown {
   throw new FixtureError(404, `${method} ${path} is not in the contract`);
 }
 
-export async function fixtureFetch(path: string, method: string): Promise<unknown> {
+export async function fixtureFetch(
+  path: string,
+  method: string,
+  body?: unknown,
+): Promise<unknown> {
   await new Promise((resolve) => window.setTimeout(resolve, LATENCY_MS));
   try {
-    return route(method, path);
+    return route(method, path, body);
   } catch (error) {
     if (error instanceof FixtureError) throw error;
     throw new FixtureError(500, error instanceof Error ? error.message : "fixture failure");

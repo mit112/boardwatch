@@ -41,7 +41,7 @@ from sqlalchemy import Connection, Engine, insert
 
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import api
-from boardwatch.delivery.api import _TERM_CACHE, ApiContext, queue_payload
+from boardwatch.delivery.api import _TERM_CACHE, ApiContext, detail_payload, queue_payload
 from boardwatch.extract.taxonomy import (
     Taxonomy,
     bundled_taxonomy_text,
@@ -52,7 +52,6 @@ from boardwatch.store.queries import CurrentVersion
 from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings
 from boardwatch.tailor.coverage import (
     coverage_report,
-    coverage_to_dict,
     requirement_terms,
     resume_fact_skills,
 )
@@ -252,6 +251,24 @@ def _rows_by_id(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
     return {row["posting_id"]: row for row in payload["rows"] + payload["review"]}
 
 
+def _coverage_terms(engine: Engine, ctx: ApiContext, posting_id: int) -> tuple[list[str], list[str]]:
+    """One lead's covered and missing terms, read where the PAGE reads them.
+
+    The queue row carries the FRACTION alone; the term lists reach the client on the detail
+    payload, as the `rule`-less entries of `_requirements_json`'s list. Same memo behind both —
+    `detail_payload` computes its facts through `_live_facts` exactly as `queue_payload` does — so
+    a memo that served the wrong entry is visible here, which is what these assertions are for.
+    """
+    with engine.connect() as conn:
+        payload = detail_payload(conn, ctx, posting_id)
+    assert payload is not None, "premise: the lead was delivered and has a detail"
+    terms = [entry for entry in payload["requirements"] if entry["rule"] is None]
+    return (
+        [entry["requirement"] for entry in terms if entry["covered"]],
+        [entry["requirement"] for entry in terms if not entry["covered"]],
+    )
+
+
 # ------------------------------------------------------------------------------- the memo itself
 
 
@@ -306,14 +323,16 @@ def test_the_served_coverage_matches_an_independent_parse_of_the_same_body(
     rows = _rows_by_id(_render(engine, ctx))
     for posting_id, body in ((py, BODY_PY), (rust, BODY_RUST)):
         terms, source = requirement_terms(body, taxonomy)
-        expected = coverage_to_dict(coverage_report(terms, skills, source))
-        assert rows[posting_id]["coverage_detail"] == expected
+        expected = coverage_report(terms, skills, source)
+        assert _coverage_terms(engine, ctx, posting_id) == (
+            list(expected.covered),
+            list(expected.missing),
+        )
+        assert rows[posting_id]["coverage"] == expected.fraction
 
     # And the two bodies really do disagree, so the loop above is not comparing one answer twice.
-    assert rows[py]["coverage_detail"]["covered"] == ["Python"]
-    assert rows[py]["coverage_detail"]["missing"] == ["Django"]
-    assert rows[rust]["coverage_detail"]["covered"] == ["Rust"]
-    assert rows[rust]["coverage_detail"]["missing"] == ["Kubernetes"]
+    assert _coverage_terms(engine, ctx, py) == (["Python"], ["Django"])
+    assert _coverage_terms(engine, ctx, rust) == (["Rust"], ["Kubernetes"])
 
 
 def test_identical_bodies_under_different_version_ids_are_each_correct(
@@ -331,10 +350,15 @@ def test_identical_bodies_under_different_version_ids_are_each_correct(
         second = _deliver(conn, "twin-b", body=BODY_PY)
         other = _deliver(conn, "other", body=BODY_RUST)
 
-    rows = _rows_by_id(_render(engine, ctx))
-    assert rows[first]["coverage_detail"] == rows[second]["coverage_detail"]
-    assert rows[first]["coverage_detail"]["covered"] == ["Python"]
-    assert rows[other]["coverage_detail"]["covered"] == ["Rust"]
+    _render(engine, ctx)
+    rendered = parses.n
+    assert _coverage_terms(engine, ctx, first) == _coverage_terms(engine, ctx, second)
+    assert _coverage_terms(engine, ctx, first)[0] == ["Python"]
+    assert _coverage_terms(engine, ctx, other)[0] == ["Rust"]
+    # The detail payload shares the memo with the queue render, so reading three of them parses
+    # nothing. Asserted rather than assumed: it is what makes the reads above observations of the
+    # memo's entries and not of a fresh parse each time.
+    assert parses.n == rendered, "a detail read re-parsed a body the queue render had cached"
 
     # All three are resident afterwards, twins included: a memo that folded the twins into one
     # entry would still be correct, but one that dropped an entry would re-parse here.
@@ -423,8 +447,8 @@ def test_a_changed_master_resume_discards_the_memo_and_an_unrecognised_edit_does
     assert parses.n == 1
     # `_rows_by_id`, not `["rows"][0]`: the seeded lead carries no evaluation, so since A3 the
     # payload lists it under `review`. Coverage is rendered the same on either list.
-    (baseline_row,) = _rows_by_id(baseline).values()
-    assert baseline_row["coverage_detail"]["covered"] == ["Rust"]
+    (baseline_id,) = _rows_by_id(baseline)
+    assert _coverage_terms(engine, ctx, baseline_id)[0] == ["Rust"]
 
     # An edit the taxonomy cannot see: same skills, different bytes, memo retained.
     _write_resume(ctx, RESUME_REWORDED)
@@ -436,7 +460,7 @@ def test_a_changed_master_resume_discards_the_memo_and_an_unrecognised_edit_does
     changed = _render(engine, ctx)
     assert parses.n == 2, "a changed master résumé served terms from the previous generation"
     (changed_row,) = _rows_by_id(changed).values()
-    assert changed_row["coverage_detail"]["covered"] == []
+    assert _coverage_terms(engine, ctx, baseline_id)[0] == []
     assert changed_row["coverage"] == 0.0
 
 

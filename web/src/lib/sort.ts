@@ -13,6 +13,7 @@ export const SORT_KEYS = [
   "age",
   "score",
   "coverage",
+  "provider",
 ] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
@@ -62,6 +63,28 @@ function compareText(a: string | null, b: string | null, direction: SortDirectio
   return direction === "asc" ? result : -result;
 }
 
+/**
+ * Sort the leads into ATS BLOCKS, each block still in rank order.
+ *
+ * The owner applies in batches by ATS — every Greenhouse form is the same form — so what this
+ * key has to produce is blocks, and a block the reader works down from the best lead. Rank is
+ * therefore the tiebreak and it is ALWAYS ascending: the direction reverses which block comes
+ * first, never the reading order inside one.
+ *
+ * `?? null` and not `=== null`: an older server omits `provider` entirely (see the type), so the
+ * value is `undefined`, and `compareText` — which is what puts an absent value LAST in both
+ * directions — checks for `null`. Absence is not an ATS and never heads the list.
+ */
+function compareProvider(
+  a: QueueRow,
+  b: QueueRow,
+  direction: SortDirection,
+  rankOf: (row: QueueRow) => number,
+): number {
+  const byProvider = compareText(a.provider ?? null, b.provider ?? null, direction);
+  return byProvider === 0 ? rankOf(a) - rankOf(b) : byProvider;
+}
+
 export function sortRows(
   rows: QueueRow[],
   sort: SortState,
@@ -84,6 +107,8 @@ export function sortRows(
         return compareNullable(a.score, b.score, sort.direction);
       case "coverage":
         return compareNullable(a.coverage, b.coverage, sort.direction);
+      case "provider":
+        return compareProvider(a, b, sort.direction, rankOf);
     }
   });
   return copy;

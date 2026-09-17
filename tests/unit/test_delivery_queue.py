@@ -208,6 +208,7 @@ def _queue_row(posting_id: int, company: str, title: str) -> QueueRow:
         job_id=posting_id,
         title=title,
         company=company,
+        provider="greenhouse",
         location=None,
         locations=(),
         remote_policy=None,

@@ -8,6 +8,38 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The web app's wave-1 triage features, built during the M5 confirm window on the owner's
+  ruling that web work is the only UI and cannot wait (2026-09-16).** Everything here lives
+  under `delivery/`, `store/delivery_queries.py` and `web/`, none of which
+  `engine_version()` digests, so no verdict, `rules_hash` or code fingerprint moved.
+  - **The final gate's verdict on every queue row** (`judge_verdict`, list and detail), rendered
+    as a `gate eligible` / `gate uncertain` / `gate ineligible` badge beside the rules verdict,
+    with three new status-band cells (`gate eligible`, `gate uncertain`, `not judged`) that
+    facet the table and are never folded into each other. Measured before: 42 of the 390 judged
+    apply-lane leads read `uncertain` at the gate and looked identical to the 347 it cleared.
+    `queue_detail` now reads the gate under the same identity as the rules verdict, so the pane
+    and the list cannot disagree.
+  - **`judge_seniority_above_band` is actually on the wire.** The earlier entry above says the
+    field "had been on the wire since D-504"; it had not — `_row_json` fed it to `classify` and
+    dropped it, so the badge keyed on it could not render against any real server. Emitted now,
+    tested under an armed hold.
+  - **"New since last visit" facet.** A per-viewer `localStorage` watermark on the highest
+    `delivered_run_id` seen at the last page load; the set is computed once per load and never
+    moves under the reader. A first visit marks nothing new.
+  - **The ATS on every row, sortable.** `provider` carried from `companies.provider` — the row
+    the posting sits on, never the apply URL's host class — through the API into a sort key
+    that groups leads into ATS blocks in rank order, nulls last.
+  - **Bulk skip.** Multi-select on the apply lane (checkbox column, `x` / `shift+x`), a bulk bar
+    at one or more selected, `POST /api/queue/skip` and `/unskip` taking `{"job_ids": [...]}`
+    through the same bounded-retry write and the same folder reconcile as a single skip, and one
+    undo toast. An id naming no standing lead is reported in `failed`, never a 404 for the batch.
+  - **`jurisdiction` restated in words** in the answers panel (D-485's owed item), over the
+    catalog's own `work_auth.jurisdiction` choices; out-of-catalog passes through unchanged.
+  - **The orphan `coverage_detail` is gone from the row payload.** Nothing read it; the terms
+    reach the pane through `requirements`. `coverage_to_dict` stays for the funnel artifact.
+  - **The narrow-tier detail sheet is a dialog** (`role="dialog"`, `aria-modal`, named by the
+    lead's title) and Escape returns focus to the row for the same posting id, looked up at
+    close time — the remembered-element restore D-348 measured landing on `<body>` is replaced.
 - **A delivered lane copy whose employer-board twin is standing now DRAINS (D-506).** D-498 rule
   (a) drops the aggregator's copy of a job when the employer's own board copy is in front of the
   owner — but it runs in the ranker, so it only ever stopped a redundant copy being *delivered*.

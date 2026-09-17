@@ -115,6 +115,12 @@ class QueueRow:
     job_id: int
     title: str
     company: str
+    #: The ATS the posting SITS ON — `companies.provider`, the ROW, never `classify_host` over
+    #: `apply_url`. The job-apps lane writes the employer's own apply URL, so URL classification
+    #: reads a lane copy as the employer's board; the same fact `standing_board_cross_host_keys`
+    #: turns on. A lane row therefore carries its LANE's name (`jobapps`, `linkedin`, `indeed`,
+    #: `hiringcafe`, `jsonld`), which is what the owner batching by ATS needs to see.
+    provider: str
     location: str | None
     #: Raw location segments from `postings.locations_json`. `location` above is the joined display
     #: string; `classify_location` needs the segments, not the joined string (it splits on nothing).
@@ -206,6 +212,7 @@ def _delivered_select() -> Select[Any]:
             postings.c.status,
             postings.c.url,
             companies.c.name.label("company"),
+            companies.c.provider,
             companies.c.tags_json,
             companies.c.watched,
         )
@@ -324,6 +331,7 @@ def _queue_row(
         job_id=int(row.job_id),
         title=str(row.title),
         company=str(row.company),
+        provider=str(row.provider),
         location=_location(row.locations_json),
         locations=_locations_list(row.locations_json),
         remote_policy=(
@@ -552,10 +560,7 @@ def standing_board_cross_host_keys(
     reported = reported_job_ids(conn)
     rows = conn.execute(
         _delivered_select()
-        .add_columns(
-            companies.c.provider,
-            posting_identities.c.identity_key,
-        )
+        .add_columns(posting_identities.c.identity_key)
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)
@@ -622,7 +627,7 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
     # applied in Python over joined rows ever since.
     rows = conn.execute(
         _delivered_select()
-        .add_columns(companies.c.provider, posting_identities.c.identity_key)
+        .add_columns(posting_identities.c.identity_key)
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)
@@ -859,12 +864,13 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # opening a later connection would let the body and its quarantine status come from different
     # SQLite snapshots.
     quarantined = version is not None and is_quarantined(conn, version.posting_version_id)
-    verdicts = current_verdicts(
-        conn,
-        [] if version is None else [version.posting_version_id],
-        profile_hash,
-        rules_hash,
-    )
+    version_ids = [] if version is None else [version.posting_version_id]
+    verdicts = current_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # The FINAL GATE's verdict, under the same identity and the same version as the rules verdict
+    # above, so the pane and the list row for one lead cannot report two different gate readings.
+    # `delivered_unapplied` reads it for every row; without it here the detail served `None` for a
+    # lead the list served `uncertain` — the same field, the same lead, two answers.
+    gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
     audit = load_audit(
         conn,
         posting_id,
@@ -874,7 +880,12 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     )
     provenance = lead_provenance(conn, [posting_id]).get(posting_id)
     return QueueDetail(
-        row=_queue_row(row, verdict=verdicts.get(posting_id), now=utcnow()),
+        row=_queue_row(
+            row,
+            verdict=verdicts.get(posting_id),
+            now=utcnow(),
+            judge_verdict=gate.get(posting_id),
+        ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(
             JD_ABSENT_NO_CURRENT_VERSION

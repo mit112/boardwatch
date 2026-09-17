@@ -16,6 +16,7 @@ import { AnswersPanel } from "./AnswersPanel";
 import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
 import { CopyButton } from "./CopyButton";
+import { JudgeVerdictBadge } from "./JudgeVerdictBadge";
 import { ReviewReasonBadge } from "./ReviewReasonBadge";
 import { VerdictChip } from "./VerdictChip";
 
@@ -26,6 +27,12 @@ import { VerdictChip } from "./VerdictChip";
  * covers, and the two must never disagree about where the sheet begins.
  */
 export const SIDE_BY_SIDE = "(min-width: 64rem)";
+
+/**
+ * The lead's title, which is what the sheet is ABOUT and therefore what names it to a screen
+ * reader. One pane is open at a time, so a constant id is unambiguous.
+ */
+const TITLE_ID = "lead-detail-title";
 
 /**
  * `note` is the server's own sentence about the number above it — the score's `why`, and nothing
@@ -221,7 +228,10 @@ export function DetailPane({
    * The other half is in `QueuePage`, which inerts what the sheet covers at that same tier: moving
    * focus in is worth nothing if Shift+Tab walks straight back out to a row behind the sheet.
    *
-   * The trigger row is refocused on close so the cursor does not fall back to `<body>`.
+   * The cleanup hands focus back where it came from when the pane stops being a sheet WITHOUT
+   * closing — growing the window across the breakpoint. Closing is not this effect's job: the
+   * cursor goes back to the row for the lead's posting id, looked up at close time by
+   * `QueuePage`'s `focusRow`, because by then the element remembered here can be the wrong one.
    *
    * SUBSCRIBED, not sampled. This used to read `matchMedia(...).matches` once on mount, which
    * answers for the tier the pane OPENED at and never again — so shrinking the window across the
@@ -267,7 +277,20 @@ export function DetailPane({
     <aside
       ref={pane}
       tabIndex={-1}
-      aria-label="Lead detail"
+      /*
+       * A modal ONLY below `lg`. There the pane is `fixed inset-0` over a page `QueuePage` has
+       * inerted — it blocks, so it says so, and a reader is told the rest of the page is gone
+       * rather than left to discover it by tabbing. At or above `lg` it is a column beside a list
+       * that stays fully operable, and a `dialog` role there would be a claim that is not true.
+       *
+       * Named by its own heading, which is the lead's title. `aria-label` is kept for the two
+       * states that render no heading — loading, and a lead that failed to load — because an
+       * `aria-labelledby` pointing at an element that does not exist yields no name at all.
+       */
+      role={sideBySide ? undefined : "dialog"}
+      aria-modal={sideBySide ? undefined : true}
+      aria-label={sideBySide || row === null ? "Lead detail" : undefined}
+      aria-labelledby={!sideBySide && row !== null ? TITLE_ID : undefined}
       /*
        * `lg:top-header` and `lg:z-auto`, both load-bearing. At `top-0` with `z-40` the pane slid
        * OVER the sticky app header — measured at scroll 900, the pane's top was y=0 and the header
@@ -296,7 +319,9 @@ export function DetailPane({
         <div className="flex flex-col gap-5 px-4 py-4">
           {/* THE DOMINANT CELL. Everything needed to decide, before any prose. */}
           <section className="rounded-md border border-divider bg-surface-2 shadow-[0_16px_40px_-24px_rgb(0_0_0/0.9)] p-4">
-            <h2 className="text-lg leading-snug text-fg">{row.title}</h2>
+            <h2 id={TITLE_ID} className="text-lg leading-snug text-fg">
+              {row.title}
+            </h2>
             <p className="mt-0.5 text-sm text-fg-2">{row.company}</p>
             {/* Every location, comma-separated. The row can only afford the primary and a `+N`,
                 so the pane is where the rest of the list has to be readable — and `?? []` for the
@@ -320,6 +345,13 @@ export function DetailPane({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <VerdictChip verdict={row.verdict} />
+              {/* Directly beside the rules verdict, because the pane is opened to decide and the
+                  two engines disagreeing is the fact that decides it. `showReason` for the reason
+                  `unverifiable` and `thin JD` carry theirs visibly here: this chip asserts which
+                  engine said what, and a bare `gate uncertain` invites the reader to read it as a
+                  second opinion with the same standing as the chip beside it. It is not — a gate
+                  `uncertain` does not move a lead out of the apply lane. */}
+              <JudgeVerdictBadge verdict={row.judge_verdict} showReason />
               {row.status === "closed" ? (
                 <Badge
                   label="closed"

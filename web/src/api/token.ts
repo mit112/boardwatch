@@ -89,3 +89,48 @@ export function forgetToken(): void {
 export function authHeaders(): HeadersInit {
   return bearer === null ? {} : { Authorization: `Bearer ${bearer}` };
 }
+
+/*
+ * THE QUEUE WATERMARK. Not a credential, and here anyway.
+ *
+ * It is the highest `delivered_run_id` the queue page saw the LAST time it loaded, per viewer, and
+ * it is the whole of what "new since last visit" needs — no API change, no server-side per-viewer
+ * state, nothing for a second reader of the same store to collide with. It lives in this module
+ * because this is where the app's `localStorage` keys are and where the throw-safe accessor above
+ * already is: a second copy of that `try`/`catch` somewhere else is a second chance to forget it.
+ *
+ * `localStorage`, deliberately, where the queue's filters and sorts are in `sessionStorage`: those
+ * are what the reader is doing right now and should die with the tab, while "since I last looked"
+ * has to survive closing it or the first load of every morning marks nothing.
+ */
+const WATERMARK_KEY = "boardwatch.queue.watermark";
+
+/**
+ * The stored watermark, or `null` when there is none — which is NOT `0`. A first visit must mark
+ * NOTHING new, and an absent watermark read as zero marks the entire queue new, permanently, on
+ * the one load where the reader has no way to tell that is wrong.
+ *
+ * A stored value that is not a finite number is DISCARDED whole rather than repaired, the rule the
+ * queue page's own decoders follow: storage outlives a bundle upgrade and is editable by hand.
+ */
+export function readWatermark(): number | null {
+  let raw: string | null = null;
+  try {
+    raw = storage()?.getItem(WATERMARK_KEY) ?? null;
+  } catch {
+    /* `storage()` guards reaching the object; the operation itself throws too on a blocked or
+       exhausted store, and a viewer that cannot remember a visit must still be a viewer. */
+    return null;
+  }
+  if (raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function writeWatermark(value: number): void {
+  try {
+    storage()?.setItem(WATERMARK_KEY, String(value));
+  } catch {
+    /* Remembering is a convenience; failing to remember is never a page failure. */
+  }
+}

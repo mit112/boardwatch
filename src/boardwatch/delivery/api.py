@@ -105,7 +105,6 @@ from boardwatch.store.tables import artifacts, extractions, postings, runs
 from boardwatch.tailor.coverage import (
     CoverageReport,
     coverage_report,
-    coverage_to_dict,
     requirement_terms,
     resume_fact_skills,
 )
@@ -360,9 +359,9 @@ def _unique_locations(locations: Sequence[str]) -> list[str]:
 def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any]:
     """One `QueueRow` as the frontend's `QueueRow` interface.
 
-    `coverage` is the fraction, matching the client that is already written against it, and the
-    covered/missing lists travel beside it as `coverage_detail` through `coverage_to_dict` — the
-    serializer the funnel artifact already uses, so the two surfaces cannot drift apart.
+    `coverage` is the fraction and nothing else. The covered/missing term LISTS are not here: the
+    only place the client renders them is the detail pane, which reads them from
+    `_requirements_json`, so a second copy on every row of every render was built and dropped.
 
     `thin_jd` is `fraction is None`, which is true both for a JD carrying no recognised
     requirement at all and for a store with no master résumé to measure against. Both are
@@ -375,6 +374,14 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
     `review_reason` is on EVERY row rather than only on the review list, because `detail_payload`
     serializes one row with no list around it — a field that existed only inside `review` would be
     absent exactly where the pane has to explain why the lead is held.
+
+    `judge_verdict` is the FINAL GATE's own verdict, verbatim, and it is a SECOND opinion beside
+    `verdict` rather than a component of it. The store has carried it since T42 and `classify`
+    below has read it since D-489, but nothing emitted it — so a lead the gate read as `uncertain`
+    rendered identically to one it cleared, and the strongest signal in the system was the one
+    signal the page could not show. It is `None` where no gate row exists under this identity,
+    which is "the gate has not spoken" and never "the gate cleared it": the two are folded
+    together only by an implementation that reports the absence as an eligible.
     """
     fraction = None if facts.coverage is None else facts.coverage.fraction
     off_target = facts.role == "not_swe"
@@ -398,6 +405,11 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "job_id": row.job_id,
         "title": row.title,
         "company": row.company,
+        # The ATS the posting SITS ON, straight from `companies.provider`. Never re-derived here
+        # from `apply_url`: the job-apps lane writes the employer's own apply URL, so a host
+        # classifier reads a lane copy as the employer's board and would answer the wrong
+        # question — which is the whole reason the field is carried out of the store.
+        "provider": row.provider,
         "location": locations[0] if locations else None,
         "locations": locations,
         "remote_policy": row.remote_policy,
@@ -405,6 +417,14 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "first_seen": _iso_utc(row.first_seen),
         "status": row.status,
         "verdict": row.verdict,
+        # Beside `verdict`, never merged into it: the rules engine and the final gate are two
+        # engines and the page has to be able to say which one said what.
+        "judge_verdict": row.judge_verdict,
+        # The gate's separate seniority reading, as the boolean the row's badge is keyed on.
+        # `classify` has read it since D-504; the wire never carried it, so the badge was dead.
+        "judge_seniority_above_band": row.judge_seniority_fit == "no",
+        # The gate's separate seniority reading, as the boolean the row's badge is keyed on.
+        # `classify` has read it since D-504; the wire never carried it, so the badge was dead.
         "apply_url": row.apply_url,
         "delivered_run_id": row.delivered_run_id,
         "tex_uri": row.tex_uri,
@@ -418,7 +438,6 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "score": facts.score,
         "why": facts.why,
         "coverage": fraction,
-        "coverage_detail": coverage_to_dict(facts.coverage),
     }
 
 
@@ -497,12 +516,26 @@ def _counts(
 
     `applied_ever`, not applied-today. With zero applications ever recorded the two are
     indistinguishable, and only the second says whether the tool works.
+
+    The three `judge_*` cells are the FINAL GATE's reading of the same apply lane, counted the way
+    `eligible` and `uncertain` are and kept apart for the same reason. `judge_unjudged` is
+    `judge_verdict is None` exactly — "the gate has not spoken" — and is never a catch-all: a lead
+    the gate called `ineligible` is in NONE of the three, the same way a lead with no rules verdict
+    is in neither `eligible` nor `uncertain`. It is deliberately not given a fourth cell here
+    (there is 1 such lead in the standing lane); folding it into any of the three would assert a
+    verdict the gate did not give.
     """
     last = _last_finished_run(conn)
     return {
         "in_queue": len(rows),
         "eligible": sum(1 for row in rows if row.verdict == "eligible"),
         "uncertain": sum(1 for row in rows if row.verdict == "uncertain"),
+        # The final gate's own three, from the SAME `rows` and never folded into each other or
+        # into the two above: a rules `eligible` the gate read as `uncertain` is counted once in
+        # each column, which is the whole point of showing both.
+        "judge_eligible": sum(1 for row in rows if row.judge_verdict == "eligible"),
+        "judge_uncertain": sum(1 for row in rows if row.judge_verdict == "uncertain"),
+        "judge_unjudged": sum(1 for row in rows if row.judge_verdict is None),
         # Its OWN cell, never folded into either neighbour and never left as an unexplained
         # remainder. `in_queue` counts the work list, which excludes these, so the band now
         # reconciles: in_queue == eligible + uncertain + (rows with no verdict yet).

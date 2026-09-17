@@ -14,16 +14,75 @@ function Key({ children }: { children: string }) {
   );
 }
 
+/*
+ * The bulk bar. It exists ONLY while at least one row is selected — a selection column and an
+ * action bar that are always drawn cost every single-row visit some clarity, and there is no
+ * "0 selected" state to read.
+ *
+ * No confirmation dialog, deliberately: skip is cheaply reversible and the toast's Undo is the
+ * route back, which is the same bargain the single-row skip already makes. A modal here would
+ * stop every bulk triage to protect the one mis-click that Undo already covers.
+ *
+ * Both accessible names START with the visible label (SC 2.5.3 Label in Name) before naming what
+ * the control does to the count.
+ */
+function BulkBar({
+  count,
+  onSkip,
+  onClear,
+}: {
+  count: number;
+  onSkip: () => void;
+  onClear: () => void;
+}) {
+  const leads = `${count.toLocaleString()} ${count === 1 ? "lead" : "leads"}`;
+  return (
+    <div
+      role="group"
+      aria-label="Bulk actions"
+      className="flex flex-wrap items-center gap-3 rounded-sm border border-control bg-surface-2 px-3 py-2"
+    >
+      <span className="text-sm text-fg tabular-nums">{count.toLocaleString()} selected</span>
+      <span aria-hidden="true" className="text-divider">
+        ·
+      </span>
+      <button
+        type="button"
+        onClick={onSkip}
+        aria-label={`Skip ${count.toLocaleString()} selected ${count === 1 ? "lead" : "leads"}`}
+        title="Skip every selected lead. One write, undoable from the toast."
+        className="min-h-11 rounded-sm border border-fg-2 px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface"
+      >
+        Skip {count.toLocaleString()}
+      </button>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={`Clear the selection of ${leads}`}
+        className="min-h-11 rounded-sm px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
 export function QueueToolbar({
   query,
   onQuery,
   minScore,
   onMinScore,
+  selectedCount,
+  onSkipSelected,
+  onClearSelection,
 }: {
   query: string;
   onQuery: (value: string) => void;
   minScore: string;
   onMinScore: (value: string) => void;
+  selectedCount: number;
+  onSkipSelected: () => void;
+  onClearSelection: () => void;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -60,6 +119,14 @@ export function QueueToolbar({
         </label>
       </div>
 
+      {selectedCount === 0 ? null : (
+        <BulkBar
+          count={selectedCount}
+          onSkip={onSkipSelected}
+          onClear={onClearSelection}
+        />
+      )}
+
       {/*
         * Stated, not hidden behind a `?` dialog. Every key here has a visible button equivalent on
         * the row, so this is an accelerator rather than the only route — but a queue worked at
@@ -93,6 +160,9 @@ export function QueueToolbar({
         </span>
         <span>
           <Key>s</Key> skip
+        </span>
+        <span>
+          <Key>x</Key> select
         </span>
         <span>
           <Key>r</Key> report

@@ -315,7 +315,8 @@ def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> 
     def _row(posting_id: int, verdict: str | None, locations: tuple[str, ...]) -> QueueRow:
         return QueueRow(
             posting_id=posting_id, job_id=posting_id, title="Software Engineer",
-            company="Acme", location=", ".join(locations), locations=locations,
+            company="Acme", provider="greenhouse",
+            location=", ".join(locations), locations=locations,
             remote_policy="onsite", posted_days=2, first_seen=NOW, status="open",
             verdict=verdict, apply_url="https://boards.test/apply", delivered_run_id=7,
             tex_uri="/out/t.typ", pdf_uri=None, target_flag=None,

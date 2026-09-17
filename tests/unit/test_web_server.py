@@ -38,10 +38,16 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
+from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
+from boardwatch.delivery import DRAIN_DIRS
 from boardwatch.delivery import server as server_mod
-from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
+from boardwatch.delivery.answers import (
+    WORK_AUTH_JURISDICTION_WORDS,
+    WORK_AUTH_STATUS_WORDS,
+)
 from boardwatch.delivery.api import ApiContext
+from boardwatch.delivery.queue import SKIPPED_DIR, sync_queue
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
     TOKEN_FILENAME,
@@ -56,7 +62,9 @@ from boardwatch.delivery.server import (
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
 from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
+from boardwatch.eligibility.final_gate import record_gate_verdict
 from boardwatch.eligibility.hashing import build_identity
+from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
@@ -184,15 +192,23 @@ def call(
     bearer: str | None = None,
     host: str | None = None,
     extra: dict[str, str] | None = None,
+    body: Any | None = None,
 ) -> Response:
-    """One request. `bearer=None` sends no `Authorization` header at all."""
+    """One request. `bearer=None` sends no `Authorization` header at all.
+
+    `body` is serialised as JSON and sent with a `Content-Type`, which is what the batch routes
+    read. `None` sends no body at all, so every existing caller's request is byte-identical.
+    """
     headers = {"Host": live.authority if host is None else host}
     if bearer is not None:
         headers["Authorization"] = f"Bearer {bearer}"
     headers.update(extra or {})
+    payload = None if body is None else json.dumps(body).encode("utf-8")
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
     conn = http.client.HTTPConnection(live.authority, timeout=15)
     try:
-        conn.request(method, path, headers=headers)
+        conn.request(method, path, body=payload, headers=headers)
         raw = conn.getresponse()
         return Response(
             status=raw.status,
@@ -237,6 +253,8 @@ def _deliver(
     judge: bool = True,
     facts: Facts | None = None,
     policy: Policy | None = None,
+    provider: str = "greenhouse",
+    url: str = "https://boards.test/apply",
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact.
 
@@ -252,7 +270,7 @@ def _deliver(
         conn.execute(
             insert(companies).values(
                 name=f"Acme {key}",
-                provider="greenhouse",
+                provider=provider,
                 slug=f"acme-{key}",
                 source="user",
                 watched=watched,
@@ -270,7 +288,7 @@ def _deliver(
                 provider_posting_id=key,
                 title=title,
                 normalized_title=title.casefold(),
-                url="https://boards.test/apply",
+                url=url,
                 locations_json=locations if locations is not None else ["Boston, MA"],
                 remote_policy="remote",
                 posted_at=NOW - timedelta(days=3),
@@ -354,6 +372,51 @@ def _judge(
     return result.verdict
 
 
+def _gate(
+    conn: Connection,
+    posting_id: int,
+    body: str,
+    decision: str,
+    *,
+    facts: Facts | None = None,
+    policy: Policy | None = None,
+    seniority_fit: str = "unclear",
+) -> None:
+    """One FINAL-GATE verdict for `posting_id`'s current version, under the live identity.
+
+    Through `record_gate_verdict` rather than a hand-inserted `engine_kind='llm'` row: the read
+    behind `QueueRow.judge_verdict` is scoped to `engine_version LIKE 'final_gate:%'`, so a
+    hand-written version constant here would read back under any implementation that hand-wrote
+    the same constant — the vacuous shape `_judge` above avoids for the same reason.
+
+    `confidence="low"` and `reason=None` keep an `ineligible` decision on the fail-open path
+    (`accept_oracle_verdict` downgrades it to `uncertain`), which is why no caller below asks this
+    for an `ineligible`.
+    """
+    catalog = load_rules(load_settings().config_dir)
+    version_id = int(
+        conn.execute(
+            select(posting_versions.c.id).where(posting_versions.c.posting_id == posting_id)
+        ).scalar_one()
+    )
+    record_gate_verdict(
+        conn,
+        posting_version_id=version_id,
+        jd_text=body,
+        facts=Facts() if facts is None else facts,
+        policy=Policy() if policy is None else policy,
+        catalog=catalog,
+        verdict=OracleVerdict(
+            label="synthetic",
+            decision=decision,
+            reason=None,
+            evidence="",
+            confidence="low",
+            seniority_fit=seniority_fit,
+        ),
+    )
+
+
 def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | None = None) -> None:
     """The default pair is `None`/`None`, which leaves eligibility unsaved exactly as before —
     every existing caller keeps its current identity. Pass both to store a policy that can
@@ -373,6 +436,17 @@ def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | N
         save_eligibility(
             conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")
         )
+
+
+def _queue_folders(base: Path) -> list[str]:
+    """Lead folders directly under `base`, sorted. Drain directories and dotfiles are not leads."""
+    if not base.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in base.iterdir()
+        if path.is_dir() and not path.name.startswith(".") and path.name not in DRAIN_DIRS
+    )
 
 
 def _event_count(engine: Engine) -> int:
@@ -946,14 +1020,54 @@ def test_coverage_is_a_live_fraction_and_thin_jd_is_derived_from_it(
 
     assert rows[measured]["thin_jd"] is False
     assert rows[measured]["coverage"] == 1.0
-    detail = rows[measured]["coverage_detail"]
-    assert detail["covered"] and detail["total_count"] == detail["covered_count"]
-    assert detail["fraction"] == rows[measured]["coverage"]
 
     assert rows[thin]["thin_jd"] is True
     assert rows[thin]["coverage"] is None
-    assert rows[thin]["coverage_detail"]["total_count"] == 0
-    assert rows[thin]["coverage_detail"]["fraction"] is None
+
+    # Non-vacuity, read on the surface the PAGE takes the terms from: the measured lead's detail
+    # lists covered terms and none missing, which is what a fraction of 1.0 claims, and the thin
+    # one lists no coverage terms at all — a fraction of 1.0 over nothing would be the same number
+    # about a different thing. (The row itself carries the fraction alone; the term lists live on
+    # the detail payload, where `_requirements_json` puts them.)
+    assert _detail_coverage_terms(live, measured)[0], "premise: something was recognised"
+    assert _detail_coverage_terms(live, measured)[1] == []
+    assert _detail_coverage_terms(live, thin) == ([], [])
+
+
+def _detail_coverage_terms(live: Live, posting_id: int) -> tuple[list[str], list[str]]:
+    """The covered and missing résumé terms as the page receives them: the `rule`-less entries of
+    the detail payload's requirement list, which is where `_requirements_json` puts them."""
+    entries = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()["requirements"]
+    terms = [entry for entry in entries if entry["rule"] is None]
+    return (
+        [entry["requirement"] for entry in terms if entry["covered"]],
+        [entry["requirement"] for entry in terms if not entry["covered"]],
+    )
+
+
+def test_the_row_payload_carries_no_coverage_detail(live: Live, engine: Engine) -> None:
+    """`coverage_detail` was serialised on every row and read by nothing.
+
+    The covered/missing terms the client actually renders come from `_requirements_json` on the
+    DETAIL payload; `QueueRow` in `web/src/api/types.ts` never declared this key, so the lists were
+    built and shipped for every row of every render and then dropped on the floor. Asserted as an
+    ABSENT key rather than a null, because a null would still be a field the client could start
+    reading.
+    """
+    resume = live.server.deps.ctx.settings.config_dir / "resume.yaml"
+    resume.parent.mkdir(parents=True, exist_ok=True)
+    resume.write_text(scaffold_template(), encoding="utf-8")
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, "python", body=JD_ELIGIBLE)
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    (row,) = [r for r in payload["rows"] + payload["review"] if r["posting_id"] == posting_id]
+    detail_row = call(live, f"/api/queue/{posting_id}", bearer=live.token).json()["row"]
+
+    assert "coverage_detail" not in row
+    assert "coverage_detail" not in detail_row
+    # The information is not lost: it reaches the page through the detail's requirement list.
+    assert _detail_coverage_terms(live, posting_id)[0]
 
 
 # ------------------------------------------------------------------------------- a locked store
@@ -1120,6 +1234,133 @@ def test_skip_removes_a_lead_and_unskip_restores_it(live: Live, engine: Engine) 
     assert back["counts"]["skipped"] == 0
 
 
+def test_a_batch_skip_is_one_write_that_drains_what_it_can_and_names_what_it_could_not(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """The bulk-skip contract, all of it: 200 for a batch that is only partly skippable, the two
+    standing jobs in `skipped`, the id that is in no lane in `failed`, and BOTH folders under
+    `_skipped/` — counted through the filesystem rather than through the response that claimed it.
+
+    The unskippable id is checked in the same test as the skippable ones on this module's standing
+    rule: a route that answered `failed` for everything would pass a refusal test on its own.
+    """
+    with engine.begin() as conn:
+        one, job_one = _deliver(conn, "one")
+        two, job_two = _deliver(conn, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 2, "two folders have to exist or the move below is unfalsifiable"
+
+    answer = call(
+        live,
+        "/api/queue/skip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, 999999, job_two]},
+    )
+
+    assert answer.status == 200, answer.body[:200]
+    # Request order is preserved in both lists, so a client can pair an id with its outcome.
+    assert answer.json() == {"skipped": [job_one, job_two], "failed": [999999]}
+    # The FOLDERS, not the response: the drain is the deliverable and the response is the claim.
+    assert _queue_folders(ctx.queue_root) == []
+    assert _queue_folders(ctx.queue_root / SKIPPED_DIR) == standing
+
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["posting_id"] for row in page["rows"] if row["posting_id"] in (one, two)] == []
+    assert page["counts"]["skipped"] == 2
+    # A skip is not an application, in a batch exactly as it is one at a time.
+    assert page["counts"]["applied_ever"] == 0
+
+
+def test_a_batch_unskip_returns_every_id_it_was_given_to_the_queue(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """The undo half. One call, so the toast's Undo is one write and not N."""
+    with engine.begin() as conn:
+        one, job_one = _deliver(conn, "one")
+        two, job_two = _deliver(conn, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+
+    call(
+        live,
+        "/api/queue/skip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, job_two]},
+    )
+    undone = call(
+        live,
+        "/api/queue/unskip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, job_two]},
+    )
+
+    assert undone.status == 200, undone.body[:200]
+    assert undone.json() == {"skipped": [job_one, job_two], "failed": []}
+    assert _queue_folders(ctx.queue_root) == standing
+    assert _queue_folders(ctx.queue_root / SKIPPED_DIR) == []
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert sorted(row["posting_id"] for row in page["rows"]) == sorted([one, two])
+    assert page["counts"]["skipped"] == 0
+
+
+def test_a_batch_skip_obeys_the_same_bearer_and_host_checks_as_every_other_route(
+    live: Live, engine: Engine
+) -> None:
+    """The checks live in the dispatcher, so this asserts the batch route did not arrive with its
+    own. Each refusal carries the request that SUCCEEDS, this module's standing rule."""
+    with engine.begin() as conn:
+        _one, job_one = _deliver(conn, "one")
+    payload = {"job_ids": [job_one]}
+
+    assert call(live, "/api/queue/skip", method="POST", bearer=None, body=payload).status == 401
+    assert (
+        call(
+            live,
+            "/api/queue/skip",
+            method="POST",
+            bearer=live.token,
+            host="evil.test",
+            body=payload,
+        ).status
+        == 403
+    )
+    assert (
+        call(live, "/api/queue/skip", method="POST", bearer=live.token, body=payload).status == 200
+    )
+
+
+def test_a_batch_skip_refuses_a_body_that_is_not_a_list_of_job_ids(
+    live: Live, engine: Engine
+) -> None:
+    """A malformed batch is a 400 and writes nothing — never a 500, and never a partial skip from
+    a body the route could not read. `true` is rejected with the integers because Python reads a
+    bool as an `int`, so a bare `isinstance` check would skip job 1."""
+    with engine.begin() as conn:
+        _one, job_one = _deliver(conn, "one")
+
+    for body in ([job_one], {"job_ids": job_one}, {"job_ids": ["1"]}, {"job_ids": [True]}, {}):
+        answer = call(live, "/api/queue/skip", method="POST", bearer=live.token, body=body)
+        assert answer.status == 400, (body, answer.status, answer.body[:200])
+    assert call(live, "/api/queue", bearer=live.token).json()["counts"]["skipped"] == 0
+
+    assert (
+        call(
+            live,
+            "/api/queue/skip",
+            method="POST",
+            bearer=live.token,
+            body={"job_ids": [job_one]},
+        ).status
+        == 200
+    )
+
+
 def test_report_removes_a_lead_and_unreport_restores_it(live: Live, engine: Engine) -> None:
     with engine.begin() as conn:
         posting_id, _job = _deliver(conn, "one")
@@ -1241,6 +1482,91 @@ def test_counts_report_ineligible_as_its_own_cell_and_keep_it_out_of_the_queue(
     # Its own cell, never folded into a neighbour: an implementation that added it to `uncertain`
     # or left it inside `in_queue` reports 2 here and passes any `>= 1` check.
     assert counts["in_queue"] == counts["eligible"] + counts["uncertain"]
+
+
+def test_every_row_carries_the_gates_own_verdict_and_it_is_counted_apart_from_the_rules_one(
+    live: Live, engine: Engine
+) -> None:
+    """The final gate's verdict on the ROW and in its own three cells.
+
+    The store has carried it since T42 and `classify` has read it since D-489; nothing emitted it,
+    so a lead the gate read as `uncertain` was indistinguishable on the page from one it cleared.
+
+    Three leads with the SAME body and therefore the same RULES verdict, so the only thing that
+    differs between them is the gate. That is what makes this test discriminating: an
+    implementation that echoed `verdict` into `judge_verdict` reports `eligible` three times and
+    fails on the `uncertain` row, and one that treated "no gate row" as a clear reports
+    `judge_eligible: 2`.
+
+    The gate verdicts are written through `record_gate_verdict` and asserted on the payload rather
+    than read back through the same query that produced them.
+    """
+    with engine.begin() as conn:
+        _profile(conn)
+        held, _ = _deliver(conn, "held", body=JD_ELIGIBLE)
+        cleared, _ = _deliver(conn, "cleared", body=JD_ELIGIBLE)
+        silent, _ = _deliver(conn, "silent", body=JD_ELIGIBLE)
+        _gate(conn, held, JD_ELIGIBLE, "uncertain")
+        _gate(conn, cleared, JD_ELIGIBLE, "eligible")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    rows = {row["posting_id"]: row for row in payload["rows"]}
+    assert set(rows) == {held, cleared, silent}
+    assert rows[held]["judge_verdict"] == "uncertain"
+    assert rows[cleared]["judge_verdict"] == "eligible"
+    # `None`, never omitted and never "eligible": no gate row exists for this lead, and "the gate
+    # has not spoken" is not "the gate cleared it".
+    assert rows[silent]["judge_verdict"] is None
+    # The RULES verdict is untouched on all three, which is what makes the two columns two
+    # opinions rather than one renamed twice.
+    assert [rows[pid]["verdict"] for pid in (held, cleared, silent)] == ["eligible"] * 3
+
+    counts = payload["counts"]
+    assert counts["judge_uncertain"] == 1
+    assert counts["judge_eligible"] == 1
+    assert counts["judge_unjudged"] == 1
+    # Stated out loud because the sum is the specific defect: an implementation that folded the
+    # gate's uncertain into its eligible reports `judge_eligible: 2` and passes any `>= 1` check.
+    assert counts["judge_eligible"] != counts["eligible"]
+    assert counts["eligible"] == 3
+
+    # `detail_payload` serializes one row with no list around it, through the same `_row_json`.
+    # Asserted here so the field cannot exist on the list and be absent in the pane.
+    detail = call(live, f"/api/queue/{held}", bearer=live.token).json()
+    assert detail["row"]["judge_verdict"] == "uncertain"
+
+
+def test_every_row_carries_the_gates_seniority_reading_the_badge_is_keyed_on(
+    live: Live, engine: Engine
+) -> None:
+    """`judge_seniority_above_band` on the wire, as the boolean `QueueRowItem` keys its badge on.
+
+    `types.ts` has said "the server has always sent this" since D-504. It never had: `_row_json`
+    fed the reading into `classify` and dropped it, so the badge could not render against any
+    real server and the test that covered it set the field in a fixture by hand.
+
+    The hold is ARMED here because the store deliberately leaves the column at its inert
+    `"unclear"` while it is off (`delivered_unapplied` does not run the seniority read at all),
+    so an armed hold is the only state in which the wire can carry a `True`. Under it the
+    above-band lead is held for review, and the field rides on THAT row too — `_row_json`
+    serializes both lanes — while the cleared lead reads `False`, never an omitted key.
+    """
+    with engine.begin() as conn:
+        _profile(conn)
+        senior, _ = _deliver(conn, "senior", body=JD_ELIGIBLE)
+        junior, _ = _deliver(conn, "junior", body=JD_ELIGIBLE)
+        _gate(conn, senior, JD_ELIGIBLE, "eligible", seniority_fit="no")
+        _gate(conn, junior, JD_ELIGIBLE, "eligible", seniority_fit="yes")
+    config = live.server.deps.ctx.settings.config_dir / "config.toml"
+    config.write_text("[gate]\nseniority_hold = true\n", encoding="utf-8")
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    apply_rows = {row["posting_id"]: row for row in payload["rows"]}
+    review_rows = {row["posting_id"]: row for row in payload["review"]}
+    # The control: the hold really is armed, or the `True` below could not be reached.
+    assert review_rows[senior]["review_reason"] == "seniority_judged_above_band"
+    assert review_rows[senior]["judge_seniority_above_band"] is True
+    assert apply_rows[junior]["judge_seniority_above_band"] is False
 
 
 def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None:
@@ -1592,6 +1918,48 @@ def test_the_answers_panel_serves_work_auth_words_not_enum_tokens(
     assert work_auth["needs_sponsorship"] == "no"
 
 
+def test_the_answers_panel_serves_the_jurisdiction_in_words_too(
+    live: Live, engine: Engine
+) -> None:
+    """`us` is this catalog's token for a country, not the answer a form asks for.
+
+    The same argument as the status above, on the field beside it: the panel exists to be COPIED,
+    and a two-letter code pasted into "which country is that authorisation for?" is this program's
+    vocabulary reaching an employer.
+    """
+    facts = Facts(
+        work_authorization=WorkAuthFact(status="citizen", jurisdiction="us", needs_sponsorship=False)
+    )
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    work_auth = call(live, "/api/answers", bearer=live.token).json()["work_auth"]
+
+    assert work_auth["jurisdiction"] == "United States"
+
+
+def test_a_jurisdiction_outside_the_catalog_is_passed_through_rather_than_refused(
+    live: Live, engine: Engine
+) -> None:
+    """The one place this field parts company with `status`, asserted so the asymmetry is
+    deliberate rather than an omission.
+
+    An unrecognised `status` is refused because `ead_or_similar` has no meaning outside this
+    program and a corrupt one must not reach a form. A jurisdiction the catalog does not declare is
+    a stored value the panel already served verbatim before it was restated at all, so refusing it
+    would take a working panel to a 422 over a field restating was only ever meant to improve.
+    Passed through unchanged, and never dropped: a blank would hide the stored fact entirely.
+    """
+    facts = Facts(work_authorization=WorkAuthFact(status="citizen", jurisdiction="zz"))
+    with engine.begin() as conn:
+        _profile(conn, facts=facts, policy=Policy())
+
+    response = call(live, "/api/answers", bearer=live.token)
+
+    assert response.status == 200, response.body[:400]
+    assert response.json()["work_auth"]["jurisdiction"] == "zz"
+
+
 #: The catalog's own `work_auth.status` vocabulary, read from the BUNDLED rules rather than
 #: respelled here: the choice vocabulary belongs to the catalog (D-P2-4), and a list retyped in a
 #: test would go on passing after the catalog gained a sixth member.
@@ -1609,6 +1977,25 @@ def test_every_declared_work_auth_status_has_words(status: str) -> None:
     employer's form as a raw token, which is the bug this closes."""
     assert status in WORK_AUTH_STATUS_WORDS
     assert WORK_AUTH_STATUS_WORDS[status] != status
+
+
+#: The catalog's own `work_auth.jurisdiction` vocabulary, read from the BUNDLED rules for the same
+#: reason the status list above is.
+WORK_AUTH_JURISDICTION_CHOICES: tuple[str, ...] = next(
+    field.choices
+    for field in load_rules(Path("/nonexistent")).family("work_auth").fields
+    if field.name == "jurisdiction"
+)
+
+
+@pytest.mark.parametrize("jurisdiction", WORK_AUTH_JURISDICTION_CHOICES)
+def test_every_declared_work_auth_jurisdiction_has_words(jurisdiction: str) -> None:
+    """Closed over the catalog's declared choices, so a new member ships with words. Unlike the
+    status mapping this one does not REFUSE an unlisted value, which is exactly why its coverage
+    has to be asserted here: a missing member would otherwise be served as a raw token forever
+    instead of failing."""
+    assert jurisdiction in WORK_AUTH_JURISDICTION_WORDS
+    assert WORK_AUTH_JURISDICTION_WORDS[jurisdiction] != jurisdiction
 
 
 def test_a_work_auth_status_outside_the_catalog_is_refused_not_copied(
@@ -1671,6 +2058,33 @@ def test_the_queue_payload_carries_the_fields_the_client_halves_are_built_agains
     assert payload["counts"]["closed"] == 0
     assert payload["meta"]["reveal_supported"] is True
     assert "why" in payload["rows"][0]
+
+
+def test_a_rows_provider_is_the_company_row_and_not_the_apply_urls_host(
+    live: Live, engine: Engine
+) -> None:
+    """`provider` is the ATS the posting SITS ON, carried from `companies.provider`.
+
+    The lane row below is seeded with an apply URL on an ATS vendor's own host — which is what
+    the job-apps lane really writes — so a `provider` derived from the URL would report
+    `greenhouse` for it. The `classify_host` control states that the host really does read as
+    `ats`, so the payload's `jobapps` is attributable to the company row and nothing else.
+
+    The DETAIL payload is asserted in the same test because it serializes through `_row_json`:
+    that is what makes one field emitted once rather than twice, and the assertion is what
+    keeps it that way.
+    """
+    with engine.begin() as conn:
+        lane, _ = _deliver(
+            conn, "lane", provider="jobapps", url="https://boards.greenhouse.io/acme/jobs/1"
+        )
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+    assert classify_host(row["apply_url"]) == "ats"
+    assert row["provider"] == "jobapps"
+
+    detail = call(live, f"/api/queue/{lane}", bearer=live.token).json()
+    assert detail["row"]["provider"] == "jobapps"
 
 
 def test_a_semicolon_joined_location_entry_is_split_into_places(tmp_path: Path) -> None:
