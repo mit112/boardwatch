@@ -148,6 +148,17 @@ export function appliedRow(overrides: Partial<AppliedRow> = {}): AppliedRow {
   };
 }
 
+/**
+ * The statuses the server counts as a submission, transcribed from
+ * `store/applications.APPLIED_STATUSES`.
+ *
+ * `interested` is outside it because it is `create_application`'s default and means only that a
+ * lead was tracked, and `withdrawn` because it cannot distinguish withdrawing an application from
+ * withdrawing interest before applying. A "not withdrawn" test here let a fixture band claim a
+ * `posting_closed` figure the server would never send.
+ */
+const APPLIED_STATUSES = ["applied", "interviewing", "offer", "rejected"];
+
 /** The counts the server computes, computed the same way here so a fixture band cannot claim a
  *  total the rows beside it do not add up to. */
 export function appliedResponse(rows: AppliedRow[]): AppliedHistoryResponse {
@@ -166,7 +177,7 @@ export function appliedResponse(rows: AppliedRow[]): AppliedHistoryResponse {
       total: rows.length,
       by_status,
       posting_closed: rows.filter(
-        (row) => row.posting_status === "closed" && row.status !== "withdrawn",
+        (row) => row.posting_status === "closed" && APPLIED_STATUSES.includes(row.status),
       ).length,
     },
   };
