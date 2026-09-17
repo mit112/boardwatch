@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers). Nothing was deleted on any of the eight passes. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way). Nothing was deleted on any of the nine passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,52 +20,58 @@
 
 ## Current standing
 
-### 2026-09-16 — **RUN 432 CLEAN (confirm day 11), D-512's PROOF HELD, AND WEB WAVE 1 SHIPPED UNDER THE FREEZE ON THE OWNER'S RULING: D-515, D-516. PR #381 MERGED.**
+### 2026-09-17 — **RUN 433 CLEAN (confirm day 12); WEB WAVE 2 SHIPPED AFTER A BLIND REVIEW OF A GREEN UNION FOUND SIX DEFECTS: D-517. PR #383 MERGED.**
 
-**Owner rulings (D-515).** `boardwatch web` is the ONLY UI — never publish an artifact, sheet or
-CSV of the queue again. Web work CONTINUES through the confirm window: `delivery/`,
-`store/delivery_queries.py` and `web/` are outside the four digested engine modules, so nothing
-the bars read moves. **The gate judge's move to Sonnet is NOT web work and stays parked until
-09-19.** The below-the-cap "rest" view stays deferred (spec D5, it needs the ranker path the daily
-driver calls).
+**Run 433 (readout in `METRICS.md`).** 04:00 tick, `ok`, 77 min, RECONCILES, `runs = 8` exit 0.
+40,813 seen / 8,902 new / 199,742 open; 76 shortlisted, 40 tailored, 19 PDFs; gate 51 judged
+(29/17/5), 0 batches failed open, 1 of 13 verdicts missing in one batch (lead left unchanged).
+**Its manifest is identical to run 432's across the wave-1 merge** — D-515's claim that web work
+cannot move the confirm window, measured. New board errors to watch a second day: `postman`
+Greenhouse 404, Magnite Workday 422.
 
-**Run 432 (D-516, readout in `METRICS.md`).** 04:00 tick, `ok`, 61 min, RECONCILES, `runs = 7`
-exit 0. 42,327 seen / 10,532 new / 192,408 open; 71 shortlisted, 40 tailored, 26 PDFs; gate 39
-judged (20/12/7), 0 failed open. **Stale-policy gate rows on open postings 36 → 5** — the fix
-works. job-apps ran at 08:55. **The lane the owner opens: apply 392 (rules 156 `eligible` / 236
-`uncertain`; gate 347 / 42 / 1 / 2 unjudged), review 350 (255 above band), applied 61. 48 leads
-are new since the 09-14 worklist.** Folders, API and store agree.
+**Web wave 2 shipped (PR #383, D-517).** Follow-up dates on a lead (`followup`/`unfollowup`
+routes, `queue.followup.<job_id>`, server-local day, ±366-day guard, pane input, row chip, facet,
+sort, `f`); the applied history at `#/applied` (`GET /api/applied`, read-only); follow-up dates on
+that page. **The first union was green (10,188) and was NOT shipped:** a blind reviewer found a
+date input writing one POST per intermediate value (year-2 dates stored as "due"), an Unmark
+acting on a different attempt than the row clicked, and an applied row describing a sibling
+posting. Fixed by two file-split executors; second gate 10,195 passed, 7:21.
 
-**Web wave 1 shipped (PR #381, merge commit).** Gate verdict on every row + three band cells;
-"new since last visit" facet; ATS (`provider`) sort; bulk skip with batch routes and one undo;
-`jurisdiction` in words; orphan `coverage_detail` removed; dialog role + focus-by-posting-id on
-the narrow sheet. **And `judge_seniority_above_band` had NEVER been on the wire** — the 09-14
-CHANGELOG entry and `types.ts` were both wrong; fixed red-first under an armed hold.
-`make check` green twice (10,146 on `t80`; 10,161 on the union).
+**The lane the owner opens:** apply **400**, review **370**, applied **61** (53 open, 3 since
+closed). **Only 3 of the 61 applied rows were delivered by the queue**, so Unmark and the
+follow-up input exist on 3 rows today; the 58 imports are inert on that page (owner call below).
 
-**The running viewer is STALE until restarted** (bundle from disk, API from startup, D-360): the
-one started this session at `127.0.0.1:59592` predates the merge. Restart it from the primary
-checkout on `main`; the port changes.
-
-**Enterprise seat: 0% → 60% in 37 min** under four Opus executors + one audit. Owner: *"dont spawn
-new tasks."* **Wave 2 is ticketed and NOT dispatched** — T83 follow-up dates, T84 applied-history
-page (drafts in the 09-16 session scratchpad, not the repo; re-derive from D-516 if lost).
+**The viewer was restarted on the merged `main`** (`boardwatch web --port 0 --no-open`; port in
+the session's `web.log`, token in the config dir's `web-token`). It goes stale on the next web
+merge (D-360): restart it after every one.
 
 **Next action — unchanged in substance: the two dated readings on 09-19 decide M4 and M5.**
 
-1. **Read the 04:00 tick each morning by `max(runs.id)`** — 432 was 09-16, expect 433 on 09-17.
-   Confirm day 12.
+1. **Read the 04:00 tick each morning by `max(runs.id)`** — 433 was 09-17, expect 434 on 09-18.
+   Confirm day 13.
 2. **M4: second Gate 1 reading ~09-19** is the last condition; if it holds, job-apps switches off.
 3. **M5: confirm day 14 is 09-19.** Reconciliation `True` on every run since 09-07.
-4. **First thing after 09-19:** the gate judge off haiku onto Sonnet (D-477, D-514).
-5. **Web wave 2 when the seat allows** (owner's call on scale): T83, T84. Restart the viewer
-   after every web merge.
-6. **Owner calls from D-516's executors**, each one line if reversed: batch `failed` = "not a
-   standing lead" (review-lane ids are skippable); `x` refuses auto-repeat; `ats` sort opens
-   descending; no `judge_ineligible` band cell; pane `review_reason` from default flags
-   (pre-existing); no scroll lock on the sheet.
+4. **First thing after 09-19:** the gate judge off haiku onto Sonnet (D-477, D-514). NOT web work.
+5. **Web: nothing is ticketed.** Open from the parity audit: the below-the-cap "rest" view
+   (deferred, spec D5 — needs the ranker path the daily driver calls; owner's call after 09-19)
+   and scroll lock on the narrow sheet (an owner call from D-516).
+6. **Owner calls from D-517**, each small: a follow-up route keyed on `job_id` so the 58 imported
+   applications can carry a date; the applied page's `follow-up due` cell is per JOB while its
+   filter is per attempt; the ±366-day bound is restated in the bundle; a recent past date is
+   accepted on purpose. **From D-516, still open:** batch `failed` = "not a standing lead";
+   `x` refuses auto-repeat; `ats` sort opens descending; no `judge_ineligible` band cell; pane
+   `review_reason` from default flags (pre-existing); no scroll lock on the sheet.
 7. Still open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
    `board_reported_total = None`; `details.json` naming which lead supersedes a drained lane copy.
+
+### 2026-09-16 — run 432 (confirm day 11), the web-only-UI ruling, web wave 1 (PR #381). **Held WHOLE in D-515, D-516 and `METRICS.md` (session 2026-09-16); do not re-derive.**
+
+`boardwatch web` is the ONLY UI — never publish an artifact, sheet or CSV of the queue — and web
+work continues through the confirm window because `delivery/`, `store/delivery_queries.py` and
+`web/` are outside the four digested engine modules (D-515). Wave 1: gate verdict on every row,
+"new since last visit", ATS sort, bulk skip, `jurisdiction` in words, the dialog sheet; and
+`judge_seniority_above_band` had never been on the wire (D-516). Stale-policy gate rows 36 → 5:
+D-512 works.
 
 ### 2026-09-14b → 2026-09-15 — B8 MET; every bar clear except the two dated readings on 09-19. **Held WHOLE in D-506 … D-514 and `METRICS.md` (sessions 2026-09-14b and 2026-09-15); do not re-derive.**
 
