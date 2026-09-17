@@ -398,6 +398,11 @@ def _row_json(row: QueueRow, facts: LiveFacts, ctx: ApiContext) -> dict[str, Any
         "job_id": row.job_id,
         "title": row.title,
         "company": row.company,
+        # The ATS the posting SITS ON, straight from `companies.provider`. Never re-derived here
+        # from `apply_url`: the job-apps lane writes the employer's own apply URL, so a host
+        # classifier reads a lane copy as the employer's board and would answer the wrong
+        # question — which is the whole reason the field is carried out of the store.
+        "provider": row.provider,
         "location": locations[0] if locations else None,
         "locations": locations,
         "remote_policy": row.remote_policy,

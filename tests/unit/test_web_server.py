@@ -38,6 +38,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
+from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import server as server_mod
 from boardwatch.delivery.answers import WORK_AUTH_STATUS_WORDS
@@ -237,6 +238,8 @@ def _deliver(
     judge: bool = True,
     facts: Facts | None = None,
     policy: Policy | None = None,
+    provider: str = "greenhouse",
+    url: str = "https://boards.test/apply",
 ) -> tuple[int, int]:
     """One delivered lead: company, job, posting, frozen version, tailored artifact.
 
@@ -252,7 +255,7 @@ def _deliver(
         conn.execute(
             insert(companies).values(
                 name=f"Acme {key}",
-                provider="greenhouse",
+                provider=provider,
                 slug=f"acme-{key}",
                 source="user",
                 watched=watched,
@@ -270,7 +273,7 @@ def _deliver(
                 provider_posting_id=key,
                 title=title,
                 normalized_title=title.casefold(),
-                url="https://boards.test/apply",
+                url=url,
                 locations_json=locations if locations is not None else ["Boston, MA"],
                 remote_policy="remote",
                 posted_at=NOW - timedelta(days=3),
@@ -1671,6 +1674,33 @@ def test_the_queue_payload_carries_the_fields_the_client_halves_are_built_agains
     assert payload["counts"]["closed"] == 0
     assert payload["meta"]["reveal_supported"] is True
     assert "why" in payload["rows"][0]
+
+
+def test_a_rows_provider_is_the_company_row_and_not_the_apply_urls_host(
+    live: Live, engine: Engine
+) -> None:
+    """`provider` is the ATS the posting SITS ON, carried from `companies.provider`.
+
+    The lane row below is seeded with an apply URL on an ATS vendor's own host — which is what
+    the job-apps lane really writes — so a `provider` derived from the URL would report
+    `greenhouse` for it. The `classify_host` control states that the host really does read as
+    `ats`, so the payload's `jobapps` is attributable to the company row and nothing else.
+
+    The DETAIL payload is asserted in the same test because it serializes through `_row_json`:
+    that is what makes one field emitted once rather than twice, and the assertion is what
+    keeps it that way.
+    """
+    with engine.begin() as conn:
+        lane, _ = _deliver(
+            conn, "lane", provider="jobapps", url="https://boards.greenhouse.io/acme/jobs/1"
+        )
+
+    row = call(live, "/api/queue", bearer=live.token).json()["rows"][0]
+    assert classify_host(row["apply_url"]) == "ats"
+    assert row["provider"] == "jobapps"
+
+    detail = call(live, f"/api/queue/{lane}", bearer=live.token).json()
+    assert detail["row"]["provider"] == "jobapps"
 
 
 def test_a_semicolon_joined_location_entry_is_split_into_places(tmp_path: Path) -> None:

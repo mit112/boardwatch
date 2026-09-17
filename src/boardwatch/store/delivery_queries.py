@@ -115,6 +115,12 @@ class QueueRow:
     job_id: int
     title: str
     company: str
+    #: The ATS the posting SITS ON — `companies.provider`, the ROW, never `classify_host` over
+    #: `apply_url`. The job-apps lane writes the employer's own apply URL, so URL classification
+    #: reads a lane copy as the employer's board; the same fact `standing_board_cross_host_keys`
+    #: turns on. A lane row therefore carries its LANE's name (`jobapps`, `linkedin`, `indeed`,
+    #: `hiringcafe`, `jsonld`), which is what the owner batching by ATS needs to see.
+    provider: str
     location: str | None
     #: Raw location segments from `postings.locations_json`. `location` above is the joined display
     #: string; `classify_location` needs the segments, not the joined string (it splits on nothing).
@@ -206,6 +212,7 @@ def _delivered_select() -> Select[Any]:
             postings.c.status,
             postings.c.url,
             companies.c.name.label("company"),
+            companies.c.provider,
             companies.c.tags_json,
             companies.c.watched,
         )
@@ -324,6 +331,7 @@ def _queue_row(
         job_id=int(row.job_id),
         title=str(row.title),
         company=str(row.company),
+        provider=str(row.provider),
         location=_location(row.locations_json),
         locations=_locations_list(row.locations_json),
         remote_policy=(
@@ -552,10 +560,7 @@ def standing_board_cross_host_keys(
     reported = reported_job_ids(conn)
     rows = conn.execute(
         _delivered_select()
-        .add_columns(
-            companies.c.provider,
-            posting_identities.c.identity_key,
-        )
+        .add_columns(posting_identities.c.identity_key)
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)
@@ -622,7 +627,7 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
     # applied in Python over joined rows ever since.
     rows = conn.execute(
         _delivered_select()
-        .add_columns(companies.c.provider, posting_identities.c.identity_key)
+        .add_columns(posting_identities.c.identity_key)
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)

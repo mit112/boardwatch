@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Connection, Engine, insert, text
 
+from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery.names import DRAIN_DIRS
 from boardwatch.eligibility.audit import AuditRequirement
@@ -93,6 +94,7 @@ def _company(
     slug: str,
     *,
     name: str = "Acme",
+    provider: str = "greenhouse",
     tags: list[str] | None = None,
     source: str = "user",
     watched: bool = True,
@@ -100,7 +102,7 @@ def _company(
     return int(
         conn.execute(
             insert(companies).values(
-                name=name, provider="greenhouse", slug=slug, source=source,
+                name=name, provider=provider, slug=slug, source=source,
                 watched=watched, tags_json=tags,
             )
         ).inserted_primary_key[0]
@@ -192,18 +194,22 @@ def _deliver(
     version_body: str = JD,
     source: str = "user",
     watched: bool = True,
+    provider: str = "greenhouse",
+    url: str | None = "https://boards.test/apply",
 ) -> tuple[int, int]:
     """One delivered lead — company, job, posting, frozen version, tailored artifact.
 
     Returns `(posting_id, job_id)`. Pass an existing `job_id` to make two postings siblings of
     one canonical job, which is the population deduplication has to collapse.
     """
-    company_id = _company(conn, f"acme-{key}", tags=tags, source=source, watched=watched)
+    company_id = _company(
+        conn, f"acme-{key}", provider=provider, tags=tags, source=source, watched=watched
+    )
     job = _job(conn) if job_id is None else job_id
     posting_id = _posting(
         conn, company_id=company_id, job_id=job, key=key, status=status,
         posted_at=posted_at, locations=locations, remote_policy=remote_policy,
-        body=posting_body,
+        url=url, body=posting_body,
     )
     version_id = _version(conn, posting_id=posting_id, body=version_body)
     _artifact(
@@ -544,6 +550,30 @@ def test_a_posting_naming_no_place_has_no_location(engine: Engine) -> None:
     assert by_posting[nowhere].location is None
     assert by_posting[nowhere].location != ""
     assert by_posting[somewhere].location == "Boston, MA"
+
+
+def test_a_rows_provider_is_the_company_row_and_never_the_apply_urls_host(engine: Engine) -> None:
+    """The ATS the posting SITS ON, read from `companies.provider`.
+
+    The job-apps lane writes the EMPLOYER's own apply URL, so a lane row's host classifies
+    exactly like an employer-board row's while the row itself is `jobapps` — the same fact
+    `standing_board_cross_host_keys` turns on. A provider derived from the URL would report
+    both rows below alike, so the identical-host control is what makes the difference
+    attributable to the company row.
+    """
+    with engine.begin() as conn:
+        lane, _ = _deliver(
+            conn, "lane", provider="jobapps", url="https://boards.greenhouse.io/acme/jobs/1"
+        )
+        board, _ = _deliver(
+            conn, "board", provider="greenhouse", url="https://boards.greenhouse.io/acme/jobs/2"
+        )
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert classify_host(str(by_posting[lane].apply_url)) == "ats"
+    assert classify_host(str(by_posting[board].apply_url)) == "ats"
+    assert by_posting[lane].provider == "jobapps"
+    assert by_posting[board].provider == "greenhouse"
 
 
 # -------------------------------------------------------------------------------- the verdict
