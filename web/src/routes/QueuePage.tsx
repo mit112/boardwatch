@@ -573,7 +573,14 @@ export function QueuePage({
   const focusFollowUp = useCallback(
     (row: QueueRow) => {
       if (selected === row.posting_id) {
-        document.getElementById(FOLLOW_UP_INPUT_ID)?.focus();
+        const input = document.getElementById(FOLLOW_UP_INPUT_ID);
+        if (input !== null) {
+          input.focus();
+          return;
+        }
+        // The lead is open but its detail is still IN FLIGHT, so there is no input yet. Recording
+        // the id lands the cursor when it arrives; `?.focus()` on nothing dropped the keystroke.
+        followUpFocus.current = row.posting_id;
         return;
       }
       followUpFocus.current = row.posting_id;
@@ -581,6 +588,18 @@ export function QueuePage({
     },
     [selected, openLead],
   );
+
+  /*
+   * The record is for ONE keystroke on ONE lead, and two paths used to outlive it: a detail load
+   * that FAILED (the success effect below was the only place that cleared it) and the reader
+   * opening some other lead. Either left an id armed, so a later CLICK on that first lead pulled
+   * the cursor off the list and into the date input — exactly what the effect below exists to
+   * prevent. Cleared whenever the open lead is not the recorded one, and whenever that lead's
+   * detail came back an error.
+   */
+  useEffect(() => {
+    if (followUpFocus.current !== selected || shownError !== null) followUpFocus.current = null;
+  }, [selected, shownError]);
 
   /*
    * The other half of `f`: the pane's detail arrives asynchronously, so the input the keystroke

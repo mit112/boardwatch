@@ -397,6 +397,107 @@ describe("the write path", () => {
 
     expect(document.activeElement).toBe(screen.getByLabelText("Follow up on"));
   });
+
+  it("f while the lead's detail is still in flight still lands the cursor when it arrives", async () => {
+    // `f` on the lead that is ALREADY selected used to look the input up and focus it on the
+    // spot — but the pane's detail is fetched, so while it is in flight there is no input and
+    // the keystroke was dropped with nothing recorded. The reader pressed a key and nothing
+    // ever happened.
+    const row = queueRow({ company: "Globex", title: "Backend Engineer" });
+    vi.mocked(getQueue).mockResolvedValue(queueResponse([row]));
+    vi.mocked(getAnswers).mockResolvedValue({
+      identity: {},
+      work_auth: {},
+      education: [],
+      questions: [],
+    });
+    let land: (detail: QueueDetail) => void = () => undefined;
+    vi.mocked(getDetail).mockReturnValue(
+      new Promise<QueueDetail>((resolve) => {
+        land = resolve;
+      }),
+    );
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const dataRow = rowElement();
+    dataRow.focus();
+    fireEvent.click(dataRow);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    // In flight: the pane is drawing its loading state and the input does not exist yet.
+    expect(screen.queryByLabelText("Follow up on")).toBeNull();
+    fireEvent.keyDown(dataRow, { key: "f" });
+
+    await act(async () => {
+      land({ row, jd_body: null, requirements: [], board_target: null });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(document.activeElement).toBe(screen.getByLabelText("Follow up on"));
+  });
+
+  it("forgets the f cursor when the detail load fails and another lead is opened", async () => {
+    // The ref is the record of one keystroke on one lead. Only the SUCCESS path used to clear
+    // it, so a failed load left it armed: the reader who later opened that lead by hand had the
+    // cursor pulled off the list into the date input by a keystroke they pressed minutes ago.
+    const first = queueRow({ company: "Acme Corp", title: "FIRST-LEAD" });
+    const second = queueRow({ company: "Globex", title: "SECOND-LEAD" });
+    vi.mocked(getQueue).mockResolvedValue(queueResponse([first, second]));
+    vi.mocked(getAnswers).mockResolvedValue({
+      identity: {},
+      work_auth: {},
+      education: [],
+      questions: [],
+    });
+    let refused = false;
+    vi.mocked(getDetail).mockImplementation((postingId: number) => {
+      if (postingId === first.posting_id && !refused) {
+        refused = true;
+        return Promise.reject(new Error("503 from the store"));
+      }
+      const row = postingId === first.posting_id ? first : second;
+      return Promise.resolve({ row, jd_body: null, requirements: [], board_target: null });
+    });
+    render(<App />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const rowFor = (title: string): HTMLElement => {
+      const found = within(screen.getByRole("grid", { name: "Queue" }))
+        .getAllByRole("row")
+        .find((element) => element.textContent?.includes(title) === true);
+      if (found === undefined) throw new Error(`no row for ${title}`);
+      return found;
+    };
+
+    const firstRow = rowFor("FIRST-LEAD");
+    firstRow.focus();
+    fireEvent.keyDown(firstRow, { key: "f" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("503 from the store")).toBeTruthy();
+
+    // A different lead, then back to the first one by CLICK. This time the detail arrives, and
+    // the cursor has to stay on the list: nothing asked for the input.
+    fireEvent.click(rowFor("SECOND-LEAD"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const again = rowFor("FIRST-LEAD");
+    again.focus();
+    fireEvent.click(again);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByLabelText("Follow up on")).toBeTruthy();
+    expect(document.activeElement).toBe(again);
+  });
 });
 
 describe("the follow-up due facet", () => {
