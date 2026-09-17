@@ -244,6 +244,21 @@ export interface SkipResponse {
   outcome: MarkOutcome;
 }
 
+/**
+ * `POST /api/queue/skip` and `POST /api/queue/unskip`, which take `{ job_ids: [...] }` and act on
+ * the whole list in one transaction.
+ *
+ * `skipped` names the ids the call acted on and `failed` the ids that named no standing lead —
+ * reported rather than refused, so one stale id cannot discard the owner's decision about the
+ * rest of a selection. Both are OPTIONAL on the wire for the same reason `locations` is: the
+ * viewer serves this bundle from disk and answers from the Python it imported at start-up, so a
+ * server that has the route but not a field must degrade to "nothing here" rather than throw.
+ */
+export interface BatchSkipResponse {
+  skipped?: number[];
+  failed?: number[];
+}
+
 export interface ReportResponse {
   outcome: MarkOutcome;
 }
