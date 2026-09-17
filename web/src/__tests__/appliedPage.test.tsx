@@ -150,6 +150,33 @@ describe("the counts band", () => {
     expect(bandValue("offer")).toBe("0");
   });
 
+  it("carries the year on the applied date, and no time of day on the close", async () => {
+    /*
+     * This is the one page built to hold a MULTI-YEAR history, and it is sorted by this column by
+     * default — so `Sep 10` alone printed the same label for 2025-09-10 and 2026-09-10 and the
+     * list read as mis-sorted. `closed_at` is a DATE (the day the requisition went down), so a
+     * time of day on it is precision the column does not have.
+     */
+    await renderApplied(
+      appliedResponse([
+        appliedRow({
+          submitted_at: "2025-09-10T15:30:00+00:00",
+          created_at: "2025-09-10T15:30:00+00:00",
+          posting_status: "closed",
+          closed_at: "2026-09-12T09:00:00+00:00",
+        }),
+      ]),
+    );
+
+    const cells = within(dataRows()[0] as HTMLElement).getAllByRole("cell");
+    expect((cells[0] as HTMLElement).textContent ?? "").toMatch(/2025/);
+    const closed = screen.getByText(/^closed /).textContent ?? "";
+    expect(closed).toMatch(/2026/);
+    // No clock on a date. Written as "not a time" rather than as an exact string so the
+    // assertion holds under whatever locale the reader's machine prints.
+    expect(closed).not.toMatch(/\d:\d\d/);
+  });
+
   it("says in words, and with a date, that a posting has closed", async () => {
     await renderApplied(
       appliedResponse([

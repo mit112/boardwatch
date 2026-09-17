@@ -4,7 +4,12 @@ import { getApplied, markApplied, openPdf, unapply } from "../api/client";
 import type { AppliedCounts, AppliedRow } from "../api/types";
 import { Badge } from "../components/Badge";
 import type { ToastRequest } from "../hooks/useToasts";
-import { EM_DASH, formatTimestamp, pathFromFileUri } from "../lib/format";
+import {
+  EM_DASH,
+  formatDateWithYear,
+  formatTimestampWithYear,
+  pathFromFileUri,
+} from "../lib/format";
 import { matchesAppliedQuery, sortAppliedRows } from "../lib/sort";
 import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
 
@@ -25,7 +30,9 @@ import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
  *  only stands in where the first is absent, which is an attempt that never reached `applied`. */
 function appliedLabel(row: AppliedRow): string {
   const stamp = row.submitted_at ?? row.created_at ?? null;
-  return formatTimestamp(stamp);
+  // WITH the year: this list spans years and is sorted by this column, so a label without one
+  // prints the same text for two applications twelve months apart.
+  return formatTimestampWithYear(stamp);
 }
 
 /** A text field off the wire, or an em dash. `== null` and never `=== null`: an older server omits
@@ -94,7 +101,7 @@ function PostingStanding({ row }: { row: AppliedRow }) {
     const when = row.closed_at ?? null;
     return (
       <Badge
-        label={when == null ? "closed" : `closed ${formatTimestamp(when)}`}
+        label={when == null ? "closed" : `closed ${formatDateWithYear(when)}`}
         emphasis="strong"
         reason="The employer has taken this requisition down since the application was sent."
       />

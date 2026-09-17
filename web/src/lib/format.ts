@@ -51,6 +51,45 @@ export function formatTimestamp(iso: string | null): string {
   });
 }
 
+/** The two helpers below share this. `== null` and the `NaN` check for the usual reason: an older
+ *  server omits the key entirely, and an unparseable string is absence rather than a thrown render. */
+function localeWhen(iso: string | null | undefined, options: Intl.DateTimeFormatOptions): string {
+  if (iso == null) return EM_DASH;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return EM_DASH;
+  return when.toLocaleString(undefined, options);
+}
+
+/**
+ * A stored instant WITH its year, for the applied history.
+ *
+ * Its own helper rather than a widening of `formatTimestamp`: the queue and the runs pages show
+ * days-old rows, where a year on every line is noise. The applied history is the one list built to
+ * hold several years of it and is sorted by that column by default, so `Sep 10, 03:30 PM` labelled
+ * 2025-09-10 and 2026-09-10 identically — the list read as mis-sorted and "when did I apply" had
+ * no answer on the page that exists to give it.
+ */
+export function formatTimestampWithYear(iso: string | null | undefined): string {
+  return localeWhen(iso, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * A stored instant as a DATE with its year and no clock.
+ *
+ * `postings.closed_at` answers "which day did the employer take this down", and the hour it was
+ * noticed is the scan's timing rather than the employer's — printing it claims a precision the
+ * column does not have.
+ */
+export function formatDateWithYear(iso: string | null | undefined): string {
+  return localeWhen(iso, { year: "numeric", month: "short", day: "numeric" });
+}
+
 export function formatCount(value: number | null): string {
   return value == null ? EM_DASH : value.toLocaleString();
 }
