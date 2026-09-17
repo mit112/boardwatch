@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { QueueDetail } from "../api/types";
+import type { FollowUpResponse, QueueDetail } from "../api/types";
 import { DetailPane } from "../components/DetailPane";
 import { QueueRowItem } from "../components/QueueRowItem";
 import { sortRows } from "../lib/sort";
@@ -378,6 +378,52 @@ describe("the write path", () => {
       within(screen.getByRole("grid", { name: "Queue" })).queryByText("follow-up 2026-09-20"),
     ).toBeNull();
     expect(screen.getByText("400 from /api/queue/1/followup")).toBeTruthy();
+  });
+
+  it("reconciles the row against the date the STORE echoes, not the one it sent", async () => {
+    // The optimistic value and the echo are the same string only while the route's parser stays
+    // strict, and `FollowUpResponse.follow_up` promises the reconciliation
+    // (`ux-interaction/states/ux-state-optimistic`: reconcile with the server response). A write
+    // that never reads the echo leaves the page showing a date the store does not hold.
+    const row = await openLead();
+    const sent = isoDaysFromToday(5);
+    const stored = isoDaysFromToday(6);
+    vi.mocked(setFollowUp).mockResolvedValue({ outcome: "follow_up_set", follow_up: stored });
+
+    pickDate(screen.getByLabelText("Follow up on"), sent);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, sent);
+    const queue = within(screen.getByRole("grid", { name: "Queue" }));
+    expect(queue.getAllByText(`follow-up ${stored}`).length).toBeGreaterThan(0);
+    expect(queue.queryByText(`follow-up ${sent}`)).toBeNull();
+    // The toast names the stored date too: a confirmation that reads back the value the store
+    // refused would be the same lie in words.
+    expect(screen.getByText(`Follow up on Globex — Backend Engineer on ${stored}`)).toBeTruthy();
+  });
+
+  it("keeps the optimistic date when the server omits the echo entirely", async () => {
+    // The `== null` half of the reconciliation. This viewer serves the bundle from disk and
+    // answers from the Python it imported at start-up, so the key can be absent — and a read
+    // written without the guard would blank the chip the write just drew.
+    await openLead();
+    const sent = isoDaysFromToday(5);
+    vi.mocked(setFollowUp).mockResolvedValue(
+      withoutFields<FollowUpResponse>({ outcome: "follow_up_set", follow_up: sent }, [
+        "follow_up",
+      ]),
+    );
+
+    pickDate(screen.getByLabelText("Follow up on"), sent);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(
+      within(screen.getByRole("grid", { name: "Queue" })).getAllByText(`follow-up ${sent}`).length,
+    ).toBeGreaterThan(0);
   });
 
   it("f on the focused row moves the cursor into the date input", async () => {

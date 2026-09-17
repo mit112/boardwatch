@@ -17,6 +17,7 @@ import {
 } from "../api/client";
 import type {
   Answers,
+  FollowUpResponse,
   QueueCounts,
   QueueDetail,
   QueueResponse,
@@ -839,19 +840,30 @@ export function QueuePage({
       const previous = row.follow_up ?? null;
       if (previous === next) return;
       applyFollowUp(row.posting_id, next);
-      const write = (value: string | null): Promise<unknown> =>
+      const write = (value: string | null): Promise<FollowUpResponse> =>
         value === null ? clearFollowUp(row.posting_id) : setFollowUp(row.posting_id, value);
       void write(next)
-        .then(() => {
+        .then((response) => {
+          /*
+           * Reconciled against the ECHO, which is what `FollowUpResponse.follow_up` is for: the
+           * value sent and the value stored are the same string only while the route's parser
+           * stays strict, and a page that keeps showing what it sent is a page that disagrees
+           * with the store until the next fetch.
+           *
+           * `== null`, never `=== null`: a server older than the echo omits the key, and the
+           * optimistic value is the better answer there than blanking a date that was written.
+           */
+          const stored = response.follow_up == null ? next : response.follow_up;
+          if (stored !== next) applyFollowUp(row.posting_id, stored);
           push({
             message:
-              next === null
+              stored === null
                 ? `Cleared the follow-up on ${row.company} — ${row.title}`
-                : `Follow up on ${row.company} — ${row.title} on ${next}`,
+                : `Follow up on ${row.company} — ${row.title} on ${stored}`,
             undo: () => {
               applyFollowUp(row.posting_id, previous);
               void write(previous).catch((caught: unknown) => {
-                applyFollowUp(row.posting_id, next);
+                applyFollowUp(row.posting_id, stored);
                 push({
                   message: errorMessage(caught, "Could not undo that follow-up."),
                   tone: "error",
