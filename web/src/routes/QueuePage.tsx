@@ -17,6 +17,7 @@ import {
 } from "../api/client";
 import type {
   Answers,
+  FollowUpResponse,
   QueueCounts,
   QueueDetail,
   QueueResponse,
@@ -573,7 +574,14 @@ export function QueuePage({
   const focusFollowUp = useCallback(
     (row: QueueRow) => {
       if (selected === row.posting_id) {
-        document.getElementById(FOLLOW_UP_INPUT_ID)?.focus();
+        const input = document.getElementById(FOLLOW_UP_INPUT_ID);
+        if (input !== null) {
+          input.focus();
+          return;
+        }
+        // The lead is open but its detail is still IN FLIGHT, so there is no input yet. Recording
+        // the id lands the cursor when it arrives; `?.focus()` on nothing dropped the keystroke.
+        followUpFocus.current = row.posting_id;
         return;
       }
       followUpFocus.current = row.posting_id;
@@ -581,6 +589,18 @@ export function QueuePage({
     },
     [selected, openLead],
   );
+
+  /*
+   * The record is for ONE keystroke on ONE lead, and two paths used to outlive it: a detail load
+   * that FAILED (the success effect below was the only place that cleared it) and the reader
+   * opening some other lead. Either left an id armed, so a later CLICK on that first lead pulled
+   * the cursor off the list and into the date input — exactly what the effect below exists to
+   * prevent. Cleared whenever the open lead is not the recorded one, and whenever that lead's
+   * detail came back an error.
+   */
+  useEffect(() => {
+    if (followUpFocus.current !== selected || shownError !== null) followUpFocus.current = null;
+  }, [selected, shownError]);
 
   /*
    * The other half of `f`: the pane's detail arrives asynchronously, so the input the keystroke
@@ -749,10 +769,12 @@ export function QueuePage({
       // `== null`, never `=== null`: an older server omits the field, and "the server cannot say"
       // reads as "the gate has not spoken" rather than throwing off the count.
       judge_unjudged: filtered.filter((row) => row.judge_verdict == null).length,
-      // Recomputed against the active filter like the five above, and for the same reason: this
-      // cell is a facet, so it has to agree with the list clicking it produces. The server sends
-      // its own figure over the same lane; recomputing keeps the cell honest while a write is
-      // still optimistic and the payload has not been re-fetched.
+      // Recomputed against the active filter like the five above, and over the APPLY lane like
+      // every cell here: `filtered` is that lane. The FACET reaches both lanes, as the verdict
+      // and `judge_*` facets do, so clicking this cell can show MORE rows than the number on
+      // it — the count answers "how much of the work list is due", and the filter answers "show
+      // me everything that is due". Recomputing keeps the cell honest while a write is still
+      // optimistic and the payload has not been re-fetched.
       follow_up_due: filtered.filter((row) => isFollowUpDue(row.follow_up)).length,
       // Passed through, NOT recomputed: an ineligible lead is never in `rows`, so no
       // client-side filter can see one. Recomputing it here would always yield 0 and quietly
@@ -820,19 +842,30 @@ export function QueuePage({
       const previous = row.follow_up ?? null;
       if (previous === next) return;
       applyFollowUp(row.posting_id, next);
-      const write = (value: string | null): Promise<unknown> =>
+      const write = (value: string | null): Promise<FollowUpResponse> =>
         value === null ? clearFollowUp(row.posting_id) : setFollowUp(row.posting_id, value);
       void write(next)
-        .then(() => {
+        .then((response) => {
+          /*
+           * Reconciled against the ECHO, which is what `FollowUpResponse.follow_up` is for: the
+           * value sent and the value stored are the same string only while the route's parser
+           * stays strict, and a page that keeps showing what it sent is a page that disagrees
+           * with the store until the next fetch.
+           *
+           * `== null`, never `=== null`: a server older than the echo omits the key, and the
+           * optimistic value is the better answer there than blanking a date that was written.
+           */
+          const stored = response.follow_up == null ? next : response.follow_up;
+          if (stored !== next) applyFollowUp(row.posting_id, stored);
           push({
             message:
-              next === null
+              stored === null
                 ? `Cleared the follow-up on ${row.company} — ${row.title}`
-                : `Follow up on ${row.company} — ${row.title} on ${next}`,
+                : `Follow up on ${row.company} — ${row.title} on ${stored}`,
             undo: () => {
               applyFollowUp(row.posting_id, previous);
               void write(previous).catch((caught: unknown) => {
-                applyFollowUp(row.posting_id, next);
+                applyFollowUp(row.posting_id, stored);
                 push({
                   message: errorMessage(caught, "Could not undo that follow-up."),
                   tone: "error",

@@ -576,10 +576,14 @@ def _counts(
     last = _last_finished_run(conn)
     today = local_today().isoformat()
     # Over `rows` — the APPLY lane — and never over every stored follow-up, for the reason
-    # `eligible` and the three `judge_*` cells are: this cell is a FACET, so the number on it
-    # has to be the number of rows clicking it shows. A count over the whole `app_state`
-    # namespace would include leads already applied to, which are not rows at all, and the
-    # facet would then offer a figure the list beside it cannot reach.
+    # `eligible` and the three `judge_*` cells are: a count over the whole `app_state` namespace
+    # would include leads already applied to, which are not rows at all, and this figure would
+    # then describe a set the page never shows.
+    #
+    # It is NOT the number of rows clicking the facet shows. The frontend's facet is a row
+    # predicate, so it reaches the review lane too (`StatusBand.QUEUE_FACETS`) — the same
+    # asymmetry the verdict and `judge_*` cells already have. The cell answers "how much of the
+    # apply lane is due"; the filter answers "show me everything that is due".
     due = {} if follow_ups is None else follow_ups
     return {
         "in_queue": len(rows),

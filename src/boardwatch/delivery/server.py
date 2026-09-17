@@ -144,10 +144,16 @@ READ_BUSY_TIMEOUT_MS = 500
 #: the tests both assert on the exact string and a reworded copy in either place is a silent pass.
 FOLLOWUP_DATE_REASON = 'expected {"date": "YYYY-MM-DD"}'
 #: A fat-finger guard, not a policy: the realistic slip is a mistyped YEAR, which parks a lead's
-#: follow-up a decade out where nothing will ever surface it again. 366 rather than 365 so "this
+#: follow-up a decade away where nothing will ever surface it again. 366 rather than 365 so "this
 #: time next year" across a leap year is still accepted.
+#:
+#: Bounded in BOTH directions, because the slip runs both ways and the past is the worse half: a
+#: date input fills its segments left to right, so typing the year of `2026-09-20` walks through
+#: `0002-09-20`, `0020-09-20` and `0202-09-20`, every one of them `<= today` and therefore due
+#: forever. A recent past date is still accepted — overdue is a real state, and surfacing it is
+#: what `follow_up_due` is for.
 FOLLOWUP_MAX_DAYS = 366
-FOLLOWUP_RANGE_REASON = f"a follow-up date may be at most {FOLLOWUP_MAX_DAYS} days from today"
+FOLLOWUP_RANGE_REASON = f"a follow-up date must be within {FOLLOWUP_MAX_DAYS} days of today"
 
 #: Cap on a request body, in bytes. Only the batch routes read one. 64 KiB carries roughly 7,000
 #: ids against a queue measured at 392, and the point of the cap is that a claimed
@@ -737,7 +743,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if on.isoformat() != raw:
             self._error(HTTPStatus.BAD_REQUEST, FOLLOWUP_DATE_REASON)
             return None
-        if on > local_today() + timedelta(days=FOLLOWUP_MAX_DAYS):
+        window = timedelta(days=FOLLOWUP_MAX_DAYS)
+        today = local_today()
+        if not today - window <= on <= today + window:
             self._error(HTTPStatus.BAD_REQUEST, FOLLOWUP_RANGE_REASON)
             return None
         return on

@@ -35,8 +35,10 @@ export const BAND_WIDE = "(min-width: 40rem)";
  *
  * `follow_up_due` is a row predicate like the verdicts, and it reaches both lanes for the same
  * reason they do: a review lead whose follow-up date has arrived is work for today too. Its
- * count is recomputed client-side from the rows on the page, so the cell and the list it filters
- * to cannot disagree.
+ * COUNT, like every count in this band, is over the apply lane alone — so clicking this cell can
+ * show more rows than the number on it said, exactly as the verdict and `judge_*` cells can. The
+ * two answer different questions: the cell is how much of the work list is due, the filter is
+ * everything that is due.
  *
  * `new` is the only member the SERVER knows nothing about. It is per-viewer and frontend-only —
  * the leads delivered by a run later than the highest this viewer had seen when the page last
