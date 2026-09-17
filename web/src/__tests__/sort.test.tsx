@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { QueueRow } from "../api/types";
 import { matchesQuery, sortRows } from "../lib/sort";
 import type { SortState } from "../lib/sort";
-import { queueRow } from "../test/rows";
+import { queueRow, withoutFields } from "../test/rows";
 
 /*
  * `lib/sort` is pure, so these tests need no DOM — but the file is `.test.tsx` because the vitest
@@ -99,4 +100,70 @@ it("matches the text filter against a secondary location, not only the primary",
   const row = queueRow({ location: "New York, NY", locations: ["New York, NY", "Boston, MA"] });
   expect(matchesQuery(row, "boston")).toBe(true);
   expect(matchesQuery(row, "chicago")).toBe(false);
+});
+
+/*
+ * Sorting by the ATS the posting sits on. The owner applies in batches by provider — every
+ * Greenhouse form is the same form — so the thing under test is that the sort produces BLOCKS
+ * and that each block is still in the order the ranker put it in. A comparator that only
+ * compared the provider string would pass the grouping half and shuffle every block.
+ */
+describe("sortRows groups by provider and keeps rank order inside each block", () => {
+  const workdayLate = queueRow({ provider: "workday" });
+  const greenhouseLate = queueRow({ provider: "greenhouse" });
+  const workdayEarly = queueRow({ provider: "workday" });
+  const greenhouseEarly = queueRow({ provider: "greenhouse" });
+  // Deliberately the REVERSE of the array order below, so a sort that returned its input
+  // unchanged — or one that ignored the rank tiebreak — cannot read as green.
+  const ranks = new Map([
+    [workdayLate.posting_id, 4],
+    [greenhouseLate.posting_id, 3],
+    [workdayEarly.posting_id, 2],
+    [greenhouseEarly.posting_id, 1],
+  ]);
+  const byRank = (row: { posting_id: number }) => ranks.get(row.posting_id) ?? 0;
+  const unsorted = [workdayLate, greenhouseLate, workdayEarly, greenhouseEarly];
+
+  function blocks(rows: QueueRow[]): [string | null | undefined, number][] {
+    return rows.map((row) => [row.provider, byRank(row)]);
+  }
+
+  it("ascending: the providers block alphabetically and each block reads in rank order", () => {
+    expect(blocks(sortRows(unsorted, { key: "provider", direction: "asc" }, byRank))).toEqual([
+      ["greenhouse", 1],
+      ["greenhouse", 3],
+      ["workday", 2],
+      ["workday", 4],
+    ]);
+  });
+
+  it("descending: the BLOCKS reverse, the rank order inside one does not", () => {
+    // Rank is the reading order within a provider, not a second sort direction: flipping it
+    // would hand the reader the worst lead of a block first.
+    expect(blocks(sortRows(unsorted, { key: "provider", direction: "desc" }, byRank))).toEqual([
+      ["workday", 2],
+      ["workday", 4],
+      ["greenhouse", 1],
+      ["greenhouse", 3],
+    ]);
+  });
+
+  it("a row the server named no provider for sorts LAST in both directions", () => {
+    // `withoutFields` and not `provider: null`: an older server omits the key entirely, so the
+    // value is `undefined`, and a comparator guarded `=== null` would let it through to
+    // `localeCompare` and throw. Absence is not a low value and not a high one — it is last.
+    const unnamed = withoutFields(queueRow({ provider: "greenhouse" }), ["provider"]);
+    const rows = [unnamed, workdayLate, greenhouseLate];
+    const providers = (sorted: QueueRow[]) => sorted.map((row) => row.provider);
+    expect(providers(sortRows(rows, { key: "provider", direction: "asc" }, byRank))).toEqual([
+      "greenhouse",
+      "workday",
+      undefined,
+    ]);
+    expect(providers(sortRows(rows, { key: "provider", direction: "desc" }, byRank))).toEqual([
+      "workday",
+      "greenhouse",
+      undefined,
+    ]);
+  });
 });

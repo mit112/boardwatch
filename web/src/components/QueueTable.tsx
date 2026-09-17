@@ -216,7 +216,7 @@ export function QueueTable({
           </span>
           <span
             role="columnheader"
-            aria-sort={ariaSort(sort, "title", "company")}
+            aria-sort={ariaSort(sort, "title", "company", "provider")}
             className="flex items-center gap-2"
           >
             <SortButton label="title" sortKey="title" sort={sort} onSort={onSort} />
@@ -224,6 +224,13 @@ export function QueueTable({
               |
             </span>
             <SortButton label="company" sortKey="company" sort={sort} onSort={onSort} />
+            <span aria-hidden="true" className="text-divider">
+              |
+            </span>
+            {/* The ATS lives in THIS columnheader because it is rendered in this column, beside
+                the company it belongs to — a sort control over a cell the reader is not looking
+                at is the hidden affordance the data-table card refuses. */}
+            <SortButton label="ats" sortKey="provider" sort={sort} onSort={onSort} />
           </span>
           <span role="columnheader" aria-sort={ariaSort(sort, "location")} className={MIDDLE_UP}>
             <SortButton label="location · remote" sortKey="location" sort={sort} onSort={onSort} />

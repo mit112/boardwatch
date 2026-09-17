@@ -6,6 +6,8 @@ import { QueueRowItem } from "../components/QueueRowItem";
 import { ReviewReasonBadge } from "../components/ReviewReasonBadge";
 import { VerdictChip } from "../components/VerdictChip";
 import { EM_DASH, formatAge, formatCount, formatFraction, formatScore } from "../lib/format";
+import { sortRows } from "../lib/sort";
+import type { SortState } from "../lib/sort";
 import { absent, queueRow, withoutFields } from "../test/rows";
 
 /*
@@ -30,6 +32,7 @@ import { absent, queueRow, withoutFields } from "../test/rows";
 const ABSENT_REASON = absent<ReviewReason | null>();
 const ABSENT_VERDICT = absent<Verdict | null>();
 const ABSENT_NUMBER = absent<number | null>();
+const PROVIDER_SORT: SortState = { key: "provider", direction: "asc" };
 
 describe("a field an older server never sent", () => {
   it("renders no review badge instead of throwing", () => {
@@ -77,5 +80,48 @@ describe("a field an older server never sent", () => {
     expect(screen.getAllByTitle("Backend Engineer").length).toBeGreaterThan(0);
     // The numbers it could not be told read as absent, never as zero.
     expect(screen.getAllByText(EM_DASH).length).toBeGreaterThan(0);
+  });
+
+  it("renders no ATS label, and still sorts by provider, when the key is absent", () => {
+    // A row from a server that predates `provider`: the key is not there at all, so the read is
+    // `undefined`. Rendering must produce nothing rather than an empty chip, and `sortRows` must
+    // not reach `localeCompare` on it — a guard written `=== null` does both wrong.
+    const stale = withoutFields(queueRow({ provider: "greenhouse" }), ["provider"]);
+
+    const { container } = render(
+      <QueueRowItem
+        row={stale}
+        rank={1}
+        selected={false}
+        active={false}
+        collapsing={false}
+        onSelect={() => undefined}
+        onApplied={() => undefined}
+        onSkip={() => undefined}
+        onReport={() => undefined}
+      />,
+    );
+    expect(container.textContent).not.toContain("greenhouse");
+    expect(() =>
+      sortRows([stale, queueRow({ provider: "workday" })], PROVIDER_SORT, () => 1),
+    ).not.toThrow();
+  });
+
+  it("CONTROL: the same row WITH a provider does render the ATS label", () => {
+    // Without this, the assertion above is green for a component that renders no label at all.
+    render(
+      <QueueRowItem
+        row={queueRow({ provider: "greenhouse" })}
+        rank={1}
+        selected={false}
+        active={false}
+        collapsing={false}
+        onSelect={() => undefined}
+        onApplied={() => undefined}
+        onSkip={() => undefined}
+        onReport={() => undefined}
+      />,
+    );
+    expect(screen.getByText("greenhouse")).toBeTruthy();
   });
 });

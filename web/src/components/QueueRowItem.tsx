@@ -226,8 +226,30 @@ export function QueueRowItem({
               <span className="max-w-full truncate text-sm text-fg" title={row.title}>
                 {row.title}
               </span>
-              <span className="max-w-full truncate text-xs text-fg-2" title={row.company}>
-                {row.company}
+              {/* The ATS sits on the company line because it is a fact about the COMPANY's
+                  board, and because the owner works the queue in ATS batches — sorting by it
+                  (`lib/sort`) is useless if the blocks are not labelled. One `Badge`, no colour
+                  of its own: an ATS is not a state, and a palette per vendor would spend the
+                  row's whole colour budget on something that conveys nothing on its own.
+                  `== null` so an older server's absent field renders nothing (D-360). */}
+              <span className="flex w-full min-w-0 items-center gap-1.5">
+                {/* `min-w-0`: a flex item's default `min-width: auto` refuses to shrink below
+                    its content, so without it a long employer name overflows the cell instead
+                    of truncating — which is what `max-w-full` was doing before the row became
+                    a flex row. The label beside it is `shrink-0` for the opposite reason: it
+                    is three characters the reader is grouping BY, so it is the company name
+                    that gives way, never the ATS. */}
+                <span className="min-w-0 truncate text-xs text-fg-2" title={row.company}>
+                  {row.company}
+                </span>
+                {row.provider == null ? null : (
+                  <span className="shrink-0">
+                    <Badge
+                      label={row.provider}
+                      reason={`Applicant tracking system: ${row.provider}. Sort by "ats" to work the queue one form at a time.`}
+                    />
+                  </span>
+                )}
               </span>
             </button>
             {/* Everything the tier above this row's own has as a column. Each item hides at the
