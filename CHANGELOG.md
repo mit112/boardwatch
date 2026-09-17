@@ -8,6 +8,36 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The web app's wave-2 features: follow-up dates and the applied history (2026-09-17).** Both
+  were deferred in the web spec (D10, §11) and un-deferred by the owner on 2026-09-16. Everything
+  lives under `delivery/`, `store/delivery_queries.py`, `store/queue_state.py` and `web/`, none
+  of which `engine_version()` digests.
+  - **Follow-up dates on a lead.** `POST /api/queue/<posting_id>/followup` with
+    `{"date": "YYYY-MM-DD"}` and `/unfollowup`, stored as `app_state` key
+    `queue.followup.<job_id>` (no migration). A follow-up is a note ON a lead: it moves no
+    folder, changes no lane or verdict, and survives the lead being marked applied. Dates are
+    the SERVER's local calendar day, never UTC. A date more than 366 days from today in either
+    direction is a 400 with a named reason. Every queue row and the detail payload carry
+    `follow_up`; `counts.follow_up_due` counts apply-lane leads due today or earlier. In the
+    app: a native date input plus Clear in the detail pane, a `follow-up due <date>` chip on the
+    row, a `follow-up due` facet cell, a `follow_up` sort (nulls last), and `f` to open the lead
+    with the date input focused. A TYPED date is written once, on blur or Enter — never once per
+    intermediate value the date input passes through; a date picked from the calendar commits
+    at once. The row is reconciled against the date the store echoes.
+  - **Applied history, a third route `#/applied`.** `GET /api/applied` (read-only) lists every
+    application attempt, newest first: company, title (linked to the posting), location, status,
+    applied date with the year, whether the posting is still open and the date it closed, the
+    mark's source, and "Open PDF" exactly when `/api/pdf/<id>` would serve it. The row describes
+    the posting the application was MADE against (`applications.posting_version_id`) where that
+    posting was delivered, and the queue's own `_supersedes` choice otherwise. "Unmark applied"
+    is offered only on a job's latest, still-submitted attempt (`can_unmark`), because the write
+    acts per job. A never-delivered application (an import) offers neither control and says why.
+    The band counts total, every application status (zeros included), and applied-and-since-
+    closed.
+  - **Follow-up dates on the applied history** — the surface for the lead the owner actually
+    chases. `follow_up` on every `/api/applied` row, `counts.follow_up_due` counted once per JOB
+    over the submitted statuses, a per-row date input and Clear through the existing follow-up
+    routes (no new write path), a band facet, and a sort.
 - **The web app's wave-1 triage features, built during the M5 confirm window on the owner's
   ruling that web work is the only UI and cannot wait (2026-09-16).** Everything here lives
   under `delivery/`, `store/delivery_queries.py` and `web/`, none of which
