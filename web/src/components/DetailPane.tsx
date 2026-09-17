@@ -35,6 +35,14 @@ export const SIDE_BY_SIDE = "(min-width: 64rem)";
 const TITLE_ID = "lead-detail-title";
 
 /**
+ * The follow-up date input. Exported because `QueuePage`'s `f` shortcut moves the cursor here,
+ * and a shortcut that looked the element up by a hand-written selector would be a second copy of
+ * this id. One pane is open at a time, so a constant id is unambiguous — the same reason
+ * `TITLE_ID` is one.
+ */
+export const FOLLOW_UP_INPUT_ID = "lead-detail-follow-up";
+
+/**
  * `note` is the server's own sentence about the number above it — the score's `why`, and nothing
  * else so far. It is prose rather than an instrument reading, so it is NOT `tabular-nums`.
  */
@@ -61,12 +69,16 @@ function ActionButton({
   onClick,
   emphasis = "normal",
   title,
+  ariaLabel,
   disabled = false,
 }: {
   label: string;
   onClick: () => void;
   emphasis?: "normal" | "strong";
   title?: string;
+  /* Only where the visible label is not a name on its own. It STARTS with the label wherever it
+     is set, so Label in Name holds (SC 2.5.3). */
+  ariaLabel?: string;
   disabled?: boolean;
 }) {
   const skin =
@@ -79,6 +91,7 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       {...(title ? { title } : {})}
+      {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
       className={`inline-flex min-h-11 items-center rounded-sm border px-3 text-sm transition-colors duration-150 ease-in-out disabled:border-divider disabled:text-fg-3 ${skin}`}
     >
       {label}
@@ -182,6 +195,7 @@ export function DetailPane({
   onApplied,
   onSkip,
   onReport,
+  onFollowUp,
   onToast,
   revealSupported = true,
 }: {
@@ -193,6 +207,8 @@ export function DetailPane({
   onApplied: () => void;
   onSkip: () => void;
   onReport: () => void;
+  /** A `YYYY-MM-DD` date to pin, or `null` to clear the one this lead carries. */
+  onFollowUp: (date: string | null) => void;
   onToast: (message: string, tone: "info" | "error") => void;
   /**
    * Whether THIS server can open a file manager at all. `false` omits the button rather than
@@ -473,6 +489,60 @@ export function DetailPane({
               <ActionButton label="Mark applied" emphasis="strong" onClick={onApplied} />
               <ActionButton label="Skip" onClick={onSkip} />
               <ActionButton label="Report" onClick={onReport} />
+            </span>
+
+            {/*
+              * The follow-up date, in the SAME action strip and behind its own rule, because it
+              * is the one control here that writes without removing the lead: applied, skipped
+              * and reported all take the row off the list, and this one pins a note to a row
+              * that stays. No dialog and no confirm step — the platform's own date picker in
+              * place, which is what a non-blocking input is for
+              * (`anti-patterns/anti-modal-overuse`).
+              *
+              * A real `<label>` rather than an `aria-label`, so the words are visible and the
+              * 44px hit target includes them. `?? ""` and never `?? undefined`: an uncontrolled
+              * input that later becomes controlled is a React warning and a lost keystroke, and
+              * an older server omits the field entirely. Clearing is the button, never the empty
+              * input — see the `onChange` below.
+              */}
+            <span className="flex flex-wrap items-center gap-2 border-l border-divider pl-2">
+              <label
+                htmlFor={FOLLOW_UP_INPUT_ID}
+                className="label-micro text-fg-3"
+              >
+                Follow up on
+              </label>
+              <input
+                id={FOLLOW_UP_INPUT_ID}
+                type="date"
+                value={row.follow_up ?? ""}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  /*
+                   * An EMPTY value writes nothing, and clearing is the button beside this.
+                   *
+                   * That split is not tidiness. A date input reports `value === ""` for any
+                   * incomplete date, and browsers differ on whether editing one segment of an
+                   * already-set date fires a `change` at "" on the way through — so routing ""
+                   * to a clear would let an in-progress edit silently drop the stored date and
+                   * then write a second one, two writes and two toasts for one intention. The
+                   * field snaps back to the stored date if the picker is emptied, which is what
+                   * a controlled input does, and `Clear` is immediately to its right.
+                   */
+                  if (next === "") return;
+                  onFollowUp(next);
+                }}
+                className="min-h-11 rounded-sm border border-control bg-surface px-2 text-sm text-fg tabular-nums"
+              />
+              <ActionButton
+                label="Clear"
+                title="Remove this lead's follow-up date."
+                ariaLabel="Clear follow-up"
+                disabled={row.follow_up == null}
+                onClick={() => {
+                  onFollowUp(null);
+                }}
+              />
             </span>
           </section>
 

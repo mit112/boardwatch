@@ -33,6 +33,11 @@ export const BAND_WIDE = "(min-width: 40rem)";
  * not the complement of the other two: a gate `ineligible` is in none of the three, so the three
  * cells do not sum to the lane and are not meant to.
  *
+ * `follow_up_due` is a row predicate like the verdicts, and it reaches both lanes for the same
+ * reason they do: a review lead whose follow-up date has arrived is work for today too. Its
+ * count is recomputed client-side from the rows on the page, so the cell and the list it filters
+ * to cannot disagree.
+ *
  * `new` is the only member the SERVER knows nothing about. It is per-viewer and frontend-only —
  * the leads delivered by a run later than the highest this viewer had seen when the page last
  * loaded — so its count arrives as its own prop rather than through `counts`, which is the wire
@@ -45,6 +50,7 @@ export const QUEUE_FACETS = [
   "judge_eligible",
   "judge_uncertain",
   "judge_unjudged",
+  "follow_up_due",
   "new",
 ] as const;
 export type QueueFacet = (typeof QUEUE_FACETS)[number];
@@ -294,6 +300,19 @@ export function StatusBand({
         note="Flagged as wrongly-eligible and held for investigation. Its own cell, never folded into skipped, and taken out of the queue like a skip."
         order={12}
       />
+      {/* `?? 0` because a server older than the field omits it, and the honest render for a
+          count nobody took is zero rather than `NaN`. Clickable at zero like every other facet
+          cell on this band. */}
+      <Metric
+        label="follow-up due"
+        value={(counts.follow_up_due ?? 0).toLocaleString()}
+        note="Leads whose pinned follow-up date has arrived — today or earlier, on this machine's calendar. A follow-up is a note on a lead, so these are still in whichever lane they were in. Click to show only these."
+        order={13}
+        active={activeFacet === "follow_up_due"}
+        onToggle={() => {
+          onToggleFacet("follow_up_due");
+        }}
+      />
       <Metric
         label="last run"
         value={
@@ -302,7 +321,7 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
-        order={13}
+        order={14}
       />
     </>
   );
