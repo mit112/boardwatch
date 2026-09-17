@@ -68,7 +68,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from sqlalchemy import Connection, Row, and_, func, select
 
@@ -90,10 +90,17 @@ from boardwatch.projection.shell import load_shell
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import profile_view_from_row, score_posting
 from boardwatch.rank.role_gate import role_verdict
-from boardwatch.store.applications import applied_job_ids
+from boardwatch.store.applications import (
+    APPLIED_STATUSES,
+    ApplicationStatus,
+    applied_job_ids,
+)
 from boardwatch.store.delivery_queries import (
+    STATUS_CLOSED,
+    AppliedRow,
     QueueDetail,
     QueueRow,
+    applied_rows,
     delivered_unapplied,
     queue_detail,
 )
@@ -125,6 +132,10 @@ RUNS_LIMIT = 20
 #: by tens a day, so this is ample — and it is a CAP rather than an absence of one because an
 #: unbounded dict over a corpus that grows every day is a leak on a slow fuse, not a cache.
 TERM_CACHE_MAX = 5_000
+
+#: The application-status catalog, read off the `ApplicationStatus` alias rather than restated, so
+#: the band's cells and the column's CHECK constraint can never name different sets.
+APPLICATION_STATUSES: tuple[str, ...] = get_args(ApplicationStatus)
 
 #: Last resort for the owner's name, used only in the PDF's download filename. Never a person's
 #: name: a hardcoded one would be wrong for every user but one (CLAUDE.md, multi-tenancy).
@@ -895,6 +906,87 @@ def resolve_owner_name(conn: Connection | None, config_dir: Path) -> str:
     except ProjectionError:
         return FALLBACK_OWNER_NAME
     return header[0].strip() if header and header[0].strip() else FALLBACK_OWNER_NAME
+
+
+# ------------------------------------------------------------------------------ applied history
+
+
+def applied_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/applied`: every application the store holds, newest first, plus the counts band.
+
+    Read-only, and the ONLY page that is: a lead leaves the queue when it is marked applied, so
+    without this the 61 recorded applications were reachable only through `boardwatch track` or by
+    reading the `_applied/` folder tree. The page answers a recruiter call — what, when, is the
+    requisition still up, and which résumé went out.
+
+    Deliberately not filtered to the applied statuses. `withdrawn` is what this page's own unmark
+    writes, so hiding those rows would make the undo look like a delete.
+    """
+    rows = applied_rows(conn)
+    return {
+        "rows": [_applied_json(row, ctx) for row in rows],
+        "counts": _applied_counts(rows),
+    }
+
+
+def _applied_json(row: AppliedRow, ctx: ApiContext) -> dict[str, Any]:
+    """One application as the frontend's `AppliedRow` interface.
+
+    `pdf_available` is `_pdf_path` — the same three checks `resolve_pdf` makes — so the page's
+    "Open PDF" is offered exactly when `GET /api/pdf/<posting_id>` would serve it. The `_applied/`
+    folder's own copy is deliberately NOT what is probed: the endpoint serves the canonical
+    artifact under the applications root, and advertising a copy the endpoint does not read would
+    be a button that can only fail.
+
+    Both timestamps carry an explicit offset via `_iso_utc`; the store holds naive UTC and a
+    browser reads a bare timestamp as local time.
+    """
+    return {
+        # The stable key for the list. `job_id` is not one: a job can hold several attempts.
+        "application_id": row.application_id,
+        "job_id": row.job_id,
+        "posting_id": row.posting_id,
+        "company": row.company,
+        "title": row.title,
+        "location": row.location,
+        "apply_url": row.apply_url,
+        "status": row.status,
+        "submitted_at": _iso_utc(row.submitted_at),
+        "created_at": _iso_utc(row.created_at),
+        "posting_status": row.posting_status,
+        "closed_at": _iso_utc(row.closed_at),
+        "pdf_available": _pdf_path(row.pdf_uri, ctx.out_root) is not None,
+        "pdf_uri": row.pdf_uri,
+        "source": row.source,
+    }
+
+
+def _applied_counts(rows: Sequence[AppliedRow]) -> dict[str, Any]:
+    """The applied page's band: the total, the whole status catalog, and applied-and-since-closed.
+
+    `by_status` carries every member of the closed catalog every time, zeros included, so a 0 is a
+    MEASUREMENT rather than a key the reader has to guess was absent. An out-of-catalog status is
+    not minted as a seventh bucket — the column's CHECK constraint makes it unreachable, and a
+    report that invented a bucket for it would hide a corrupt row rather than leave it visible as
+    the difference between `total` and the buckets.
+
+    `posting_closed` is gated on `APPLIED_STATUSES` rather than on the posting alone: a withdrawn
+    attempt against a dead requisition is not an application waiting on an employer, and counting
+    it would overstate the one figure this page exists to answer.
+    """
+    by_status = dict.fromkeys(APPLICATION_STATUSES, 0)
+    for row in rows:
+        if row.status in by_status:
+            by_status[row.status] += 1
+    return {
+        "total": len(rows),
+        "by_status": by_status,
+        "posting_closed": sum(
+            1
+            for row in rows
+            if row.status in APPLIED_STATUSES and row.posting_status == STATUS_CLOSED
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------------------- the PDF

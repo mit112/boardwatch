@@ -1,4 +1,6 @@
 import type {
+  AppliedHistoryResponse,
+  AppliedRow,
   FunnelStage,
   QueueCounts,
   QueueResponse,
@@ -103,11 +105,68 @@ export function absent<T>(): T {
   return undefined as unknown as T;
 }
 
-/** Drops keys from a row the way an older server's JSON simply would not carry them. */
-export function withoutFields(row: QueueRow, fields: readonly (keyof QueueRow)[]): QueueRow {
-  const copy: Record<string, unknown> = { ...row };
-  for (const field of fields) delete copy[field];
-  return copy as unknown as QueueRow;
+/** Drops keys from a row the way an older server's JSON simply would not carry them.
+ *
+ *  Generic over the row type, so the applied page's rows are skewed by the SAME helper rather than
+ *  by a second copy of it — two spellings of "a field the server never sent" is how one of them
+ *  stops matching what the wire actually does. */
+export function withoutFields<T extends object>(row: T, fields: readonly (keyof T)[]): T {
+  const copy = { ...row } as Record<string, unknown>;
+  for (const field of fields) delete copy[field as string];
+  return copy as unknown as T;
+}
+
+/*
+ * Applied-history rows, built here for the same two reasons the queue rows above are: no test may
+ * import `src/fixtures/`, and typing them as the wire contract makes a field that moves a
+ * `tsc --noEmit` failure rather than a silently-skipped assertion.
+ */
+
+export function appliedRow(overrides: Partial<AppliedRow> = {}): AppliedRow {
+  counter += 1;
+  const id = counter;
+  return {
+    application_id: id,
+    job_id: 2000 + id,
+    posting_id: 3000 + id,
+    company: `Acme Corp ${String(id)}`,
+    title: `Software Engineer ${String(id)}`,
+    location: "Austin, TX",
+    apply_url: "https://careers.acme.test/apply",
+    status: "applied",
+    submitted_at: "2026-09-10T15:30:00+00:00",
+    created_at: "2026-09-10T15:30:00+00:00",
+    posting_status: "open",
+    closed_at: null,
+    pdf_available: true,
+    pdf_uri: "file:///queue/acme/resume.pdf",
+    source: "web",
+    ...overrides,
+  };
+}
+
+/** The counts the server computes, computed the same way here so a fixture band cannot claim a
+ *  total the rows beside it do not add up to. */
+export function appliedResponse(rows: AppliedRow[]): AppliedHistoryResponse {
+  const by_status: Record<string, number> = {
+    interested: 0,
+    applied: 0,
+    interviewing: 0,
+    offer: 0,
+    rejected: 0,
+    withdrawn: 0,
+  };
+  for (const row of rows) by_status[row.status] = (by_status[row.status] ?? 0) + 1;
+  return {
+    rows,
+    counts: {
+      total: rows.length,
+      by_status,
+      posting_closed: rows.filter(
+        (row) => row.posting_status === "closed" && row.status !== "withdrawn",
+      ).length,
+    },
+  };
 }
 
 /*

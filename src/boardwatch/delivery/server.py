@@ -71,6 +71,7 @@ from boardwatch.delivery.api import (
     PdfFile,
     PdfIssue,
     answers_payload,
+    applied_payload,
     detail_payload,
     funnel_payload,
     local_today,
@@ -397,6 +398,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if (pdf := _PDF.match(path)) is not None:
                 self._pdf(int(pdf.group(1)))
+                return
+            if path == "/api/applied":
+                # Read-only through `_read`, exactly like `/api/queue`: a per-request read-only
+                # connection, 503 on a busy store, and no write path on this route at all.
+                self._json(HTTPStatus.OK, self._read(applied_payload))
                 return
             if path == "/api/answers":
                 self._answers()

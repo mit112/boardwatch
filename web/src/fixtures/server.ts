@@ -10,7 +10,13 @@
  *   - `reveal` reports `ok: false` for one posting, which is what a platform with no file-manager
  *     handler looks like on the wire.
  */
-import type { QueueCounts, QueueResponse, QueueRow } from "../api/types";
+import type {
+  AppliedHistoryResponse,
+  AppliedRow,
+  QueueCounts,
+  QueueResponse,
+  QueueRow,
+} from "../api/types";
 import { ANSWERS } from "./answers";
 import { LATE_ROWS, QUEUE_ROWS, byRank, detailFor } from "./data";
 import { FUNNELS, RUNS } from "./runs";
@@ -142,6 +148,56 @@ function counts(rows: QueueRow[]): QueueCounts {
   };
 }
 
+/*
+ * `GET /api/applied`, derived from the same `appliedJobIds` the mark route writes — so marking a
+ * lead applied in the queue makes it appear here on the next load, which is the behaviour the page
+ * exists for. The seeded set is empty, matching `data.ts`' own note that `applications` has never
+ * held a row on the live store: an empty applied page is the honest starting state.
+ *
+ * `application_id` is synthesised from the job id (one attempt per job is all this fixture models)
+ * and `posting_id` is the fixture row's own, because every fixture lead was delivered. The
+ * `posting_id: null` case — an application whose job never reached the queue — has no fixture row
+ * to hang off and is exercised in `web/src/__tests__/appliedPage.test.tsx` instead.
+ */
+function appliedResponse(): AppliedHistoryResponse {
+  const rows: AppliedRow[] = [...appliedJobIds]
+    .map((jobId) => ALL_ROWS.find((candidate) => candidate.job_id === jobId))
+    .filter((row): row is QueueRow => row !== undefined)
+    .map((row) => ({
+      application_id: row.job_id,
+      job_id: row.job_id,
+      posting_id: row.posting_id,
+      company: row.company,
+      title: row.title,
+      location: row.location,
+      apply_url: row.apply_url,
+      status: "applied",
+      submitted_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      posting_status: row.status,
+      closed_at: row.status === "closed" ? row.first_seen : null,
+      pdf_available: row.pdf_available,
+      pdf_uri: row.pdf_uri,
+      source: "web",
+    }));
+  return {
+    rows,
+    counts: {
+      total: rows.length,
+      // The whole catalog every time, zeros included, exactly as the server sends it.
+      by_status: {
+        interested: 0,
+        applied: rows.length,
+        interviewing: 0,
+        offer: 0,
+        rejected: 0,
+        withdrawn: 0,
+      },
+      posting_closed: rows.filter((row) => row.posting_status === "closed").length,
+    },
+  };
+}
+
 export class FixtureError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -199,6 +255,7 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/queue") return queueResponse();
   if (method === "POST" && path === "/api/queue/skip") return batchSkip(body, true);
   if (method === "POST" && path === "/api/queue/unskip") return batchSkip(body, false);
+  if (method === "GET" && path === "/api/applied") return appliedResponse();
   if (method === "GET" && path === "/api/answers") return ANSWERS;
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
 

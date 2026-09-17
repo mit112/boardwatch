@@ -1,4 +1,4 @@
-import type { QueueRow } from "../api/types";
+import type { AppliedRow, QueueRow } from "../api/types";
 
 /** Only user-initiated sorting changes the order; a background refresh never does.
  *
@@ -134,5 +134,60 @@ export function matchesQuery(row: QueueRow, query: string): boolean {
     // posting listed as "New York, NY / Boston, MA" must answer to "boston". `?? []` because an
     // older server omits the list (see `format.ts`).
     (row.locations ?? []).some((entry) => entry.toLowerCase().includes(needle))
+  );
+}
+
+/*
+ * The applied page's sort. Its own CLOSED catalog rather than a widening of `SORT_KEYS`: the two
+ * lists share no column but company, and a single catalog would let a queue-only key be restored
+ * onto a table that cannot sort by it. The comparators below are the same two, so "null sorts
+ * last in both directions" is one rule and not two.
+ */
+export const APPLIED_SORT_KEYS = ["date", "company", "posting_status"] as const;
+export type AppliedSortKey = (typeof APPLIED_SORT_KEYS)[number];
+
+export interface AppliedSortState {
+  key: AppliedSortKey;
+  direction: SortDirection;
+}
+
+/**
+ * When the application was MADE, as a sortable number, or `null` when nothing can say.
+ *
+ * `submitted_at` first and `created_at` only as the fallback: the first is the date the owner is
+ * looking for, and it is absent exactly for an attempt that never reached `applied`, where when
+ * boardwatch learned of the row is the only date there is. `?? null` at both reads because an
+ * older server omits a key entirely, and `Number.isNaN` because an unparseable string must sort
+ * as absence rather than as `NaN`, which compares false against everything.
+ */
+export function appliedAt(row: AppliedRow): number | null {
+  const stamp = row.submitted_at ?? row.created_at ?? null;
+  if (stamp == null) return null;
+  const parsed = Date.parse(stamp);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export function sortAppliedRows(rows: AppliedRow[], sort: AppliedSortState): AppliedRow[] {
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    switch (sort.key) {
+      case "date":
+        return compareNullable(appliedAt(a), appliedAt(b), sort.direction);
+      case "company":
+        return compareText(a.company ?? null, b.company ?? null, sort.direction);
+      case "posting_status":
+        return compareText(a.posting_status ?? null, b.posting_status ?? null, sort.direction);
+    }
+  });
+  return copy;
+}
+
+/** The applied page's search box: company, title and location, the same three the queue's box
+ *  reads, so a match is always something the reader can see on the row. */
+export function matchesAppliedQuery(row: AppliedRow, query: string): boolean {
+  if (query === "") return true;
+  const needle = query.toLowerCase();
+  return [row.company, row.title, row.location].some(
+    (field) => field != null && field.toLowerCase().includes(needle),
   );
 }

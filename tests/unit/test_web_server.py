@@ -68,6 +68,7 @@ from boardwatch.eligibility.final_gate import record_gate_verdict
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.store.applications import create_application
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.queue_state import followup_job_dates
@@ -439,6 +440,48 @@ def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | N
         save_eligibility(
             conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")
         )
+
+
+def _undelivered(conn: Connection, key: str, *, title: str = "Data Engineer") -> int:
+    """A company and a posting with NO tailored artifact, returning the posting's canonical job.
+
+    This is the shape of the applications imported from another tool's history: `import_history`
+    matches a row against a real posting, so the job EXISTS, but nothing ever tailored a résumé
+    for it — so the delivery queue never offered it and there is no `posting_id` for the web page
+    to key a PDF or an unmark on.
+    """
+    company_id = int(
+        conn.execute(
+            insert(companies).values(
+                name=f"Acme {key}",
+                provider="greenhouse",
+                slug=f"acme-{key}",
+                source="user",
+                watched=True,
+            )
+        ).inserted_primary_key[0]
+    )
+    job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+    conn.execute(
+        insert(postings).values(
+            company_id=company_id,
+            job_id=job,
+            provider_posting_id=key,
+            title=title,
+            normalized_title=title.casefold(),
+            url="https://careers.acme.test/apply",
+            locations_json=["Austin, TX"],
+            remote_policy="remote",
+            posted_at=NOW - timedelta(days=9),
+            first_seen_at=NOW,
+            last_seen_at=NOW,
+            status="open",
+            consecutive_missing=0,
+            content_hash=f"hash-{key}",
+            body_text=JD_ELIGIBLE,
+        )
+    )
+    return job
 
 
 def _queue_folders(base: Path) -> list[str]:
@@ -1402,6 +1445,100 @@ def test_marking_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engi
         call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token).status
         == 200
     )
+
+
+def test_the_applied_history_names_a_closed_lead_and_one_that_never_reached_the_queue(
+    live: Live, engine: Engine
+) -> None:
+    """`GET /api/applied`, the third page's whole payload.
+
+    Two applications, chosen because they are the two shapes the live store actually holds: one
+    the queue delivered and the owner marked, whose posting the employer has since taken down,
+    and one imported from another tool's history, whose job never reached the delivery queue at
+    all. The second is what `posting_id: null` is FOR — the page has to say what was applied to
+    without claiming a delivery that never happened, and a row that invented a posting id would
+    hand the PDF and unmark controls an id the queue never offered.
+
+    `posting_closed` counts the first and not the second, which is what makes it answerable at a
+    recruiter call: applied, and the requisition is gone.
+    """
+    with engine.begin() as conn:
+        closed_posting, _closed_job = _deliver(conn, "one", pdf_uri=None)
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == closed_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        never_queued = _undelivered(conn, "two")
+        create_application(
+            conn,
+            job_id=never_queued,
+            status="applied",
+            source="import",
+            occurred_at=NOW - timedelta(days=5),
+        )
+
+    # Through the route the queue page uses, so the mark under test is the one it writes.
+    marked = call(live, f"/api/queue/{closed_posting}/applied", method="POST", bearer=live.token)
+    assert marked.status == 200
+
+    response = call(live, "/api/applied", bearer=live.token)
+    assert response.status == 200
+    payload = response.json()
+    # Newest first, and the imported row was applied to five days earlier.
+    assert [row["posting_id"] for row in payload["rows"]] == [closed_posting, None]
+    lead, imported = payload["rows"]
+
+    assert lead["company"] == "Acme one"
+    assert lead["title"] == "Software Engineer"
+    assert lead["status"] == "applied"
+    assert lead["posting_status"] == "closed"
+    assert lead["closed_at"] == "2026-08-26T12:00:00+00:00"
+    assert lead["source"] == "web"
+    # No PDF was ever built for this lead, so the control the page offers must not claim one.
+    assert lead["pdf_available"] is False
+    assert lead["pdf_uri"] is None
+
+    assert imported["company"] == "Acme two"
+    assert imported["title"] == "Data Engineer"
+    assert imported["location"] == "Austin, TX"
+    assert imported["apply_url"] == "https://careers.acme.test/apply"
+    assert imported["posting_status"] == "open"
+    assert imported["closed_at"] is None
+    assert imported["source"] == "import"
+    # An explicit offset, never a naive timestamp: the store holds naive UTC and a browser reads
+    # a bare timestamp as LOCAL time (D-485 finding 1).
+    assert imported["submitted_at"] == "2026-08-21T12:00:00+00:00"
+
+    counts = payload["counts"]
+    assert counts["total"] == 2
+    # The whole closed catalog every time, so a 0 here is a measurement rather than an absence.
+    assert counts["by_status"] == {
+        "interested": 0,
+        "applied": 2,
+        "interviewing": 0,
+        "offer": 0,
+        "rejected": 0,
+        "withdrawn": 0,
+    }
+    assert counts["posting_closed"] == 1
+
+
+def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine: Engine) -> None:
+    """A read, through `_read`, like `/api/queue`: no token is a 401 and a POST is not a route.
+
+    The paired 200 is in the same test on purpose — a server that answered 401 or 404 to
+    everything would pass both refusals on its own.
+    """
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+
+    assert call(live, "/api/applied", bearer=None).status == 401
+    assert call(live, "/api/applied", method="POST", bearer=live.token).status == 404
+    served = call(live, "/api/applied", bearer=live.token)
+    assert served.status == 200
+    assert len(served.json()["rows"]) == 1
 
 
 # -------------------------------------------------------------------------------------- counts
