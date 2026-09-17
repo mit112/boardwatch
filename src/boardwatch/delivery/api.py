@@ -923,13 +923,17 @@ def applied_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     writes, so hiding those rows would make the undo look like a delete.
     """
     rows = applied_rows(conn)
+    # ONE prefix scan for the whole page, exactly as `queue_payload` does it, and resolved on
+    # `job_id` because that is what the key holds. An applied lead keeps its follow-up — the store
+    # was always right about that, and until now no surface said so.
+    follow_ups = followup_job_dates(conn)
     return {
-        "rows": [_applied_json(row, ctx) for row in rows],
-        "counts": _applied_counts(rows),
+        "rows": [_applied_json(row, ctx, follow_ups.get(row.job_id)) for row in rows],
+        "counts": _applied_counts(rows, follow_ups),
     }
 
 
-def _applied_json(row: AppliedRow, ctx: ApiContext) -> dict[str, Any]:
+def _applied_json(row: AppliedRow, ctx: ApiContext, follow_up: str | None) -> dict[str, Any]:
     """One application as the frontend's `AppliedRow` interface.
 
     `pdf_available` is `_pdf_path` — the same three checks `resolve_pdf` makes — so the page's
@@ -962,10 +966,14 @@ def _applied_json(row: AppliedRow, ctx: ApiContext) -> dict[str, Any]:
         # route is per job: it withdraws the job's latest attempt, so a page offering the control
         # on every row would promise a write it cannot make (see `AppliedRow.can_unmark`).
         "can_unmark": row.can_unmark,
+        # The date pinned to this lead, resolved on `job_id` — so every attempt on one job carries
+        # the same one, because the store holds one. Passed in rather than read per row: one scan
+        # per request, like the queue's.
+        "follow_up": follow_up,
     }
 
 
-def _applied_counts(rows: Sequence[AppliedRow]) -> dict[str, Any]:
+def _applied_counts(rows: Sequence[AppliedRow], follow_ups: dict[int, str]) -> dict[str, Any]:
     """The applied page's band: the total, the whole status catalog, and applied-and-since-closed.
 
     `by_status` carries every member of the closed catalog every time, zeros included, so a 0 is a
@@ -977,11 +985,18 @@ def _applied_counts(rows: Sequence[AppliedRow]) -> dict[str, Any]:
     `posting_closed` is gated on `APPLIED_STATUSES` rather than on the posting alone: a withdrawn
     attempt against a dead requisition is not an application waiting on an employer, and counting
     it would overstate the one figure this page exists to answer.
+
+    `follow_up_due` is gated the same way and on the same reasoning, and it counts each JOB once:
+    the key is `queue.followup.<job_id>`, so a job with three attempts holds ONE date, and
+    counting the rows would report three pieces of work where the owner has one call to make.
     """
     by_status = dict.fromkeys(APPLICATION_STATUSES, 0)
     for row in rows:
         if row.status in by_status:
             by_status[row.status] += 1
+    # Read ONCE for the whole band, as `_counts` reads it: the date cannot be allowed to move
+    # between two rows of one report.
+    today = local_today().isoformat()
     return {
         "total": len(rows),
         "by_status": by_status,
@@ -989,6 +1004,18 @@ def _applied_counts(rows: Sequence[AppliedRow]) -> dict[str, Any]:
             1
             for row in rows
             if row.status in APPLIED_STATUSES and row.posting_status == STATUS_CLOSED
+        ),
+        # `<=`, never `==`: a date that slipped past unread is the one the owner most needs
+        # counted. ISO-8601 dates compare lexicographically exactly as they compare
+        # chronologically, so this needs no parse per row.
+        "follow_up_due": len(
+            {
+                row.job_id
+                for row in rows
+                if row.status in APPLIED_STATUSES
+                and (on := follow_ups.get(row.job_id)) is not None
+                and on <= today
+            }
         ),
     }
 

@@ -1684,6 +1684,92 @@ def test_an_undelivered_application_never_offers_the_unmark(live: Live, engine: 
     assert row["can_unmark"] is False
 
 
+def test_an_applied_leads_follow_up_reaches_the_applied_history_and_its_band(
+    live: Live, engine: Engine
+) -> None:
+    """The gap T83 left: a follow-up SURVIVES `mark_job_applied` in the store, but `queue_payload`
+    is built on `delivered_unapplied`, so an applied lead was in neither lane and no surface
+    showed its date or let the owner set one — and the applied lead is exactly the one the owner
+    follows up on.
+
+    The count is per JOB, not per attempt: two attempts on one job carry the same date (the key is
+    `queue.followup.<job_id>`), and counting both would report two pieces of work where there is
+    one. `<=` today, so a date that slipped past unread is counted.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+        # Two attempts, both reading as submitted, so the dedup is exercised rather than asserted
+        # on a shape that cannot distinguish the two rules.
+        create_application(
+            conn, job_id=job_id, status="applied", occurred_at=NOW - timedelta(days=5)
+        )
+        create_application(conn, job_id=job_id, status="interviewing")
+    today = local_today()
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+
+    overdue = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today - timedelta(days=3)).isoformat()},
+    )
+    assert overdue.status == 200, overdue.body[:200]
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    # Resolved on `job_id`, so every attempt on the job carries it — the store holds one date.
+    assert [row["follow_up"] for row in payload["rows"]] == [
+        (today - timedelta(days=3)).isoformat()
+    ] * 2
+    assert payload["counts"]["follow_up_due"] == 1
+
+    # Tomorrow's date is pinned but not due, and the same two rows now count for nothing.
+    later = call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (today + timedelta(days=1)).isoformat()},
+    )
+    assert later.status == 200, later.body[:200]
+    future = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in future["rows"]] == [
+        (today + timedelta(days=1)).isoformat()
+    ] * 2
+    assert future["counts"]["follow_up_due"] == 0
+
+    cleared = call(
+        live, f"/api/queue/{posting_id}/unfollowup", method="POST", bearer=live.token
+    )
+    assert cleared.status == 200
+    gone = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in gone["rows"]] == [None, None]
+    assert gone["counts"]["follow_up_due"] == 0
+
+
+def test_a_withdrawn_attempts_follow_up_is_not_counted_as_due(
+    live: Live, engine: Engine
+) -> None:
+    """`follow_up_due` is gated on `APPLIED_STATUSES`, exactly as `posting_closed` is: a withdrawn
+    attempt is not an application anybody is waiting on, so its date is shown and not counted."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+        create_application(conn, job_id=job_id, status="withdrawn")
+    today = local_today()
+    call(
+        live,
+        f"/api/queue/{posting_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": today.isoformat()},
+    )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    # Shown on the row — the date is still pinned to the lead, which is the queue's business.
+    assert payload["rows"][0]["follow_up"] == today.isoformat()
+    assert payload["counts"]["follow_up_due"] == 0
+
+
 def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine: Engine) -> None:
     """A read, through `_read`, like `/api/queue`: no token is a 401 and a POST is not a route.
 

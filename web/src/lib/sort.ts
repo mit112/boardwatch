@@ -143,7 +143,7 @@ export function matchesQuery(row: QueueRow, query: string): boolean {
  * onto a table that cannot sort by it. The comparators below are the same two, so "null sorts
  * last in both directions" is one rule and not two.
  */
-export const APPLIED_SORT_KEYS = ["date", "company", "posting_status"] as const;
+export const APPLIED_SORT_KEYS = ["date", "company", "posting_status", "follow_up"] as const;
 export type AppliedSortKey = (typeof APPLIED_SORT_KEYS)[number];
 
 export interface AppliedSortState {
@@ -177,6 +177,12 @@ export function sortAppliedRows(rows: AppliedRow[], sort: AppliedSortState): App
         return compareText(a.company ?? null, b.company ?? null, sort.direction);
       case "posting_status":
         return compareText(a.posting_status ?? null, b.posting_status ?? null, sort.direction);
+      /* The same comparator the queue's `follow_up` uses, for the same two reasons: ISO-8601
+         dates sort lexicographically exactly as they sort chronologically, and `compareText` is
+         what puts an absent value LAST in BOTH directions — an application with no follow-up is
+         not the soonest one. */
+      case "follow_up":
+        return compareText(a.follow_up ?? null, b.follow_up ?? null, sort.direction);
     }
   });
   return copy;

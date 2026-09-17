@@ -8,6 +8,7 @@ import type {
   RunFunnel,
   RunSummary,
 } from "../api/types";
+import { todayIso } from "../lib/format";
 
 /*
  * Queue rows for the frontend tests, built here rather than imported from `src/fixtures/`.
@@ -144,6 +145,9 @@ export function appliedRow(overrides: Partial<AppliedRow> = {}): AppliedRow {
     // `true`, deliberately: the default row is a job's one attempt, still reading as submitted,
     // which is exactly the row the unapply route acts on. A test about an earlier attempt says so.
     can_unmark: true,
+    // `null`, deliberately, exactly as the queue row's is: the default row renders NO follow-up
+    // chip, and a test that wants one says so.
+    follow_up: null,
     ...overrides,
   };
 }
@@ -179,6 +183,18 @@ export function appliedResponse(rows: AppliedRow[]): AppliedHistoryResponse {
       posting_closed: rows.filter(
         (row) => row.posting_status === "closed" && APPLIED_STATUSES.includes(row.status),
       ).length,
+      // Per JOB and gated on the submitted statuses, the way the server counts it: two attempts
+      // on one job hold ONE date, so a fixture band cannot claim two calls to make.
+      follow_up_due: new Set(
+        rows
+          .filter(
+            (row) =>
+              row.follow_up != null &&
+              row.follow_up <= todayIso() &&
+              APPLIED_STATUSES.includes(row.status),
+          )
+          .map((row) => row.job_id),
+      ).size,
     },
   };
 }

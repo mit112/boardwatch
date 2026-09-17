@@ -28,6 +28,8 @@ vi.mock("../api/client", () => ({
   markSkipped: vi.fn(),
   unskip: vi.fn(),
   unapply: vi.fn(),
+  setFollowUp: vi.fn(),
+  clearFollowUp: vi.fn(),
   report: vi.fn(),
   unreport: vi.fn(),
   revealFolder: vi.fn(),
@@ -35,7 +37,14 @@ vi.mock("../api/client", () => ({
 }));
 
 // Imported AFTER the mock factory, which vitest hoists above both.
-import { getApplied, getQueue, markApplied, unapply } from "../api/client";
+import {
+  clearFollowUp,
+  getApplied,
+  getQueue,
+  markApplied,
+  setFollowUp,
+  unapply,
+} from "../api/client";
 import { App } from "../App";
 
 /** The application rows of the applied table: `role="row"` also matches its header row. */
@@ -117,7 +126,7 @@ describe("the applied route", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     await renderApplied({
       rows: {} as unknown as AppliedHistoryResponse["rows"],
-      counts: { total: 0, by_status: {}, posting_closed: 0 },
+      counts: { total: 0, by_status: {}, posting_closed: 0, follow_up_due: 0 },
     });
 
     expect(screen.getByText("This view could not be drawn.")).toBeTruthy();
@@ -294,6 +303,133 @@ describe("the row's controls", () => {
     expect(screen.getByText(/only a job's latest attempt/)).toBeTruthy();
   });
 
+/*
+ * The follow-up date on an applied lead. It SURVIVES `mark_job_applied` in the store, but the
+ * queue payload is built on `delivered_unapplied`, so until this page carried it no surface showed
+ * an applied lead's date or let the owner set one — and the applied lead ("applied 09-17, chase on
+ * 10-01") is exactly the one a follow-up is for.
+ *
+ * `PAST` and `FUTURE` are absolute rather than computed from today: the due test has to keep
+ * answering the same thing on every day the suite runs.
+ */
+const PAST = "2000-01-01";
+const FUTURE = "2999-12-31";
+
+describe("the follow-up column", () => {
+  it("marks a date that has arrived as due, in words, and one that has not as pinned", async () => {
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ company: "Acme Corp", follow_up: PAST }),
+        appliedRow({ company: "Globex", follow_up: FUTURE }),
+      ]),
+    );
+
+    // The SAME wording the queue row uses, through the same component: DUE is carried by the word
+    // "due" and by the strong treatment, never by colour alone (SC 1.4.1).
+    expect(screen.getByText(`follow-up due ${PAST}`)).toBeTruthy();
+    expect(screen.getByText(`follow-up ${FUTURE}`)).toBeTruthy();
+    expect(screen.queryByText(`follow-up due ${FUTURE}`)).toBeNull();
+  });
+
+  it("writes through the existing route, keyed on the posting, and offers an undo", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer", follow_up: null });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setFollowUp).mockResolvedValue({ outcome: "follow_up_set", follow_up: FUTURE });
+    vi.mocked(clearFollowUp).mockResolvedValue({
+      outcome: "follow_up_cleared",
+      follow_up: null,
+    });
+
+    const input = screen.getByLabelText("Follow up on Acme Corp — Backend Engineer");
+    fireEvent.change(input, { target: { value: FUTURE } });
+    fireEvent.blur(input);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // The EXISTING queue route, keyed on the posting the queue delivered — no new write path.
+    expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, FUTURE);
+    expect(screen.getByText(new RegExp(`Follow up on Acme Corp — Backend Engineer on ${FUTURE}`)))
+      .toBeTruthy();
+
+    // And the undo writes: it clears the date through the other existing route rather than
+    // repainting the row.
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(vi.mocked(clearFollowUp)).toHaveBeenCalledWith(row.posting_id);
+  });
+
+  it("clears a pinned date through the existing unfollowup route", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer", follow_up: PAST });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(clearFollowUp).mockResolvedValue({
+      outcome: "follow_up_cleared",
+      follow_up: null,
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear follow-up for Acme Corp — Backend Engineer" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(vi.mocked(clearFollowUp)).toHaveBeenCalledWith(row.posting_id);
+  });
+
+  it("offers no date input on a row the queue never delivered, and says why", async () => {
+    // Both follow-up routes key on a posting id, so there is nothing to write with. Said in
+    // words, the way the same row already accounts for its missing unmark.
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ company: "Acme Corp", posting_id: null, pdf_available: false }),
+      ]),
+    );
+
+    expect(screen.queryByLabelText(/^Follow up on /)).toBeNull();
+    expect(screen.getByText(/nothing to pin a date to/)).toBeTruthy();
+  });
+
+  it("filters the table to the due rows from the band, and back", async () => {
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ company: "Acme Corp", follow_up: PAST }),
+        appliedRow({ company: "Globex", follow_up: FUTURE }),
+        appliedRow({ company: "Zenith", follow_up: null }),
+      ]),
+    );
+    expect(dataRows()).toHaveLength(3);
+
+    const cell = screen.getByRole("button", { name: /^follow-up due 1/ });
+    fireEvent.click(cell);
+
+    expect(dataRows()).toHaveLength(1);
+    expect(screen.getByText("Acme Corp")).toBeTruthy();
+    // Toggles, like the queue's facet: a second activation clears it.
+    fireEvent.click(screen.getByRole("button", { name: /^follow-up due 1/ }));
+    expect(dataRows()).toHaveLength(3);
+  });
+
+  it("sorts by follow-up date with the undated rows last", async () => {
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ company: "Zenith", follow_up: null }),
+        appliedRow({ company: "Globex", follow_up: FUTURE }),
+        appliedRow({ company: "Acme Corp", follow_up: PAST }),
+      ]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "follow up" }));
+
+    // Absence is not the soonest date: an undated application sorts last in BOTH directions.
+    expect(
+      dataRows().map((row) => /Acme Corp|Globex|Zenith/.exec(row.textContent ?? "")?.[0]),
+    ).toEqual(["Acme Corp", "Globex", "Zenith"]);
+  });
+});
+
 describe("a server older than this bundle", () => {
   it("still draws the row, and still offers the PDF, with no pdf_uri on the wire", async () => {
     /*
@@ -320,6 +456,26 @@ describe("a server older than this bundle", () => {
     expect(dataRows()).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Unmark applied" })).toBeNull();
     expect(screen.getByText(/only a job's latest attempt/)).toBeTruthy();
+  });
+
+  it("draws the row and the band with no follow-up on the wire at all", async () => {
+    /*
+     * The other half of the skew (D-360): the server predates the field, so `follow_up` and
+     * `counts.follow_up_due` are simply absent and every read is `undefined`. The page renders
+     * NOTHING for them — no chip, no band cell — and never blanks.
+     */
+    const response = appliedResponse([
+      withoutFields(appliedRow({ company: "Acme Corp" }), ["follow_up"]),
+    ]);
+    await renderApplied({
+      rows: response.rows,
+      counts: withoutFields(response.counts, ["follow_up_due"]),
+    });
+
+    expect(dataRows()).toHaveLength(1);
+    expect(screen.getByText("Acme Corp")).toBeTruthy();
+    expect(screen.queryByText(/^follow-up/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^follow-up due/ })).toBeNull();
   });
 
   it("draws every other cell when the dates and the posting status are absent", async () => {
