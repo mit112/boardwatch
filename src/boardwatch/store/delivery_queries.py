@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Row, Select, func, select
+from sqlalchemy import Connection, Row, Select, func, null, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.normalize import content_hash
@@ -71,6 +71,8 @@ from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.tables import (
+    application_events,
+    applications,
     artifacts,
     companies,
     posting_identities,
@@ -165,6 +167,40 @@ class QueueRow:
         return self.status == STATUS_CLOSED
 
 
+@dataclass(frozen=True)
+class AppliedRow:
+    """One row of `applications`, with the posting that says what it was applied to.
+
+    Every posting-derived field is NULLABLE, and that is the point: an application imported from
+    another tool's history matched a posting the store holds, but nothing tailored a résumé for it,
+    so the delivery queue never offered it. `posting_id` is the id the queue delivered and is
+    `None` for exactly those rows — never a sibling posting's id, because that id is what the web
+    page hands to `/api/pdf/<id>` and `/api/queue/<id>/unapplied`.
+    """
+
+    application_id: int
+    job_id: int
+    #: From the closed `ApplicationStatus` catalog, held there by a CHECK constraint.
+    status: str
+    #: When boardwatch LEARNED of the application, which is not when it was made.
+    created_at: datetime
+    #: When the application was MADE. `None` for an attempt that never reached `applied`.
+    submitted_at: datetime | None
+    #: `application_events.source` for the event that set the current status — "web", "import",
+    #: "user". `None` on a row with no event, which no writer in this codebase can produce.
+    source: str | None
+    posting_id: int | None
+    company: str | None
+    title: str | None
+    location: str | None
+    locations: tuple[str, ...]
+    apply_url: str | None
+    #: `open`, `closed` or `unverifiable`, from `_status` — the same three the queue renders.
+    posting_status: str | None
+    closed_at: datetime | None
+    pdf_uri: str | None
+
+
 #: Why `QueueDetail.jd_body` is absent. A CLOSED set, declared where the value is produced so
 #: `delivery/queue.py` consumes it rather than restating it — two spellings of one catalog is
 #: how a consumer silently starts treating an unknown reason as a new bucket.
@@ -210,6 +246,10 @@ def _delivered_select() -> Select[Any]:
             postings.c.posted_at,
             postings.c.first_seen_at,
             postings.c.status,
+            # Read by `applied_rows` only: the applied page has to say WHEN a posting closed, and
+            # nothing else in the queue's own payload asks. Selected here rather than in a second
+            # query so both readers resolve the posting through one join.
+            postings.c.closed_at,
             postings.c.url,
             companies.c.name.label("company"),
             companies.c.provider,
@@ -834,6 +874,180 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     ]
 
 
+def _job_posting_select() -> Select[Any]:
+    """A job's own postings, labelled exactly as `_delivered_select` labels them.
+
+    Only `applied_rows` reads this, and only for a job that reached NO delivery: the application
+    still has to name what was applied to, and the facts live on the posting either way. Labelled
+    identically — including a `null` `pdf_uri` — so one row constructor serves both shapes and
+    `_supersedes` can pick between them by the same rule the queue uses.
+    """
+    return select(
+        postings.c.id.label("posting_id"),
+        postings.c.job_id,
+        postings.c.title,
+        postings.c.locations_json,
+        postings.c.first_seen_at,
+        postings.c.status,
+        postings.c.closed_at,
+        postings.c.url,
+        companies.c.name.label("company"),
+        companies.c.watched,
+        # No artifact, so no delivered résumé. `null()` rather than a missing column: the
+        # constructor below reads the attribute on both shapes, and an absent one would be an
+        # AttributeError at exactly the row this branch exists to serve.
+        null().label("pdf_uri"),
+    ).join(companies, postings.c.company_id == companies.c.id)
+
+
+def _applied_row(
+    row: Row[Any], posting: Row[Any] | None, *, delivered: bool, source: str | None
+) -> AppliedRow:
+    """One application, with the posting that identifies it.
+
+    `posting_id` is exposed ONLY for a delivered posting. It is the id every existing web control
+    keys on — `/api/pdf/<id>`, `/api/queue/<id>/unapplied` — and handing out the id of a posting
+    the queue never offered would offer a PDF that was never built. The facts around it come from
+    whichever posting resolved, because "what did I apply to" has an answer in both cases.
+    """
+    return AppliedRow(
+        application_id=int(row.id),
+        job_id=int(row.job_id),
+        status=str(row.status),
+        created_at=row.created_at,
+        submitted_at=row.submitted_at,
+        source=source,
+        posting_id=int(posting.posting_id) if delivered and posting is not None else None,
+        company=None if posting is None else str(posting.company),
+        title=None if posting is None else str(posting.title),
+        location=None if posting is None else _location(posting.locations_json),
+        locations=() if posting is None else _locations_list(posting.locations_json),
+        apply_url=(
+            None if posting is None or posting.url is None else str(posting.url)
+        ),
+        posting_status=None if posting is None else _status(posting.status, posting.watched),
+        closed_at=None if posting is None else posting.closed_at,
+        pdf_uri=(
+            str(posting.pdf_uri)
+            if posting is not None and posting.pdf_uri is not None
+            else None
+        ),
+    )
+
+
+def _delivered_winners(conn: Connection, job_ids: set[int]) -> dict[int, Row[Any]]:
+    """The posting the delivery queue offered for each of `job_ids`, by the SAME rule the queue
+    uses: `_supersedes` over the delivered artifacts, ascending, so a live posting wins and
+    delivery recency only breaks its ties (D-432).
+
+    Reached by a join out of `artifacts` rather than by binding the job ids, exactly as
+    `delivered_unapplied` is, so no list is built over the corpus.
+    """
+    winners: dict[int, Row[Any]] = {}
+    rows = conn.execute(
+        _delivered_select().order_by(artifacts.c.created_at, artifacts.c.id)
+    ).all()
+    for row in rows:
+        if row.job_id is None:
+            continue
+        job_id = int(row.job_id)
+        if job_id not in job_ids:
+            continue
+        incumbent = winners.get(job_id)
+        if incumbent is None or _supersedes(row, incumbent):
+            winners[job_id] = row
+    return winners
+
+
+def _applied_postings(conn: Connection) -> dict[int, Row[Any]]:
+    """One posting per job that carries an application, chosen by `_supersedes` as usual.
+
+    Reached by a JOIN OUTWARD from `applications` — one row per job the owner acted on — and
+    never by binding a job-id list. This module builds no `.in_()` of its own: the two reads that
+    do take an id list hand it to `store/param_chunks.py`, and a list bound here would have none
+    of that protection. `tests/unit/test_delivery_queries.py` asserts the absence.
+
+    Computed for EVERY applied job, the delivered ones included, because that is what the join
+    shape costs. `applied_rows` prefers the delivered posting wherever there is one, so those rows
+    are resolved and never read.
+
+    Ascending by `first_seen_at`, so `_supersedes`' liveness tie falls through to the most
+    recently seen posting.
+    """
+    winners: dict[int, Row[Any]] = {}
+    rows = conn.execute(
+        _job_posting_select()
+        .join(applications, applications.c.job_id == postings.c.job_id)
+        .order_by(postings.c.first_seen_at, postings.c.id)
+    ).all()
+    for row in rows:
+        job_id = int(row.job_id)
+        incumbent = winners.get(job_id)
+        if incumbent is None or _supersedes(row, incumbent):
+            winners[job_id] = row
+    return winners
+
+
+def _mark_sources(conn: Connection) -> dict[int, str]:
+    """Where each application's CURRENT state came from, out of `application_events.source`.
+
+    `applications` carries no source column; the event log does, and the LAST event for an
+    application is the one that put it in the state it is in ("web", "import", "user"). The
+    highest `id` wins because `mark_job_applied` appends nothing on a re-POST — the event that set
+    the state is still the last one written.
+
+    The whole log, unfiltered and unbound, for the reason `applied_job_ids` gives about
+    `applications` itself: it holds a handful of rows per job the owner acted on and cannot
+    outgrow the shortlist it is read beside. No `.in_()`, per this module's rule.
+    """
+    rows = conn.execute(
+        select(application_events.c.application_id, application_events.c.source).order_by(
+            application_events.c.application_id, application_events.c.id
+        )
+    ).all()
+    return {int(row.application_id): str(row.source) for row in rows}
+
+
+def applied_rows(conn: Connection) -> list[AppliedRow]:
+    """Every application attempt the store holds, newest first, with what it was made against.
+
+    EVERY attempt, at every status — including `withdrawn`. A withdrawal is what the page's own
+    unmark writes (`mark_job_unapplied`), so dropping those rows would make the undo look like a
+    delete, and `withdrawn` is the documented drain rather than an erasure.
+
+    Ordered by `submitted_at` falling back to `created_at`: the first is WHEN the application was
+    made and is what the owner is looking for, and it is NULL for an attempt still at
+    `interested`, where when boardwatch learned of it is the only date there is.
+
+    The whole table, unfiltered, for the reason `applied_job_ids` gives: `applications` holds one
+    row per job the owner acted on, so it cannot outgrow the shortlist it is read beside.
+    """
+    rows = conn.execute(
+        select(applications).order_by(
+            func.coalesce(applications.c.submitted_at, applications.c.created_at).desc(),
+            applications.c.id.desc(),
+        )
+    ).all()
+    if not rows:
+        return []
+    delivered = _delivered_winners(conn, {int(row.job_id) for row in rows})
+    fallback = _applied_postings(conn)
+    sources = _mark_sources(conn)
+    built: list[AppliedRow] = []
+    for row in rows:
+        job_id = int(row.job_id)
+        posting = delivered.get(job_id)
+        built.append(
+            _applied_row(
+                row,
+                posting if posting is not None else fallback.get(job_id),
+                delivered=posting is not None,
+                source=sources.get(int(row.id)),
+            )
+        )
+    return built
+
+
 def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     """One delivered lead in full, or None when `posting_id` has no tailored artifact.
 
@@ -908,9 +1122,11 @@ __all__ = [
     "STATUS_CLOSED",
     "STATUS_UNVERIFIABLE",
     "TARGET_TAG",
+    "AppliedRow",
     "QueueDetail",
     "QueueRow",
     "RequirementView",
+    "applied_rows",
     "closed_job_ids",
     "delivered_unapplied",
     "ineligible_job_ids",
