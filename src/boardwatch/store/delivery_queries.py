@@ -44,6 +44,7 @@ write: `load_settings` creates no directory, and neither does `load_rules`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -947,18 +948,23 @@ def _applied_row(
     )
 
 
-def _delivered_winners(conn: Connection, job_ids: set[int]) -> dict[int, Row[Any]]:
+def _deliveries(conn: Connection) -> list[Row[Any]]:
+    """Every tailored delivery, ASCENDING by delivery, which is the order `_supersedes` reads.
+
+    Reached by a join out of `artifacts` rather than by binding an id list, exactly as
+    `delivered_unapplied` is, so no list is built over the corpus. Executed once and handed to
+    both readers below: `applied_rows` needs the same scan keyed two ways — by job, for the
+    queue's own choice, and by posting, for the one an application names.
+    """
+    return list(conn.execute(_delivered_select().order_by(artifacts.c.created_at, artifacts.c.id)))
+
+
+def _delivered_winners(rows: Sequence[Row[Any]], job_ids: set[int]) -> dict[int, Row[Any]]:
     """The posting the delivery queue offered for each of `job_ids`, by the SAME rule the queue
     uses: `_supersedes` over the delivered artifacts, ascending, so a live posting wins and
     delivery recency only breaks its ties (D-432).
-
-    Reached by a join out of `artifacts` rather than by binding the job ids, exactly as
-    `delivered_unapplied` is, so no list is built over the corpus.
     """
     winners: dict[int, Row[Any]] = {}
-    rows = conn.execute(
-        _delivered_select().order_by(artifacts.c.created_at, artifacts.c.id)
-    ).all()
     for row in rows:
         if row.job_id is None:
             continue
@@ -969,6 +975,35 @@ def _delivered_winners(conn: Connection, job_ids: set[int]) -> dict[int, Row[Any
         if incumbent is None or _supersedes(row, incumbent):
             winners[job_id] = row
     return winners
+
+
+def _delivered_by_posting(rows: Sequence[Row[Any]]) -> dict[int, Row[Any]]:
+    """The same deliveries keyed by POSTING, most recent artifact per posting winning.
+
+    `rows` is ascending, so plain assignment keeps the latest delivery for each posting — which is
+    the one `queue_detail` resolves for that posting id, so the applied page and the detail pane
+    cannot name two different résumés for one requisition.
+    """
+    return {int(row.posting_id): row for row in rows if row.job_id is not None}
+
+
+def _applied_versions(conn: Connection) -> dict[int, int]:
+    """application_id -> the posting its `posting_version_id` names, for the rows that name one.
+
+    `applications.posting_version_id` records the version the application was MADE against
+    (`mark_job_applied`, comment A4), and it is the only column that says WHICH of a job's
+    postings the owner actually applied to. An INNER join, so a NULL column and a version row
+    that has since gone are both simply absent here rather than a None to test for.
+
+    A join OUTWARD from `applications` — a handful of rows per job the owner acted on — and never
+    an `.in_()` over an id list, per this module's rule.
+    """
+    rows = conn.execute(
+        select(applications.c.id, posting_versions.c.posting_id).join(
+            posting_versions, applications.c.posting_version_id == posting_versions.c.id
+        )
+    ).all()
+    return {int(row.id): int(row.posting_id) for row in rows}
 
 
 def _applied_postings(conn: Connection) -> dict[int, Row[Any]]:
@@ -1042,7 +1077,10 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
     ).all()
     if not rows:
         return []
-    delivered = _delivered_winners(conn, {int(row.job_id) for row in rows})
+    deliveries = _deliveries(conn)
+    delivered = _delivered_winners(deliveries, {int(row.job_id) for row in rows})
+    by_posting = _delivered_by_posting(deliveries)
+    applied_against = _applied_versions(conn)
     fallback = _applied_postings(conn)
     sources = _mark_sources(conn)
     # The attempt `mark_job_unapplied` would reach for each job: `get_applications` orders by
@@ -1057,7 +1095,17 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
     built: list[AppliedRow] = []
     for row in rows:
         job_id = int(row.job_id)
-        posting = delivered.get(job_id)
+        # The posting the application NAMES, where it names one that was delivered for this same
+        # job. It beats `_supersedes`' choice because the two answer different questions: the
+        # queue's rule prefers a LIVE posting, which is right for finding work and wrong for
+        # reporting an application made against a sibling the employer has since taken down. The
+        # same-job check is what keeps a regrouped or mis-linked version from pulling in another
+        # job's requisition, and the delivered-only check is what keeps `posting_id` an id every
+        # existing web control can act on.
+        named = by_posting.get(applied_against.get(int(row.id), -1))
+        posting = named if named is not None and int(named.job_id) == job_id else None
+        if posting is None:
+            posting = delivered.get(job_id)
         built.append(
             _applied_row(
                 row,

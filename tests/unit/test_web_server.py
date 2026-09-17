@@ -1524,6 +1524,112 @@ def test_the_applied_history_names_a_closed_lead_and_one_that_never_reached_the_
     assert counts["posting_closed"] == 1
 
 
+def test_the_applied_row_describes_the_posting_the_application_was_made_against(
+    live: Live, engine: Engine
+) -> None:
+    """`applications.posting_version_id` decides the row's posting, not `_supersedes`.
+
+    The eBay shape `_supersedes` exists for: one job holding two delivered postings, an open
+    requisition and a dead copy. `_delivered_winners` prefers the LIVE one (D-432), which is right
+    for the queue — it is looking for work — and wrong here, because the owner applied against the
+    copy that is now closed. Without this the page answers `posting_status: "open"`,
+    `closed_at: null` and serves the résumé tailored for a requisition nobody applied to.
+
+    `_deliver` mints a company per delivery, so the two postings here sit on sibling company rows;
+    every assertion below is keyed on the posting id and its standing rather than on the name.
+    """
+    with engine.begin() as conn:
+        live_posting, job = _deliver(conn, "live", pdf_uri="file:///out/live.pdf")
+        dead_posting, _same = _deliver(
+            conn,
+            "dead",
+            job_id=job,
+            pdf_uri="file:///out/dead.pdf",
+            delivered_at=NOW + timedelta(hours=1),
+        )
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == dead_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        applied_against = int(
+            conn.execute(
+                select(posting_versions.c.id).where(posting_versions.c.posting_id == dead_posting)
+            ).scalar_one()
+        )
+        create_application(
+            conn, job_id=job, posting_version_id=applied_against, status="applied"
+        )
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["posting_id"] == dead_posting
+    assert row["posting_status"] == "closed"
+    assert row["closed_at"] == "2026-08-26T12:00:00+00:00"
+    # The résumé that went out, which is the one tailored for the requisition applied to.
+    assert row["pdf_uri"] == "file:///out/dead.pdf"
+    # The live sibling is still there and is still what the QUEUE would offer — this changed the
+    # applied page's reading of one application, not the delivery rule.
+    assert live_posting != dead_posting
+
+
+def test_an_unresolvable_applied_version_keeps_the_delivery_queues_own_choice(
+    live: Live, engine: Engine
+) -> None:
+    """The fallback, asserted so the branch above cannot be the only path that works.
+
+    Two applications that name no usable version: one with `posting_version_id` NULL — every row
+    `mark_job_applied` wrote before A4, and every row whose posting had no version — and one
+    naming a version on a posting the queue never DELIVERED, which has no artifact and therefore
+    no résumé or delivered id to offer. Both keep `_supersedes`' live winner.
+    """
+    with engine.begin() as conn:
+        live_posting, job = _deliver(conn, "live", pdf_uri="file:///out/live.pdf")
+        dead_posting, _same = _deliver(
+            conn, "dead", job_id=job, delivered_at=NOW + timedelta(hours=1)
+        )
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == dead_posting)
+            .values(status="closed", closed_at=NOW)
+        )
+        create_application(conn, job_id=job, status="applied")
+
+        undelivered_job = _undelivered(conn, "two")
+        undelivered_version = int(
+            conn.execute(
+                insert(posting_versions).values(
+                    posting_id=int(
+                        conn.execute(
+                            select(postings.c.id).where(postings.c.job_id == undelivered_job)
+                        ).scalar_one()
+                    ),
+                    content_hash="v-two",
+                    body_text=JD_ELIGIBLE,
+                    captured_at=NOW,
+                    capture_reason="new",
+                )
+            ).inserted_primary_key[0]
+        )
+        create_application(
+            conn,
+            job_id=undelivered_job,
+            posting_version_id=undelivered_version,
+            status="applied",
+            occurred_at=NOW - timedelta(days=5),
+        )
+
+    rows = call(live, "/api/applied", bearer=live.token).json()["rows"]
+    unnamed, never_delivered = rows
+    assert unnamed["posting_id"] == live_posting
+    assert unnamed["posting_status"] == "open"
+    assert unnamed["pdf_uri"] == "file:///out/live.pdf"
+    # Never delivered, so no posting id and no résumé — the posting's own facts still answer
+    # "what was applied to".
+    assert never_delivered["posting_id"] is None
+    assert never_delivered["title"] == "Data Engineer"
+    assert never_delivered["pdf_uri"] is None
+
+
 def test_only_a_jobs_latest_submitted_attempt_offers_the_unmark(
     live: Live, engine: Engine
 ) -> None:
