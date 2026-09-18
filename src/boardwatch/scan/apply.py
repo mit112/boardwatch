@@ -6,7 +6,10 @@ vanish together (state test h — the 304-trap regression).
 
 Rules folded in:
 - D23: every posting listed in a complete or partial snapshot has
-  consecutive_missing reset to 0; increments happen only on complete.
+  consecutive_missing reset to 0; increments happen only on complete. Its
+  exception is an observation declaring `"liveness"` secondhand — a listing by
+  something that never looked, which also withholds `death_strikes`,
+  `last_seen_at` and the reopen.
 - D25 persistence rule: every positive observation refreshes ALL
   provider-sourced mutable fields and raw_json regardless of content_hash;
   only a body-hash change emits `revised` (extraction is hash-keyed, so it
@@ -209,18 +212,26 @@ def _apply_listed(
             continue
         # D25: regardless of content_hash — minus whatever this observation declared secondhand.
         values: dict[str, Any] = _refreshed_fields(raw, now)
-        values["consecutive_missing"] = 0  # D23: reset on every positive observation
-        # D-325, the same rule applied to the death probe's counter. A listing is stronger
-        # evidence than any number of failed probes: the posting is on a board right now. This
-        # is half the drain the probe owes itself (the other half is an `alive` probe), and it
-        # is what stops a strike earned during a CDN outage surviving to meet a second one
-        # weeks later and close a posting nobody ever measured as dead twice in a row.
-        values["death_strikes"] = 0
-        if row.status == "closed":
-            values["status"] = "open"
-            values["closed_at"] = None
-            append_event(conn, row.id, "reopened", run_id)
-            result.reopened += 1
+        # Everything below this line is what a SIGHTING does, and an observation that declared
+        # `"liveness"` is not one — it re-listed a record it read out of a static local directory
+        # (`lanes/jobapps.py`), so it has no more to say about whether the posting is still
+        # served than yesterday's copy of the same file did. Reading the DECLARATION rather than
+        # the lane name is the whole mechanism: a name is a string nobody can typecheck
+        # (`SecondhandField`'s reason 3), and fidelity varies within one `collect()`.
+        if "liveness" not in raw.secondhand:
+            values["consecutive_missing"] = 0  # D23: reset on every positive observation
+            # D-325, the same rule applied to the death probe's counter. A listing is stronger
+            # evidence than any number of failed probes: the posting is on a board right now.
+            # This is half the drain the probe owes itself (the other half is an `alive` probe),
+            # and it is what stops a strike earned during a CDN outage surviving to meet a
+            # second one weeks later and close a posting nobody ever measured as dead twice in
+            # a row.
+            values["death_strikes"] = 0
+            if row.status == "closed":
+                values["status"] = "open"
+                values["closed_at"] = None
+                append_event(conn, row.id, "reopened", run_id)
+                result.reopened += 1
         # The whole REVISION is skipped for a secondhand body, not merely the two columns.
         # Eligibility reads the CURRENT `posting_versions` row, so leaving `_insert_version` armed
         # while withholding `postings.content_hash` would put an aggregator's text at the head of
@@ -236,7 +247,14 @@ def _apply_listed(
             )
             append_event(conn, row.id, "revised", run_id)
             result.revised += 1
-        conn.execute(update(postings).where(postings.c.id == row.id).values(**values))
+        # A jobapps tier-1 record declares every column AND `"liveness"`, which leaves NOTHING
+        # to write. An empty `values` is not a no-op: SQLAlchemy emits `UPDATE postings SET
+        # WHERE id = ?` and SQLite answers `OperationalError: near "WHERE": syntax error`, which
+        # would abort the whole board's transaction. The identity write below still runs — it
+        # recomputes from the ROW, which is the point of passing those values rather than reading
+        # them off `raw`.
+        if values:
+            conn.execute(update(postings).where(postings.c.id == row.id).values(**values))
         # AFTER the update, so the identity is computed from what was just persisted. The
         # observation may have moved title or locations without producing a revision (the D25
         # rule above refreshes them regardless of content_hash), which moves an identity key.
@@ -370,6 +388,14 @@ _SECONDHAND_COLUMNS: dict[SecondhandField, tuple[str, ...]] = {
     "body_text": (),
     "salary": ("salary_min", "salary_max", "salary_currency", "salary_period"),
     "raw_json": ("raw_json",),
+    # `last_seen_at` is the ONE column `_mutable_fields` writes that is the observation's own
+    # claim rather than the provider's, so it is the one column no FIDELITY declaration may
+    # withhold -- and it is exactly what `"liveness"` is a declaration about. An observation that
+    # did not look cannot move it. The three other things a sighting does -- `consecutive_missing`,
+    # `death_strikes` and the reopen -- are not `_mutable_fields` columns either; like
+    # `content_hash`/`body_text` they are written at their own branch in `_apply_listed`, which
+    # reads the declaration there.
+    "liveness": ("last_seen_at",),
 }
 
 
@@ -391,10 +417,15 @@ def _refreshed_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     preserves it, while on INSERT withholding replaces a value the lane genuinely holds with a
     schema default. The one INSERT exception is stated there.
 
-    `last_seen_at` and the miss counters are untouched by this and no declaration may withhold
-    them. A listing is positive evidence that the posting is ALIVE regardless of whose text
+    No FIDELITY declaration may withhold `last_seen_at` or the miss counters: a listing by
+    something that looked is positive evidence the posting is ALIVE regardless of whose text
     arrived, so `consecutive_missing` and `death_strikes` still reset — otherwise a stale strike
-    survives to meet a second one and closes a posting the lane just watched being served.
+    survives to meet a second one and closes a posting the lane just watched being served. The
+    separate `"liveness"` member is the case where nothing looked: `lanes/jobapps.py` walks a
+    static local directory and re-lists every record in it on every run, so its listing erased
+    the board scan's own miss an hour after the scan measured it. That member takes
+    `last_seen_at` off the UPDATE here, and `_apply_listed` withholds the two counters and the
+    reopen at the branch that writes them.
 
     The `content_hash` / `body_text` pair is NOT here because it is not a `_mutable_fields` column;
     it is written in `_apply_listed`'s revision branch, which reads the declaration itself.

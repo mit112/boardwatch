@@ -170,13 +170,32 @@ class _Identity:
     provider: str
     slug: str
     posting_ref: str
-    # What this hit is NOT the record of truth for (D-414(a), D-500). It rides WITH the identity
-    # because the two are decided by the same fact: a tier-1 reference is the board's OWN posting
-    # key, so the board scan is the record of truth and this lane refreshes liveness only. Tiers 2
-    # and 3 file under a `pst_` key of their own and declare nothing -- there, this lane is the
-    # only observer the row will ever have, and freezing its columns would pin whatever landed
-    # first forever.
-    secondhand: frozenset[SecondhandField] = frozenset()
+    # What this hit is NOT the record of truth for (D-414(a), D-500). The COLUMN half rides WITH
+    # the identity because the two are decided by the same fact: a tier-1 reference is the board's
+    # OWN posting key, so the board scan is the record of truth for every column. Tiers 2 and 3
+    # file under a `pst_` key of their own and declare no column -- there, this lane is the only
+    # observer the row will ever have, and freezing its columns would pin whatever landed first
+    # forever.
+    #
+    # `"liveness"` is on EVERY tier and is not decided by the identity at all (see
+    # `_LIVENESS_UNOBSERVED`).
+    secondhand: frozenset[SecondhandField]
+
+
+# Every record this lane emits declares it, on all three tiers, because it is a property of HOW
+# the record was observed and not of which key it resolved to: `collect` walks a static local
+# directory (`_records_under`) and re-lists every record in it on every run. `scan/apply.py`
+# otherwise reads a listing as evidence the posting is still served and resets the board scan's
+# `consecutive_missing`, the death probe's `death_strikes`, `last_seen_at` and a `closed` status.
+# Measured on the live store before this declaration: Twilio #110283 and Cohere #188104 are absent
+# from their WATCHED boards' `complete` scans today, and both read `consecutive_missing = 0,
+# status = open` because this lane re-listed them an hour after the scan counted the miss; 2,478
+# of the 2,481 rows this lane created are open and 3 have ever closed.
+#
+# THE COMMENT THIS REPLACES CLAIMED THE OPPOSITE -- that a tier-1 reference "refreshes liveness
+# only" -- and that was the bug, not the design: refreshing liveness is the one thing a directory
+# read cannot do.
+_LIVENESS_UNOBSERVED: frozenset[SecondhandField] = frozenset({"liveness"})
 
 
 def is_direct_apply(primary_acquisition: str) -> bool:
@@ -259,7 +278,10 @@ def posting_identity(record: _Record) -> _Identity:
     ladder, and it cuts both ways: the tier-1 row is one a board scan also writes, so this lane's
     rendering of the employer's page must not replace the employer's own on the columns the scan
     owns -- above all `body_text`, which is the document every eligibility rule quotes. Tiers 2
-    and 3 declare nothing because no board scan ever reaches those rows.
+    and 3 declare no column because no board scan ever reaches those rows.
+
+    **EVERY TIER DECLARES `_LIVENESS_UNOBSERVED`**, which is orthogonal and does not follow the
+    ladder: the observation is a directory read whichever key it resolved to.
     """
     try:
         target = parse_posting_target(record.direct_url)
@@ -267,15 +289,20 @@ def posting_identity(record: _Record) -> _Identity:
         pass
     else:
         return _Identity(
-            target.provider, target.slug, target.posting_ref, CONVERGED_SECONDHAND
+            target.provider,
+            target.slug,
+            target.posting_ref,
+            CONVERGED_SECONDHAND | _LIVENESS_UNOBSERVED,
         )
     try:
         provider, slug = parse_board_target(record.direct_url)
     except UnknownBoardURL:
         pass
     else:
-        return _Identity(provider, slug, record.posting_id)
-    return _Identity(LANE_PROVIDER, _name_slug(record.company), record.posting_id)
+        return _Identity(provider, slug, record.posting_id, _LIVENESS_UNOBSERVED)
+    return _Identity(
+        LANE_PROVIDER, _name_slug(record.company), record.posting_id, _LIVENESS_UNOBSERVED
+    )
 
 
 def _name_slug(company: str) -> str:

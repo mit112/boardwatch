@@ -81,7 +81,7 @@ class BoardRequest(BaseModel):
 # verdict HAS one, and the span is real, but it was cut from the wrong document — so the invariant
 # passes syntactically while failing in substance, which is worse than no span at all. Declaring
 # `body_text` secondhand is what keeps the evidence chain pointing at the employer's own text.
-SecondhandField = Literal[
+SecondhandColumnField = Literal[
     "title",
     "url",
     "locations",
@@ -94,17 +94,43 @@ SecondhandField = Literal[
     "raw_json",
 ]
 
+# `"liveness"` is the one declarable member that is not a column family: it says the observation
+# is NOT EVIDENCE THE POSTING IS ALIVE. `scan.apply._apply_listed` treats every listing as a
+# sighting — it resets `consecutive_missing` (D23) and `death_strikes` (D-325), bumps
+# `last_seen_at` and reopens a `closed` row — and that premise holds for anything that fetched
+# something. `lanes/jobapps.py` fetches nothing: it walks a static local directory
+# (`_source_url` returns `file://...`) and re-lists every record in it on every run, so the miss
+# a board scan measured an hour earlier is erased by a file read. Measured on the live store
+# before this member existed: Twilio #110283 and Cohere #188104 sit on WATCHED boards whose
+# `complete` scans no longer list them (checked against `boards-api.greenhouse.io` and
+# `api.ashbyhq.com` directly), and both read `consecutive_missing = 0, status = open`; of the
+# 2,481 rows that lane created, 2,478 are open and 3 have ever closed, and 90 of the open ones
+# are on watched boards whose own evidence was erased every run.
+#
+# It is orthogonal to the column members and declared ALONGSIDE them, never instead: fidelity is
+# "whose reading of this field is better" and liveness is "did anyone look at all". A jobapps
+# tier-1 record declares both, tiers 2 and 3 declare this one alone — a lane-keyed row is still
+# the only observer its columns will ever have, and it can still close through the death probe.
+#
+# NOT every secondhand observation: hiring.cafe re-fetches the employer's own board and the
+# LinkedIn / Indeed / jsonld lanes are served by a live index, so their listings are real
+# sightings of a posting that is being served right now. That is why this member is OUTSIDE
+# `CONVERGED_SECONDHAND` below and must be declared explicitly.
+SecondhandField = Literal[SecondhandColumnField, "liveness"]
+
 # The declaration a lane makes when its hit CONVERGES onto a real provider's
-# `(company_id, provider_posting_id)`: every declarable field it carries is its own rendering of
-# a posting the board scan is the record of truth for, so it declares the lot and refreshes only
-# liveness. Derived from `SecondhandField` rather than spelled out: a field added later must
-# default to "the converging lane does not own this", and a hand-written list would silently
-# default it the other way -- the direction that deletes a lead.
+# `(company_id, provider_posting_id)`: every COLUMN it carries is its own rendering of a posting
+# the board scan is the record of truth for, so it declares the lot and refreshes liveness alone.
+# Derived from `SecondhandColumnField` rather than spelled out: a column added later must default
+# to "the converging lane does not own this", and a hand-written list would silently default it
+# the other way -- the direction that deletes a lead. Deriving from the COLUMN alias is what keeps
+# `"liveness"` out: a converged hit off a live index IS a sighting, and a lane that did not fetch
+# adds the member itself.
 #
 # It is NOT a property of a lane, it is a property of ONE HIT. Fidelity varies within a single
 # `collect()` (see reason 1 above), so a lane declares this on its converged tier and nothing on
 # the tiers where it files under its own key and is the only observer that row will ever have.
-CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
+CONVERGED_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandColumnField))
 
 
 class RawPosting(BaseModel):
