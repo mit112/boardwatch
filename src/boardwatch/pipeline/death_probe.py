@@ -74,6 +74,33 @@ exceed the run itself within a month. Hence a per-run budget and a TTL, both con
 both sides of both budgets reported: a sweep that refuses work must read as refused work, never
 as a clean corpus. The listing path gets its OWN budget because its unit is the company, and a
 budget of 100 companies buys roughly 410 rows of coverage at today's density.
+
+**T90: the budget goes to the rows the owner is looking at, first.** Run 433 logged `death
+probe: 50 of 13101 due probed … 13051 refused by budget`. Under a plain
+`last_death_probe_at ASC NULLS FIRST, id ASC` the sweep walks the oldest ids first, so a row a
+lane delivered this week is reached in roughly **260 runs** — and of the 400 leads in the apply
+lane that day, **393 had never been probed and 300 sat on unwatched companies**, with two of the
+six genuine apply-lane misses in the owner's pre-flight being dead rows the sweep had never
+reached. So both paths sort a row whose job carries a **standing lead** ahead of the rest of the
+due set (on the listing path the unit is the COMPANY: any standing lead among its open rows
+promotes the whole board's GET). The delivery queue drains `_closed` on its own (D-383), so
+closing a held row is the one close the owner FEELS.
+
+The priority **reorders the due set; it never widens it**, and that is what stops it becoming
+"always the same 300 leads": a probed row leaves the due set for `ttl_hours`, so the next run's
+budget flows to the rest of the class. The D-325 round-robin property therefore holds unchanged.
+The sort key is SQL and the budget's `LIMIT` is applied **after** it — re-sorting a `LIMIT`ed
+result would rank only the rows the limit had already admitted, and a lead one place past the
+budget's edge would be cut before the priority ever saw it.
+
+**And the listing path gets a per-row TTL, which the URL path always had.** A COMPANY is due
+when ANY of its open rows is due, so the rows it holds are not all due. One row a lane added
+today re-asks the board inside the TTL, and every other open row was then struck and stamped
+again — an older row that struck an hour ago could take its second strike the same day: two
+strikes in different runs, but not 24 h apart, which is weaker than the URL path enforces for
+the same evidence. A row inside its own TTL is now neither struck nor stamped. A
+`listing_present` still clears it, because a drain runs on both sides of its gate and
+withholding a POSITIVE observation is the one direction this may never take.
 """
 
 from __future__ import annotations
@@ -92,6 +119,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.pipeline.liveness import LivenessProber
 from boardwatch.reports.run_funnel import DeathProbeReport
 from boardwatch.scan.apply import CLOSE_AFTER_MISSES
+from boardwatch.store.delivery_queries import standing_lead_job_ids
 from boardwatch.store.events import append_event
 from boardwatch.store.tables import companies, postings
 
@@ -261,14 +289,21 @@ def _listing_signal(listing: Listing, provider_posting_id: str) -> str:
     return "listing_present" if provider_posting_id in listing.ids else "listing_absent"
 
 
-def _due_predicate(cutoff: datetime) -> ColumnElement[bool]:
-    return and_(
-        unreachable_by_the_scanner(),
-        or_(
-            postings.c.last_death_probe_at.is_(None),
-            postings.c.last_death_probe_at < cutoff,
-        ),
+def _past_ttl(cutoff: datetime) -> ColumnElement[bool]:
+    """One row's own TTL: never asked, or last asked before the cutoff.
+
+    Factored out because the listing path has to evaluate it a SECOND time, per row, inside the
+    company it already decided to ask about — and the two must be the same predicate against the
+    same cutoff or a row could be admitted by one and struck by the other.
+    """
+    return or_(
+        postings.c.last_death_probe_at.is_(None),
+        postings.c.last_death_probe_at < cutoff,
     )
+
+
+def _due_predicate(cutoff: datetime) -> ColumnElement[bool]:
+    return and_(unreachable_by_the_scanner(), _past_ttl(cutoff))
 
 
 def sweep_unwatched_deaths(
@@ -296,6 +331,10 @@ def sweep_unwatched_deaths(
     `listing_prober=None` leaves the listing half unasked and reports its whole due set as
     `companies_refused`, the same direction `budget=0` takes on the URL path: a half that did
     not run must read as refused work, never as a clean corpus.
+
+    Both budgets go to the rows carrying a STANDING LEAD first (T90). The priority reorders the
+    due set and never widens it, so it cannot become "always the same leads": a probed row leaves
+    the due set for `ttl_hours`, and the next run's budget flows to the rest of the class.
     """
     now = utcnow()
     cutoff = now - timedelta(hours=ttl_hours)
@@ -316,6 +355,21 @@ def sweep_unwatched_deaths(
     oldest_probe = func.min(postings.c.last_death_probe_at)
 
     with engine.connect() as conn:
+        # T90. Which rows the owner is actually looking at. Read ONCE per sweep, from the queue's
+        # own reader — `delivered_unapplied` — so the sweep cannot disagree with the queue page
+        # about which leads are standing. `delivered_unapplied` is keyed by canonical `job_id`
+        # and this sweep is keyed by `posting_id`, so the sort key joins through `postings.job_id`
+        # rather than comparing ids that mean different things. Bounded by the DELIVERED corpus
+        # (670 leads measured 2026-09-14), not by the 13,101-row open class, so binding it is not
+        # the corpus-scaled `IN (...)` D-287 forbids.
+        standing = standing_lead_job_ids(conn)
+        # ONE membership test, read by both paths' sort keys. A posting whose job has a standing
+        # lead is the one whose death the owner FEELS: the delivery queue drains `_closed` on its
+        # own (D-383), so closing it removes a dead row from the apply lane, while closing an
+        # unheld row only tidies the store.
+        has_a_standing_lead = postings.c.job_id.in_(standing)
+        held_by_a_standing_lead = case((has_a_standing_lead, 0), else_=1)  # 0 sorts first
+        company_holds_a_standing_lead = func.max(case((has_a_standing_lead, 1), else_=0))
         # One pass for both URL denominators. `unprobeable` is a row this mechanism can never
         # reach by any future refinement — `postings.url` is nullable — so it is reported rather
         # than filtered away, which would hide a permanently stuck slice inside a sweep claiming
@@ -328,15 +382,26 @@ def sweep_unwatched_deaths(
             .select_from(board)
             .where(and_(due_predicate, on_url_path))
         ).one()
-        # Least-recently-probed first, NULL (never asked) ahead of everything. Ordering by `id`
-        # would probe the same head every run for ever and never reach the tail, while
-        # `attempted` reported a busy sweep. `LIMIT` IS the budget, so this is bounded by
-        # construction and never binds a corpus-scaled `IN (...)` (D-287).
+        # Standing leads first, then least-recently-probed, NULL (never asked) ahead of
+        # everything. Ordering by `id` alone would probe the same head every run for ever and
+        # never reach the tail, while `attempted` reported a busy sweep — that property (D-325)
+        # is preserved, because the priority only reorders the DUE set and a probed row leaves it
+        # for `ttl_hours`. So the priority can never become "always the same leads": next run's
+        # budget flows to the rest of the class.
+        #
+        # The sort key is SQL, and the `LIMIT` is applied AFTER it, deliberately. Re-sorting a
+        # `LIMIT`ed result in Python would rank only the rows the limit had already admitted, and
+        # a lead past the budget's edge would be cut before the priority ever saw it. `LIMIT` IS
+        # the budget, so this is still bounded by construction.
         candidates = conn.execute(
             select(postings.c.id, postings.c.url, postings.c.death_strikes)
             .select_from(board)
             .where(and_(due_predicate, has_url, on_url_path))
-            .order_by(postings.c.last_death_probe_at.asc(), postings.c.id.asc())
+            .order_by(
+                held_by_a_standing_lead.asc(),
+                postings.c.last_death_probe_at.asc(),
+                postings.c.id.asc(),
+            )
             .limit(budget)
         ).all()
         # The listing half's queue, one row per COMPANY. A company is due when any of its open
@@ -352,7 +417,16 @@ def sweep_unwatched_deaths(
             .where(and_(unreachable_by_the_scanner(), on_listing_path))
             .group_by(companies.c.id)
             .having(or_(never_asked, oldest_probe < cutoff))
-            .order_by(never_asked.desc(), oldest_probe.asc(), companies.c.id.asc())
+            # The unit here is the COMPANY, so the priority is too: a company holding ANY
+            # standing lead among its open rows sorts first, because one GET answers all of
+            # them. `max` over the per-row key rather than a second query — the rows are already
+            # grouped by company here.
+            .order_by(
+                company_holds_a_standing_lead.desc(),
+                never_asked.desc(),
+                oldest_probe.asc(),
+                companies.c.id.asc(),
+            )
         ).all()
 
     asked_companies = due_companies[:company_budget] if listing_prober is not None else []
@@ -410,6 +484,15 @@ def sweep_unwatched_deaths(
                         postings.c.id,
                         postings.c.provider_posting_id,
                         postings.c.death_strikes,
+                        # T90. The company is due when ANY of its open rows is, so the rows it
+                        # holds are not all due: one row a lane added today re-asks the board
+                        # inside the TTL, and every OTHER open row would then be struck and
+                        # stamped again. An older row that struck an hour ago could take its
+                        # second strike the same day — two strikes in different runs, but not
+                        # 24 h apart, which is weaker than the URL path enforces for the same
+                        # evidence. Evaluated by `_past_ttl`, the same predicate and the same
+                        # cutoff that admitted the company, so the two cannot drift.
+                        _past_ttl(cutoff).label("past_ttl"),
                     ).where(
                         postings.c.company_id == company.id,
                         postings.c.status == "open",
@@ -418,13 +501,22 @@ def sweep_unwatched_deaths(
                 for row in open_rows:
                     signal = _listing_signal(listing, str(row.provider_posting_id))
                     strikes = int(row.death_strikes)
+                    past_ttl = bool(row.past_ttl)
                     if signal == "listing_absent":
+                        # Counted whatever the row's own TTL says: the board DID answer about it
+                        # and did not list it. The per-row guard withholds the STRIKE, not the
+                        # observation, and there is no report field that could carry a
+                        # third state without going unread.
                         listing_absent += 1
-                        strikes += 1
+                        if past_ttl:
+                            strikes += 1
                     elif signal == "listing_present":
                         listing_present += 1
                         # The drain, and the stronger half of it: a board that LISTS the posting
-                        # is the same positive evidence `_apply_listed` acts on.
+                        # is the same positive evidence `_apply_listed` acts on. Allowed inside
+                        # the per-row TTL as well — every quarantine's drain runs on both sides
+                        # of its gate, and withholding a POSITIVE observation is the one
+                        # direction this mechanism may never take.
                         strikes_cleared += 1 if strikes else 0
                         strikes = 0
                     else:
@@ -432,13 +524,15 @@ def sweep_unwatched_deaths(
                         # not.
                         listing_unknown += 1
 
-                    values = {
-                        "death_strikes": strikes,
+                    values = {"death_strikes": strikes}
+                    if past_ttl:
                         # Stamped on every outcome, including `unknown`, so a board that is
                         # permanently broken spends its TTL instead of consuming the company
-                        # budget every run and starving the rest of the class.
-                        "last_death_probe_at": now,
-                    }
+                        # budget every run and starving the rest of the class. NOT stamped for a
+                        # row inside its own TTL: re-stamping would slide that row's next
+                        # legitimate ask a further TTL into the future on every sweep its
+                        # company was asked about for some other row's sake.
+                        values["last_death_probe_at"] = now
                     closing = strikes >= CLOSE_AFTER_MISSES
                     if closing:
                         values["status"] = "closed"

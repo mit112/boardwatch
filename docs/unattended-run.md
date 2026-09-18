@@ -56,6 +56,26 @@ What to expect from an unattended run:
   **`--project`** to render each lead from the career-profile bundle's projection instead of the
   authored résumé; this needs a **current projection approval** (`profile-bundle
   approve-projection`), and without one the run refuses rather than silently falling back.
+- **The death-probe sweep refuses work out loud, and the refusal is the knob.** Each run prints
+  `death probe: <attempted> of <due> due probed, … (<refused> refused by budget)` and a second
+  `death probe listings:` line for the ATS list-API half; the same numbers are on the
+  `death_probe` stage of `morning-<run_id>.{json,md}`. `refused by budget` is **not** an error —
+  it is the part of the never-enumerated class this run did not reach, and it will be large,
+  because that class runs to five figures while `death_probe_budget` defaults to 50 probes
+  (~0.97 s each) and `death_probe_company_budget` to 100 board GETs. Read it against the leads
+  standing in your queue rather than against `due`: the sweep probes a posting carrying a
+  standing lead **first**, so the first rows the budget buys are the ones whose death you would
+  otherwise walk into on the apply list. Size the budget so it is at least as large as your
+  standing-lead count, in `config.toml`:
+
+  ```toml
+  death_probe_budget = 400
+  death_probe_company_budget = 150
+  ```
+
+  Above that, the remaining `refused by budget` is ordinary backlog and costs you nothing today.
+  `0` disarms a half while still reporting its whole due population as refused, so a disarmed
+  sweep can never be misread as a corpus with nothing dead in it.
 - **The delivery queue's root can be overridden with `--queue-root PATH`**, the same option `web`
   takes; omit it and the queue defaults to `~/boardwatch-queue`. If `BOARDWATCH_DATA_DIR` is set
   (rather than `--data-dir`) and `--queue-root` is not, `run` refuses instead of reconciling the
