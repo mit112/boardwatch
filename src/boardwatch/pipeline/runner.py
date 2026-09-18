@@ -81,7 +81,7 @@ from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
 from boardwatch.notify.liveness_blind import check_liveness_blind
 from boardwatch.notify.scan_health import scan_outage_alert
-from boardwatch.pipeline.death_probe import sweep_unwatched_deaths
+from boardwatch.pipeline.death_probe import ListingProber, sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
 from boardwatch.pipeline.liveness import LivenessProber, check_leads
@@ -1724,6 +1724,7 @@ def run_pipeline(
     skip_scan: bool = False,
     project: bool = False,
     liveness_prober: LivenessProber | None = None,
+    listing_prober: ListingProber | None = None,
     queue_root: Path | None = None,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
@@ -1734,6 +1735,12 @@ def run_pipeline(
 
     Raises ScanLockHeldError if another scan holds the lock. Nothing is written in that case,
     because the row is created by the scan stage inside the lock it failed to acquire.
+
+    `listing_prober=None` leaves T89's ATS list-API half of the death sweep unasked, reported as
+    `companies_refused` rather than as a clean corpus. It is separate from `liveness_prober`
+    because it answers a different question with a different unit — membership of a whole board,
+    one GET per company — and because defaulting it to a real network client would let any test
+    that supplies only a URL prober reach three live ATS APIs. `run_cmd` supplies both together.
 
     `liveness_prober=None` skips the liveness check (P6 item 6) and reports it as UNMEASURED,
     not as zero dead. Passed in rather than built here so that *which URLs get probed* is the
@@ -1986,6 +1993,13 @@ def run_pipeline(
         # produce an absence signal (D-314) — and the only evidence that closes one is the stored
         # URL itself answering a non-redirect 404/410, twice, in different runs.
         #
+        # T89 gave it a SECOND, disjoint mechanism. `ashby`, `greenhouse` and `lever` rows leave
+        # the URL candidate set and are answered by membership of their company's ATS list
+        # endpoint instead, because on those hosts the URL probe was worse than blind: a dead
+        # Ashby posting answers 200 with an empty shell and a dead Greenhouse posting redirects
+        # to a 200, so the probe took its `alive` branch and ZEROED the strikes the row had
+        # earned. 12.6% of the open rows on 60 such companies were absent from their own board.
+        #
         # Reuses the SHORTLIST prober: `liveness_prober is None` means the operator asked for no
         # network liveness at all, and sweeping anyway would ignore that. It also means a run
         # that skips the check reports the sweep as UNMEASURED rather than as zero closed.
@@ -2000,8 +2014,10 @@ def run_pipeline(
                 summary.death_probe = sweep_unwatched_deaths(
                     engine,
                     prober=liveness_prober,
+                    listing_prober=listing_prober,
                     run_id=run_id,
                     budget=settings.death_probe_budget,
+                    company_budget=settings.death_probe_company_budget,
                     ttl_hours=settings.death_probe_ttl_hours,
                 )
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -2012,8 +2028,16 @@ def run_pipeline(
                 probe = summary.death_probe
                 console.print(
                     f"death probe: {probe.attempted} of {probe.due} due probed, "
-                    f"{probe.gone} gone, {probe.unknown} unknown, {probe.closed} closed "
+                    f"{probe.gone} gone, {probe.unknown} unknown, "
+                    f"{probe.closed_by_url} closed "
                     f"({probe.budget_refused} refused by budget)"
+                )
+                console.print(
+                    f"death probe listings: {probe.companies_attempted} of "
+                    f"{probe.companies_due} due companies asked, {probe.listing_absent} "
+                    f"absent, {probe.listing_present} present, {probe.listing_unknown} "
+                    f"unknown, {probe.closed_by_listing} closed "
+                    f"({probe.companies_refused} refused by budget)"
                 )
         clock.mark("death_probe")
 

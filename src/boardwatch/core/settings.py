@@ -342,6 +342,14 @@ class Settings(BaseModel):
     # still reporting the whole due population as `budget_refused`, so a disarmed check reads as
     # refused work rather than as a clean corpus.
     death_probe_budget: int = Field(default=50, ge=0)
+    # T89 — the same cap for the ATS list-API half, whose probe unit is the COMPANY: one GET of
+    # `api.ashbyhq.com` / `boards-api.greenhouse.io` / `api.lever.co` answers every open row a
+    # company holds. Measured live 2026-09-17, 60 such companies held 246 open rows, so 100
+    # companies buys ~410 rows of coverage for 100 requests — where the URL half spends one
+    # request per row and, on those same two hosts, gets `alive` for a posting that is dead.
+    # Floor of 0, and 0 is a real setting for the same reason the budget above has one: it
+    # disarms this half while still reporting the whole due company set as `companies_refused`.
+    death_probe_company_budget: int = Field(default=100, ge=0)
     # How long a probed row is left alone. 24 h means a posting is asked about once a day
     # whatever the run cadence, which is what keeps the budget spread across the class instead
     # of re-asking the same head every three hours.

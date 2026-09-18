@@ -9,6 +9,14 @@ no URLs, a redirect rule swallowing every gone-status, a drain that never fires.
 
 `artifact_version` is left ALONE (8 since T60). Asserted here as well as at the four sites that pin it,
 so the additive-key ruling is visible from the change that relies on it.
+
+T89 added the ATS list-API half and holds the version there too, on **D-498's** ruling rather
+than D-285's: `due`/`attempted`/`gone`/`alive` count exactly what they always counted — what the
+URL probe asked and heard — and what is new is a REASON `due` can be smaller, published as its
+own set of keys in the same section rather than folded into a neighbour. The reconciliation
+identities a consumer checks still add up from keys it can read: `due = attempted +
+budget_refused`, `companies_due = companies_attempted + companies_refused`, and
+`closed = closed_by_url + closed_by_listing`.
 """
 
 from __future__ import annotations
@@ -84,8 +92,15 @@ def _sample() -> DeathProbeReport:
         gone=3,
         unknown=1,
         alive=1,
-        closed=2,
+        closed_by_url=2,
+        closed_by_listing=4,
         strikes_cleared=1,
+        companies_due=9,
+        companies_attempted=6,
+        companies_refused=3,
+        listing_absent=8,
+        listing_present=13,
+        listing_unknown=2,
     )
 
 
@@ -101,8 +116,16 @@ def test_every_probe_bucket_reaches_the_artifact() -> None:
         "gone": 3,
         "unknown": 1,
         "alive": 1,
-        "closed": 2,
+        "closed": 6,
+        "closed_by_url": 2,
+        "closed_by_listing": 4,
         "strikes_cleared": 1,
+        "companies_due": 9,
+        "companies_attempted": 6,
+        "companies_refused": 3,
+        "listing_absent": 8,
+        "listing_present": 13,
+        "listing_unknown": 2,
     }
 
 
@@ -122,7 +145,15 @@ def test_an_unswept_run_reports_UNMEASURED_rather_than_zero() -> None:  # noqa: 
         "unknown": None,
         "alive": None,
         "closed": None,
+        "closed_by_url": None,
+        "closed_by_listing": None,
         "strikes_cleared": None,
+        "companies_due": None,
+        "companies_attempted": None,
+        "companies_refused": None,
+        "listing_absent": None,
+        "listing_present": None,
+        "listing_unknown": None,
     }
 
 
@@ -135,6 +166,14 @@ def test_the_markdown_names_the_measured_sensitivity() -> None:
     assert "6.7%" in rendered
     assert "5 of 12 due probed" in rendered
     assert "7 refused by the budget" in rendered
+    # T89's half, and the number it has to be read against: the URL probe is not merely
+    # insensitive on these providers, it answers `alive` for a posting that is dead.
+    assert "6 of 9 due companies asked" in rendered
+    assert "3 refused by the company budget" in rendered
+    assert "8 rows absent" in rendered
+    assert "2 closed by URL" in rendered
+    assert "4 closed by listing" in rendered
+    assert "12.6%" in rendered
 
 
 def test_the_markdown_says_UNMEASURED_when_the_sweep_did_not_run() -> None:  # noqa: N802
@@ -162,3 +201,19 @@ def test_the_artifact_version_does_not_move_for_the_death_probe_section() -> Non
     assert ARTIFACT_VERSION == 8
     assert funnel_to_dict(_funnel())["artifact_version"] == 8
     assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 8
+
+
+def test_closed_is_the_sum_of_the_two_halves_by_construction(tmp_path: object) -> None:
+    """`closed` is the key every reader that predates T89's split already reads, so it must keep
+    answering "how many did the sweep retire?". A PROPERTY rather than a third field: a stored
+    total is a third number that can disagree with the two it summarises, and a report whose
+    halves do not add up would make a close unattributable — the same defect D-325 gave
+    `death_strikes` its own column to avoid."""
+    report = _sample()
+
+    assert report.closed == report.closed_by_url + report.closed_by_listing == 6
+    payload = funnel_to_dict(_funnel(report))["death_probe"]
+    assert isinstance(payload, dict)
+    assert payload["closed"] == payload["closed_by_url"] + payload["closed_by_listing"]
+    # And it cannot be set independently: there is no `closed` field to pass.
+    assert "closed" not in DeathProbeReport.__dataclass_fields__

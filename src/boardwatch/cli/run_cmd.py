@@ -15,6 +15,7 @@ from rich.console import Console
 from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT
+from boardwatch.pipeline.death_probe import build_listing_prober
 from boardwatch.pipeline.liveness import build_prober
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
 from boardwatch.scan.coordinator import ScanLockHeldError
@@ -220,6 +221,10 @@ def run(
             # CLI's decision. Not an offline switch — the scan stage fetches every configured
             # board, and `--no-scan` is what makes a run offline.
             liveness_prober=build_prober(settings) if check_liveness else None,
+            # T89's listing half, built on the same switch and for the same reason: it is
+            # network liveness, so `--no-check-liveness` disarms it too. Separate from the
+            # prober above because its unit is the company, not the posting.
+            listing_prober=build_listing_prober(settings) if check_liveness else None,
             # `None` unless given, same reasoning as `web_cmd`'s `--queue-root` resolution: a
             # relative root would price a shorter destination than the one actually written.
             queue_root=queue_root.expanduser().resolve() if queue_root is not None else None,

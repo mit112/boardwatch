@@ -93,6 +93,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # the same posting twice. Neutral by construction — neither says anything about roles,
     # seniority, geography or field, and a run reports both sides of the budget either way.
     "Settings.death_probe_budget": 50,
+    # T89. The same kind of cap one level up: how many BOARDS the list-API half may read per
+    # run. Neutral by construction — it names three ATS vendors, which is a statement about
+    # which APIs publish a whole board, not about roles, seniority, geography or field, and any
+    # tenant of those vendors gets the identical treatment.
+    "Settings.death_probe_company_budget": 100,
     "Settings.death_probe_ttl_hours": 24,
     "Settings.weights": {
         "skill_coverage": 0.5,
@@ -188,6 +193,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.jobapps_discovery_dir": "path",
     "Settings.jobapps_queue_dir": "path",
     "Settings.death_probe_budget": "operational",
+    "Settings.death_probe_company_budget": "operational",
     "Settings.death_probe_ttl_hours": "operational",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
