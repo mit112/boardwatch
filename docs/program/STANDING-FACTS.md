@@ -517,6 +517,14 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 - **Liveness is never cached, and "never" includes `postings.status`** (D-111). One 404 from a flaky CDN would
   otherwise retire a live requisition **irreversibly**. That column belongs to the scanner's
   `CLOSE_AFTER_MISSES = 2` rule, which works: 0 open postings are stale beyond 7 days.
+  **Corrected 2026-09-17:** that 0 was held there by the `jobapps` lane bumping `last_seen_at` on every
+  row it re-listed each run, and now that a listing no longer writes liveness the same query reads true ages.
+- **URL liveness is `unknown`, not `dead`, for a dead Ashby or Greenhouse posting.** A dead Ashby page answers
+  200 with an empty shell and a dead Greenhouse page redirects to `<board>?error=true` and then answers 200, so
+  `core/liveness.py` maps both to `refetch_ok` → alive. Only a board scan of a watched company, or the
+  list-API membership half of the death probe for unwatched `ashby`/`greenhouse`/`lever`, can close that class
+  — and a `jobapps`-lane listing is a local directory read that declares `"liveness"` secondhand, so it is
+  never evidence in either direction.
 - **Only 404/410 withholds a lead, and only from the URL asked about** (D-111, D-113). Timeout, 403, 5xx, a
   redirect and a NULL URL are all `unknown`. A live Pinterest posting answers 403 to an unfamiliar user agent.
 - **`Fetcher` sets `follow_redirects=True`**, so a `302 → 404` chain arrives as a bare 404, and
@@ -970,6 +978,13 @@ zero-evidence `eligible` abstains to `uncertain` (D-250); two rules that could n
 `degree:any_degree_required` and `work_auth:sponsorship_available` (D-256, #107); and **clearance is armed as
 a `blocker`** with `security_clearance={state:none,level:none}` (D-257) so the ~138 clearance-required
 postings resolve UNMET → ineligible → dropped.
+
+**Application-form questions are not in the JD any gate reads, and Greenhouse is the only board that exposes
+them:** its public job endpoint returns the form (`?questions=true`), and a citizenship / US-person /
+export-control question routes the lead to `_review` under `form_question_hard_stop` without ever writing a
+verdict, because the keystone requires a quoted span from the frozen JD and a form is not the frozen JD. Every
+other ATS's form is invisible to this repo, so a hard stop that lives only there is a permanent miss and a
+human read of the form is the last gate.
 
 **The role gate is tight and holding.** Four passes of SOFT denies — pre-sales/support/BD, non-eng
 managers/directors, Data Scientist/Analyst, business/ops/admin/pricing, and bare `Lead`
