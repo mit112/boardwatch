@@ -145,6 +145,15 @@ export const setFollowUp = (postingId: number, date: string): Promise<FollowUpRe
 export const clearFollowUp = (postingId: number): Promise<FollowUpResponse> =>
   request<FollowUpResponse>(`/api/queue/${String(postingId)}/unfollowup`, "POST");
 
+// The same note keyed on a JOB, for the applied history. An imported application has no posting
+// the queue delivered, so the two routes above cannot reach it — while the stored key is job-keyed
+// either way (`queue.followup.<job_id>`), which is why both pairs write one piece of state.
+export const setJobFollowUp = (jobId: number, date: string): Promise<FollowUpResponse> =>
+  request<FollowUpResponse>(`/api/applied/${String(jobId)}/followup`, "POST", { date });
+
+export const clearJobFollowUp = (jobId: number): Promise<FollowUpResponse> =>
+  request<FollowUpResponse>(`/api/applied/${String(jobId)}/unfollowup`, "POST");
+
 export const revealFolder = (postingId: number): Promise<RevealResponse> =>
   request<RevealResponse>(`/api/queue/${String(postingId)}/reveal`, "POST");
 

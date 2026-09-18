@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **An imported application can carry a follow-up date (2026-09-18, T94).**
+  `POST /api/applied/<job_id>/followup` and `/unfollowup`, keyed on the JOB rather than a posting
+  and guarded on that job holding an application. The stored key was job-keyed from the start
+  (`queue.followup.<job_id>`) and the applied page already READ it, so only the write was
+  unreachable: 58 of the owner's 61 applications were imported, carry no posting the queue
+  delivered, and so showed no date input at all. Both routes share one date parser and one
+  response shape, so the ±366-day bound and the stored-value echo cannot drift apart.
 - **Greenhouse application-form questions hold a lead for review (2026-09-17, T91).** The public
   job endpoint's `questions[]` is fetched once per posting version, cached in
   `posting_form_questions`, and matched against a closed three-surface catalog (citizenship,

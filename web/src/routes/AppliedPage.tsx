@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  clearFollowUp,
+  clearJobFollowUp,
   getApplied,
   markApplied,
   openPdf,
-  setFollowUp,
+  setJobFollowUp,
   unapply,
 } from "../api/client";
 import type { AppliedCounts, AppliedRow } from "../api/types";
@@ -31,9 +31,11 @@ import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
  * tree. What it has to answer, with the page open during a recruiter call, is four things at once:
  * what was applied to, when, whether the requisition is still up, and which résumé went out.
  *
- * Everything on it is a read except one write, and that write is the queue's EXISTING inverse
- * route (`unapply` -> `mark_job_unapplied`). Its undo is the queue's existing forward route. No
- * new write path reaches this page, which is what keeps `applications` with one writer per intent.
+ * Everything on it is a read except two, and neither touches `applications` beyond the writer it
+ * already had: the unmark is the queue's EXISTING inverse route (`unapply` ->
+ * `mark_job_unapplied`), and the follow-up writes `app_state` through a route keyed on the JOB.
+ * That second one exists because 58 of 61 applications here were IMPORTED and carry no posting the
+ * queue delivered, so the queue's posting-keyed routes could not reach the rows this page is for.
  */
 
 /** The date every row is read by. `submitted_at` is when the application was MADE; `created_at`
@@ -302,9 +304,9 @@ function RowAction({
  * input is therefore uncontrolled and remounted (`key`) whenever the STORED date changes, so it
  * always shows what the store holds without a keystroke being able to write an intermediate one.
  *
- * A row the queue never delivered gets no input at all: both follow-up routes key on a posting id,
- * so there would be nothing to write with. Said in words, the way that row already accounts for
- * its missing unmark.
+ * EVERY row gets the input, including one the queue never delivered: the write is keyed on the
+ * job, which every application has, and the store has only ever held one date per job. This is
+ * unlike the unmark beside it, which really does need a delivered posting id.
  */
 function FollowUpCell({
   row,
@@ -317,11 +319,6 @@ function FollowUpCell({
 }) {
   const pinned = row.follow_up ?? null;
   const named = `${text(row.company)} — ${text(row.title)}`;
-  if (row.posting_id == null) {
-    return (
-      <span className="text-xs text-fg-3">no posting — nothing to pin a date to</span>
-    );
-  }
   return (
     <span className="flex flex-wrap items-center gap-2">
       <FollowUpBadge followUp={row.follow_up} />
@@ -428,10 +425,10 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
   }, []);
 
   /*
-   * Pin a follow-up date, or drop one, through the queue's EXISTING routes — no new write path
-   * reaches this page. The undo restores the PREVIOUS value through the same two routes rather
-   * than repainting the row, so a toast that says it put the old date back has actually written
-   * it: the rule `unapply` established for the applied toast.
+   * Pin a follow-up date, or drop one, on the JOB — the id every row here has, and the id the
+   * store has always keyed the date under. The undo restores the PREVIOUS value through the same
+   * two routes rather than repainting the row, so a toast that says it put the old date back has
+   * actually written it: the rule `unapply` established for the applied toast.
    *
    * `load()` follows a settled write because the band's `follow_up_due` is the SERVER's figure,
    * counted once per job and gated on the submitted statuses — a client-side recount here would
@@ -439,10 +436,6 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
    */
   const writeFollowUp = useCallback(
     (row: AppliedRow, next: string | null) => {
-      const postingId = row.posting_id;
-      /* Both routes key on a posting id, and the cell offers no input without one — this is the
-         guard for the path the render already refuses. */
-      if (postingId == null) return;
       /*
        * An EMPTY value writes nothing, and clearing is the button beside the input. A date input
        * reports `value === ""` for any incomplete date, so routing "" to a clear would let an
@@ -454,7 +447,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
       applyFollowUp(row.job_id, next);
       const named = `${text(row.company)} — ${text(row.title)}`;
       const write = (value: string | null): Promise<unknown> =>
-        value === null ? clearFollowUp(postingId) : setFollowUp(postingId, value);
+        value === null ? clearJobFollowUp(row.job_id) : setJobFollowUp(row.job_id, value);
       void write(next)
         .then(() => {
           push({

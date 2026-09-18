@@ -85,6 +85,7 @@ from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.store.applications import (
     MarkOutcome,
     MarkResult,
+    get_applications,
     mark_job_applied,
     mark_job_unapplied,
 )
@@ -175,6 +176,12 @@ _QUEUE_ACTION = re.compile(
     r"^/api/queue/(\d+)/"
     r"(applied|unapplied|skipped|unskip|reported|unreport|followup|unfollowup|reveal)$"
 )
+#: The applied history's follow-up write, keyed on a JOB rather than a posting. Disjoint from
+#: every `_QUEUE*` route above by prefix: an imported application has no posting the queue
+#: delivered, so `_QUEUE_ACTION` can never reach it, while the stored key was job-keyed from the
+#: start (`queue.followup.<job_id>`). Only these two actions are mounted here — a page that is
+#: otherwise read-only gains no lane, verdict or applied-state write.
+_APPLIED_ACTION = re.compile(r"^/api/applied/(\d+)/(followup|unfollowup)$")
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
@@ -428,6 +435,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         if method == "POST" and (action := _QUEUE_ACTION.match(path)) is not None:
             self._action(int(action.group(1)), action.group(2))
+            return
+        if method == "POST" and (applied := _APPLIED_ACTION.match(path)) is not None:
+            self._applied_followup(
+                int(applied.group(1)), clearing=applied.group(2) == "unfollowup"
+            )
             return
         self._error(HTTPStatus.NOT_FOUND, f"{method} {path} is not a route")
 
@@ -698,12 +710,56 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if result.outcome is MarkOutcome.NO_POSTING:
             self._error(HTTPStatus.NOT_FOUND, "no such posting")
             return
+        self._followup_json(on)
+
+    def _applied_followup(self, job_id: int, *, clearing: bool) -> None:
+        """The same note, written from the applied history, where the id is a JOB.
+
+        D-517 measured the gap this closes: 58 of 61 applications were IMPORTED, so they carry no
+        posting the queue ever delivered, and every follow-up route keyed on one — the date input
+        existed on 3 rows out of 61. Nothing about the STORED state changes: the key was
+        `queue.followup.<job_id>` from the start, and `followup_job_dates` already resolved it for
+        this page's reads. Only the write had no door.
+
+        Guarded on the job holding an application, through the reader `track` already uses. The id
+        arrives off the wire, so without that check this would write state for any integer — and
+        for a job with no application the page it serves would not show the row it had written.
+
+        No `_reconcile`, for `_followup`'s reason: a follow-up moves no folder. And no new
+        `applications` write of any kind, which is what keeps one writer per intent on that table.
+        """
+        on = None if clearing else self._followup_date()
+        if not clearing and on is None:
+            return
+
+        def work(conn: Connection) -> MarkResult:
+            if not get_applications(conn, job_id):
+                return MarkResult(MarkOutcome.NO_POSTING)
+            if on is None:
+                clear_job_followup(conn, job_id=job_id)
+            else:
+                set_job_followup(conn, job_id=job_id, on=on)
+            return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id)
+
+        result = self._write(work)
+        if result is None:
+            return
+        if result.outcome is MarkOutcome.NO_POSTING:
+            self._error(HTTPStatus.NOT_FOUND, "no application on that job")
+            return
+        self._followup_json(on)
+
+    def _followup_json(self, on: date | None) -> None:
+        """The one response shape both follow-up routes answer with.
+
+        Shared rather than copied because the ECHO is the contract: the optimistic client renders
+        the date the STORE holds rather than the one it sent, and two copies of that rule is how
+        one route starts echoing the request instead.
+        """
         self._json(
             HTTPStatus.OK,
             {
                 "outcome": "follow_up_cleared" if on is None else "follow_up_set",
-                # Echoed so the optimistic client renders the date the STORE holds rather than
-                # the one it sent, which are the same string only while this parser stays strict.
                 "follow_up": None if on is None else on.isoformat(),
             },
         )
