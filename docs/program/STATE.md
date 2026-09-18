@@ -20,6 +20,31 @@
 
 ## Current standing
 
+### 2026-09-17b — **THE FIRST AUTOAPPLY PRE-FLIGHT VERIFIED AND TICKETED (`TICKETS-2026-09-17.md`); T88–T91 + T93 SHIPPED INSIDE THE FREEZE: D-518. PRs #385–#387 MERGED; #388 (T91) and #389 (T93) GREEN WITH AUTO-MERGE ARMED — confirm they merged before reading run 434.**
+
+**16 of the 22 leads the owner withdrew were review-lane holds**, not apply-lane leads; the
+pre-flight read the union of both lanes. **Source the next pre-flight from the apply lane only**
+(top-level queue folders). The six real slips were 3 form-only citizenship/ITAR (all Greenhouse),
+2 dead jobapps-created rows, 1 defense employer (owner call). Held whole in D-518; the per-category
+verdicts and the owner calls are in the tickets file §1 and §3.
+
+**What run 434 (2026-09-18 04:00) runs for the first time** — read each in the log:
+`death probe:` now prints TWO lines (URL half, listing half: `companies_attempted`,
+`listing_absent`, `closed_by_listing`); a `form questions:` line (candidates / cached / fetched /
+unfetched / budget_refused); migration `p_form_questions` applies at the run's first command;
+`closed_count` should step up once as the ~90 watched-board jobapps rows stop being refreshed.
+**None of T88–T91 touches a digested module or `rules.yaml`** — the manifest's rules and config
+hashes must read unchanged; if they moved, something is wrong.
+
+**Parked:** T92 (structured `employmentType` → `contract_not_fte`; 2 rows today) until the window
+after 09-19, batched with the Sonnet judge move. **Owner calls, not defaulted (tickets §3):**
+visa-class specificity; a `defense_employer` HOLD family; a per-company posting-volume signal;
+structured salary as a seniority input; whether a provider field counts as the frozen JD.
+**Follow-ups the executors surfaced:** a newly delivered Greenhouse lead is rendered once before
+the form sweep holds it; `queue_detail` does not carry `judge_seniority_fit` (pre-existing);
+form-sweep counts are console-only, not in the funnel; `smartrecruiters` (812 unwatched rows, 8
+companies) is the next list endpoint. The owner's findings doc stays UNTRACKED (names his status).
+
 ### 2026-09-17 — **RUN 433 CLEAN (confirm day 12); WEB WAVE 2 SHIPPED AFTER A BLIND REVIEW OF A GREEN UNION FOUND SIX DEFECTS: D-517. PR #383 MERGED.**
 
 **Run 433 (readout in `METRICS.md`).** 04:00 tick, `ok`, 77 min, RECONCILES, `runs = 8` exit 0.
@@ -48,7 +73,8 @@ merge (D-360): restart it after every one.
 **Next action — unchanged in substance: the two dated readings on 09-19 decide M4 and M5.**
 
 1. **Read the 04:00 tick each morning by `max(runs.id)`** — 433 was 09-17, expect 434 on 09-18.
-   Confirm day 13.
+   Confirm day 13. **434 is the first run on T88–T91: read the two `death probe:` lines and the
+   `form questions:` line, and check the manifest's rules/config hashes did NOT move (D-518).**
 2. **M4: second Gate 1 reading ~09-19** is the last condition; if it holds, job-apps switches off.
 3. **M5: confirm day 14 is 09-19.** Reconciliation `True` on every run since 09-07.
 4. **First thing after 09-19:** the gate judge off haiku onto Sonnet (D-477, D-514). NOT web work.
