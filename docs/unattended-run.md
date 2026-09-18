@@ -75,7 +75,9 @@ What to expect from an unattended run:
 
   Above that, the remaining `refused by budget` is ordinary backlog and costs you nothing today.
   `0` disarms a half while still reporting its whole due population as refused, so a disarmed
-  sweep can never be misread as a corpus with nothing dead in it.
+  sweep can never be misread as a corpus with nothing dead in it. Do not leave the listing half at
+  `0` for long: a dead Ashby or Greenhouse page answers 200, so the URL half reads it as alive, and
+  for unwatched companies on those boards the listing half is the only thing that can close it.
 - **The delivery queue's root can be overridden with `--queue-root PATH`**, the same option `web`
   takes; omit it and the queue defaults to `~/boardwatch-queue`. If `BOARDWATCH_DATA_DIR` is set
   (rather than `--data-dir`) and `--queue-root` is not, `run` refuses instead of reconciling the

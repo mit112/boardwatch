@@ -223,6 +223,18 @@ the count appears under the table, `stats` reports it, `show <id>` explains any 
 Only a confident hit hides a posting; an unresolved level token abstains rather than guessing.
 Level-aware gating is optional and documented in [configuration](docs/configuration.md#level-aware-gating).
 
+**The application form is not part of the posting boardwatch reads**, and on a Greenhouse board
+a form question stating a citizenship, US-person or export-control requirement holds the lead for
+you to read rather than writing a verdict — a form is not the posting an evidence chain can quote
+from. On every other board the form is invisible, so a requirement that lives only there is a
+permanent miss, and your own read of the form before you apply is the last gate.
+
+**A posting that has been taken down does not always answer as gone:** a dead Ashby page answers
+HTTP 200 with an empty shell, and a dead Greenhouse page redirects to an error URL that also
+answers 200, so the per-URL liveness re-check reads both as alive. What closes them is absence
+from the company's own job list — seen in a scan of a board you watch, or through that ATS's list
+endpoint — so a stored URL with no board behind it can sit open indefinitely.
+
 ---
 
 ## What changed since you last looked
