@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Greenhouse application-form questions hold a lead for review (2026-09-17, T91).** The public
+  job endpoint's `questions[]` is fetched once per posting version, cached in
+  `posting_form_questions`, and matched against a closed three-surface catalog (citizenship,
+  ITAR/US-person, citizen-or-green-card); a hit routes the lead to `_review` as
+  `form_question_hard_stop` with the quoted question, never a verdict. `form_question_fetch_budget`
+  (default 100) bounds GETs; the fetcher is injected by `run`, so tests never reach the network.
+- **The death probe asks an ATS list endpoint for unwatched `ashby`/`greenhouse`/`lever` rows
+  (2026-09-17, T89).** One GET per company; absence from a parseable listing is a strike,
+  presence clears, anything else is unknown. Those rows leave the URL path. New
+  `death_probe_company_budget` (default 100); the funnel reports both halves.
+- **The death probe asks about standing leads first (2026-09-17, T90).** Both paths sort rows
+  whose job the queue still holds ahead of the rest, in SQL before the budget's `LIMIT`; the
+  listing path gains a per-row TTL.
+
 - **The web app's wave-2 features: follow-up dates and the applied history (2026-09-17).** Both
   were deferred in the web spec (D10, §11) and un-deferred by the owner on 2026-09-16. Everything
   lives under `delivery/`, `store/delivery_queries.py`, `store/queue_state.py` and `web/`, none
@@ -606,6 +620,13 @@ All notable changes to this project are documented here. The format follows
   this change: approve once more after upgrading.**
 
 ### Fixed
+
+- **A jobapps-lane listing no longer counts as liveness (2026-09-17, T88).** Every jobapps record
+  declares `"liveness"` secondhand, so re-listing a static directory no longer resets
+  `consecutive_missing`, `death_strikes` or `last_seen_at`, and no longer reopens a closed row.
+  Watched-board rows the lane kept alive now close on the second scan that omits them.
+- **A dead Ashby (HTTP 200 shell) or Greenhouse (`?error=true`) posting reads `alive` to the URL
+  probe** — now documented (T93) and closed by T89's listing half instead.
 
 - **A gate policy bump now actually reaches the leads it should re-judge (D-512).**
   `run_gate_stage`'s never-re-judge filter (D-477 pt 5) shared the DISPLAY read
