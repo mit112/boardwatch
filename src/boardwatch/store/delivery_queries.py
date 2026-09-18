@@ -706,6 +706,26 @@ def closed_job_ids(conn: Connection) -> set[int]:
     return {row.job_id for row in delivered_unapplied(conn, skipped=set()) if row.closed}
 
 
+def standing_lead_job_ids(conn: Connection) -> set[int]:
+    """`job_id` for every lead still standing in front of the owner.
+
+    One name for the set `delivery/server.py::_skip_batch` already calls "the standing set", so
+    a reader outside this module — `pipeline/death_probe.py` is the first — asks the question
+    once rather than re-deriving it from `job_dispositions` or from `applications`. Derived from
+    `delivered_unapplied` for the same reason `closed_job_ids` and `review_job_ids` are: nothing
+    may disagree with the queue page about which leads exist. `skipped=set()` matches those two,
+    so the applied/skipped precedence stays in `_wanted_location`.
+
+    **It is the union of every lane, not just apply plus review**, and that width is deliberate
+    rather than unnoticed: the drained leads (`ineligible`, `_closed`, `_lane_copy`) are still
+    delivered rows this set names. Narrowing it would mint a fifth caller of
+    :func:`boardwatch.delivery.review_gate.lane` to answer a question no caller has yet needed —
+    and the one caller there is uses this only as a PRIORITY, where over-inclusion costs a
+    handful of places in a queue and under-inclusion costs a lead.
+    """
+    return {row.job_id for row in delivered_unapplied(conn, skipped=set())}
+
+
 def review_job_ids(conn: Connection) -> set[int]:
     """`job_id` for every delivered lead the verified-uncertain check routes to the review lane.
 
@@ -1203,5 +1223,6 @@ __all__ = [
     "delivered_unapplied",
     "ineligible_job_ids",
     "queue_detail",
+    "standing_lead_job_ids",
     "standing_slate_keys",
 ]

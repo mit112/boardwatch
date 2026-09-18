@@ -45,7 +45,9 @@ from boardwatch.pipeline.death_probe import (
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.delivery_queries import delivered_unapplied, standing_lead_job_ids
 from boardwatch.store.queries import insert_run
+from boardwatch.store.run_funnel_queries import TAILORED_KIND
 
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
 
@@ -871,3 +873,214 @@ def test_a_board_that_does_not_answer_still_spends_its_TTL(tmp_path: Path) -> No
     assert second.companies_due == 1
     assert second.companies_attempted == 1
     assert second.listing_unknown == 1
+
+
+# --- T90: the sweep reaches the rows the owner is actually looking at ----------------------
+#
+# Run 433 logged `death probe: 50 of 13101 due probed … 13051 refused by budget`. The URL
+# path's order is `last_death_probe_at ASC NULLS FIRST, id ASC`, so the sweep walks the oldest
+# ids first and a row a lane delivered this week is reached in roughly 260 runs. Of the 400
+# leads in the apply lane that day, 393 had never been probed and 300 sat on unwatched
+# companies; two of the six genuine apply-lane misses in the owner's pre-flight were dead rows
+# the sweep had never reached. The delivery queue drains `_closed` automatically (D-383), so a
+# standing lead is the one row whose death the owner FEELS.
+#
+# The control for this whole block is `test_the_budget_takes_the_least_recently_probed_first`
+# above: with no standing leads anywhere the round-robin must be untouched, because the D-325
+# ordering comment is still the reason this cannot become "probe the same head every run".
+
+
+def _deliver_lead(engine: Engine, posting_id: int) -> None:
+    """Make an existing posting a STANDING lead — the two rows `delivered_unapplied` joins out
+    of, and nothing else.
+
+    Not `tests/unit/test_delivery_queue.py::_deliver`: that helper mints its OWN company and
+    posting (watched, `source='user'`, plus a disk folder, a stored profile and an evaluation),
+    and what these tests need is a lead attached to a posting THIS file already seeded under an
+    unwatched company with a known id. The seed is therefore counted once through the queue's
+    own reader in `test_the_seeded_lead_is_a_standing_lead_by_the_queues_own_reader` — an
+    ordering assertion is silently satisfiable by a seed that created no lead at all.
+    """
+    run_id = insert_run(engine)
+    now = utcnow()
+    with engine.begin() as conn:
+        version_id = int(
+            conn.execute(
+                insert(tables.posting_versions).values(
+                    posting_id=posting_id,
+                    content_hash=content_hash(BODY),
+                    body_text=BODY,
+                    captured_at=now,
+                    run_id=run_id,
+                    capture_reason="new",
+                )
+            ).inserted_primary_key[0]
+        )
+        conn.execute(
+            insert(tables.artifacts).values(
+                posting_version_id=version_id,
+                kind=TAILORED_KIND,
+                uri=f"file:///tailored-{posting_id}.typ",
+                generator="boardwatch.tailor",
+                media_type="text/x-typst",
+                meta_json={"pdf_uri": f"file:///tailored-{posting_id}.pdf"},
+                created_at=now,
+                run_id=run_id,
+            )
+        )
+
+
+def _job_id(engine: Engine, posting_id: int) -> int:
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                select(tables.postings.c.job_id).where(tables.postings.c.id == posting_id)
+            ).scalar_one()
+        )
+
+
+def _last_probe(engine: Engine, posting_id: int) -> object:
+    with engine.connect() as conn:
+        return conn.execute(
+            select(tables.postings.c.last_death_probe_at).where(
+                tables.postings.c.id == posting_id
+            )
+        ).scalar_one()
+
+
+def test_the_seeded_lead_is_a_standing_lead_by_the_queues_own_reader(tmp_path: Path) -> None:
+    """The fixture guard for every ordering assertion below.
+
+    An order is satisfiable by accident: if `_deliver_lead` seeded nothing the queue can see,
+    the priority key would be constant, the existing `id ASC` order would decide, and the
+    assertions would still have to be read as evidence. So the seed is counted through
+    `delivered_unapplied` itself — the reader production's priority is built on — rather than
+    through the sweep that consumes it.
+    """
+    engine = _store(tmp_path)
+    posting_id = _posting(engine, _company(engine, slug="acme", watched=False))
+    _deliver_lead(engine, posting_id)
+
+    with engine.connect() as conn:
+        assert {row.posting_id for row in delivered_unapplied(conn, skipped=set())} == {
+            posting_id
+        }
+        assert standing_lead_job_ids(conn) == {_job_id(engine, posting_id)}
+
+
+def test_a_standing_lead_is_url_probed_before_an_older_row_nobody_holds(tmp_path: Path) -> None:
+    """The URL path, at a budget of one. Three due rows, ids ascending, the HIGHEST holding the
+    lead: today `last_death_probe_at ASC NULLS FIRST, id ASC` takes the lowest id and the lead
+    waits for the sweep to walk the whole class."""
+    engine = _store(tmp_path)
+    company_id = _company(engine, slug="acme", watched=False)
+    ids = [
+        _posting(engine, company_id, pid=f"p-{n}", url=f"https://boards.example.test/j/{n}")
+        for n in range(3)
+    ]
+    _deliver_lead(engine, ids[-1])
+
+    url = _url_prober_that_records(_gone)
+    report = _sweep(engine, url, budget=1)
+
+    assert (report.due, report.attempted, report.budget_refused) == (3, 1, 2)
+    assert url.asked == [ids[-1]]  # type: ignore[attr-defined]
+
+
+def test_the_priority_is_applied_before_the_budget_not_after_it(tmp_path: Path) -> None:
+    """The reason the sort key is SQL and not a re-sort of the fetched rows: a Python-side
+    re-ordering of a `LIMIT`ed result would rank only the rows the limit already admitted, and
+    a lead sitting past the budget's edge would be cut before the priority ever saw it.
+
+    Ten due rows, the lead LAST by id, a budget of one — so the lead is outside any window an
+    unprioritised `LIMIT 1` could return.
+    """
+    engine = _store(tmp_path)
+    company_id = _company(engine, slug="acme", watched=False)
+    ids = [
+        _posting(engine, company_id, pid=f"p-{n}", url=f"https://boards.example.test/j/{n}")
+        for n in range(10)
+    ]
+    _deliver_lead(engine, ids[-1])
+
+    url = _url_prober_that_records(_gone)
+    _sweep(engine, url, budget=1)
+
+    assert url.asked == [ids[-1]]  # type: ignore[attr-defined]
+
+
+def test_a_company_holding_a_standing_lead_is_asked_before_an_older_one(tmp_path: Path) -> None:
+    """The listing path, where the probe unit is the COMPANY: a company with ANY standing lead
+    among its open rows sorts ahead of one with none. Two never-asked companies tie on both
+    existing terms, so today `companies.id ASC` decides and the later-id company waits."""
+    engine = _store(tmp_path)
+    plain = _company(engine, slug="plain", watched=False, provider="ashby")
+    holder = _company(engine, slug="holder", watched=False, provider="ashby")
+    _posting(engine, plain, pid="plain-1")
+    lead = _posting(engine, holder, pid="holder-1")
+    _deliver_lead(engine, lead)
+
+    listing = _listing("something-else")
+    report = _sweep(engine, _gone, listing_prober=listing, company_budget=1)
+
+    assert (report.companies_due, report.companies_attempted) == (2, 1)
+    assert [slug for _, _, slug in listing.asked] == ["holder"]  # type: ignore[attr-defined]
+
+
+def test_the_priority_never_overrides_the_ttl(tmp_path: Path) -> None:
+    """Priority reorders the DUE set; it does not widen it.
+
+    The trap it closes is the priority becoming "always the same 300 leads": a probed row leaves
+    the due set for `ttl_hours`, so the next run's budget has to flow to the rest of the class.
+    Here the lead is the HIGHER id, so the first sweep proves the priority and the second proves
+    the TTL still governs it — today the two probes come back in the opposite order.
+    """
+    engine = _store(tmp_path)
+    company_id = _company(engine, slug="acme", watched=False)
+    other = _posting(engine, company_id, pid="other", url="https://boards.example.test/j/other")
+    lead = _posting(engine, company_id, pid="lead", url="https://boards.example.test/j/lead")
+    _deliver_lead(engine, lead)
+
+    url = _url_prober_that_records(_error)
+    _sweep(engine, url, budget=1)
+    second = _sweep(engine, url, budget=1)
+
+    assert url.asked == [lead, other]  # type: ignore[attr-defined]
+    # The lead is no longer due, so the whole due set is the one row that has never been asked.
+    assert (second.due, second.attempted, second.budget_refused) == (1, 1, 0)
+
+
+def test_a_listing_row_asked_within_the_ttl_is_neither_struck_nor_stamped(
+    tmp_path: Path,
+) -> None:
+    """The listing path's per-row TTL, which the URL path has always had.
+
+    A COMPANY is due when ANY of its open rows is never-asked or past the TTL, and every open
+    row of an asked company was then struck and stamped. So one new lane row re-asks the board
+    inside the TTL and an OLDER row that struck an hour ago takes its SECOND strike in the same
+    day — two strikes in two runs, but not 24 h apart, which is weaker than the bar
+    `CLOSE_AFTER_MISSES` is meant to set and weaker than the URL half enforces for the same
+    evidence.
+
+    `struck` was answered about an hour ago; `fresh` has never been asked. The listing omits
+    both. Only `fresh` may earn a strike, and `struck`'s own timestamp must not move — moving it
+    would slide the row's next legitimate ask a further TTL into the future every run.
+    """
+    engine = _store(tmp_path)
+    company_id = _company(engine, slug="acme", watched=False, provider="ashby")
+    struck = _posting(engine, company_id, pid="struck")
+
+    _sweep(engine, _gone, listing_prober=_listing("something-else"))
+    assert _row(engine, struck) == ("open", 1, None)
+    _set_probe_age(engine, company_id, hours=1)
+    stamped_at = _last_probe(engine, struck)
+    fresh = _posting(engine, company_id, pid="fresh")
+
+    report = _sweep(engine, _gone, listing_prober=_listing("something-else"))
+
+    assert _row(engine, struck) == ("open", 1, None)
+    assert _last_probe(engine, struck) == stamped_at
+    assert _row(engine, fresh) == ("open", 1, None)
+    # The board DID answer about both rows and listed neither, so both are counted absent. The
+    # per-row TTL withholds the strike, not the observation.
+    assert (report.listing_absent, report.closed_by_listing) == (2, 0)

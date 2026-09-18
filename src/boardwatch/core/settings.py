@@ -341,6 +341,15 @@ class Settings(BaseModel):
     # a class growing ~182/day. Floor of 0, and 0 is a real setting — it disarms the sweep while
     # still reporting the whole due population as `budget_refused`, so a disarmed check reads as
     # refused work rather than as a clean corpus.
+    #
+    # T90 — size it from the funnel, not from this default. `budget_refused` on the `death_probe`
+    # stage says how much of the due class the sweep never reached, and the sweep now probes rows
+    # carrying a STANDING LEAD first, so the first rows the budget buys are the ones whose death
+    # the owner feels. The useful reading is therefore "is the budget at least as large as the
+    # standing-lead population?": at that size every held row is asked about once per TTL and the
+    # rest of `budget_refused` is ordinary backlog. Run 433 read 50 of 13,101 due with 400 leads
+    # standing, which is why raising it is the operator's move in `config.toml` and not a change
+    # to this default — the cost is linear in wall-clock and only they know the run's budget.
     death_probe_budget: int = Field(default=50, ge=0)
     # T89 — the same cap for the ATS list-API half, whose probe unit is the COMPANY: one GET of
     # `api.ashbyhq.com` / `boards-api.greenhouse.io` / `api.lever.co` answers every open row a
