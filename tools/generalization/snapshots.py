@@ -99,6 +99,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # tenant of those vendors gets the identical treatment.
     "Settings.death_probe_company_budget": 100,
     "Settings.death_probe_ttl_hours": 24,
+    # How many application forms one queue sync may fetch. Neutral by construction: it bounds
+    # the COST of asking a board a question and encodes no view about roles, seniority,
+    # geography, field or work authorization -- the hold it can produce applies to every
+    # profile status alike, because the reader answers the question, not a rule.
+    "Settings.form_question_fetch_budget": 100,
     "Settings.weights": {
         "skill_coverage": 0.5,
         "title_match": 0.25,
@@ -195,6 +200,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.death_probe_budget": "operational",
     "Settings.death_probe_company_budget": "operational",
     "Settings.death_probe_ttl_hours": "operational",
+    "Settings.form_question_fetch_budget": "operational",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
     "RankWeights.skill_coverage": "preference",

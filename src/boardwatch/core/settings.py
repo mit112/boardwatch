@@ -363,6 +363,17 @@ class Settings(BaseModel):
     # whatever the run cadence, which is what keeps the budget spread across the class instead
     # of re-asking the same head every three hours.
     death_probe_ttl_hours: int = Field(default=24, ge=1)
+    # T91 — the Greenhouse application-form fetch. Bounds the GETs one queue sync may spend
+    # asking boards for the form behind a delivered lead, never the verdict and never the cache
+    # reads: a form already stored under a lead's current posting version is free forever.
+    #
+    # 100 against a measured 22 Greenhouse leads in a 400-lead apply lane, so the steady state is
+    # the leads delivered since the last run and the budget is slack rather than a throttle. It
+    # exists for the FIRST run after a backlog, where the whole delivered set is uncached at once.
+    # Floor of 0, and 0 is a real setting: it disarms the fetch while still reporting the whole
+    # candidate population as refused, so a disarmed pass reads as declined work rather than as a
+    # queue with no hard stops in it.
+    form_question_fetch_budget: int = Field(default=100, ge=0)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)

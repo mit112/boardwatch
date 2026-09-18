@@ -90,7 +90,17 @@ function Flags({ row }: { row: QueueRow }) {
           `off target` chip below can stay suppressed rather than repeat one decision. */}
       <ReviewReasonBadge
         reason={row.review_reason}
-        detailReason={row.review_reason === "role_vetoed" ? row.off_target_reason : null}
+        detailReason={
+          row.review_reason === "role_vetoed"
+            ? row.off_target_reason
+            : /* The QUOTED application-form question, routed exactly as the role gate's
+                 per-title evidence is above. `?? null` because the field is optional on the
+                 wire: an older server omits it, and the badge then falls back to its own copy
+                 rather than rendering `undefined`. */
+              row.review_reason === "form_question_hard_stop"
+              ? (row.form_question ?? null)
+              : null
+        }
       />
       {/* WHAT THE FINAL GATE SAID, which is not what the `VerdictChip` beside this cell says.
           On the measured apply lane 42 of 390 judged leads read `uncertain` here on rows the

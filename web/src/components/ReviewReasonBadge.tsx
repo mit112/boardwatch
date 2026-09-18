@@ -83,6 +83,15 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: the title looks entry-level but an independent read of the job description describes a more senior role. Read the JD before applying.",
   },
+  form_question_hard_stop: {
+    label: "form hard stop",
+    // States where the requirement WAS FOUND, because that is the whole point: the reader's first
+    // instinct on any hold is to open the JD, and for this one the JD says nothing. The generic
+    // copy is a fallback -- on a real row the QUOTED question arrives as `detailReason`, which is
+    // the evidence the reader actually acts on.
+    reason:
+      "Held for review: this employer's application form asks a citizenship or export-control question that the job description never mentions. Read the form before applying.",
+  },
   unevaluated: {
     label: "not evaluated",
     reason:

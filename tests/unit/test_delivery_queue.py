@@ -42,8 +42,10 @@ from filelock import FileLock
 from sqlalchemy import Connection, Engine, insert, select, update
 
 from boardwatch.core import lock_reclaim
+from boardwatch.core.politeness import FetchFailure
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import DRAIN_DIRS, queue
+from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     APPLIED_DIR,
     CLOSED_DIR,
@@ -73,7 +75,7 @@ from boardwatch.store.applications import create_application, set_application_st
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import QueueDetail, QueueRow, delivered_unapplied
 from boardwatch.store.quarantine_queries import record_quarantine
-from boardwatch.store.queries import save_eligibility, save_profile
+from boardwatch.store.queries import current_posting_versions, save_eligibility, save_profile
 from boardwatch.store.queue_state import (
     mark_job_reported,
     mark_job_skipped,
@@ -2619,3 +2621,278 @@ def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     assert drained.to_ineligible == 1
     assert len(_folders(root / INELIGIBLE_DIR)) == 1
     assert _folders(root / LANE_COPY_DIR) == []
+
+
+# ---------------------------------------------- the Greenhouse application form's hard stops (T91)
+
+
+#: A real Greenhouse posting URL, which is what `parse_posting_target` needs to resolve
+#: `(provider, slug, posting_ref)`. `APPLY_URL` above is deliberately NOT one — it is an opaque
+#: `boards.test` link — so every other fixture in this module reads as "not a Greenhouse lead".
+GREENHOUSE_URL = "https://job-boards.greenhouse.io/tenet3/jobs/8810809002"
+
+#: The tenet3 citizenship question, verbatim from the live payload (see `test_form_questions.py`).
+CITIZENSHIP_QUESTION = (
+    "This position requires current U. S. citizenship in order to achieve and maintain a "
+    "security clearance. Are you currently a U. S. citizen?"
+)
+
+
+def _questions_payload(*labels: str) -> bytes:
+    return json.dumps(
+        {
+            "id": 8810809002,
+            "questions": [
+                {"label": label, "description": None, "required": True, "fields": []}
+                for label in labels
+            ],
+            # Present so the exclusion has something to exclude on the integrated path too.
+            "compliance": [{"type": "eeoc", "description": "&lt;p&gt;CC-305&lt;/p&gt;", "questions": []}],
+        }
+    ).encode()
+
+
+class _FormFetcher:
+    """Counts GETs and answers each with a queued response. Not the real `Fetcher`: the point of
+    every test below is what the sweep ASKS FOR and how often, and a real client would put this
+    suite on the network."""
+
+    def __init__(self, *responses: object) -> None:
+        self.responses = list(responses)
+        self.urls: list[str] = []
+
+    def get(self, url: str) -> object:
+        self.urls.append(url)
+        answer = self.responses.pop(0) if self.responses else self.responses
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+class _FormResult:
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+        self.not_modified = False
+
+
+def test_a_greenhouse_lead_whose_form_states_a_hard_stop_lands_in_review(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The whole path, end to end: fetch, cache, match, lane, folder, sidecar.
+
+    This is the class the change exists for. The lead's BODY is the ordinary `JD` fixture — no
+    citizenship, no clearance, no ITAR, nothing the eligibility engine could read — so before the
+    sweep it is a confirmed-US, confirmed-software, `eligible` lead sitting in the blind-apply
+    queue, which is exactly where the three live leads of 2026-09-17 were. The only new evidence
+    is the application form, and it is enough to hold it.
+    """
+    with engine.begin() as conn:
+        held_id, _ = _deliver(conn, apps, "held", company="Tenet Co", url=GREENHOUSE_URL)
+        _deliver(conn, apps, "clear", company="Clear Co")
+
+    fetcher = _FormFetcher(_FormResult(_questions_payload(CITIZENSHIP_QUESTION)))
+    with engine.connect() as conn:
+        # Before: nothing is held, so the hold below is the form's doing and not the fixture's.
+        assert delivered_unapplied(conn, skipped=set())[0].form_question_hit is None
+        sweep = sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert sweep == FormQuestionSweep(candidates=1, cached=0, fetched=1)
+    assert fetcher.urls == [
+        "https://boards-api.greenhouse.io/v1/boards/tenet3/jobs/8810809002?questions=true"
+    ]
+    # The non-Greenhouse lead is untouched and still blindly appliable: the gate reaches one
+    # provider by construction and must not disturb the rest of the queue.
+    assert _folders(root) == ["Clear_Co_Software_Engineer"]
+    assert _folders(root / REVIEW_DIR) == ["Tenet_Co_Software_Engineer"]
+
+    details = _details(root / REVIEW_DIR / "Tenet_Co_Software_Engineer")
+    assert details["review_reason"] == "form_question_hard_stop"
+    # The EVIDENCE travels with the reason, and it has to: this reason names a requirement the
+    # `job-description.txt` in the same folder does not state, so a reader who cannot see the
+    # question concludes the gate misfired.
+    assert details["form_question"] == CITIZENSHIP_QUESTION
+    jd = (root / REVIEW_DIR / "Tenet_Co_Software_Engineer" / JD_FILE).read_text(encoding="utf-8")
+    assert "citizen" not in jd.lower() and "clearance" not in jd.lower()
+    # And it writes NO verdict: the form is not the frozen JD, so `INELIGIBLE` is unreachable
+    # here however clear the question is.
+    with engine.connect() as conn:
+        assert {r.posting_id: r.verdict for r in delivered_unapplied(conn, skipped=set())}[
+            held_id
+        ] == "eligible"
+
+
+def test_a_form_with_no_hard_stop_leaves_the_lead_in_the_apply_queue(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The control that must stay GREEN, and the arm a hold-every-Greenhouse-lead mutant fails.
+    A fetched form is not a hold — 22 of 400 apply-lane leads are Greenhouse rows, and holding
+    them all would cost the owner 21 real applications to catch one."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "ordinary", company="Ordinary Co", url=GREENHOUSE_URL)
+
+    fetcher = _FormFetcher(_FormResult(_questions_payload("First Name", "LinkedIn Profile")))
+    with engine.connect() as conn:
+        sweep = sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert sweep.fetched == 1
+    assert _folders(root) == ["Ordinary_Co_Software_Engineer"]
+    assert _details(_sole_folder(root))["form_question"] is None
+
+
+def test_the_form_is_asked_for_once_per_posting_version_and_never_again(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """THE CACHE, and it is priced in requests rather than in rows: `sync_queue` runs at the end of
+    every run, at web-server start-up and after every mark-applied, so a per-run GET per lead would
+    be hundreds of requests a day against a host we promise 1 req/s.
+
+    The second sweep reads the same 1 candidate and issues NO request. The match is still made —
+    the catalog is applied on READ, over the stored payload — so the lead stays held.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, apps, "cached", company="Cached Co", url=GREENHOUSE_URL)
+
+    fetcher = _FormFetcher(_FormResult(_questions_payload(CITIZENSHIP_QUESTION)))
+    with engine.connect() as conn:
+        first = sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+        second = sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert first == FormQuestionSweep(candidates=1, fetched=1)
+    assert second == FormQuestionSweep(candidates=1, cached=1)
+    assert len(fetcher.urls) == 1
+    assert _folders(root / REVIEW_DIR) == ["Cached_Co_Software_Engineer"]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [FetchFailure("HTTP 500 after 3 attempts", status_code=500), TimeoutError("read timeout")],
+    ids=["http-500", "timeout"],
+)
+def test_a_board_that_will_not_answer_never_holds_the_lead(
+    engine: Engine, root: Path, apps: Path, failure: Exception
+) -> None:
+    """FAIL-OPEN, counted. This is the safety argument for putting a network read on the delivery
+    path at all: an error is "no questions known", reported as `unfetched`, and the lead rides on
+    into the apply queue exactly as it did before this gate existed. The opposite direction would
+    cost the owner a real application every time a board 500s."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "unreachable", company="Silent Board Co", url=GREENHOUSE_URL)
+
+    fetcher = _FormFetcher(failure)
+    with engine.connect() as conn:
+        sweep = sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert sweep == FormQuestionSweep(candidates=1, unfetched=1)
+    assert _folders(root) == ["Silent_Board_Co_Software_Engineer"]
+    assert _folders(root / REVIEW_DIR) == []
+    # And it is RETRYABLE: a failure is not cached, so the next run asks again rather than
+    # treating one bad minute as a permanent answer about this requisition.
+    with engine.connect() as conn:
+        assert sweep_form_questions(
+            conn, fetcher=_FormFetcher(failure), budget=100  # type: ignore[arg-type]
+        ) == FormQuestionSweep(candidates=1, unfetched=1)
+
+
+def test_the_budget_bounds_the_requests_and_reports_what_it_refused(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A budget that silently dropped the remainder would make a throttled run indistinguishable
+    from a queue with no hard stops in it. `0` is a real setting and disarms the sweep, reporting
+    the whole candidate population as refused."""
+    with engine.begin() as conn:
+        for key in ("one", "two", "three"):
+            _deliver(conn, apps, key, company=f"Co {key}", url=GREENHOUSE_URL)
+
+    payloads = [_FormResult(_questions_payload("First Name")) for _ in range(3)]
+    with engine.connect() as conn:
+        assert sweep_form_questions(
+            conn, fetcher=_FormFetcher(*payloads), budget=0  # type: ignore[arg-type]
+        ) == FormQuestionSweep(candidates=3, budget_refused=3)
+        bounded = _FormFetcher(*payloads)
+        assert sweep_form_questions(conn, fetcher=bounded, budget=2) == FormQuestionSweep(  # type: ignore[arg-type]
+            candidates=3, fetched=2, budget_refused=1
+        )
+        assert len(bounded.urls) == 2
+        # The third lead is picked up by the NEXT run, and the two already stored cost nothing.
+        assert sweep_form_questions(
+            conn, fetcher=_FormFetcher(*payloads), budget=2  # type: ignore[arg-type]
+        ) == FormQuestionSweep(candidates=3, cached=2, fetched=1)
+
+
+def test_a_closed_greenhouse_lead_is_never_asked_about(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A dead requisition gets no GET. `classify` drains it above the form branch (D-383), so no
+    answer could move it, and asking would spend the budget on work that cannot exist."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "gone", company="Gone Co", url=GREENHOUSE_URL)
+        conn.execute(
+            postings.update().where(postings.c.id == posting_id).values(status="closed")
+        )
+
+    fetcher = _FormFetcher()
+    with engine.connect() as conn:
+        assert sweep_form_questions(
+            conn, fetcher=fetcher, budget=100  # type: ignore[arg-type]
+        ) == FormQuestionSweep(candidates=0)
+    assert fetcher.urls == []
+
+
+def test_the_pipeline_makes_no_form_request_unless_a_caller_supplies_a_fetcher(
+    engine: Engine, apps: Path
+) -> None:
+    """The sweep is INJECTED, never built inside the pipeline — and this is a property of the
+    GATE, not only of the API.
+
+    `make check` runs on three operating systems and must make no request of its own, while
+    fixtures across this suite carry real `boards.greenhouse.io` posting URLs (this module's own
+    `GREENHOUSE_URL` among them, on a lead this very test delivers). A `Fetcher` constructed
+    inside `_sync_queue` would put the gate on the network the first time one of them reached a
+    delivered lead — silently, and only on whichever machine happened to have connectivity.
+    `run_cmd` supplies the one fetcher that exists, exactly as it supplies the liveness prober and
+    for the same recorded reason.
+
+    Run against a REAL connection holding a real Greenhouse candidate, so the two arms cannot
+    pass by failing earlier: the no-fetcher arm has something it could have asked about, and the
+    absence of a cached row is the evidence it did not.
+    """
+    from rich.console import Console  # noqa: PLC0415
+
+    from boardwatch.pipeline import runner as runner_mod  # noqa: PLC0415
+    from boardwatch.store.form_question_queries import cached_form_questions  # noqa: PLC0415
+
+    class _Explode:
+        def get(self, url: str) -> object:
+            raise AssertionError(f"the gate must not fetch: {url}")
+
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "offline", company="Offline Co", url=GREENHOUSE_URL)
+
+    settings = load_settings()
+    # Controls: neither arm below can pass through the budget guard by accident, and the lead
+    # really is a candidate the sweep would otherwise ask about.
+    assert settings.form_question_fetch_budget > 0
+    console = Console(quiet=True)
+    with engine.connect() as conn:
+        version = current_posting_versions(conn, [posting_id])[posting_id]
+        assert sweep_form_questions(
+            conn, fetcher=_FormFetcher(_FormResult(_questions_payload(CITIZENSHIP_QUESTION))),
+            budget=0,
+        ) == FormQuestionSweep(candidates=1, budget_refused=1)  # type: ignore[arg-type]
+
+        # No fetcher -> UNMEASURED, and nothing is asked. `None` rather than a zeroed report,
+        # because "nobody asked" and "asked and found nothing" are different facts.
+        assert runner_mod._sweep_form_questions(conn, settings, console, None) is None
+        # The budget disarms it even when a caller DOES supply one, without the exploding fetcher
+        # being reached.
+        disarmed = settings.model_copy(update={"form_question_fetch_budget": 0})
+        assert (
+            runner_mod._sweep_form_questions(conn, disarmed, console, _Explode())  # type: ignore[arg-type]
+            is None
+        )
+        # And neither call stored anything, which is what says no request was made.
+        assert cached_form_questions(conn, [version.posting_version_id]) == {}

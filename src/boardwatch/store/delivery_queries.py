@@ -68,7 +68,7 @@ from boardwatch.eligibility.read import (
 from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
 from boardwatch.store.quarantine_queries import is_quarantined
-from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.queries import CurrentVersion, current_posting_versions
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.tables import (
@@ -155,6 +155,19 @@ class QueueRow:
     #: call and under the same identity as everything above it. `"unclear"` is the inert default,
     #: so a row judged before the field existed withholds nothing.
     judge_seniority_fit: str = "unclear"
+    #: T91. The QUOTED question from this posting's Greenhouse APPLICATION FORM that states a
+    #: citizenship or export-control hard stop, or `None`.
+    #:
+    #: `None` is three things at once and they are deliberately indistinguishable here: the lead is
+    #: not on Greenhouse, its form has not been fetched, or it was fetched and no catalog surface
+    #: matched. Only a HIT can move a lead, so an unasked or unanswerable form costs the owner
+    #: nothing — the fail-open direction a reading no rule can quote a span for is owed (D-380).
+    #:
+    #: Derived from the CACHE (`posting_form_questions`) under this row's own current version, in
+    #: the same read as everything above it. Nothing here fetches: the network pass is
+    #: `delivery/form_questions.sweep_form_questions`, run once per run, and this module never
+    #: writes.
+    form_question_hit: str | None = None
 
     @property
     def closed(self) -> bool:
@@ -371,6 +384,7 @@ def _queue_row(
     requirement_flags: RequirementFlags = NO_REQUIREMENT_FLAGS,
     judge_verdict: str | None = None,
     judge_seniority_fit: str = "unclear",
+    form_question_hit: str | None = None,
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -397,6 +411,7 @@ def _queue_row(
         requirement_flags=requirement_flags,
         judge_verdict=judge_verdict,
         judge_seniority_fit=judge_seniority_fit,
+        form_question_hit=form_question_hit,
     )
 
 
@@ -759,6 +774,7 @@ def review_job_ids(conn: Connection) -> set[int]:
             no_requirement_rows=row.requirement_flags.no_requirement_rows,
             judge_eligible=row.judge_verdict == "eligible",
             judge_seniority_above_band=row.judge_seniority_fit == "no",
+            form_question_hit=row.form_question_hit,
             posting_closed=row.closed,
         )
         == REVIEW_DIR
@@ -815,6 +831,7 @@ def apply_lane_placements(
                 no_requirement_rows=row.requirement_flags.no_requirement_rows,
             judge_eligible=row.judge_verdict == "eligible",
             judge_seniority_above_band=row.judge_seniority_fit == "no",
+                form_question_hit=row.form_question_hit,
                 posting_closed=row.closed,
             )
             == ""
@@ -886,6 +903,11 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
         if load_settings().gate.seniority_hold
         else {}
     )
+    # T91. NOT identity-scoped, and that is the difference from every read above it: the
+    # application form is a fact about the REQUISITION, not about this user's profile or the rules
+    # catalog, so it is keyed on the frozen version alone. It cannot disagree with the verdict
+    # beside it for the same reason — it is not an opinion about the same question.
+    form_questions = form_question_hits(conn, versions)
     now = utcnow()
     return [
         _queue_row(
@@ -895,9 +917,49 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             requirement_flags=flags.get(int(row.posting_id), NO_REQUIREMENT_FLAGS),
             judge_verdict=gate.get(int(row.posting_id)),
             judge_seniority_fit=seniority.get(int(row.posting_id), "unclear"),
+            form_question_hit=form_questions.get(int(row.posting_id)),
         )
         for row in ordered
     ]
+
+
+def form_question_hits(
+    conn: Connection, versions: dict[int, CurrentVersion]
+) -> dict[int, str]:
+    """`posting_id` -> the quoted form question holding it, for the leads a surface matches.
+
+    PUBLIC because it has two readers, and they must not each have their own: `delivered_unapplied`
+    above (the standing queue, the folder tree and the page) and `pipeline.runner._lead_lanes`
+    (the pre-tailor split, which decides whether the expensive render is spent at all). Two
+    derivations of "is this lead held by its form" would be the second opinion `_review` exists to
+    prevent (D-332), and they would disagree the first time the catalog grew.
+
+    The CATALOG is applied here, on every read, over the payload the sweep stored — never stored
+    alongside it. So a surface added to `delivery/form_questions.CATALOG` takes effect on the next
+    reconcile against every form already fetched, with no board re-asked and no migration.
+
+    A version with no stored row is absent from the result, which is "no questions known". A
+    version whose stored form matches nothing is absent too, and folding those two together is
+    correct at THIS boundary even though `cached_form_questions` keeps them apart: both mean this
+    lead is not held, and the lane must not be able to tell them apart.
+    """
+    from boardwatch.delivery.form_questions import (  # noqa: PLC0415 - import cycle
+        decode_questions,
+        match_questions,
+    )
+    from boardwatch.store.form_question_queries import (  # noqa: PLC0415 - see the module above
+        cached_form_questions,
+    )
+
+    by_version = {
+        version.posting_version_id: posting_id for posting_id, version in versions.items()
+    }
+    hits: dict[int, str] = {}
+    for version_id, stored in cached_form_questions(conn, list(by_version)).items():
+        hit = match_questions(decode_questions(stored))
+        if hit is not None:
+            hits[by_version[version_id]] = hit.question
+    return hits
 
 
 def _job_posting_select() -> Select[Any]:
@@ -1185,12 +1247,18 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
         rules_hash=rules_hash,
     )
     provenance = lead_provenance(conn, [posting_id]).get(posting_id)
+    # T91, read HERE for the reason the gate verdict one line up is: `delivered_unapplied` carries
+    # it for every list row, and without it the pane served `null` for a lead the list held for
+    # `form_question_hard_stop` -- the same field, the same lead, two answers, and the pane is the
+    # surface where the reader decides. Same function, so the quote and the hold cannot differ.
+    form_questions = form_question_hits(conn, {} if version is None else {posting_id: version})
     return QueueDetail(
         row=_queue_row(
             row,
             verdict=verdicts.get(posting_id),
             now=utcnow(),
             judge_verdict=gate.get(posting_id),
+            form_question_hit=form_questions.get(posting_id),
         ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(

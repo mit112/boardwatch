@@ -14,6 +14,7 @@ from rich.console import Console
 
 from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
+from boardwatch.core.politeness import Fetcher
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT
 from boardwatch.pipeline.death_probe import build_listing_prober
 from boardwatch.pipeline.liveness import build_prober
@@ -225,6 +226,13 @@ def run(
             # network liveness, so `--no-check-liveness` disarms it too. Separate from the
             # prober above because its unit is the company, not the posting.
             listing_prober=build_listing_prober(settings) if check_liveness else None,
+            # T91's Greenhouse application-form sweep, built here for the same reason the prober
+            # above is: which hosts get asked is the CLI's decision, and a pipeline that builds
+            # its own client would make the test suite's own fixtures reach the network. Not
+            # gated on `--check-liveness`: that switch bounds probes of the whole shortlist,
+            # while this is one GET per delivered Greenhouse lead per posting version, already
+            # bounded by `form_question_fetch_budget` (0 disarms it).
+            form_fetcher=Fetcher(settings),
             # `None` unless given, same reasoning as `web_cmd`'s `--queue-root` resolution: a
             # relative root would price a shorter destination than the one actually written.
             queue_root=queue_root.expanduser().resolve() if queue_root is not None else None,

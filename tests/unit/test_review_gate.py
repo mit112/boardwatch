@@ -819,7 +819,15 @@ def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
             if "no_requirement_rows" not in kwargs:
                 continue
             seen += 1
-            for required in ("judge_eligible", "judge_seniority_above_band"):
+            for required in (
+                "judge_eligible",
+                "judge_seniority_above_band",
+                # T91. Omitting it at ONE site is the D-332 failure in its purest form: the lead
+                # is held for review by the site that passes it and promoted by the site that
+                # does not, so the folder tree and the page disagree about a citizenship hard
+                # stop. Nothing else would catch it -- each call site has its own fixtures.
+                "form_question_hit",
+            ):
                 if required not in kwargs:
                     missing.append(f"{path.relative_to(root)}:{node.lineno} ({required})")
     assert seen >= 5, f"expected at least five call sites, found {seen}"
@@ -886,6 +894,83 @@ def test_lane_projects_the_body_reader_too() -> None:
     """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
     for held in (False, True):
         kwargs = {"verdict": "eligible", **_US_SWE, "judge_seniority_above_band": held}
+        decision = classify(**kwargs)  # type: ignore[arg-type]
+        assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
+        assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# ------------------------------------------------------------------------------------------
+# T91 — the Greenhouse APPLICATION FORM's hard stops, which are not in the JD at all.
+# ------------------------------------------------------------------------------------------
+
+
+def test_a_form_question_hard_stop_holds_the_lead_under_its_own_reason() -> None:
+    """The lever. Measured live 2026-09-17: three apply-lane leads a hand pre-flight withdrew
+    carried a citizenship or export-control hard stop that appears ONLY on the Greenhouse
+    application form — a `body_text` grep for citizen/clearance/ITAR/export returned 0 hits on
+    all three.
+
+    Its own member, never folded into `ineligible_verdict`: this writes NO verdict and cannot.
+    The form is not the frozen JD, so the keystone's "INELIGIBLE must carry a quoted span from
+    the frozen JD" cannot be met, and review is the fail-open direction D-380 requires for a
+    reading no rule can quote a span for.
+    """
+    assert classify(
+        verdict="eligible",
+        **_US_SWE,
+        form_question_hit="Are you currently a U. S. citizen?",
+    ) == LaneDecision(REVIEW_DIR, "form_question_hard_stop")
+
+
+def test_no_form_question_hit_leaves_the_lead_exactly_where_it_was() -> None:
+    """The BEHAVIOURAL half of the gate above, and the arm a hold-everything mutant fails.
+
+    `None` is both "this lead is not on Greenhouse" and "the fetch failed, so no questions are
+    known", and the two must be indistinguishable here: an error is not evidence of a hard stop,
+    so it can never cost the owner an application. Every fixture in this module reaches `classify`
+    without the argument, so this also pins the default as inert.
+    """
+    assert lane(verdict="eligible", **_US_SWE, form_question_hit=None) == ""
+    for verdict, locations, title in _CASES:
+        assert classify(verdict=verdict, locations=locations, title=title) == classify(
+            verdict=verdict, locations=locations, title=title, form_question_hit=None
+        )
+
+
+def test_a_closed_posting_outranks_a_form_question_hard_stop() -> None:
+    """Ordering. The form branch sits directly UNDER `posting_closed` and above everything else:
+    a dead requisition cannot be applied to whatever its form asks, and holding it for review
+    would ask the owner to read a form for a job that no longer exists (D-383)."""
+    assert classify(
+        verdict="eligible",
+        **_US_SWE,
+        form_question_hit="Are you currently a U. S. citizen?",
+        posting_closed=True,
+    ) == LaneDecision(CLOSED_DIR, None)
+
+
+def test_the_form_question_gate_outranks_every_review_reason_below_it() -> None:
+    """A form hard stop is the strongest NON-CLOSURE reason, so it names the hold even when a
+    weaker gate would also fire. Reporting `ineligible_verdict` or `non_us_location` for a lead
+    whose form states a citizenship requirement would send the owner to the JD, which does not
+    mention it — the whole class this gate exists to reach."""
+    for extra in (
+        {"verdict": "ineligible"},
+        {"verdict": "uncertain", "locations": ["Kaunas, Lithuania"]},
+        {"verdict": "uncertain", "title": "Registered Nurse Practitioner"},
+        {"verdict": None},
+        {"verdict": "uncertain", "eligibility_unconfirmed": True},
+    ):
+        kwargs = {**_US_SWE, "form_question_hit": "EXPORT COMPLIANCE", **extra}
+        assert classify(**kwargs) == LaneDecision(  # type: ignore[arg-type]
+            REVIEW_DIR, "form_question_hard_stop"
+        )
+
+
+def test_lane_projects_the_form_question_gate_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
+    for hit in (None, "Are you a US Citizen or Green Card Holder"):
+        kwargs = {"verdict": "eligible", **_US_SWE, "form_question_hit": hit}
         decision = classify(**kwargs)  # type: ignore[arg-type]
         assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
         assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)

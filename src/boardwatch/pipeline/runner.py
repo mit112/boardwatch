@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, cast
 
 import httpx
 from rich.console import Console
+from sqlalchemy import Connection as SAConnection
 from sqlalchemy import Engine, select
 
 from boardwatch.core.clock import utcnow
@@ -43,6 +44,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.api import resolve_owner_name
+from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT, reconcile_queue, sync_queue
 from boardwatch.delivery.review_gate import REVIEW_DIR
 from boardwatch.delivery.review_gate import lane as review_lane
@@ -128,6 +130,7 @@ from boardwatch.scan.coordinator import (
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
+from boardwatch.store.delivery_queries import form_question_hits
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
@@ -1395,6 +1398,12 @@ def _lead_lanes(
             if settings.gate.seniority_hold
             else {}
         )
+        # T91. Read from the CACHE, not fetched: the network pass runs on the `_sync_queue` path
+        # in this run's `finally`. The SAME function `delivered_unapplied` calls, so the lane this
+        # run tailors for cannot disagree with the one `sync_queue` files the folder under. Not
+        # identity-scoped like the three reads above it -- the application form is a fact about
+        # the requisition, not about this user's profile or the rules catalog.
+        form_questions = form_question_hits(conn, versions)
         locations_by_posting = {
             int(row.id): tuple(
                 str(loc) for loc in (row.locations_json or []) if str(loc).strip()
@@ -1451,6 +1460,11 @@ def _lead_lanes(
                 judge_seniority_above_band=(
                     gate_seniority.get(posting.posting_id) == "no"
                 ),
+                # A lead delivered for the FIRST time is not yet in the cache and IS tailored;
+                # the sweep in this run's `finally` then finds its hard stop and `sync_queue`
+                # files the folder under `_review`. One render once per lead, never the wrong
+                # lane.
+                form_question_hit=form_questions.get(posting.posting_id),
                 posting_closed=False,
             ),
             posting_version_id,
@@ -1725,6 +1739,7 @@ def run_pipeline(
     project: bool = False,
     liveness_prober: LivenessProber | None = None,
     listing_prober: ListingProber | None = None,
+    form_fetcher: Fetcher | None = None,
     queue_root: Path | None = None,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
@@ -1741,6 +1756,10 @@ def run_pipeline(
     because it answers a different question with a different unit — membership of a whole board,
     one GET per company — and because defaulting it to a real network client would let any test
     that supplies only a URL prober reach three live ATS APIs. `run_cmd` supplies both together.
+    `form_fetcher=None` skips the Greenhouse application-form sweep (T91) and reports it as
+    UNMEASURED, on exactly the reasoning `liveness_prober` below carries: it is passed in rather
+    than built here so that WHICH HOSTS get asked is the caller's decision, and so that a caller
+    that supplies neither makes no request of its own. `run_cmd` always supplies one.
 
     `liveness_prober=None` skips the liveness check (P6 item 6) and reports it as UNMEASURED,
     not as zero dead. Passed in rather than built here so that *which URLs get probed* is the
@@ -2735,7 +2754,9 @@ def run_pipeline(
         # queue the owner will trust anyway.
         try:
             lead_failures, folder_failures = _sync_queue(
-                engine, settings, console, queue_root=queue_root
+                engine, settings, console,
+                queue_root=queue_root,
+                form_fetcher=form_fetcher,
             )
             queue_failures = _interleave(lead_failures, folder_failures)
             # Per-lead failures used to stop at the log line above, which is defensible while
@@ -3268,7 +3289,12 @@ def _interleave(first: list[str], second: list[str]) -> list[str]:
 
 
 def _sync_queue(
-    engine: Engine, settings: Settings, console: Console, *, queue_root: Path | None = None
+    engine: Engine,
+    settings: Settings,
+    console: Console,
+    *,
+    queue_root: Path | None = None,
+    form_fetcher: Fetcher | None = None,
 ) -> tuple[list[str], list[str]]:
     """Drain, then rebuild, the delivery queue on disk from what the store says (design §4.3).
 
@@ -3313,6 +3339,7 @@ def _sync_queue(
         # owns that question (`answers.yaml` first, the authored résumé's header second), on the
         # connection already open here rather than by reading the résumé a second time.
         owner_name = resolve_owner_name(conn, settings.config_dir)
+        form_questions = _sweep_form_questions(conn, settings, console, form_fetcher)
         drained = reconcile_queue(conn, root=root)
         synced = sync_queue(conn, root=root, owner_name=owner_name)
     contended = " (contended, nothing changed)" if synced.contended or drained.contended else ""
@@ -3323,6 +3350,14 @@ def _sync_queue(
         f"{synced.failed + drained.failed} failed{contended}",
         markup=False,
     )
+    if form_questions is not None:
+        console.print(
+            f"  application forms: {form_questions.candidates} greenhouse leads, "
+            f"{form_questions.cached} cached, {form_questions.fetched} fetched, "
+            f"{form_questions.unfetched} unfetched, "
+            f"{form_questions.budget_refused} refused by budget",
+            markup=False,
+        )
     # Both halves of the partition: a lead `sync_queue` could not write, and a folder
     # `reconcile_queue` could not move. They are one list to the caller because the answer to
     # either is the same — the queue on disk no longer matches what the store says was delivered.
@@ -3333,6 +3368,49 @@ def _sync_queue(
         [f"posting {item.posting_id}: {_oneline(item.detail)}" for item in synced.failures],
         [f"folder {_oneline(item.folder)}: {_oneline(item.detail)}" for item in drained.failures],
     )
+
+
+def _sweep_form_questions(
+    conn: SAConnection, settings: Settings, console: Console, fetcher: Fetcher | None
+) -> FormQuestionSweep | None:
+    """Ask Greenhouse for the APPLICATION FORM behind each delivered lead, once per version.
+
+    BEFORE `reconcile_queue` and `sync_queue` in the same connection, which is the whole reason it
+    lives here rather than inside `sync_queue`: the sweep writes the cache and both of those read
+    it through `delivered_unapplied`, so a lead whose form was fetched this run lands in the right
+    lane on this run rather than the next one. It is the one network read on the delivery path and
+    it is the only place `delivery/` fetches anything.
+
+    **The web server deliberately does NOT call this.** `prime_queue` and the reconcile endpoint
+    run inside a request, where a network read would hold the page; they see whatever this pass
+    cached, which is the same fail-open state as a board that has not been asked yet.
+
+    `None` means UNMEASURED, never zero: no fetcher was supplied, the budget is 0 (disarmed), or
+    the sweep raised. Caught rather than propagated for the reason the call site's own block
+    comment gives -- the queue holds COPIES of work the run already delivered, so a fault here
+    must cost the extra reach and nothing else. Not on `summary.errors`: the fetch produces a HOLD
+    at worst, and a hold nobody learned about is a lead in the apply lane, which is exactly where
+    it already was.
+
+    **`fetcher is None` is the whole reason this is not built here**, and it is a test-suite
+    property as much as an API one: `make check` runs on three operating systems and must make no
+    request of its own, while fixtures across the suite carry real `boards.greenhouse.io` posting
+    URLs. A `Fetcher` constructed in this function would put the gate on the network the first
+    time one of them reached a delivered lead. `run_cmd` supplies the only one that exists.
+    """
+    if fetcher is None or settings.form_question_fetch_budget <= 0:
+        return None
+    try:
+        return sweep_form_questions(
+            conn,
+            fetcher=fetcher,
+            budget=settings.form_question_fetch_budget,
+        )
+    except Exception as exc:  # noqa: BLE001 - never cost the queue its own sync
+        console.print(
+            f"  ! application forms: sweep failed ({type(exc).__name__}: {exc})", markup=False
+        )
+        return None
 
 
 def _oneline(text: str) -> str:

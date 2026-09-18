@@ -56,7 +56,7 @@ describe("REVIEW_REASON_LABELS", () => {
     // TEN, not nine: a member dropped from the labels map would otherwise pass this vacuously.
     // The count is hand-kept on purpose — deriving it from the map under test would make the
     // guard agree with whatever the map happens to hold, which is the failure it exists to catch.
-    expect(keys).toHaveLength(10);
+    expect(keys).toHaveLength(11);
     for (const reason of keys) {
       const view = render(<ReviewReasonBadge reason={reason} />);
       // The badge renders exactly one element carrying its label text.

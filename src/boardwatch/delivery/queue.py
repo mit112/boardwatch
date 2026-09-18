@@ -112,7 +112,7 @@ STAGING_PREFIX = ".staging-"
 
 #: Bumped when `details.json`'s shape changes. A reader that finds a schema it does not know is
 #: reading a projection, not a source of truth, and the next sync rewrites it.
-DETAILS_SCHEMA = 2
+DETAILS_SCHEMA = 3
 
 #: Bound at import so a test can choose a platform without touching `sys`. The apply-link file's
 #: format is a property of the machine the owner clicks on, and it does not change mid-process.
@@ -431,6 +431,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             no_requirement_rows=row.requirement_flags.no_requirement_rows,
             judge_eligible=row.judge_verdict == "eligible",
             judge_seniority_above_band=row.judge_seniority_fit == "no",
+            form_question_hit=row.form_question_hit,
             posting_closed=row.closed,
         )
         for row in rows
@@ -686,6 +687,14 @@ def _payload(
         # On disk because the run's review composition is read from the queue tree (M3), where the
         # web API is not available.
         "review_reason": review_reason,
+        # T91. The QUOTED question from the Greenhouse application form that holds this lead, or
+        # `null`. It is the EVIDENCE for `form_question_hard_stop` and it has to travel with the
+        # reason: that reason names a requirement the JD in this very folder does not state, so a
+        # reader who opens `job-description.txt` looking for it finds nothing and concludes the
+        # gate misfired. `null` on every other lead, including a Greenhouse lead whose form was
+        # read and matched nothing — an absent hold has no evidence, and inventing an empty string
+        # for it would make "no hard stop" and "a hard stop we cannot quote" the same value.
+        "form_question": row.form_question_hit,
         "first_seen": row.first_seen.isoformat(),
         "apply_url": row.apply_url,
         "board_target": board_target,

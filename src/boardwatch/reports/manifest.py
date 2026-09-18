@@ -131,6 +131,13 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # sweep may ask per run, never how a posting is judged.
         "death_probe_company_budget",
         "death_probe_ttl_hours",
+        # T91. OUT, on exactly the reasoning the two above carry: it bounds HOW MANY application
+        # forms are fetched, never how a posting is judged. The form fetch writes no verdict and
+        # no requirement row -- it can only route a lead to the review lane -- and `policy_version`
+        # derives from `config_hash`, so classifying it IN would mark every permanent
+        # `built`/`skipped` disposition stale the moment an operator changed a fetch budget. The
+        # queue sync reports both sides of the budget either way.
+        "form_question_fetch_budget",
     }
 )
 

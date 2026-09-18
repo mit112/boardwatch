@@ -63,7 +63,16 @@ export type ReviewReason =
   | "eligibility_unconfirmed"
   | "experience_requirement"
   | "seniority_above_band"
-  | "seniority_judged_above_band";
+  | "seniority_judged_above_band"
+  /*
+   * The only member that does not come from the job description at all. The Greenhouse
+   * APPLICATION FORM states a citizenship or export-control requirement the JD never mentions —
+   * measured live on three apply-lane leads a hand pre-flight withdrew, none of which says
+   * "citizen", "clearance", "ITAR" or "export" anywhere in its body. That is why the chip carries
+   * the QUOTED question (`form_question` below): a reader sent to the JD for this reason finds
+   * nothing there and concludes the gate misfired.
+   */
+  | "form_question_hard_stop";
 
 export interface QueueRow {
   posting_id: number;
@@ -170,6 +179,19 @@ export interface QueueRow {
    * "the server cannot say" is no badge.
    */
   judge_seniority_above_band?: boolean;
+  /**
+   * The QUOTED question from the Greenhouse application form that holds this lead, or `null`.
+   *
+   * Optional on the wire for exactly the reason `judge_seniority_above_band` above is: `boardwatch
+   * web` serves this bundle from DISK while running the Python it imported at STARTUP, so a
+   * long-lived viewer can serve a bundle newer than its own API. An older server omits the key,
+   * and `undefined` has to render as "no quote available" rather than throw.
+   *
+   * `null` on every lead the gate does not hold, INCLUDING a Greenhouse lead whose form was read
+   * and matched nothing. An absent hold has no evidence, and an empty string here would make
+   * "no hard stop" and "a hard stop we cannot quote" the same value.
+   */
+  form_question?: string | null;
   /**
    * The date this lead is to be looked at again, `YYYY-MM-DD`, or `null` when none is pinned.
    *
