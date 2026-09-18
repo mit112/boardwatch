@@ -28,8 +28,8 @@ vi.mock("../api/client", () => ({
   markSkipped: vi.fn(),
   unskip: vi.fn(),
   unapply: vi.fn(),
-  setFollowUp: vi.fn(),
-  clearFollowUp: vi.fn(),
+  setJobFollowUp: vi.fn(),
+  clearJobFollowUp: vi.fn(),
   report: vi.fn(),
   unreport: vi.fn(),
   revealFolder: vi.fn(),
@@ -38,11 +38,11 @@ vi.mock("../api/client", () => ({
 
 // Imported AFTER the mock factory, which vitest hoists above both.
 import {
-  clearFollowUp,
+  clearJobFollowUp,
   getApplied,
   getQueue,
   markApplied,
-  setFollowUp,
+  setJobFollowUp,
   unapply,
 } from "../api/client";
 import { App } from "../App";
@@ -331,11 +331,14 @@ describe("the follow-up column", () => {
     expect(screen.queryByText(`follow-up due ${FUTURE}`)).toBeNull();
   });
 
-  it("writes through the existing route, keyed on the posting, and offers an undo", async () => {
+  it("writes keyed on the JOB, which every applied row has, and offers an undo", async () => {
     const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer", follow_up: null });
     await renderApplied(appliedResponse([row]));
-    vi.mocked(setFollowUp).mockResolvedValue({ outcome: "follow_up_set", follow_up: FUTURE });
-    vi.mocked(clearFollowUp).mockResolvedValue({
+    vi.mocked(setJobFollowUp).mockResolvedValue({
+      outcome: "follow_up_set",
+      follow_up: FUTURE,
+    });
+    vi.mocked(clearJobFollowUp).mockResolvedValue({
       outcome: "follow_up_cleared",
       follow_up: null,
     });
@@ -347,8 +350,8 @@ describe("the follow-up column", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    // The EXISTING queue route, keyed on the posting the queue delivered — no new write path.
-    expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, FUTURE);
+    // Keyed on the job: the store holds one date per job, and an imported row has no posting.
+    expect(vi.mocked(setJobFollowUp)).toHaveBeenCalledWith(row.job_id, FUTURE);
     expect(screen.getByText(new RegExp(`Follow up on Acme Corp — Backend Engineer on ${FUTURE}`)))
       .toBeTruthy();
 
@@ -358,13 +361,13 @@ describe("the follow-up column", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(vi.mocked(clearFollowUp)).toHaveBeenCalledWith(row.posting_id);
+    expect(vi.mocked(clearJobFollowUp)).toHaveBeenCalledWith(row.job_id);
   });
 
-  it("clears a pinned date through the existing unfollowup route", async () => {
+  it("clears a pinned date through the job-keyed unfollowup route", async () => {
     const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer", follow_up: PAST });
     await renderApplied(appliedResponse([row]));
-    vi.mocked(clearFollowUp).mockResolvedValue({
+    vi.mocked(clearJobFollowUp).mockResolvedValue({
       outcome: "follow_up_cleared",
       follow_up: null,
     });
@@ -376,20 +379,35 @@ describe("the follow-up column", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(vi.mocked(clearFollowUp)).toHaveBeenCalledWith(row.posting_id);
+    expect(vi.mocked(clearJobFollowUp)).toHaveBeenCalledWith(row.job_id);
   });
 
-  it("offers no date input on a row the queue never delivered, and says why", async () => {
-    // Both follow-up routes key on a posting id, so there is nothing to write with. Said in
-    // words, the way the same row already accounts for its missing unmark.
-    await renderApplied(
-      appliedResponse([
-        appliedRow({ company: "Acme Corp", posting_id: null, pdf_available: false }),
-      ]),
-    );
+  it("pins a date on a row the queue never delivered, keyed on its job", async () => {
+    // The 58 imported applications: no posting the queue delivered, so the queue's own routes
+    // cannot reach them and this row carried no input at all until the job-keyed route existed.
+    // The unmark beside it stays absent — that write really does need a delivered posting.
+    const row = appliedRow({
+      company: "Acme Corp",
+      title: "Backend Engineer",
+      posting_id: null,
+      pdf_available: false,
+      follow_up: null,
+    });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setJobFollowUp).mockResolvedValue({
+      outcome: "follow_up_set",
+      follow_up: FUTURE,
+    });
 
-    expect(screen.queryByLabelText(/^Follow up on /)).toBeNull();
-    expect(screen.getByText(/nothing to pin a date to/)).toBeTruthy();
+    const input = screen.getByLabelText("Follow up on Acme Corp — Backend Engineer");
+    fireEvent.change(input, { target: { value: FUTURE } });
+    fireEvent.blur(input);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(vi.mocked(setJobFollowUp)).toHaveBeenCalledWith(row.job_id, FUTURE);
+    expect(screen.queryByRole("button", { name: /^Unmark applied/ })).toBeNull();
   });
 
   it("filters the table to the due rows from the band, and back", async () => {

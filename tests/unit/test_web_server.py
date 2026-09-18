@@ -1684,6 +1684,106 @@ def test_an_undelivered_application_never_offers_the_unmark(live: Live, engine: 
     assert row["can_unmark"] is False
 
 
+def test_an_undelivered_applications_follow_up_is_written_on_the_job_route(
+    live: Live, engine: Engine
+) -> None:
+    """The gap D-517 left open: 58 of the owner's 61 applications were IMPORTED, so they carry no
+    posting the queue delivered — and every follow-up write route keyed on one. The store was
+    always job-keyed (`queue.followup.<job_id>`), so the read side already showed these rows; only
+    the write was unreachable, which left the date input on 3 rows out of 61.
+
+    Keyed on `job_id` and mounted under `/api/applied` rather than `/api/queue`, because that is
+    the surface it serves and the id it takes is not a posting id.
+    """
+    with engine.begin() as conn:
+        never_queued = _undelivered(conn, "two")
+        create_application(conn, job_id=never_queued, status="applied")
+    today = local_today()
+    due = (today - timedelta(days=2)).isoformat()
+
+    written = call(
+        live,
+        f"/api/applied/{never_queued}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": due},
+    )
+    assert written.status == 200, written.body[:200]
+    assert written.json()["follow_up"] == due
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in payload["rows"]] == [due]
+    assert payload["counts"]["follow_up_due"] == 1
+    with engine.begin() as conn:
+        assert followup_job_dates(conn) == {never_queued: due}
+
+    cleared = call(
+        live, f"/api/applied/{never_queued}/unfollowup", method="POST", bearer=live.token
+    )
+    assert cleared.status == 200
+    assert cleared.json()["follow_up"] is None
+    gone = call(live, "/api/applied", bearer=live.token).json()
+    assert [row["follow_up"] for row in gone["rows"]] == [None]
+    with engine.begin() as conn:
+        assert followup_job_dates(conn) == {}
+
+
+def test_the_job_route_refuses_a_job_that_holds_no_application(
+    live: Live, engine: Engine
+) -> None:
+    """The guard that keeps this from being a second way to write ANY job's date: the route takes
+    a job id off the wire, so without it a typo — or a walk of the integers — would mint state for
+    a job nothing was ever applied to, on a page that would then not show the row it wrote.
+    """
+    with engine.begin() as conn:
+        _posting_id, job_id = _deliver(conn, "one")
+
+    refused = call(
+        live,
+        f"/api/applied/{job_id}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": local_today().isoformat()},
+    )
+    assert refused.status == 404, refused.body[:200]
+    with engine.begin() as conn:
+        assert followup_job_dates(conn) == {}
+
+
+def test_the_job_route_parses_a_date_as_strictly_as_the_queue_route(
+    live: Live, engine: Engine
+) -> None:
+    """One parser for both routes, asserted rather than assumed: an instant is not a day, and the
+    ±366-day bound is the same bound. A second handler with its own parse is how two surfaces
+    drift into accepting different values for one stored key.
+    """
+    with engine.begin() as conn:
+        never_queued = _undelivered(conn, "three")
+        create_application(conn, job_id=never_queued, status="applied")
+
+    instant = call(
+        live,
+        f"/api/applied/{never_queued}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": "2026-09-20T09:00"},
+    )
+    assert instant.status == 400
+    assert instant.json()["error"] == FOLLOWUP_DATE_REASON
+
+    far = call(
+        live,
+        f"/api/applied/{never_queued}/followup",
+        method="POST",
+        bearer=live.token,
+        body={"date": (local_today() + timedelta(days=400)).isoformat()},
+    )
+    assert far.status == 400
+    assert far.json()["error"] == FOLLOWUP_RANGE_REASON
+    with engine.begin() as conn:
+        assert followup_job_dates(conn) == {}
+
+
 def test_an_applied_leads_follow_up_reaches_the_applied_history_and_its_band(
     live: Live, engine: Engine
 ) -> None:
