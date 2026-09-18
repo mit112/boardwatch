@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way). Nothing was deleted on any of the nine passes. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers). Nothing was deleted on any of the nine passes. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,75 +20,67 @@
 
 ## Current standing
 
-### 2026-09-17b — **THE FIRST AUTOAPPLY PRE-FLIGHT VERIFIED AND TICKETED (`TICKETS-2026-09-17.md`); T88–T91 + T93 SHIPPED INSIDE THE FREEZE: D-518. PRs #385–#387 MERGED; #388 (T91) and #389 (T93) GREEN WITH AUTO-MERGE ARMED — confirm they merged before reading run 434.**
+### 2026-09-18 — **RUN 434 CLEAN (confirm day 13) AND T88–T91 ALL READ LIVE WITH THE MANIFEST UNMOVED; SIX OWNER DECISIONS SIZED THEN RULED — FOUR PRECISION FAMILIES REFUSED, THE YEARS CEILING HELD, THE PROBE BUDGETS RAISED (D-519); T94 SHIPPED (D-520).**
 
-**16 of the 22 leads the owner withdrew were review-lane holds**, not apply-lane leads; the
-pre-flight read the union of both lanes. **Source the next pre-flight from the apply lane only**
-(top-level queue folders). The six real slips were 3 form-only citizenship/ITAR (all Greenhouse),
-2 dead jobapps-created rows, 1 defense employer (owner call). Held whole in D-518; the per-category
-verdicts and the owner calls are in the tickets file §1 and §3.
+**Run 434 (readout in `METRICS.md`).** 04:00 tick, `ok`, 57 min to the funnel, RECONCILES.
+**Manifest byte-identical to run 433's**, which is what D-518 asked of T88–T91. Both `death probe:`
+lines, the `application forms:` line and the `p_form_questions` migration all landed. `0 closed by
+listing` is the EXPECTED first reading — two strikes in different runs close, so **run 435 is the
+first that can close a listing-absent row; read the listing half there.** `postman` Greenhouse 404
+and Magnite Workday 422 are on their second day.
 
-**What run 434 (2026-09-18 04:00) runs for the first time** — read each in the log:
-`death probe:` now prints TWO lines (URL half, listing half: `companies_attempted`,
-`listing_absent`, `closed_by_listing`); a `form questions:` line (candidates / cached / fetched /
-unfetched / budget_refused); migration `p_form_questions` applies at the run's first command;
-`closed_count` should step up once as the ~90 watched-board jobapps rows stop being refreshed.
-**None of T88–T91 touches a digested module or `rules.yaml`** — the manifest's rules and config
-hashes must read unchanged; if they moved, something is wrong.
+**The lane the owner opens:** apply **381** (147 affirmatively `eligible`, 234 `uncertain`, never
+summed), review **379**, applied-ever **104** (was 400 / 370 / 61 on 09-17). Two paths agree on the size (API counts
+and the on-disk queue). T91's first three live catches are in the review lane as
+`form_question_hard_stop`. **The owner's autoapply is already in the ledger** (28 applied + 18
+withdrawn on 09-18, notes carrying `autoapply 2026-09-18`); job-apps' `_applied` tree is unchanged
+since 08-15, so **no applied-history import is owed**.
 
-**Parked:** T92 (structured `employmentType` → `contract_not_fte`; 2 rows today) until the window
-after 09-19, batched with the Sonnet judge move. **Owner calls, not defaulted (tickets §3):**
-visa-class specificity; a `defense_employer` HOLD family; a per-company posting-volume signal;
-structured salary as a seniority input; whether a provider field counts as the frozen JD.
-**Follow-ups the executors surfaced:** a newly delivered Greenhouse lead is rendered once before
-the form sweep holds it; `queue_detail` does not carry `judge_seniority_fit` (pre-existing);
-form-sweep counts are console-only, not in the funnel; `smartrecruiters` (812 unwatched rows, 8
-companies) is the next list endpoint. The owner's findings doc stays UNTRACKED (names his status).
+**D-519 closed the whole §3 list and the web calls.** Every option was measured against the 760
+standing leads before being put to the owner, and five of six answers are "no" because the reach
+is 0–9 leads: 3.1 visa classes → the judge; 3.2 `defense_employer` → not built; 3.3 title entropy
+→ REFUSED; 3.4 structured salary → REFUSED (0 standing leads carry one); 3.5 **a structured field
+is NOT the frozen JD**, so T92 holds for review and can never say `ineligible`;
+`near_miss_years_ceiling` **stays at 3** — and its "biggest lever" framing is RETIRED (475
+review-lane holds on 09-03, 26 today; bound: that is a LANE reading, not the corpus). Every D-516
+and D-517 web call is ratified as shipped. **Nothing from §3 is carried.**
 
-### 2026-09-17 — **RUN 433 CLEAN (confirm day 12); WEB WAVE 2 SHIPPED AFTER A BLIND REVIEW OF A GREEN UNION FOUND SIX DEFECTS: D-517. PR #383 MERGED.**
+**Operator numbers set (D-519).** `death_probe_budget` 50 → 300, `death_probe_company_budget`
+100 → 300 in the owner's `config.toml`, read back through `load_settings`. **Residual: 660 of the
+760 standing leads are on the URL path** (510 under an unwatched company), so 300 reaches ~59% of
+them per run — a held lead is asked about roughly every second run, not every run.
 
-**Run 433 (readout in `METRICS.md`).** 04:00 tick, `ok`, 77 min, RECONCILES, `runs = 8` exit 0.
-40,813 seen / 8,902 new / 199,742 open; 76 shortlisted, 40 tailored, 19 PDFs; gate 51 judged
-(29/17/5), 0 batches failed open, 1 of 13 verdicts missing in one batch (lead left unchanged).
-**Its manifest is identical to run 432's across the wave-1 merge** — D-515's claim that web work
-cannot move the confirm window, measured. New board errors to watch a second day: `postman`
-Greenhouse 404, Magnite Workday 422.
+**Next action — the two dated readings land tomorrow.**
 
-**Web wave 2 shipped (PR #383, D-517).** Follow-up dates on a lead (`followup`/`unfollowup`
-routes, `queue.followup.<job_id>`, server-local day, ±366-day guard, pane input, row chip, facet,
-sort, `f`); the applied history at `#/applied` (`GET /api/applied`, read-only); follow-up dates on
-that page. **The first union was green (10,188) and was NOT shipped:** a blind reviewer found a
-date input writing one POST per intermediate value (year-2 dates stored as "due"), an Unmark
-acting on a different attempt than the row clicked, and an applied row describing a sibling
-posting. Fixed by two file-split executors; second gate 10,195 passed, 7:21.
+1. **Read the 04:00 tick by `max(runs.id)`** — 435 on 09-19, **confirm day 14, M5's exit**. Read
+   the listing half of the death probe: this is the run that can close.
+2. **M4: the second Gate 1 reading (D-482) is owed ~09-19** and is the last condition.
+3. **The moment M5 closes, ONE batched engine landing** (D-519): the Sonnet judge move (D-477,
+   D-514) **and** T92 together, so the clock restarts once. NOT web work, NOT a new family.
+4. **Then ticket the GitHub new-grad-lists lane** — approved 09-18, reopens D-008 by the owner's
+   hand: 19.1% of job-apps' yield for ~5 public-repo GETs against a 16.4% reach.
+5. **Still owed and small:** the form-sweep counts are console-only and not in the funnel (the
+   sweep's report is not threaded to `run_funnel` at all — T96); `smartrecruiters` is the next
+   T89 list endpoint (812 unwatched rows, 8 companies — T95); `queue_detail` does not carry
+   `judge_seniority_fit`; a newly delivered Greenhouse lead renders once before the form sweep
+   holds it.
+6. **Web: nothing is ticketed.** Open: the below-the-cap "rest" view (spec D5, needs the ranker
+   path the daily driver calls — owner's call after 09-19).
 
-**The lane the owner opens:** apply **400**, review **370**, applied **61** (53 open, 3 since
-closed). **Only 3 of the 61 applied rows were delivered by the queue**, so Unmark and the
-follow-up input exist on 3 rows today; the 58 imports are inert on that page (owner call below).
+### 2026-09-17b — the first autoapply pre-flight, verified and ticketed; T88–T91 + T93 shipped inside the freeze. **Held WHOLE in D-518 and `TICKETS-2026-09-17.md`; do not re-derive.**
 
-**The viewer was restarted on the merged `main`** (`boardwatch web --port 0 --no-open`; port in
-the session's `web.log`, token in the config dir's `web-token`). It goes stale on the next web
-merge (D-360): restart it after every one.
+16 of the 22 leads the owner withdrew were review-lane holds, not apply-lane leads — **source a
+pre-flight from the apply lane alone**. The six real slips split into liveness (T88–T90) and the
+Greenhouse form (T91); all read live on run 434 with the manifest unmoved. **Every owner decision
+the tickets file left open is now RULED in D-519 — §3 carries nothing live.** T92 is parked for the
+post-M5 batch.
 
-**Next action — unchanged in substance: the two dated readings on 09-19 decide M4 and M5.**
+### 2026-09-17 — run 433 (confirm day 12) and web wave 2 shipped after a blind review of a green union found six defects. **Held WHOLE in D-517 and `METRICS.md` (session 2026-09-17); do not re-derive.**
 
-1. **Read the 04:00 tick each morning by `max(runs.id)`** — 433 was 09-17, expect 434 on 09-18.
-   Confirm day 13. **434 is the first run on T88–T91: read the two `death probe:` lines and the
-   `form questions:` line, and check the manifest's rules/config hashes did NOT move (D-518).**
-2. **M4: second Gate 1 reading ~09-19** is the last condition; if it holds, job-apps switches off.
-3. **M5: confirm day 14 is 09-19.** Reconciliation `True` on every run since 09-07.
-4. **First thing after 09-19:** the gate judge off haiku onto Sonnet (D-477, D-514). NOT web work.
-5. **Web: nothing is ticketed.** Open from the parity audit: the below-the-cap "rest" view
-   (deferred, spec D5 — needs the ranker path the daily driver calls; owner's call after 09-19)
-   and scroll lock on the narrow sheet (an owner call from D-516).
-6. **Owner calls from D-517**, each small: a follow-up route keyed on `job_id` so the 58 imported
-   applications can carry a date; the applied page's `follow-up due` cell is per JOB while its
-   filter is per attempt; the ±366-day bound is restated in the bundle; a recent past date is
-   accepted on purpose. **From D-516, still open:** batch `failed` = "not a standing lead";
-   `x` refuses auto-repeat; `ats` sort opens descending; no `judge_ineligible` band cell; pane
-   `review_reason` from default flags (pre-existing); no scroll lock on the sheet.
-7. Still open from D-494: seed the cluster cap from the standing queue; ratify `apple`'s
-   `board_reported_total = None`; `details.json` naming which lead supersedes a drained lane copy.
+Run 433's manifest is byte-identical to run 432's across the wave-1 merge — D-515's claim that web
+work cannot move the confirm window, measured, and reproduced again on run 434. The wave-2
+features (follow-up dates, the applied history at `#/applied`) are shipped; **the job-keyed
+follow-up route that made the 58 imported applications usable is T94 (D-520).**
 
 ### 2026-09-16 — run 432 (confirm day 11), the web-only-UI ruling, web wave 1 (PR #381). **Held WHOLE in D-515, D-516 and `METRICS.md` (session 2026-09-16); do not re-derive.**
 
