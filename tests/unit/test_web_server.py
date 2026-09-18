@@ -1955,6 +1955,63 @@ def test_every_row_carries_the_gates_seniority_reading_the_badge_is_keyed_on(
     assert apply_rows[junior]["judge_seniority_above_band"] is False
 
 
+def test_a_form_hard_stop_reaches_the_page_with_the_question_it_quotes(
+    live: Live, engine: Engine
+) -> None:
+    """T91 on the wire. The reason and its EVIDENCE travel together, and they have to: this is the
+    one hold whose requirement is nowhere in the job description the pane renders beside it, so a
+    chip that could not quote the form would send the reader to a JD that says nothing about it.
+
+    The cache is written through the real sweep with a stub fetcher, so this pins the whole server
+    path — store read, catalog match, `classify`, `_row_json` — rather than a hand-set field.
+    """
+    from boardwatch.delivery.form_questions import sweep_form_questions  # noqa: PLC0415
+
+    question = "Are you currently a U. S. citizen?"
+
+    class _Result:
+        content = json.dumps(
+            {"questions": [{"label": question, "description": None, "fields": []}]}
+        ).encode()
+        not_modified = False
+
+    class _Fetcher:
+        def get(self, url: str) -> _Result:
+            return _Result()
+
+    with engine.begin() as conn:
+        _profile(conn)
+        held, _ = _deliver(
+            conn, "form", body=JD_ELIGIBLE,
+            url="https://job-boards.greenhouse.io/tenet3/jobs/8810809002",
+        )
+        clear, _ = _deliver(conn, "clear", body=JD_ELIGIBLE)
+    with engine.begin() as conn:
+        sweep_form_questions(conn, fetcher=_Fetcher(), budget=10)  # type: ignore[arg-type]
+
+    payload = call(live, "/api/queue", bearer=live.token).json()
+    apply_rows = {row["posting_id"]: row for row in payload["rows"]}
+    review_rows = {row["posting_id"]: row for row in payload["review"]}
+    assert review_rows[held]["review_reason"] == "form_question_hard_stop"
+    assert review_rows[held]["form_question"] == question
+    # The two lists PARTITION the delivered set, and this is the assertion that says so. The
+    # page splits them with two separate `lane()` calls; one of them omitting the form input
+    # leaves the held lead in BOTH lists, and every other assertion here passes against that.
+    assert held not in apply_rows
+    assert clear not in review_rows
+    # The lead is held WITHOUT a verdict being written: the form is not the frozen JD, so the
+    # eligibility gate's own answer is untouched and still says this lead is eligible.
+    assert review_rows[held]["verdict"] == "eligible"
+    # The control: the non-Greenhouse lead is unheld, and the key is present as `null` rather
+    # than omitted, so the page can tell "no hard stop" from "an older server".
+    assert apply_rows[clear]["review_reason"] is None
+    assert apply_rows[clear]["form_question"] is None
+    # Same field through `_row_json`'s single-row path, so it cannot exist on the list and be
+    # absent in the detail pane.
+    detail = call(live, f"/api/queue/{held}", bearer=live.token).json()
+    assert detail["row"]["form_question"] == question
+
+
 def test_counts_report_the_last_finished_run(live: Live, engine: Engine) -> None:
     with engine.begin() as conn:
         run_id = _run(conn)

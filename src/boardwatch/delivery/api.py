@@ -294,6 +294,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
                 no_requirement_rows=r.requirement_flags.no_requirement_rows,
                 judge_eligible=r.judge_verdict == "eligible",
                 judge_seniority_above_band=r.judge_seniority_fit == "no",
+                form_question_hit=r.form_question_hit,
                 posting_closed=r.closed,
             )
             == ""
@@ -313,6 +314,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
                 no_requirement_rows=r.requirement_flags.no_requirement_rows,
                 judge_eligible=r.judge_verdict == "eligible",
                 judge_seniority_above_band=r.judge_seniority_fit == "no",
+                form_question_hit=r.form_question_hit,
                 posting_closed=r.closed,
             )
             != ""
@@ -440,6 +442,7 @@ def _row_json(
         no_requirement_rows=row.requirement_flags.no_requirement_rows,
         judge_eligible=row.judge_verdict == "eligible",
         judge_seniority_above_band=row.judge_seniority_fit == "no",
+        form_question_hit=row.form_question_hit,
     ).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
     locations = _unique_locations(row.locations)
@@ -466,8 +469,13 @@ def _row_json(
         # The gate's separate seniority reading, as the boolean the row's badge is keyed on.
         # `classify` has read it since D-504; the wire never carried it, so the badge was dead.
         "judge_seniority_above_band": row.judge_seniority_fit == "no",
-        # The gate's separate seniority reading, as the boolean the row's badge is keyed on.
-        # `classify` has read it since D-504; the wire never carried it, so the badge was dead.
+        # T91. The QUOTED question from the Greenhouse application form that holds this lead, so
+        # the `form_question_hard_stop` chip can show the requirement itself rather than only
+        # naming it. It is routed to the badge's tooltip exactly as `off_target_reason` is on a
+        # `role_vetoed` row, and for the same reason: this reason names a requirement the JD does
+        # not state, so a chip that could not quote the form would send the reader to a JD that
+        # says nothing about it. `None` on every lead the gate does not hold.
+        "form_question": row.form_question_hit,
         "apply_url": row.apply_url,
         "delivered_run_id": row.delivered_run_id,
         "tex_uri": row.tex_uri,

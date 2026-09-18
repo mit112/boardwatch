@@ -159,6 +159,23 @@ posting_version_sources = Table(
     Column("payload_hash", Text, nullable=True),
 )
 
+posting_form_questions = Table(
+    "posting_form_questions",
+    metadata,
+    # Keyed on the VERSION, not the posting: a revised requisition is a new subject and its
+    # application form may have changed with it, which is exactly when the question is worth
+    # re-asking. One row per version means one GET per lead for the life of that version.
+    Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), primary_key=True),
+    # The FETCHED form, not the match: `delivery/form_questions`' catalog is applied fresh on
+    # every read, so adding a surface takes effect on the next reconcile without re-asking any
+    # board. `questions[]` only — never the `compliance[]` EEO blocks, which are the same
+    # boilerplate on every Greenhouse board.
+    Column("questions_json", JSON, nullable=False),
+    # When the board answered. Nothing expires a row today — a version is immutable, so its form
+    # is asked about once — and this is what a later re-ask policy would be priced against.
+    Column("fetched_at", DateTime, nullable=False),
+)
+
 board_scans = Table(
     "board_scans",
     metadata,

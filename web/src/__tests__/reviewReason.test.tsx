@@ -88,6 +88,7 @@ describe("the requirement-hold badges", () => {
       "unevaluated",
       "seniority_above_band",
       "seniority_judged_above_band",
+      "form_question_hard_stop",
     ];
     const labels = reasons.map((reason) => {
       const { container, unmount } = render(<ReviewReasonBadge reason={reason} />);
@@ -141,5 +142,57 @@ describe("the role-vetoed compact row surfaces its evidence without a duplicate 
     // trail. Dropping the `detailReason` routing (badge falls back to generic copy) fails this.
     expect(screen.getAllByText("role vetoed").length).toBeGreaterThan(0);
     expect(screen.getAllByTitle(offTargetReason).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the form-hard-stop row quotes the question the JD does not contain", () => {
+  // T91. This reason is the only one whose evidence is NOT in the job description, so the quote
+  // is the whole audit trail: a reader who sees "form hard stop", opens the JD and finds no
+  // mention of citizenship concludes the gate misfired. The quote reaches the compact row exactly
+  // as the role gate's matched phrase does — through the badge's `detailReason` tooltip.
+  const question =
+    "This position requires current U. S. citizenship in order to achieve and maintain a " +
+    "security clearance. Are you currently a U. S. citizen?";
+  const renderRow = (formQuestion: string | null) =>
+    render(
+      <QueueRowItem
+        row={queueRow({
+          review_reason: "form_question_hard_stop",
+          form_question: formQuestion,
+        })}
+        rank={1}
+        selected={false}
+        active={false}
+        collapsing={false}
+        onSelect={() => undefined}
+        onApplied={() => undefined}
+        onSkip={() => undefined}
+        onReport={() => undefined}
+      />,
+    );
+
+  it("carries the quoted question on the badge's tooltip", () => {
+    renderRow(question);
+    expect(screen.getAllByText("form hard stop").length).toBeGreaterThan(0);
+    // Dropping the `detailReason` routing falls back to the generic copy and fails this.
+    expect(screen.getAllByTitle(question).length).toBeGreaterThan(0);
+  });
+
+  it("falls back to the generic copy when the server sent no quote", () => {
+    // The state an older viewer process produces: it serves this bundle but omits the field. The
+    // honest render is the reason WITHOUT a quote — never `undefined` in a tooltip, and never a
+    // missing chip, because the hold is real either way.
+    renderRow(null);
+    expect(screen.getAllByText("form hard stop").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle(/never mentions/).length).toBeGreaterThan(0);
+  });
+
+  it("says where the requirement was found, not that the JD states it", () => {
+    const { container } = render(
+      <ReviewReasonBadge reason="form_question_hard_stop" showReason />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/application form/i);
+    expect(text).toMatch(/job description never mentions/i);
   });
 });

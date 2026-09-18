@@ -96,7 +96,17 @@ CLOSED_DIR = "_closed"
 #: title the operator can see at a glance, and this one is an LLM's reading of a body whose title
 #: looks entry-level. Folding them together would also make the lane-composition report unable to
 #: show whether the body reader is earning its keep, which is the only way to tell.
+#:
+#: ``form_question_hard_stop`` (T91) is the only member that does not come from the JD at all, and
+#: it is the reason it is a member rather than a re-use of ``ineligible_verdict``. It says the
+#: Greenhouse APPLICATION FORM states a citizenship or export-control requirement — measured live
+#: 2026-09-17 on three apply-lane leads a hand pre-flight withdrew, none of which mentions
+#: citizenship, clearance, ITAR or export anywhere in the body the engine reads. Nothing else in
+#: this system can see that class. It carries a QUOTED question rather than a quoted JD span, so
+#: it can never be reported as a verdict: the keystone requires the span to come from the frozen
+#: JD, the form is not the frozen JD, and review is the fail-open direction that leaves (D-380).
 ReviewReason = Literal[
+    "form_question_hard_stop",
     "ineligible_verdict",
     "non_us_location",
     "role_vetoed",
@@ -141,6 +151,7 @@ def classify(
     seniority_above_band: bool = False,
     judge_eligible: bool = False,
     judge_seniority_above_band: bool = False,
+    form_question_hit: str | None = None,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the nine reasons held the lead.
 
@@ -202,6 +213,27 @@ def classify(
     # board. That is the fail-open direction a liveness judge is owed.
     if posting_closed:
         return LaneDecision(CLOSED_DIR, None)
+    # T91, and it sits HERE — directly under the closure drain and above every verdict, location,
+    # role and seniority gate — because it is the strongest NON-CLOSURE reason a lead can be held
+    # for. A citizenship or export-control requirement on the application form is a HARD STOP the
+    # JD does not state at all: measured live 2026-09-17, a `body_text` grep for
+    # citizen/clearance/ITAR/export returned 0 hits on all three leads that carried one. So no
+    # gate below can see it, and reporting one of their reasons instead would send the owner to a
+    # JD that does not mention the thing that stops them.
+    #
+    # It HOLDS, never drops, and it writes NO VERDICT: `INELIGIBLE` must carry a quoted span from
+    # the frozen JD, and this quotes a question from a form that is not the frozen JD. Review is
+    # the fail-open direction that leaves (D-380), and it is the right one here for a second
+    # reason — the hold applies to EVERY profile status, because this module is deliberately
+    # user-agnostic and does not read the facts. A citizen reading "are you a U.S. citizen?" on
+    # the chip clears it in two seconds; a rule that tried to answer it for them would need the
+    # profile, and would be wrong for every other tenant.
+    #
+    # `None` covers "not a Greenhouse lead", "form not fetched" and "fetched, nothing matched"
+    # alike. Only a HIT moves anything, so a board that will not answer never costs an
+    # application.
+    if form_question_hit is not None:
+        return LaneDecision(REVIEW_DIR, "form_question_hard_stop")
     if verdict == "ineligible":
         return LaneDecision(REVIEW_DIR, "ineligible_verdict")
     if classify_location(list(locations)) == "non_us":
@@ -316,6 +348,7 @@ def lane(
     seniority_above_band: bool = False,
     judge_eligible: bool = False,
     judge_seniority_above_band: bool = False,
+    form_question_hit: str | None = None,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -335,4 +368,5 @@ def lane(
         seniority_above_band=seniority_above_band,
         judge_eligible=judge_eligible,
         judge_seniority_above_band=judge_seniority_above_band,
+        form_question_hit=form_question_hit,
     ).lane

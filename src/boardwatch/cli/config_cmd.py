@@ -192,6 +192,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "death_probe_ttl_hours": (
         int, "next run", "hours before such a posting may be probed again, ≥1"
     ),
+    "form_question_fetch_budget": (
+        int,
+        "next run",
+        "Greenhouse application forms fetched per queue sync, looking for a citizenship or "
+        "export-control hard stop the JD never states, ≥0 (0 disarms it)",
+    ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 

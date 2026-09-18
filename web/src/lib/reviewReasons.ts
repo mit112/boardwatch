@@ -19,6 +19,7 @@ import type { QueueRow, ReviewReason } from "../api/types";
 export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   eligibility_unconfirmed: "eligibility unconfirmed",
   experience_requirement: "experience requirement",
+  form_question_hard_stop: "form hard stop",
   ineligible_verdict: "ineligible verdict",
   no_requirements_found: "nothing extracted",
   non_us_location: "outside the US",
