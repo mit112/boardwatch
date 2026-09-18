@@ -33,7 +33,12 @@ from typing import Any, get_args
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from boardwatch.core.models import BoardSnapshot, RawPosting, SecondhandField
+from boardwatch.core.models import (
+    BoardSnapshot,
+    RawPosting,
+    SecondhandColumnField,
+    SecondhandField,
+)
 from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.engine import evaluate
@@ -55,7 +60,12 @@ from boardwatch.store.queries import (
     upsert_lane_company,
 )
 
-ALL_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandField))
+#: Every COLUMN member, which is what every guard in this module is about. Derived from the
+#: column alias rather than from `SecondhandField`, so `"liveness"` — a declaration that the
+#: observation is not evidence of life at all, not a claim about a column — stays out. These
+#: guards assert that a secondhand observation DOES still record liveness; folding that member
+#: in here would make them assert the opposite of what they say.
+ALL_SECONDHAND: frozenset[SecondhandField] = frozenset(get_args(SecondhandColumnField))
 
 #: Sol's repro, verbatim: two readings of ONE posting that decide opposite ways under the SHIPPED
 #: rules. The employer offers sponsorship; the aggregator's 31-character rendering restricts to
@@ -621,9 +631,14 @@ def test_every_column_the_writer_refreshes_is_classified_exactly_once(
     assert set(_SECONDHAND_COLUMNS) == set(get_args(SecondhandField))
     classified = [column for columns in _SECONDHAND_COLUMNS.values() for column in columns]
     assert len(classified) == len(set(classified))  # no column owned by two declarations
-    # `last_seen_at` is the one exclusion, and it is deliberate: it is the observation's OWN
-    # claim, never the provider's, so no declaration may withhold it.
-    assert set(classified) == written - {"last_seen_at"}
+    assert set(classified) == written
+    # `last_seen_at` is the one column no FIDELITY member may withhold -- it is the observation's
+    # OWN claim, never the provider's -- which is why it is owned by `"liveness"` and by nothing
+    # in `ALL_SECONDHAND`. The split is the contract: declaring every column still refreshes it.
+    assert _SECONDHAND_COLUMNS["liveness"] == ("last_seen_at",)
+    assert "last_seen_at" not in {
+        column for name in ALL_SECONDHAND for column in _SECONDHAND_COLUMNS[name]
+    }
 
 
 def test_body_text_is_declarable_but_owns_no_mutable_column() -> None:

@@ -466,9 +466,14 @@ def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):
     landed: 612 `revised` versions written by this lane onto board postings, ALL of them tier 1,
     and the board's very next reading reverted 87 of 436 (20.0%) by more than half the body.
 
+    `"liveness"` is declared IN ADDITION, and on every tier (see the tiers-2-and-3 test below):
+    it is not a column family, it is the statement that this observation is a directory read
+    rather than a fetch. Tier 1 is the tier where the two meet — the board scan owns the columns
+    AND is the only thing that can see whether the posting is still served.
+
     The expected set is spelled out as a LITERAL rather than compared against
-    `CONVERGED_SECONDHAND`, which is derived from `SecondhandField` and would agree with itself
-    however either one changes. A new declarable field reddens this test on purpose.
+    `CONVERGED_SECONDHAND`, which is derived from `SecondhandColumnField` and would agree with
+    itself however either one changes. A new declarable field reddens this test on purpose.
     """
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "a")
@@ -476,7 +481,7 @@ def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):
     assert posting.secondhand == frozenset(
         {
             "title", "url", "locations", "remote_policy", "department",
-            "posted_at", "updated_at", "body_text", "salary", "raw_json",
+            "posted_at", "updated_at", "body_text", "salary", "raw_json", "liveness",
         }
     )
 
@@ -488,20 +493,25 @@ def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):
         ("https://lifeattiktok.com/search/123", "pst_y"),      # tier 3: the lane namespace
     ],
 )
-def test_a_record_filed_under_its_own_key_declares_nothing_secondhand(
+def test_a_record_filed_under_its_own_key_declares_only_liveness(
     tmp_path, direct_url, posting_id
 ):
     """Tiers 2 and 3, and the reason the declaration rides on the IDENTITY rather than the lane.
 
     Neither tier converges onto a board's posting key -- both file under job-apps' own `pst_`
-    reference -- so this lane is the ONLY observer those rows will ever have. Declaring there
-    would freeze whatever landed first and never refresh it, which is the failure mode
+    reference -- so this lane is the ONLY observer those rows will ever have. Declaring a COLUMN
+    there would freeze whatever landed first and never refresh it, which is the failure mode
     `SecondhandField`'s reason 1 rejects a per-lane precedence rule for.
+
+    `"liveness"` is the one member that does NOT vary by tier, because it is not a claim about
+    fidelity: this lane reads a static local directory and re-lists every record in it on every
+    run, whatever identity the record resolved to. A tier-3 row can still close through the
+    death probe (D-325), and letting a file read clear its strikes disarms that.
     """
     root = tmp_path / "queue"
     _write(root, "Other", "a", direct_url=direct_url, posting_id=posting_id)
     (posting,) = _postings(_collect(root, tmp_path))
-    assert posting.secondhand == frozenset()
+    assert posting.secondhand == frozenset({"liveness"})
 
 
 def test_two_spellings_of_one_lane_company_still_collapse_to_one_slug(tmp_path):
