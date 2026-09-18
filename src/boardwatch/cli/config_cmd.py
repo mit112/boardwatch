@@ -183,6 +183,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "next run",
         "liveness probes per run against postings no board scan enumerates, ≥0 (0 disarms it)",
     ),
+    "death_probe_company_budget": (
+        int,
+        "next run",
+        "ATS list-endpoint reads per run, one per company, against providers that publish a "
+        "whole board (ashby/greenhouse/lever), ≥0 (0 disarms that half)",
+    ),
     "death_probe_ttl_hours": (
         int, "next run", "hours before such a posting may be probed again, ≥1"
     ),

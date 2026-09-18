@@ -8,7 +8,12 @@ unreachable, with nothing red.
 
 So these run the real pipeline and read the artifact off disk.
 
-Never the network: the prober is injected, exactly as `cli/run_cmd.py` injects the real one.
+Never the network: BOTH probers are injected, exactly as `cli/run_cmd.py` injects the real ones.
+That is load-bearing for T89's listing half in particular — it reads three live ATS APIs, so a
+default-constructed one would have every pipeline test in this repo enumerating real boards.
+
+T89 also makes `companies.provider` decide WHICH half answers for a row, so the seed below names
+it explicitly rather than leaving it as scenery.
 """
 
 from __future__ import annotations
@@ -41,7 +46,19 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data"
 
 
-def _seed_posting(data_dir: Path, n: int, *, watched: bool = False) -> int:
+# T89: `greenhouse` rows now leave the URL candidate set for the list-API half, so the URL-path
+# tests here name a provider that has no list endpoint. `jobapps` is the real one — tier-3
+# name-keyed rows with no ATS behind them, 2,247 of the open rows in this class.
+URL_PATH_PROVIDER = "jobapps"
+
+
+def _seed_posting(
+    data_dir: Path,
+    n: int,
+    *,
+    watched: bool = False,
+    provider: str = URL_PATH_PROVIDER,
+) -> int:
     engine = get_engine(data_dir)
     ensure_schema(engine)
     now = utcnow()
@@ -49,7 +66,7 @@ def _seed_posting(data_dir: Path, n: int, *, watched: bool = False) -> int:
         company_id = int(
             conn.execute(
                 insert(tables.companies).values(
-                    name=f"Acme{n}", provider="greenhouse", slug=f"acme{n}",
+                    name=f"Acme{n}", provider=provider, slug=f"acme{n}",
                     source="user", watched=watched,
                 )
             ).inserted_primary_key[0]
@@ -78,13 +95,17 @@ def _seed_posting(data_dir: Path, n: int, *, watched: bool = False) -> int:
     return posting_id
 
 
-def _ready(data_dir: Path, count: int, *, watched: bool = False) -> list[int]:
+def _ready(
+    data_dir: Path, count: int, *, watched: bool = False, provider: str = URL_PATH_PROVIDER
+) -> list[int]:
     from typer.testing import CliRunner
 
     from boardwatch.cli.app import app
 
     cli = CliRunner()
-    ids = [_seed_posting(data_dir, n, watched=watched) for n in range(count)]
+    ids = [
+        _seed_posting(data_dir, n, watched=watched, provider=provider) for n in range(count)
+    ]
     assert cli.invoke(app, ["--data-dir", str(data_dir), "init"], input=runner_input).exit_code == 0
     assert cli.invoke(app, ["--data-dir", str(data_dir), "tailor", "init"]).exit_code == 0
     # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
@@ -103,7 +124,9 @@ def _gone_for(gone: set[int]):  # type: ignore[no-untyped-def]
     return probe
 
 
-def _pipeline(data_dir: Path, out_root: Path, *, prober=None) -> PipelineSummary:  # type: ignore[no-untyped-def]
+def _pipeline(  # type: ignore[no-untyped-def]
+    data_dir: Path, out_root: Path, *, prober=None, listing_prober=None
+) -> PipelineSummary:
     settings = load_settings(data_dir=data_dir)
     return run_pipeline(
         get_engine(data_dir),
@@ -114,6 +137,7 @@ def _pipeline(data_dir: Path, out_root: Path, *, prober=None) -> PipelineSummary
         skip_scan=True,
         top_n=5,
         liveness_prober=prober,
+        listing_prober=listing_prober,
     )
 
 
@@ -182,6 +206,11 @@ def test_two_pipeline_runs_close_the_posting_and_the_funnel_says_so(
     assert probe["alive"] == 1
     assert probe["attempted"] == probe["due"] == 2
     assert probe["budget_refused"] == 0
+    assert probe["closed_by_url"] == 1
+    assert probe["closed_by_listing"] == 0
+    # The listing half was not asked for — no company under a list-API provider exists here —
+    # so its whole block reads zero DUE rather than zero absent.
+    assert probe["companies_due"] == probe["companies_attempted"] == 0
 
 
 def test_a_closed_posting_leaves_the_ranked_corpus_on_the_run_that_proved_it(
@@ -260,5 +289,74 @@ def test_a_run_with_no_prober_reports_the_sweep_as_UNMEASURED(  # noqa: N802
         "unknown": None,
         "alive": None,
         "closed": None,
+        "closed_by_url": None,
+        "closed_by_listing": None,
         "strikes_cleared": None,
+        "companies_due": None,
+        "companies_attempted": None,
+        "companies_refused": None,
+        "listing_absent": None,
+        "listing_present": None,
+        "listing_unknown": None,
     }
+
+
+def _listing_for(listed: set[str]):  # type: ignore[no-untyped-def]
+    from boardwatch.pipeline.death_probe import Listing
+
+    def probe(company_id: int, provider: str, slug: str) -> Listing:
+        return Listing(company_id, frozenset(listed), f"{len(listed)} listed")
+
+    return probe
+
+
+def test_two_pipeline_runs_close_a_posting_absent_from_its_boards_listing(
+    env: Path, tmp_path: Path
+) -> None:
+    """T89's half through the real pipeline, and the reason it exists asserted alongside it: the
+    URL prober says `alive` for BOTH rows — which is what a dead Ashby posting actually answers,
+    a 200 with an empty shell — and the listing is the only thing that can distinguish them.
+
+    A stage that decides correctly in a unit test and is never reached is the failure D-314 had
+    once, so this reads the outcome off the artifact on disk.
+    """
+    ids = _ready(env, 2, provider="ashby")
+    out_root = tmp_path / "apps"
+    alive = _gone_for(set())  # every URL answers 200, exactly as the dead ones do live
+
+    _pipeline(env, out_root, prober=alive, listing_prober=_listing_for({"p-1"}))
+    _age_the_probe(env)
+    summary = _pipeline(env, out_root, prober=alive, listing_prober=_listing_for({"p-1"}))
+
+    assert summary.fatal is None, summary.errors
+    assert _status(env, ids[0]) == ("closed", 2)
+    assert _status(env, ids[1]) == ("open", 0)
+
+    assert summary.funnel is not None
+    probe = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))["death_probe"]
+    assert probe["instrumented"] is True
+    assert probe["closed"] == probe["closed_by_listing"] == 1
+    assert probe["closed_by_url"] == 0
+    assert (probe["listing_absent"], probe["listing_present"]) == (1, 1)
+    assert probe["companies_attempted"] == probe["companies_due"] == 2
+    assert probe["companies_refused"] == 0
+    # And the URL half was offered nothing: one row, one signal (D-325 narrowing 4).
+    assert probe["due"] == probe["attempted"] == 0
+
+
+def test_a_run_with_no_listing_prober_reports_the_companies_as_REFUSED(  # noqa: N802
+    env: Path, tmp_path: Path
+) -> None:
+    """The listing half's analogue of the UNMEASURED rule, and the reason it is a separate
+    argument from `liveness_prober`: a caller that supplies only a URL prober must not have this
+    half report a clean corpus it never asked about. `run_cmd` supplies both on one switch."""
+    _ready(env, 2, provider="ashby")
+
+    summary = _pipeline(env, tmp_path / "apps", prober=_gone_for(set()), listing_prober=None)
+
+    assert summary.fatal is None, summary.errors
+    assert summary.funnel is not None
+    probe = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))["death_probe"]
+    assert (probe["companies_due"], probe["companies_attempted"]) == (2, 0)
+    assert probe["companies_refused"] == 2
+    assert probe["listing_absent"] == 0

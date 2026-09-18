@@ -538,21 +538,40 @@ class DeathProbeReport:
     CLOSES the ones proven gone twice. Sharing a block would invite a reader to add `checked`
     and `attempted` into one probe count, which would be two questions summed.
 
+    **T89 split it in two, because the sweep now has two mechanisms with different probe
+    units.** `due`/`unprobeable`/`attempted`/`budget_refused`/`gone`/`unknown`/`alive` are the
+    URL path's, whose unit is the POSTING; `companies_*` and `listing_*` are the ATS list-API
+    path's, whose unit is the COMPANY (one GET covers every open row it holds). Each row is fed
+    by exactly one of the two, so the two blocks partition the class rather than overlapping.
+
     Every bucket here exists because its absence would let the sweep fail silently:
 
-    - `due` is the denominator — how many rows the TTL admitted this run. Without it `attempted`
-      alone cannot distinguish a healthy sweep from a budget of zero.
+    - `due` is the URL path's denominator — how many rows the TTL admitted this run. Without it
+      `attempted` alone cannot distinguish a healthy sweep from a budget of zero.
     - `budget_refused` is `due - attempted`. A sweep that refuses work must read as refused
       work, never as a clean corpus.
     - `unprobeable` is due rows with no URL. This mechanism can never reach them by any future
-      refinement, so they are reported rather than filtered away.
+      refinement, so they are reported rather than filtered away. It has no listing-path
+      analogue: there the URL is never asked about, so a NULL url costs nothing.
     - `unknown` counts every non-closing outcome, `refetch_gone_after_redirect` included. It is
       the bucket that can disarm the check with no other number moving.
-    - `strikes_cleared` is the drain firing. Zero forever alongside a rising `gone` means the
-      only path out of the strike counter has stopped working.
+    - `companies_due`/`companies_attempted`/`companies_refused` are the same three facts one
+      level up, for the path whose budget counts companies. `companies_refused` also absorbs a
+      run given no listing prober at all, which is refused work and must not read as a clean
+      corpus.
+    - `listing_unknown` is the listing path's disarming bucket, and it is the one to watch: a
+      provider that starts answering 200 with an empty `jobs` array, or that moves its list
+      endpoint, lands every row here while `listing_absent` goes to 0 for ever.
+    - `strikes_cleared` is the drain firing, for BOTH paths. Zero forever alongside a rising
+      `gone` or `listing_absent` means the only path out of the strike counter has stopped
+      working.
+    - `closed_by_url`/`closed_by_listing` say WHICH evidence closed a posting, which is the same
+      reason D-325 gave `death_strikes` its own column: one number fed by two signals makes a
+      close unattributable. `closed` is derived as their sum — a property, not a field, so the
+      identity every existing reader relies on cannot drift from the two halves.
 
     Plain ints, never `None`: the whole object is `None` when the sweep did not run, so an
-    unmeasured run is stated once at the section rather than nine times inside it.
+    unmeasured run is stated once at the section rather than fifteen times inside it.
     """
 
     due: int
@@ -562,8 +581,22 @@ class DeathProbeReport:
     gone: int
     unknown: int
     alive: int
-    closed: int
+    closed_by_url: int
+    closed_by_listing: int
     strikes_cleared: int
+    companies_due: int
+    companies_attempted: int
+    companies_refused: int
+    listing_absent: int
+    listing_present: int
+    listing_unknown: int
+
+    @property
+    def closed(self) -> int:
+        """Every posting this sweep closed, however it was proved. Kept so the readers that
+        predate the split — the console line, the markdown, the artifact key — still answer
+        "how many did the sweep retire?" with one number."""
+        return self.closed_by_url + self.closed_by_listing
 
 
 def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
@@ -580,7 +613,15 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
             "unknown": None,
             "alive": None,
             "closed": None,
+            "closed_by_url": None,
+            "closed_by_listing": None,
             "strikes_cleared": None,
+            "companies_due": None,
+            "companies_attempted": None,
+            "companies_refused": None,
+            "listing_absent": None,
+            "listing_present": None,
+            "listing_unknown": None,
         }
     return {
         "instrumented": True,
@@ -591,8 +632,18 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
         "gone": report.gone,
         "unknown": report.unknown,
         "alive": report.alive,
+        # Kept, and kept FIRST of the three, because it is the key every reader that predates
+        # T89's split already reads. It is the sum of the two below by construction.
         "closed": report.closed,
+        "closed_by_url": report.closed_by_url,
+        "closed_by_listing": report.closed_by_listing,
         "strikes_cleared": report.strikes_cleared,
+        "companies_due": report.companies_due,
+        "companies_attempted": report.companies_attempted,
+        "companies_refused": report.companies_refused,
+        "listing_absent": report.listing_absent,
+        "listing_present": report.listing_present,
+        "listing_unknown": report.listing_unknown,
     }
 
 
@@ -2655,6 +2706,16 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"· {probe.closed} closed · {probe.strikes_cleared} strike counters cleared"
         ),
         "",
+        (
+            ""
+            if probe is None
+            else f"listings: {probe.companies_attempted} of {probe.companies_due} due "
+            f"companies asked ({probe.companies_refused} refused by the company budget) "
+            f"· {probe.listing_absent} rows absent · {probe.listing_present} present "
+            f"· {probe.listing_unknown} unknown · {probe.closed_by_url} closed by URL "
+            f"· {probe.closed_by_listing} closed by listing"
+        ),
+        "",
         "*The only mechanism that can close a posting whose company is `watched = 0` — a lane "
         "re-acquires by SEARCH, so absence is never evidence for these rows and the board "
         "scanner never revisits them (D-314). Only a non-redirect 404/410 from the posting's "
@@ -2663,6 +2724,17 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "(6.7%, Wilson 95% CI 2.6%–15.9%), because a closed Workday requisition still answers "
         "200 (0 of 37). It returned 0 false deaths against 90 live postings. `closed` staying "
         "at 0 is the expected reading, not evidence the class is healthy.*",
+        "",
+        "*T89 gave `ashby`, `greenhouse` and `lever` rows a second, disjoint mechanism: "
+        "membership of their company's ATS list endpoint, one GET per COMPANY. On those two "
+        "hosts the URL probe was worse than blind — a dead Ashby posting answers 200 with an "
+        "empty shell and a dead Greenhouse posting redirects to a 200, so the probe took its "
+        "`alive` branch and ZEROED the strikes the row had earned. Measured live over 60 "
+        "unwatched companies holding 246 open rows: 59 answered 200, none answered empty, and "
+        "31 rows (12.6%) were absent from their own board. A non-200, an unparseable body, or "
+        "an empty listing for a company that still holds open rows is `listing_unknown` and "
+        "moves no counter — so `listing_unknown` climbing while `listing_absent` sits at 0 is "
+        "the signature of this half being disarmed.*",
         "",
         "## Gate",
         "",

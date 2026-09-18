@@ -56,7 +56,10 @@ def _seed_posting(data_dir: Path, n: int, *, url: str | None = None) -> int:
         company_id = int(
             conn.execute(
                 insert(tables.companies).values(
-                    name=f"Acme{n}", provider="greenhouse", slug=f"acme{n}",
+                    # T89: `greenhouse` rows leave the URL candidate set for the ATS list-API
+                    # half of the death sweep, and these postings are seeded to exercise the URL
+                    # path. `jobapps` has no list endpoint, so it stays on it.
+                    name=f"Acme{n}", provider="jobapps", slug=f"acme{n}",
                     source="user", watched=False,
                 )
             ).inserted_primary_key[0]

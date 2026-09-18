@@ -127,6 +127,9 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # corpus-wide drain from a knob that judged nothing. And the artifact is not silent
         # either way: the funnel's `death_probe` section reports both sides of the budget.
         "death_probe_budget",
+        # T89's company budget, OUT on the identical reasoning: it bounds how many BOARDS the
+        # sweep may ask per run, never how a posting is judged.
+        "death_probe_company_budget",
         "death_probe_ttl_hours",
     }
 )
