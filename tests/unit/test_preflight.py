@@ -97,7 +97,10 @@ def test_backfills_open_postings_only_with_progress_line(
 
     assert stats.profile_refreshed is False
     assert stats.postings_backfilled == 2  # closed posting untouched
-    assert "re-extracting 2 postings" in buf.getvalue()
+    # The taxonomy did NOT change here -- the assertion two lines above is what says so --
+    # so the line must not claim it did. This test previously pinned the opposite.
+    assert "extracting 2 new posting(s)" in buf.getvalue()
+    assert "taxonomy changed" not in buf.getvalue()
     assert _extraction_versions(engine) == [current, current]
 
 
@@ -110,6 +113,31 @@ def test_refreshes_stale_profile(engine: Engine, settings: Settings) -> None:
         row = conn.execute(select(tables.profile)).one()
     assert row.taxonomy_version == load_taxonomy(settings.config_dir).version
     assert "Python" in row.skills_json and "Go" in row.skills_json
+
+
+def test_taxonomy_changed_wording_only_when_the_profile_was_stale(
+    engine: Engine, settings: Settings
+) -> None:
+    """The two causes of a pending extraction must not share one message.
+
+    A stale `profile.taxonomy_version` is the ONLY evidence the preflight has that the
+    taxonomy itself moved, so it is the only condition under which the re-extraction line
+    may say so. The companion assertion in
+    `test_backfills_open_postings_only_with_progress_line` pins the other direction; a fix
+    that hardcoded either wording would fail exactly one of the pair.
+    """
+    cid = _seed_company(engine)
+    _seed_posting(engine, cid, "1", "Python and Kafka systems.")
+    _seed_posting(engine, cid, "2", "Go services on Kubernetes.")
+    _seed_profile(engine, "stale-version")
+    console, buf = _console()
+
+    stats = run_preflight(engine, settings, console)
+
+    assert stats.profile_refreshed is True
+    assert stats.postings_backfilled == 2
+    assert "taxonomy changed — re-extracting 2 postings" in buf.getvalue()
+    assert "new posting(s)" not in buf.getvalue()
 
 
 def test_silent_and_idempotent_when_current(engine: Engine, settings: Settings) -> None:

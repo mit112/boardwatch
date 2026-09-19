@@ -50,7 +50,23 @@ def run_preflight(
 
     pending = _open_postings_missing_extraction(engine, taxonomy.version)
     if pending:
-        console.print(f"taxonomy changed — re-extracting {len(pending)} postings\u2026")
+        # The CAUSE is read, never assumed. A posting lacks an extraction at the current
+        # version for two unrelated reasons and only one of them is a taxonomy change: the
+        # taxonomy moved -- which the branch above has already detected, because a moved
+        # taxonomy necessarily leaves the profile's recorded version stale -- or the posting
+        # is simply NEW and has never been extracted. The second is the ordinary case on
+        # every run that scans a board, so a line hardcoded to "taxonomy changed" asserts a
+        # cause it never checked: it read that way on 17 consecutive runs across which
+        # `profile.taxonomy_version` never moved once, which makes it indistinguishable
+        # from the one reading that would matter -- a frozen window losing its identity.
+        # BOUND: with no profile row at all `profile_refreshed` cannot be True, so a genuine
+        # taxonomy change on such a store reports as new postings. That store ranks nothing,
+        # and the alternative -- a second query over the pending rows' stored versions --
+        # buys a distinction only an unranked store could observe.
+        if stats.profile_refreshed:
+            console.print(f"taxonomy changed — re-extracting {len(pending)} postings\u2026")
+        else:
+            console.print(f"extracting {len(pending)} new posting(s)\u2026")
         for chunk_start in range(0, len(pending), BATCH_SIZE):
             chunk = pending[chunk_start : chunk_start + BATCH_SIZE]
             with engine.begin() as conn:  # one commit per batch: resumable (D21)

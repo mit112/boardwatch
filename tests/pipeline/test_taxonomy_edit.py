@@ -46,7 +46,10 @@ def test_k_taxonomy_edit_triggers_preflight_on_next_top(
 
     first = runner.invoke(app, ["--data-dir", str(tmp_path), "top"])
     assert first.exit_code == 0
-    assert "re-extracting 2 postings" in first.output  # initial backfill at bundled version
+    # The profile was saved AT the bundled version, so the taxonomy has not moved — these two
+    # postings simply have no extraction yet. The line must say so rather than blame the taxonomy.
+    assert "extracting 2 new posting(s)" in first.output
+    assert "taxonomy changed" not in first.output
 
     # ---- the edit: user override = bundled + one new pattern ----
     (cfg / "taxonomy.yaml").write_text(
@@ -57,7 +60,10 @@ def test_k_taxonomy_edit_triggers_preflight_on_next_top(
 
     second = runner.invoke(app, ["--data-dir", str(tmp_path), "top"])
     assert second.exit_code == 0
-    assert "re-extracting 2 postings" in second.output  # preflight ran again
+    # NOW the taxonomy really did move, which the stale profile version is the evidence for —
+    # so this is the one call that may name it. Asserted as the full phrase, and paired with the
+    # negative above, so neither wording can be hardcoded without failing one of the two.
+    assert "taxonomy changed — re-extracting 2 postings" in second.output
 
     with engine.connect() as conn:
         profile_row = conn.execute(select(tables.profile)).one()

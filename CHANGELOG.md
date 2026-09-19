@@ -628,6 +628,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The extraction preflight no longer claims a taxonomy change it never checked (2026-09-19).**
+  `taxonomy changed — re-extracting N postings…` was printed whenever any OPEN posting lacked an
+  extraction at the current taxonomy version — which is true of every newly scanned posting, so it
+  fired on 17 consecutive runs across which `profile.taxonomy_version` never moved once. The line
+  now branches on whether the profile's recorded version was actually stale, which is the only
+  evidence the preflight has that the taxonomy itself moved; the other branch reads
+  `extracting N new posting(s)…`. Reporting only — no change to what is extracted, and
+  `extract/preflight.py` is not one of the four modules `engine_version` digests, so no stored
+  evaluation is invalidated.
+
 - **A jobapps-lane listing no longer counts as liveness (2026-09-17, T88).** Every jobapps record
   declares `"liveness"` secondhand, so re-listing a static directory no longer resets
   `consecutive_missing`, `death_strikes` or `last_seen_at`, and no longer reopens a closed row.
