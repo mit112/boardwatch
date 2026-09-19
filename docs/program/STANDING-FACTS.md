@@ -1915,7 +1915,13 @@ longer reaches the remote channel**, only the digest — closing that means a la
 wider payload. On run 133 itself the channel would have posted **nothing**, which is correct.
 
 **THE ORDERING INVARIANT IS LOAD-BEARING AND A MECHANICAL REBASE BREAKS IT SILENTLY (D-374).**
-`_emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`. An alert appended
+`[form sweep] -> _emit_funnel -> _sync_queue -> [ALL soft alerts] -> _emit_morning -> heartbeat gate`.
+The form sweep joined the head of that chain in T96: it used to run INSIDE `_sync_queue`, which put
+it downstream of the artifact its counts belong in, so they reached a console line and nothing else.
+It sits ABOVE `escalatable_from` and appends NOTHING to `summary.errors` on any path — deliberately,
+because an unfetched form produces a HOLD at worst and a hold that did not happen leaves the lead
+where it already was. **That placement is why it is not an exception to the invariant below**: the
+invariant governs ALERTS, and the sweep raises none. An alert appended
 BELOW `_emit_morning` still fires, is still recorded, and is **invisible to the owner** — which is exactly
 how the queue-sync note and #249's intake-death alert shipped. Three separate branches tried to union into
 that region this session and two would have landed below the digest. **Verify the order in source after any
