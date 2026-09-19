@@ -1239,6 +1239,23 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # `delivered_unapplied` reads it for every row; without it here the detail served `None` for a
     # lead the list served `uncertain` — the same field, the same lead, two answers.
     gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # The gate's SENIORITY reading, for the same reason its verdict one line up is read here, and
+    # missed when that one was added. Two things went wrong without it, and the second is the
+    # worse one. `delivery/api.py` keys the above-band badge on `row.judge_seniority_fit == "no"`,
+    # so the pane's badge was dead. And `_row_json` feeds the reading into `review_gate.classify`,
+    # so a lead the LIST holds as `seniority_judged_above_band` read `review_reason: None` in
+    # the PANE -- measured, not inferred. Not two different answers: the pane reported NO HOLD on
+    # the surface where the reader decides whether to apply.
+    #
+    # Gated on the flag HERE and nowhere else on this side, exactly as
+    # `delivered_unapplied` gates it: every consumer reads `judge_seniority_fit == "no"` and the
+    # inert `"unclear"` default is what keeps them agreeing (D-332). `settings` is already bound
+    # above, so this needs no second `load_settings()`.
+    seniority = (
+        current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
+        if settings.gate.seniority_hold
+        else {}
+    )
     audit = load_audit(
         conn,
         posting_id,
@@ -1258,6 +1275,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             verdict=verdicts.get(posting_id),
             now=utcnow(),
             judge_verdict=gate.get(posting_id),
+            judge_seniority_fit=seniority.get(posting_id, "unclear"),
             form_question_hit=form_questions.get(posting_id),
         ),
         jd_body=None if version is None or quarantined else version.body_text,
