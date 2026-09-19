@@ -10,11 +10,42 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
-from boardwatch.reports.abstain import build_abstain_report
+from boardwatch.eligibility.engine import evaluate
+from boardwatch.eligibility.facts import Facts, Policy
+from boardwatch.reports import abstain
+from boardwatch.reports.abstain import DispositionCounts, build_abstain_report
 
 # No override dir exists here, so load_rules falls back to the bundled catalog.
 BUNDLED = Path("does-not-exist")
+
+# The two ids D-253 exempted as structurally undecidable, both of which now DECIDE: D-326 gave
+# `clearable_required` the `security_clearance.obtainable` bit, and the scoped-years resolver
+# rejects a scoped bar the declared total cannot reach.
+FORMERLY_EXEMPT = frozenset(
+    {"experience_years:scoped_years_minimum", "clearance:clearable_required"}
+)
+
+# All four families as blockers, and a one-year near-miss ceiling so a 12-year bar lands
+# outside the band and resolves rather than abstaining into it.
+_POLICY = Policy(
+    families={
+        "work_auth": "blocker",
+        "experience_years": "blocker",
+        "clearance": "blocker",
+        "degree": "blocker",
+    },
+    near_miss_years_ceilings={"experience_years": 1},
+)
+# (body, can the profile obtain a clearance) — the clearance body is evaluated BOTH ways so the
+# rule is shown deciding in each direction, not merely rejecting.
+_BODIES = (
+    ("Minimum of 12 years of experience in software development.", False),
+    ("Must be able to obtain a security clearance.", False),
+    ("Must be able to obtain a security clearance.", True),
+)
 
 
 def catalog() -> RulesCatalog:
@@ -23,6 +54,31 @@ def catalog() -> RulesCatalog:
 
 def rule_ids(cat: RulesCatalog) -> list[str]:
     return [pattern.rule_id for family in cat.families for pattern in family.patterns]
+
+
+def evaluated_counts(cat: RulesCatalog) -> DispositionCounts:
+    """Real rows from `engine.evaluate`, tallied the way the store's GROUP BY hands them over."""
+    counts: dict[tuple[str | None, str], int] = {}
+    for body, obtainable in _BODIES:
+        facts = Facts.model_validate(
+            {
+                "work_authorization": {
+                    "status": "ead_or_similar",
+                    "jurisdiction": "us",
+                    "needs_sponsorship": True,
+                },
+                "security_clearance": {
+                    "level": "none",
+                    "state": "none",
+                    "obtainable": obtainable,
+                },
+                "total_years_experience": 1,
+            }
+        )
+        for item in evaluate(body, facts, _POLICY, cat).requirements:
+            key = (item.rule_id, item.disposition)
+            counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def test_every_catalog_rule_appears_even_with_no_rows() -> None:
@@ -91,41 +147,78 @@ def test_never_fired_is_not_counted_as_fully_abstaining() -> None:
     assert len(report.never_fired) == 60  # 57 -> 59: the two months patterns (2026-09-04); 59 -> 60: `labeled_years_minimum` (2026-09-05)
 
 
-def test_a_structurally_undecidable_rule_is_reported_apart_from_the_fixable_ones() -> None:
-    """D-253: `scoped_years_minimum` abstains unconditionally (the schema stores no per-skill
-    durations), so its 100% abstain is a schema gap, not a fixable blind spot. It must stay
-    visible but must NOT inflate the actionable 'fire but never decide' count and mask the
-    rules a profile fact or a code line would fix."""
-    from boardwatch.reports.abstain import STRUCTURALLY_UNDECIDABLE
+def test_the_formerly_exempt_rules_decide_and_are_not_flagged_undecidable() -> None:
+    """D-326 and the scoped-years resolution made both former exemptions DECIDE.
 
+    `clearance:clearable_required` reads `security_clearance.obtainable` and returns met/unmet
+    from the bit; `experience_years:scoped_years_minimum` returns unmet for a scoped bar the
+    declared total cannot reach. Rows are taken from a real `engine.evaluate`, not hand-typed,
+    so a resolver that goes back to abstaining moves this test rather than sitting behind a
+    fixture that agrees with the old behaviour.
+    """
     cat = catalog()
-    structural = "experience_years:scoped_years_minimum"
-    assert structural in STRUCTURALLY_UNDECIDABLE  # the constant names a real catalog rule
-    fixable = next(r for r in rule_ids(cat) if r not in STRUCTURALLY_UNDECIDABLE)
-    report = build_abstain_report(
-        cat, {(structural, "unknown"): 16007, (fixable, "unknown"): 5}
-    )
+    counts = evaluated_counts(cat)
+    report = build_abstain_report(cat, counts)
 
     by_id = {rule.rule_id: rule for rule in report.rules}
-    assert by_id[structural].structurally_undecidable is True
+    for rule_id in FORMERLY_EXEMPT:
+        rule = by_id[rule_id]
+        assert rule.unknown == 0, rule_id
+        assert rule.met + rule.unmet > 0, rule_id
+        assert rule.abstain_rate == 0.0, rule_id
+        assert rule.structurally_undecidable is False, rule_id
+        assert rule.fully_abstaining is False, rule_id
+    # Nothing in the catalog is exempt any more: the renderer's "100% (schema gap)" branch and
+    # the summary's "N structurally undecidable" count are both empty.
+    assert report.structurally_undecidable == ()
+
+
+def test_unknown_only_rows_for_the_formerly_exempt_rules_are_actionable() -> None:
+    """A rule that CAN decide but abstained on every row is a fixable blind spot.
+
+    While these two ids were exempt, that condition was dropped from the actionable headline —
+    the one number the report exists to make true.
+    """
+    cat = catalog()
+    report = build_abstain_report(cat, {(rid, "unknown"): 9 for rid in FORMERLY_EXEMPT})
+
+    fixable = {rule.rule_id for rule in report.fully_abstaining_fixable}
+    assert FORMERLY_EXEMPT <= fixable
+
+
+def test_the_formerly_exempt_rules_with_no_rows_still_read_as_never_fired() -> None:
+    """CONTROL, green before and after: zero rows is `None`, never 0% and never a rate."""
+    cat = catalog()
+    report = build_abstain_report(cat, {})
+
+    by_id = {rule.rule_id: rule for rule in report.rules}
+    for rule_id in FORMERLY_EXEMPT:
+        assert by_id[rule_id].abstain_rate is None, rule_id
+        assert by_id[rule_id].never_fired is True, rule_id
+
+
+def test_a_structurally_undecidable_member_is_still_reported_apart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CONTROL for D-253's MECHANISM, which outlives its members.
+
+    The allowlist is empty today, so nothing else exercises the branch. Monkeypatching one id
+    in keeps the separation under test: a member must stay visible in `fully_abstaining` and
+    be withheld from the actionable `fully_abstaining_fixable`.
+    """
+    cat = catalog()
+    member, fixable = rule_ids(cat)[0], rule_ids(cat)[1]
+    monkeypatch.setattr(abstain, "STRUCTURALLY_UNDECIDABLE", frozenset({member}))
+    report = build_abstain_report(cat, {(member, "unknown"): 4, (fixable, "unknown"): 5})
+
+    by_id = {rule.rule_id: rule for rule in report.rules}
+    assert by_id[member].structurally_undecidable is True
     assert by_id[fixable].structurally_undecidable is False
-    # both fire and only ever abstain, so both are fully_abstaining (unchanged semantics)...
-    assert {structural, fixable} <= {rule.rule_id for rule in report.fully_abstaining}
-    # ...but the structural one is bucketed apart and dropped from the actionable count. The
-    # structurally-undecidable set is intrinsic (flagged from the constant), so it lists every
-    # such catalog rule regardless of rows — both scoped_years_minimum and clearable_required.
-    # A LITERAL, not `set(STRUCTURALLY_UNDECIDABLE)`: comparing the report against the same
-    # constant the production code reads is vacuous, because a mutant that drops a member from
-    # `STRUCTURALLY_UNDECIDABLE` moves BOTH sides and the equality still holds. Pinned to the two
-    # ids `abstain.py` declares so dropping either one fails here (D-253).
-    structural_ids = {rule.rule_id for rule in report.structurally_undecidable}
-    assert structural_ids == {
-        "experience_years:scoped_years_minimum",
-        "clearance:clearable_required",
-    }
-    fixable_ids = {rule.rule_id for rule in report.fully_abstaining_fixable}
-    assert structural not in fixable_ids
-    assert fixable in fixable_ids
+    # Unchanged semantics: both still fire and never decide...
+    assert {member, fixable} <= {rule.rule_id for rule in report.fully_abstaining}
+    # ...but only the member is bucketed apart and withheld from the actionable count.
+    assert [rule.rule_id for rule in report.structurally_undecidable] == [member]
+    assert [rule.rule_id for rule in report.fully_abstaining_fixable] == [fixable]
 
 
 def test_a_rule_id_outside_the_catalog_is_surfaced_not_bucketed() -> None:

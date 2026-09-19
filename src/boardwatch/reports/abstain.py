@@ -42,12 +42,14 @@ CLOSED_DISPOSITIONS = frozenset({MET, UNMET, UNKNOWN})
 # in the schema for ANY profile, so their 100% abstain is structural, not a fixable blind spot.
 # Detection still fires on purpose (it keeps the requirement row visible and prevents an
 # `eligible`-by-silence), so the rule is not deleted; it is reported apart from the fixable
-# fully-abstaining rules. A closed, versioned list: a new unconditional-abstain resolver must be
-# added here deliberately (D-253). Sources: `eligibility/resolve.py` — `scoped_years_minimum`
-# (no per-skill durations stored) and `clearable_required` (obtain-after-hire not stored).
-STRUCTURALLY_UNDECIDABLE = frozenset(
-    {"experience_years:scoped_years_minimum", "clearance:clearable_required"}
-)
+# fully-abstaining rules (D-253).
+#
+# EMPTY today, and an empty allowlist is the correct state whenever every resolver can decide
+# for SOME profile. The distinction D-253 drew is kept, because it will be needed again; its two
+# original members were not. An id may be added back ONLY with a test proving no profile can
+# make that rule decide — an exemption that outlives its resolver renders a working rule as a
+# permanent "100% (schema gap)" and drops its fixable blind spots from the actionable headline.
+STRUCTURALLY_UNDECIDABLE: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
