@@ -213,6 +213,25 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 
 ## Live blockers and carried gaps
 
+**THE SCHEDULED (WINDOWS) BUILD HAS BEEN RED FOR FOUR CONSECUTIVE NIGHTS AND NOBODY OWNS IT —
+found 2026-09-19, NOT caused by that session's work.** Last green scheduled run **2026-09-15
+(`2b980ebb`)**; red on 09-16 `70b99689`, 09-17 `1882e198`, 09-18 `15531462`, 09-19 `a2366bbf`.
+**Every PUSH ci run in that window is GREEN** — Windows runs ONLY on the schedule, which is why
+this is structurally invisible to a PR and to `make check` on macOS. Three failures, all
+Windows-only:
+
+- `tests/unit/test_web_server.py::test_local_today_is_the_servers_own_zone_and_never_utc` —
+  **`AttributeError: module 'time' has no attribute 'tzset'`** at lines 2918 and 2928.
+  `time.tzset()` is Unix-only and does not exist on Windows. Introduced by **`3652f583`
+  (2026-09-17, "Pin a follow-up date to a lead")** — three days before it was noticed.
+- `tests/pipeline/test_gate_stage.py::test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy`
+  — `assert fake_claude.exists()` fails; the D-511/D-512 superseded-policy path.
+
+**Attribution checked, not assumed:** the breakage predates 2026-09-19's commits by three days and
+none of them touch those files. Read it with `gh run list --branch main --json event,conclusion`
+and filter `event=="schedule"` — `--limit 1` shows the newest run of EITHER kind and will report
+whichever landed last, which is how a red nightly reads as green.
+
 | Item | Detail | Owner |
 |---|---|---|
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
