@@ -2053,6 +2053,16 @@ def test_every_row_carries_the_gates_seniority_reading_the_badge_is_keyed_on(
     assert review_rows[senior]["review_reason"] == "seniority_judged_above_band"
     assert review_rows[senior]["judge_seniority_above_band"] is True
     assert apply_rows[junior]["judge_seniority_above_band"] is False
+    # Same field through `_row_json`'s single-row path, so it cannot exist on the list and be
+    # absent in the pane -- the assertion its `judge_verdict` and `form_question` siblings
+    # already carry. **The second one is the one that matters**: `_row_json` feeds this reading
+    # into `review_gate.classify`, so a pane that does not read it does not merely lose a badge.
+    # MEASURED against the unfixed code: the pane returned `review_reason: None` for a lead the
+    # list held as `seniority_judged_above_band` -- it reported NO HOLD AT ALL on the surface
+    # where the reader decides whether to apply.
+    detail = call(live, f"/api/queue/{senior}", bearer=live.token).json()["row"]
+    assert detail["judge_seniority_above_band"] is True
+    assert detail["review_reason"] == "seniority_judged_above_band"
 
 
 def test_a_form_hard_stop_reaches_the_page_with_the_question_it_quotes(
