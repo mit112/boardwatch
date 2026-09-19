@@ -20,52 +20,69 @@
 
 ## Current standing
 
-### 2026-09-18 — **RUN 434 CLEAN (confirm day 13) AND T88–T91 ALL READ LIVE WITH THE MANIFEST UNMOVED; SIX OWNER DECISIONS SIZED THEN RULED — FOUR PRECISION FAMILIES REFUSED, THE YEARS CEILING HELD, THE PROBE BUDGETS RAISED (D-519); T94 SHIPPED (D-520).**
+### 2026-09-19 — **M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
 
-**Run 434 (readout in `METRICS.md`).** 04:00 tick, `ok`, 57 min to the funnel, RECONCILES.
-**Manifest byte-identical to run 433's**, which is what D-518 asked of T88–T91. Both `death probe:`
-lines, the `application forms:` line and the `p_form_questions` migration all landed. `0 closed by
-listing` is the EXPECTED first reading — two strikes in different runs close, so **run 435 is the
-first that can close a listing-absent row; read the listing half there.** `postman` Greenhouse 404
-and Magnite Workday 422 are on their second day.
+**Run 447 (readout in `METRICS.md`).** `ok`, RECONCILES, **manifest byte-identical to run 434's on
+all five hashes**, one identity across the whole run. B1 40 · B2 19/19 · B3 0 failures ·
+B5 40 artifacts · B6 RECONCILES · B7 0% abstain. **B4 is VACUOUS, not met** — 0 bullets seen, so it
+contributes nothing to n ≥ 100. **B8's volume half reads 19 against ≥ 20.**
 
-**The lane the owner opens:** apply **381** (147 affirmatively `eligible`, 234 `uncertain`, never
-summed), review **379**, applied-ever **104** (was 400 / 370 / 61 on 09-17). Two paths agree on the size (API counts
-and the on-disk queue). T91's first three live catches are in the review lane as
-`form_question_hard_stop`. **The owner's autoapply is already in the ledger** (28 applied + 18
-withdrawn on 09-18, notes carrying `autoapply 2026-09-18`); job-apps' `_applied` tree is unchanged
-since 08-15, so **no applied-history import is owed**.
+**Owner's word, 2026-09-18 22:56: "I am giving you permission to count it as Day 14."** Run 447 was
+hand-launched on run 434's commit and the UNCHANGED 652-board fleet, so day 14 read on the frozen
+corpus and the expansion landed after. **The confirm therefore evidences 13 unattended ticks plus
+one attended run** — it no longer evidences "the plist fired on the 14th day", which 13 prior ticks
+and Gate P3's own counter already cover. Do not let a later reader mistake it for 14 unattended days.
 
-**D-519 closed the whole §3 list and the web calls.** Every option was measured against the 760
-standing leads before being put to the owner, and five of six answers are "no" because the reach
-is 0–9 leads: 3.1 visa classes → the judge; 3.2 `defense_employer` → not built; 3.3 title entropy
-→ REFUSED; 3.4 structured salary → REFUSED (0 standing leads carry one); 3.5 **a structured field
-is NOT the frozen JD**, so T92 holds for review and can never say `ineligible`;
-`near_miss_years_ceiling` **stays at 3** — and its "biggest lever" framing is RETIRED (475
-review-lane holds on 09-03, 26 today; bound: that is a LANE reading, not the corpus). Every D-516
-and D-517 web call is ratified as shipped. **Nothing from §3 is carried.**
+**B8's VOLUME half had never been recorded and fails 9 of the 14 confirm days** (7/13/10/12/3/10/9
+then 26/22/26/19/21/19 against ≥ 20). The acceptance-run table in `METRICS.md` reads
+`_(not started)_`, which is why nobody saw it; the instrument was validated against two recorded
+values before this was believed. Its precision half stays MET at 6.9%/5.6% (D-514). **Whether a
+9-of-14 volume record blocks the REPLACEMENT decision is Mit's — `PROGRAM.md` §1's table includes
+B8, M5's exit criterion does not.**
 
-**Operator numbers set (D-519).** `death_probe_budget` 50 → 300, `death_probe_company_budget`
-100 → 300 in the owner's `config.toml`, read back through `load_settings`. **Residual: 660 of the
-760 standing leads are on the URL path** (510 under an unwatched company), so 300 reaches ~59% of
-them per run — a held lead is asked about roughly every second run, not every run.
+**Gate 1, the reading of record** (7 days after D-499, as D-482 required): greenhouse **99.3%**,
+ashby **100%**, workday **100%**, lever **100%** against ≥ 85% — clear on both readings.
+Drawn-from total 35.2% → **44.6%**. **M4's exit condition is met.**
 
-**Next action — the two dated readings land tomorrow.**
+**Discovery was three disjoint backlogs (D-521 §1).** Gap A **958** stored-but-unwatched on a
+parseable provider — cause: **hiring.cafe admits ~78 real employer boards per run and writes every
+one unwatched**; Gap B **593** GitHub new-grad-list boards; Gap C **43** behind the `grnh.se` seeds.
+Stage 1 (ashby/greenhouse/lever/workable) was live-probed — 14 dead caught, including
+`greenhouse:embed` — and **1,155 imported, exit 0, zero skipped. Fleet 652 → 1,807**, verified by
+counting the store, provenance intact. **Stages 2–3 (workday 230, oraclehcm 62, smartrecruiters 78)
+are REFUSED** on measured lead density: ashby 3.05 vs workday 0.17 vs oraclehcm **0.00** per 1k open.
+**Gap C is emitted but NOT imported — never put to the owner.**
 
-1. **Read the 04:00 tick by `max(runs.id)`** — 435 on 09-19, **confirm day 14, M5's exit**. Read
-   the listing half of the death probe: this is the run that can close.
-2. **M4: the second Gate 1 reading (D-482) is owed ~09-19** and is the last condition.
-3. **The moment M5 closes, ONE batched engine landing** (D-519): the Sonnet judge move (D-477,
-   D-514) **and** T92 together, so the clock restarts once. NOT web work, NOT a new family.
-4. **Then ticket the GitHub new-grad-lists lane** — approved 09-18, reopens D-008 by the owner's
-   hand: 19.1% of job-apps' yield for ~5 public-repo GETs against a 16.4% reach.
-5. **Still owed and small:** the form-sweep counts are console-only and not in the funnel (the
-   sweep's report is not threaded to `run_funnel` at all — T96); `smartrecruiters` is the next
-   T89 list endpoint (812 unwatched rows, 8 companies — T95); `queue_detail` does not carry
-   `judge_seniority_fit`; a newly delivered Greenhouse lead renders once before the form sweep
-   holds it.
-6. **Web: nothing is ticketed.** Open: the below-the-cap "rest" view (spec D5, needs the ranker
-   path the daily driver calls — owner's call after 09-19).
+**Volume is not the constraint (D-521 §4).** 99.77% of the corpus is evaluated; ~40 delivered/day
+against ~841 standing. `--top` stays 40 and the lane caps stay.
+
+**Next action.**
+
+1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`** — the web app mints a
+   `runs` row per on-demand render and put 31 in the table on 09-18 alone. That tick is the **first
+   run on 1,807 boards**: expect **~85–100 min** (D-521; +8–9 min paced scan, +18–36 min one-time
+   eligibility fill), and read `closed by listing` against the prediction below.
+2. **PREDICTION to check on that tick: `closed by listing` > 0, order of tens.** 228 open postings
+   now carry `death_strikes = 1` across 108 companies and none carries 2; at 300 of 825 companies
+   per run a second strike takes ~2.75 runs. **A second 0 would mean the strike is not persisting,
+   and that WOULD be a defect.**
+3. **Watch the Indeed lane.** It failed TOTALLY on run 447 — every one of 14 role facets yielded
+   nothing with **0 request failures**, i.e. refusal. Indeed is 37.1% of Gate 1 recall. A repeat is
+   an outage to size, not a flake.
+4. **The batched engine landing** — the Sonnet judge move (D-477, D-514) and T92, **plus
+   `education_timing`** (D-521 §8.5: one nullable profile field, resolves 7 standing leads to
+   ineligible — a precision win, and the clock restart is cheap now M5 has banked).
+5. **Then read stage 1's lead yield** in the funnel's per-provider table against D-521 §2's
+   baseline before stages 2–3 are reconsidered.
+6. **Ready to hand over:** `queue_detail` missing `judge_seniority_fit` — 20 lines, no unknowns; the
+   detail pane can currently name a different `review_reason` than the list for the same lead.
+   **T95 must NOT ship as specified** — its population is ONE Domino's board and a bare catalog entry
+   would falsely close 701 postings; ask about purging those 801 rows instead. T96 needs the sweep
+   HOISTED (the funnel is written before it runs today).
+7. **Open, unruled:** `--include-non-swe` and `--include-zero-signal` are silently bounded by
+   `--top N` and inert at N = 40, unlike `--include-hard-filter` which D-277 ruled unbounded.
+
+### 2026-09-18 — run 434 (confirm day 13), T88–T91 read live, six owner decisions ruled. **Held WHOLE in D-519, D-520 and `METRICS.md`; do not re-derive.** **One correction: D-519 ruling 6 records the years ceiling as 3; the LIVE value is 1** (run 434's own rules snapshot; `catalog.py:252` has the policy override beat the catalog default), so its "7 leads at a bar ≤ 3" sizing was taken against the wrong value and must be re-read before it is cited. The ruling — change nothing — stands.
 
 ### 2026-09-17b — the first autoapply pre-flight, verified and ticketed; T88–T91 + T93 shipped inside the freeze. **Held WHOLE in D-518 and `TICKETS-2026-09-17.md`; do not re-derive.**
 
@@ -91,7 +108,7 @@ work continues through the confirm window because `delivery/`, `store/delivery_q
 `judge_seniority_above_band` had never been on the wire (D-516). Stale-policy gate rows 36 → 5:
 D-512 works.
 
-### 2026-09-14b → 2026-09-15 — B8 MET; every bar clear except the two dated readings on 09-19. **Held WHOLE in D-506 … D-514 and `METRICS.md` (sessions 2026-09-14b and 2026-09-15); do not re-derive.**
+### 2026-09-14b → 2026-09-15 — B8's PRECISION half MET (its VOLUME half was never read — see 2026-09-19); every bar clear except the two dated readings on 09-19, both since taken. **Held WHOLE in D-506 … D-514 and `METRICS.md` (sessions 2026-09-14b and 2026-09-15); do not re-derive.**
 
 The apply lane read end to end by the production judge (D-507: 23% is NOT a defect rate); rule
 (a)'s standing-side drain (D-506); the ≤1-YoE harvest (D-509); applied history imported 18 → 61;
@@ -121,8 +138,9 @@ the hold demoting ~26 applyable leads per 160 as its cost. Owner's worklist
 **0-B, 0-C and 0-D are ALL SHIPPED (2026-09-13, D-502/D-503) and are no longer owner-gated.** 0-D
 shipped narrower than the ruling and the correction is in D-502; 0-D's REPAIR half (117 overwritten
 bodies, 301 lane-payload `raw_json` rows) was not part of the ruling and remains available if Mit
-wants it. D-498's rule (b) — collapsing a lanes-only group to one member, +18 on today's queue — was
-not ruled on and is not built; rule (c) stays refused.
+wants it. **D-498's rule (b) IS BUILT and shipped under D-504** — `_suppress_lane_copies`
+(`top_cmd.py:1062`) implements it; the previous "not ruled on and is not built" here was false
+(D-521 §8.2). Rule (c) stays refused.
 
 **0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), ALL DECISIONS TAKEN (D-480).** D1 = T47
 (per-user policy data). D2 = floor first, then arm the judge, both before run 4. D3 = above-band
