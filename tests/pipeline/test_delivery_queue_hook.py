@@ -81,8 +81,14 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data"
 
 
-def _seed_posting(data_dir: Path, n: int) -> int:
-    """One open posting on its own company and its own job — the live 1:1 shape."""
+def _seed_posting(data_dir: Path, n: int, *, url: str | None = None) -> int:
+    """One open posting on its own company and its own job — the live 1:1 shape.
+
+    `url` overrides the synthetic posting URL. Only the form-sweep test below passes one, and it
+    has to: `greenhouse_target` reads the slug and the posting reference back out of the URL
+    through `parse_posting_target`, so `example.test` is not a Greenhouse candidate and a sweep
+    over the default seed would honestly report zero of them.
+    """
     engine = get_engine(data_dir)
     ensure_schema(engine)
     now = utcnow()
@@ -109,7 +115,7 @@ def _seed_posting(data_dir: Path, n: int) -> int:
                     job_id=job_id,
                     title="Backend Engineer",
                     normalized_title="backend engineer",
-                    url=f"https://example.test/j/{n}",
+                    url=url if url is not None else f"https://example.test/j/{n}",
                     locations_json=["Remote"],
                     remote_policy="remote",
                     first_seen_at=now,
@@ -133,13 +139,13 @@ def _seed_posting(data_dir: Path, n: int) -> int:
     return posting_id
 
 
-def _ready(data_dir: Path, count: int) -> list[int]:
+def _ready(data_dir: Path, count: int, *, url: str | None = None) -> list[int]:
     from typer.testing import CliRunner
 
     from boardwatch.cli.app import app
 
     cli = CliRunner()
-    ids = [_seed_posting(data_dir, n) for n in range(count)]
+    ids = [_seed_posting(data_dir, n, url=url) for n in range(count)]
     assert cli.invoke(app, ["--data-dir", str(data_dir), "init"], input=INIT_INPUT).exit_code == 0
     assert cli.invoke(app, ["--data-dir", str(data_dir), "tailor", "init"]).exit_code == 0
     # T2: `tailor init` does not scaffold `resume_template.tex`, and `resolve_template` no longer
@@ -155,6 +161,7 @@ def _run(
     *,
     top_n: int = 1,
     queue_root: Path | None = None,
+    form_fetcher: object | None = None,
 ) -> tuple[PipelineSummary, str]:
     """One pipeline run and everything it printed. Width is pinned wide so the queue line, which
     carries the counts this hook exists to surface AND the queue root, is not folded mid-line.
@@ -165,12 +172,19 @@ def _run(
     (every test in this file except the T5 override tests below) still calls `run_pipeline` with
     exactly the signature it had before T5 — the override tests are the only ones that should fail
     against a `run_pipeline` that does not yet accept the parameter.
+
+    `form_fetcher` is passed the same way and for a second reason: omitting it is what keeps the
+    other tests here OFF THE NETWORK. `run_pipeline` builds no fetcher of its own, so a test that
+    does not name one cannot reach `boards-api.greenhouse.io` no matter what URL its fixture
+    carries.
     """
     buffer = io.StringIO()
     settings = load_settings(data_dir=data_dir)
     kwargs: dict[str, object] = {}
     if queue_root is not None:
         kwargs["queue_root"] = queue_root
+    if form_fetcher is not None:
+        kwargs["form_fetcher"] = form_fetcher
     summary = run_pipeline(
         get_engine(data_dir),
         settings,
@@ -460,6 +474,115 @@ def test_a_drain_failure_is_escalated_too(env: Path, tmp_path: Path, queue_root:
     assert "1 failed" in _queue_line(output)
     assert [note for note in summary.errors if "delivery queue" in note], summary.errors
     assert [note for note in _errors_json(env, summary.run_id) if "delivery queue" in note]
+
+
+# --- T96: the form sweep's counts reach the funnel ARTIFACT ---------------------------------
+#
+# Appended here rather than in a new file because the ordering under test is this module's own
+# subject: the sweep used to run inside `_sync_queue`, and `_sync_queue` runs AFTER `_emit_funnel`
+# on purpose — the queue holds copies and "must not sit upstream of an artifact a gate reads".
+# So the counts were produced after the only artifact that could carry them. T96 hoists the sweep
+# above the funnel instead of moving the funnel below the queue, and this test is what tells the
+# two apart.
+
+#: A real Greenhouse posting URL shape, `{slug}/jobs/{ref}`. The slug matches the company
+#: `_seed_posting` creates for n=0, so the sweep asks about the board the lead actually sits on.
+GREENHOUSE_POSTING_URL = "https://boards.greenhouse.io/acme0/jobs/6000001"
+
+#: A form with one question that matches NO catalog surface. Deliberate: a hit would route the
+#: lead to `_review`, and this test is about the counts reaching the artifact, not about the
+#: lane. The shape is the one `parse_questions` reads — `questions[].label`, `description`,
+#: `fields[].values[].label`.
+FORM_PAYLOAD = json.dumps(
+    {
+        "id": 6000001,
+        "title": "Backend Engineer",
+        "questions": [
+            {
+                "label": "Why do you want to work here?",
+                "description": None,
+                "required": True,
+                "fields": [{"name": "question_0", "type": "input_text", "values": []}],
+            }
+        ],
+    }
+).encode()
+
+
+class _FormResult:
+    """What `Fetcher.get` returns, reduced to the one attribute `fetch_questions` reads."""
+
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+        self.not_modified = False
+
+
+class _RecordingFormFetcher:
+    """One GET per asked-about posting, recorded. NOT the real `Fetcher`.
+
+    `make check` runs on three operating systems and must make no request of its own, and this
+    file's fixtures now carry a real `boards.greenhouse.io` URL. `run_pipeline` builds no fetcher,
+    so injecting this one is the only way the sweep runs at all — which is also what makes the
+    `urls` list below a usable control on whether it ran.
+    """
+
+    def __init__(self) -> None:
+        self.urls: list[str] = []
+
+    def get(self, url: str) -> _FormResult:
+        self.urls.append(url)
+        return _FormResult(FORM_PAYLOAD)
+
+
+def test_the_form_sweep_counts_reach_the_funnel_on_disk(
+    env: Path, tmp_path: Path, queue_root: Path
+) -> None:
+    """**The ordering test.** The funnel ARTIFACT — the file, not the summary — must carry a
+    non-zero `form_questions.candidates` for a run that delivered a Greenhouse lead.
+
+    It fails against the pre-hoist ordering, and the two controls below are what make the failure
+    attributable. The sweep really ran: the stub fetcher was asked for exactly the questions URL
+    of the delivered lead, and the console carries the counts. So a red here can only mean the
+    artifact was written before the counts existed — which is exactly what `_emit_funnel` running
+    ahead of `_sync_queue` guaranteed while the sweep lived inside the queue hook. Against that
+    version the section renders `instrumented: false` with nulls, because `summary.form_questions`
+    is still unset when the funnel is assembled.
+
+    Read back off DISK rather than off `summary.funnel`'s in-memory object, per this repo's rule
+    that a deliverable is counted through a different path than the one that produced it: the
+    artifact is what a gate reads, and an object held in the summary proves nothing about it.
+    """
+    fetcher = _RecordingFormFetcher()
+    _ready(env, 1, url=GREENHOUSE_POSTING_URL)
+
+    summary, output = _run(env, tmp_path / "apps", form_fetcher=fetcher)
+
+    assert len(summary.tailored) == 1, summary.errors
+    # Control 1: the sweep ran and asked about THIS lead. Without it, a null section below would
+    # be honest — no fetcher, no candidate — and the assertion would be vacuous.
+    assert fetcher.urls == [
+        "https://boards-api.greenhouse.io/v1/boards/acme0/jobs/6000001?questions=true"
+    ], fetcher.urls
+    # Control 2: the counts existed and reached the console, which is the only place they went
+    # before this ticket. A red on the artifact assertion is therefore about the artifact.
+    assert "application forms: 1 greenhouse leads" in output
+
+    assert summary.funnel is not None
+    artifact = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    section = artifact["form_questions"]
+    assert section["instrumented"] is True, section
+    assert section["candidates"] == 1, section
+    assert section["fetched"] == 1, section
+    assert section["cached"] == 0, section
+    assert section["unfetched"] == 0, section
+    assert section["budget_refused"] == 0, section
+    # The markdown half of the same artifact, so a JSON-only pass-through cannot ship green.
+    assert "1 greenhouse leads delivered" in summary.funnel.markdown_path.read_text(
+        encoding="utf-8"
+    )
+    # And the version did NOT move for an additive section (see
+    # `tests/unit/test_run_funnel_form_questions.py` for the ruling).
+    assert artifact["artifact_version"] == 8
 
 
 # --- T5: queue root override on `run` -----------------------------------------------------

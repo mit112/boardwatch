@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.location_gate import LocationClass, classify_location
 from boardwatch.reports.abstain import AbstainReport
@@ -647,6 +648,42 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
     }
 
 
+def form_questions_to_dict(sweep: FormQuestionSweep | None) -> dict[str, object]:
+    """The `form_questions` block (T96). `instrumented: false` and nulls when the sweep did not
+    run — never a block of zeros, the same D-022/D-023 rule `death_probe` above obeys.
+
+    The distinction earns its keep here more than almost anywhere: the sweep is the ONLY reader
+    of a requirement that lives on the Greenhouse application form and not in the frozen JD, and
+    three measured apply-lane leads carried exactly such a hard stop with zero hits for
+    citizen/clearance/ITAR/export in their bodies. `candidates: 0` from a run that never swept
+    would read as "no delivered lead had a form to ask about" — which is the same JSON a run with
+    no Greenhouse leads at all produces, and the opposite of what happened.
+
+    `unfetched` and `budget_refused` stay apart for the reason `FormQuestionSweep` states: the
+    first is a board that would not answer and the second is work this run declined to do. Both
+    mean "no questions known" at the lane and they lead to different investigations. The
+    reconciliation a consumer can check is `candidates = cached + fetched + unfetched +
+    budget_refused`.
+    """
+    if sweep is None:
+        return {
+            "instrumented": False,
+            "candidates": None,
+            "cached": None,
+            "fetched": None,
+            "unfetched": None,
+            "budget_refused": None,
+        }
+    return {
+        "instrumented": True,
+        "candidates": sweep.candidates,
+        "cached": sweep.cached,
+        "fetched": sweep.fetched,
+        "unfetched": sweep.unfetched,
+        "budget_refused": sweep.budget_refused,
+    }
+
+
 @dataclass(frozen=True)
 class GateCounters:
     """T42: the headless final-eligibility-gate judge stage's per-run tally.
@@ -1156,6 +1193,13 @@ class RunFunnel:
     # supplied — which is not the same as a sweep that found nothing. A block of zeros would
     # claim a measurement nobody took, the same rule `LivenessCheck` applies above.
     death_probe: DeathProbeReport | None = None
+    # T96. `None` means the Greenhouse application-form sweep did NOT run this run — no fetcher
+    # was supplied, the budget is 0 (disarmed), or the sweep raised — which is not the same as a
+    # sweep that found no Greenhouse leads to ask about. Same omission direction as
+    # `death_probe` above, and it matters more here: the form is the only place a citizenship or
+    # export-control hard stop appears for some requisitions, so a zeroed section would say the
+    # delivered slate had been checked.
+    form_questions: FormQuestionSweep | None = None
     # T42. `None` means the gate was NOT armed this run (`settings.gate.enabled` False) —
     # not the same as an armed run that judged nothing, the same omission direction
     # `death_probe` above uses.
@@ -1334,6 +1378,9 @@ def build_run_funnel(
     # D-325. Omitted means the sweep did not run and the section reports itself UNMEASURED,
     # never zero — the same omission direction as `liveness` above.
     death_probe: DeathProbeReport | None = None,
+    # T96. Omitted means the Greenhouse application-form sweep did not run and the section
+    # reports itself UNMEASURED, never zero — the same omission direction as `death_probe`.
+    form_questions: FormQuestionSweep | None = None,
     # P6. Omitted means the sweep did not run at all, and the `dedup` stage says so rather than
     # reporting zero duplicates — the same omission direction as `liveness` and `death_probe`.
     # A sweep that ran over an incomplete backfill is a DIFFERENT state and carries
@@ -1892,6 +1939,7 @@ def build_run_funnel(
         board_coverage=board_coverage,
         lanes=tuple(lanes),
         death_probe=death_probe,
+        form_questions=form_questions,
         gate=gate,
         stage_durations=None if stage_durations is None else tuple(stage_durations),
     )
@@ -2004,6 +2052,10 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # D-325. Its own section, NOT more keys under `liveness`: different population, and this
         # one WRITES. Summing the two probe counts would be summing two questions.
         "death_probe": death_probe_to_dict(funnel.death_probe),
+        # T96. Its own section, NOT keys under `liveness` or `death_probe`: a third population
+        # (the leads this run DELIVERED, not the corpus and not the shortlist), a different
+        # host, and it WRITES a per-version cache. None of its counts add to either neighbour's.
+        "form_questions": form_questions_to_dict(funnel.form_questions),
         # T42. Its own section: a different judge, over a different population (the whole
         # delivered slate, not the shortlist re-fetch), that also WRITES (a persisted
         # `final_gate:` row).
@@ -2669,6 +2721,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
 
     live = funnel.liveness
     probe = funnel.death_probe
+    forms = funnel.form_questions
     stub = funnel.stub_rate
     stub_rate = "not instrumented (empty corpus)" if stub.rate is None else f"{stub.rate:.2%}"
     fab = funnel.fabrication
@@ -2735,6 +2788,33 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "an empty listing for a company that still holds open rows is `listing_unknown` and "
         "moves no counter — so `listing_unknown` climbing while `listing_absent` sits at 0 is "
         "the signature of this half being disarmed.*",
+        "",
+        "## Application forms",
+        "",
+        (
+            "not instrumented — no delivered lead's Greenhouse form was asked for this run "
+            "(no fetcher, or the budget is 0), which is NOT the same as no lead carrying a "
+            "form-only hard stop"
+            if forms is None
+            else f"{forms.candidates} greenhouse leads delivered · {forms.cached} already "
+            f"cached · {forms.fetched} fetched · {forms.unfetched} unfetched · "
+            f"{forms.budget_refused} refused by the budget"
+        ),
+        "",
+        "*T91: the Greenhouse application form carries hard stops the JD does not. Measured "
+        "2026-09-17, three apply-lane leads a hand pre-flight withdrew each carried a "
+        "citizenship or export-control requirement that appears ONLY on the form — a "
+        "`body_text` grep for citizen/clearance/ITAR/export returned 0 hits on all three, so "
+        "no rule, judge or ranker in this repo can reach the class: they all read the frozen "
+        "JD. GREENHOUSE-ONLY by construction, not as a gap to close — Ashby and Lever do not "
+        "publish the form at all — and reach was 22 of 400 apply-lane leads. A hit routes the "
+        "lead to `_review` and NEVER produces a verdict: the keystone requires a quoted span "
+        "from the frozen JD and the form is not the frozen JD. `unfetched` climbing while "
+        "`fetched` sits at 0 is the signature of the endpoint being unreachable (every fetch "
+        "fails open, so the leads still shipped unheld); `budget_refused` above 0 is the knob "
+        "`form_question_fetch_budget`, not a provider fault. `candidates` counts the leads "
+        "this run DELIVERED, so it is a different population from `liveness` (the shortlist) "
+        "and from the death probe (the unwatched corpus) and adds to neither.*",
         "",
         "## Gate",
         "",
@@ -2902,6 +2982,7 @@ __all__ = [
     "build_projection_counters",
     "build_run_funnel",
     "death_probe_to_dict",
+    "form_questions_to_dict",
     "funnel_to_dict",
     "funnel_to_markdown",
     "gate_to_dict",

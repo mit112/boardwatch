@@ -519,6 +519,12 @@ class PipelineSummary:
     # 6.7% against a control of proven-closed postings, so a zero here is weak evidence about
     # the class and must not be read as one.
     death_probe: DeathProbeReport | None = None
+    # T96. What the Greenhouse application-form sweep did for the leads this run delivered.
+    # `None` means the sweep did NOT run — no fetcher was supplied, the budget is 0, or it
+    # raised — which is not the same as a sweep that found no candidates. The sweep is the only
+    # reader of a requirement that is on the FORM and not in the frozen JD, so a block of zeros
+    # here would claim the delivered slate was asked about when nobody asked.
+    form_questions: FormQuestionSweep | None = None
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
@@ -2719,6 +2725,52 @@ def run_pipeline(
         # markdown states that exclusion rather than letting the shares imply otherwise.
         clock.mark("finalize")
         summary.stage_durations = list(clock.durations)
+        # T96. HOISTED OUT OF `_sync_queue`, and the ordering is the whole point. The funnel is
+        # written a few lines below and the queue sync runs after it — deliberately, because the
+        # queue "must not sit upstream of an artifact a gate reads" (the block comment at the
+        # sync's own call site). So while the sweep lived inside `_sync_queue` its counts were
+        # produced AFTER the artifact that is supposed to carry them, and the only place they
+        # ever reached was a console line in a log file nobody opens. Moving `_emit_funnel` down
+        # would have fixed the section and broken that rule; moving the sweep up fixes it and
+        # keeps the rule.
+        #
+        # Behaviour-preserving for the queue, which is the thing that reads what the sweep
+        # writes: `sweep_form_questions` commits each cached form on its own, so everything this
+        # pass stored is durable before this connection closes, and the connection `_sync_queue`
+        # opens below therefore sees exactly what it saw when the sweep ran inside it — a lead
+        # whose form was fetched this run still lands in the right lane on this run rather than
+        # the next one. The two connections are sequential, never concurrent, so nothing here
+        # contends with the queue for the store.
+        #
+        # Still AFTER `clock.mark("finalize")` and after the durations are snapshotted, which
+        # leaves the sweep's network cost outside the stage clock exactly as it was before this
+        # moved. That is not an oversight to correct in this change: charging it to a stage now
+        # would make every run's timing incomparable with every run before it, and the sweep has
+        # its own budget (`form_question_fetch_budget`) as its cost control.
+        try:
+            with engine.connect() as conn:
+                summary.form_questions = _sweep_form_questions(
+                    conn, settings, console, form_fetcher
+                )
+        except Exception as exc:  # noqa: BLE001 - a mute section beats a lost funnel
+            # ONLY reachable for a connection this could not open or close: the sweep itself
+            # already catches its own failures and returns `None`. Guarded all the same, and
+            # for the same reason `_load_board_coverage` above is: this runs inside a `finally`
+            # that may already be unwinding, and everything after it — the funnel, the queue,
+            # the soft detectors, the morning digest, the heartbeat — is unreachable if it
+            # raises. Printed and NOT appended to `summary.errors`, on the sweep's own recorded
+            # reasoning: a form nobody fetched produces a HOLD at worst, and a hold that did not
+            # happen leaves the lead in the apply lane, which is where it already was.
+            console.print(f"  ! application forms: not swept ({exc})", markup=False)
+        if summary.form_questions is not None:
+            console.print(
+                f"  application forms: {summary.form_questions.candidates} greenhouse leads, "
+                f"{summary.form_questions.cached} cached, "
+                f"{summary.form_questions.fetched} fetched, "
+                f"{summary.form_questions.unfetched} unfetched, "
+                f"{summary.form_questions.budget_refused} refused by budget",
+                markup=False,
+            )
         # Where the ESCALATABLE alerts begin, and why a mark is needed at all: `summary.errors`
         # is not "the run's alerts". It accumulates every stage error the pipeline produced — a
         # single 404 on one board slug, a lane that could not collect, a per-lead projection or
@@ -2756,7 +2808,6 @@ def run_pipeline(
             lead_failures, folder_failures = _sync_queue(
                 engine, settings, console,
                 queue_root=queue_root,
-                form_fetcher=form_fetcher,
             )
             queue_failures = _interleave(lead_failures, folder_failures)
             # Per-lead failures used to stop at the log line above, which is defensible while
@@ -3132,6 +3183,10 @@ def _emit_funnel(
         ),
         # D-325. `None` when the sweep did not run — never a block of zeros.
         death_probe=summary.death_probe,
+        # T96. `None` when the form sweep did not run (no fetcher, budget 0, or it raised) —
+        # never a block of zeros. Reachable at all only because the sweep is hoisted above this
+        # call; it used to run inside `_sync_queue`, which is downstream of this artifact.
+        form_questions=summary.form_questions,
         # T42. `None` when `gate.enabled` was False this run — never a block of zeros, which
         # would claim a measurement nobody took.
         gate=(
@@ -3294,7 +3349,6 @@ def _sync_queue(
     console: Console,
     *,
     queue_root: Path | None = None,
-    form_fetcher: Fetcher | None = None,
 ) -> tuple[list[str], list[str]]:
     """Drain, then rebuild, the delivery queue on disk from what the store says (design §4.3).
 
@@ -3339,7 +3393,6 @@ def _sync_queue(
         # owns that question (`answers.yaml` first, the authored résumé's header second), on the
         # connection already open here rather than by reading the résumé a second time.
         owner_name = resolve_owner_name(conn, settings.config_dir)
-        form_questions = _sweep_form_questions(conn, settings, console, form_fetcher)
         drained = reconcile_queue(conn, root=root)
         synced = sync_queue(conn, root=root, owner_name=owner_name)
     contended = " (contended, nothing changed)" if synced.contended or drained.contended else ""
@@ -3350,14 +3403,6 @@ def _sync_queue(
         f"{synced.failed + drained.failed} failed{contended}",
         markup=False,
     )
-    if form_questions is not None:
-        console.print(
-            f"  application forms: {form_questions.candidates} greenhouse leads, "
-            f"{form_questions.cached} cached, {form_questions.fetched} fetched, "
-            f"{form_questions.unfetched} unfetched, "
-            f"{form_questions.budget_refused} refused by budget",
-            markup=False,
-        )
     # Both halves of the partition: a lead `sync_queue` could not write, and a folder
     # `reconcile_queue` could not move. They are one list to the caller because the answer to
     # either is the same — the queue on disk no longer matches what the store says was delivered.
@@ -3375,11 +3420,17 @@ def _sweep_form_questions(
 ) -> FormQuestionSweep | None:
     """Ask Greenhouse for the APPLICATION FORM behind each delivered lead, once per version.
 
-    BEFORE `reconcile_queue` and `sync_queue` in the same connection, which is the whole reason it
-    lives here rather than inside `sync_queue`: the sweep writes the cache and both of those read
-    it through `delivered_unapplied`, so a lead whose form was fetched this run lands in the right
-    lane on this run rather than the next one. It is the one network read on the delivery path and
-    it is the only place `delivery/` fetches anything.
+    BEFORE `reconcile_queue` and `sync_queue`, on its OWN connection (T96): the caller opens one,
+    hands it here, and closes it before the queue opens its own. It used to share the queue's
+    connection, which is why the two orderings are worth keeping apart — what the queue needs is
+    that the cache is DURABLE before it reads, not that it was written on the same handle, and
+    `sweep_form_questions` commits each row as it lands. So a lead whose form was fetched this run
+    still reaches the right lane on this run rather than the next one, and the counts now also
+    reach the run funnel, which is written between this call and the queue sync and could not
+    carry them while the sweep ran downstream of it.
+
+    It is the one network read on the delivery path and the only place `delivery/` fetches
+    anything.
 
     **The web server deliberately does NOT call this.** `prime_queue` and the reconcile endpoint
     run inside a request, where a network read would hold the page; they see whatever this pass

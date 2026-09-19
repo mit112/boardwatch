@@ -19,6 +19,7 @@ from pathlib import Path
 from sqlalchemy import Engine, select
 
 from boardwatch.core.settings import Settings
+from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import (
     ENGINE_KIND,
@@ -101,6 +102,9 @@ def collect_run_funnel(
     liveness: LivenessCheck | None = None,
     # D-325. `None` means the measured-death sweep did NOT run, never that it found nothing.
     death_probe: DeathProbeReport | None = None,
+    # T96. `None` means the Greenhouse application-form sweep did NOT run — no fetcher, a budget
+    # of 0, or it raised — never that it found no candidates.
+    form_questions: FormQuestionSweep | None = None,
     # T42. `None` means the gate was NOT armed this run (`settings.gate.enabled` False),
     # never that it judged nothing.
     gate: GateCounters | None = None,
@@ -308,6 +312,7 @@ def collect_run_funnel(
         shortlist=shortlist,
         liveness=liveness,
         death_probe=death_probe,
+        form_questions=form_questions,
         gate=gate,
         dedup=dedup,
         sources=sources,
