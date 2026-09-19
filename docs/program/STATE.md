@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-19 — **M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
+### 2026-09-19 — **THE EXPANSION IS MEASURED AND IT WORKS (run 467, D-522): 1,155 boards → 59,622 postings → 1,222 eligible → 28 of 40 DELIVERED LEADS, and B8's VOLUME half PASSES at 25. INDEED IS CONFIRMED DEAD. M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
 
 **Run 447 (readout in `METRICS.md`).** `ok`, RECONCILES, **manifest byte-identical to run 434's on
 all five hashes**, one identity across the whole run. B1 40 · B2 19/19 · B3 0 failures ·
@@ -56,31 +56,47 @@ are REFUSED** on measured lead density: ashby 3.05 vs workday 0.17 vs oraclehcm 
 **Volume is not the constraint (D-521 §4).** 99.77% of the corpus is evaluated; ~40 delivered/day
 against ~841 standing. `--top` stays 40 and the lane caps stay.
 
+**RUN 467 — the first tick on 1,807 boards (readout in `METRICS.md`).** A REAL tick
+(`launchctl runs = 9 → 10`); it is run **467**, not 448, because web renders consumed 446-466.
+`ok`, **RECONCILES**, **manifest byte-identical to 447 and 434 on all five hashes** — the measured
+proof that watching boards moves no hash. **65 min** on 2.8× the fleet. **1,155 of 1,155 new
+boards scanned `complete`, zero failures added.** Corpus 208,847 → **261,626**; eligible verdicts
+7,675 → **8,581**; **B8's volume half 19 → 25, MET** after failing 9 of 14 confirm days;
+**28 of the 40 delivered leads came from the new boards.**
+
+**THE SIZING RULE (D-522 §3), which inverts what was assumed:** a lane's secondhand sample of a
+board is a **terrible** predictor of its SIZE (2.6 postings vs a real **51.6**, off 20×) and an
+**excellent** predictor of its ELIGIBLE RATE (2.1% vs a measured **2.05%**). Size from fleet
+density; predict yield from the sample. Never the reverse.
+
+**INDEED IS CONFIRMED DEAD** — a second consecutive silent refusal (HTTP 200, valid GraphQL,
+`results: []`, identical 68-byte body across three probe shapes including unfaceted-and-unfiltered).
+**Evasion is REFUSED** (D-368 precedent). **Accepting the loss is Mit's**: ~500 postings/day,
+~75 new companies/day, **37.1% of Gate 1 recall**. Note run 467 met B8 *with Indeed dead*.
+
 **Next action.**
 
-1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`** — the web app mints a
-   `runs` row per on-demand render and put 31 in the table on 09-18 alone. That tick is the **first
-   run on 1,807 boards**: expect **~85–100 min** (D-521; +8–9 min paced scan, +18–36 min one-time
-   eligibility fill), and read `closed by listing` against the prediction below.
-2. **PREDICTION to check on that tick: `closed by listing` > 0, order of tens.** 228 open postings
-   now carry `death_strikes = 1` across 108 companies and none carries 2; at 300 of 825 companies
-   per run a second strike takes ~2.75 runs. **A second 0 would mean the strike is not persisting,
-   and that WOULD be a defect.**
-3. **Watch the Indeed lane.** It failed TOTALLY on run 447 — every one of 14 role facets yielded
-   nothing with **0 request failures**, i.e. refusal. Indeed is 37.1% of Gate 1 recall. A repeat is
-   an outage to size, not a flake.
-4. **The batched engine landing** — the Sonnet judge move (D-477, D-514) and T92, **plus
-   `education_timing`** (D-521 §8.5: one nullable profile field, resolves 7 standing leads to
-   ineligible — a precision win, and the clock restart is cheap now M5 has banked).
-5. **Then read stage 1's lead yield** in the funnel's per-provider table against D-521 §2's
-   baseline before stages 2–3 are reconsidered.
-6. **Ready to hand over:** `queue_detail` missing `judge_seniority_fit` — 20 lines, no unknowns; the
-   detail pane can currently name a different `review_reason` than the list for the same lead.
-   **T95 must NOT ship as specified** — its population is ONE Domino's board and a bare catalog entry
-   would falsely close 701 postings; ask about purging those 801 rows instead. T96 needs the sweep
-   HOISTED (the funnel is written before it runs today).
-7. **Open, unruled:** `--include-non-swe` and `--include-zero-signal` are silently bounded by
-   `--top N` and inert at N = 40, unlike `--include-hard-filter` which D-277 ruled unbounded.
+1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`.** Watch whether the
+   new boards' 2.05% rate and 70%-of-slate share HOLD on a second run, or whether run 467 was a
+   first-scan bulge — the whole stage-2/3 argument turns on that.
+2. **Rule on Indeed** (above). If accepted, size it as a dead lane rather than fixing it.
+3. **Rule on B8.** Its volume half now PASSES at 25, but it failed 9 of the 14 confirm days and
+   `PROGRAM.md` §1's replacement table includes it while M5's exit criterion does not. Does the
+   record block the retirement decision?
+4. **The batched engine landing** — the Sonnet judge move (D-477, D-514), T92, **and
+   `education_timing`** (D-521 §8.5: one nullable field, correctly rejects 7 unapplyable
+   2027-start leads).
+5. **Stages 2-3 stay REFUSED** on measured lead density (workday 0.17, smartrecruiters 0.08,
+   oraclehcm **0.00** per 1k open). Run 467 does not revisit that — its density win is an
+   INLINE-BODY figure.
+6. **Still open and unruled:** purge the 801 Domino's rows (T95 is one pizza board and would
+   falsely close 701 postings as specified); import Gap C's 43 `grnh.se` boards; the
+   `--include-non-swe` / `--include-zero-signal` drains are inert at production N.
+7. **LinkedIn is the untouched backlog** — still ~423 companies refused by its cap every run,
+   while hiringcafe's admissions fell 78 → 19 and jobapps' to 0 as Gap A was absorbed.
+
+**T96 and T97 are MERGED** (union gated before push: exit 0, 10,274 passed). Both were held off
+`main` until run 467 was read so the expansion was measured as one variable.
 
 ### 2026-09-18 — run 434 (confirm day 13), T88–T91 read live, six owner decisions ruled. **Held WHOLE in D-519, D-520 and `METRICS.md`; do not re-derive.** **One correction: D-519 ruling 6 records the years ceiling as 3; the LIVE value is 1** (run 434's own rules snapshot; `catalog.py:252` has the policy override beat the catalog default), so its "7 leads at a bar ≤ 3" sizing was taken against the wrong value and must be re-read before it is cited. The ruling — change nothing — stands.
 
