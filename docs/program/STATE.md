@@ -20,6 +20,23 @@
 
 ## Current standing
 
+### 2026-09-19b — **AN EXTERNAL DESIGN REVIEW IS COMMISSIONED. Five prompts for GPT astra sit in `.agent/astra/prompts/` (gitignored); the owner runs each in its own astra session and brings the findings file back to a NEW boardwatch session, one review per session.** No run was read, no code changed, no metric moved.
+
+The slices, in the order to consume them: **01** the deterministic eligibility engine; **02** the
+apply-lane stack (rank gates → judge → `review_gate` → B8); **03** identity, liveness, the ledger,
+dedup and the on-disk queue; **04** `run_pipeline`, the coordinator, the WAL/`BEGIN` model and the
+run contract; **05** discovery strategy (optional). `.agent/astra/README.md` is the index. Astra
+writes `.agent/astra/findings/<NN>-<slice>.md` under a fixed schema (verdict → ranked findings
+with `file:symbol` evidence, proposal, what it re-keys, falsifier, confidence → checked-and-sound →
+owner questions → not read).
+
+**How a session consumes one.** A finding is a POINTER, not proof: re-verify every cited symbol
+against the code, run the stated falsifier, and only then ticket it. Anything that touches a
+digested engine module re-keys the ledger and restarts the confirm window — say so in the ticket.
+Anything astra proposes inside the refused scope (automation, evasion, re-opening a cited ruling
+without new evidence) is dropped with one line, not argued. The prompts ask astra to cite the
+`D-nnn` it disagrees with, so a disagreement is a review item for the owner, not a re-litigation.
+
 ### 2026-09-19 — **THE EXPANSION IS MEASURED AND IT WORKS (run 467, D-522): 1,155 boards → 59,622 postings → 1,222 eligible → 28 of 40 DELIVERED LEADS, and B8's VOLUME half PASSES at 25. INDEED IS CONFIRMED DEAD. M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
 
 **Run 447 (readout in `METRICS.md`).** `ok`, RECONCILES, **manifest byte-identical to run 434's on
@@ -76,6 +93,8 @@ density; predict yield from the sample. Never the reverse.
 
 **Next action.**
 
+0. **Consume the astra reviews as they arrive** (see 2026-09-19b above) — one findings file per
+   session, in slice order 01 → 04, 05 if it exists. Verify before ticketing; nothing lands unread.
 1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`.** Watch whether the
    new boards' 2.05% rate and 70%-of-slate share HOLD on a second run, or whether run 467 was a
    first-scan bulge — the whole stage-2/3 argument turns on that.
