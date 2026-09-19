@@ -628,6 +628,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The abstain monitor no longer exempts two rules that decide (2026-09-19, T98).**
+  `reports/abstain.py:STRUCTURALLY_UNDECIDABLE` still named `experience_years:scoped_years_minimum`
+  and `clearance:clearable_required` from D-253, although D-326's `obtainable` bit and the scoped-years
+  resolution made both decide; a working rule rendered as `100% (schema gap)` and its unknown-only
+  rows were dropped from the actionable headline. The set is now empty (the D-253 mechanism stays,
+  under a monkeypatched-member control); the literal-set test is replaced by four tests over real
+  `engine.evaluate` rows. Astra review 01, finding F8. Reporting only — no identity moves.
+
 - **The extraction preflight no longer claims a taxonomy change it never checked (2026-09-19).**
   `taxonomy changed — re-extracting N postings…` was printed whenever any OPEN posting lacked an
   extraction at the current taxonomy version — which is true of every newly scanned posting, so it
