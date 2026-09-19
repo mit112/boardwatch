@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from sqlalchemy import Connection, func, select
+from sqlalchemy.sql.elements import ColumnElement
 
 from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
@@ -298,7 +299,7 @@ def current_gate_seniority(
 def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int],
     profile_hash: str | None, rules_hash: str | None,
-    *, engine_version: str | None = None,
+    *, engine_version: str | None = None, facts_key: str | None = None,
 ) -> dict[int, str | None]:
     """posting_id -> the LATEST final-gate verdict for its current version under this identity.
 
@@ -316,6 +317,18 @@ def current_gate_verdicts(
     `seniority_fit` on 2026-09-13, every lead holding a `p5-oracle-1` row counted as already
     judged, and the re-judge that `oracle.POLICY_VERSION`'s note assumed "simply wins" could never
     be triggered — 434 of 505 standing apply-lane leads read `unclear` forever.
+
+    **`facts_key` adds the one equality the identity cannot express, and again only the
+    freshness test wants it.** `profile_hash` folds in a family's declared fields only while
+    its live severity is not `"ignore"`, but the judge is sent EVERY fact and judges under an
+    all-blocker policy (D-461) — so under `work_auth: ignore`, `citizen` -> `needs_sponsorship`
+    changes the judge's request while leaving the row key byte-identical, and a cached clear on
+    a no-sponsorship JD stays "fresh" after the fact that decides it moved. When given, a row
+    counts only if `json_extract(raw_output_json, '$.facts_key')` equals it; when omitted the
+    query is byte-identical to before, which is what every display reader passes. A legacy row
+    written before the key existed therefore never matches a given key — on the first run after
+    this ships every delivered lead (bounded by `--top`, D-477 pt 1) is re-judged ONCE and comes
+    back keyed, and after that the check is exact.
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
@@ -324,6 +337,21 @@ def current_gate_verdicts(
     # key: every posting_version's rows fall in exactly one chunk, so max(id) per
     # posting_version is the same answer chunked or whole.
     verdict_by_version: dict[int, str] = {}
+    # Both narrowings sit INSIDE the max(id) subquery, so they filter before "latest" is
+    # picked rather than after: a lead whose newest row is stale still hits on an older row
+    # that does match, which is the right caching answer — that verdict was reached on these
+    # exact facts.
+    scope: list[ColumnElement[bool]] = [
+        eligibility_evaluations.c.engine_kind == "llm",
+        eligibility_evaluations.c.engine_version == engine_version
+        if engine_version is not None
+        else eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+    ]
+    if facts_key is not None:
+        scope.append(
+            func.json_extract(eligibility_evaluations.c.raw_output_json, "$.facts_key")
+            == facts_key
+        )
     for chunk in id_chunks(posting_version_ids):
         latest = (
             select(eligibility_inputs.c.posting_version_id,
@@ -333,10 +361,7 @@ def current_gate_verdicts(
                 eligibility_inputs.c.posting_version_id.in_(chunk),
                 eligibility_inputs.c.profile_hash == profile_hash,
                 eligibility_inputs.c.rules_hash == rules_hash,
-                eligibility_evaluations.c.engine_kind == "llm",
-                eligibility_evaluations.c.engine_version == engine_version
-                if engine_version is not None
-                else eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
+                *scope,
             )
             .group_by(eligibility_inputs.c.posting_version_id)
             .subquery()

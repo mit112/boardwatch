@@ -31,7 +31,16 @@ from tests.pipeline.test_llm_lane import EXPERIENCE_QUOTE, JD_5YR, _seed_posting
 # experience_years pinned to `blocker` so it is an ENABLED family: build_identity then folds
 # total_years_experience into profile_hash, which is what makes two different facts two
 # different cache keys.
+#
+# That is also what this module used to leave UNCOVERED, and T99 closes it: `build_identity`
+# drops a family's declared fields the moment its severity is `ignore`, while
+# `_requirement_for_span` reads `facts.total_years_experience` regardless of any policy. So
+# under the IGNORED policy below the years a disposition is computed from were invisible to
+# the cache key — see the last test.
 POLICY = Policy(families={"experience_years": "blocker"})
+# `degree` must be ignored alongside `experience_years`: it DECLARES total_years_experience
+# too (resolve.declared_fields), so leaving it enabled would fold the years back in.
+IGNORED_POLICY = Policy(families={"degree": "ignore", "experience_years": "ignore"})
 BODY = json.dumps([{"family": "experience_years", "span_quote": EXPERIENCE_QUOTE}])
 
 
@@ -59,11 +68,12 @@ def cache(tmp_path: Path) -> ResponseCache:
     return ResponseCache(tmp_path / "cache")
 
 
-def _run(engine: Engine, cache: ResponseCache, client: CountingClient, catalog, facts, *, slug):
+def _run(engine: Engine, cache: ResponseCache, client: CountingClient, catalog, facts, *,
+         slug, policy: Policy = POLICY):
     pv_id = _seed_posting_version(engine, JD_5YR, slug=slug)
     with engine.begin() as conn:
         extract_and_record(
-            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=facts, policy=POLICY,
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=facts, policy=policy,
             catalog=catalog, client=client, cache=cache, provider="anthropic", model="m",
         )
 
@@ -115,3 +125,25 @@ def test_response_cache_key_stays_identity_free(cache: ResponseCache) -> None:
     content_hash = hashlib.sha256(b"jd").hexdigest()
     expected = hashlib.sha256(f"{content_hash}|v1|model".encode()).hexdigest()
     assert cache.key(content_hash, "v1", "model") == expected
+
+
+def test_different_years_is_a_cache_miss_even_when_the_family_is_ignored(
+    engine: Engine, cache: ResponseCache, tmp_path: Path
+) -> None:
+    """T99. `profile_hash` is not the whole judge-visible profile.
+
+    With both families that declare `total_years_experience` set to `ignore`,
+    `build_identity` drops the field and the two profiles hash identically — but
+    `extract_llm._requirement_for_span` consults no severity policy at all and adjudicates
+    the span against `facts.total_years_experience` anyway, so 0 -> 10 flips the disposition
+    unmet -> met. Folding the facts key into the content_hash argument makes that a MISS.
+    """
+    catalog = load_rules(tmp_path / "no-cfg")
+    client = CountingClient(BODY)
+    _run(engine, cache, client, catalog, Facts(total_years_experience=0), slug="a",
+         policy=IGNORED_POLICY)
+    _run(engine, cache, client, catalog, Facts(total_years_experience=10), slug="b",
+         policy=IGNORED_POLICY)
+    assert client.calls == 2, (
+        "an ignored family still reaches the disposition, so its fact must key the cache"
+    )

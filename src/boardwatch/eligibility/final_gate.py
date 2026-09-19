@@ -8,8 +8,8 @@ from __future__ import annotations
 from sqlalchemy import Connection
 
 from boardwatch.eligibility.catalog import RulesCatalog
-from boardwatch.eligibility.facts import Facts, Policy
-from boardwatch.eligibility.hashing import build_identity
+from boardwatch.eligibility.facts import Facts, Policy, facts_payload
+from boardwatch.eligibility.hashing import build_identity, digest
 from boardwatch.eligibility.oracle import (
     POLICY_VERSION,
     PROMPT_VERSION,
@@ -28,6 +28,27 @@ GATE_VERSION_PREFIX = "final_gate:"
 
 def gate_engine_version() -> str:
     return f"{GATE_VERSION_PREFIX}{POLICY_VERSION}:{PROMPT_VERSION}"
+
+
+def gate_facts_key(facts: Facts) -> str:
+    """A digest of the EXACT payload the judge is sent — `facts_payload(facts)`, the same
+    object `gate_handshake.build_gate_request` puts in every item.
+
+    The freshness test needs this because the ROW IDENTITY cannot see it. `hashing.
+    build_identity` folds a family's declared fields into `profile_hash` only when the live
+    policy severity is not `"ignore"`, but the judge reads every fact under an all-blocker
+    policy (D-461). So under `Policy(families={"work_auth": "ignore"})` a change from
+    `citizen` to `needs_sponsorship` leaves the identity byte-identical while the judge's
+    request changes, and a cached clear on a no-sponsorship JD stays "fresh" after the fact
+    that decides it moved.
+
+    Written into `raw_output` rather than into the identity: eight display readers join gate
+    rows on the DETERMINISTIC `(profile_hash, rules_hash)` from `preflight.current_identity`,
+    and re-keying the rows under the judge's policy would move every one of them.
+    `digest` is `hashing`'s sorted-key compact-JSON sha256 — the canonical form this repo
+    already hashes every snapshot with.
+    """
+    return digest(facts_payload(facts))
 
 
 def record_gate_verdict(
@@ -66,7 +87,9 @@ def record_gate_verdict(
         posting_version_id=posting_version_id, facts=facts, policy=policy,
         catalog=catalog, declared_fields=declared_fields(),
     )
-    raw_output: dict[str, object] = {"gate_verdict": verdict.__dict__}
+    raw_output: dict[str, object] = {
+        "gate_verdict": verdict.__dict__, "facts_key": gate_facts_key(facts),
+    }
     if shortlist_rank is not None:
         raw_output["shortlist_rank"] = shortlist_rank
     return record_evaluation(

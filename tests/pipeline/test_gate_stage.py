@@ -860,3 +860,114 @@ def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
 
     # And the superseded row stays readable: the DISPLAY read is unchanged, still prefix-matched.
     assert _current_gate_verdict(env, posting_id) is not None
+
+
+# ---------------------------------------------------------------------------
+# (j) the freshness check must see every fact the JUDGE reads — T99
+# ---------------------------------------------------------------------------
+
+
+def _store_eligibility(data_dir: Path, *, work_auth_status: str) -> None:
+    """Pin the stored profile to `work_auth: ignore` plus one work-authorization status.
+
+    `ignore` is the whole point: `hashing.build_identity` folds a family's declared fields
+    into `profile_hash` only while its severity is not `"ignore"`, so under this policy the
+    status below is INVISIBLE to the gate row's key — while `build_gate_request` still sends
+    it to the judge, which reads it under an all-blocker policy (D-461).
+    """
+    from boardwatch.store.queries import save_eligibility
+
+    with get_engine(data_dir).begin() as conn:
+        save_eligibility(
+            conn,
+            facts_json={"work_authorization": {"status": work_auth_status}},
+            policy_json={"families": {"work_auth": "ignore"}},
+        )
+
+
+def _plant_current_gate_row(data_dir: Path, posting_id: int) -> None:
+    """One `eligible` gate row at the CURRENT engine_version, under whatever facts+policy
+    the store holds right now."""
+    from boardwatch.eligibility.catalog import load_rules
+    from boardwatch.eligibility.facts import parse_facts, parse_policy
+    from boardwatch.eligibility.final_gate import record_gate_verdict
+    from boardwatch.eligibility.oracle import OracleVerdict
+    from boardwatch.store.queries import current_posting_versions, get_profile
+
+    settings = load_settings(data_dir=data_dir)
+    engine = get_engine(data_dir)
+    catalog = load_rules(settings.config_dir)
+    with engine.connect() as conn:
+        current = current_posting_versions(conn, [posting_id])[posting_id]
+        profile_row = get_profile(conn)
+    assert profile_row is not None
+    with engine.begin() as conn:
+        record_gate_verdict(
+            conn,
+            posting_version_id=current.posting_version_id,
+            jd_text=current.body_text,
+            facts=parse_facts(profile_row.eligibility_facts_json),
+            policy=parse_policy(profile_row.eligibility_policy_json),
+            catalog=catalog,
+            verdict=OracleVerdict(
+                label=str(posting_id), decision="eligible", reason=None, evidence="",
+                confidence="high",
+            ),
+        )
+
+
+@_needs_an_executable_fake
+def test_gate_rejudges_when_a_fact_the_judge_reads_changed_under_an_ignored_family(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache contract, and it was broken in the direction that clears a barred lead.
+
+    Under `Policy(families={"work_auth": "ignore"})` the row identity cannot see
+    `work_authorization.status` at all, but the judge is sent every fact. So `citizen` ->
+    `needs_sponsorship` left `(posting_version_id, profile_hash, rules_hash, engine_kind,
+    engine_version)` byte-identical while changing the request — and a clear the judge gave a
+    citizen on a no-sponsorship JD stayed "already judged" forever after the fact that decides
+    it moved. `raw_output.facts_key` digests the exact payload the judge is sent, and the
+    freshness read now requires it to match.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    _store_eligibility(env, work_auth_status="citizen")
+    _plant_current_gate_row(env, posting_id)
+    # The one line that differs from the control below.
+    _store_eligibility(env, work_auth_status="needs_sponsorship")
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert fake_claude.exists(), (
+        "a lead whose judge-visible facts changed must reach a request — the row identity "
+        "drops every family the live policy ignores, so it cannot see this on its own"
+    )
+    assert summary.gate_judged == 1, summary.gate_judged
+
+
+def test_gate_still_never_rejudges_when_the_judge_visible_facts_are_unchanged(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL for the test above, green before and after: identical setup minus the fact
+    change. The facts key must not defeat the never-re-judge filter (D-477 pt 5) — a run that
+    re-judged an unchanged lead would spend a `claude` call per lead per day forever.
+
+    `exit1` so a call cannot be mistaken for a skip: any call at all surfaces as
+    `gate_failed_open`.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    _store_eligibility(env, work_auth_status="citizen")
+    _plant_current_gate_row(env, posting_id)
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert not fake_claude.exists(), "an unchanged lead must never reach a request"
+    assert summary.gate_judged == 0
+    assert summary.gate_failed_open == 0

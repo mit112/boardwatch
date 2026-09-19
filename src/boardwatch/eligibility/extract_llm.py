@@ -24,6 +24,7 @@ from sqlalchemy import Connection
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.facts import Facts, Policy
+from boardwatch.eligibility.final_gate import gate_facts_key
 from boardwatch.eligibility.ground import GroundedSpan, ground
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
@@ -156,8 +157,16 @@ def extract_and_record(
     # into key() itself. Without it a cached response would replay across a changed profile or
     # rule catalog: the same JD adjudicated against different facts (or a bumped catalog
     # version) would wrongly HIT.
+    #
+    # `profile_hash` alone is not enough, because it drops every family the live policy
+    # `ignore`s — and `_requirement_for_span` below reads `facts.total_years_experience`
+    # directly, consulting no severity policy at all (see its own note). With `degree` and
+    # `experience_years` both ignored, 0 years -> 10 years flips a disposition unmet -> met
+    # while profile_hash stands still. The facts key closes that: it digests the whole facts
+    # payload, so any fact this lane can read is part of the key (T99).
     identity_hash = hashlib.sha256(
-        f"{content_hash}:{identity.profile_hash}:{identity.rules_hash}".encode()
+        f"{content_hash}:{identity.profile_hash}:{identity.rules_hash}"
+        f":{gate_facts_key(facts)}".encode()
     ).hexdigest()
     cache_key = cache.key(identity_hash, PROMPT_VERSION, model or "unknown")
 

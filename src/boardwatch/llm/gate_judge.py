@@ -27,7 +27,7 @@ from sqlalchemy import Engine
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts, parse_policy
-from boardwatch.eligibility.final_gate import gate_engine_version
+from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import OracleVerdict, OracleVerdictError, accept_oracle_verdict
 from boardwatch.eligibility.preflight import current_identity
@@ -291,10 +291,16 @@ def run_gate_stage(
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
         already_gated = current_gate_verdicts(
             conn, [v.posting_version_id for v in versions.values()], *identity,
-            engine_version=gate_engine_version(),
+            engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
         )
     # Never re-judge (D-477 point 5): a lead with a current gate row under this identity is
     # skipped entirely — it never enters a request, let alone a `claude` call.
+    #
+    # `facts_key` is computed off the SAME `facts` object that goes into `build_gate_request`
+    # below, so what the freshness test compares is exactly what the judge would be sent. The
+    # row identity cannot carry this: `profile_hash` drops a family the live policy `ignore`s,
+    # while the judge reads every fact under an all-blocker policy, so a work_auth flip was
+    # invisible here while changing the request (T99).
     #
     # `engine_version` is EXACT here, not the prefix the display readers use (D-512). "Current"
     # has to mean current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that
