@@ -29544,3 +29544,70 @@ constraint). Stamping the configured model on CLI-applied verdicts (a lie about 
 Fixing F5's composite-title role asymmetry (`Quality Engineer, Software`) — magnitude unmeasured,
 and astra itself says a parser rewrite is not justified by the examples; measure before designing.
 Astra's claim that an escaping judge exception costs every artifact (the `finally:` block runs).
+
+### D-524 addendum, same session — T107 and T109 land, and two judgment calls inside them are ruled
+
+**T107 (F4) — the gate stage now reports item- and field-level coverage, and a partial outage
+escalates.** `GateStageResult` and `GateCounters` gain `candidates` / `cached` / `sent` /
+`missing_items` / `refused_items` and a THREE-WAY seniority split (`answered` / explicit `unclear` /
+`unreadable`); two soft alerts sit between `escalatable_from` and `_emit_morning`, beside the
+whole-batch one. `sent` is `len(request["items"])` — deliberately below `candidates - cached`,
+because `build_gate_request` drops a lead with no current version or a quarantined body, and that
+is the true send denominator. Coverage is measured against `sent`, never total leads; `sent == 0`
+abstains. New counters are ABSENT on a pre-instrumentation funnel rather than `0`, on the
+`scan.fetch_cost` precedent (D-113), so no `ARTIFACT_VERSION` bump.
+
+**Two judgment calls the executor flagged, both RULED here:**
+
+1. **A total outage now raises TWO alerts** — the whole-batch one ("the process failed for N
+   batches") and the coverage one ("M leads have no verdict"). **Kept.** They answer different
+   questions and an operator needs both: the first says whether to look at the judge, the second
+   says how much of the day went unjudged. Suppressing either would re-create the ambiguity F4
+   exists to remove.
+2. **The seniority field-coverage alarm fires on a STRICT MAJORITY of unreadable answers**, not on
+   the first one, and the executor correctly flagged that as a policy choice with no test at the
+   boundary. **Kept, and here is why it cannot yet be tuned on evidence:** over the 1,232 gate rows
+   written since `seniority_fit` existed, 215 read `unclear` — and today's code CANNOT distinguish
+   an explicit `unclear` (a real answer) from an out-of-catalog fold (a parse failure), which is the
+   very thing T107 fixes. So the observed unreadable rate is unknown, bounded above by 17.5%, and a
+   fire-on-first threshold could be daily noise or could be silent. A strict majority cannot be
+   noisy and still catches the failure that matters — prompt or policy drift dropping the field,
+   which hits every answer. **Revisit the threshold after the first armed run reports the real
+   `seniority_unclear` vs `seniority_unreadable` split;** that is a tuning on data, not a guess, and
+   it is the whole reason the split was built three-way.
+
+**T109 (F3) — standing delivery gets the title-seniority hold AND the judge's negative.** Five
+hand-written argument lists reached `review_gate.classify`; four of them dropped
+`seniority_above_band` and one also dropped `posting_closed`, and every one of them was
+type-correct. `classify` now takes `judge_verdict: str | None` instead of `judge_eligible: bool`,
+gains the `judged_ineligible_verdict` member (placed beside the body-judge hold and ABOVE the
+`eligible` short-circuit, for the reason the body reader sits there: the deterministic verdict
+answers the blocker families and says nothing about a separate reader's rejection), and every
+production-relevant input is now REQUIRED. **Live effect on the day it lands: the 12 open unapplied
+leads measured above leave the apply lane for review. They are held, not dropped.**
+
+**The executor departed from the ticket's design and the departure is ACCEPTED, because it is
+stronger than what was specified.** The ticket said to plumb `Settings` through to the four
+standing call sites. It instead computes the title band inside `delivered_unapplied` — the single
+common ancestor all four already read — rides it on `QueueRow`, and collapses the four sites into
+one `lane_decision(row)`. Three reasons, all checked: `store/delivery_queries.py` **already** does
+exactly this for `gate.seniority_hold`, with a written rationale citing D-332 ("each call site
+checking the flag itself is exactly the second opinion `_review` exists to prevent"); the plumbing
+would have touched ~110 call sites; and passing the whole row makes a dropped input
+**inexpressible** rather than merely type-checked. The tree goes from five argument lists to two.
+
+**The AST guard was REPLACED, not extended, and that is also right.** With the arguments required,
+the old guard pinned nothing `mypy --strict` did not pin harder. What mypy cannot state is HOW MANY
+call sites exist — which is the defect T109 actually found — so the new guard asserts the exact
+list by name (`pipeline/runner.py`, `store/delivery_queries.py`). Mutation M7 confirms it bites and
+the docstring honestly records that an import alias still evades it, which is why the guard is the
+backstop and `lane_decision(row)` is the mechanism.
+
+**Not widened, deliberately:** `judge_seniority_above_band` stays a boolean. It is a different
+field of the same row, armed at one place upstream (`settings.gate.seniority_hold`) with an inert
+`"unclear"` default, and collapsing it is the same narrowing the title band gets.
+
+**This ticket touches `web/`** — `ReviewReason` is a closed catalog mirrored in TypeScript as
+`Record<ReviewReason, …>`, so the new member would not compile without it — and therefore required
+a `make web` rebuild, because `tests/unit/test_web_bundle_freshness.py` hashes every file under
+`web/`, test files included.

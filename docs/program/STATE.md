@@ -20,15 +20,15 @@
 
 ## Current standing
 
-### 2026-09-19e — **ASTRA REVIEW 02 IS CONSUMED (D-524): ALL EIGHT FINDINGS CONFIRMED; T106, T108 AND T112 SHIPPED; T107, T109–T111, T113 TICKETED in `TICKETS-2026-09-19-ASTRA-02.md`. THREE OWNER QUESTIONS RULED. NOTHING HERE TOUCHES THE ENGINE — no ledger re-key, no drain, no confirm-clock restart.**
+### 2026-09-19e — **ASTRA REVIEW 02 IS CONSUMED (D-524): ALL EIGHT FINDINGS CONFIRMED; T106, T107, T108, T109 AND T112 ALL SHIPPED; T110, T111 AND T113 TICKETED in `TICKETS-2026-09-19-ASTRA-02.md`. THREE OWNER QUESTIONS RULED. NOTHING HERE TOUCHES THE ENGINE — no ledger re-key, no drain, no confirm-clock restart. `main`'s FOUR-COMMIT CI RED IS FIXED and unrelated to the review.**
 
 Both falsifiers re-run here (every row of five tables reproduces); every cited `file:symbol` opened
 by a read-only Opus verifier on the seat (`.agent/astra/verify/02-report.md`, $3.56). **The apply
 lane's defect is that its CONSUMERS do not honour the distinctions the stack draws:** the gate judge
 does not fail open at three seams it claims to (F2, **fixed: T106**); a PARTIAL judge outage is
-neither counted nor escalated — run 467 carried one (F4, **T107**); the gate row key does not vary
+neither counted nor escalated — run 467 carried one (F4, **fixed: T107**); the gate row key does not vary
 with the judge MODEL, so the pending model move would reach new leads only (F1, **fixed: T108**);
-four standing call sites drop the title-seniority hold and none can see a judge NEGATIVE (F3,
+four standing call sites drop the title-seniority hold and none can see a judge NEGATIVE (F3, **fixed:
 **T109**); three lexical spellings classify inconsistently (F5, **fixed: T112**); B8's instrument is
 the pre-form-sweep render count (F6, **T110**) and a routing change moves no manifest hash (**T111**);
 a stale gate negative suppresses its own repair and the one manual path reads through the same hide
@@ -56,6 +56,15 @@ recorded as the v2 boundary.
 
 **T108 must land before the judge-model move** (next-action 4): without it the move reaches new
 leads only. It also collapses T99's pending one-time re-judge into the same run.
+
+**`main`'s CI was RED for four consecutive commits before this session and is now GREEN — the cause
+was NOT the review.** Two tests in `web/src/__tests__/followUp.test.tsx` pinned `2026-09-20` as a
+LITERAL future date; the follow-up chip reads "follow-up due <d>" once d is today or past, so the
+assertion silently became a different one on arrival, and CI (UTC) crossed that boundary five hours
+before local did. **A green local gate could not predict it and a re-run could not reproduce it** —
+`TZ=UTC` reproduces it exactly (2 of 25 fail, the two CI named). Both now derive the date from
+today. The other 14 date literals in that file compare dates to each other or to an input value,
+never to today, and were left alone.
 
 ### 2026-09-19c — astra review 01 (the deterministic eligibility engine) consumed: all ten findings confirmed, T98 and T99 shipped, T100–T105 ticketed. **Held WHOLE in D-523 and `TICKETS-2026-09-19-ASTRA-01.md`; do not re-derive.** Its live residual is in next action 4: **the first armed run after T99 (and now T108) re-judges the delivered slate ONCE** (≤ `--top`, ~3 batches on the 04:00 tick) — read the funnel's gate block on that run, not just the verdicts.
 
@@ -135,8 +144,8 @@ density; predict yield from the sample. Never the reverse.
 0. **Consume astra reviews 03 → 04 (05 if it exists) as they arrive** — one findings file per
    session, the way 01 and 02 were: probes re-run here, symbols verified on the seat, then
    ticketed. **From review 01: T98 and T99 shipped; T100–T104 join item 4's batch; T105 needs a
-   design. From review 02 (D-524): T106, T108 and T112 SHIPPED; T107 and T109 in flight;
-   T110, T111 and T113 ticketed.** Mit's standing answer on the seat (2026-09-19 18:40): fan out
+   design. From review 02 (D-524): T106, T107, T108, T109 and T112 ALL SHIPPED; T110, T111 and
+   T113 ticketed.** Mit's standing answer on the seat (2026-09-19 18:40): fan out
    **2–3 executors at once, never more**; ask for the usage reading again before a fan-out on a
    later day.
 1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`.** Watch whether the

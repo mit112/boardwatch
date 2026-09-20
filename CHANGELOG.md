@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The gate stage reports item- and field-level coverage, and a partial outage escalates
+  (2026-09-19, T107).** `GateStageResult` and the funnel's gate block gain candidate, cached, sent,
+  missing-item and refused-item counts and a three-way seniority split that keeps a real explicit
+  `unclear` apart from an absent or unreadable one. Two soft alerts sit beside the existing
+  whole-batch one, above the morning digest and inside the escalated slice. Only a whole-batch
+  failure was counted before, so a batch that came back answering 1 of 13 reached the digest and
+  never the escalation — which is what run 467 did, leaving one lead unjudged with nothing said.
+  Coverage is measured against what was SENT, never against total leads, so a run whose every lead
+  already carried a current verdict abstains instead of alarming. Delivery is unchanged: no lead is
+  dropped and no run becomes fatal.
+- **Standing delivery honours the title-seniority hold and the judge's rejection (2026-09-19,
+  T109).** Five hand-written argument lists reached the lane classifier; four dropped the title band
+  and one also dropped the closed flag, and every one of them type-checked. There is now a single
+  `lane_decision(row)` for the standing side and every production-relevant input is required, so a
+  dropped input is not expressible rather than merely caught. `classify` takes the judge's verdict
+  instead of a boolean and gains a `judged_ineligible_verdict` hold, placed beside the body-seniority
+  hold and above the eligible short-circuit: a lead the judge rejected with a quoted span is held for
+  review, never dropped and never equated with a deterministic deletion. The title band is computed
+  per read and never persisted, so narrowing the target band re-routes standing leads.
+
 - **The gate stage's row names the judge that wrote it (2026-09-19, T108).** `record_gate_verdict`
   fills the `provider`/`model` columns that already existed and `current_gate_verdicts` gains a
   `model` narrowing, applied INSIDE its `max(id)` subquery exactly as `facts_key` is. Nothing in the
