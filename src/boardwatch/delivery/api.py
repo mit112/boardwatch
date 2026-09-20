@@ -36,10 +36,11 @@ would assert a decision the gate declined to make, which is the same error as fo
 into a neighbour.
 
 `review_reason` is therefore a SEPARATE field and `off_target` must never be stretched to stand in
-for it. It names which of `review_gate.ReviewReason`'s nine members held the lead, and it comes
-from `review_gate.classify` — the same call `lane` projects, so the reason on a row and the lane
-the row arrived in are one decision and cannot disagree (D-332). It is `None` for every apply-lane
-row, which makes `review_reason is not None` and "this row came in `review`" the same statement.
+for it. It names which member of `review_gate.ReviewReason` held the lead, and it comes from
+`delivery_queries.lane_decision` — the SAME call the two lists are split by, so the reason on a row
+and the lane the row arrived in are one decision and cannot disagree (D-332). It is `None` for
+every apply-lane row, and `None` for a closed one, which makes `review_reason is not None` and
+"this row came in `review`" the same statement.
 The two fields answer different questions: `off_target` is `not_swe` alone, while the lane also
 holds a confirmed non-US location and a title the role gate merely could not call software, so
 most review leads carry a reason and no badge.
@@ -83,7 +84,6 @@ from boardwatch.delivery.answers import (
 )
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
-from boardwatch.delivery.review_gate import classify, lane
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
@@ -102,6 +102,7 @@ from boardwatch.store.delivery_queries import (
     QueueRow,
     applied_rows,
     delivered_unapplied,
+    lane_decision,
     queue_detail,
 )
 from boardwatch.store.param_chunks import id_chunks
@@ -270,57 +271,19 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     def rank_key(row: QueueRow) -> tuple[bool, float]:
         return (facts[row.posting_id].score is None, -(facts[row.posting_id].score or 0.0))
 
-    # The SAME split the folder tree uses, from the SAME function (D-332). Calling
-    # `review_gate.lane` rather than re-deriving "is this appliable" here is the whole point: a
-    # second opinion in this module is how the page and the drain start disagreeing about one
-    # lead, which is the defect `_ineligible` and `_review` both exist to prevent.
+    # The SAME split the folder tree uses, from the SAME call (D-332). Calling `lane_decision`
+    # rather than re-deriving "is this appliable" here is the whole point: a second opinion in
+    # this module is how the page and the drain start disagreeing about one lead, which is the
+    # defect `_ineligible` and `_review` both exist to prevent. Taking the whole ROW is what makes
+    # that structural rather than a convention — there is one argument list, in
+    # `delivery_queries.lane_decision`, and nothing here to hand-copy out of step with it.
     #
-    # `posting_closed` is redundant in both calls below and is passed anyway: `kept` already
-    # excludes every closed row, so the flag is provably False here and no test can observe its
-    # removal. It keeps the call shape byte-identical to `queue.py`'s and `review_job_ids`', which
-    # is what makes "the same function, called the same way" checkable by reading rather than by
-    # trusting. If `kept` ever stops excluding closed rows, this is what stops them landing in the
-    # blind-apply list.
-    apply_rows = sorted(
-        (
-            r
-            for r in kept
-            if lane(
-                verdict=r.verdict,
-                locations=r.locations,
-                title=r.title,
-                experience_unconfirmed=r.requirement_flags.experience_unconfirmed,
-                eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
-                no_requirement_rows=r.requirement_flags.no_requirement_rows,
-                judge_eligible=r.judge_verdict == "eligible",
-                judge_seniority_above_band=r.judge_seniority_fit == "no",
-                form_question_hit=r.form_question_hit,
-                posting_closed=r.closed,
-            )
-            == ""
-        ),
-        key=rank_key,
-    )
-    review_rows = sorted(
-        (
-            r
-            for r in kept
-            if lane(
-                verdict=r.verdict,
-                locations=r.locations,
-                title=r.title,
-                experience_unconfirmed=r.requirement_flags.experience_unconfirmed,
-                eligibility_unconfirmed=r.requirement_flags.eligibility_unconfirmed,
-                no_requirement_rows=r.requirement_flags.no_requirement_rows,
-                judge_eligible=r.judge_verdict == "eligible",
-                judge_seniority_above_band=r.judge_seniority_fit == "no",
-                form_question_hit=r.form_question_hit,
-                posting_closed=r.closed,
-            )
-            != ""
-        ),
-        key=rank_key,
-    )
+    # `posting_closed` rides on the row and is provably False here, `kept` having already excluded
+    # every closed row. It is passed anyway, for the reason it always was: if `kept` ever stops
+    # excluding them, this is what keeps them out of the blind-apply list.
+    lanes = {r.posting_id: lane_decision(r).lane for r in kept}
+    apply_rows = sorted((r for r in kept if lanes[r.posting_id] == ""), key=rank_key)
+    review_rows = sorted((r for r in kept if lanes[r.posting_id] != ""), key=rank_key)
     return {
         "rows": [
             _row_json(row, facts[row.posting_id], ctx, follow_ups.get(row.job_id))
@@ -430,20 +393,14 @@ def _row_json(
     """
     fraction = None if facts.coverage is None else facts.coverage.fraction
     off_target = facts.role == "not_swe"
-    # From `classify`, which `lane` is a projection of, so this row's reason and the list it was
-    # sorted into are the SAME decision rather than two that agree today. `None` on an apply-lane
-    # row by construction: `classify` returns a reason only where it returns `REVIEW_DIR`.
-    held = classify(
-        verdict=row.verdict,
-        locations=row.locations,
-        title=row.title,
-        experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
-        eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
-        no_requirement_rows=row.requirement_flags.no_requirement_rows,
-        judge_eligible=row.judge_verdict == "eligible",
-        judge_seniority_above_band=row.judge_seniority_fit == "no",
-        form_question_hit=row.form_question_hit,
-    ).reason
+    # The SAME call the two lists above are split by, so this row's reason and the list it was
+    # sorted into are ONE decision rather than two that agree today. `None` on an apply-lane row
+    # by construction — a reason comes back only with `REVIEW_DIR` — and `None` on a CLOSED one
+    # for the same reason: `_closed` is not a review reason, it is the lead being gone, and the
+    # page renders that from `status` below. This call used to omit `posting_closed`, so the pane
+    # published the reason a closed lead WOULD have had were it live, which is a hold the folder
+    # tree disagrees with on the one surface where the reader decides whether to apply (T109).
+    held = lane_decision(row).reason
     pdf = _pdf_path(row.pdf_uri, ctx.out_root)
     locations = _unique_locations(row.locations)
     return {

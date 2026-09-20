@@ -47,6 +47,15 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: an ineligible verdict arrived on a lead the queue expected to have excluded.",
   },
+  judged_ineligible_verdict: {
+    label: "judged ineligible",
+    // Names WHICH engine said so, because that is what the reader does differently: the
+    // deterministic member above sends them to the rule, and this one sends them to the JD. States
+    // that it is one read rather than a finding, for the same reason `seniority_judged_above_band`
+    // does — there is no rule behind it to correct, only a span to weigh.
+    reason:
+      "Held for review: an independent read of the job description rejected this lead, while the rules engine did not. Read the quoted evidence before applying.",
+  },
   eligibility_unconfirmed: {
     label: "eligibility unconfirmed",
     reason:

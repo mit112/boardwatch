@@ -30,7 +30,7 @@ from itertools import zip_longest
 from pathlib import Path
 from threading import Thread
 from time import perf_counter
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import httpx
 from rich.console import Console
@@ -101,8 +101,7 @@ from boardwatch.projection.run import (
     resolve_projection_run,
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
+from boardwatch.rank.title_band import profile_target_band, title_band_reader
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
 from boardwatch.reports.board_coverage import build_report as build_board_coverage_report
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
@@ -1392,10 +1391,12 @@ def _lead_lanes(
 
     T44's `seniority_above_band` is computed HERE and passed in, rather than re-derived inside
     `review_gate.classify`: the scheme/band/tier/catalog inputs are config- and profile-dependent
-    and do not belong to a pure classifier. Derived exactly as `cli/top_cmd.py` derives them, so
-    the lane a lead lands in cannot disagree with the band the shortlist showed for it. Left
-    uncomputed the flag would default False forever, and a rule that cannot fire is a monitoring
-    failure, not conservatism.
+    and do not belong to a pure classifier. `rank.title_band` holds that derivation and the
+    standing queue's read shares it, so the lane a lead lands in here cannot disagree with the
+    band the shortlist showed for it OR with the lane `sync_queue` later files its folder under.
+    Left uncomputed the flag would default False forever, and a rule that cannot fire is a
+    monitoring failure, not conservatism — which is exactly what had happened on the standing
+    side, where four readers took the default (T109).
     """
     if not leads:
         return {}
@@ -1433,8 +1434,8 @@ def _lead_lanes(
                 )
             ).all()
         }
-        # T44. (provider, slug) is the key `resolve_schemes` returns its per-company level
-        # schemes under, so the band is read against the company's OWN ladder where it has one.
+        # T44. (provider, slug) is the key `title_band` looks its per-company level schemes up
+        # under, so the band is read against the company's OWN ladder where it has one.
         company_of = {
             int(row.id): (str(row.provider), str(row.slug))
             for row in conn.execute(
@@ -1444,14 +1445,10 @@ def _lead_lanes(
             ).all()
         }
         profile_row = get_profile(conn)
-    leveling = load_leveling(settings.config_dir)
-    schemes, _scheme_warning = resolve_schemes(leveling, settings.config_dir)
-    # Mirrors `top_cmd`'s own derivation, field tier included, so the two cannot drift.
-    tier = leveling.fields["software"]
-    target_band = cast(
-        TargetBand,
-        str(getattr(profile_row, "target_seniority_band", None) or "any"),
-    )
+    # T44's four inputs, resolved once. `title_band_reader` is the ONE derivation, shared with
+    # the standing queue's own read, so the lane this run tailors for and the lane `sync_queue`
+    # files the folder under cannot disagree about a band.
+    band_reader = title_band_reader(settings, profile_target_band(profile_row))
     result: dict[int, tuple[str, int | None]] = {}
     for posting in leads:
         posting_version = versions.get(posting.posting_id)
@@ -1459,23 +1456,18 @@ def _lead_lanes(
             None if posting_version is None else posting_version.posting_version_id
         )
         posting_flags = flags.get(posting.posting_id, NO_REQUIREMENT_FLAGS)
-        band, _band_reason = seniority_verdict(
-            posting.title,
-            schemes.get(company_of.get(posting.posting_id, ("", ""))),
-            target_band,
-            tier,
-            leveling,
-        )
         result[posting.posting_id] = (
             review_lane(
                 verdict=posting.verdict,
                 locations=locations_by_posting.get(posting.posting_id, ()),
                 title=posting.title,
-                seniority_above_band=band == "above_band",
+                seniority_above_band=band_reader.above_band(
+                    posting.title, company_of.get(posting.posting_id)
+                ),
                 experience_unconfirmed=posting_flags.experience_unconfirmed,
                 eligibility_unconfirmed=posting_flags.eligibility_unconfirmed,
                 no_requirement_rows=posting_flags.no_requirement_rows,
-                judge_eligible=gate_verdicts.get(posting.posting_id) == "eligible",
+                judge_verdict=gate_verdicts.get(posting.posting_id),
                 judge_seniority_above_band=(
                     gate_seniority.get(posting.posting_id) == "no"
                 ),
