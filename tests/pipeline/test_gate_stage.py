@@ -189,11 +189,11 @@ def _seed(data_dir: Path, *, slug: str = "acme-gate1", body: str = BODY) -> int:
     return posting_id
 
 
-def _arm_gate(data_dir: Path, *, batch_size: int = 13) -> None:
+def _arm_gate(data_dir: Path, *, batch_size: int = 13, model: str = "sonnet") -> None:
     config_dir = load_settings(data_dir=data_dir).config_dir
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
-        f"[gate]\nenabled = true\nmodel = \"sonnet\"\nbatch_size = {batch_size}\n"
+        f"[gate]\nenabled = true\nmodel = \"{model}\"\nbatch_size = {batch_size}\n"
         "call_timeout_s = 30\n",
         encoding="utf-8",
     )
@@ -480,6 +480,8 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
     current = versions[posting_id]
     # Plant a CURRENT gate row for this exact identity, as though a prior run already judged
     # it — the whole point of "never re-judge" is that this run must skip straight past it.
+    # Under `_arm_gate`'s own model, because a row naming a DIFFERENT judge (or none) is not
+    # current either (T108), and this control is about the unchanged case.
     with engine.begin() as conn:
         record_gate_verdict(
             conn,
@@ -492,6 +494,8 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
                 label=str(posting_id), decision="eligible", reason=None, evidence="",
                 confidence="high",
             ),
+            provider="claude-code-agent",
+            model=settings.gate.model,
         )
 
     # If this ran, it would tell the fake to fail the WHOLE batch and the test would still
@@ -885,9 +889,13 @@ def _store_eligibility(data_dir: Path, *, work_auth_status: str) -> None:
         )
 
 
-def _plant_current_gate_row(data_dir: Path, posting_id: int) -> None:
+def _plant_current_gate_row(
+    data_dir: Path, posting_id: int, *, model: str | None = None
+) -> None:
     """One `eligible` gate row at the CURRENT engine_version, under whatever facts+policy
-    the store holds right now."""
+    the store holds right now. `model` names the judge that wrote it; the default `None` is
+    the LEGACY shape, which every row written before T108 has and no backfill can change —
+    the ledger is append-only."""
     from boardwatch.eligibility.catalog import load_rules
     from boardwatch.eligibility.facts import parse_facts, parse_policy
     from boardwatch.eligibility.final_gate import record_gate_verdict
@@ -913,6 +921,8 @@ def _plant_current_gate_row(data_dir: Path, posting_id: int) -> None:
                 label=str(posting_id), decision="eligible", reason=None, evidence="",
                 confidence="high",
             ),
+            provider=None if model is None else "claude-code-agent",
+            model=model,
         )
 
 
@@ -934,7 +944,7 @@ def test_gate_rejudges_when_a_fact_the_judge_reads_changed_under_an_ignored_fami
     posting_id = _seed(env)
     _arm_gate(env)
     _store_eligibility(env, work_auth_status="citizen")
-    _plant_current_gate_row(env, posting_id)
+    _plant_current_gate_row(env, posting_id, model="sonnet")
     # The one line that differs from the control below.
     _store_eligibility(env, work_auth_status="needs_sponsorship")
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -963,7 +973,7 @@ def test_gate_still_never_rejudges_when_the_judge_visible_facts_are_unchanged(
     posting_id = _seed(env)
     _arm_gate(env)
     _store_eligibility(env, work_auth_status="citizen")
-    _plant_current_gate_row(env, posting_id)
+    _plant_current_gate_row(env, posting_id, model="sonnet")
     monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
 
     summary = _pipeline(env, tmp_path / "apps")
@@ -971,3 +981,126 @@ def test_gate_still_never_rejudges_when_the_judge_visible_facts_are_unchanged(
     assert not fake_claude.exists(), "an unchanged lead must never reach a request"
     assert summary.gate_judged == 0
     assert summary.gate_failed_open == 0
+
+
+# ---------------------------------------------------------------------------
+# (k) the freshness check must see WHICH MODEL judged the row — T108
+# ---------------------------------------------------------------------------
+
+
+def _persisted_judge(data_dir: Path) -> set[tuple[str | None, str | None]]:
+    """Every gate row's `(provider, model)` pair, read from the columns that hold them."""
+    from sqlalchemy import select
+
+    from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
+
+    with get_engine(data_dir).connect() as conn:
+        rows = conn.execute(
+            select(
+                tables.eligibility_evaluations.c.provider,
+                tables.eligibility_evaluations.c.model,
+            ).where(
+                tables.eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%")
+            )
+        ).all()
+    return {(row.provider, row.model) for row in rows}
+
+
+@_needs_an_executable_fake
+def test_gate_rejudges_a_lead_whose_gate_row_names_no_model(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every row written before this shipped has `model IS NULL`, and the ledger is
+    append-only — there is no backfill. So the FIRST run after this lands re-judges the
+    standing slate once (bounded by `--top`, D-477 pt 1) and comes back keyed. This is also
+    the only test that can see `run_gate_stage` passing a model at all: with the argument
+    dropped, a null-model row would still read as fresh.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    _store_eligibility(env, work_auth_status="citizen")
+    _plant_current_gate_row(env, posting_id)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert fake_claude.exists(), (
+        "a gate row that names no model can never be attributed to the configured judge, "
+        "so it must not count as already judged"
+    )
+    assert summary.gate_judged == 1, summary.gate_judged
+
+
+@_needs_an_executable_fake
+def test_gate_rejudges_a_lead_whose_gate_row_was_judged_by_a_different_model(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The case that made a judge switch reach NEW leads only.
+
+    Nothing the freshness read compared moved with `settings.gate.model`: the row identity is
+    `(posting_version_id, profile_hash, rules_hash)`, `gate_engine_version()` carries the policy
+    and prompt versions, and `facts_key` digests the judge's request. The run manifest's
+    `config_hash` does move — `_GATE_RELEVANT` includes `model` — but a `config_hash` invalidates
+    no gate row, so every lead the old judge cleared stayed "fresh" under the new one forever.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    _store_eligibility(env, work_auth_status="citizen")
+    _plant_current_gate_row(env, posting_id, model="sonnet")
+    # The one line that differs from the control below.
+    _arm_gate(env, model="haiku")
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert fake_claude.exists(), (
+        "a lead whose only gate row was judged by a DIFFERENT model must reach a request — "
+        "otherwise a judge switch reaches new leads only and the migration is silently partial"
+    )
+    assert summary.gate_judged == 1, summary.gate_judged
+
+
+def test_gate_still_never_rejudges_when_the_configured_model_is_unchanged(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL for the test above: identical setup minus the model change. The model narrowing
+    must not defeat the never-re-judge filter (D-477 pt 5) — a run that re-judged an unchanged
+    lead would spend a `claude` call per lead per day forever.
+
+    `exit1` so a call cannot be mistaken for a skip: any call at all surfaces as
+    `gate_failed_open`.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    _store_eligibility(env, work_auth_status="citizen")
+    _plant_current_gate_row(env, posting_id, model="sonnet")
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert not fake_claude.exists(), "an unchanged lead must never reach a request"
+    assert summary.gate_judged == 0
+    assert summary.gate_failed_open == 0
+
+
+@_needs_an_executable_fake
+def test_a_gate_row_records_the_provider_and_model_that_judged_it(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-row provenance, in the two columns that already existed for it and sat empty:
+    without it there is no way to audit which judge decided which lead across a switch."""
+    _ready(env)
+    _seed(env)
+    _arm_gate(env, model="haiku")
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 1, summary.gate_judged
+    assert _persisted_judge(env) == {("claude-code-agent", "haiku")}

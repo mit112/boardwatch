@@ -54,7 +54,7 @@ def gate_facts_key(facts: Facts) -> str:
 def record_gate_verdict(
     conn: Connection, *, posting_version_id: int, jd_text: str, facts: Facts,
     policy: Policy, catalog: RulesCatalog, verdict: OracleVerdict, run_id: int | None = None,
-    shortlist_rank: int | None = None,
+    shortlist_rank: int | None = None, provider: str | None = None, model: str | None = None,
 ) -> int:
     """Persist one judge verdict. `shortlist_rank` is the lead's 1-based position in the
     ranker's DEPTH slate, recorded so conversion can be read BY RANK BAND afterwards.
@@ -64,6 +64,21 @@ def record_gate_verdict(
     every future reader of the column wrong. `None` is written as an ABSENT key rather
     than a null, so a row judged through a path that has no ranker (the
     `eligibility gate apply` CLI) is distinguishable from a lead that ranked nowhere.
+
+    `provider`/`model` name the judge that reached this verdict, and go into the COLUMNS of
+    those names rather than into `raw_output_json` — unlike `facts_key`, which is in
+    `raw_output` only because re-keying the deterministic identity would have moved eight
+    display readers. They are what `read.current_gate_verdicts`' freshness narrowing matches
+    on, so a configured-model change is a MISS and the lead is re-judged under the new judge
+    rather than coasting on the old one's verdict forever (T108).
+
+    Both default to `None`, which is the legacy shape and the honest one for a caller that
+    cannot name its judge: the `eligibility gate apply` CLI applies a verdicts file produced
+    by whatever agent session the operator ran, not by `settings.gate.model`, and writing the
+    configured model there would put a judge's name on a verdict it never reached. A row with
+    `model IS NULL` never matches a given model, so the daily stage re-judges it ONCE (bounded
+    by `--top`, D-477 pt 1) and it comes back keyed; the ledger is append-only, so there is no
+    backfill and this is the only way those rows become attributable.
     """
     accepted = accept_oracle_verdict(verdict, jd_text, catalog)
     persisted: EligibilityVerdict = accepted.expected_verdict  # type: ignore[assignment]
@@ -99,6 +114,6 @@ def record_gate_verdict(
         input_fingerprint=identity.input_fingerprint,
         engine_kind="llm", engine_version=gate_engine_version(),
         verdict=persisted, score=None, requirements=requirements,
-        provider=None, model=None, prompt_version=PROMPT_VERSION,
+        provider=provider, model=model, prompt_version=PROMPT_VERSION,
         idempotency_key=None, run_id=run_id, raw_output=raw_output,
     )

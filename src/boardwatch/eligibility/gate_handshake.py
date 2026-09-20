@@ -115,6 +115,8 @@ def apply_gate_verdicts(
     catalog: RulesCatalog,
     run_id: int | None = None,
     shortlist_ranks: Mapping[int, int] | None = None,
+    provider: str | None = None,
+    model: str | None = None,
 ) -> ApplyGateResult:
     """Run every verdict through `record_gate_verdict` against the posting's CURRENT
     OPEN version body (`versions`, re-read by the caller at apply time — this is the
@@ -133,6 +135,10 @@ def apply_gate_verdicts(
     the CLI handshake has no ranker at all and passes `None`, and a `.get` miss under a
     supplied map means the caller's own map disagreed with its verdict list, which is a
     fact worth leaving visible rather than papering over with a sentinel.
+
+    `provider`/`model` name the judge that reached these verdicts and are threaded straight to
+    `record_gate_verdict`, whose docstring holds why they default to `None` and what a row that
+    names no model costs.
     """
     # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most:
     # `record_gate_verdict` persists an ineligible-capable verdict with a span sliced out of
@@ -172,6 +178,8 @@ def apply_gate_verdicts(
             verdict=verdict,
             run_id=run_id,
             shortlist_rank=None if shortlist_ranks is None else shortlist_ranks.get(posting_id),
+            provider=provider,
+            model=model,
         )
         judged += 1
         if persisted == "ineligible":
