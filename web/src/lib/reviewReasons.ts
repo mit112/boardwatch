@@ -24,6 +24,7 @@ export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   judged_ineligible_verdict: "judged ineligible",
   no_requirements_found: "nothing extracted",
   non_us_location: "outside the US",
+  revised_since_build: "revised since build",
   role_unconfirmed: "role unconfirmed",
   role_vetoed: "role vetoed",
   seniority_above_band: "above the target band",

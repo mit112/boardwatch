@@ -5,16 +5,30 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import delete, distinct, func, insert, select, update
 from sqlalchemy.engine import Connection, Row
+from sqlalchemy.sql import Select
 
-from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION, kind_spec
+from boardwatch.core.identity_kinds import (
+    IDENTITY_ALGORITHM_VERSION,
+    SUPPRESSING_KINDS,
+    kind_spec,
+)
+from boardwatch.core.ledger import is_live
 from boardwatch.core.near_duplicate import PostingEvidence
 from boardwatch.core.posting_identity import IdentityInputs, PostingIdentity
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.tables import companies, job_dispositions, posting_identities, postings
+from boardwatch.store.tables import (
+    applications,
+    companies,
+    job_dispositions,
+    job_grouping_events,
+    posting_identities,
+    postings,
+)
 
 
 def load_identity_inputs(
@@ -238,13 +252,21 @@ class StaleIdentityGeneration:
 def count_stale_identities(conn: Connection) -> tuple[StaleIdentityGeneration, ...]:
     """Identity rows at every `algorithm_version` that is NOT the current one.
 
-    This is the whole reapable set, and the bound on it is what makes it safe: every reader
-    in this module filters to `IDENTITY_ALGORITHM_VERSION`, so a row at any other version is
-    unreadable by construction — `load_identities`, `identities_complete`,
-    `load_surfaced_identities` and `load_surfaced_keys` all carry the filter, and
-    `write_identities` documents that it never touches another version's rows. Deleting them
-    therefore cannot change any verdict, any suppression, or any report; it only stops the
-    table carrying a generation nothing will ever read again.
+    This is the whole reapable set, and the bound on it is what makes it safe — but the
+    property it relies on is that every reader **repo-wide** filters to
+    `IDENTITY_ALGORITHM_VERSION`, not merely every reader in this module. The narrower claim
+    was true and the wider one was not: `cli/top_cmd._suppress_lane_copies`,
+    `store/delivery_queries.standing_board_cross_host_keys` and
+    `store/delivery_queries.lane_copy_job_ids` each selected `kind == 'cross_host'` with no
+    version predicate, so a retired row was readable by them and reaping it WOULD have changed
+    which leads the owner saw. All three now carry the filter, alongside `load_identities`,
+    `identities_complete`, `load_surfaced_identities`, `load_surfaced_keys` and
+    `store/run_funnel_queries`; `write_identities` documents that it never touches another
+    version's rows. What is checked is that list, by grep over `posting_identities` readers —
+    nothing enforces it, so a new unfiltered reader would make this docstring wrong again.
+
+    Given that, deleting a retired generation cannot change any verdict, any suppression, or
+    any report; it only stops the table carrying rows nothing will ever read again.
 
     **Rows on CLOSED postings at the CURRENT version are deliberately NOT reapable, and that
     is a decision, not an omission.** 11.0% of the live table (52,571 of 476,277 on
@@ -500,3 +522,188 @@ def load_surfaced_posting_ids(conn: Connection) -> dict[int, tuple[int, ...]]:
     for job_id, posting_id in conn.execute(stmt).all():
         out.setdefault(int(job_id), []).append(int(posting_id))
     return {job_id: tuple(ids) for job_id, ids in out.items()}
+
+
+class MembershipStanding(StrEnum):
+    """What a multi-posting job's recorded grouping evidence says about it TODAY.
+
+    Closed and exhaustive: every job anchoring more than one posting gets exactly one of
+    these, so the report can never quietly drop a shape it did not anticipate. Typed rather
+    than a string for the reason `MarkOutcome` is (`store/applications.py`) — no caller
+    classifies a standing by matching prose.
+
+    `NO_CURRENT_EVIDENCE` is deliberately neither neighbour. A member with no current-version
+    identity has not been measured, which is a different statement from "its key disagrees",
+    and `IDENTITY_ALGORITHM_VERSION` bumps produce it fleet-wide by design (see this module's
+    `load_identities` and `core/identity_kinds.py`). Folding it into `DIVERGED` would report a
+    bump as a corpus-wide defect; folding it into `JUSTIFIED` would clear a membership nothing
+    checked.
+    """
+
+    JUSTIFIED = "justified"
+    DIVERGED = "diverged"
+    NO_CURRENT_EVIDENCE = "no_current_evidence"
+    UNRECORDED = "unrecorded"
+
+
+@dataclass(frozen=True)
+class JobMembership:
+    """One job that anchors more than one posting, judged against its own merge trail.
+
+    `methods` and `algorithm_versions` are the DISTINCT values recorded on the merges that
+    built this job, restricted to suppressing kinds — tuples rather than scalars because the
+    trail is append-only and a job merged across an algorithm bump carries two versions. They
+    are context for the reader, not the check: the check always re-reads identities at the
+    CURRENT version, because that is the only version anything downstream suppresses on.
+
+    `has_live_disposition` and `has_application` are what make a divergence consequential
+    rather than cosmetic — a shared disposition governs every member (`cli/top_cmd.py`) and
+    `applications` keys on `job_id` alone (`store/applications.py`), so one application makes
+    every sibling read as applied.
+    """
+
+    job_id: int
+    posting_ids: tuple[int, ...]
+    methods: tuple[str, ...]
+    algorithm_versions: tuple[str | None, ...]
+    standing: MembershipStanding
+    has_live_disposition: bool
+    has_application: bool
+
+
+def _multi_posting_jobs() -> Select[tuple[int]]:
+    """The jobs anchoring more than one posting, as a subquery rather than an id list.
+
+    Every read below filters through this instead of passing ids, so none of them can reach
+    the 32,766 bound-parameter cap (D-288) no matter how far the merged population grows —
+    there is no bound on it other than the corpus, which is already past the cap.
+
+    Not filtered on `postings.status`. A closed posting still anchors its job and still shares
+    that job's disposition, so excluding it would drop exactly the memberships old enough to
+    have gone stale.
+    """
+    return (
+        select(postings.c.job_id)
+        .where(postings.c.job_id.is_not(None))
+        .group_by(postings.c.job_id)
+        .having(func.count() > 1)
+    )
+
+
+def load_job_memberships(conn: Connection, *, now: datetime) -> tuple[JobMembership, ...]:
+    """Every multi-posting job, with whether its recorded grouping evidence still holds.
+
+    Read-only. Grouping is durable by design (D-104) and there is no split path anywhere in
+    the tree, so this reports and repairs nothing; what it measures is the gap D-104 never
+    ruled on — a membership that outlived the evidence that justified it.
+
+    The evidence is `job_grouping_events`, which `store/regroup.apply_merges` writes BEFORE the
+    `postings.job_id` projection precisely so it is the undo path. For each job this takes the
+    kinds recorded on the merges that built it and asks whether every current member still
+    carries one shared identity key of that kind at `IDENTITY_ALGORITHM_VERSION`.
+
+    **Keyed on `SUPPRESSING_KINDS`, never on an agreeing kind.** `exact_quad` is the only
+    suppressing kind; `content_hash_only` and `company_title_location` agree across genuinely
+    different jobs by construction (`core/identity_kinds.py` — 727 of 809 live hash-collision
+    groups span a different title or location), so a check that accepted their agreement as
+    justification would report a weaker property than the one suppression actually rests on.
+    A recorded method outside the closed catalog raises `UnknownIdentityKind` through
+    `kind_spec` rather than being silently skipped, which would read as "nothing to report".
+    """
+    suppressing = {k.name for k in SUPPRESSING_KINDS}
+    jobs = _multi_posting_jobs()
+
+    members: dict[int, list[int]] = {}
+    for job_id, posting_id in conn.execute(
+        select(postings.c.job_id, postings.c.id)
+        .where(postings.c.job_id.in_(jobs))
+        .order_by(postings.c.job_id, postings.c.id)
+    ).all():
+        members.setdefault(int(job_id), []).append(int(posting_id))
+
+    recorded: dict[int, set[tuple[str, str | None]]] = {}
+    for to_job_id, method, version in conn.execute(
+        select(
+            job_grouping_events.c.to_job_id,
+            job_grouping_events.c.method,
+            job_grouping_events.c.algorithm_version,
+        )
+        .where(job_grouping_events.c.to_job_id.in_(jobs))
+        .distinct()
+    ).all():
+        if not kind_spec(str(method)).suppresses:
+            continue
+        recorded.setdefault(int(to_job_id), set()).add(
+            (str(method), None if version is None else str(version))
+        )
+
+    keys: dict[tuple[int, str], str] = {}
+    for posting_id, kind, key in conn.execute(
+        select(
+            posting_identities.c.posting_id,
+            posting_identities.c.kind,
+            posting_identities.c.identity_key,
+        )
+        .join(postings, postings.c.id == posting_identities.c.posting_id)
+        .where(
+            postings.c.job_id.in_(jobs),
+            posting_identities.c.kind.in_(suppressing),
+            posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+        )
+    ).all():
+        keys[(int(posting_id), str(kind))] = str(key)
+
+    live = {
+        int(row.job_id)
+        for row in conn.execute(
+            select(
+                job_dispositions.c.job_id,
+                job_dispositions.c.expires_at,
+                job_dispositions.c.reopened_at,
+            ).where(job_dispositions.c.job_id.in_(jobs))
+        ).all()
+        if is_live(expires_at=row.expires_at, reopened_at=row.reopened_at, now=now)
+    }
+    tracked = {
+        int(job_id)
+        for (job_id,) in conn.execute(
+            select(distinct(applications.c.job_id)).where(applications.c.job_id.in_(jobs))
+        ).all()
+    }
+
+    out: list[JobMembership] = []
+    for job_id, posting_ids in sorted(members.items()):
+        evidence = sorted(recorded.get(job_id, ()))
+        out.append(
+            JobMembership(
+                job_id=job_id,
+                posting_ids=tuple(posting_ids),
+                methods=tuple(dict.fromkeys(method for method, _ in evidence)),
+                algorithm_versions=tuple(dict.fromkeys(version for _, version in evidence)),
+                standing=_standing([method for method, _ in evidence], posting_ids, keys),
+                has_live_disposition=job_id in live,
+                has_application=job_id in tracked,
+            )
+        )
+    return tuple(out)
+
+
+def _standing(
+    methods: Sequence[str], posting_ids: Sequence[int], keys: dict[tuple[int, str], str]
+) -> MembershipStanding:
+    """Classify one job. `NO_CURRENT_EVIDENCE` outranks `DIVERGED` on purpose.
+
+    Two members' keys can only be said to disagree once both have been read. When one of them
+    has no current-version row — un-backfilled, or a body-less posting that withholds
+    `exact_quad` by design (D-132) — the membership is unmeasured, and calling that a
+    divergence would manufacture a defect out of a coverage gap.
+    """
+    if not methods:
+        return MembershipStanding.UNRECORDED
+    diverged = False
+    for method in methods:
+        member_keys = [keys.get((posting_id, method)) for posting_id in posting_ids]
+        if any(key is None for key in member_keys):
+            return MembershipStanding.NO_CURRENT_EVIDENCE
+        diverged = diverged or len(set(member_keys)) > 1
+    return MembershipStanding.DIVERGED if diverged else MembershipStanding.JUSTIFIED

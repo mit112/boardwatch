@@ -76,6 +76,24 @@ describe("the requirement-hold badges", () => {
     expect(text).toMatch(/vetoed this title/i);
   });
 
+  // T119. This reason is the only one that is NOT a reading of the posting as it stands: it says
+  // the version the résumé was tailored against is no longer the one on the board. Wording it as
+  // a finding about the job ("this posting changed its requirements") would assert a reading of
+  // the revision that nothing here has made — the revision has not been read at all, which is
+  // exactly why the lead is in front of the reader.
+  it("names the revision as a move under the résumé, not as a finding about the posting", () => {
+    const { container } = render(
+      <ReviewReasonBadge reason="revised_since_build" showReason />,
+    );
+    screen.getByText("revised since build");
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/revised since/i);
+    expect(text).toMatch(/tailored for it/i);
+    // The claim it must NOT make: nothing here has read the new body, so it cannot say the
+    // posting is now ineligible, more senior, or anything else about its contents.
+    expect(text).not.toMatch(/ineligible|no longer eligible/i);
+  });
+
   it("gives every reason its OWN label, so no two holds read alike", () => {
     const reasons: ReviewReason[] = [
       "ineligible_verdict",
@@ -89,6 +107,7 @@ describe("the requirement-hold badges", () => {
       "seniority_above_band",
       "seniority_judged_above_band",
       "form_question_hard_stop",
+      "revised_since_build",
     ];
     const labels = reasons.map((reason) => {
       const { container, unmount } = render(<ReviewReasonBadge reason={reason} />);

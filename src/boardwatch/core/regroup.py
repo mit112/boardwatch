@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from boardwatch.core.dedup import Suppression
 
 # Closed catalog. An out-of-catalog refusal is a failure, never a new bucket.
-REGROUP_REFUSALS: tuple[str, ...] = ("tracked_job", "missing_job_anchor")
+REGROUP_REFUSALS: tuple[str, ...] = ("tracked_job", "queue_action_job", "missing_job_anchor")
 
 
 @dataclass(frozen=True)
@@ -57,11 +57,18 @@ def plan_regrouping(
     job_by_posting: Mapping[int, int],
     *,
     protected_job_ids: frozenset[int],
+    queue_action_job_ids: frozenset[int],
 ) -> RegroupPlan:
     """Which postings move onto which canonical job, and which groups are refused.
 
-    `protected_job_ids` are jobs carrying an `applications` or `artifacts` row. A group is
-    refused **whole** when any non-survivor member sits on one.
+    `protected_job_ids` are jobs carrying an `applications` or `artifacts` row.
+    `queue_action_job_ids` are jobs carrying a review-queue skip, report or follow-up. A group is
+    refused **whole** when any non-survivor member sits on either.
+
+    The two sets are separate parameters rather than one union because the refusal they raise is
+    reported to the owner and the remedy differs: `tracked_job` means an application row would be
+    orphaned, `queue_action_job` means the owner's own skip / report / follow-up would be. Naming
+    a skipped job "tracked" would claim an application that does not exist.
 
     Why the whole group and not just the offending member: a partially-merged group is a third
     state — some members canonical, some not — that nothing downstream understands, and it makes
@@ -95,6 +102,11 @@ def plan_regrouping(
         ]
         if any(job_id in protected_job_ids for _, job_id in moving):
             refusals.append(Refusal(survivor_id, "tracked_job", members))
+            continue
+        # Checked second: a job that is both applied-to and skipped is reported under the
+        # refusal whose consequence is larger, and the applied count is the larger one.
+        if any(job_id in queue_action_job_ids for _, job_id in moving):
+            refusals.append(Refusal(survivor_id, "queue_action_job", members))
             continue
         merges.extend(
             JobMerge(posting_id=pid, from_job_id=job_id, to_job_id=canonical)

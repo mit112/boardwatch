@@ -8,6 +8,54 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Lane-copy suppression reads only the current identity generation (2026-09-20, T114).** The
+  three readers of `posting_identities` that elect a lane copy's holder — `_suppress_lane_copies`,
+  `standing_board_cross_host_keys` and `lane_copy_job_ids` — selected `kind == "cross_host"` with no
+  `algorithm_version` predicate, so a generation the identity subsystem had retired could still
+  defer a lead. Identity rows are written beside history by design and reaping is manual, so retired
+  rows sit on disk indefinitely. Missing current evidence now means no suppression, the fail-open
+  direction. The same change corrects `count_stale_identities`' safety claim, which argued from
+  "every reader in this module" while these three sat outside it. No backfill, no re-key: the store
+  holds one generation today, so nothing changes until the next bump.
+- **A regroup no longer releases a job that still has postings, nor strands a queue action
+  (2026-09-20, T115).** `_carry_dispositions` documented itself as moving "each emptied job's"
+  decision but never checked emptiness, and collapsed source-to-target moves into a last-wins dict.
+  A source whose members split across two targets now carries onto every target; a source that still
+  anchors postings carries nothing and releases nothing, counted in a new `MergeOutcome` so the
+  refusal is visible. Separately, `queue.skipped/reported/followup` are keyed on a job id that a
+  merge would move out from under them, so a job carrying any of the three now refuses the whole
+  group — a new `queue_action_job` refusal reason rather than a widened `tracked_job`, because a
+  skipped job is not a tracked one and the two point at different remedies.
+- **Queue sync verifies the destination before reporting it unchanged (2026-09-20, T116).**
+  Idempotence keyed on the `content_hash` recorded in `details.json`, which is written by the same
+  pass that writes the files and therefore proves only what that pass intended. A folder is now
+  skipped when the stamp matches *and* its own bytes re-derive it; damaged known files are repaired
+  in place, never by replacing the folder, so work the owner keeps alongside a lead cannot be
+  destroyed. The job description is written as bytes rather than text so a folder's contents are a
+  function of the payload alone on every platform.
+- **The run funnel names the boards no liveness owner can retire (2026-09-20, T117).** Absence-based
+  closure runs only under a `complete` snapshot and the death sweep excludes watched companies, so a
+  watched board whose scans are never complete has neither owner. Every provider demotes a whole
+  board to `partial` on a single per-posting parse error, so this is fleet-wide. The scan block now
+  names each watched board with no `complete` scan ever recorded and the open postings hanging on it,
+  biggest first, distinguishing not-measured from measured-zero. Report-only: nothing changes about
+  what is closed, probed or swept.
+- **`boardwatch identities memberships` reports memberships whose evidence no longer holds
+  (2026-09-20, T118).** Grouping is durable by design and there is no split path anywhere, so a job
+  that merged two postings keeps governing both after their evidence diverges — a shared disposition
+  or application then covers a genuinely different opening. The new read-only report takes the kinds
+  recorded on the merges that built each multi-posting job and asks whether every current member
+  still shares an identity key of that kind at the current algorithm version, keyed on the only
+  suppressing kind rather than on any kind that happens to agree. Members with no current-version row
+  are their own bucket: keys can only be said to disagree once both have been read.
+- **A built lead whose posting was revised re-enters review (2026-09-20, T119).** A `built`
+  disposition governs permanently and the run policy stamp does not hash posting content, so a lead
+  whose job description changed after its résumé was tailored stayed in the apply queue on the
+  evidence it was built against. Such a lead now moves to review under `revised_since_build`. The
+  hold sits above the blindly-appliable short-circuit, because an `eligible` verdict on the revised
+  body describes the new text and says nothing about the résumé built against the old one; every
+  stronger hold — closure, a form hard stop, a rejection, location, role and seniority — still
+  outranks it.
 - **The gate stage reports item- and field-level coverage, and a partial outage escalates
   (2026-09-19, T107).** `GateStageResult` and the funnel's gate block gain candidate, cached, sent,
   missing-item and refused-item counts and a three-way seniority split that keeps a real explicit

@@ -53,11 +53,11 @@ afterEach(() => {
 describe("REVIEW_REASON_LABELS", () => {
   it("agrees with ReviewReasonBadge's own catalog, key for key", () => {
     const keys = Object.keys(REVIEW_REASON_LABELS) as ReviewReason[];
-    // TWELVE, spelled out: a member dropped from the labels map would otherwise pass this
+    // THIRTEEN, spelled out: a member dropped from the labels map would otherwise pass this
     // vacuously. The count is hand-kept on purpose — deriving it from the map under test would
     // make the guard agree with whatever the map happens to hold, which is the failure it exists
     // to catch. Bump it with the server's `ReviewReason` catalog, never to make this go green.
-    expect(keys).toHaveLength(12);
+    expect(keys).toHaveLength(13);
     for (const reason of keys) {
       const view = render(<ReviewReasonBadge reason={reason} />);
       // The badge renders exactly one element carrying its label text.

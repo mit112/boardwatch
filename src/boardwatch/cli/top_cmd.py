@@ -24,6 +24,7 @@ from boardwatch.cli._profile_row import refuse_unusable_profile_row
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression, resolve_duplicates
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.posting_identity import normalized_locations
 from boardwatch.core.settings import Settings
@@ -1114,6 +1115,12 @@ def _suppress_lane_copies(
             .join(companies, companies.c.id == postings.c.company_id)
             .where(
                 posting_identities.c.kind == "cross_host",
+                # The CURRENT generation only. Identity rows are written beside history — the
+                # UNIQUE key includes the version — and `identities reap` is manual, so a retired
+                # generation sits on disk indefinitely; reading one would defer a lane copy on
+                # evidence the identity subsystem has withdrawn. No current key means no group,
+                # and no group means no suppression: the fail-open direction for this rule.
+                posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
                 posting_identities.c.posting_id.in_(ids),
             )
         ).all()

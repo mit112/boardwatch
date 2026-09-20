@@ -129,7 +129,7 @@ from boardwatch.scan.coordinator import (
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
-from boardwatch.store.delivery_queries import form_question_hits
+from boardwatch.store.delivery_queries import form_question_hits, revised_since_build_ids
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
@@ -145,8 +145,17 @@ from boardwatch.store.queries import (
     upsert_lane_company,
     watched_company_names,
 )
-from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
-from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
+from boardwatch.store.regroup import (
+    apply_merges,
+    job_anchors,
+    protected_job_ids,
+    queue_action_job_ids,
+)
+from boardwatch.store.run_funnel_queries import (
+    TAILORED_KIND,
+    lead_provenance,
+    watched_boards_never_complete,
+)
 from boardwatch.store.seed_queries import (
     LaneSeed,
     record_seed_attempt,
@@ -1424,15 +1433,34 @@ def _lead_lanes(
         # identity-scoped like the three reads above it -- the application form is a fact about
         # the requisition, not about this user's profile or the rules catalog.
         form_questions = form_question_hits(conn, versions)
+        # T119. The SAME function `delivered_unapplied` calls, so the lane this run tailors for
+        # cannot disagree with the one `sync_queue` files the folder under. It is near-always
+        # empty here — `top_cmd`'s rank-time suppression keeps a job with a live `built`
+        # disposition out of `ranked.visible` — and it is computed anyway rather than passed a
+        # `False`, because a rule that cannot fire from one of its two call sites is the drift
+        # T109 was written to stop, and the suppression is a ranker policy this gate must not
+        # silently depend on. The posting rows are read ONCE and serve both this and the
+        # locations below; `job_id` is NOT NULL for anything the scanner wrote (the
+        # `postings_job_required_*` triggers), so the guard drops nothing reachable.
+        posting_rows = conn.execute(
+            select(postings.c.id, postings.c.job_id, postings.c.locations_json).where(
+                postings.c.id.in_(posting_ids)
+            )
+        ).all()
+        revised = revised_since_build_ids(
+            conn,
+            {
+                int(row.id): int(row.job_id)
+                for row in posting_rows
+                if row.job_id is not None
+            },
+            now=utcnow(),
+        )
         locations_by_posting = {
             int(row.id): tuple(
                 str(loc) for loc in (row.locations_json or []) if str(loc).strip()
             )
-            for row in conn.execute(
-                select(postings.c.id, postings.c.locations_json).where(
-                    postings.c.id.in_(posting_ids)
-                )
-            ).all()
+            for row in posting_rows
         }
         # T44. (provider, slug) is the key `title_band` looks its per-company level schemes up
         # under, so the band is read against the company's OWN ladder where it has one.
@@ -1476,6 +1504,7 @@ def _lead_lanes(
                 # files the folder under `_review`. One render once per lead, never the wrong
                 # lane.
                 form_question_hit=form_questions.get(posting.posting_id),
+                revised_since_build=posting.posting_id in revised,
                 posting_closed=False,
             ),
             posting_version_id,
@@ -1706,7 +1735,9 @@ def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, 
     """Move each suppressed posting onto its survivor's job. Returns (moved, messages).
 
     Refusals are returned as non-fatal messages, not swallowed: a group left ungrouped because a
-    member's job carries an application is a correct outcome, but an invisible one is a leak.
+    member's job carries an application is a correct outcome, but an invisible one is a leak. The
+    same holds for a decision `apply_merges` declined to carry off a source that still has
+    postings.
     """
     if not suppressions:
         return 0, []
@@ -1719,14 +1750,20 @@ def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, 
             suppressions,
             job_anchors(conn, member_ids),
             protected_job_ids=protected_job_ids(conn),
+            queue_action_job_ids=queue_action_job_ids(conn),
         )
-        moved = apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
+        outcome = apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
+    if outcome.refused_non_empty:
+        messages.append(
+            f"regroup: {outcome.refused_non_empty} source job(s) kept their live decision — "
+            "still anchor postings after the move"
+        )
     for refusal in plan.refusals:
         messages.append(
             f"regroup: group of posting {refusal.survivor_posting_id} left ungrouped "
             f"({refusal.reason}): {', '.join(str(p) for p in refusal.member_posting_ids)}"
         )
-    return moved, messages
+    return outcome.moved, messages
 
 
 def _slug(company: str, posting_id: int) -> str:
@@ -3201,6 +3238,14 @@ def _emit_funnel(
     day_dir: Path,
 ) -> WrittenArtifact:
     """Collect the funnel from the store and write both halves beside the day's leads."""
+    # T117. Read from the STORE, not from `scan_summary`: this is a STANDING population over
+    # the whole scan history, and a board in it may not have been attempted this run at all.
+    # `None` on a `--no-scan` run, on the `fetch_cost` rule below — the history is then a run
+    # older than the artifact, and `()` would read as a measured all-clear.
+    watched_never_complete = None
+    if scan_summary is not None:
+        with engine.connect() as conn:
+            watched_never_complete = watched_boards_never_complete(conn)
     funnel = collect_run_funnel(
         engine,
         settings,
@@ -3238,6 +3283,7 @@ def _emit_funnel(
                 )
                 for provider, cost in scan_summary.fetch_cost.items()
             ),
+            watched_never_complete=watched_never_complete,
         ),
         shortlist=summary.shortlist,
         liveness=LivenessCheck(
