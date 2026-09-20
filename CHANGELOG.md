@@ -628,6 +628,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The final gate's freshness check now sees every fact the judge reads (2026-09-19, T99).**
+  `build_identity` folds a family's fields into `profile_hash` only while its live severity is not
+  `ignore`, but the judge is sent all facts under an all-blocker policy (D-461), so a changed
+  judge-visible fact under an ignored family left a cached clear "fresh". Each gate row now carries
+  `facts_key` (a digest of the exact facts payload sent) in `raw_output`, and the one freshness read
+  in `run_gate_stage` requires it to match; every display reader is byte-identical. The advisory
+  extraction lane folds the same key into its cache key. On the first run after this ships, every
+  delivered lead holding a pre-key gate row is re-judged exactly once (bounded by `--top`, D-477
+  pt 1) and comes back keyed. Astra review 01, finding F7. No engine identity moves.
+
 - **The abstain monitor no longer exempts two rules that decide (2026-09-19, T98).**
   `reports/abstain.py:STRUCTURALLY_UNDECIDABLE` still named `experience_years:scoped_years_minimum`
   and `clearance:clearable_required` from D-253, although D-326's `obtainable` bit and the scoped-years

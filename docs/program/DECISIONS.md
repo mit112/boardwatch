@@ -29398,3 +29398,15 @@ fan-out (asked, unanswered at close).
 **Corrected in memory, not in the repo:** the live `near_miss_years_ceiling` is 1 (STATE 2026-09-18),
 so "a months bar under 36 cannot reject" is a ceiling-3 statement; astra's profile P used 1 and
 therefore matches live.
+
+**Addendum, same session (18:40–19:10 CDT).** Mit answered the two questions: T99 now, engine
+tickets batched; the seat reads 0% but **fan out 2–3 at once only**. T99 shipped on the seat (Opus,
+62 turns, $4.70). Its design departs from the tickets file's sketch on purpose: rebuilding the gate
+identity under the judge's all-blocker policy would have moved every display reader that joins gate
+rows on the deterministic `(profile_hash, rules_hash)`, and `idempotency_key` is globally unique
+with upsert semantics, so a facts key there would turn a re-judge into a de-dupe. The row identity
+is untouched; each gate row carries `facts_key = digest(facts_payload(facts))` in `raw_output`, and
+only `run_gate_stage`'s freshness read requires it to match (`json_extract`, the repo's existing
+idiom). A pre-key row is never fresh, so the next run re-judges the delivered slate once, bounded by
+`--top`. The advisory lane's cache key folds the same digest. Four red-first tests, one API-shaped
+red justified by mutation, 212 narrow tests green, gate run on the union.

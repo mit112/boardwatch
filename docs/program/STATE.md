@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-19c — **ASTRA REVIEW 01 IS CONSUMED (D-523): ALL TEN FINDINGS CONFIRMED, T98 SHIPPED, T99–T105 TICKETED in `TICKETS-2026-09-19-ASTRA-01.md`.** No run read, no metric moved. Reviews 02–05 are still to come, one per session.
+### 2026-09-19c — **ASTRA REVIEW 01 IS CONSUMED (D-523): ALL TEN FINDINGS CONFIRMED, T98 AND T99 SHIPPED, T100–T105 TICKETED in `TICKETS-2026-09-19-ASTRA-01.md`.** No run read, no metric moved. Reviews 02–05 are still to come, one per session.
 
 Every falsifier re-run here (six probes, all reproduce); every cited symbol opened by a read-only
 Opus verifier on the enterprise seat (`.agent/astra/verify/01-report.md`). The engine's principal
@@ -28,10 +28,12 @@ defect is between matching and resolution: a matching phrase becomes a requireme
 heading, subject, modality and relation to other phrases are known (F1–F4); four resolvers reach
 `met` on out-of-catalog facts (F5); the ITAR predicate narrows its own catalog comment (F6); the
 final-gate cache key omits facts the judge reads (F7); the abstain monitor exempted two rules that
-decide (F8, **fixed: T98**); the 1,060-case corpus has no multiline body at all (F9). **Re-key rule
-for the rest:** T100–T104 touch digested modules or `rules.yaml` and land as ONE bump with
-next-action 4; T99 moves the gate version only and ships first, then a one-time rejudge of the
-delivered slate; T105 is designed before any executor sees it. The session's split, ruled by Mit:
+decide (F8, **fixed: T98**); the 1,060-case corpus has no multiline body at all (F9). **F7 is fixed
+(T99): each gate row carries a `facts_key` and the one freshness read requires it, so the NEXT
+RUN re-judges every delivered lead once (≤ `--top`) — expect ~3 judge batches on the 04:00 tick
+and read the funnel's gate block, not just the verdicts.** **Re-key rule for the rest:**
+T100–T104 touch digested modules or `rules.yaml` and land as ONE bump with next-action 4; T105 is
+designed before any executor sees it. The session's split, ruled by Mit:
 this session orchestrates and judges; the enterprise seat executes (review $6.59 total).
 
 ### 2026-09-19b — **AN EXTERNAL DESIGN REVIEW IS COMMISSIONED. Five prompts for GPT astra sit in `.agent/astra/prompts/` (gitignored); the owner runs each in its own astra session and brings the findings file back to a NEW boardwatch session, one review per session.** No run was read, no code changed, no metric moved.
@@ -109,9 +111,9 @@ density; predict yield from the sample. Never the reverse.
 
 0. **Consume astra reviews 02 → 04 (05 if it exists) as they arrive** — one findings file per
    session, the way 01 was (2026-09-19c): probes re-run here, symbols verified on the seat, then
-   ticketed. **From review 01: T99 next (gate identity + slate rejudge, outside the engine batch);
-   T100–T104 join item 4's batch; T105 needs a design.** Before any fan-out, ask Mit the seat's
-   usage reading (asked 2026-09-19, unanswered) — one executor per ~$8–10 of headroom.
+   ticketed. **From review 01: T98 and T99 shipped; T100–T104 join item 4's batch; T105 needs a
+   design.** Mit's standing answer on the seat (2026-09-19 18:40): fan out **2–3 executors at
+   once, never more**; ask for the usage reading again before a fan-out on a later day.
 1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`.** Watch whether the
    new boards' 2.05% rate and 70%-of-slate share HOLD on a second run, or whether run 467 was a
    first-scan bulge — the whole stage-2/3 argument turns on that.
