@@ -91,6 +91,7 @@ from boardwatch.store.queue_state import (
 )
 from boardwatch.store.tables import (
     artifacts,
+    board_scans,
     companies,
     jobs,
     posting_identities,
@@ -233,6 +234,21 @@ def _queue_row(posting_id: int, company: str, title: str) -> QueueRow:
     )
 
 
+def _complete_scan(conn: Connection, company_id: int, run_id: int) -> None:
+    """The `board_scans` row that makes a watched board ENUMERATED rather than merely configured.
+
+    Without one, `delivery_queries._status` renders every open posting `unverifiable` (T122):
+    absence closure needs a `complete` snapshot, so a board that has never produced one can no
+    more retire a posting than an unwatched board can.
+    """
+    conn.execute(
+        insert(board_scans).values(
+            run_id=run_id, company_id=company_id, started_at=NOW, finished_at=NOW,
+            status="complete", postings_listed=1,
+        )
+    )
+
+
 def _deliver(
     conn: Connection,
     apps: Path,
@@ -280,6 +296,7 @@ def _deliver(
             )
         ).inserted_primary_key[0]
     )
+    _complete_scan(conn, company_id, run_id)
     job = (
         int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         if job_id is None
