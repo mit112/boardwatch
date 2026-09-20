@@ -716,11 +716,6 @@ def unwatched_scannable_companies(
     return list(conn.execute(stmt).all())
 
 
-# keep the P0 signature working — it is now a thin wrapper (no caller churn)
-def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
-    upsert_watch(conn, provider=provider, slug=slug, name=name, source="user")
-
-
 def unwatch(conn: Connection, *, provider: str, slug: str) -> int:
     """Unwatch a board, resolving the slug the way `upsert_watch` does.
 
