@@ -209,13 +209,29 @@ def _seed_routes(
     return routes
 
 
+def _selectable(
+    hosts: frozenset[str], host_suffixes: frozenset[str], max_attempts: int
+) -> ColumnElement[bool]:
+    """The predicate "`unresolved_seeds` would return this row".
+
+    Shared with `unresolved_seed_count` for the reason `_seed_routes` is shared: a count that
+    answered a different question than the select is a coverage report that lies about what was
+    left behind, which is worse than no report at all.
+    """
+    return and_(
+        lane_seeds.c.resolved_at.is_(None),
+        or_(*_seed_routes(hosts, host_suffixes)),
+        lane_seeds.c.attempts < max_attempts,
+    )
+
+
 def unresolved_seeds(
     conn: Connection,
     *,
     hosts: frozenset[str],
     host_suffixes: frozenset[str] = frozenset(),
     max_attempts: int,
-    limit: int,
+    limit: int | None,
 ) -> tuple[LaneSeed, ...]:
     """Seeds no resolver has turned into a posting yet, on hosts THIS resolver can handle.
 
@@ -253,17 +269,22 @@ def unresolved_seeds(
     promise would be silently defeated by a caller that computed a budget and got a subtraction
     wrong. A negative `max_attempts` selects nothing, which reads as a drained backlog.
 
+    **`limit=None` is EVERY matching row, and it is spelled `None` rather than `0` or `-1`
+    because both of those are real budgets somewhere.** `0` is SQLite's empty result and `-1` its
+    no-bound, so a caller whose budget arithmetic produced either would get the opposite of what
+    it meant. `None` cannot be produced by arithmetic, so asking for the whole queue stays a
+    deliberate act — which is what it has to be for a caller paying one request per row.
+
     Ordered by `attempts` then `id`: a seed that has never been tried is tried before one that
     has already failed twice, so a budget too small to drain the backlog still makes progress on
     new discoveries instead of spending every run re-failing the same oldest rows.
     """
-    if limit < 0 or max_attempts < 0:
+    if (limit is not None and limit < 0) or max_attempts < 0:
         raise ValueError(
             f"limit and max_attempts must be non-negative; got {limit}, {max_attempts}"
         )
     if not hosts and not host_suffixes:
         return ()
-    routes = _seed_routes(hosts, host_suffixes)
     stmt = (
         select(
             lane_seeds.c.id,
@@ -272,14 +293,11 @@ def unresolved_seeds(
             lane_seeds.c.discovered_by,
             lane_seeds.c.attempts,
         )
-        .where(
-            lane_seeds.c.resolved_at.is_(None),
-            or_(*routes),
-            lane_seeds.c.attempts < max_attempts,
-        )
+        .where(_selectable(hosts, host_suffixes, max_attempts))
         .order_by(lane_seeds.c.attempts, lane_seeds.c.id)
-        .limit(limit)
     )
+    if limit is not None:
+        stmt = stmt.limit(limit)
     return tuple(
         LaneSeed(
             id=row.id,
@@ -289,6 +307,36 @@ def unresolved_seeds(
             attempts=row.attempts,
         )
         for row in conn.execute(stmt)
+    )
+
+
+def unresolved_seed_count(
+    conn: Connection,
+    *,
+    hosts: frozenset[str],
+    host_suffixes: frozenset[str] = frozenset(),
+    max_attempts: int,
+) -> int:
+    """How many seeds `unresolved_seeds` WOULD return with no limit.
+
+    Exists so a bounded reader can report what it left behind. A `limit` is a request budget, not
+    a statement about the queue, and a caller that only ever sees its own slice cannot tell a
+    drained backlog from a fixed prefix it never reads past — which is exactly how 249 of 449
+    stored `grnh.se` seeds went unexamined for weeks while the candidate list shrank toward zero
+    and read as "nothing left to find".
+
+    The same `_selectable` predicate as the select, so "not examined" always means "this reader
+    could have taken it and did not", never "the count and the select disagree about what is
+    eligible".
+    """
+    if max_attempts < 0:
+        raise ValueError(f"max_attempts must be non-negative; got {max_attempts}")
+    if not hosts and not host_suffixes:
+        return 0
+    return int(
+        conn.execute(
+            select(func.count()).where(_selectable(hosts, host_suffixes, max_attempts))
+        ).scalar_one()
     )
 
 
