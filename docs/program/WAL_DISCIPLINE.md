@@ -27,8 +27,15 @@ connection (`db.py:46-51`):
    database lock.
 
 ## Why this holds for the unattended daily driver
-`boardwatch run` scan→eligibility→tailor runs under the scan lock (the run row is minted inside it). No
-second scan can interleave. The eligibility and tailor stages are the same process writing serially. So the
+`boardwatch run`'s SCAN STAGE runs under the scan lock, and the run row is minted inside it (D-020), so
+no second scan can interleave. **The lock does not extend past that stage** — `run_scan` releases it in its
+own `finally` (`scan/coordinator.py:320-321`) before ranking, the gate, tailoring and finalization, and the
+`--no-scan` path takes no lock at all. So a second `boardwatch run` CAN begin scanning while the first is
+still judging or rendering, and the two would share a per-day output directory (`_slug` carries no run id).
+Corrected 2026-09-20 (D-526, astra review 04 F1): this sentence previously claimed the whole
+scan→eligibility→tailor sequence held the lock, contradicting item 1 twelve lines above, which is right.
+Measured at 0 occurrences across 468 runs — but the store cannot see a peer session on another checkout,
+which is the real exposure. A whole-run lease is **T133**. The eligibility and tailor stages are the same process writing serially. So the
 only cross-process concurrency in normal operation is (a running scan) × (an ad-hoc read like `verify`/
 `show`), which WAL handles by construction.
 
