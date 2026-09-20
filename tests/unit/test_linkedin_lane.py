@@ -196,6 +196,27 @@ def test_one_search_get_and_one_body_get_per_admitted_posting(tmp_path):
 
 
 @respx.mock
+def test_an_admission_never_asks_for_its_placeholder_board_to_be_watched(tmp_path):
+    """SCOPE CONTROL for the hiring.cafe watch ruling (2026-09-20), which is that lane's alone.
+
+    A LinkedIn admission is keyed under `linkedin`, a PLACEHOLDER: there is no board behind it
+    for a scan to fetch, so a watched row here would add an `unknown provider` line to every run
+    forever (D-285). The ruling covers a supported employer board a lane RESOLVED, and this lane
+    resolves none. What the store then writes is `upsert_lane_company`'s `watched=False` default,
+    pinned in `tests/unit/test_lane_company_queries.py`; what is pinned here is that this lane
+    never asks for anything else.
+    """
+    cards = search_cards()
+    _mock_search(cards)
+    _mock_bodies(cards)
+
+    result = LinkedInLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert result.snapshots
+    assert all(s.provider == LANE_PROVIDER and s.watch is False for s in result.snapshots)
+
+
+@respx.mock
 def test_a_posting_carries_the_view_url_location_title_and_urn_id(tmp_path):
     cards = search_cards()
     _mock_search(cards)

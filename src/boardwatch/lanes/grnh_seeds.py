@@ -128,6 +128,47 @@ class GrnhCensus:
 
 
 @dataclass(frozen=True)
+class SeedCoverage:
+    """What the queue held versus what this pass actually followed.
+
+    Separate from `GrnhCensus` because the census accounts for seeds READ and this accounts for
+    the ones that were NOT -- the outcome no census can see. Without it a bounded read of a queue
+    nothing advances is indistinguishable from a drained one: this command charges no attempt and
+    sets no `resolved_at`, so `ORDER BY attempts, id LIMIT n` is a FIXED PREFIX, and as the good
+    boards inside it get imported the file shrinks toward empty while the seeds behind it are
+    never once fetched.
+    """
+
+    selectable: int
+    followed: int
+
+    @property
+    def not_examined(self) -> int:
+        """Seeds this pass could have taken and did not. Floored at 0.
+
+        The two numbers are two SQLite snapshots (pysqlite begins no transaction for a `SELECT`,
+        the hazard `store.seed_queries.read_seed_claims` is one statement to avoid), so a
+        concurrent insert can only make this larger -- those seeds really are unexamined -- and a
+        concurrent resolution is the only way it could go negative. A negative count here would
+        be nonsense printed into a document a human has to trust.
+        """
+        return max(0, self.selectable - self.followed)
+
+    def summary(self) -> str:
+        """One line, both branches, so full coverage is never reported as a constant."""
+        if self.not_examined == 0:
+            return (
+                f"seed coverage: followed all {self.selectable} selectable grnh.se seed(s); "
+                "0 not examined."
+            )
+        return (
+            f"seed coverage: followed {self.followed} of {self.selectable} selectable grnh.se "
+            f"seed(s); {self.not_examined} NOT EXAMINED by this run -- re-run with `--limit 0` "
+            "to follow every one."
+        )
+
+
+@dataclass(frozen=True)
 class GrnhResolution:
     boards: tuple[ResolvedBoard, ...]
     census: GrnhCensus
@@ -242,13 +283,19 @@ def without_known(
     )
 
 
-def candidate_document(resolution: GrnhResolution, *, generated_on: date) -> str:
+def candidate_document(
+    resolution: GrnhResolution, *, generated_on: date, coverage: SeedCoverage
+) -> str:
     """The registry-format file `companies import` accepts, behind a reviewable header.
 
     The header is comments, which `yaml.safe_load` ignores, and that is the only place the
     provenance can go: `CompanyEntry` sets `extra="forbid"`, so a per-entry `seed_url` field
     would fail the very validator the file has to pass. The owner reviews this file away from the
     terminal that produced it, so what it excluded has to travel with it.
+
+    `coverage` is REQUIRED for that last reason: the seeds this pass never looked at are the
+    largest thing the document excludes, and a default would let a caller emit a file that reads
+    as the whole queue when it is a fixed prefix of it.
     """
     payload = {
         "companies": [
@@ -259,7 +306,7 @@ def candidate_document(resolution: GrnhResolution, *, generated_on: date) -> str
     # `safe_dump` quotes any scalar whose plain form would resolve to something else, so a board
     # named `no`, `123` or `~` survives the round trip through `safe_load`.
     body: str = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
-    return _header(resolution, generated_on) + body
+    return _header(resolution, generated_on, coverage) + body
 
 
 def _one_line(value: str) -> str:
@@ -271,7 +318,7 @@ def _one_line(value: str) -> str:
     return " ".join(value.split())
 
 
-def _header(resolution: GrnhResolution, generated_on: date) -> str:
+def _header(resolution: GrnhResolution, generated_on: date, coverage: SeedCoverage) -> str:
     c = resolution.census
     lines = [
         "# boardwatch seeds resolve - candidate greenhouse boards, for review before import",
@@ -279,6 +326,7 @@ def _header(resolution: GrnhResolution, generated_on: date) -> str:
         f"# generated {generated_on.isoformat()} by following grnh.se short links stored in",
         "# `lane_seeds`. Greenhouse's own shortener; the redirect target is the board.",
         "#",
+        f"# {coverage.summary()}",
         f"# seeds read {c.seeds_read} | distinct boards {c.resolved} "
         f"| same board again {c.duplicate} | landed off-board {c.off_board} "
         f"| fetch failed {c.failed}",

@@ -512,6 +512,29 @@ class HiringCafeLane:
                         # The page this company was actually found on. Citing the unfaceted
                         # root would name a URL a faceted run never requested.
                         snapshot=lane_snapshot(postings, company_hits.url),
+                        # WATCHED, by owner ruling (2026-09-20): a supported employer board this
+                        # lane RESOLVED and READ joins the scan fleet, so boardwatch holds that
+                        # employer on every later run instead of seeing it only while hiring.cafe
+                        # happens to index it. The three conditions that make `watch=False` the
+                        # right default everywhere else (D-285) are all already established at
+                        # this line, by code above it rather than by a re-check here:
+                        #   1. SCANNABLE. `board` is not None, and `_body_inlined_providers()` is
+                        #      keyed by `build_providers()`'s own keys -- the SAME dict
+                        #      `scan/coordinator` looks a watched row's provider up in before
+                        #      appending `unknown provider` to every run's errors. A second list
+                        #      of "scannable" names would be a catalog free to drift away from
+                        #      the error site it exists to prevent, so there is none.
+                        #   2. NOT A PLACEHOLDER. `LANE_PROVIDER` is not a registry name, so a
+                        #      hit keyed under it by `hit_identity` fails (1) and never reaches
+                        #      here. Condition 2 needs no list of its own either.
+                        #   3. PROVEN LIVE. `postings` is non-empty, so this board answered with
+                        #      the employer's own bodies THIS RUN. A board that resolved but
+                        #      served nothing is not proven live: the stage-1 import live-probed
+                        #      and caught 14 dead boards, `greenhouse:embed` among them, and the
+                        #      `if postings:` gate above is what stands in for that human probe.
+                        # Only ever ON: `upsert_lane_company` never unwatches on this flag, and
+                        # leaves an existing row's `name` and `source` untouched.
+                        watch=True,
                     )
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally, search_pages=search_pages)

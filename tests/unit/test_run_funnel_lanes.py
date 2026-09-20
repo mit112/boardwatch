@@ -45,6 +45,7 @@ def _report(
     *outcomes: str,
     admitted: tuple[tuple[str, str], ...] = (),
     refused: tuple[tuple[str, str], ...] = (),
+    persisted_new: tuple[tuple[str, str], ...] = (),
     fetch_seconds: float | None = None,
     apply_seconds: float | None = None,
 ) -> LaneReport:
@@ -57,6 +58,7 @@ def _report(
         is_silent_outage=tally.is_silent_outage,
         admitted=admitted,
         refused=refused,
+        persisted_new=persisted_new,
         # Default None on purpose: every test above this line predates the cost split and must
         # keep exercising the NOT MEASURED path rather than being silently backfilled with 0.0.
         fetch_seconds=fetch_seconds,
@@ -184,6 +186,32 @@ def test_both_sides_of_the_company_cap_are_named_not_merely_counted() -> None:
     markdown = funnel_to_markdown(_funnel((report,)))
     assert "`greenhouse:acme`" in markdown
     assert "`lever:beta`" in markdown
+
+
+def test_the_persisted_reach_is_reported_beside_the_cap_approvals_in_both_halves() -> None:
+    """T140. `admitted` is what the cap APPROVED before any body was fetched; an approval whose
+    bodies were all unavailable never becomes a company row. Measured live, 214 of 1,342
+    admissions across 27 of 27 runs were never persisted, so the gap is the normal case and not
+    an edge — both renderers must carry the persisted number, because the JSON is what a later
+    measurement reads and the Markdown is what the owner reads."""
+    report = _report(
+        "stub",
+        "body_inline",
+        admitted=(("hiringcafe", "src:lands"), ("hiringcafe", "src:bodyless")),
+        persisted_new=(("hiringcafe", "src:lands"),),
+    )
+
+    lane = funnel_to_dict(_funnel((report,)))["lanes"][0]  # type: ignore[index]
+    assert lane["admitted"] == ["hiringcafe:src:lands", "hiringcafe:src:bodyless"]
+    assert lane["persisted_new"] == ["hiringcafe:src:lands"]
+
+    markdown = funnel_to_markdown(_funnel((report,)))
+    assert "2 new companies admitted · 1 persisted · 0 refused by the cap" in markdown
+    assert "- **persisted:** `hiringcafe:src:lands`" in markdown
+    # The two corrected sentences: the rendered note, and the docstring the note paraphrases.
+    assert "the reach this run ADDED" not in markdown
+    assert LaneReport.__doc__ is not None
+    assert "so its length is the reach this run ADDED" not in LaneReport.__doc__
 
 
 def test_the_markdown_section_is_absent_when_no_lane_ran() -> None:

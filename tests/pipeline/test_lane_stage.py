@@ -99,8 +99,13 @@ class StubLane:
         seed_attempts: tuple[tuple[int, bool], ...] = (),
         discovered_seeds: tuple[str, ...] = (),
         refused_seeds: tuple[str, ...] = (),
+        bodyless: tuple[tuple[str, str], ...] = (),
     ) -> None:
         self._companies = companies
+        # Admitted, then every body request for it failed. The real lanes emit no snapshot in
+        # exactly this case — `hiringcafe.collect` and `linkedin.collect` both guard the append
+        # with `if postings:` — and a snapshot is the only thing that ever writes a company row.
+        self._bodyless = frozenset(bodyless)
         self._outcomes = outcomes
         self._raises = raises
         # Carried onto the returned `LaneResult` so the stage can be presented a lane that crashed
@@ -138,6 +143,8 @@ class StubLane:
             if not admits(provider, slug):
                 continue
             self.landed.append((provider, slug))
+            if (provider, slug) in self._bodyless:
+                continue
             snapshots.append(
                 LaneCompanySnapshot(
                     provider=provider,
@@ -423,6 +430,101 @@ def test_admission_holds_no_connection_open_across_the_lanes_network_work(
 
 
 # --------------------------------------------------------------------------------------
+# T140 — cap approvals are not reach added
+# --------------------------------------------------------------------------------------
+
+
+def test_an_admitted_company_whose_bodies_all_fail_is_approved_and_never_stored(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Run 467 at n=2. Admission is decided BEFORE any body is fetched, so an approval is not
+    a company row: the bodyless company emits no snapshot, `_apply_snapshots` never upserts it,
+    and nothing in the store ever holds it. Two approved, ONE persisted, and the report must
+    carry both — with only `admitted` to read, this run reports 2 of reach it did not add."""
+    lane = StubLane(
+        [("hiringcafe", "src:lands"), ("hiringcafe", "src:bodyless")],
+        bodyless=(("hiringcafe", "src:bodyless"),),
+    )
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path),
+        lane,
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    assert report.admitted == (("hiringcafe", "src:lands"), ("hiringcafe", "src:bodyless"))
+    # The ground truth, counted through a different path than the one that produced the report:
+    # the store itself. Asserted BEFORE the report so a red run proves the gap is real.
+    assert _stored_slugs(engine) == {"src:lands"}
+    assert report.persisted_new == (("hiringcafe", "src:lands"),)
+
+
+def test_a_company_the_store_already_held_is_neither_admitted_nor_persisted_reach(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The control that stops `persisted_new` from being `len(snapshots)`. A known company is
+    admitted FREE and its snapshot DOES land — the convergence case a lane exists to produce —
+    but it widened reach by nothing, so it belongs in neither list. Two snapshots apply here
+    and only one of them is new reach."""
+    _known(engine, "greenhouse", "already")
+    lane = StubLane([("greenhouse", "already"), ("hiringcafe", "src:new")])
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path),
+        lane,
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    assert lane.landed == [("greenhouse", "already"), ("hiringcafe", "src:new")]
+    assert _open_posting_ids(engine) == {"already-1", "src:new-1"}, "only one snapshot applied"
+    assert report.admitted == (("hiringcafe", "src:new"),)
+    assert report.persisted_new == (("hiringcafe", "src:new"),)
+
+
+def test_the_two_counts_are_equal_when_every_approval_is_applied(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The equality control, and what stops the new field from being a constant: on a run where
+    nothing is deferred or refused a body, cap approvals ARE the reach added."""
+    lane = StubLane([("hiringcafe", f"src:{slug}") for slug in ("a", "b", "c")])
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path),
+        lane,
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    assert len(report.admitted) == 3
+    assert report.persisted_new == report.admitted
+
+
+def test_a_company_the_cap_refused_is_in_refused_and_in_neither_other_list(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Unchanged behaviour, named as a control: this ticket is reporting only, so the cap must
+    still bite at the same place and a refusal must still be IDENTIFIED rather than counted."""
+    lane = StubLane([("hiringcafe", "src:a"), ("hiringcafe", "src:b")])
+
+    report = _collect_lane(
+        engine,
+        _settings(tmp_path, lane_new_companies_per_run=1),
+        lane,
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    assert report.refused == (("hiringcafe", "src:b"),)
+    assert report.admitted == (("hiringcafe", "src:a"),)
+    assert report.persisted_new == (("hiringcafe", "src:a"),)
+
+
+# --------------------------------------------------------------------------------------
 # D3/D4 — what the lane writes
 # --------------------------------------------------------------------------------------
 
@@ -575,6 +677,7 @@ def test_the_run_log_line_names_a_silent_outage_and_stays_silent_otherwise() -> 
                 is_silent_outage=tally.is_silent_outage,
                 admitted=(),
                 refused=(),
+                persisted_new=(),
             )
         )
         return summary

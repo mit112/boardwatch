@@ -1082,10 +1082,22 @@ class LaneReport:
     `admitted` and `refused` are the two sides of the per-run company cap, as the
     `(provider, slug)` pairs the store keys a company on. Refusals are IDENTIFIED and not merely
     counted — a company dropped silently is indistinguishable from one the lane never saw, and
-    that difference is the whole diagnostic value. `admitted` holds only companies the store did
-    NOT already have, so its length is the reach this run ADDED rather than the companies the
-    lane touched; a lane that spent its whole cap on companies already stored would otherwise
-    report a full admission list and no new reach at all.
+    that difference is the whole diagnostic value. `admitted` holds the companies the cap
+    APPROVED — those the store did not already hold **at approval time** — so its length says
+    whether the cap bound the run, and a lane that spent its whole cap on companies already
+    stored would otherwise report a full admission list and no new reach at all.
+
+    `persisted_new` IS THE REACH THIS RUN ADDED, and it is a third quantity because `admitted`
+    is not that number. Admission is decided BEFORE a company's bodies are fetched — that
+    ordering is what makes the cap save requests instead of discarding paid-for ones — so an
+    approved company whose every body request failed, or whose bodies fell outside the remaining
+    body budget, emits no `LaneCompanySnapshot`, is never handed to `upsert_lane_company`, and
+    gets NO company row. It is approved and never stored. Measured over the store's whole funnel
+    history, 214 of 1,342 admissions (15.9%) across 27 of 27 runs were never persisted, never
+    once in the other direction; the headline expansion run reported 19 admitted against 7 rows.
+    It is the subset of `admitted` whose snapshots landed, so it is never the applied-snapshot
+    count: a company the store ALREADY held also lands a snapshot and belongs in neither list,
+    having added no reach.
 
     `search_pages` is `(search url, pages fetched)` per search the lane made, and it is here for
     the one thing a posting count cannot say: whether a facet stopped because it RAN OUT of
@@ -1124,6 +1136,7 @@ class LaneReport:
     is_silent_outage: bool
     admitted: tuple[tuple[str, str], ...]
     refused: tuple[tuple[str, str], ...]
+    persisted_new: tuple[tuple[str, str], ...]
     search_pages: tuple[tuple[str, int], ...] = ()
     fetch_seconds: float | None = None
     apply_seconds: float | None = None
@@ -2291,9 +2304,14 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 # Not derivable as `resolved == 0`, which is also true of a lane with no work.
                 "is_silent_outage": lane.is_silent_outage,
                 # The per-run company cap, both sides, as `provider:slug`. `admitted` counts
-                # only companies the store did not already hold, so it IS the reach added.
+                # the companies the cap APPROVED and the store did not already hold at that
+                # moment — which is what says whether the cap bound the run, NOT reach added.
                 "admitted": [f"{provider}:{slug}" for provider, slug in lane.admitted],
                 "refused": [f"{provider}:{slug}" for provider, slug in lane.refused],
+                # The reach actually added: the approved subset that became a company row.
+                # Beside `admitted` rather than replacing it, because an approval whose bodies
+                # were all unavailable is approved and never stored, and only this key sees it.
+                "persisted_new": [f"{provider}:{slug}" for provider, slug in lane.persisted_new],
                 # Pages actually fetched per search. Additive, like `lanes` itself was: `[]` for
                 # a lane whose search does not paginate, so a reader can tell "no paging here"
                 # from "one page each" without consulting the configuration that produced it.
@@ -2475,6 +2493,7 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
             "",
             f"{lane.attempted} attempted · {lane.resolved} resolved · "
             f"{len(lane.admitted)} new companies admitted · "
+            f"{len(lane.persisted_new)} persisted · "
             f"{len(lane.refused)} refused by the cap{outage}",
             "",
             _lane_cost_line(lane),
@@ -2485,10 +2504,15 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
         lines += [f"| {name} | {count} |" for name, count in lane.counts.items()]
         lines += [
             "",
-            "*Companies already in the store are admitted free and appear in neither list — "
-            "`admitted` is the reach this run ADDED, not the companies the lane touched.*",
+            "*Companies already in the store are admitted free and appear in no list below — "
+            "`admitted` is what the cap APPROVED and the store did not already hold at approval "
+            "time, not the companies the lane touched and not the reach this run added. "
+            "Admission is decided before any body is fetched, so an approved company whose "
+            "bodies were all unavailable is approved and never stored: `persisted` is the "
+            "subset that became a company row, and it is the reach added.*",
             "",
             f"- **admitted:** {_lane_companies(lane.admitted)}",
+            f"- **persisted:** {_lane_companies(lane.persisted_new)}",
             f"- **refused:** {_lane_companies(lane.refused)}",
         ]
         if lane.search_pages:
