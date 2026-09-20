@@ -29410,3 +29410,12 @@ only `run_gate_stage`'s freshness read requires it to match (`json_extract`, the
 idiom). A pre-key row is never fresh, so the next run re-judges the delivered slate once, bounded by
 `--top`. The advisory lane's cache key folds the same digest. Four red-first tests, one API-shaped
 red justified by mutation, 212 narrow tests green, gate run on the union.
+
+**Addendum 2 (20:15 CDT) — both owner questions RULED.** (1) m0079: *"both of those cases mean the
+same thing for me: that they are not eligible jobs, because I will never be able to obtain a
+clearance."* A group whose every member resolves `unmet` is `unmet` (and every-`met` is `met`), for
+different-span members too; only a mixed group keeps the presence-semantics rewrite. Folded into
+T103; the m0079 golden itself is unmoved because its fixture declares no `obtainable` fact. His live
+profile declares `obtainable: false` and all families as blockers (read `?mode=ro`, 20:14), so the
+rule reaches his own review-lane holds the day the engine batch lands. (2) F10's coverage sidecar:
+not now; revisit after T101–T105. The extractor pilot stays unticketed.

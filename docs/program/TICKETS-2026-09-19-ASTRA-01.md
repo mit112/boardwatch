@@ -170,9 +170,23 @@ the more specific one (field-qualified over level-only; obtainability over activ
 other. Different-span members keep today's presence semantics — this is what preserves
 `test_an_exclusive_group_keeps_presence_semantics`, the three-member two-sentence test, m0079 and
 m0171. Red first: regressions 6 and 7 (ineligible), plus the matching-field doctorate (eligible)
-and obtainable=True (eligible). The executor runs the whole corpus and reports EVERY golden that
-moves; the expected answer is none (m0583, m0430–m0436, m0847 stay uncertain because the surviving
-member abstains on the absent fact).
+and obtainable=True (eligible).
+
+**Widened by Mit's ruling (2026-09-19 20:15): a UNANIMOUS group is not a contradiction.** When every
+surviving member of an exclusive group in a family resolves `unmet`, the group is `unmet`; when
+every member resolves `met`, it is `met`. This applies to DIFFERENT-span members too (m0079's shape:
+`Active Secret clearance required; candidates must be able to obtain a clearance.` with
+`obtainable=False` is active-unmet + clearable-unmet ⇒ ineligible). Only a MIXED group — any
+`unknown`, or `met` beside `unmet` — keeps today's presence-semantics rewrite to unknown. Mit's
+words: *"both of those cases mean the same thing for me: that they are not eligible jobs, because I
+will never be able to obtain a clearance."* His live profile declares `obtainable: false`, so this
+fires on his own review-lane holds the day it lands. Red first: m0079's text with
+`obtainable=False` ⇒ ineligible (today: uncertain). Controls that must NOT move: m0079's own golden
+(no `obtainable` fact ⇒ clearable is `unknown` ⇒ mixed ⇒ uncertain), m0171 (unmet + unknown),
+`test_an_exclusive_group_keeps_presence_semantics` (obtainable=True: active unmet + clearable met
+⇒ mixed ⇒ uncertain). The executor runs the whole corpus and reports EVERY golden that moves; the
+expected answer is none (m0583, m0430–m0436, m0847 stay uncertain because the surviving member
+abstains on the absent fact).
 
 ## T104 — the two document-scoped degree escapes get bounded reach (F4)
 
@@ -215,14 +229,13 @@ Each PR moves `engine_version`; T105a/T105c also add catalog vocabulary (`rules_
    landing as one bump; T105 is designed during that batch and lands in it if the design is ready,
    otherwise in the one after. The alternative — land each as it is ready — costs one ledger
    re-key and confirm-clock restart per ticket.
-2. **m0079** (`Active Secret clearance required; candidates must be able to obtain a clearance.`
-   → `uncertain`). Ordinary conjunction says ineligible. T103 does not touch it; the question only
-   becomes live if F2 is ever widened beyond same-span subsumption. Record the convention or leave
-   the golden as is — either is a ruling, not a default.
-3. **F10, the verdict-neutral coverage sidecar.** Astra's case: row count cannot express
-   coverage (`Must be authorized to work in the US.` + an uncatalogued ten-year bar reads
-   `eligible` with one met row). Its proposal changes no verdict and no identity. Build it as an
-   analysis instrument, or leave the 33.9% zero-row class measured by the funnel alone.
+2. **m0079 — RULED 2026-09-19 20:15.** Active-required and obtainable-required both fail a
+   profile that can never obtain a clearance; such a posting is ineligible. Implemented as T103's
+   unanimous-group rule above. The m0079 GOLDEN itself does not move (its fixture declares no
+   `obtainable` fact, so it stays mixed ⇒ uncertain); the ruling changes the text/profile pair.
+3. **F10, the verdict-neutral coverage sidecar — RULED 2026-09-19 20:15: not now.** The judge
+   already reads every delivered lead in full (D-477). Revisit after T101–T105 land, when the
+   catalog's shape has changed.
 4. **The shared-resolver extractor pilot (F10's second half)** is a hypothesis astra itself says
    must beat "current judge plus targeted regex fixes" on a labeled full-JD set before activation.
    Not ticketed; revisit after T101–T105 have been measured.
