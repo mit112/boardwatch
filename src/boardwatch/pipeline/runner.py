@@ -545,6 +545,19 @@ class PipelineSummary:
     # again next run — and a `depth` lead the judge cleared ranks in tier 0 there, which is the
     # queue this knob exists to drain.
     gate_beyond_slate: int = 0
+    # T107 — the gate stage's item- and field-level coverage, which the batch count above
+    # cannot see. All-zero is the honest reading when `gate.enabled` is False, exactly as the
+    # four counts above it are; the funnel omits the whole block in that case. See
+    # `llm.gate_judge.GateStageResult` for what each one is measured against — in particular
+    # that answer coverage is read against `gate_sent`, never against `gate_candidates`.
+    gate_candidates: int = 0
+    gate_cached: int = 0
+    gate_sent: int = 0
+    gate_missing_items: int = 0
+    gate_refused_items: int = 0
+    gate_seniority_answered: int = 0
+    gate_seniority_unclear: int = 0
+    gate_seniority_unreadable: int = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -2227,6 +2240,14 @@ def run_pipeline(
         summary.gate_ineligible = gate_result.ineligible
         summary.gate_uncertain = gate_result.uncertain
         summary.gate_failed_open = gate_result.failed_open_batches
+        summary.gate_candidates = gate_result.candidates
+        summary.gate_cached = gate_result.cached
+        summary.gate_sent = gate_result.sent
+        summary.gate_missing_items = gate_result.missing_items
+        summary.gate_refused_items = gate_result.refused_items
+        summary.gate_seniority_answered = gate_result.seniority_answered
+        summary.gate_seniority_unclear = gate_result.seniority_unclear
+        summary.gate_seniority_unreadable = gate_result.seniority_unreadable
         summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
         # T63 — THE CUT, and it is the last line at which `leads` is the depth slate. Everything
         # below sees only the delivered slate: the lane split, projection, the tailor loop, the
@@ -2972,6 +2993,58 @@ def run_pipeline(
             console.print(f"  ! {gate_alert}", markup=False)
             summary.errors.append(gate_alert)
             append_run_error(engine, run_id, gate_alert)
+        # T107 — the ITEM-level half of the same alert, which the batch count above cannot
+        # see at all. A PARTIAL answer and a per-item refusal each append a note at the GATE
+        # stage, which is BELOW `escalatable_from`, so run 467 (2026-09-19, the live 04:00
+        # tick) recorded `batch 5/7 partly failed open, 1 of 13 verdicts missing (label
+        # 302235)`, left `gate_failed_open` at 0, and escalated nothing: that posting is still
+        # open, still deterministic `uncertain`, and carries zero gate rows. Raised HERE,
+        # beside its sibling and above `_emit_morning`, so the digest and the escalation
+        # slice both carry it.
+        #
+        # `gate_sent == 0` ABSTAINS — every candidate already carried a current verdict, or
+        # the stage never built a request. Zero coverage of zero items is not a coverage
+        # failure, and the funnel says which of the two it was. `missing` and `refused` are
+        # separate numbers in one alert because they are one question ("which leads did this
+        # run fail to judge") with two causes.
+        if summary.gate_sent and (summary.gate_missing_items or summary.gate_refused_items):
+            coverage_alert = (
+                f"gate: {summary.gate_missing_items} of {summary.gate_sent} judged items came "
+                f"back with no verdict and {summary.gate_refused_items} were answered then "
+                "refused — those leads were left unchanged, never dropped, and carry no gate "
+                "row at all"
+            )
+            console.print(f"  ! {coverage_alert}", markup=False)
+            summary.errors.append(coverage_alert)
+            append_run_error(engine, run_id, coverage_alert)
+        # T107 — the FIELD-level half, and the degradation with no signal whatsoever today.
+        # `_seniority_fit` folds an absent or out-of-catalog answer to `"unclear"`, which is
+        # the right DELIVERY direction (it withholds nothing) and an unreadable REPORTING one:
+        # `"unclear"` is also what a judge that genuinely could not tell returns, and 215 of
+        # the 1,999 stored verdicts are exactly that. So a judge that silently stops emitting
+        # the field that drives the seniority hold reads as a wholly successful run.
+        #
+        # Armed only when the hold is: with `gate.seniority_hold` off the column is inert
+        # (`delivery_queries` never reads it) and an unreadable answer costs nothing. A STRICT
+        # MAJORITY rather than any single miss, because this fires daily into the escalation
+        # channel and one oddly-spelled answer in thirteen is noise, while the failure this
+        # exists to catch — a prompt or policy drift that drops the field — hits every answer.
+        seniority_answers = (
+            summary.gate_seniority_answered
+            + summary.gate_seniority_unclear
+            + summary.gate_seniority_unreadable
+        )
+        unreadable_majority = summary.gate_seniority_unreadable * 2 > seniority_answers
+        if settings.gate.seniority_hold and unreadable_majority:
+            seniority_alert = (
+                "gate: `seniority_fit` was absent or out-of-catalog on "
+                f"{summary.gate_seniority_unreadable} of {seniority_answers} verdicts while "
+                "`gate.seniority_hold` is armed — every one of them reads `unclear` and holds "
+                "nothing; an explicit `unclear` is a real answer and is not counted here"
+            )
+            console.print(f"  ! {seniority_alert}", markup=False)
+            summary.errors.append(seniority_alert)
+            append_run_error(engine, run_id, seniority_alert)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
@@ -3197,6 +3270,14 @@ def _emit_funnel(
                 uncertain=summary.gate_uncertain,
                 failed_open_batches=summary.gate_failed_open,
                 beyond_slate=summary.gate_beyond_slate,
+                candidates=summary.gate_candidates,
+                cached=summary.gate_cached,
+                sent=summary.gate_sent,
+                missing_items=summary.gate_missing_items,
+                refused_items=summary.gate_refused_items,
+                seniority_answered=summary.gate_seniority_answered,
+                seniority_unclear=summary.gate_seniority_unclear,
+                seniority_unreadable=summary.gate_seniority_unreadable,
             )
             if settings.gate.enabled
             else None

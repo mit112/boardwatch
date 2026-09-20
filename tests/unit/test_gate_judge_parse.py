@@ -39,13 +39,15 @@ def _verdict(label: str) -> dict[str, object]:
 
 def test_a_skipped_lead_is_reported_missing_and_the_rest_are_kept() -> None:
     """RED before: `ValueError: expected a JSON array of 3 verdicts, got 2`."""
-    verdicts, missing = _parse_verdicts(_stdout([_verdict("1"), _verdict("3")]), ["1", "2", "3"])
+    verdicts, missing, _ = _parse_verdicts(
+        _stdout([_verdict("1"), _verdict("3")]), ["1", "2", "3"]
+    )
     assert [v.label for v in verdicts] == ["1", "3"]
     assert missing == ("2",)
 
 
 def test_a_complete_answer_reports_nothing_missing() -> None:
-    verdicts, missing = _parse_verdicts(_stdout([_verdict("2"), _verdict("1")]), ["1", "2"])
+    verdicts, missing, _ = _parse_verdicts(_stdout([_verdict("2"), _verdict("1")]), ["1", "2"])
     assert sorted(v.label for v in verdicts) == ["1", "2"]
     assert missing == ()
 
@@ -95,7 +97,7 @@ def test_an_unreadable_seniority_answer_reads_unclear_and_never_no(
     those decide a VERDICT, and this one only decides a delivery lane. A batch that answered the
     six families correctly must not be thrown away over a tenth field it spelled oddly.
     """
-    verdicts, missing = _parse_verdicts(_stdout([{**_verdict("1"), **answer}]), ["1"])
+    verdicts, missing, _ = _parse_verdicts(_stdout([{**_verdict("1"), **answer}]), ["1"])
     assert missing == ()
     assert verdicts[0].seniority_fit == "unclear"
 
@@ -104,7 +106,7 @@ def test_a_well_formed_seniority_answer_is_carried_through() -> None:
     """The other half: the control that keeps the test above from passing on a parser that
     hard-codes `"unclear"` for everything."""
     for value in ("yes", "no", "unclear"):
-        verdicts, _ = _parse_verdicts(
+        verdicts, _, _ = _parse_verdicts(
             _stdout([{**_verdict("1"), "seniority_fit": value}]), ["1"]
         )
         assert verdicts[0].seniority_fit == value
@@ -165,7 +167,7 @@ def test_a_non_mapping_envelope_fails_its_batch_open(
     `_judge_batch`'s catch tuple and therefore left the stage entirely."""
     _returns(monkeypatch, outer)
 
-    verdicts, note = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+    verdicts, note, _ = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
 
     assert verdicts is None
     assert note is not None and "unusable response" in note
@@ -179,7 +181,7 @@ def test_an_out_of_vocabulary_decision_fails_its_batch_open(
     `accept_oracle_verdict` INSIDE `run_gate_stage`'s write transaction."""
     _returns(monkeypatch, _stdout([{**_verdict("1"), "decision": "move"}]))
 
-    verdicts, note = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+    verdicts, note, _ = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
 
     assert verdicts is None
     assert note is not None and "move" in note
@@ -191,7 +193,7 @@ def test_an_out_of_vocabulary_confidence_fails_its_batch_open(
     """`confidence` was validated against nothing, anywhere, and persisted verbatim."""
     _returns(monkeypatch, _stdout([{**_verdict("1"), "confidence": "nonsense"}]))
 
-    verdicts, note = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+    verdicts, note, _ = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
 
     assert verdicts is None
     assert note is not None and "nonsense" in note
@@ -212,7 +214,7 @@ def test_a_process_launch_failure_fails_its_batch_open(
     external, both `OSError`, and both escaped."""
     _raises(monkeypatch, exc)
 
-    verdicts, note = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+    verdicts, note, _ = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
 
     assert verdicts is None
     assert note is not None and "claude" in note
@@ -241,7 +243,7 @@ def test_the_three_named_process_failures_keep_their_own_notes(
     the morning digest print. Each must survive the widening verbatim."""
     _raises(monkeypatch, exc)
 
-    verdicts, note = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+    verdicts, note, _ = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
 
     assert verdicts is None
     assert note is not None and expected in note
@@ -370,7 +372,9 @@ def test_a_verdict_that_fails_acceptance_costs_its_own_lead_and_no_other(
         OracleVerdict(label=str(good_id), decision="eligible", reason=None, evidence="",
                       confidence="high"),
     ]
-    monkeypatch.setattr(gate_judge, "_judge_batch", lambda *a, **k: (verdicts, None))
+    monkeypatch.setattr(
+        gate_judge, "_judge_batch", lambda *a, **k: (verdicts, None, ("answered",) * 2)
+    )
 
     kept, result = run_gate_stage(
         engine, _settings(tmp_path), [_Lead(bad_id), _Lead(good_id)], run_id=None
@@ -381,3 +385,60 @@ def test_a_verdict_that_fails_acceptance_costs_its_own_lead_and_no_other(
     assert _persisted(engine) == {good_version: "eligible"}
     assert bad_version not in _persisted(engine)
     assert any(str(bad_id) in error for error in result.errors), result.errors
+
+
+# ------------------------------- T107: the three-way `seniority_fit` answer split
+#
+# `_seniority_fit` folds an absent or out-of-catalog answer to `"unclear"` — the inert value,
+# which is the right DELIVERY direction and the wrong REPORTING one: `"unclear"` is also what a
+# judge that genuinely could not tell returns. Of 1,999 stored gate verdicts 215 carry an
+# explicit `"unclear"`, so a two-way split would report a real answer as a parse failure on a
+# seventh of the corpus. The parser therefore reports HOW each answer read, beside the value.
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        pytest.param({"seniority_fit": "yes"}, "answered", id="yes"),
+        pytest.param({"seniority_fit": "no"}, "answered", id="no"),
+        pytest.param({"seniority_fit": "unclear"}, "unclear", id="a REAL explicit unclear"),
+        pytest.param({}, "unreadable", id="absent — a judge under the old policy"),
+        pytest.param({"seniority_fit": None}, "unreadable", id="null"),
+        pytest.param({"seniority_fit": "NO"}, "unreadable", id="wrong case"),
+        pytest.param({"seniority_fit": "senior"}, "unreadable", id="out of catalog"),
+        pytest.param({"seniority_fit": 0}, "unreadable", id="wrong type"),
+    ],
+)
+def test_the_parser_reports_how_each_seniority_answer_read(
+    answer: dict[str, object], expected: str
+) -> None:
+    _, _, seniority = _parse_verdicts(_stdout([{**_verdict("1"), **answer}]), ["1"])
+    assert seniority == (expected,)
+
+
+def test_the_seniority_split_is_one_token_per_verdict_in_answer_order() -> None:
+    """The split must survive a batch, not just a single item: the field-coverage alarm is a
+    SHARE, and a parser that reported only the last answer's quality would read 1/13 as 1/1."""
+    _, _, seniority = _parse_verdicts(
+        _stdout([
+            {**_verdict("1"), "seniority_fit": "yes"},
+            {**_verdict("2"), "seniority_fit": "unclear"},
+            _verdict("3"),
+        ]),
+        ["1", "2", "3"],
+    )
+    assert seniority == ("answered", "unclear", "unreadable")
+
+
+def test_a_failed_batch_reports_no_seniority_answers_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A batch that failed open answered nothing, so it contributes nothing to the field
+    coverage denominator — folding its items in as `unreadable` would make a process outage
+    read as a parse-quality failure, and those need different fixes."""
+    _returns(monkeypatch, "null")
+
+    verdicts, note, seniority = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+
+    assert verdicts is None and note is not None
+    assert seniority == ()

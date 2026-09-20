@@ -174,6 +174,13 @@ _TOP_MISSING = 10
 # `tailor.entered` against `projection.advanced` across two runs would read T43's lane split as
 # leads appearing from nowhere. `projected_leads.in_memory` changes meaning with it (the apply
 # lane, not every delivered lead). A changed meaning is exactly what this field signals.
+# **T107's gate coverage counters do NOT bump it**, on the D-113 → `scan.fetch_cost` precedent.
+# No new top-level section — `gate` has been here since T42 — and no existing key changes
+# MEANING: `judged` still counts persisted verdicts, `failed_open_batches` still counts BATCHES.
+# What was invisible is the denominator those numbers were always read against. A funnel written
+# before this exists simply lacks the keys, which is the ABSENT-not-zero direction this block
+# already uses for `instrumented: false`: a pre-instrumentation run must not read as a run with
+# zero missing items.
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -706,6 +713,14 @@ class GateCounters:
     leads are inside the shortlist stage's `capped_by_top_n`, because for delivery that is
     exactly what they were. 0 means the run delivered everything it judged, which is what
     `gate.depth = 0` always produces.
+
+    `candidates`/`cached`/`sent`/`missing_items`/`refused_items` and the three-way
+    `seniority_*` split are T107, and they are what make zero judgments legible: an all-cache
+    run and a missing prerequisite used to produce identical zeros. Expected fresh-answer
+    coverage is measured against `sent`, NEVER against `candidates` — a lead that already
+    carried a current verdict was never asked about. `seniority_unclear` is a REAL explicit
+    answer from the judge and is never folded into `seniority_unreadable`, which is the absent
+    or out-of-catalog case: 215 of the 1,999 stored verdicts are the former.
     """
 
     judged: int
@@ -714,6 +729,14 @@ class GateCounters:
     uncertain: int
     failed_open_batches: int
     beyond_slate: int = 0
+    candidates: int = 0
+    cached: int = 0
+    sent: int = 0
+    missing_items: int = 0
+    refused_items: int = 0
+    seniority_answered: int = 0
+    seniority_unclear: int = 0
+    seniority_unreadable: int = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -728,6 +751,14 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "uncertain": None,
             "failed_open_batches": None,
             "beyond_slate": None,
+            "candidates": None,
+            "cached": None,
+            "sent": None,
+            "missing_items": None,
+            "refused_items": None,
+            "seniority_answered": None,
+            "seniority_unclear": None,
+            "seniority_unreadable": None,
         }
     return {
         "instrumented": True,
@@ -737,7 +768,47 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "uncertain": gate.uncertain,
         "failed_open_batches": gate.failed_open_batches,
         "beyond_slate": gate.beyond_slate,
+        "candidates": gate.candidates,
+        "cached": gate.cached,
+        "sent": gate.sent,
+        "missing_items": gate.missing_items,
+        "refused_items": gate.refused_items,
+        "seniority_answered": gate.seniority_answered,
+        "seniority_unclear": gate.seniority_unclear,
+        "seniority_unreadable": gate.seniority_unreadable,
     }
+
+
+def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
+    """The `## Gate` paragraph. Three lines rather than one, and a helper rather than three
+    conditional expressions on the same `is None`."""
+    if gate is None:
+        return (
+            "not armed — `gate.enabled` was false this run, which is NOT the same as a run "
+            "that judged nothing",
+        )
+    coverage = (
+        # The `sent == 0` reading the ticket's fourth point asks for, and it is NOT an alarm:
+        # zero coverage of zero items is not a coverage failure. Said in words because the
+        # numbers alone read the same as a judge that answered nothing.
+        f"nothing was sent to the judge this run: {gate.cached} of {gate.candidates} "
+        "candidates already carried a current verdict"
+        if gate.sent == 0
+        else f"{gate.candidates} candidates · {gate.cached} already current · "
+        f"{gate.sent} sent · {gate.missing_items} sent items came back with no verdict · "
+        f"{gate.refused_items} answered then refused"
+    )
+    return (
+        f"{gate.judged} judged ({gate.eligible} eligible, {gate.ineligible} ineligible, "
+        f"{gate.uncertain} uncertain) · {gate.failed_open_batches} batch(es) failed open · "
+        f"{gate.beyond_slate} beyond the delivered slate",
+        "",
+        coverage,
+        "",
+        f"`seniority_fit`: {gate.seniority_answered} answered yes/no · "
+        f"{gate.seniority_unclear} explicit `unclear` · "
+        f"{gate.seniority_unreadable} absent or out-of-catalog",
+    )
 
 
 # The closed catalog of Tier-B rewrite outcomes. `drop_reason` is an untyped string at the
@@ -2818,15 +2889,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "",
         "## Gate",
         "",
-        (
-            "not armed — `gate.enabled` was false this run, which is NOT the same as a run "
-            "that judged nothing"
-            if funnel.gate is None
-            else f"{funnel.gate.judged} judged ({funnel.gate.eligible} eligible, "
-            f"{funnel.gate.ineligible} ineligible, {funnel.gate.uncertain} uncertain) · "
-            f"{funnel.gate.failed_open_batches} batch(es) failed open · "
-            f"{funnel.gate.beyond_slate} beyond the delivered slate"
-        ),
+        *_gate_lines(funnel.gate),
         "",
         "*T42 (D-477's \"lever\"): a headless final-eligibility-gate judge over the whole "
         "delivered slate, JD-and-facts-only (never a prior engine verdict), routed through "
@@ -2840,6 +2903,18 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "presented, never recorded `seen`, so they rank again next run carrying the verdict "
         "this run bought for them. They are counted in the shortlist stage's "
         "`capped_by_top_n`, which is what they were for delivery.*",
+        "",
+        "*T107, the second and third lines: `sent` is the only honest denominator for answer "
+        "coverage — a `cached` lead was never asked about, so measuring against `candidates` "
+        "would report a well-behaved all-cache run as a total outage. `missing_items` counts "
+        "sent labels NO answer named (run 467 lost posting 302235 that way, with "
+        "`failed_open_batches` at 0 and no alert anywhere); `refused_items` counts items that "
+        "WERE answered and whose verdict `accept_oracle_verdict` then refused — a different "
+        "fault needing a different fix. `seniority_fit` is split three ways because the parser "
+        "folds an absent or out-of-catalog answer to `unclear`, which is also what a judge "
+        "that genuinely could not tell returns: 215 of 1,999 stored verdicts are a REAL "
+        "explicit `unclear` and counting those as malformed would report a seventh of the "
+        "corpus as a parse failure.*",
         "",
         "## Stub rate",
         "",
