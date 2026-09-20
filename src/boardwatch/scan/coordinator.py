@@ -29,6 +29,7 @@ from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SE
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher, host_key
 from boardwatch.core.settings import Settings
+from boardwatch.notify.scan_health import degraded_scan_alert
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.apply import apply_board
@@ -103,16 +104,20 @@ def _lock_held_message(lock_path: Path, meta_path: Path) -> str:
     )
 
 
-def is_systemic_scan_outage(*, attempted: int, complete: int, unchanged: int) -> bool:
+def is_systemic_scan_outage(
+    *, attempted: int, complete: int, unchanged: int, partial: int
+) -> bool:
     """CLAUDE.md's fail-safe table: "systemic outage => fatal (prevents the silent empty day)".
 
-    Boards were attempted and NOT ONE completed (nor was left unchanged) is a DNS/network
-    failure, not a few dead slugs. A few dead boards are NOT this: Workday returns `partial`
-    routinely, and only "attempted some, completed/unchanged none" is the outage. This is the
-    single predicate both `run_scan` (standalone) and `run_pipeline` classify a run's outcome
-    by, so the two callers can never disagree on the same event (D-037).
+    Boards were attempted and NOT ONE returned any usable postings — none complete, none
+    unchanged, none even `partial` — is a DNS/network-wide failure, not a few dead slugs. A
+    `partial` board holds REAL POSTINGS, so a scan containing one has evidence in hand and is
+    degraded success, never the silent empty day this guard exists to prevent; it is reported
+    by `notify/scan_health.degraded_scan_alert` instead. This is the single predicate both
+    `run_scan` (standalone) and `run_pipeline` classify a run's outcome by, so the two callers
+    can never disagree on the same event (D-037).
     """
-    return attempted > 0 and complete == 0 and unchanged == 0
+    return attempted > 0 and complete == 0 and unchanged == 0 and partial == 0
 
 
 def systemic_scan_outage_reason(attempted: int) -> str:
@@ -121,11 +126,13 @@ def systemic_scan_outage_reason(attempted: int) -> str:
     Shared for exactly the reason the predicate is (D-037): `run_scan` and `run_pipeline` both
     persist this sentence onto the run row, and two hand-written copies would drift into two
     different accounts of one event. A `failed` row is only useful if it says why, and this is
-    the whole of the why for the outage case — the per-board errors that usually explain a bad
-    scan are absent by construction here, since a board that returns `partial` is counted
-    neither complete nor failed and contributes no error line of its own.
+    the whole of the why for the outage case — though every board in it failed outright, so
+    each also contributes an error line of its own.
     """
-    return f"systemic scan outage: {attempted} boards attempted, none completed"
+    return (
+        f"systemic scan outage: {attempted} boards attempted, "
+        "none returned any usable postings"
+    )
 
 
 @dataclass
@@ -528,17 +535,33 @@ def _scan_body(
         attempted=summary.companies,
         complete=summary.complete,
         unchanged=summary.unchanged,
+        partial=summary.partial,
     )
-    # A `failed` row whose errors_json is `[]` cannot answer why it failed, and the outage is
-    # the one fatal state here that leaves no error line behind on its own: a board that comes
-    # back `partial` is counted neither complete nor failed, so "one board attempted, it
-    # returned partial" trips the predicate with an empty error list. Recorded ONLY when
-    # `finish`, because that is exactly when this caller owns the terminal status. Under
-    # `boardwatch run` the pipeline owns it and appends the same sentence to its own error
-    # list, so appending here too would write one event onto one row twice — the duplication
-    # this function's per-board errors are already careful to avoid.
+    # A `failed` row whose errors_json is `[]` cannot answer why it failed. Every board in an
+    # outage now failed outright and wrote its own error line, so this sentence is the run-level
+    # account rather than the only one. Recorded ONLY when `finish`, because that is exactly
+    # when this caller owns the terminal status. Under `boardwatch run` the pipeline owns it
+    # and appends the same sentence to its own error list, so appending here too would write
+    # one event onto one row twice — the duplication this function's per-board errors are
+    # already careful to avoid.
     if outage and finish:
         summary.errors.append(systemic_scan_outage_reason(summary.companies))
+    elif finish:
+        # The degraded half, and it exists because narrowing the predicate above moved this
+        # caller from `failed`-with-a-reason to `ok`-with-NOTHING. The five live instances of
+        # the partial-only shape (runs 23/26/31/36/37) were all STANDALONE scans — every one
+        # carries `corpus_evaluated IS NULL`, and two ingested 879 and 344 postings — so the
+        # pipeline-side alert `run_pipeline` raises cannot see any of them. A run that stops
+        # being fatal must not become silent, which is `degraded_scan_alert`'s own rule.
+        #
+        # Gated on `finish` for exactly the reason the outage sentence above is: under
+        # `boardwatch run` the scan is called with `finish=False` and the pipeline appends its
+        # own copy, so recording here too would write one event onto one row twice.
+        degraded = degraded_scan_alert(
+            summary.companies, summary.complete, summary.unchanged, summary.partial
+        )
+        if degraded is not None:
+            summary.errors.append(degraded)
     finalize_run(
         engine, active_run_id,
         boards_attempted=summary.companies,

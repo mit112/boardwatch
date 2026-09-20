@@ -14,6 +14,7 @@ import httpx
 import pytest
 import respx
 from filelock import FileLock
+from gh_fixtures import gh_jobs
 from rich.console import Console
 from sqlalchemy import func, insert, select
 from typer.testing import CliRunner
@@ -23,7 +24,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import _cohort_guard, _slug, _zero_output_guard, run_pipeline
 from boardwatch.providers.registry import build_providers
-from boardwatch.scan.coordinator import ScanLockHeldError
+from boardwatch.scan.coordinator import ScanLockHeldError, run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
@@ -1160,7 +1161,14 @@ def test_a_successful_run_pings_the_heartbeat(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A clean run fires the dead-man's-switch exactly once. The whole design rests on a
-    successful run being the ONLY thing that pings, so that a missed run produces silence."""
+    successful run being the ONLY thing that pings, so that a missed run produces silence.
+
+    The CONTROL for T129's durable-status clause: this run's `finish_run` genuinely succeeds,
+    so the row is stamped `ok` with a `finished_at` — asserted here rather than assumed,
+    because "the ping fired" and "the row closed" are the two halves of the same claim and a
+    clause that withheld the ping on a perfectly finished run would be a regression this test
+    is the only one positioned to catch.
+    """
     _ready(env)
 
     import boardwatch.pipeline.runner as runner_mod
@@ -1172,6 +1180,15 @@ def test_a_successful_run_pings_the_heartbeat(
 
     assert summary.fatal is None, "guard: this must be the success path"
     assert summary.tailored, "guard: the fixture produced no lead, so success proves nothing"
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs.c.status, tables.runs.c.finished_at).where(
+                tables.runs.c.id == summary.run_id
+            )
+        ).one()
+    assert row.status == "ok" and row.finished_at is not None, (
+        f"guard: terminal persistence must genuinely succeed here — status={row.status!r}"
+    )
     assert pings == [1], "a clean run did not ping the heartbeat exactly once"
 
 
@@ -1839,5 +1856,608 @@ def test_the_apply_lane_alert_reaches_the_MORNING_DIGEST(
     rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
     assert "MARKER-apply-lane" in rendered, (
         "the apply-lane alert is missing from the morning digest — the call sits BELOW "
+        "`_emit_morning`, where it fires, is recorded, and is invisible to an absent owner"
+    )
+
+
+# --- T129: the ping may not outrun the run's own bookkeeping -------------------------------
+#
+# The heartbeat gate asked three questions — did the run go fatal, did the funnel write, did
+# the digest write — and none of them asked whether the run CLOSED ITS OWN ROW. `finish_run`
+# raising leaves `status='running'` with `finished_at` NULL while `fatal` stays None and both
+# artifacts write, so the success-only monitor was told a run succeeded that has no terminal
+# status. Runs 310 and 312 in the live store sat in exactly that state for 35.2 hours and were
+# closed by the reaper; nothing else noticed. The same failure was invisible to escalation too,
+# because its note was appended ABOVE `escalatable_from`.
+
+
+def _terminal_row(data_dir: Path, run_id: int):
+    with get_engine(data_dir).connect() as conn:
+        return conn.execute(
+            select(tables.runs.c.status, tables.runs.c.finished_at).where(
+                tables.runs.c.id == run_id
+            )
+        ).one()
+
+
+def _escalation_spy(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
+    """Captures `summary.errors[escalatable_from:]` — the slice is a local in `run_pipeline`
+    and observable nowhere else, so a spy on `escalate_alerts` is the only way to assert
+    membership of it rather than of `summary.errors` (where every stage error also lands)."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+    return captured
+
+
+def test_a_run_that_never_closed_its_row_does_not_ping_the_heartbeat(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect itself. `finish_run` raises on both attempts, so the row stays `running` with
+    `finished_at` NULL — and the run is otherwise spotless: non-fatal, funnel written, digest
+    written. Before T129 the three-clause gate saw nothing wrong and pinged GREEN, which is the
+    one thing a success-only dead-man's switch must never do: the monitor's whole contract is
+    that a ping means a completed run.
+
+    `calls == 2` is asserted here as well as in the retry test, and it pins the OTHER
+    direction: the re-attempt is bounded at one, not a loop inside a `finally`.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    calls: list[int] = []
+
+    def finish_boom(*_a: object, **_k: object) -> None:
+        calls.append(1)
+        raise RuntimeError("database is locked")
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "finish_run", finish_boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, "guard: the run itself must be clean, or this proves nothing"
+    assert summary.funnel is not None, "guard: the funnel clause must not be what withholds"
+    assert summary.morning is not None, "guard: the digest clause must not be what withholds"
+    row = _terminal_row(env, summary.run_id)
+    assert row.status == "running" and row.finished_at is None, (
+        "guard: the row must genuinely be unfinished for this to be the case under test"
+    )
+    assert pings == [], (
+        "a run whose row says `running` pinged the success-only monitor — runs 310/312's shape, "
+        "reported as health"
+    )
+    assert len(calls) == 2, f"finish_run was attempted {len(calls)} times, expected exactly 2"
+
+
+def test_a_finish_run_that_fails_once_and_succeeds_on_the_retry_closes_the_row_and_pings(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Transient contention must not cost the run its terminal status. `finish_run` owns its
+    transaction, so the attempt that raised committed nothing and a second attempt writes what
+    the first meant to — the row closes `ok`, the ping fires, and no failure note is raised at
+    all. The control for this is the test above: both attempts failing sends zero pings.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    real_finish = runner_mod.finish_run
+    calls: list[int] = []
+
+    def flaky(*a: object, **k: object) -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("database is locked")
+        real_finish(*a, **k)  # type: ignore[arg-type]
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "finish_run", flaky)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert len(calls) == 2, f"the retry did not happen ({len(calls)} attempt(s))"
+    row = _terminal_row(env, summary.run_id)
+    assert row.status == "ok" and row.finished_at is not None, (
+        f"the retry did not close the row: status={row.status!r}"
+    )
+    assert pings == [1], "a run whose row DID close on the retry was denied its ping"
+    assert not [e for e in summary.errors if "finish_run failed" in e], (
+        f"a recovered write still reported a failure: {summary.errors}"
+    )
+
+
+def test_a_failure_to_close_the_run_row_is_ESCALATED(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The note was appended ABOVE `escalatable_from`, so the most consequential alert the
+    finalize block can raise was the one alert excluded from the report — invisible to the
+    heartbeat AND to the escalation channel at the same time.
+
+    The control is the discriminating half: an ordinary per-board stage error must STILL stay
+    out of the slice after the mark moved. Escalating one is how this channel would train its
+    reader to ignore it — measured over runs 109-133, nine ordinary `status=ok` runs carried a
+    single dead slug's 404 and would each have driven the monitor DOWN.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def finish_boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(runner_mod, "finish_run", finish_boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+    # A PRE-finalize stage error, injected the way the lane stage produces one.
+    monkeypatch.setattr(
+        runner_mod, "_run_lanes", lambda *_a, **_k: ([], ["whatnot: HTTP 404 for slug `plaid`"])
+    )
+    captured = _escalation_spy(monkeypatch)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert captured, "escalation was never called"
+    payload = captured[-1]
+    assert any("finish_run failed" in alert for alert in payload), (
+        f"the run row was left unfinished and nothing was escalated: {payload}"
+    )
+    assert not any("whatnot: HTTP 404" in alert for alert in payload), (
+        "a pre-finalize STAGE error reached the escalation payload — armed, an ordinary run "
+        "with one dead board slug would drive the monitor DOWN"
+    )
+    assert any("whatnot: HTTP 404" in e for e in summary.errors), (
+        "guard: the stage error must still reach summary.errors and the digest"
+    )
+
+
+def test_a_fatal_run_still_closes_its_row_as_failed_and_stays_silent(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fatal path is unchanged by the durable-status clause: the row is still stamped
+    `failed` with a `finished_at`, and the ping is still withheld — by `fatal`, exactly as
+    before. A clause that accidentally left a fatal run's row open would be a regression in the
+    reaper's favour and invisible to every other test here."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("resume.yaml is missing")
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "run_tailor", boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is not None, "guard: this must be the fatal path"
+    row = _terminal_row(env, summary.run_id)
+    assert row.status == RUN_FAILED, f"a fatal run was closed as {row.status!r}"
+    assert row.finished_at is not None, "a fatal run was left open for the reaper"
+    assert pings == [], "a fatal run pinged the heartbeat"
+
+
+# --- T129: the four finalization blocks that had no `try` at all ---------------------------
+#
+# Thirteen `append_run_error` calls in the finalize block are unguarded; four of them sat in
+# blocks with no `try` of any kind. A store fault on one of those writes aborted finalization
+# BEFORE `_emit_morning` and the heartbeat gate, so a soft alert about a degraded run turned
+# into a run with no digest, no ping and no escalation — strictly worse than the alert it was
+# trying to raise.
+
+
+def _store_refuses(monkeypatch: pytest.MonkeyPatch, marker: str) -> None:
+    """Make `append_run_error` raise for ONE note — the block under test — and behave normally
+    for every other, so the injection cannot be mistaken for a store that is down."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    real = runner_mod.append_run_error
+
+    def guarded(engine: object, run_id: int, note: str) -> None:
+        if marker in note:
+            raise RuntimeError("errors_json write refused")
+        real(engine, run_id, note)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runner_mod, "append_run_error", guarded)
+
+
+def _fake_gate_stage(monkeypatch: pytest.MonkeyPatch, **counters: int) -> None:
+    """Drive the gate's finalize-block alerts by their inputs, without a judge. The stage
+    returns the slate unchanged on every fail-open path, so an identity slate plus a counted
+    result is exactly what a real degraded run hands the finalize block."""
+    import boardwatch.pipeline.runner as runner_mod
+    from boardwatch.llm.gate_judge import GateStageResult
+
+    def fake(
+        engine: object, settings: object, leads: list[object], **_k: object
+    ) -> tuple[list[object], GateStageResult]:
+        return leads, GateStageResult(**counters)
+
+    monkeypatch.setattr(runner_mod, "run_gate_stage", fake)
+
+
+def _seniority_hold(data_dir: Path) -> None:
+    config_dir = load_settings(data_dir=data_dir).config_dir
+    (config_dir / "config.toml").write_text(
+        "[gate]\nseniority_hold = true\n", encoding="utf-8"
+    )
+
+
+def test_a_scan_outage_alert_that_cannot_be_recorded_does_not_take_the_digest_with_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The partial scan-outage alert had no `try`: a store fault on its one write aborted the
+    finally, and the run that had just lost most of its fleet also lost its digest and its
+    heartbeat decision."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "scan_outage_alert", lambda *_a, **_k: "MARKER-outage")
+    _store_refuses(monkeypatch, "MARKER-outage")
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=HEALTHY_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    assert summary.fatal is None, f"guard: the run must be otherwise clean — {summary.fatal}"
+    assert any("MARKER-outage" in e for e in summary.errors), "guard: the alert never fired"
+    assert summary.morning is not None, (
+        "a store fault on the scan-outage alert aborted finalization before the digest"
+    )
+    assert pings == [1], "the heartbeat decision was never reached"
+
+
+def test_a_scan_outage_alert_that_records_cleanly_behaves_as_before(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for the test above: same alert, no injection. It reaches `summary.errors`, the
+    digest and `runs.errors_json`, which is what the guard must not change."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "scan_outage_alert", lambda *_a, **_k: "MARKER-outage")
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=HEALTHY_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    assert any("MARKER-outage" in e for e in summary.errors)
+    assert summary.morning is not None and pings == [1]
+    with get_engine(env).connect() as conn:
+        stored = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    assert stored is not None and any("MARKER-outage" in e for e in stored), (
+        "the guard swallowed a write that succeeded"
+    )
+
+
+def test_a_gate_failed_open_alert_that_cannot_be_recorded_does_not_take_the_digest_with_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    _fake_gate_stage(monkeypatch, failed_open_batches=1)
+    _store_refuses(monkeypatch, "batch(es) failed open")
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, f"guard: the run must be otherwise clean — {summary.fatal}"
+    assert any("batch(es) failed open" in e for e in summary.errors), "guard: no alert fired"
+    assert summary.morning is not None, (
+        "a store fault on the gate failed-open alert aborted finalization before the digest"
+    )
+    assert pings == [1], "the heartbeat decision was never reached"
+
+
+def test_a_gate_coverage_alert_that_cannot_be_recorded_does_not_take_the_digest_with_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    _fake_gate_stage(monkeypatch, sent=13, missing_items=12)
+    _store_refuses(monkeypatch, "came back with no verdict")
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, f"guard: the run must be otherwise clean — {summary.fatal}"
+    assert any("came back with no verdict" in e for e in summary.errors), "guard: no alert fired"
+    assert summary.morning is not None, (
+        "a store fault on the T107 coverage alert aborted finalization before the digest"
+    )
+    assert pings == [1], "the heartbeat decision was never reached"
+
+
+def test_a_gate_seniority_alert_that_cannot_be_recorded_does_not_take_the_digest_with_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ready(env)
+    _seniority_hold(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    _fake_gate_stage(monkeypatch, seniority_unreadable=3, seniority_answered=1)
+    _store_refuses(monkeypatch, "was absent or out-of-catalog")
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, f"guard: the run must be otherwise clean — {summary.fatal}"
+    assert any("was absent or out-of-catalog" in e for e in summary.errors), "guard: no alert"
+    assert summary.morning is not None, (
+        "a store fault on the seniority alert aborted finalization before the digest"
+    )
+    assert pings == [1], "the heartbeat decision was never reached"
+
+
+def test_the_three_gate_alerts_that_record_cleanly_behave_as_before(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for the three tests above: the same three alerts, no injection. Each reaches
+    `summary.errors` and `runs.errors_json`, the digest writes and the run pings — the
+    behaviour the guards must leave exactly where it was."""
+    _ready(env)
+    _seniority_hold(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    _fake_gate_stage(
+        monkeypatch,
+        failed_open_batches=1,
+        sent=13,
+        missing_items=12,
+        seniority_unreadable=3,
+        seniority_answered=1,
+    )
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    with get_engine(env).connect() as conn:
+        stored = list(
+            conn.execute(
+                select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+            or []
+        )
+    for marker in ("batch(es) failed open", "came back with no verdict", "out-of-catalog"):
+        assert any(marker in e for e in summary.errors), f"{marker!r} missing from summary.errors"
+        assert any(marker in e for e in stored), f"{marker!r} missing from runs.errors_json"
+    assert summary.morning is not None and pings == [1]
+
+
+# --- T130: a scan that returned usable postings is DEGRADED, not a systemic outage ---------
+#
+# `is_systemic_scan_outage` counted a `partial` board as neither complete nor failed, so a
+# scan whose only board came back `partial` — real postings in hand — tripped the fatal guard
+# with an EMPTY per-board error list. Five live runs (23, 26, 31, 36, 37) sit in exactly that
+# state; across 70 scanning runs not one has ever had zero usable evidence, so the guard has
+# never once fired on a true outage. Owner ruling (2026-09-20): fatal is reserved for 0
+# complete, 0 unchanged AND 0 partial. The run stops being fatal, so it must not become
+# silent — hence the soft alert below, raised above `_emit_morning` like its siblings.
+
+# One job that parses and one that cannot: Greenhouse's `partial`, which still yields postings.
+PARTIAL_BODY = json.dumps({"jobs": [gh_jobs()[0], {"id": 999}]}).encode()
+
+
+def _standalone_scan_status(data_dir: Path, body: bytes) -> str:
+    """`boardwatch scan`'s OWN classification of one board outcome (`finish=True`, so this
+    caller owns the terminal status). A fresh store, so it shares nothing with the pipeline's
+    run but the predicate."""
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name="Acme", provider="greenhouse", slug="acme", source="user", watched=True
+            )
+        )
+    settings = load_settings(data_dir=data_dir).model_copy(update={"retry_attempts": 1})
+    with respx.mock:
+        respx.get(_GH.board_url("acme")).mock(return_value=httpx.Response(200, content=body))
+        summary = run_scan(engine, settings, finish=True)
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                select(tables.runs.c.status).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+        )
+
+
+def test_a_partial_only_pipeline_run_is_degraded_not_fatal_and_says_so_in_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs 23/26/31/36/37 under `boardwatch run`: every attempted board came back `partial`.
+
+    Three assertions, and all three are the ruling: the run is not fatal, the row is `ok`, and
+    the degraded alert is on the row so a run that stopped being fatal did not become silent.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=PARTIAL_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs).where(tables.runs.c.id == summary.run_id)
+        ).one()
+    assert (
+        row.boards_attempted,
+        row.boards_complete,
+        row.boards_unchanged,
+        row.boards_partial,
+    ) == (2, 0, 0, 2), f"guard: not the partial-only shape, so this test proves nothing: {row}"
+
+    assert summary.fatal is None, (
+        f"a scan holding real postings was refused as a systemic outage: {summary.fatal}"
+    )
+    assert row.status == "ok", "the partial-only run was still persisted failed"
+    stored = list(row.errors_json or [])
+    assert not any("systemic scan outage" in e for e in stored), (
+        f"the fatal outage sentence was persisted onto a run that succeeded: {stored}"
+    )
+    assert any("scan degraded" in e for e in summary.errors), (
+        f"the run stopped being fatal and became silent instead: {summary.errors}"
+    )
+    # EXACTLY once, on both, and this is the assertion the `finish` gate exists for. The scan
+    # stage records the degraded sentence only when it owns the terminal status; `run_pipeline`
+    # calls `run_scan(..., finish=False)` and records its own copy, so dropping that gate writes
+    # one event onto one row twice. Verified discriminating: with `elif finish:` relaxed to
+    # `else:` in `scan/coordinator.py`, 136 tests passed and NOTHING caught the duplicate.
+    assert sum("scan degraded" in e for e in summary.errors) == 1, (
+        f"one degraded scan was reported more than once: {summary.errors}"
+    )
+    assert sum("scan degraded" in e for e in stored) == 1, (
+        f"one degraded scan was persisted onto the row more than once: {stored}"
+    )
+    assert any("scan degraded" in e for e in stored), (
+        f"the degraded alert never reached runs.errors_json: {stored}"
+    )
+    assert pings == [1], "a degraded run still succeeded, so the heartbeat must fire"
+
+
+def test_D_037_parity_one_scan_outcome_cannot_be_ok_under_run_and_failed_under_scan(  # noqa: N802
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-037's whole reason for existing: ONE predicate, both callers, so the SAME event can
+    never record `ok` under `boardwatch scan` and `failed` under `boardwatch run`.
+
+    Asserted on equality first and on the value second — a second predicate added for one
+    caller passes every other test in this file and fails only here.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None, raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=PARTIAL_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    with get_engine(env).connect() as conn:
+        pipeline_status = conn.execute(
+            select(tables.runs.c.status).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    standalone_status = _standalone_scan_status(tmp_path / "standalone", PARTIAL_BODY)
+
+    assert pipeline_status == standalone_status, (
+        f"the two callers disagree about one scan outcome: `boardwatch run` says "
+        f"{pipeline_status!r}, `boardwatch scan` says {standalone_status!r}"
+    )
+    assert pipeline_status == "ok", (
+        f"a partial-only scan is degraded success under both callers, not fatal: "
+        f"{pipeline_status!r}"
+    )
+
+
+def test_the_degraded_scan_alert_reaches_the_MORNING_DIGEST(  # noqa: N802
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins the CALL SITE's position, not merely that the alert is raised.
+
+    Fails against the same detector wired in below `_emit_morning`: `summary.errors` would
+    still carry the marker (so an assertion on that list cannot tell the two apart) while the
+    rendered digest — the one artifact an unattended owner reads — would not.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "degraded_scan_alert", lambda *_a, **_k: "MARKER-degraded")
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None, raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=HEALTHY_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    assert summary.morning is not None, "guard: the digest must have been written"
+    assert any("MARKER-degraded" in e for e in summary.errors), (
+        "guard: the alert must reach summary.errors at all"
+    )
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "MARKER-degraded" in rendered, (
+        "the degraded-scan alert is missing from the morning digest — the call sits BELOW "
         "`_emit_morning`, where it fires, is recorded, and is invisible to an absent owner"
     )
