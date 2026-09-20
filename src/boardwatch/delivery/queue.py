@@ -191,6 +191,14 @@ class SyncReport:
     `retired` is orthogonal too, and counts DUPLICATE folders deleted because identity resolution
     converged two postings onto one canonical job. It is reported rather than silent because it
     is the only destructive thing this function does.
+
+    `repaired` is orthogonal in the same way `moved` is, and for the same reason the partition
+    must hold: a repaired lead is one whose RECORDED hash matched but whose bytes on disk did
+    not, so it was rewritten and belongs in `updated`. Counting it only there would make it
+    indistinguishable from an ordinary content change — which is the whole point of T116's
+    destination check, since a repair means the disk silently diverged from what the store
+    believed it had written. A non-zero value here is the signal that something outside
+    boardwatch is editing the queue.
     """
 
     created: int = 0
@@ -198,6 +206,7 @@ class SyncReport:
     unchanged: int = 0
     moved: int = 0
     retired: int = 0
+    repaired: int = 0
     failures: tuple[LeadFailure, ...] = ()
     contended: bool = False
 
@@ -456,7 +465,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
             failed.add(row.posting_id)
 
-    created = updated = unchanged = 0
+    created = updated = unchanged = repaired = 0
     staging = root / f"{STAGING_PREFIX}{token_hex(8)}"
     staging.mkdir()
     try:
@@ -489,6 +498,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                         unchanged += 1
                         continue
                     _repair(staging, target, payload)
+                    repaired += 1
                     updated += 1
                     continue
                 _install(staging, target, payload)
@@ -507,6 +517,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         unchanged=unchanged,
         moved=moved,
         retired=retired,
+        repaired=repaired,
         failures=tuple(failures),
     )
 

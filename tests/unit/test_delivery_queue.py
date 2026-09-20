@@ -535,6 +535,7 @@ def test_a_second_sync_rewrites_nothing_at_all(engine: Engine, root: Path, apps:
         second = sync_queue(conn, root=root, owner_name=OWNER)
 
     assert (second.created, second.updated, second.unchanged, second.failed) == (0, 0, 1, 0)
+    assert second.repaired == 0, "an untouched destination repairs nothing"
     assert _snapshot(root) == before
 
 
@@ -567,6 +568,8 @@ def test_a_changed_jd_rewrites_the_folder(engine: Engine, root: Path, apps: Path
         report = sync_queue(conn, root=root, owner_name=OWNER)
 
     assert (report.created, report.updated, report.unchanged) == (0, 1, 0)
+    # Control for T120: a GENUINE content change is `updated` and must NOT be `repaired`.
+    assert report.repaired == 0
     folder = _sole_folder(root)
     assert (folder / JD_FILE).read_text(encoding="utf-8") == revised
     assert _snapshot(root) != before
@@ -629,6 +632,7 @@ def test_a_tampered_destination_jd_is_rewritten_from_the_store(
     report = _resync(engine, root)
 
     assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert report.repaired == 1, "a rewritten-from-store lead is a REPAIR, not an edit"
     assert (folder / JD_FILE).read_text(encoding="utf-8") == JD
     assert _details(folder)["content_hash"] == recorded
 
@@ -643,6 +647,7 @@ def test_a_deleted_destination_jd_is_written_again(
     report = _resync(engine, root)
 
     assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert report.repaired == 1, "a rewritten-from-store lead is a REPAIR, not an edit"
     assert (folder / JD_FILE).read_text(encoding="utf-8") == JD
     assert _details(folder)["content_hash"] == recorded
 
