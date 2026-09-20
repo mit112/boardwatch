@@ -65,6 +65,15 @@ export type ReviewReason =
   | "seniority_above_band"
   | "seniority_judged_above_band"
   /*
+   * The FINAL GATE's own `ineligible`, kept apart from `ineligible_verdict` above because the two
+   * are different engines and the reader acts on them differently: that one is a versioned
+   * deterministic rule firing against a resolved profile field, which is a catalog bug when it is
+   * wrong; this is an independent read of the whole JD, which needs the quoted span opened and a
+   * judgement made. It HOLDS the lead in review and never drains it — review is the fail-open
+   * direction for a reading no rule produced.
+   */
+  | "judged_ineligible_verdict"
+  /*
    * The only member that does not come from the job description at all. The Greenhouse
    * APPLICATION FORM states a citizenship or export-control requirement the JD never mentions —
    * measured live on three apply-lane leads a hand pre-flight withdrew, none of which says

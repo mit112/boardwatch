@@ -47,13 +47,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Connection, Row, Select, func, null, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.normalize import content_hash
-from boardwatch.core.settings import load_settings
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
@@ -66,9 +66,10 @@ from boardwatch.eligibility.read import (
     current_verdicts,
 )
 from boardwatch.providers.registry import PROVIDER_NAMES
+from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
 from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
 from boardwatch.store.quarantine_queries import is_quarantined
-from boardwatch.store.queries import CurrentVersion, current_posting_versions
+from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.tables import (
@@ -80,6 +81,9 @@ from boardwatch.store.tables import (
     posting_versions,
     postings,
 )
+
+if TYPE_CHECKING:  # its runtime import is function-local, to break the delivery <-> store cycle
+    from boardwatch.delivery.review_gate import LaneDecision
 
 #: The audit's requirement view, reused rather than re-shaped. `load_audit` already slices each
 #: quote from the frozen `posting_versions.body_text` and version-gates the label; a second
@@ -168,6 +172,20 @@ class QueueRow:
     #: `delivery/form_questions.sweep_form_questions`, run once per run, and this module never
     #: writes.
     form_question_hit: str | None = None
+    #: T109. Whether this posting's TITLE levels above the operator's `target_seniority_band`,
+    #: from `rank.title_band.TitleBandReader` — never from the JD body, which D-477 refused a
+    #: deterministic family for.
+    #:
+    #: **COMPUTED on every read, never persisted**, and that is the whole point of carrying it
+    #: here rather than in a column: the case it exists for is a lead delivered while the band was
+    #: `any` that must re-route the day the operator narrows it to `entry`. A bit frozen at
+    #: delivery would answer for a target that has since moved.
+    #:
+    #: It rides on the row for the reason `judge_seniority_fit` above does (D-332): the reader is
+    #: built ONCE per read, beside the verdict and the requirement summary, so the four standing
+    #: consumers cannot each derive their own answer and disagree about one lead. Four of them did
+    #: exactly that by omission — they took `classify`'s old `False` default — until T109.
+    seniority_above_band: bool = False
 
     @property
     def closed(self) -> bool:
@@ -272,6 +290,10 @@ def _delivered_select() -> Select[Any]:
             postings.c.url,
             companies.c.name.label("company"),
             companies.c.provider,
+            # T109. `resolve_schemes` keys its per-company level schemes on (provider, slug), so
+            # the title band is read against the company's OWN ladder where it has one. Selected
+            # here rather than in a second query for the reason `closed_at` above is: one join.
+            companies.c.slug,
             companies.c.tags_json,
             companies.c.watched,
         )
@@ -385,6 +407,7 @@ def _queue_row(
     judge_verdict: str | None = None,
     judge_seniority_fit: str = "unclear",
     form_question_hit: str | None = None,
+    band: TitleBandReader | None = None,
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -412,6 +435,60 @@ def _queue_row(
         judge_verdict=judge_verdict,
         judge_seniority_fit=judge_seniority_fit,
         form_question_hit=form_question_hit,
+        # `None` means the caller resolved no reader and the gate is therefore inert for this
+        # row, which is what a fixture built before T109 gets. The live read paths always pass
+        # one; `title_band_reader` itself is what makes an unset target band inert.
+        seniority_above_band=(
+            False
+            if band is None
+            else band.above_band(str(row.title), (str(row.provider), str(row.slug)))
+        ),
+    )
+
+
+def _title_band(conn: Connection, settings: Settings) -> TitleBandReader:
+    """The title-seniority reader for THIS read, built from the live config and profile.
+
+    Takes the caller's already-bound `Settings` rather than calling `load_settings` again, exactly
+    as `queue_detail`'s seniority read does: both read paths have one bound, and a second load
+    would be a second chance for the two to disagree about a config dir mid-read.
+
+    Called once per read pass and never per row — `load_leveling` parses YAML on every call.
+    """
+    return title_band_reader(settings, profile_target_band(get_profile(conn)))
+
+
+def lane_decision(row: QueueRow) -> LaneDecision:
+    """The lane and the reason for ONE standing lead: the single call every standing reader makes.
+
+    The four standing consumers — `delivery/queue.py:sync_queue`'s folder placement, the web
+    API's two lists and its detail pane, `review_job_ids` and `apply_lane_placements` — each used
+    to spell the arguments out themselves. They drifted, which is the failure D-332 names: all
+    four omitted the title band, one also omitted `posting_closed`, and every one of them reduced
+    the gate's verdict to `judge_verdict == "eligible"`, so a current `ineligible` could hold
+    nothing. Nothing in the suite caught it because each call site has its own fixtures.
+
+    Passing the ROW is what makes `apply_lane_placements`' "the SAME call, with the SAME argument
+    shape" true rather than merely intended: there is now one argument list, so a field added to
+    `QueueRow` has exactly one place to be wired in and a field dropped is not expressible.
+
+    `classify` rather than `lane`: the folder a lead lands in and the reason the page publishes
+    for it are ONE decision, so neither can be re-derived into disagreement with the other.
+    """
+    from boardwatch.delivery.review_gate import classify  # noqa: PLC0415 - import cycle
+
+    return classify(
+        verdict=row.verdict,
+        locations=row.locations,
+        title=row.title,
+        experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
+        eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
+        no_requirement_rows=row.requirement_flags.no_requirement_rows,
+        posting_closed=row.closed,
+        seniority_above_band=row.seniority_above_band,
+        judge_verdict=row.judge_verdict,
+        judge_seniority_above_band=row.judge_seniority_fit == "no",
+        form_question_hit=row.form_question_hit,
     )
 
 
@@ -759,25 +836,12 @@ def review_job_ids(conn: Connection) -> set[int]:
     wrong answer is masked downstream — and that mask is precisely why the honesty has to live
     here: the day the precedence changes, this function must already be right.
     """
-    from boardwatch.delivery.review_gate import REVIEW_DIR, lane
+    from boardwatch.delivery.review_gate import REVIEW_DIR  # noqa: PLC0415 - import cycle
 
     return {
         row.job_id
         for row in delivered_unapplied(conn, skipped=set())
-        if row.verdict != "ineligible"
-        and lane(
-            verdict=row.verdict,
-            locations=row.locations,
-            title=row.title,
-            experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
-            eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
-            no_requirement_rows=row.requirement_flags.no_requirement_rows,
-            judge_eligible=row.judge_verdict == "eligible",
-            judge_seniority_above_band=row.judge_seniority_fit == "no",
-            form_question_hit=row.form_question_hit,
-            posting_closed=row.closed,
-        )
-        == REVIEW_DIR
+        if row.verdict != "ineligible" and lane_decision(row).lane == REVIEW_DIR
     }
 
 
@@ -792,7 +856,8 @@ def apply_lane_placements(
     call, with the SAME argument shape, that `review_job_ids` above and `delivery/queue.py` and
     `delivery/api.py` make (D-332) — the whole reason this lives here rather than in `notify/` is
     that this module already holds one, so the lane decision gains a reader and not a fourth site
-    that could drift.
+    that could drift. Since T109 that is enforced rather than intended: all four go through
+    `lane_decision`, so there is one argument list and nothing to hand-copy.
 
     PLACEABLE is narrower than delivered, and each exclusion is what stops the detector naming the
     wrong gate:
@@ -813,29 +878,13 @@ def apply_lane_placements(
     whether apply-lane work EXISTS, not what was once created) and it is why the counts must never
     be read as a delivery-day record.
     """
-    from boardwatch.delivery.review_gate import lane
-
     placed: dict[int, tuple[int, int]] = {rid: (0, 0) for rid in run_ids}
     for row in delivered_unapplied(conn, skipped=set()):
         if row.delivered_run_id not in run_ids:
             continue
         if row.verdict == "ineligible" or row.closed:
             continue
-        reached = (
-            lane(
-                verdict=row.verdict,
-                locations=row.locations,
-                title=row.title,
-                experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
-                eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
-                no_requirement_rows=row.requirement_flags.no_requirement_rows,
-            judge_eligible=row.judge_verdict == "eligible",
-            judge_seniority_above_band=row.judge_seniority_fit == "no",
-                form_question_hit=row.form_question_hit,
-                posting_closed=row.closed,
-            )
-            == ""
-        )
+        reached = lane_decision(row).lane == ""
         placeable, in_apply = placed[row.delivered_run_id]
         placed[row.delivered_run_id] = (placeable + 1, in_apply + int(reached))
     return placed
@@ -862,6 +911,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     not recompute a score (design §6.2 — score and coverage are recomputed live, never persisted).
     """
     applied = applied_job_ids(conn)
+    settings = load_settings()
     # Ascending, so `_supersedes` reads a later delivery as the incumbent's challenger and its
     # liveness tie falls through to the most recent one.
     rows = conn.execute(
@@ -900,7 +950,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # `_review` exists to prevent (D-332). It also skips the query entirely when off.
     seniority = (
         current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
-        if load_settings().gate.seniority_hold
+        if settings.gate.seniority_hold
         else {}
     )
     # T91. NOT identity-scoped, and that is the difference from every read above it: the
@@ -908,6 +958,14 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # catalog, so it is keyed on the frozen version alone. It cannot disagree with the verdict
     # beside it for the same reason — it is not an opinion about the same question.
     form_questions = form_question_hits(conn, versions)
+    # T109. Built ONCE for the whole read, beside every identity-scoped fact above it and for the
+    # same reason (D-332): the title band is config- and profile-dependent, and four standing
+    # consumers of this list used to take `classify`'s `False` default rather than derive it — so
+    # a senior title delivered under `target_seniority_band: any` stayed in the blind-apply lane
+    # forever after the operator narrowed the band. Not identity-scoped like the verdict reads:
+    # the band depends on the leveling catalog and the profile's TARGET, neither of which is part
+    # of `profile_hash`, which is exactly why it must be recomputed here rather than stored.
+    band = _title_band(conn, settings)
     now = utcnow()
     return [
         _queue_row(
@@ -918,6 +976,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             judge_verdict=gate.get(int(row.posting_id)),
             judge_seniority_fit=seniority.get(int(row.posting_id), "unclear"),
             form_question_hit=form_questions.get(int(row.posting_id)),
+            band=band,
         )
         for row in ordered
     ]
@@ -1277,6 +1336,11 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             judge_verdict=gate.get(posting_id),
             judge_seniority_fit=seniority.get(posting_id, "unclear"),
             form_question_hit=form_questions.get(posting_id),
+            # T109, read HERE for the reason the gate verdict and the form question above are:
+            # `delivered_unapplied` carries it for every list row, and without it the pane
+            # reported no hold for a lead the LIST holds as `seniority_above_band` -- the same
+            # field, the same lead, two answers, on the surface where the reader decides.
+            band=_title_band(conn, settings),
         ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(
@@ -1308,6 +1372,7 @@ __all__ = [
     "closed_job_ids",
     "delivered_unapplied",
     "ineligible_job_ids",
+    "lane_decision",
     "queue_detail",
     "standing_lead_job_ids",
     "standing_slate_keys",

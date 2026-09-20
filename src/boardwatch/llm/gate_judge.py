@@ -22,7 +22,7 @@ import json
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol, TypeVar
 
 from sqlalchemy import Engine
@@ -64,11 +64,12 @@ _T = TypeVar("_T", bound=_HasPostingId)
 
 @dataclass(frozen=True)
 class GateStageResult:
-    """One run's tally from the gate stage. All-zero and `excluded_ids=()` is the honest
-    reading both when the gate is off and when it is on but nothing needed judging — the
-    caller (the pipeline) is the one that knows which of those it is, from `settings.gate.
-    enabled`, and reports that separately (mirroring `DeathProbeReport`'s `None`-means-
-    unmeasured split living one level up rather than inside this object).
+    """One run's tally from the gate stage. An all-zero result with `excluded_ids=()` is the
+    honest reading when the gate is OFF — the caller (the pipeline) is the one that knows
+    that, from `settings.gate.enabled`, and reports it separately (mirroring
+    `DeathProbeReport`'s `None`-means-unmeasured split living one level up rather than inside
+    this object). An ARMED run that judged nothing no longer reads the same way: `candidates`
+    and `cached` say whether nothing was DUE or nothing was ASKED (T107).
     """
 
     judged: int = 0
@@ -79,6 +80,33 @@ class GateStageResult:
     # the funnel reports the batch count so a reader can tell "the judge never ran" (batches ==
     # total batches) from "one bad response" (batches == 1).
     failed_open_batches: int = 0
+    # T107 — the ITEM-level reconciliation, because the batch count cannot see a PARTIAL
+    # outage at all. `candidates` is what the stage was handed, `cached` how many already
+    # carried a current row (`len(already_gated)` — never why one missed), `sent` how many
+    # items a request actually carried (below `candidates - cached` when a lead has no current
+    # version or a quarantined body, both of which `build_gate_request` drops), `missing_items`
+    # how many sent labels no answer ever named, and `refused_items` how many WERE answered
+    # and then refused by `_accepted`. The last two are deliberately separate: an item the
+    # judge skipped and an item whose verdict could not be used need different fixes.
+    #
+    # These do NOT reconcile to `judged` on their own: `apply_gate_verdicts` also skips a
+    # verdict whose posting closed mid-run or whose body the quarantine withheld. The point of
+    # the split is that zero fresh judgments stops being ambiguous — `sent == 0` says nothing
+    # was due, `missing_items == sent` says the judge answered nothing.
+    candidates: int = 0
+    cached: int = 0
+    sent: int = 0
+    missing_items: int = 0
+    refused_items: int = 0
+    # T107 — the FIELD-level split, three-way and never two. `_seniority_fit` folds an absent
+    # or out-of-catalog answer to `"unclear"`, which is also what a judge that genuinely could
+    # not tell returns: of 1,999 stored gate verdicts 215 carry an explicit `"unclear"`, so
+    # counting the fold as malformed would report a real answer as a parse failure on a
+    # seventh of the corpus. `seniority_answered` is `yes`/`no`, `seniority_unclear` the real
+    # explicit one, `seniority_unreadable` the fold.
+    seniority_answered: int = 0
+    seniority_unclear: int = 0
+    seniority_unreadable: int = 0
     # Posting ids this run persisted a gate `ineligible` verdict for — the ONLY ones the caller
     # must drop from the slate before tailoring. Everything else (eligible, uncertain, unjudged
     # because already current) stays exactly where the ranker put it.
@@ -171,9 +199,28 @@ def _unfence(text: str) -> str:
 #: withholds nothing.
 _SENIORITY_FIT = frozenset({"yes", "no", "unclear"})
 
+#: The closed catalog of ways one `seniority_fit` answer can READ, reported beside the value so
+#: the run can tell the fold above apart from the value it folds to. `_seniority_fit` is the
+#: only producer, so these three are exhaustive by construction.
+_SENIORITY_ANSWERED = "answered"
+_SENIORITY_UNCLEAR = "unclear"
+_SENIORITY_UNREADABLE = "unreadable"
 
-def _seniority_fit(value: object) -> str:
-    return str(value) if str(value) in _SENIORITY_FIT else "unclear"
+
+def _seniority_fit(value: object) -> tuple[str, str]:
+    """The value the verdict will carry, and how the answer read (T107).
+
+    The value is unchanged from before — an unreadable answer is still the inert `"unclear"`,
+    which withholds nothing. What is new is the second element: without it a systematic
+    omission of this field is indistinguishable from a judge answering `"unclear"` honestly,
+    and the field that drives the seniority hold can stop arriving with no signal at all.
+    """
+    text = str(value)
+    if text == _SENIORITY_UNCLEAR:
+        return text, _SENIORITY_UNCLEAR
+    if text in _SENIORITY_FIT:
+        return text, _SENIORITY_ANSWERED
+    return _SENIORITY_UNCLEAR, _SENIORITY_UNREADABLE
 
 
 def _in_vocabulary(value: object, vocabulary: frozenset[str], field: str) -> str:
@@ -196,15 +243,16 @@ def _in_vocabulary(value: object, vocabulary: frozenset[str], field: str) -> str
 
 def _parse_verdicts(
     stdout: str, expected_labels: Sequence[str]
-) -> tuple[list[OracleVerdict], tuple[str, ...]]:
+) -> tuple[list[OracleVerdict], tuple[str, ...], tuple[str, ...]]:
     """The two-stage envelope `--output-format json` wraps every headless response in: the
     outer JSON's `result` key holds the model's text, which is itself the JSON array this
     stage asked for (2026-09-08 calibration harness, `calib/*/batch-*.json`). Raises
     (`json.JSONDecodeError`, `KeyError`, `TypeError`, `ValueError`, `OracleVerdictError`) on
     anything that does not conform — the caller treats every one of those as fail-open.
 
-    Returns the verdicts the response carried and the labels it did NOT carry. Keyed on
-    `label`, not on position or count: runs 45 and 48 (2026-09-09, -12) each lost a whole
+    Returns the verdicts the response carried, the labels it did NOT carry, and one
+    `_SENIORITY_*` token per verdict saying how that answer's `seniority_fit` read (T107).
+    Keyed on `label`, not on position or count: runs 45 and 48 (2026-09-09, -12) each lost a whole
     batch of 13 because the model answered 12 — one lead skipped — and an exact count check
     failed all 13 open. Every verdict names its lead and `apply_gate_verdicts` binds on that
     name, never on position, so the 12 are as sound as any batch's and only the skipped lead
@@ -228,17 +276,25 @@ def _parse_verdicts(
             f"expected a JSON array of at most {len(expected_labels)} verdicts, got "
             f"{len(parsed) if isinstance(parsed, list) else type(parsed).__name__}"
         )
-    verdicts = [
-        OracleVerdict(
-            label=str(item["label"]),
-            decision=_in_vocabulary(item["decision"], _VERDICTS, "decision"),
-            reason=item.get("reason"),
-            evidence=str(item["evidence"]),
-            confidence=_in_vocabulary(item["confidence"], _CONFIDENCE, "confidence"),
-            seniority_fit=_seniority_fit(item.get("seniority_fit")),
+    verdicts: list[OracleVerdict] = []
+    seniority: list[str] = []
+    for item in parsed:
+        # Subscripted BEFORE any `.get`, and that order is load-bearing: an ELEMENT that is not
+        # a mapping raises `TypeError` here, which the caller catches and fails the batch open,
+        # where `.get` would raise `AttributeError` and leave the stage entirely.
+        label = str(item["label"])
+        fit, quality = _seniority_fit(item.get("seniority_fit"))
+        verdicts.append(
+            OracleVerdict(
+                label=label,
+                decision=_in_vocabulary(item["decision"], _VERDICTS, "decision"),
+                reason=item.get("reason"),
+                evidence=str(item["evidence"]),
+                confidence=_in_vocabulary(item["confidence"], _CONFIDENCE, "confidence"),
+                seniority_fit=fit,
+            )
         )
-        for item in parsed
-    ]
+        seniority.append(quality)
     answered = [verdict.label for verdict in verdicts]
     unknown = sorted(set(answered) - set(expected_labels))
     if unknown:
@@ -246,17 +302,21 @@ def _parse_verdicts(
     if len(set(answered)) != len(answered):
         raise ValueError("the same label was answered more than once")
     missing = tuple(label for label in expected_labels if label not in set(answered))
-    return verdicts, missing
+    return verdicts, missing, tuple(seniority)
 
 
 def _judge_batch(
     batch: list[dict[str, object]], judging_policy: str, settings: Settings
-) -> tuple[list[OracleVerdict] | None, str | None]:
-    """Run one batch through headless claude. `(verdicts, None)` on success, `(None, note)`
-    on any failure this stage must fail open on — a note describing WHAT failed, never a
-    traceback, so the run's soft alert and funnel error line are readable — and
-    `(verdicts, note)` when the response answered SOME of the batch: the note names the
-    leads it skipped, which stay unjudged and on the slate exactly as a failed batch's do."""
+) -> tuple[list[OracleVerdict] | None, str | None, tuple[str, ...]]:
+    """Run one batch through headless claude. `(verdicts, None, ...)` on success,
+    `(None, note, ())` on any failure this stage must fail open on — a note describing WHAT
+    failed, never a traceback, so the run's soft alert and funnel error line are readable —
+    and `(verdicts, note, ...)` when the response answered SOME of the batch: the note names
+    the leads it skipped, which stay unjudged and on the slate exactly as a failed batch's do.
+
+    The third element is one `_SENIORITY_*` token per verdict returned (T107), and it is EMPTY
+    on every fail-open path: a batch that answered nothing contributes nothing to the field
+    coverage denominator, or a process outage would read as a parse-quality failure."""
     prompt = _prompt(judging_policy, batch)
     try:
         stdout = _call_claude(
@@ -266,32 +326,42 @@ def _judge_batch(
             timeout_s=settings.gate.call_timeout_s,
         )
     except FileNotFoundError:
-        return None, "claude binary not found on PATH"
+        return None, "claude binary not found on PATH", ()
     except subprocess.TimeoutExpired:
-        return None, f"claude timed out after {settings.gate.call_timeout_s}s"
+        return None, f"claude timed out after {settings.gate.call_timeout_s}s", ()
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()[:300]
-        return None, f"claude exited {exc.returncode}: {stderr}"
+        return None, f"claude exited {exc.returncode}: {stderr}", ()
     except OSError as exc:
         # Everything else `subprocess.run` can raise launching a process: EACCES on a binary
         # that is not executable, E2BIG on a batch whose argv exceeds the platform limit,
         # ENOMEM under fork. `FileNotFoundError` is an `OSError` too, so it is handled above
         # and keeps its own note; this is the readable fallback, never an escape.
-        return None, f"claude could not be launched ({type(exc).__name__}, errno {exc.errno})"
+        return (
+            None,
+            f"claude could not be launched ({type(exc).__name__}, errno {exc.errno})",
+            (),
+        )
     try:
-        verdicts, missing = _parse_verdicts(stdout, [str(item["label"]) for item in batch])
+        verdicts, missing, seniority = _parse_verdicts(
+            stdout, [str(item["label"]) for item in batch]
+        )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OracleVerdictError) as exc:
-        return None, f"unusable response ({type(exc).__name__}): {exc}"
+        return None, f"unusable response ({type(exc).__name__}): {exc}", ()
     if not verdicts:
         # An empty array answers NOBODY: that is the "judge never ran" shape the batch count
         # exists to make visible, not a partial answer, so it fails the whole batch open.
-        return None, f"unusable response: the array carried none of the {len(batch)} verdicts"
+        return (
+            None,
+            f"unusable response: the array carried none of the {len(batch)} verdicts",
+            (),
+        )
     if missing:
         return verdicts, (
             f"{len(missing)} of {len(batch)} verdicts missing (labels {', '.join(missing)}); "
             "those leads were left unchanged, never dropped"
-        )
-    return verdicts, None
+        ), seniority
+    return verdicts, None, seniority
 
 
 def _accepted(
@@ -354,10 +424,14 @@ def run_gate_stage(
     if not settings.gate.enabled or not leads:
         return leads, GateStageResult()
 
+    # T107. Set on every return below, including the fail-open aborts: a run that never got
+    # past the profile read has `candidates > 0, cached = 0, sent = 0`, which reads as "nothing
+    # was asked" rather than as the clean "nothing was due" that `cached == candidates` is.
+    candidates = len(leads)
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
-            return leads, GateStageResult()
+            return leads, GateStageResult(candidates=candidates)
         try:
             facts = parse_facts(profile_row.eligibility_facts_json)
             policy = parse_policy(profile_row.eligibility_policy_json)
@@ -365,11 +439,11 @@ def run_gate_stage(
             # The ranker already refused an unusable profile row upstream of this stage
             # (`run_pipeline`'s own `ProfileRowInvalid` handler); reaching a second one here
             # would be a race with a profile edit mid-run, and fail-open is still correct.
-            return leads, GateStageResult()
+            return leads, GateStageResult(candidates=candidates)
         catalog = load_rules(settings.config_dir)
         identity = current_identity(conn, settings)
         if identity is None:
-            return leads, GateStageResult()
+            return leads, GateStageResult(candidates=candidates)
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
         already_gated = current_gate_verdicts(
             conn, [v.posting_version_id for v in versions.values()], *identity,
@@ -397,17 +471,25 @@ def run_gate_stage(
     # else; it just no longer counts as "already judged".
     to_judge = [p for p in leads if p.posting_id not in already_gated]
     if not to_judge:
-        return leads, GateStageResult()
+        return leads, GateStageResult(candidates=candidates, cached=len(already_gated))
 
     request = build_gate_request(to_judge, versions, facts, catalog, request_id=f"run-{run_id}")
     items = request["items"]
     judging_policy = request["judging_policy"]
     verdicts: list[OracleVerdict] = []
     failed_batches = 0
+    missing_items = 0
+    seniority: list[str] = []
     errors: list[str] = []
     batches = _chunks(items, max(1, settings.gate.batch_size))
     for index, batch in enumerate(batches):
-        batch_verdicts, note = _judge_batch(batch, judging_policy, settings)
+        batch_verdicts, note, batch_seniority = _judge_batch(batch, judging_policy, settings)
+        # Derived rather than reported back out of the parser, which already guarantees the
+        # arithmetic: no verdict names a label the batch did not carry and no label is answered
+        # twice, so the shortfall IS the count of labels nobody answered. A failed batch
+        # answered none of them.
+        missing_items += len(batch) - (0 if batch_verdicts is None else len(batch_verdicts))
+        seniority.extend(batch_seniority)
         if batch_verdicts is None:
             failed_batches += 1
             errors.append(f"gate: batch {index + 1}/{len(batches)} failed open: {note}")
@@ -418,8 +500,23 @@ def run_gate_stage(
 
     verdicts, refused = _accepted(verdicts, versions, catalog)
     errors.extend(refused)
+    # Everything the stage measured about COVERAGE, whether or not a single verdict survived to
+    # be written. The two return paths below differ only in the persisted tally, so the counters
+    # are built once here and the write path `replace`s that tally onto them.
+    coverage = GateStageResult(
+        failed_open_batches=failed_batches,
+        candidates=candidates,
+        cached=len(already_gated),
+        sent=len(items),
+        missing_items=missing_items,
+        refused_items=len(refused),
+        seniority_answered=seniority.count(_SENIORITY_ANSWERED),
+        seniority_unclear=seniority.count(_SENIORITY_UNCLEAR),
+        seniority_unreadable=seniority.count(_SENIORITY_UNREADABLE),
+        errors=tuple(errors),
+    )
     if not verdicts:
-        return leads, GateStageResult(failed_open_batches=failed_batches, errors=tuple(errors))
+        return leads, coverage
 
     with engine.begin() as write_conn:
         result = apply_gate_verdicts(
@@ -430,14 +527,13 @@ def run_gate_stage(
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)
     filtered = [p for p in leads if p.posting_id not in excluded_ids]
-    return filtered, GateStageResult(
+    return filtered, replace(
+        coverage,
         judged=result.judged,
         eligible=eligible_count,
         ineligible=result.ineligible,
         uncertain=uncertain_count,
-        failed_open_batches=failed_batches,
         excluded_ids=excluded_ids,
-        errors=tuple(errors),
     )
 
 

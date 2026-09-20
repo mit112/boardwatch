@@ -110,6 +110,11 @@ else:
         for l in labels
     ]
 
+seniority = os.environ.get("GATE_FAKE_SENIORITY")
+if seniority:
+    for verdict in verdicts:
+        verdict["seniority_fit"] = seniority
+
 result_text = json.dumps(verdicts)
 if mode == "fenced":
     # Byte-shape of what real haiku returned on run 4: a ```json fence around the array,
@@ -189,12 +194,18 @@ def _seed(data_dir: Path, *, slug: str = "acme-gate1", body: str = BODY) -> int:
     return posting_id
 
 
-def _arm_gate(data_dir: Path, *, batch_size: int = 13, model: str = "sonnet") -> None:
+def _arm_gate(
+    data_dir: Path,
+    *,
+    batch_size: int = 13,
+    model: str = "sonnet",
+    seniority_hold: bool = False,
+) -> None:
     config_dir = load_settings(data_dir=data_dir).config_dir
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
         f"[gate]\nenabled = true\nmodel = \"{model}\"\nbatch_size = {batch_size}\n"
-        "call_timeout_s = 30\n",
+        f"call_timeout_s = 30\nseniority_hold = {str(seniority_hold).lower()}\n",
         encoding="utf-8",
     )
 
@@ -1104,3 +1115,226 @@ def test_a_gate_row_records_the_provider_and_model_that_judged_it(
     assert summary.fatal is None, summary.fatal
     assert summary.gate_judged == 1, summary.gate_judged
     assert _persisted_judge(env) == {("claude-code-agent", "haiku")}
+
+
+# ---------------------------------------------------------------------------
+# (l) T107 — item- and field-level coverage, and a PARTIAL outage that escalates
+#
+# Run 467 (2026-09-19, the live 04:00 tick) recorded `batch 5/7 partly failed open, 1 of 13
+# verdicts missing (label 302235)`. `gate_failed_open` stayed 0, the note was appended at the
+# GATE stage — below `escalatable_from` — and so the only artifact that carried it was the
+# morning digest. Posting 302235 is still open, still deterministic `uncertain`, and carries
+# zero gate rows. Nothing alerted.
+# ---------------------------------------------------------------------------
+
+
+def _escalated(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
+    """Captures the ESCALATION SLICE — `summary.errors[escalatable_from:]`. `escalatable_from`
+    is a local in `run_pipeline` and the slice is observable nowhere else, so a spy on
+    `escalate_alerts` is the only way to assert an alert is ABOVE the mark rather than merely
+    somewhere in `summary.errors` (where every routine stage error also lands)."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+    return captured
+
+
+def _funnel_gate(summary: object) -> dict[str, object]:
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))  # type: ignore[attr-defined]
+    gate: dict[str, object] = payload["gate"]
+    return gate
+
+
+@_needs_an_executable_fake
+def test_a_one_of_thirteen_answer_raises_one_item_coverage_alert_the_owner_can_see(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run 467's exact shape: a batch of 13 answered once.
+
+    Twelve leads come back with no verdict at all, and today that costs ONE note appended at
+    the gate stage — below `escalatable_from`, so it reaches the digest and stops. The
+    whole-batch counter stays 0 because `batch_verdicts is not None`.
+    """
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-partial-{n}") for n in range(13)]
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "wrongcount")
+    escalated = _escalated(monkeypatch)
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=13)
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_candidates == 13
+    assert summary.gate_sent == 13
+    assert summary.gate_judged == 1
+    assert summary.gate_missing_items == 12
+    assert summary.gate_failed_open == 0, "a partly answered batch is not a failed batch"
+    # Every lead survives: the judge cleared one and answered for none of the other twelve.
+    assert summary.gate_excluded_ids == []
+    assert {lead.posting_id for lead in summary.tailored} == set(ids)
+
+    coverage = [error for error in summary.errors if "came back with no verdict" in error]
+    assert len(coverage) == 1, summary.errors
+    assert "12 of 13" in coverage[0], coverage[0]
+    assert escalated, "escalation never ran"
+    assert coverage[0] in escalated[-1], (
+        "the coverage alert is below `escalatable_from`, exactly where run 467's note was"
+    )
+    assert summary.morning is not None
+    digest = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "came back with no verdict" in digest
+
+    gate = _funnel_gate(summary)
+    assert gate["sent"] == 13
+    assert gate["missing_items"] == 12
+
+
+def test_every_lead_already_current_sends_nothing_and_that_is_not_a_coverage_failure(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`sent == 0` ABSTAINS. Zero fresh judgments is ambiguous today — an all-cache run and a
+    missing prerequisite produce identical zeros — so the funnel has to say which it was."""
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-cached-{n}") for n in range(2)]
+    _arm_gate(env)
+    _store_eligibility(env, work_auth_status="citizen")
+    for posting_id in ids:
+        _plant_current_gate_row(env, posting_id, model="sonnet")
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")  # any call at all would be an obvious tell
+    escalated = _escalated(monkeypatch)
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=13)
+
+    assert not fake_claude.exists(), "a fully cached slate must never reach a request"
+    assert summary.gate_candidates == 2
+    assert summary.gate_cached == 2
+    assert summary.gate_sent == 0
+    assert summary.gate_missing_items == 0
+    assert not [error for error in summary.errors if "came back with no verdict" in error]
+    assert escalated and not [alert for alert in escalated[-1] if alert.startswith("gate:")]
+
+    gate = _funnel_gate(summary)
+    assert gate["instrumented"] is True, "the gate WAS armed — that is not the disarmed case"
+    assert gate["cached"] == 2
+    assert gate["sent"] == 0
+    body = summary.funnel.markdown_path.read_text(encoding="utf-8")
+    assert "nothing was sent to the judge" in body, (
+        "the funnel must distinguish 'nothing was due' from 'the judge answered nothing'"
+    )
+
+
+@_needs_an_executable_fake
+def test_a_seniority_field_absent_from_every_answer_raises_a_field_coverage_alarm(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The failure that reads as a wholly successful run: every `seniority_fit` absent.
+
+    `_seniority_fit` folds an absent answer to `"unclear"`, which holds nothing and is also
+    what a judge that genuinely could not tell returns — so a systematic omission of the field
+    that drives the seniority hold produces no signal whatsoever. The fake omits the field by
+    default, which is exactly the pre-`p5-oracle-2` judge's shape.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env, seniority_hold=True)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    escalated = _escalated(monkeypatch)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 1
+    assert summary.gate_seniority_unreadable == 1
+    assert summary.gate_seniority_unclear == 0, "an absent answer is not an explicit `unclear`"
+    assert summary.gate_seniority_answered == 0
+    # No hold: the reading still fails safe, which is why this is invisible without the alarm.
+    assert posting_id in [lead.posting_id for lead in summary.tailored]
+
+    alarm = [error for error in summary.errors if "seniority_fit" in error]
+    assert len(alarm) == 1, summary.errors
+    assert escalated and alarm[0] in escalated[-1]
+    assert summary.morning is not None
+    assert "seniority_fit" in summary.morning.markdown_path.read_text(encoding="utf-8")
+
+
+@_needs_an_executable_fake
+def test_the_seniority_alarm_is_silent_when_the_hold_is_not_armed(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL. With `gate.seniority_hold` off the field drives nothing — `delivery_queries`
+    leaves the column inert — so an unreadable answer costs nothing and must not alarm. The
+    counter still records it: the measurement is unconditional, only the alert is gated."""
+    _ready(env)
+    _seed(env)
+    _arm_gate(env)  # seniority_hold defaults False
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.gate_seniority_unreadable == 1
+    assert not [error for error in summary.errors if "seniority_fit" in error], summary.errors
+
+
+@_needs_an_executable_fake
+def test_an_explicit_unclear_is_a_real_answer_and_is_never_counted_malformed(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL, and the reason the split is three-way rather than two-way.
+
+    Of 1,999 stored gate verdicts, 215 carry an explicit `"unclear"`. Counting those as a
+    parse failure would report a real answer as malformed on a seventh of the corpus and
+    would fire this alarm on a judge doing exactly what it was asked.
+    """
+    _ready(env)
+    _seed(env)
+    _arm_gate(env, seniority_hold=True)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    monkeypatch.setenv("GATE_FAKE_SENIORITY", "unclear")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.gate_judged == 1
+    assert summary.gate_seniority_unclear == 1
+    assert summary.gate_seniority_unreadable == 0
+    assert not [error for error in summary.errors if "seniority_fit" in error], summary.errors
+
+
+@_needs_an_executable_fake
+def test_a_clean_batch_raises_neither_alert_and_leaves_the_existing_gate_numbers_intact(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL. Every item answered, every `seniority_fit` in catalog, the hold armed: no
+    coverage alert, no field alarm, and the six gate numbers the funnel already published
+    read exactly what they read before this instrumentation existed."""
+    _ready(env)
+    _seed(env)
+    _arm_gate(env, seniority_hold=True)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    monkeypatch.setenv("GATE_FAKE_SENIORITY", "yes")
+    escalated = _escalated(monkeypatch)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert not [error for error in summary.errors if "came back with no verdict" in error]
+    assert not [error for error in summary.errors if "seniority_fit" in error]
+    assert escalated and not [alert for alert in escalated[-1] if alert.startswith("gate:")]
+
+    gate = _funnel_gate(summary)
+    assert {key: gate[key] for key in (
+        "judged", "eligible", "ineligible", "uncertain", "failed_open_batches", "beyond_slate",
+    )} == {
+        "judged": 1, "eligible": 1, "ineligible": 0, "uncertain": 0,
+        "failed_open_batches": 0, "beyond_slate": 0,
+    }
+    assert gate["seniority_answered"] == 1
+    assert gate["seniority_unclear"] == 0
+    assert gate["seniority_unreadable"] == 0
+    assert gate["missing_items"] == 0
+    assert gate["refused_items"] == 0

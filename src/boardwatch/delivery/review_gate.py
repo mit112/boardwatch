@@ -35,7 +35,8 @@ reads under the SAME identity as the verdict it passes alongside. That is a deli
 departure from D-323's "reads no stored eligibility state". The drift D-323 guarded against is
 this module reaching into the DB on its own and disagreeing with the caller's verdict; the
 summary travels WITH the verdict from one identity-scoped read, so the two cannot come from
-different evaluations. All three flags default False, which is exactly the old behaviour.
+different evaluations. None of those inputs has a default: a call site that drops one is a
+``mypy --strict`` failure rather than a lead silently routed the other way (T109).
 """
 
 from __future__ import annotations
@@ -105,6 +106,21 @@ CLOSED_DIR = "_closed"
 #: this system can see that class. It carries a QUOTED question rather than a quoted JD span, so
 #: it can never be reported as a verdict: the keystone requires the span to come from the frozen
 #: JD, the form is not the frozen JD, and review is the fail-open direction that leaves (D-380).
+#:
+#: ``judged_ineligible_verdict`` (T109) is the final gate's own ``ineligible``, and it is NOT
+#: folded into ``ineligible_verdict``. That member means the DETERMINISTIC engine rejected the
+#: lead — a rule in the versioned catalog fired against a resolved profile field — and the
+#: reader's next action there is to check the rule and the fact, because a wrong one is a bug to
+#: fix in the catalog. This member means a judge that read the whole JD rejected it, which is a
+#: different instrument and a different next action: read the quoted span and decide, because
+#: there is no rule to correct. Reporting either as the other would send the reader to the wrong
+#: place, and it would make the lane-composition report unable to show which engine is holding
+#: the lane back — the same reason the two seniority members are kept apart.
+#:
+#: It HOLDS, never drops. Review is the fail-open direction D-380 requires for a reading no
+#: deterministic rule produced (the owner's ruling, 2026-09-19): the lead stays visible, keeps its
+#: folder and stays reviewable, and it is never equated with the deterministic deletion that
+#: drains to ``_ineligible``.
 ReviewReason = Literal[
     "form_question_hard_stop",
     "ineligible_verdict",
@@ -117,6 +133,7 @@ ReviewReason = Literal[
     "experience_requirement",
     "seniority_above_band",
     "seniority_judged_above_band",
+    "judged_ineligible_verdict",
 ]
 
 
@@ -144,19 +161,36 @@ def classify(
     verdict: str | None,
     locations: Sequence[str],
     title: str,
-    experience_unconfirmed: bool = False,
-    eligibility_unconfirmed: bool = False,
-    no_requirement_rows: bool = False,
-    posting_closed: bool = False,
-    seniority_above_band: bool = False,
-    judge_eligible: bool = False,
-    judge_seniority_above_band: bool = False,
+    experience_unconfirmed: bool,
+    eligibility_unconfirmed: bool,
+    no_requirement_rows: bool,
+    posting_closed: bool,
+    seniority_above_band: bool,
+    judge_verdict: str | None,
+    judge_seniority_above_band: bool,
     form_question_hit: str | None = None,
 ) -> LaneDecision:
-    """Decide the lane AND, in the same pass, which of the nine reasons held the lead.
+    """Decide the lane AND, in the same pass, which of the reasons held the lead.
 
     The single place either answer is computed. The reason is a by-product of the branch the
     lane decision already takes, never a re-derivation, which is why the two cannot disagree.
+
+    **Every production-relevant input is REQUIRED**, and that is the durable half of T109. Each
+    used to default to its inert value, and the four STANDING call sites quietly took the default
+    for the title band while the run's own call site computed and passed it — so the same lead
+    classified one way for the run and another for the queue, with nothing failing. A caller that
+    drops one now fails ``mypy --strict`` instead. ``form_question_hit`` keeps its default because
+    ``None`` there is a real third state (not a Greenhouse lead / form not fetched / fetched and
+    nothing matched), not an absent input.
+
+    ``judge_verdict`` is the gate's verdict VERBATIM — ``eligible``, ``ineligible``, ``uncertain``
+    or ``None`` for no current gate row — replacing the ``judge_eligible`` boolean every call site
+    reduced it to. A boolean can say "not eligible" but never "rejected", so a current, high-
+    confidence, span-carrying ``ineligible`` could hold nothing: 17 delivered leads carried one
+    beside a deterministic ``eligible`` and sat in the apply lane on the short-circuit alone
+    (measured 2026-09-19, live, read-only). ``judge_seniority_above_band`` stays a boolean because
+    it reports a DIFFERENT field of the same gate row, and its three values collapse to two here
+    for the reason the title band's do: only one of them ever moves a lead.
 
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
@@ -253,6 +287,27 @@ def classify(
     # gate already put it.
     if seniority_above_band:
         return LaneDecision(REVIEW_DIR, "seniority_above_band")
+    # T109. THE JUDGE'S NEGATIVE, and it sits here for the identical reason the two judge-derived
+    # gates around it do: the deterministic verdict answers the six blocker families, and the
+    # judge's REJECTION is a separate reading of the same JD that an `eligible` must not override.
+    # Above the short-circuit, therefore; below the deterministic gates, which are the cheaper and
+    # more auditable claims.
+    #
+    # It outranks the body reader immediately below on the rule this module already applies to the
+    # hard-family abstain: when two holds fire, reporting the weaker one understates the hold. Both
+    # readings come from the SAME judge in the same call, and "I reject this lead, here is the
+    # span" is the stronger of the two — the seniority note says the role may not fit, this says
+    # the lead does not.
+    #
+    # It HOLDS, never drops. `verdict == "ineligible"` above drains to `_ineligible` because a
+    # versioned rule fired against a resolved profile field and can be audited; this is one
+    # reader's opinion, and D-380's fail-open direction for a reading no rule produced is review.
+    # **Measured live 2026-09-19, read-only:** 45 delivered posting-versions carried a current
+    # judge `ineligible` under the live identity; 17 of those also carried a deterministic
+    # `eligible` and so reached the blind-apply queue on the short-circuit alone, 12 of them open
+    # and unapplied.
+    if judge_verdict == "ineligible":
+        return LaneDecision(REVIEW_DIR, "judged_ineligible_verdict")
     # THE BODY READER, and it sits here — beside the title gate and ABOVE the `eligible`
     # short-circuit — for the same reason T44 does: eligibility answers the blocker families and
     # says nothing about seniority, so an `eligible` verdict must not let a lead whose BODY reads
@@ -295,6 +350,11 @@ def classify(
     # ranking's only job is to decide what a caller who passes both is told.
     if verdict is None:
         return LaneDecision(REVIEW_DIR, "unevaluated")
+    # Bound HERE rather than taken as an argument: only `eligible` releases anything, so
+    # `uncertain` and "no current gate row" are the same inert thing to the two gates below and
+    # must stay indistinguishable to them. The verdict itself travels whole so the REJECTION above
+    # can act on it; this is the narrowing, stated once.
+    judge_eligible = judge_verdict == "eligible"
     if no_requirement_rows and not judge_eligible:
         return LaneDecision(REVIEW_DIR, "no_requirements_found")
     # `judge_eligible` RELEASES THE TWO REQUIREMENT HOLDS AND NOTHING ELSE (0-B, D-489).
@@ -341,13 +401,13 @@ def lane(
     verdict: str | None,
     locations: Sequence[str],
     title: str,
-    experience_unconfirmed: bool = False,
-    eligibility_unconfirmed: bool = False,
-    no_requirement_rows: bool = False,
-    posting_closed: bool = False,
-    seniority_above_band: bool = False,
-    judge_eligible: bool = False,
-    judge_seniority_above_band: bool = False,
+    experience_unconfirmed: bool,
+    eligibility_unconfirmed: bool,
+    no_requirement_rows: bool,
+    posting_closed: bool,
+    seniority_above_band: bool,
+    judge_verdict: str | None,
+    judge_seniority_above_band: bool,
     form_question_hit: str | None = None,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
@@ -366,7 +426,7 @@ def lane(
         no_requirement_rows=no_requirement_rows,
         posting_closed=posting_closed,
         seniority_above_band=seniority_above_band,
-        judge_eligible=judge_eligible,
+        judge_verdict=judge_verdict,
         judge_seniority_above_band=judge_seniority_above_band,
         form_question_hit=form_question_hit,
     ).lane

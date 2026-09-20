@@ -17,12 +17,47 @@ from boardwatch.delivery.review_gate import (
     CLOSED_DIR,
     REVIEW_DIR,
     LaneDecision,
-    classify,
-    lane,
 )
+from boardwatch.delivery.review_gate import classify as _classify
+from boardwatch.delivery.review_gate import lane as _lane
 from boardwatch.rank.leveling import load_leveling
 from boardwatch.rank.role_gate import role_verdict
 from boardwatch.rank.seniority_gate import seniority_verdict
+
+#: The inert value of every input `classify` REQUIRES since T109 — the value that leaves a lead
+#: exactly where the gates above it put it.
+#:
+#: The production signature has no defaults on purpose: four standing call sites silently took a
+#: `False` for the title band and routed standing leads the wrong way for weeks, and a required
+#: argument is what makes that a `mypy --strict` failure instead. A TEST wants the opposite —
+#: every assertion here is a claim about ONE input, and spelling seven inert values at 84 call
+#: sites would bury the claim in noise — so the defaulting lives here, in the two wrappers below,
+#: and nowhere in `src/`. `test_the_lane_classifier_has_one_standing_call_site` is what holds that
+#: boundary; `form_question_hit` is absent because it keeps a real default in production.
+_INERT: dict[str, object] = {
+    "experience_unconfirmed": False,
+    "eligibility_unconfirmed": False,
+    "no_requirement_rows": False,
+    "posting_closed": False,
+    "seniority_above_band": False,
+    "judge_verdict": None,
+    "judge_seniority_above_band": False,
+}
+
+
+def classify(**kwargs: object) -> LaneDecision:
+    """`review_gate.classify` with every unstated input at its inert value.
+
+    A key `_INERT` no longer names, or one it names that the signature has dropped, is a loud
+    `TypeError` on the next run rather than a silent pass — which is the drift a hand-copied
+    default list would otherwise reintroduce here.
+    """
+    return _classify(**{**_INERT, **kwargs})  # type: ignore[arg-type]
+
+
+def lane(**kwargs: object) -> str:
+    """`review_gate.lane`, defaulted exactly as `classify` above is."""
+    return _lane(**{**_INERT, **kwargs})  # type: ignore[arg-type]
 
 
 def test_eligible_still_faces_the_location_and_role_gates() -> None:
@@ -705,7 +740,7 @@ def test_a_judge_eligible_releases_the_two_requirement_holds() -> None:
     for flag in ("no_requirement_rows", "experience_unconfirmed"):
         assert classify(verdict="uncertain", **_US_SWE, **{flag: True}).lane == REVIEW_DIR
         assert classify(
-            verdict="uncertain", **_US_SWE, judge_eligible=True, **{flag: True}
+            verdict="uncertain", **_US_SWE, judge_verdict="eligible", **{flag: True}
         ) == LaneDecision("", None)
 
 
@@ -718,7 +753,7 @@ def test_a_judge_eligible_does_NOT_release_the_hard_family_abstain() -> None:
     the arms the audit measured, so releasing it would be a ruling made on no evidence.
     """
     assert classify(
-        verdict="uncertain", **_US_SWE, eligibility_unconfirmed=True, judge_eligible=True
+        verdict="uncertain", **_US_SWE, eligibility_unconfirmed=True, judge_verdict="eligible"
     ) == LaneDecision(REVIEW_DIR, "eligibility_unconfirmed")
 
 
@@ -740,18 +775,18 @@ def test_a_judge_eligible_is_powerless_against_every_gate_above_the_requirement_
     judge's does not; an unevaluated verdict is the same silence the zero-row gate refuses, one
     step earlier; an above-band title is a seniority reading the six families say nothing about.
     """
-    assert classify(**_US_SWE, judge_eligible=True, **kwargs).lane == expected  # type: ignore[arg-type]
+    assert classify(**_US_SWE, judge_verdict="eligible", **kwargs).lane == expected  # type: ignore[arg-type]
 
 
 def test_a_judge_eligible_is_powerless_against_the_location_and_role_gates() -> None:
     """The R1 line, held from the other side: promotion must not re-open what R1 closed."""
     assert classify(
         verdict="uncertain", locations=["Kaunas, Lithuania"], title="Software Engineer",
-        no_requirement_rows=True, judge_eligible=True,
+        no_requirement_rows=True, judge_verdict="eligible",
     ) == LaneDecision(REVIEW_DIR, "non_us_location")
     assert classify(
         verdict="uncertain", locations=["Austin, TX"], title="Field Auto Adjuster",
-        no_requirement_rows=True, judge_eligible=True,
+        no_requirement_rows=True, judge_verdict="eligible",
     ) == LaneDecision(REVIEW_DIR, "role_unconfirmed")
 
 
@@ -763,37 +798,54 @@ def test_the_promotion_is_inert_when_the_caller_states_no_judge_verdict() -> Non
                 verdict=verdict, locations=locations, title=title, **flags
             ) == classify(
                 verdict=verdict, locations=locations, title=title,
-                judge_eligible=False, **flags,
+                judge_verdict=None, **flags,
             )
 
 
 def test_lane_projects_the_promotion_too() -> None:
     """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
     for verdict in ("uncertain", "eligible", None):
-        for promoted in (False, True):
+        for judged in (None, "eligible"):
             kwargs = {
                 "verdict": verdict, **_US_SWE,
-                "no_requirement_rows": True, "judge_eligible": promoted,
+                "no_requirement_rows": True, "judge_verdict": judged,
             }
             decision = classify(**kwargs)  # type: ignore[arg-type]
             assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
             assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
 
 
-def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
-    """The lane and the folder tree must not disagree about a lead (D-332).
+def test_the_lane_classifier_has_exactly_two_call_sites_in_the_tree() -> None:
+    """The lane and the folder tree must not disagree about a lead (D-332), enforced structurally.
 
-    Both judge arguments are required at every site. `review_gate.lane` is called from FIVE
-    places — the runner's pre-tailor split, `sync_queue`'s
-    folder placement, the web API (twice for the page, once for the detail), the standing-queue
-    `review_job_ids` drain and `apply_lane_placements`. A call site that omits `judge_eligible`
-    does not fail: it silently routes a promoted lead the OTHER way, so the run tailors a PDF for
-    the apply lane and `sync_queue` then files the folder under `_review`, or the reverse. That is
-    exactly the second opinion `_review` exists to prevent, and nothing else in the suite would
-    catch it — every one of those call sites has its own fixtures.
+    This REPLACES the guard that required each call site to pass `judge_eligible`,
+    `judge_seniority_above_band` and `form_question_hit`. Since T109 every production-relevant
+    input to `classify` is a REQUIRED keyword argument, so `mypy --strict` rejects a call site
+    that drops one before any test runs — the old guard pinned nothing that the type checker did
+    not already pin harder.
 
-    Enumerated by AST rather than by grep so a renamed keyword or a call split over lines is still
-    seen. A new call site added without the argument reddens this on purpose.
+    What the type checker CANNOT state is how many call sites there are. That is the failure T109
+    actually found: five sites each spelled their own argument list, four of them re-derived the
+    title band as `False` by omission, one also dropped `posting_closed`, and all four reduced the
+    gate's verdict to a single boolean — so `mypy` was satisfied and standing leads still routed
+    two different ways. The fix is that there is now ONE standing argument list
+    (`delivery_queries.lane_decision`, which takes the whole `QueueRow`), and this is what stops a
+    sixth site being hand-written beside it.
+
+    Two sites, and each is named rather than counted, because "two" alone would stay green if one
+    moved and a new one appeared:
+
+    * `store/delivery_queries.py` — `lane_decision`, the single call every STANDING reader makes:
+      `sync_queue`'s folder placement, the web API's two lists and its detail pane,
+      `review_job_ids` and `apply_lane_placements`.
+    * `pipeline/runner.py` — `_lead_lanes`, the RUN's pre-tailor split. It is separate because it
+      classifies a `RankedPosting` before any `QueueRow` exists, and it shares the one title-band
+      derivation (`rank/title_band.py`) with the read above so the two cannot disagree.
+
+    Enumerated by AST rather than by grep so a call split over lines is still seen. It matches on
+    the called NAME, so an import alias evades it — the same accepted bypass the guard it replaces
+    had, and the reason this is the backstop rather than the mechanism: the mechanism is that
+    `lane_decision` takes the whole row, so a hand-written site has nothing to gain.
     """
     import ast  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
@@ -801,8 +853,7 @@ def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
     import boardwatch  # noqa: PLC0415
 
     root = Path(boardwatch.__file__).parent
-    missing: list[str] = []
-    seen = 0
+    sites: list[str] = []
     for path in sorted(root.rglob("*.py")):
         if path.name == "review_gate.py":
             continue
@@ -813,25 +864,15 @@ def test_every_call_site_in_the_tree_passes_the_promotion() -> None:
             name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
             if name not in {"classify", "lane", "review_lane"}:
                 continue
-            kwargs = {k.arg for k in node.keywords}
-            # Only the lane classifier takes these; any other `classify`/`lane` in the tree is a
+            # Only the lane classifier takes this; any other `classify`/`lane` in the tree is a
             # different function and must not be dragged in by name alone.
-            if "no_requirement_rows" not in kwargs:
+            if "no_requirement_rows" not in {k.arg for k in node.keywords}:
                 continue
-            seen += 1
-            for required in (
-                "judge_eligible",
-                "judge_seniority_above_band",
-                # T91. Omitting it at ONE site is the D-332 failure in its purest form: the lead
-                # is held for review by the site that passes it and promoted by the site that
-                # does not, so the folder tree and the page disagree about a citizenship hard
-                # stop. Nothing else would catch it -- each call site has its own fixtures.
-                "form_question_hit",
-            ):
-                if required not in kwargs:
-                    missing.append(f"{path.relative_to(root)}:{node.lineno} ({required})")
-    assert seen >= 5, f"expected at least five call sites, found {seen}"
-    assert not missing, f"call sites missing a judge argument: {missing}"
+            sites.append(str(path.relative_to(root)))
+    assert sites == ["pipeline/runner.py", "store/delivery_queries.py"], (
+        "the lane classifier must be called from exactly these two places; a new call site is a "
+        f"second opinion about one lead (D-332). Found: {sites}"
+    )
 
 
 # ------------------------------------------------------------------------------------------
@@ -872,7 +913,7 @@ def test_the_body_reader_holds_an_eligible_lead_and_outranks_the_promotion() -> 
     senior — and the hold is the conservative half."""
     assert classify(
         verdict="uncertain", **_US_SWE,
-        no_requirement_rows=True, judge_eligible=True, judge_seniority_above_band=True,
+        no_requirement_rows=True, judge_verdict="eligible", judge_seniority_above_band=True,
     ) == LaneDecision(REVIEW_DIR, "seniority_judged_above_band")
 
 
@@ -971,6 +1012,125 @@ def test_lane_projects_the_form_question_gate_too() -> None:
     """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
     for hit in (None, "Are you a US Citizen or Green Card Holder"):
         kwargs = {"verdict": "eligible", **_US_SWE, "form_question_hit": hit}
+        decision = classify(**kwargs)  # type: ignore[arg-type]
+        assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
+        assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# ------------------------------------------------------------------------------------------
+# T109 — the judge's NEGATIVE. The gate reads the verdict whole, not as a pair of booleans.
+# ------------------------------------------------------------------------------------------
+
+
+def test_a_current_judge_ineligible_HOLDS_an_eligible_lead() -> None:
+    """The lever, and the population it was measured on.
+
+    `classify` used to take `judge_eligible: bool`, which can say "not eligible" but never
+    "rejected" — so a current, high-confidence, span-carrying `ineligible` could hold nothing and
+    a deterministic `eligible` short-circuited above every gate below it. Measured live
+    2026-09-19, read-only: 45 delivered posting-versions carried a current judge `ineligible`
+    under the live identity, 17 of those also carried a deterministic `eligible` and therefore sat
+    in the APPLY lane on that short-circuit alone, and 12 of the 17 were open and unapplied.
+    """
+    assert classify(
+        verdict="eligible", **_US_SWE, judge_verdict="ineligible"
+    ) == LaneDecision(REVIEW_DIR, "judged_ineligible_verdict")
+
+
+def test_the_judges_rejection_is_HELD_and_never_drained_as_ineligible() -> None:
+    """The owner's ruling, 2026-09-19: review, never the `_ineligible` drain.
+
+    `verdict == "ineligible"` above is the DETERMINISTIC engine — a versioned rule fired against a
+    resolved profile field, auditable, and drained. This is one reader's opinion of the same JD,
+    and D-380's fail-open direction for a reading no rule produced is review: the lead stays
+    visible and reviewable. The two must therefore report DIFFERENT members, which is what stops
+    any downstream reader equating them.
+    """
+    judged = classify(verdict="uncertain", **_US_SWE, judge_verdict="ineligible")
+    deterministic = classify(verdict="ineligible", **_US_SWE)
+    assert judged.lane == deterministic.lane == REVIEW_DIR
+    assert judged.reason != deterministic.reason
+    assert (judged.reason, deterministic.reason) == (
+        "judged_ineligible_verdict",
+        "ineligible_verdict",
+    )
+
+
+def test_the_judges_rejection_outranks_its_own_seniority_note() -> None:
+    """Attribution, on the rule this module already applies to the hard-family abstain: when two
+    holds fire, reporting the weaker one understates the hold. Both readings come from the SAME
+    judge in the same call, and "I reject this lead" is the stronger of the two."""
+    assert classify(
+        verdict="eligible", **_US_SWE,
+        judge_verdict="ineligible", judge_seniority_above_band=True,
+    ) == LaneDecision(REVIEW_DIR, "judged_ineligible_verdict")
+
+
+@pytest.mark.parametrize(
+    ("above", "reason"),
+    [
+        ({"posting_closed": True}, None),
+        ({"form_question_hit": "Are you a U.S. citizen?"}, "form_question_hard_stop"),
+        ({"verdict": "ineligible"}, "ineligible_verdict"),
+        ({"locations": ["Kaunas, Lithuania"]}, "non_us_location"),
+        ({"title": "Registered Nurse Practitioner"}, "role_vetoed"),
+        ({"title": "Front Office Agent"}, "role_unconfirmed"),
+        ({"seniority_above_band": True}, "seniority_above_band"),
+    ],
+    ids=[
+        "closed", "form-hard-stop", "deterministic-ineligible",
+        "non-us", "role-vetoed", "role-unconfirmed", "title-band",
+    ],
+)
+def test_every_gate_above_the_judges_rejection_still_outranks_it(
+    above: dict[str, object], reason: str | None
+) -> None:
+    """The branch is INSERTED, not moved, so nothing that outranked the body reader stops doing so.
+
+    Each of these is a cheaper or more auditable claim than an LLM's reading: closure is a fact
+    about the world, the form quote is the only evidence of a requirement the JD never states, a
+    deterministic `ineligible` carries a catalog rule, location and role are deterministic gates,
+    and the title band is a token the operator can see at a glance.
+    """
+    kwargs = {"verdict": "uncertain", **_US_SWE, "judge_verdict": "ineligible", **above}
+    assert classify(**kwargs).reason == reason  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("judged", [None, "uncertain"], ids=["absent", "uncertain"])
+def test_a_judge_uncertain_is_indistinguishable_from_an_absent_row(judged: str | None) -> None:
+    """The control. `uncertain` is an ABSTAIN, and spending it as though it were a finding is what
+    the keystone forbids — so it must move nothing, in either direction, anywhere in the ladder.
+
+    Compared against the absent row across every verdict/location/title case AND every
+    requirement-flag combination, so a branch that started reading `judge_verdict is not None`
+    rather than its value reddens here.
+    """
+    for verdict, locations, title in _CASES:
+        for flags in ({}, {"no_requirement_rows": True}, {"experience_unconfirmed": True}):
+            assert classify(
+                verdict=verdict, locations=locations, title=title,
+                judge_verdict=judged, **flags,
+            ) == classify(verdict=verdict, locations=locations, title=title, **flags)
+
+
+def test_only_eligible_releases_the_two_requirement_holds() -> None:
+    """The other half of the narrowing: the verdict now travels whole, so the RELEASE must still
+    key on `eligible` alone. `ineligible` holds (above), and `uncertain`/absent release nothing."""
+    for flag in ("no_requirement_rows", "experience_unconfirmed"):
+        for judged in (None, "uncertain"):
+            assert classify(
+                verdict="uncertain", **_US_SWE, judge_verdict=judged, **{flag: True}
+            ).lane == REVIEW_DIR
+        assert classify(
+            verdict="uncertain", **_US_SWE, judge_verdict="eligible", **{flag: True}
+        ) == LaneDecision("", None)
+
+
+def test_lane_projects_the_rejection_too() -> None:
+    """`lane` must not become a second opinion now that `classify` reads a verdict rather than a
+    boolean (D-332)."""
+    for judged in (None, "eligible", "uncertain", "ineligible"):
+        kwargs = {"verdict": "eligible", **_US_SWE, "judge_verdict": judged}
         decision = classify(**kwargs)  # type: ignore[arg-type]
         assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
         assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
