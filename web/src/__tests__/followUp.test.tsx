@@ -317,9 +317,13 @@ describe("the write path", () => {
 
   it("round-trips the date through client.ts and offers an undo that clears it", async () => {
     const row = await openLead();
+    // A date RELATIVE to today, never a literal: the chip reads "follow-up due <d>" once d is
+    // today or past, so a hardcoded future date silently becomes a different assertion the day
+    // it arrives. That is what turned CI red at UTC midnight while local was still green.
+    const future = isoDaysFromToday(7);
     vi.mocked(setFollowUp).mockResolvedValue({
       outcome: "follow_up_set",
-      follow_up: "2026-09-20",
+      follow_up: future,
     });
     vi.mocked(clearFollowUp).mockResolvedValue({
       outcome: "follow_up_cleared",
@@ -327,17 +331,17 @@ describe("the write path", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Follow up on"), {
-      target: { value: "2026-09-20" },
+      target: { value: future },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, "2026-09-20");
+    expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, future);
     // Optimistic: the ROW shows it before any refetch, and the lead has NOT left the queue —
     // a follow-up is a note, not a disposition.
     const queue = screen.getByRole("grid", { name: "Queue" });
-    expect(within(queue).getAllByText("follow-up 2026-09-20").length).toBeGreaterThan(0);
+    expect(within(queue).getAllByText(`follow-up ${future}`).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     await act(async () => {
@@ -346,7 +350,7 @@ describe("the write path", () => {
     expect(vi.mocked(clearFollowUp)).toHaveBeenCalledWith(row.posting_id);
     // The exact chip text, not `/follow-up/`: the grid's own sort control is called "follow-up".
     expect(
-      within(screen.getByRole("grid", { name: "Queue" })).queryByText("follow-up 2026-09-20"),
+      within(screen.getByRole("grid", { name: "Queue" })).queryByText(`follow-up ${future}`),
     ).toBeNull();
   });
 
@@ -359,14 +363,15 @@ describe("the write path", () => {
     pending.catch(() => undefined);
     vi.mocked(setFollowUp).mockReturnValue(pending);
 
+    const future = isoDaysFromToday(7);
     fireEvent.change(screen.getByLabelText("Follow up on"), {
-      target: { value: "2026-09-20" },
+      target: { value: future },
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(
-      within(screen.getByRole("grid", { name: "Queue" })).getAllByText("follow-up 2026-09-20")
+      within(screen.getByRole("grid", { name: "Queue" })).getAllByText(`follow-up ${future}`)
         .length,
     ).toBeGreaterThan(0);
 
@@ -375,7 +380,7 @@ describe("the write path", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(
-      within(screen.getByRole("grid", { name: "Queue" })).queryByText("follow-up 2026-09-20"),
+      within(screen.getByRole("grid", { name: "Queue" })).queryByText(`follow-up ${future}`),
     ).toBeNull();
     expect(screen.getByText("400 from /api/queue/1/followup")).toBeTruthy();
   });
