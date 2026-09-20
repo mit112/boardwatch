@@ -21,6 +21,7 @@ export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   experience_requirement: "experience requirement",
   form_question_hard_stop: "form hard stop",
   ineligible_verdict: "ineligible verdict",
+  judged_ineligible_verdict: "judged ineligible",
   no_requirements_found: "nothing extracted",
   non_us_location: "outside the US",
   role_unconfirmed: "role unconfirmed",

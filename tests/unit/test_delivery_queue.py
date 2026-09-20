@@ -32,6 +32,7 @@ import hashlib
 import json
 import plistlib
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,7 +66,7 @@ from boardwatch.delivery.queue import (
     reconcile_queue,
     sync_queue,
 )
-from boardwatch.delivery.review_gate import LaneDecision, ReviewReason, classify
+from boardwatch.delivery.review_gate import LaneDecision, ReviewReason
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
 from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
@@ -73,7 +74,12 @@ from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application, set_application_status
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.delivery_queries import QueueDetail, QueueRow, delivered_unapplied
+from boardwatch.store.delivery_queries import (
+    QueueDetail,
+    QueueRow,
+    delivered_unapplied,
+    lane_decision,
+)
 from boardwatch.store.quarantine_queries import record_quarantine
 from boardwatch.store.queries import current_posting_versions, save_eligibility, save_profile
 from boardwatch.store.queue_state import (
@@ -1154,11 +1160,11 @@ def test_details_json_records_why_the_review_lane_holds_the_lead(
 ) -> None:
     """The reason travels to disk, so a run's review composition is readable without the web API.
 
-    Asserted against `classify` itself rather than against a hand-written string: the persisted
-    reason and the folder the lead sits in must be the SAME decision (D-332), so a re-derivation
-    that agreed today and drifted tomorrow would pass a literal-only assertion. The literal is
-    pinned too, so a `classify` that started returning the wrong member for this lead cannot make
-    both sides of the comparison wrong together.
+    Asserted against `lane_decision` itself rather than against a hand-written string: the
+    persisted reason and the folder the lead sits in must be the SAME decision (D-332), so a
+    re-derivation that agreed today and drifted tomorrow would pass a literal-only assertion. The
+    literal is pinned too, so a classifier that started returning the wrong member for this lead
+    cannot make both sides of the comparison wrong together.
     """
     with engine.begin() as conn:
         silent_id, _ = _deliver(conn, apps, "silent", company="Silent Co", body=SILENT_JD)
@@ -1167,16 +1173,7 @@ def test_details_json_records_why_the_review_lane_holds_the_lead(
         rows = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
         sync_queue(conn, root=root, owner_name=OWNER)
 
-    silent = rows[silent_id]
-    expected = classify(
-        verdict=silent.verdict,
-        locations=silent.locations,
-        title=silent.title,
-        experience_unconfirmed=silent.requirement_flags.experience_unconfirmed,
-        eligibility_unconfirmed=silent.requirement_flags.eligibility_unconfirmed,
-        no_requirement_rows=silent.requirement_flags.no_requirement_rows,
-        posting_closed=silent.closed,
-    ).reason
+    expected = lane_decision(rows[silent_id]).reason
     assert expected == "no_requirements_found"
 
     held = _details(root / REVIEW_DIR / "Silent_Co_Software_Engineer")["review_reason"]
@@ -1209,10 +1206,10 @@ def test_an_unknown_review_reason_fails_the_lead(
     with engine.begin() as conn:
         _deliver(conn, apps, "invented-reason")
 
-    def invented(**kwargs: object) -> LaneDecision:
+    def invented(row: object) -> LaneDecision:
         return LaneDecision(REVIEW_DIR, "invented_reason")  # type: ignore[arg-type]
 
-    monkeypatch.setattr(queue, "classify", invented)
+    monkeypatch.setattr(queue, "lane_decision", invented)
     with engine.connect() as conn:
         report = sync_queue(conn, root=root, owner_name=OWNER)
     monkeypatch.undo()
@@ -2896,3 +2893,247 @@ def test_the_pipeline_makes_no_form_request_unless_a_caller_supplies_a_fetcher(
         )
         # And neither call stored anything, which is what says no request was made.
         assert cached_form_questions(conn, [version.posting_version_id]) == {}
+
+
+# ------------------------------------ T109: the standing lane's title band and the judge's NO
+
+
+#: A body the judge's `ineligible` is quoted from. It is NOT the posting body the deterministic
+#: engine reads (`JD`), and it does not need to be: `record_gate_verdict` uses `jd_text` only as
+#: the keystone span source, while `current_gate_verdicts` keys purely on the frozen version and
+#: the identity. Keeping them apart is what lets the fixture hold a DETERMINISTIC `eligible` and a
+#: JUDGE `ineligible` on one lead, which is the whole population this ticket is about.
+JUDGE_JD = "This position requires an active Top Secret security clearance."
+JUDGE_EVIDENCE = "requires an active Top Secret security clearance"
+
+
+@dataclass(frozen=True)
+class _Standing:
+    """What each of the four standing readers says about ONE delivered lead.
+
+    Read through four independent paths on purpose. They are the four call sites that must agree,
+    and each has its own fixtures elsewhere in the suite — so a hold that reaches one of them and
+    not the others is exactly the D-332 failure nothing else in the suite would catch.
+    """
+
+    #: The COMPUTED title-band bit on the row itself, read before any lane call — so the four
+    #: routings below cannot all be wrong together with the input they are derived from.
+    band_bit: bool
+    folder: str
+    review_reason: str | None
+    detail_reason: str | None
+    in_review_ids: bool
+    in_apply_lane: bool
+
+
+def _read_standing(engine: Engine, root: Path, apps: Path, posting_id: int, job_id: int) -> _Standing:
+    from boardwatch.delivery.api import ApiContext, detail_payload, queue_payload  # noqa: PLC0415
+    from boardwatch.store.delivery_queries import (  # noqa: PLC0415
+        apply_lane_placements,
+        review_job_ids,
+    )
+
+    with engine.begin() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    ctx = ApiContext(
+        settings=load_settings(),
+        out_root=apps.resolve(),
+        queue_root=root.resolve(),
+        owner_name=OWNER,
+        platform="darwin",
+    )
+    with engine.connect() as conn:
+        page = queue_payload(conn, ctx)
+        detail = detail_payload(conn, ctx, posting_id)
+        held = review_job_ids(conn)
+        standing = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+        run_ids = {
+            row.delivered_run_id for row in standing.values() if row.delivered_run_id is not None
+        }
+        placements = apply_lane_placements(conn, run_ids=run_ids)
+    assert detail is not None
+    rows = {int(row["posting_id"]): row for row in page["rows"] + page["review"]}
+    return _Standing(
+        band_bit=standing[posting_id].seniority_above_band,
+        folder=_folder_of(root, posting_id),
+        review_reason=rows[posting_id]["review_reason"],
+        detail_reason=detail["row"]["review_reason"],
+        in_review_ids=job_id in held,
+        in_apply_lane=any(in_apply for _placeable, in_apply in placements.values()),
+    )
+
+
+def _folder_of(root: Path, posting_id: int) -> str:
+    """Which lane directory `sync_queue` filed this lead's folder under (`""` is the apply queue).
+
+    Identified by the `posting_id` inside `details.json`, never by the folder NAME, exactly as
+    `queue.py:_index` does — the name is a projection of the title and says nothing about lanes.
+    """
+    for details in root.rglob(DETAILS_FILE):
+        if json.loads(details.read_text(encoding="utf-8"))["posting_id"] == posting_id:
+            parent = details.parent.parent
+            return "" if parent == root else parent.name
+    raise AssertionError(f"no queue folder holds posting {posting_id}")
+
+
+def _narrow_the_target_band(engine: Engine) -> None:
+    """Move the operator's target band from `any` to `entry`, as `boardwatch profile` would.
+
+    `target_seniority_band` is NOT part of `profile_hash` — that hashes the eligibility facts,
+    the policy, the rules catalog and the declared fields — so every stored evaluation survives
+    this and the lead keeps the verdict it was delivered with. Without that the lead would route
+    to review under `unevaluated` and the assertion below would pass for the wrong reason.
+    """
+    from boardwatch.store.tables import profile  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        conn.execute(update(profile).values(target_seniority_band="entry"))
+
+
+def _judge(engine: Engine, posting_id: int, *, decision: str) -> None:
+    """Persist one FINAL-GATE verdict against this lead's current version, under the live identity."""
+    from boardwatch.eligibility import final_gate  # noqa: PLC0415
+    from boardwatch.eligibility.oracle import OracleVerdict  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        version = current_posting_versions(conn, [posting_id])[posting_id]
+        final_gate.record_gate_verdict(
+            conn,
+            posting_version_id=version.posting_version_id,
+            jd_text=JUDGE_JD,
+            facts=FACTS,
+            policy=POLICY,
+            catalog=load_rules(load_settings().config_dir),
+            verdict=OracleVerdict(
+                label=str(posting_id), decision=decision, reason="work_auth",
+                evidence=JUDGE_EVIDENCE, confidence="high",
+            ),
+        )
+
+
+def test_a_narrowed_target_band_holds_a_STANDING_lead_in_every_reader(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T109 part 1. The title-seniority hold must reach the standing queue, not only the run.
+
+    `pipeline/runner._lead_lanes` computes the band and passes it; the four standing readers did
+    not, so `classify`'s `seniority_above_band` defaulted False for every lead already delivered.
+    The case that matters is exactly this one and it is unreachable from the run path — the
+    ranker hides an above-band posting BEFORE delivery (see
+    `tests/pipeline/test_lane_split_before_tailor.py`), so the only way a senior title is standing
+    in the apply lane is that it was delivered while the band was `any` and the band narrowed
+    afterwards. The band is COMPUTED on every read for that reason; persisting it at delivery
+    would freeze the answer the day the operator's target moved.
+    """
+    with engine.begin() as conn:
+        senior, senior_job = _deliver(conn, apps, "senior", title="Principal Software Engineer")
+
+    # The control: while the band is `any` the gate is inert and the lead is blindly appliable.
+    before = _read_standing(engine, root, apps, senior, senior_job)
+    assert before == _Standing(
+        band_bit=False, folder="", review_reason=None, detail_reason=None,
+        in_review_ids=False, in_apply_lane=True,
+    )
+
+    _narrow_the_target_band(engine)
+
+    after = _read_standing(engine, root, apps, senior, senior_job)
+    assert after == _Standing(
+        band_bit=True, folder=REVIEW_DIR, review_reason="seniority_above_band",
+        detail_reason="seniority_above_band", in_review_ids=True, in_apply_lane=False,
+    )
+
+
+def test_a_current_judge_ineligible_HOLDS_a_standing_lead_in_every_reader(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T109 part 2, and the owner's ruling of 2026-09-19.
+
+    A CURRENT judge `ineligible` holds a standing lead in REVIEW under its own reason. It is never
+    equated with a deterministic deletion and it is never dropped: review is the fail-open
+    direction D-380 requires for a reading no deterministic rule produced, so the lead stays
+    visible and keeps its folder.
+
+    Measured live before it shipped: 45 delivered posting-versions carried a current judge
+    `ineligible`, 17 of them ALSO carried a deterministic `eligible` and therefore sat in the
+    apply lane on `classify`'s `eligible` short-circuit alone, and 12 of those 17 were open and
+    unapplied. The deterministic `eligible` is asserted below rather than assumed, so the fixture
+    cannot drift into a verdict that would reach the hold through some other branch.
+    """
+    with engine.begin() as conn:
+        judged, judged_job = _deliver(conn, apps, "judged")
+
+    with engine.connect() as conn:
+        (row,) = delivered_unapplied(conn, skipped=set())
+    assert row.verdict == "eligible", (
+        "the fixture must carry a DETERMINISTIC eligible, or the hold below could be reached by "
+        f"a branch under the short-circuit rather than above it; got {row.verdict!r}"
+    )
+
+    # The control: with no gate row the lead is blindly appliable, so the move is attributable.
+    before = _read_standing(engine, root, apps, judged, judged_job)
+    assert before.folder == "" and before.review_reason is None
+
+    _judge(engine, judged, decision="ineligible")
+
+    after = _read_standing(engine, root, apps, judged, judged_job)
+    assert after == _Standing(
+        band_bit=False, folder=REVIEW_DIR, review_reason="judged_ineligible_verdict",
+        detail_reason="judged_ineligible_verdict", in_review_ids=True, in_apply_lane=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("decision", "reason"),
+    [("eligible", None), ("uncertain", None)],
+    ids=["eligible-releases-nothing-here", "uncertain-is-an-absent-row"],
+)
+def test_the_other_two_judge_states_leave_a_standing_lead_where_it_was(
+    engine: Engine, root: Path, apps: Path, decision: str, reason: str | None
+) -> None:
+    """The controls, one per remaining judge state. These stop the hold over-reaching.
+
+    A judge `eligible` releases the two requirement holds and nothing else, and an `uncertain`
+    behaves exactly as an absent row does — neither may move a lead that nothing else holds.
+    """
+    with engine.begin() as conn:
+        lead, lead_job = _deliver(conn, apps, "control")
+    _judge(engine, lead, decision=decision)
+
+    after = _read_standing(engine, root, apps, lead, lead_job)
+    assert after == _Standing(
+        band_bit=False, folder="", review_reason=reason, detail_reason=reason,
+        in_review_ids=False, in_apply_lane=True,
+    )
+
+
+def test_a_closed_lead_reports_no_review_reason_in_the_detail_pane(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`_row_json` omitted `posting_closed`, so the pane answered as though the lead were live.
+
+    A closed lead drains to `_closed`, which carries NO review reason — it is not held for a
+    reason drawn from the review catalog, it is simply gone (`LaneDecision`'s own contract). The
+    pane was computing the reason the lead WOULD have had were it open and publishing that
+    instead, so the one surface where the reader decides whether to apply named a hold the folder
+    tree does not agree with. The posting's closure still reaches the page as `status`, which is
+    what the closed chip renders.
+    """
+    from boardwatch.delivery.api import ApiContext, detail_payload  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        # `Front Office Agent` carries no software signal, so an OPEN lead here is held for
+        # `role_unconfirmed` — that is the reason the pane must stop reporting once it is closed.
+        dead, _ = _deliver(conn, apps, "dead", title="Front Office Agent")
+        conn.execute(update(postings).where(postings.c.id == dead).values(
+            status="closed", closed_at=NOW
+        ))
+    ctx = ApiContext(
+        settings=load_settings(), out_root=apps.resolve(), queue_root=root.resolve(),
+        owner_name=OWNER, platform="darwin",
+    )
+    with engine.connect() as conn:
+        detail = detail_payload(conn, ctx, dead)
+    assert detail is not None
+    assert detail["row"]["status"] == "closed"
+    assert detail["row"]["review_reason"] is None

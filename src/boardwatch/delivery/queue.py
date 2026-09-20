@@ -72,7 +72,6 @@ from boardwatch.delivery.review_gate import (
     REVIEW_DIR,
     REVIEW_REASONS,
     ReviewReason,
-    classify,
 )
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
@@ -83,6 +82,7 @@ from boardwatch.store.delivery_queries import (
     delivered_unapplied,
     ineligible_job_ids,
     lane_copy_job_ids,
+    lane_decision,
     queue_detail,
     review_job_ids,
 )
@@ -418,24 +418,11 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         for row in delivered_unapplied(conn, skipped=withheld)
         if row.verdict != "ineligible"
     ]
-    # `classify`, not `lane`: the folder a lead lands in and the reason `details.json` publishes
-    # for it are ONE decision here, so neither can be re-derived into disagreement with the other
-    # (D-332, and the same rule `delivery/api.py` follows for the page).
-    decision_of = {
-        row.posting_id: classify(
-            verdict=row.verdict,
-            locations=row.locations,
-            title=row.title,
-            experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
-            eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
-            no_requirement_rows=row.requirement_flags.no_requirement_rows,
-            judge_eligible=row.judge_verdict == "eligible",
-            judge_seniority_above_band=row.judge_seniority_fit == "no",
-            form_question_hit=row.form_question_hit,
-            posting_closed=row.closed,
-        )
-        for row in rows
-    }
+    # `lane_decision`, which is `classify` over the WHOLE row: the folder a lead lands in and the
+    # reason `details.json` publishes for it are ONE decision here, so neither can be re-derived
+    # into disagreement with the other (D-332, and the same call `delivery/api.py` makes for the
+    # page and `delivery_queries` makes for both drains).
+    decision_of = {row.posting_id: lane_decision(row) for row in rows}
     artifact_ids = _tailored_artifact_ids(conn)
     entries, by_job, duplicates = _resolve_job_identity(conn, _index(root)[0])
     planned, failures = _plan(rows, root=root, owner_name=owner_name)
