@@ -400,6 +400,15 @@ nothing by itself: review, then `companies import`.""",
 proposal. It reaches the network: resolving a `grnh.se` short link means fetching it. Opens the
 store without migrating (no migration). Watches nothing by itself.""",
     ),
+    "companies unscanned": Entry(
+        ("reads store", "writes files"),
+        """Lists the boards the store already holds but never scans -- `watched = 0` on a
+provider that has a scanner adapter -- as a proposal for review; `--out` writes it. No network
+and no store write; opens the store without migrating (no migration). A provider with no
+adapter is excluded rather than bucketed; a `source=user` row and a slug `companies import`
+would refuse are shown but never proposed. Watches nothing by itself: review, then
+`companies import`.""",
+    ),
     # ---- configuration ----------------------------------------------------------------------
     "config show": Entry(
         ("pure",),

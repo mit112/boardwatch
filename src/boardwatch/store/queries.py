@@ -7,7 +7,7 @@ Run counts are derived conveniences; posting_events is the source of truth (§4)
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,10 +18,14 @@ from sqlalchemy import (
     Engine,
     Row,
     Select,
+    and_,
     case,
+    exists,
     func,
     insert,
+    literal,
     literal_column,
+    or_,
     select,
     tuple_,
     update,
@@ -45,6 +49,22 @@ from boardwatch.store.tables import (
 # its own table. The pattern mirrors extract/preflight.py:63-81, which finds every
 # missing row with ONE set-oriented correlated EXISTS rather than a per-row lookup.
 _pv = posting_versions.alias("pv_current")
+
+
+def _unsliced_slug(slug: ColumnElement[str]) -> ColumnElement[str]:
+    """`slug` with any `#parameter=descriptor` facet fragment (T71) stripped, in SQL.
+
+    One definition, three readers — `stored_slug`, `companies_named_by_slug` and
+    `unwatched_scannable_companies`. A slice is an IN-PLACE edit of a watched row's slug, so
+    every query that has to recognise "the same board" has to strip the fragment the same way;
+    a third copy of the expression that drifted from the other two would make one of them stop
+    seeing exactly the rows it exists to find.
+
+    SQLite's `instr` returns 0 when the needle is absent, so the unsliced case falls through to
+    the column itself rather than to an empty string.
+    """
+    fragment_at = func.instr(slug, "#")
+    return case((fragment_at > 0, func.substr(slug, 1, fragment_at - 1)), else_=slug)
 
 
 def body_is_empty() -> ColumnElement[bool]:
@@ -416,11 +436,7 @@ def stored_slug(conn: Connection, *, provider: str, slug: str) -> str | None:
     days earlier). One direction only: a slug that CARRIES a fragment still matches exactly,
     because a sibling slice (`…#group=B` beside `…#group=A`) is a deliberate second row.
     """
-    fragment_at = func.instr(companies.c.slug, "#")
-    unsliced_stored = case(
-        (fragment_at > 0, func.substr(companies.c.slug, 1, fragment_at - 1)),
-        else_=companies.c.slug,
-    )
+    unsliced_stored = _unsliced_slug(companies.c.slug)
     wanted = func.lower(slug)
     matches = (
         func.lower(companies.c.slug) == wanted
@@ -569,11 +585,7 @@ def companies_named_by_slug(conn: Connection) -> list[Row[Any]]:
     # in-place slug edit that appends `#group=descriptor` after the row was named, so a
     # host-named row that was later sliced carries the UNSLICED slug as its name; an exact
     # `name == slug` test stopped seeing exactly those rows and they stayed host-named.
-    fragment_at = func.instr(companies.c.slug, "#")
-    unsliced_slug = case(
-        (fragment_at > 0, func.substr(companies.c.slug, 1, fragment_at - 1)),
-        else_=companies.c.slug,
-    )
+    unsliced_slug = _unsliced_slug(companies.c.slug)
     return list(
         conn.execute(
             select(companies.c.id, companies.c.provider, companies.c.slug, companies.c.name)
@@ -613,6 +625,95 @@ def company_exists(conn: Connection, *, provider: str, slug: str) -> bool:
     which is exactly how `ashby:lightfield` became a second row for `ashby:Lightfield`.
     """
     return stored_slug(conn, provider=provider, slug=slug) is not None
+
+
+def unwatched_scannable_companies(
+    conn: Connection, *, providers: Collection[str]
+) -> list[Row[Any]]:
+    """Every board the store holds but the scan fleet never reads — one row per BOARD, with the
+    evidence a human needs to judge it.
+
+    `get_watched_companies` selects `watched IS TRUE`, and `upsert_lane_company` writes
+    `watched=False` for a new row, so a company a lane discovered on a board the scanner CAN
+    parse is stored and then never scanned. Nothing in the repo could list that population
+    without hand-written SQL, which is why it went unnoticed and refilled.
+
+    READ ONLY, and that is the whole contract: this selects, it never promotes. Whether any row
+    here should be watched is the owner's ruling, taken through `companies import`.
+
+    `providers` is the ADAPTER SET and the caller supplies it — `providers.registry` is the
+    single source of truth for which providers have a scanner, and this module must never
+    import it (the registry feeds store-free entry points; a subprocess guard enforces the
+    direction). A second hardcoded list of provider names here would be exactly the closed
+    catalog that drifts from `providers/`. An empty set therefore selects NOTHING rather than
+    everything: no adapter, no proposal. A provider with no adapter (`jazzhr`, `breezy`) and an
+    aggregator placeholder (`linkedin`, `indeed`, `jobapps`, `hiringcafe`) are both simply
+    absent from the set, so they are excluded rather than bucketed as a new category.
+
+    ONE ROW PER BOARD, folded the way `stored_slug` folds — the store's own `(provider, slug)`
+    identity, not a second one invented here. A row is dropped when the store already holds:
+
+    * a WATCHED case-variant of the same board — the board IS scanned, and proposing it would
+      write a second row for one board, which is the `ashby:Lightfield` duplicate; or
+    * an OLDER unwatched variant — that older row is the one `upsert_watch` would land on, so
+      proposing both would offer one board twice.
+
+    An unsliced slug also matches a stored SLICED row of the same board, the one direction
+    `stored_slug` folds: a Workday slice is an in-place narrowing of the watched row, so
+    re-proposing the whole board would re-add everything the slice was made to exclude. A slug
+    that CARRIES a fragment is matched exactly, because a sibling slice is a deliberate second
+    board.
+
+    `postings` and `first_seen_at` are the provenance: a row with no posting at all was never
+    actually observed. LEFT JOIN, so such a row is reported with `postings = 0` rather than
+    silently dropped — "never observed" is a judgement for the reviewer, not a filter here.
+    """
+    if not providers:
+        return []
+    peer = companies.alias("board_peer")
+    carries_fragment = func.instr(companies.c.slug, "#") > 0
+    same_board = or_(
+        and_(carries_fragment, func.lower(peer.c.slug) == func.lower(companies.c.slug)),
+        and_(
+            ~carries_fragment,
+            func.lower(_unsliced_slug(peer.c.slug)) == func.lower(companies.c.slug),
+        ),
+    )
+    # ANOTHER row (`id !=`), never this one. Without that the row's own `watched` would reach
+    # this clause too and the `watched IS FALSE` filter below would become redundant — two
+    # clauses enforcing one rule, where dropping either leaves the census still passing its
+    # own tests. One rule, one place: `watched IS FALSE` selects the population, this drops
+    # the second spelling of a board already in it.
+    superseded = exists(
+        select(literal(1))
+        .select_from(peer)
+        .where(
+            peer.c.id != companies.c.id,
+            peer.c.provider == companies.c.provider,
+            same_board,
+            or_(peer.c.watched.is_(True), peer.c.id < companies.c.id),
+        )
+    )
+    stmt = (
+        select(
+            companies.c.id,
+            companies.c.provider,
+            companies.c.slug,
+            companies.c.name,
+            companies.c.source,
+            func.count(postings.c.id).label("postings"),
+            func.min(postings.c.first_seen_at).label("first_seen_at"),
+        )
+        .select_from(companies.outerjoin(postings, postings.c.company_id == companies.c.id))
+        .where(
+            companies.c.watched.is_(False),
+            companies.c.provider.in_(sorted(providers)),
+            ~superseded,
+        )
+        .group_by(companies.c.id)
+        .order_by(companies.c.provider, companies.c.slug)
+    )
+    return list(conn.execute(stmt).all())
 
 
 # keep the P0 signature working — it is now a thin wrapper (no caller churn)
