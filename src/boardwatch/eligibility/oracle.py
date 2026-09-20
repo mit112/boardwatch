@@ -217,6 +217,12 @@ class AcceptedLabel:
 
 
 _VERDICTS = frozenset({"eligible", "ineligible", "uncertain"})
+#: The closed `confidence` vocabulary JUDGING_POLICY above asks for. Only `high` clears the
+#: `ineligible` gate below; every other member downgrades to `uncertain`. Nothing validated this
+#: until T106 — a judge answering anything at all was accepted and persisted verbatim — so
+#: `gate_judge` now refuses an out-of-catalog answer at its batch boundary, where the cost is one
+#: batch failing open rather than a field nobody can read.
+_CONFIDENCE = frozenset({"high", "medium", "low"})
 
 
 def is_allowed_reason(reason: str | None, catalog: RulesCatalog) -> bool:
