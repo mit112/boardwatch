@@ -448,6 +448,13 @@ class PipelineSummary:
     rewrite_rows: list[dict[str, object]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     fatal: str | None = None
+    # Whether this run's TERMINAL STATUS reached the store — `True` only when `finish_run`
+    # returned without raising, so `runs.status` and `finished_at` are durable. `False` is the
+    # safe default and is what a run that never reached the finalize block honestly reports:
+    # the row is still `running`, only the next run's reaper will close it, and the heartbeat
+    # gate below withholds the ping on exactly that state. A run whose bookkeeping did not
+    # land is not a run the dead-man's switch may call successful.
+    terminal_status_persisted: bool = False
     # Where the per-run funnel artifact landed (P0 item 1). None only when writing it failed,
     # which is reported to the console and never allowed to fail the run.
     funnel: WrittenArtifact | None = None
@@ -2741,13 +2748,42 @@ def run_pipeline(
         # below are: the row cannot record it (that is what just failed), so the artifact is
         # the only place left that can. The row is then left `running` and the next run's
         # reaper closes it — the safe direction, and visible.
+        #
+        # Retried ONCE (T129) before it is given up on. The failure this converts is
+        # contention, not corruption: `finish_run` owns its transaction, so a raise rolled the
+        # whole statement back and a second attempt writes exactly what the first meant to.
+        # One re-attempt and no loop — see `_finish_run_with_one_retry`. If the re-attempt
+        # fails too, nothing changes about this handler — the note goes to the console and
+        # `summary.errors`, never to the row, because the row is what just refused the write —
+        # and `terminal_status_persisted` stays False, which withholds the heartbeat below.
+        #
+        # Where the ESCALATABLE alerts begin, and why a mark is needed at all: `summary.errors`
+        # is not "the run's alerts". It accumulates every stage error the pipeline produced — a
+        # single 404 on one board slug, a lane that could not collect, a per-lead projection or
+        # tailor degradation — and those are routine on a 379-board fleet. Measured over the last
+        # 25 runs, NINE carried a non-empty `summary.errors` and not one of the nine was a
+        # finalize-block alert: runs 124-128 each carried `plaid: HTTP 404` for one dead slug.
+        # Escalating that list would drive an external monitor DOWN on five consecutive ordinary
+        # `status=ok` runs, and an owner who learns a DOWN check means nothing has lost the only
+        # property this channel has. Everything appended from here on is a deliberate ALERT: the
+        # artifact-write failures, the six soft detectors, and the heartbeat's own result.
+        #
+        # The mark sits ABOVE the `finish_run` attempt rather than below the form sweep (T129),
+        # and that move costs nothing and buys the one alert that most needed the channel:
+        # NOTHING between here and the funnel write below appends to `summary.errors` except
+        # the terminal-persistence failure itself — the coverage load and the form sweep both
+        # print and deliberately do not record — so the slice gains that note and no stage
+        # error. A run row left `running` is the most consequential thing this block can
+        # report, and it was the one thing excluded from the report.
+        escalatable_from = len(summary.errors)
         try:
-            finish_run(
+            _finish_run_with_one_retry(
                 engine,
                 run_id,
                 errors=stage_errors,
                 status=RUN_FAILED if summary.fatal is not None else RUN_OK,
             )
+            summary.terminal_status_persisted = True
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"finish_run failed, run row left unfinished: {exc}"
             console.print(f"  ! {note}", markup=False)
@@ -2821,17 +2857,6 @@ def run_pipeline(
                 f"{summary.form_questions.budget_refused} refused by budget",
                 markup=False,
             )
-        # Where the ESCALATABLE alerts begin, and why a mark is needed at all: `summary.errors`
-        # is not "the run's alerts". It accumulates every stage error the pipeline produced — a
-        # single 404 on one board slug, a lane that could not collect, a per-lead projection or
-        # tailor degradation — and those are routine on a 379-board fleet. Measured over the last
-        # 25 runs, NINE carried a non-empty `summary.errors` and not one of the nine was a
-        # finalize-block alert: runs 124-128 each carried `plaid: HTTP 404` for one dead slug.
-        # Escalating that list would drive an external monitor DOWN on five consecutive ordinary
-        # `status=ok` runs, and an owner who learns a DOWN check means nothing has lost the only
-        # property this channel has. Everything appended from here on is a deliberate ALERT: the
-        # artifact-write failures, the six soft detectors, and the heartbeat's own result.
-        escalatable_from = len(summary.errors)
         try:
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -2916,12 +2941,23 @@ def run_pipeline(
         # complete, which is not systemic — the heartbeat stays green and F4 cannot see it
         # because the survivors still emit net-new. Soft and non-fatal, recorded in the run.
         # `scan_summary` is None on a lane-only or `--no-scan` run.
+        #
+        # Guarded (T129), and the guard is about `append_run_error`, not about the detector:
+        # this block had no `try` of any kind, so a store fault on the one write it makes
+        # aborted the whole finalize block — `_emit_morning`, the heartbeat gate and the
+        # escalation below it all skipped — and turned a soft alert into a silent run. Swallowed
+        # and printed, the direction `_load_board_coverage` already takes: a mute section beats
+        # a lost finalize. The three sibling blocks below carry the same guard for the same
+        # reason.
         if scan_summary is not None:
-            outage = scan_outage_alert(scan_summary.companies, summary.scan_boards_failed)
-            if outage is not None:
-                console.print(f"  ! {outage}", markup=False)
-                summary.errors.append(outage)
-                append_run_error(engine, run_id, outage)
+            try:
+                outage = scan_outage_alert(scan_summary.companies, summary.scan_boards_failed)
+                if outage is not None:
+                    console.print(f"  ! {outage}", markup=False)
+                    summary.errors.append(outage)
+                    append_run_error(engine, run_id, outage)
+            except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+                console.print(f"  ! scan-outage alert not recorded: {exc}", markup=False)
         # Delivery-drought soft alert. Intake can be healthy while the tailor, rank, or delivery
         # path silently ships nothing; the heartbeat stays green and intake-death cannot see it
         # (net-new > 0). Fires only when the last clean runs each judged a candidate yet
@@ -3013,15 +3049,20 @@ def run_pipeline(
         # still fires and is still recorded, but is invisible in the one artifact an
         # unattended owner reads. `gate_failed_open` counts BATCHES, not leads — see
         # `llm.gate_judge.GateStageResult`.
-        if summary.gate_failed_open:
-            gate_alert = (
-                f"gate: {summary.gate_failed_open} batch(es) failed open this run "
-                f"({summary.gate_judged} judged clean) — the judge did not run for those "
-                "leads; they were left unchanged, never dropped"
-            )
-            console.print(f"  ! {gate_alert}", markup=False)
-            summary.errors.append(gate_alert)
-            append_run_error(engine, run_id, gate_alert)
+        # Guarded (T129) for the reason the scan-outage block above is: its `append_run_error`
+        # is unprotected work sitting upstream of `_emit_morning` and the heartbeat gate.
+        try:
+            if summary.gate_failed_open:
+                gate_alert = (
+                    f"gate: {summary.gate_failed_open} batch(es) failed open this run "
+                    f"({summary.gate_judged} judged clean) — the judge did not run for those "
+                    "leads; they were left unchanged, never dropped"
+                )
+                console.print(f"  ! {gate_alert}", markup=False)
+                summary.errors.append(gate_alert)
+                append_run_error(engine, run_id, gate_alert)
+        except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+            console.print(f"  ! gate failed-open alert not recorded: {exc}", markup=False)
         # T107 — the ITEM-level half of the same alert, which the batch count above cannot
         # see at all. A PARTIAL answer and a per-item refusal each append a note at the GATE
         # stage, which is BELOW `escalatable_from`, so run 467 (2026-09-19, the live 04:00
@@ -3036,16 +3077,21 @@ def run_pipeline(
         # failure, and the funnel says which of the two it was. `missing` and `refused` are
         # separate numbers in one alert because they are one question ("which leads did this
         # run fail to judge") with two causes.
-        if summary.gate_sent and (summary.gate_missing_items or summary.gate_refused_items):
-            coverage_alert = (
-                f"gate: {summary.gate_missing_items} of {summary.gate_sent} judged items came "
-                f"back with no verdict and {summary.gate_refused_items} were answered then "
-                "refused — those leads were left unchanged, never dropped, and carry no gate "
-                "row at all"
-            )
-            console.print(f"  ! {coverage_alert}", markup=False)
-            summary.errors.append(coverage_alert)
-            append_run_error(engine, run_id, coverage_alert)
+        #
+        # Guarded (T129) like its sibling above.
+        try:
+            if summary.gate_sent and (summary.gate_missing_items or summary.gate_refused_items):
+                coverage_alert = (
+                    f"gate: {summary.gate_missing_items} of {summary.gate_sent} judged items "
+                    f"came back with no verdict and {summary.gate_refused_items} were answered "
+                    "then refused — those leads were left unchanged, never dropped, and carry "
+                    "no gate row at all"
+                )
+                console.print(f"  ! {coverage_alert}", markup=False)
+                summary.errors.append(coverage_alert)
+                append_run_error(engine, run_id, coverage_alert)
+        except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+            console.print(f"  ! gate coverage alert not recorded: {exc}", markup=False)
         # T107 — the FIELD-level half, and the degradation with no signal whatsoever today.
         # `_seniority_fit` folds an absent or out-of-catalog answer to `"unclear"`, which is
         # the right DELIVERY direction (it withholds nothing) and an unreadable REPORTING one:
@@ -3058,22 +3104,28 @@ def run_pipeline(
         # MAJORITY rather than any single miss, because this fires daily into the escalation
         # channel and one oddly-spelled answer in thirteen is noise, while the failure this
         # exists to catch — a prompt or policy drift that drops the field — hits every answer.
+        #
+        # Guarded (T129) like its two siblings above.
         seniority_answers = (
             summary.gate_seniority_answered
             + summary.gate_seniority_unclear
             + summary.gate_seniority_unreadable
         )
         unreadable_majority = summary.gate_seniority_unreadable * 2 > seniority_answers
-        if settings.gate.seniority_hold and unreadable_majority:
-            seniority_alert = (
-                "gate: `seniority_fit` was absent or out-of-catalog on "
-                f"{summary.gate_seniority_unreadable} of {seniority_answers} verdicts while "
-                "`gate.seniority_hold` is armed — every one of them reads `unclear` and holds "
-                "nothing; an explicit `unclear` is a real answer and is not counted here"
-            )
-            console.print(f"  ! {seniority_alert}", markup=False)
-            summary.errors.append(seniority_alert)
-            append_run_error(engine, run_id, seniority_alert)
+        try:
+            if settings.gate.seniority_hold and unreadable_majority:
+                seniority_alert = (
+                    "gate: `seniority_fit` was absent or out-of-catalog on "
+                    f"{summary.gate_seniority_unreadable} of {seniority_answers} verdicts while "
+                    "`gate.seniority_hold` is armed — every one of them reads `unclear` and "
+                    "holds nothing; an explicit `unclear` is a real answer and is not counted "
+                    "here"
+                )
+                console.print(f"  ! {seniority_alert}", markup=False)
+                summary.errors.append(seniority_alert)
+                append_run_error(engine, run_id, seniority_alert)
+        except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+            console.print(f"  ! gate seniority alert not recorded: {exc}", markup=False)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
@@ -3152,7 +3204,21 @@ def run_pipeline(
         # Still strictly fail-open (D-076): no `fatal`, no raise, no retry, no second ping. The
         # broad `except` also covers `append_run_error`, so a store that refuses the write costs
         # a console line and never the run.
-        if summary.fatal is None and summary.funnel is not None and summary.morning is not None:
+        #
+        # And gated, finally, on the run having DURABLY FINISHED (T129). The three clauses above
+        # all ask whether the run reported itself; none of them asks whether it closed its own
+        # row. `finish_run` raising leaves `status='running'` and `finished_at` NULL while
+        # `fatal` stays None and both artifacts write — so until this clause the ping fired for
+        # a run that, to every later reader of the store, never ended. Runs 310 and 312 sat in
+        # exactly that state for 35.2 hours and were closed by the reaper; nothing else noticed.
+        # This is the cheapest possible statement of the switch's own premise: the monitor is
+        # told a run succeeded only when the run said so somewhere that outlives the process.
+        if (
+            summary.fatal is None
+            and summary.funnel is not None
+            and summary.morning is not None
+            and summary.terminal_status_persisted
+        ):
             try:
                 heartbeat_alert = send_heartbeat()
                 if heartbeat_alert is not None:
@@ -3203,6 +3269,30 @@ def run_pipeline(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
+
+
+def _finish_run_with_one_retry(
+    engine: Engine, run_id: int, *, errors: list[str], status: str
+) -> None:
+    """`finish_run`, re-attempted exactly ONCE before the caller gives up (T129).
+
+    A bounded re-attempt is safe here precisely because `finish_run` owns its transaction
+    (`engine.begin()`): a raise rolled the whole read-modify-write back, so there is no half
+    of it to repair and the second attempt writes what the first meant to. That also bounds
+    what a duplicate could cost — the attempt that raised committed nothing, so `errors` is
+    appended once, not twice.
+
+    ONE re-attempt, no loop and no sleep. The fault this converts is contention — another
+    writer holding the store past the engine's own `busy_timeout`, which is already the wait
+    budget — and a loop would add unbounded delay inside a `finally` that may already be
+    unwinding an exception. If the second attempt fails, the store is not momentarily busy and
+    the honest move is to raise: the caller records the failure where it can, leaves the row
+    `running` for the reaper, and withholds the heartbeat.
+    """
+    try:
+        finish_run(engine, run_id, errors=errors, status=status)
+    except Exception:  # noqa: BLE001 - one bounded re-attempt, then the caller's handler
+        finish_run(engine, run_id, errors=errors, status=status)
 
 
 def _load_board_coverage(
