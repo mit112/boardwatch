@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-20 — **ASTRA REVIEW 03 IS CONSUMED (D-525): ALL SEVEN FINDINGS CONFIRMED, AND THE SEVERITY RANKING INVERTS UNDER MEASUREMENT. T114–T119 ALL SHIPPED, TWO GATED WAVES. T120–T127 TICKETED in `TICKETS-2026-09-20-ASTRA-03.md`. ONE OWNER QUESTION RULED; THE OTHER DELIBERATELY NOT PUT. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
+### 2026-09-20 — **ASTRA REVIEW 03 IS CONSUMED (D-525): ALL SEVEN FINDINGS CONFIRMED, AND THE SEVERITY RANKING INVERTS UNDER MEASUREMENT. T114–T119 ALL SHIPPED, MERGED, AND ON `main`. T120–T128 TICKETED in `TICKETS-2026-09-20-ASTRA-03.md`. ONE OWNER QUESTION RULED; THE OTHER DELIBERATELY NOT PUT. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
 
 All three falsifiers re-run here (**byte for byte, every line**); every cited `file:symbol` opened
 by a read-only Opus verifier on the seat (`.agent/astra/verify/03-report.md`, 84 turns, $4.67).
@@ -68,6 +68,11 @@ it with `companies.watched` — which means *configured for scans*, not *enumera
 16,510 therefore render to the owner as verified-`open` while being exactly as unverifiable as the
 `not watched` class D-314/D-324 already named. **T122 corrects the column; build T123's full
 inventory/detail split on that, not on "expand sweep selection".**
+
+**All six landed on `main` in one PR after three local gates (exit 0: 10,432 · 10,470 · 10,470)
+and green CI.** A follow-up docs PR completing D-525's ticket list with T128 was left with
+auto-merge ARMED, not hand-merged — **check it landed** (`gh pr list --state all --limit 3`); a PR
+that never merges lands nothing and the branch looks pushed either way.
 
 **The seat executed; this session orchestrated, verified and gated.** Six executors plus one
 read-only verifier, four at once on Mit's answer. Windows was dispatched **deliberately**: D-151
