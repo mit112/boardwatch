@@ -36,7 +36,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Connection, Engine, func, insert, select, update
+from sqlalchemy import Connection, Engine, event, func, insert, select, text, update
+from sqlalchemy.exc import OperationalError
 
 from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
@@ -71,8 +72,9 @@ from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
-from boardwatch.store.queue_state import followup_job_dates
+from boardwatch.store.queue_state import followup_job_dates, skipped_job_ids
 from boardwatch.store.tables import (
+    app_state,
     application_events,
     applications,
     artifacts,
@@ -1180,6 +1182,124 @@ def test_a_locked_store_answers_503_without_stalling(
     allowed = call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
     assert allowed.status == 200
     assert allowed.json()["outcome"] == "created"
+
+
+def _snapshot_conflict(data_dir: Path) -> OperationalError:
+    """One real `SQLITE_BUSY_SNAPSHOT`, built the way the pipeline suite already builds it
+    (`test_two_writer_concurrency.py:90`): a DEFERRED read-then-write whose snapshot an unrelated
+    commit invalidates.
+
+    Not a hand-made exception. The whole point is that the driver's message here is `database is
+    locked` — the same prose a genuine busy-timeout expiry produces — while the code is not 5.
+    """
+    eng = get_engine(data_dir)
+    ensure_schema(eng)
+    with pytest.raises(OperationalError) as caught:
+        with eng.begin() as conn:
+            # The read half: this is what takes the snapshot.
+            conn.execute(select(func.count()).select_from(app_state)).one()
+            with eng.connect() as lane:
+                lane.execute(insert(app_state).values(key="lane", value="x"))
+                lane.commit()
+            conn.execute(insert(app_state).values(key="write", value="x"))
+    return caught.value
+
+
+def test_a_snapshot_conflict_is_classified_as_retryable_contention(tmp_path: Path) -> None:
+    """`_is_locked` decides whether the web write path retries, and a snapshot conflict is the
+    one form of contention it will actually meet: every route reads before it writes.
+
+    Asserted on the extended result code, never on the message. `database is locked` is exactly
+    what this raises, which is why matching prose looks like it covers the case and does not.
+    """
+    conflict = _snapshot_conflict(tmp_path / "snapshot")
+
+    assert conflict.orig is not None
+    assert conflict.orig.sqlite_errorcode == sqlite3.SQLITE_BUSY_SNAPSHOT
+    assert server_mod._is_locked(conflict) is True
+
+
+def test_a_non_contention_store_error_is_not_retryable(tmp_path: Path) -> None:
+    """The control for widening the predicate: a fault no retry can fix must still escape.
+
+    A schema fault is the honest example — it arrives as `OperationalError`, so it is the class
+    `_write` actually inspects, and answering it 503 would tell the owner to try again forever.
+    """
+    eng = get_engine(tmp_path / "broken")
+    ensure_schema(eng)
+    with pytest.raises(OperationalError) as caught:
+        with eng.begin() as conn:
+            conn.execute(text("INSERT INTO no_such_table (k) VALUES ('x')"))
+
+    assert caught.value.orig is not None
+    assert caught.value.orig.sqlite_errorcode == sqlite3.SQLITE_ERROR
+    assert server_mod._is_locked(caught.value) is False
+
+
+def test_a_write_whose_snapshot_an_unrelated_commit_invalidates_retries_and_succeeds(
+    live: Live, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owner-facing failure: skip is a read-modify-write on a DEFERRED transaction, so a run
+    committing between its read and its write raises `SQLITE_BUSY_SNAPSHOT` — code 517, message
+    `database is locked`. Unfixed, `_is_locked` says that is not contention, `_write` skips its
+    bounded retry, and the exception escapes the handler instead of the whole transaction being
+    retried from a fresh snapshot (the only thing that CAN fix it: an obsolete WAL read snapshot
+    cannot be upgraded in place, so waiting inside the busy handler never succeeds).
+
+    The conflict is injected exactly once, on the route's own read, so the retry has a store it
+    can succeed against — which is what makes this a retry test rather than a 503 test.
+    """
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+
+    db_path = tmp_path / "data" / DB_FILENAME
+    stolen: list[str] = []
+    real_get_engine = server_mod.get_engine
+
+    def spy_get_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
+        eng = real_get_engine(data_dir, busy_timeout_ms=busy_timeout_ms)
+
+        @event.listens_for(eng, "after_cursor_execute")
+        def _commit_underneath_the_snapshot(
+            conn: Any, cursor: Any, statement: str, *_rest: Any
+        ) -> None:
+            # Matched on `postings` rather than on "the first SELECT": the route's read is
+            # `SELECT postings.job_id ...`, and nothing else must be able to consume the one
+            # injection. A second connection commits while that snapshot is open, which is all
+            # SQLite needs to refuse the write that follows.
+            if stolen or "postings" not in statement:
+                return
+            stolen.append(statement)
+            lane = sqlite3.connect(str(db_path))
+            try:
+                lane.execute("INSERT INTO app_state (key, value) VALUES ('t132-lane', 'x')")
+                lane.commit()
+            finally:
+                lane.close()
+
+        return eng
+
+    monkeypatch.setattr(server_mod, "get_engine", spy_get_engine)
+
+    classified: list[int | None] = []
+    real_is_locked = server_mod._is_locked
+
+    def spy_is_locked(exc: OperationalError) -> bool:
+        classified.append(getattr(exc.orig, "sqlite_errorcode", None))
+        return real_is_locked(exc)
+
+    monkeypatch.setattr(server_mod, "_is_locked", spy_is_locked)
+
+    answered = call(live, f"/api/queue/{posting_id}/skipped", method="POST", bearer=live.token)
+
+    assert stolen, "the conflict was never injected, so this proves nothing"
+    # By code, not by message: the write path met 517, not the 5 it was written for.
+    assert classified == [sqlite3.SQLITE_BUSY_SNAPSHOT]
+    assert answered.status == 200
+    assert answered.json() == {"outcome": "skipped"}
+    # Counted through the store, not through the response that claimed it: the retry wrote.
+    with engine.connect() as conn:
+        assert set(skipped_job_ids(conn)) == {job_id}
 
 
 # ------------------------------------------------------------------------------ applied and undo
