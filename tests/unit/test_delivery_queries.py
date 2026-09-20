@@ -30,6 +30,7 @@ from sqlalchemy import Connection, Engine, insert, text
 from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery.names import DRAIN_DIRS
+from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, LaneDecision
 from boardwatch.eligibility.audit import AuditRequirement
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
@@ -45,8 +46,10 @@ from boardwatch.store.delivery_queries import (
     delivered_unapplied,
     queue_detail,
     review_job_ids,
+    revised_since_build_ids,
     standing_slate_keys,
 )
+from boardwatch.store.ledger_queries import record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
@@ -142,13 +145,19 @@ def _posting(
 
 
 def _version(
-    conn: Connection, *, posting_id: int, body: str = JD, captured_at: datetime = NOW
+    conn: Connection,
+    *,
+    posting_id: int,
+    body: str = JD,
+    captured_at: datetime = NOW,
+    capture_reason: str = "new",
 ) -> int:
     return int(
         conn.execute(
             insert(posting_versions).values(
-                posting_id=posting_id, content_hash=f"v-{posting_id}", body_text=body,
-                captured_at=captured_at, run_id=None, capture_reason="new",
+                posting_id=posting_id, content_hash=f"v-{posting_id}-{captured_at:%s}",
+                body_text=body, captured_at=captured_at, run_id=None,
+                capture_reason=capture_reason,
             )
         ).inserted_primary_key[0]
     )
@@ -994,3 +1003,244 @@ def test_a_disarmed_hold_never_reads_the_seniority_table(
     with engine.connect() as conn:
         dq.delivered_unapplied(conn, skipped=set())
     assert called is False
+
+
+# ------------------------------------------------------- T119: revised after the build decision
+
+
+def _built(conn: Connection, job_id: int, *, decided_at: datetime) -> None:
+    """One live, permanent `built` decision for a job, written through the ledger's own writer.
+
+    `record_disposition` rather than a hand-inserted row: the table carries three CHECK
+    constraints and the permanence rule lives in `core.ledger`, so a literal row here could be
+    well-formed for this test and impossible in production.
+    """
+    record_disposition(
+        conn,
+        job_id,
+        disposition="built",
+        reason="lead_built",
+        policy_version="pv-1",
+        now=decided_at,
+    )
+
+
+def _revised_since_build(engine: Engine) -> set[int]:
+    with engine.connect() as conn:
+        rows = delivered_unapplied(conn, skipped=set())
+        return revised_since_build_ids(
+            conn, {row.posting_id: row.job_id for row in rows}, now=NOW + timedelta(days=30)
+        )
+
+
+def test_a_built_lead_revised_after_its_build_decision_is_reported(engine: Engine) -> None:
+    """The lever (T119, the owner's ruling of 2026-09-20), end to end through the standing read.
+
+    A `built` disposition governs its job permanently and `run_policy_version` hashes the five
+    run-manifest components and NOT posting content, so a body change moves no stamp and
+    `ledger reopen --stale` never fires for it. Measured live 2026-09-20: 34 of 887
+    built-but-unapplied jobs (3.8%) are in exactly this state.
+
+    The lane assertion is the wiring: the field reaches `classify` through `lane_decision`, and
+    the reason it publishes is the new member rather than `unevaluated`, which is the reason this
+    fixture's lead would otherwise carry. That is also the ordering claim at this level — the
+    revision hold is read ABOVE the `eligible` short-circuit and therefore above `unevaluated`.
+    """
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "moved")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+    assert _revised_since_build(engine) == {posting_id}
+    with engine.connect() as conn:
+        (row,) = delivered_unapplied(conn, skipped=set())
+        assert row.revised_since_build
+        assert delivery_queries.lane_decision(row) == LaneDecision(
+            REVIEW_DIR, "revised_since_build"
+        )
+
+
+def test_a_built_lead_with_no_later_version_is_not_reported(engine: Engine) -> None:
+    """The control, and it is the live majority: 853 of the 887 built-but-unapplied jobs carry no
+    version captured after their build decision. Asserting the absence alone would be green for a
+    query that returns nothing at all, so the reason the lead DOES carry is asserted too."""
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "still")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+    assert _revised_since_build(engine) == set()
+    with engine.connect() as conn:
+        (row,) = delivered_unapplied(conn, skipped=set())
+        assert not row.revised_since_build
+        assert delivery_queries.lane_decision(row).reason == "unevaluated"
+
+
+def test_a_revision_BEFORE_the_build_decision_is_not_reported(engine: Engine) -> None:
+    """The null control that caught the owner's own probe: inverting the date comparison returns
+    every built job rather than none, so a hold written `<` instead of `>` looks like a working
+    feature holding 887 leads. The revision here is real and the build is simply later — the
+    résumé was built against the body that is still current."""
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "settled")
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=1),
+            capture_reason="revised",
+        )
+        _built(conn, job, decided_at=NOW + timedelta(days=2))
+    assert _revised_since_build(engine) == set()
+
+
+def test_an_applied_lead_revised_after_its_build_is_not_re_routed(engine: Engine) -> None:
+    """An applied lead is DONE. Asserted against the query directly, because `delivered_unapplied`
+    excludes applied jobs and so cannot observe the filter at all — a hold that re-routed finished
+    work would be invisible there and visible on every other caller.
+
+    The control is the same fixture before the application: the query reports the lead, and
+    reports nothing once it is applied."""
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "sent")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+    job_of = {posting_id: job}
+    with engine.connect() as conn:
+        assert revised_since_build_ids(conn, job_of, now=NOW + timedelta(days=30)) == {
+            posting_id
+        }
+    with engine.begin() as conn:
+        create_application(conn, job_id=job, status="applied", source="test")
+    with engine.connect() as conn:
+        assert revised_since_build_ids(conn, job_of, now=NOW + timedelta(days=30)) == set()
+
+
+def test_a_job_that_was_never_built_is_not_reported(engine: Engine) -> None:
+    """The hold is about the evidence a BUILD was decided on, so a revised posting whose job holds
+    no disposition at all has nothing to re-enter review from."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, "unbuilt")
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+    assert _revised_since_build(engine) == set()
+
+
+def test_a_reopened_build_decision_no_longer_holds(engine: Engine) -> None:
+    """Liveness is `core.ledger.is_live`'s call and never a predicate written in SQL here. A
+    drained (reopened) row does not govern, so the lead is already back in front of the owner by
+    the ordinary path and must not ALSO be held under this reason."""
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "drained")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+    assert _revised_since_build(engine) == {posting_id}
+    with engine.begin() as conn:
+        reopen_jobs(conn, [job], now=NOW + timedelta(days=3))
+    assert _revised_since_build(engine) == set()
+
+
+@pytest.mark.parametrize(
+    "capture_reason", ["new", "backfill_original", "backfill_from_revised_event"]
+)
+def test_only_a_revised_capture_fires_the_hold(engine: Engine, capture_reason: str) -> None:
+    """The catalog is read positively (`== "revised"`), never as `!= "new"`.
+
+    `new` is written only where `scan/apply.py` INSERTS a posting, so on a delivered posting it
+    is the first capture and not a change to one; a post-build `new` row belongs to a SIBLING
+    posting, which `_supersedes` already answers. The two `backfill_*` reasons reconstruct history
+    rather than observe a change. None of the three is evidence that a body moved, and a filter
+    written as "not new" would fire on two of them.
+    """
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, f"cap-{capture_reason}")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason=capture_reason,
+        )
+    assert _revised_since_build(engine) == set()
+
+
+def test_the_closure_drain_still_outranks_a_revision(engine: Engine) -> None:
+    """The strongest gate above the new one, asserted through the real read rather than only in
+    the classifier's own suite: a dead requisition cannot be applied to however recently its body
+    moved, and filing it under `_review` would put a gone posting in the folder of live work."""
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "gone", status="closed")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+    with engine.connect() as conn:
+        (row,) = delivered_unapplied(conn, skipped=set())
+        assert row.revised_since_build
+        assert delivery_queries.lane_decision(row) == LaneDecision(CLOSED_DIR, None)
+
+
+def test_a_revision_beyond_the_first_chunk_still_holds_its_lead(engine: Engine) -> None:
+    """`latest_revision_at` splits its id list into 500-id statements and merges the pieces, and
+    a merge that keeps only one chunk raises nothing — it silently drops the hold. The built and
+    revised lead is seeded FIRST, so it sorts last and lands in the final chunk; a row-count
+    assertion alone would pass against a dropped chunk, so the assertion is that specific lead."""
+    with engine.begin() as conn:
+        moved, job = _deliver(conn, "moved")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=moved,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+        for index in range(ID_CHUNK_SIZE + 50):
+            _deliver(conn, f"bulk-{index}")
+    with engine.connect() as conn:
+        rows = delivered_unapplied(conn, skipped=set())
+    assert len(rows) == ID_CHUNK_SIZE + 51
+    assert rows[-1].posting_id == moved
+    assert rows[-1].revised_since_build
+    assert not any(row.revised_since_build for row in rows[:-1])
+
+
+def test_the_detail_pane_reports_the_revision_hold_the_list_reports(engine: Engine) -> None:
+    """The pane builds its OWN `QueueRow`, and this file records three separate leads whose hold
+    the pane could not see because one fact was read for the list and not for it — the surface
+    where the reader decides whether to apply reported no hold at all. Asserted as agreement
+    between the two reads rather than as a literal, so it cannot pass by both being wrong."""
+    with engine.begin() as conn:
+        posting_id, job = _deliver(conn, "moved")
+        _built(conn, job, decided_at=NOW + timedelta(days=1))
+        _version(
+            conn,
+            posting_id=posting_id,
+            captured_at=NOW + timedelta(days=2),
+            capture_reason="revised",
+        )
+    with engine.connect() as conn:
+        (listed,) = delivered_unapplied(conn, skipped=set())
+        detail = queue_detail(conn, posting_id)
+    assert detail is not None
+    assert detail.row.revised_since_build == listed.revised_since_build is True
+    assert delivery_queries.lane_decision(detail.row) == LaneDecision(
+        REVIEW_DIR, "revised_since_build"
+    )

@@ -74,6 +74,15 @@ export type ReviewReason =
    */
   | "judged_ineligible_verdict"
   /*
+   * The only member that is a fact about the lead's HISTORY rather than about the posting as it
+   * reads today: this job was BUILT, nothing has been applied to it, and the posting has since
+   * been revised. A built decision governs its job permanently and the policy stamp hashes the
+   * run manifest and not posting content, so nothing else notices — the lead sits in the apply
+   * queue against a job description that has changed under the résumé tailored for it. Measured
+   * live 2026-09-20: 34 of 887 built-but-unapplied jobs. It HOLDS and nothing is reopened.
+   */
+  | "revised_since_build"
+  /*
    * The only member that does not come from the job description at all. The Greenhouse
    * APPLICATION FORM states a citizenship or export-control requirement the JD never mentions —
    * measured live on three apply-lane leads a hand pre-flight withdrew, none of which says

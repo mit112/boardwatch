@@ -129,7 +129,7 @@ from boardwatch.scan.coordinator import (
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
-from boardwatch.store.delivery_queries import form_question_hits
+from boardwatch.store.delivery_queries import form_question_hits, revised_since_build_ids
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
@@ -1424,15 +1424,34 @@ def _lead_lanes(
         # identity-scoped like the three reads above it -- the application form is a fact about
         # the requisition, not about this user's profile or the rules catalog.
         form_questions = form_question_hits(conn, versions)
+        # T119. The SAME function `delivered_unapplied` calls, so the lane this run tailors for
+        # cannot disagree with the one `sync_queue` files the folder under. It is near-always
+        # empty here — `top_cmd`'s rank-time suppression keeps a job with a live `built`
+        # disposition out of `ranked.visible` — and it is computed anyway rather than passed a
+        # `False`, because a rule that cannot fire from one of its two call sites is the drift
+        # T109 was written to stop, and the suppression is a ranker policy this gate must not
+        # silently depend on. The posting rows are read ONCE and serve both this and the
+        # locations below; `job_id` is NOT NULL for anything the scanner wrote (the
+        # `postings_job_required_*` triggers), so the guard drops nothing reachable.
+        posting_rows = conn.execute(
+            select(postings.c.id, postings.c.job_id, postings.c.locations_json).where(
+                postings.c.id.in_(posting_ids)
+            )
+        ).all()
+        revised = revised_since_build_ids(
+            conn,
+            {
+                int(row.id): int(row.job_id)
+                for row in posting_rows
+                if row.job_id is not None
+            },
+            now=utcnow(),
+        )
         locations_by_posting = {
             int(row.id): tuple(
                 str(loc) for loc in (row.locations_json or []) if str(loc).strip()
             )
-            for row in conn.execute(
-                select(postings.c.id, postings.c.locations_json).where(
-                    postings.c.id.in_(posting_ids)
-                )
-            ).all()
+            for row in posting_rows
         }
         # T44. (provider, slug) is the key `title_band` looks its per-company level schemes up
         # under, so the band is read against the company's OWN ladder where it has one.
@@ -1476,6 +1495,7 @@ def _lead_lanes(
                 # files the folder under `_review`. One render once per lead, never the wrong
                 # lane.
                 form_question_hit=form_questions.get(posting.posting_id),
+                revised_since_build=posting.posting_id in revised,
                 posting_closed=False,
             ),
             posting_version_id,

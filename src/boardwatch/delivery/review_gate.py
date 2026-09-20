@@ -121,6 +121,22 @@ CLOSED_DIR = "_closed"
 #: deterministic rule produced (the owner's ruling, 2026-09-19): the lead stays visible, keeps its
 #: folder and stays reviewable, and it is never equated with the deterministic deletion that
 #: drains to ``_ineligible``.
+#:
+#: ``revised_since_build`` (T119) is the only member that is a fact about the lead's own HISTORY
+#: rather than about the posting as it reads today, and that is why it is a member rather than a
+#: re-use of anything above. A ``built`` disposition governs its job permanently, and
+#: ``pipeline/policy.run_policy_version`` hashes the five run-manifest components and NOT posting
+#: content — so a body change moves no stamp and D-103's stale-policy drain (``ledger reopen
+#: --stale``) never fires for it. The lead therefore sits in the apply queue against a JD that has
+#: since changed, held on the evidence it was built against. Every other member reports what some
+#: reader concluded about the CURRENT version; this one reports that the version the résumé was
+#: tailored against is no longer the version on the board, which no verdict, span or title can
+#: state. **Measured on the live store read-only, 2026-09-20:** of 887 built-but-unapplied jobs,
+#: 34 (3.8%) carry a ``posting_versions`` row captured after ``job_dispositions.decided_at``;
+#: inverting the date comparison returns all 887, so the test discriminates.
+#:
+#: It HOLDS and writes NOTHING. No ledger write, no drain, no reopen: the ``built`` row keeps
+#: governing, which is what stops this becoming a blanket re-open of every built job.
 ReviewReason = Literal[
     "form_question_hard_stop",
     "ineligible_verdict",
@@ -134,6 +150,7 @@ ReviewReason = Literal[
     "seniority_above_band",
     "seniority_judged_above_band",
     "judged_ineligible_verdict",
+    "revised_since_build",
 ]
 
 
@@ -168,6 +185,7 @@ def classify(
     seniority_above_band: bool,
     judge_verdict: str | None,
     judge_seniority_above_band: bool,
+    revised_since_build: bool,
     form_question_hit: str | None = None,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the reasons held the lead.
@@ -191,6 +209,13 @@ def classify(
     (measured 2026-09-19, live, read-only). ``judge_seniority_above_band`` stays a boolean because
     it reports a DIFFERENT field of the same gate row, and its three values collapse to two here
     for the reason the title band's do: only one of them ever moves a lead.
+
+    ``revised_since_build`` (T119) is the one input that is not a reading of the posting's current
+    content: it is "this job's live ``built`` disposition is older than a ``revised`` capture of
+    this posting, and nothing has been applied to it". Derived ONCE, in
+    ``store.delivery_queries.revised_since_build_ids``, and passed by both call sites — never
+    recomputed here — for the reason every fact beside it is: two derivations of the same
+    question disagree the first time one of them is changed (D-332).
 
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
@@ -326,6 +351,30 @@ def classify(
     # every run being asked one more question and answering it beside its verdict, never inside it.
     if judge_seniority_above_band:
         return LaneDecision(REVIEW_DIR, "seniority_judged_above_band")
+    # T119, and it is the LAST hold: everything above it describes the posting as it reads TODAY,
+    # and this one says the posting is not the one the résumé was built against.
+    #
+    # BELOW every gate above it, deliberately. A revision makes the engine re-evaluate the NEW
+    # version, so `verdict`, `locations`, `title` and both judge readings above already describe
+    # the revised posting — a current `ineligible`, a confirmed non-US location or a vetoed title
+    # on the revised body is strictly more informative than "it changed", and reporting the weaker
+    # claim when both hold would understate the hold (the rule this module already applies to the
+    # hard-family abstain). "The JD moved under the résumé you built" is what is left when nothing
+    # more specific holds.
+    #
+    # ABOVE the `eligible` short-circuit, and that is the half of the placement that makes the
+    # branch reach anything. `eligible` means the blocking families were decided and cleared ON
+    # THE REVISED BODY; it says nothing about the document that was tailored against the body
+    # that moved, which is a different question from every one the short-circuit settles. Below
+    # it this gate would be inert for exactly the population that reaches the blind-apply queue.
+    # It does NOT move the two requirement-flag gates, which stay below the short-circuit where
+    # D-380's R2 severity gap keeps them.
+    #
+    # It writes NOTHING: no ledger write, no drain, no reopen, no confirm-clock restart. The
+    # `built` row keeps governing, which is what makes this a targeted changed-input review path
+    # rather than a blanket re-open of every built job.
+    if revised_since_build:
+        return LaneDecision(REVIEW_DIR, "revised_since_build")
     # R1. `eligible` used to short-circuit ABOVE the two gates above, so an eligible posting was
     # blindly-appliable however foreign or however far from software it was — the 2026-08-30 audit
     # found a "Field Auto Adjuster" marked eligible sitting in the apply queue, and an independent
@@ -408,6 +457,7 @@ def lane(
     seniority_above_band: bool,
     judge_verdict: str | None,
     judge_seniority_above_band: bool,
+    revised_since_build: bool,
     form_question_hit: str | None = None,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
@@ -428,5 +478,6 @@ def lane(
         seniority_above_band=seniority_above_band,
         judge_verdict=judge_verdict,
         judge_seniority_above_band=judge_seniority_above_band,
+        revised_since_build=revised_since_build,
         form_question_hit=form_question_hit,
     ).lane
