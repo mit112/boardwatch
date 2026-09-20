@@ -593,6 +593,189 @@ def test_a_replaced_source_pdf_rewrites_the_folder(
     )
 
 
+# ------------------------------------------------- destination integrity (the tamper population)
+#
+# Every test below damages a file the sync itself wrote, leaving `details.json`'s recorded
+# `content_hash` exactly as it was. That hash is what the fast path consults, so a matching hash
+# must not be allowed to make any of them pass: each asserts the destination's ACTUAL bytes
+# against the store or the source file, and re-reads the recorded hash afterwards to show it
+# never moved.
+
+
+PDF_NAME = "Mit_Sheth_Acme_Corp_Software_Engineer.pdf"
+
+
+def _synced_lead(engine: Engine, root: Path, apps: Path) -> Path:
+    """One delivered lead, synced once: the folder the tamper tests damage."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    return _sole_folder(root)
+
+
+def _resync(engine: Engine, root: Path) -> queue.SyncReport:
+    with engine.connect() as conn:
+        return sync_queue(conn, root=root, owner_name=OWNER)
+
+
+def test_a_tampered_destination_jd_is_rewritten_from_the_store(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    folder = _synced_lead(engine, root, apps)
+    recorded = _details(folder)["content_hash"]
+    (folder / JD_FILE).write_text("TAMPERED\n", encoding="utf-8")
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert (folder / JD_FILE).read_text(encoding="utf-8") == JD
+    assert _details(folder)["content_hash"] == recorded
+
+
+def test_a_deleted_destination_jd_is_written_again(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    folder = _synced_lead(engine, root, apps)
+    recorded = _details(folder)["content_hash"]
+    (folder / JD_FILE).unlink()
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert (folder / JD_FILE).read_text(encoding="utf-8") == JD
+    assert _details(folder)["content_hash"] == recorded
+
+
+def test_a_tampered_destination_apply_link_is_rewritten(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    folder = _synced_lead(engine, root, apps)
+    link_name = queue._apply_link(APPLY_URL, queue.PLATFORM)[0]
+    (folder / link_name).write_bytes(b"https://phishing.test/\n")
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert _link_url(folder) == APPLY_URL
+
+
+def test_a_deleted_destination_apply_link_is_written_again(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    folder = _synced_lead(engine, root, apps)
+    link_name = queue._apply_link(APPLY_URL, queue.PLATFORM)[0]
+    (folder / link_name).unlink()
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert _link_url(folder) == APPLY_URL
+
+
+def test_a_replaced_destination_pdf_is_copied_again_from_the_source(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`details["pdf_sha256"]` already records the expected digest, so this needs no new state —
+    only that the digest be compared against the bytes actually present."""
+    folder = _synced_lead(engine, root, apps)
+    source = (apps / "2026-08-26" / "one" / "tailored-one.pdf").read_bytes()
+    (folder / PDF_NAME).write_bytes(b"%PDF-1.7\nnot the delivered resume\n%%EOF\n")
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert (folder / PDF_NAME).read_bytes() == source
+    assert _details(folder)["pdf_sha256"] == hashlib.sha256(source).hexdigest()
+
+
+def test_a_deleted_destination_pdf_is_copied_again_with_details_intact(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The folder still claims a PDF, so the claim is the thing to repair. Nothing else detects
+    this: the fast path skips `_install`, and no other command reads the queue's copy."""
+    folder = _synced_lead(engine, root, apps)
+    source = (apps / "2026-08-26" / "one" / "tailored-one.pdf").read_bytes()
+    (folder / PDF_NAME).unlink()
+    assert _details(folder)["pdf_filename"] == PDF_NAME
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert (folder / PDF_NAME).read_bytes() == source
+
+
+def test_a_tampered_details_body_is_rewritten_even_though_its_hash_still_matches(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`details.json` is inside its own digest, so editing the body without the hash is exactly
+    the case the recorded stamp cannot see."""
+    folder = _synced_lead(engine, root, apps)
+    body = _details(folder)
+    recorded = body["content_hash"]
+    body["company"] = "Not Acme"
+    (folder / DETAILS_FILE).write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert _details(folder)["company"] == "Acme Corp"
+    assert _details(folder)["content_hash"] == recorded
+
+
+def test_an_untouched_folder_still_reports_unchanged(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The control for the whole section: verifying the destination must not turn every sync into
+    a rewrite. Bytes AND mtimes, so a read-then-rewrite-identical implementation fails."""
+    folder = _synced_lead(engine, root, apps)
+    before = _snapshot(folder)
+    assert before, "nothing was written, so the comparison below would be vacuous"
+    time.sleep(0.02)
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 0, 1, 0)
+    assert _snapshot(folder) == before
+
+
+def test_an_unrecognised_file_in_a_folder_is_not_an_integrity_failure(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The owner keeps their own work in these folders — one live folder holds a hand-written
+    cover letter. Verification decides only whether the names this module WRITES still match."""
+    folder = _synced_lead(engine, root, apps)
+    extra = folder / "cover_letter.tex"
+    extra.write_text("\\documentclass{article}\n", encoding="utf-8")
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 0, 1, 0)
+    assert extra.read_text(encoding="utf-8") == "\\documentclass{article}\n"
+
+
+def test_the_owners_own_file_survives_a_repair_of_a_damaged_known_file(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The constraint that rules out a wholesale staged replace as the repair: the live folder
+    `_applied/Tailscale_…` holds `3_Cover_Letter_Tailscale.pdf` and `cover_letter.tex`, covered by
+    no naming constant and no hash. Repairing the JD must not take them with it."""
+    folder = _synced_lead(engine, root, apps)
+    letter = folder / "3_Cover_Letter_Acme.pdf"
+    letter.write_bytes(b"%PDF-1.7\nhand written\n%%EOF\n")
+    (folder / "cover_letter.tex").write_text("\\documentclass{article}\n", encoding="utf-8")
+    (folder / JD_FILE).write_text("TAMPERED\n", encoding="utf-8")
+
+    report = _resync(engine, root)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    assert (folder / JD_FILE).read_text(encoding="utf-8") == JD
+    assert letter.read_bytes() == b"%PDF-1.7\nhand written\n%%EOF\n"
+    assert (folder / "cover_letter.tex").read_text(encoding="utf-8") == (
+        "\\documentclass{article}\n"
+    )
+
+
 # ------------------------------------------------------------- the dated tree, and the sidecars
 
 

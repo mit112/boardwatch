@@ -40,10 +40,15 @@ aborted a whole scan (#168).
 Idempotence is keyed on `details.json`'s `content_hash`, which covers **every byte the folder
 holds**: the canonicalised details, the JD body and the apply-link file are all fed to it, and the
 copied PDF enters through `pdf_sha256`. Nothing time-varying is written, so an unchanged lead is
-not rewritten merely because a day passed. That is why `posted_days` is absent from
-`details.json` even though design §4.2 lists a posted date: the read layer exposes an age relative
-to *now*, not `posted_at`, and recording it would either churn every folder daily or record a
-number that silently goes stale. The database stays authoritative for it.
+not rewritten merely because a day passed. **The stamp is not taken on trust**: it is written by
+the same pass that writes the files, so on its own it proves only what that pass intended, and a
+folder is skipped only once its bytes re-derive it (`_destination_intact`). Nothing else in the
+repository ever reads these copies back, so damage this pass does not see is permanent.
+
+That is why `posted_days` is absent from `details.json` even though design §4.2 lists a posted
+date: the read layer exposes an age relative to *now*, not `posted_at`, and recording it would
+either churn every folder daily or record a number that silently goes stale. The database
+stays authoritative for it.
 """
 
 from __future__ import annotations
@@ -273,9 +278,11 @@ class _Payload:
 def sync_queue(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
     """Make the queue under `root` match what the database says is delivered and unapplied.
 
-    Idempotent: a folder whose `details.json` records the same `content_hash` is not rewritten,
-    which is what lets this be called at the end of every run, at web-server start-up and after
-    every mark-applied without the owner's folders churning under them.
+    Idempotent: a folder whose `details.json` records the same `content_hash` AND still holds the
+    bytes that hash, is not rewritten — which is what lets this be called at the end of every
+    run, at web-server start-up and after every mark-applied without the owner's folders churning
+    under them. One that records the hash but no longer holds the bytes has its known files
+    repaired in place and is reported as `updated`.
 
     A lead whose folder currently sits in a drain is pulled back out, because the database has
     just said it is none of applied, skipped or reported, and creating a second folder for it
@@ -458,8 +465,8 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             if names is None or row.posting_id in failed:
                 continue
             try:
-                # `entry.path` is stale after the relocation pass; only its existence and its
-                # recorded hash are read here, and neither moved.
+                # `entry.path` is stale after the relocation pass, so every read of the folder
+                # below goes through `target`, which is where that pass left it.
                 entry = _entry_for(row, entries, by_job)
                 target = _dest(root, decision_of[row.posting_id].lane, names.folder)
                 if entry is None and target.exists():
@@ -475,7 +482,14 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                     review_reason=decision_of[row.posting_id].reason,
                 )
                 if entry is not None and entry.content_hash == payload.content_hash:
-                    unchanged += 1
+                    # The recorded hash only proves what the PREVIOUS write intended; the folder
+                    # is the owner's and the disk's. Nothing else in the repository reads these
+                    # bytes back, so if this pass does not, destination damage is permanent.
+                    if _destination_intact(target, payload.content_hash):
+                        unchanged += 1
+                        continue
+                    _repair(staging, target, payload)
+                    updated += 1
                     continue
                 _install(staging, target, payload)
                 if entry is None:
@@ -748,9 +762,11 @@ def _content_hash(
     """A digest over every byte the folder will hold, and nothing else.
 
     `details` is fed in canonicalised, the JD body and the link file are fed in whole, and the
-    copied PDF enters through `details["pdf_sha256"]`. So "the recorded hash matches" really does
-    mean "the folder is already exactly this", which is what makes skipping the rewrite safe
-    rather than merely fast. `details` must not yet carry `content_hash`; it is added on write.
+    copied PDF enters through `details["pdf_sha256"]`. So the digest covers the folder exactly,
+    which is what lets `_destination_intact` re-derive it from the destination's own bytes.
+    The recorded stamp alone says only what the last write intended — the folder is skipped when
+    that stamp matches AND the bytes reproduce it. `details` must not yet carry `content_hash`;
+    it is added on write.
     """
     digest = hashlib.sha256()
     digest.update(
@@ -768,6 +784,46 @@ def _content_hash(
 def _file_sha256(path: Path) -> str:
     with path.open("rb") as handle:
         return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def _destination_intact(path: Path, content_hash: str) -> bool:
+    """Whether the folder on disk still holds what its own `details.json` describes.
+
+    The inverse of `_content_hash`, read back off the destination. The recorded stamp is written
+    by the same pass that writes the files, so it can only ever agree with itself: it proves what
+    the last sync INTENDED, never what is present now. Re-deriving the digest from the bytes
+    currently on disk is what turns it into evidence about the present, and it is cheap —
+    `_index` already opens `details.json`, the JD and the link file are the only other inputs
+    `_content_hash` has, and `details["pdf_sha256"]` already records the digest the PDF must
+    match, so nothing new is stored.
+
+    Self-consistency is enough: the caller has already established that the recorded hash equals
+    the payload's, so a folder that reproduces the recorded hash from its own bytes reproduces
+    the payload's too.
+
+    **Unrecognised files are not an integrity failure.** The owner keeps their own work in these
+    folders — one holds a hand-written cover letter — so this decides only whether the names
+    written here are still the ones written here, and never that something extra must go.
+    """
+    details = _read_details(path)
+    if details is None:
+        return False
+    if details.pop("content_hash", None) != content_hash:
+        return False
+    jd_name = _as_str(details.get("job_description_file"))
+    link_name = _as_str(details.get("apply_link_file"))
+    pdf_name = _as_str(details.get("pdf_filename"))
+    try:
+        jd = None if jd_name is None else (path / jd_name).read_bytes().decode("utf-8")
+        link = None if link_name is None else (link_name, (path / link_name).read_bytes())
+        if _content_hash(details, jd=jd, link=link) != content_hash:
+            return False
+        # Last, because it is the only check that reads a whole file the digest above does not.
+        return pdf_name is None or _file_sha256(path / pdf_name) == details.get("pdf_sha256")
+    except (OSError, ValueError):
+        # Absent, unreadable or not decodable as UTF-8 — all of them mean the same thing here,
+        # which is that the folder no longer holds what it claims.
+        return False
 
 
 def _tailored_artifact_ids(conn: Connection) -> dict[str, int]:
@@ -806,6 +862,25 @@ def _install(staging: Path, target: Path, payload: _Payload) -> None:
     os.replace(built, target)
 
 
+def _repair(staging: Path, target: Path, payload: _Payload) -> None:
+    """Rewrite the folder's known files in place, touching nothing else it holds.
+
+    Used where `_install` cannot be: the recorded hash matches, so the only thing wrong is the
+    bytes on disk, and a queue folder may hold work of the owner's own — one holds a hand-written
+    cover letter and its `.tex` source, covered by no naming constant here and by no hash.
+    `_install`'s staged replace swaps the whole directory, which would take those with it, so a
+    repair moves file by file instead.
+
+    Each file is still built under `staging` and `os.replace`d, so no reader sees a half-written
+    one, and `details.json` goes last for the same reason `_write_details` writes it last: it is
+    the marker that says the folder is complete.
+    """
+    built = staging / f"build-{token_hex(8)}"
+    _write_lead(built, payload)
+    for path in sorted(built.iterdir(), key=lambda p: p.name == DETAILS_FILE):
+        os.replace(path, target / path.name)
+
+
 def _write_lead(built: Path, payload: _Payload) -> None:
     """Write the folder's contents, file by file — never `copytree`.
 
@@ -819,7 +894,12 @@ def _write_lead(built: Path, payload: _Payload) -> None:
     if payload.link is not None:
         (built / payload.link[0]).write_bytes(payload.link[1])
     if payload.jd is not None:
-        (built / JD_FILE).write_text(payload.jd, encoding="utf-8")
+        # `write_bytes`, not `write_text`: text mode translates `\n` to the platform's line
+        # ending on write and back on read, so the file's BYTES would not be a function of the
+        # payload alone and `_destination_intact` could not re-derive the hash from them. A body
+        # carrying a stray `\r` would then be re-read as a different string and the folder
+        # repaired on every run forever.
+        (built / JD_FILE).write_bytes(payload.jd.encode("utf-8"))
     _write_details(built, payload)
 
 
