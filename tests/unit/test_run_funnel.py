@@ -689,6 +689,31 @@ def test_a_run_that_did_not_scan_reports_no_reconciliation_rather_than_a_pass() 
     assert payload["boards_reconciled"] is None
 
 
+def test_a_scan_that_found_no_never_complete_board_says_so_rather_than_going_quiet() -> None:
+    """T117. The measured all-clear is a different statement from the not-measured one, and
+    both must be readable on the surface the run log links to.
+
+    Without this the only rendered state would be the alarming one, and an operator could not
+    tell "every watched board has produced a complete inventory" apart from "this section was
+    never wired up" — which is exactly how 16,510 stranded postings stayed invisible while
+    `boards_partial` was published every run.
+    """
+    measured = funnel(scan=ScanContext(
+        ran=True, boards_attempted=2, boards_complete=2, postings_seen=7,
+        watched_never_complete=(),
+    ))
+    assert funnel_to_dict(measured)["scan"]["watched_never_complete"] == []
+    assert "Every watched board has recorded a `complete` scan" in funnel_to_markdown(measured)
+
+    unmeasured = funnel(scan=ScanContext(
+        ran=True, boards_attempted=2, boards_complete=2, postings_seen=7,
+    ))
+    assert funnel_to_dict(unmeasured)["scan"]["watched_never_complete"] is None
+    assert (
+        "never scanned `complete`: **not measured**" in funnel_to_markdown(unmeasured)
+    )
+
+
 def test_the_artifact_version_does_not_move_for_the_board_split() -> None:
     """ADDITIVE keys in a block that has existed since v1, on the `scan.fetch_cost` precedent.
 

@@ -60,6 +60,7 @@ from boardwatch.reports.board_coverage import (
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
+    NeverCompleteBoard,
     SourceOutcome,
     TailoredArtifactCounts,
 )
@@ -165,6 +166,13 @@ _TOP_MISSING = 10
 # surfaced". What is new is a reason it can be smaller, and it is published as its own `Drop` in
 # the same stage rather than folded into a neighbour, so the reconciliation identity a consumer
 # checks still adds up from keys it can read.
+#
+# **T117's `scan.watched_never_complete` does NOT bump it either**, on the same `fetch_cost` /
+# `empty_complete_guarded` precedent. No new top-level section — `scan` has been here since v1 —
+# and no existing key changes MEANING: the four board buckets still count THIS RUN's attempts,
+# and the new key is a standing cohort that is explicitly not a subset of them. A funnel written
+# before this simply lacks the key, which reads as "not measured" rather than as an empty
+# population — the same absent-not-zero direction the block uses throughout.
 #
 # **v8 is T60's two terminal states, and it bumps for the v5 reason rather than the v6 one.** It
 # adds no top-level section — `gate_rejected` and `routed_to_review_lane` are drop reasons inside
@@ -1218,6 +1226,19 @@ class ScanContext:
     # None means NOT MEASURED (a `--no-scan` run, or a stored funnel written before D-330),
     # which is a different statement from an empty tuple ("scanned, and nothing was timed").
     fetch_cost: tuple[ProviderFetchCost, ...] | None = None
+    # T117. The STANDING population no liveness owner can retire: watched boards with no
+    # `complete` scan EVER recorded, and the open postings under them. Absence closure needs a
+    # `complete` snapshot (`scan/apply.py`) and the death sweep excludes a watched company by
+    # construction (`pipeline/death_probe.py::unreachable_by_the_scanner`), so a board here has
+    # neither owner. NOT a partition member and NOT a subset of any board bucket above: those
+    # four count THIS RUN's attempts, and a board listed here may not have been attempted at
+    # all. `boards_partial` is the per-run EVENT and was always published; this is the standing
+    # cohort behind it, which nothing counted — 8 boards and 16,510 open postings on the live
+    # store when it was first measured. Named AND counted, because "which board" is the
+    # operator's first question and "how many postings" is the size of the hole.
+    # `None` means NOT MEASURED, exactly as `fetch_cost` above: a `--no-scan` run leaves the
+    # scan history a run older than the artifact, and `()` would be a false all-clear.
+    watched_never_complete: tuple[NeverCompleteBoard, ...] | None = None
 
     @property
     def boards_reconciled(self) -> bool | None:
@@ -2016,6 +2037,32 @@ def build_run_funnel(
     )
 
 
+def _watched_never_complete_markdown(
+    rows: tuple[NeverCompleteBoard, ...] | None,
+) -> list[str]:
+    """The watched boards no liveness owner can retire, or that they were not measured.
+
+    Rendered here rather than left to the JSON because the run log links the operator to THIS
+    file: a key nobody reads is what let 16,510 stranded postings sit unnoticed while
+    `boards_partial` was published every run.
+    """
+    if rows is None:
+        return ["", "Watched boards that have never scanned `complete`: **not measured** this run."]
+    if not rows:
+        return ["", "Every watched board has recorded a `complete` scan at least once."]
+    stranded = sum(row.open_postings for row in rows)
+    return [
+        "",
+        f"**{len(rows)} watched board(s) have NEVER recorded a `complete` scan, and "
+        f"{stranded} open posting(s) sit under them that nothing can retire.** *Absence "
+        "closure needs a `complete` snapshot and the death sweep skips watched companies, so "
+        "these postings have neither owner. Not a subset of the buckets above — those count "
+        "this run's attempts; a board here may not have been attempted at all. Biggest first: "
+        + ", ".join(f"`{row.board}` ({row.open_postings})" for row in rows)
+        + ".*",
+    ]
+
+
 def _fetch_cost_markdown(rows: tuple[ProviderFetchCost, ...] | None) -> list[str]:
     """The per-provider fetch cost, or an explicit statement that it was not measured."""
     if rows is None:
@@ -2189,6 +2236,18 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             # identically. A non-empty list here always sits inside `boards_partial`.
             "throttle_retries": funnel.scan.throttle_retries,
             "throttle_exhausted": sorted(funnel.scan.throttle_exhausted),
+            # T117. `null` when not measured, on the `fetch_cost` rule below — never `[]`,
+            # which would claim the population was looked for and found empty. Already ordered
+            # biggest-hole-first by the query; `provider` and `board_slug` are split for the
+            # same reason `sources` splits them.
+            "watched_never_complete": None if funnel.scan.watched_never_complete is None else [
+                {
+                    "provider": row.provider,
+                    "board_slug": row.board_slug,
+                    "open_postings": row.open_postings,
+                }
+                for row in funnel.scan.watched_never_complete
+            ],
             # Ordered most-expensive first so the constraint is the first row a reader sees.
             "fetch_cost": None if funnel.scan.fetch_cost is None else [
                 {
@@ -2546,6 +2605,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
                 )
             )
             lines.append("")
+        lines.extend(_watched_never_complete_markdown(funnel.scan.watched_never_complete))
         lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")

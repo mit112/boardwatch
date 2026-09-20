@@ -151,7 +151,11 @@ from boardwatch.store.regroup import (
     protected_job_ids,
     queue_action_job_ids,
 )
-from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
+from boardwatch.store.run_funnel_queries import (
+    TAILORED_KIND,
+    lead_provenance,
+    watched_boards_never_complete,
+)
 from boardwatch.store.seed_queries import (
     LaneSeed,
     record_seed_attempt,
@@ -3214,6 +3218,14 @@ def _emit_funnel(
     day_dir: Path,
 ) -> WrittenArtifact:
     """Collect the funnel from the store and write both halves beside the day's leads."""
+    # T117. Read from the STORE, not from `scan_summary`: this is a STANDING population over
+    # the whole scan history, and a board in it may not have been attempted this run at all.
+    # `None` on a `--no-scan` run, on the `fetch_cost` rule below — the history is then a run
+    # older than the artifact, and `()` would read as a measured all-clear.
+    watched_never_complete = None
+    if scan_summary is not None:
+        with engine.connect() as conn:
+            watched_never_complete = watched_boards_never_complete(conn)
     funnel = collect_run_funnel(
         engine,
         settings,
@@ -3251,6 +3263,7 @@ def _emit_funnel(
                 )
                 for provider, cost in scan_summary.fetch_cost.items()
             ),
+            watched_never_complete=watched_never_complete,
         ),
         shortlist=summary.shortlist,
         liveness=LivenessCheck(
