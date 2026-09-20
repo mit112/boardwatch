@@ -300,6 +300,7 @@ def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int],
     profile_hash: str | None, rules_hash: str | None,
     *, engine_version: str | None = None, facts_key: str | None = None,
+    model: str | None = None,
 ) -> dict[int, str | None]:
     """posting_id -> the LATEST final-gate verdict for its current version under this identity.
 
@@ -329,6 +330,17 @@ def current_gate_verdicts(
     written before the key existed therefore never matches a given key — on the first run after
     this ships every delivered lead (bounded by `--top`, D-477 pt 1) is re-judged ONCE and comes
     back keyed, and after that the check is exact.
+
+    **`model` is the third such narrowing, and the freshness test is again its only caller
+    (T108).** Nothing else the check compares moves when `settings.gate.model` changes: not the
+    identity, not `gate_engine_version()` — which must stay model-free or every display reader's
+    `LIKE 'final_gate:%'` starts fragmenting — and not `facts_key`. The run manifest's
+    `config_hash` does move, and invalidates no row. So a switch of judge reached NEW leads only,
+    while every standing verdict from the old model was consumed by ranking, lane promotion and
+    the delivery queue indefinitely. When given, a row counts only if its `model` column equals
+    it; when omitted the query is byte-identical to before. A legacy row has `model IS NULL` and
+    therefore never matches a given model, so — exactly as for `facts_key` — the first run after
+    this ships re-judges the standing slate ONCE and comes back attributable.
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
@@ -337,10 +349,10 @@ def current_gate_verdicts(
     # key: every posting_version's rows fall in exactly one chunk, so max(id) per
     # posting_version is the same answer chunked or whole.
     verdict_by_version: dict[int, str] = {}
-    # Both narrowings sit INSIDE the max(id) subquery, so they filter before "latest" is
+    # Every narrowing sits INSIDE the max(id) subquery, so they filter before "latest" is
     # picked rather than after: a lead whose newest row is stale still hits on an older row
     # that does match, which is the right caching answer — that verdict was reached on these
-    # exact facts.
+    # exact facts, by this exact judge.
     scope: list[ColumnElement[bool]] = [
         eligibility_evaluations.c.engine_kind == "llm",
         eligibility_evaluations.c.engine_version == engine_version
@@ -352,6 +364,8 @@ def current_gate_verdicts(
             func.json_extract(eligibility_evaluations.c.raw_output_json, "$.facts_key")
             == facts_key
         )
+    if model is not None:
+        scope.append(eligibility_evaluations.c.model == model)
     for chunk in id_chunks(posting_version_ids):
         latest = (
             select(eligibility_inputs.c.posting_version_id,

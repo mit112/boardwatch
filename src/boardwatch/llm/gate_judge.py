@@ -34,6 +34,13 @@ from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_gate_verdicts
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 
+#: What this stage writes to the gate row's `provider` column: the `claude` CLI under the
+#: operator's own subscription, no API key. The same name the agent tailor lane already
+#: records (`tailor_cmd`'s `llm_provider_override`), so the ledger has ONE name for that
+#: judge rather than two — `settings.gate.model` alone cannot say it, since the same alias
+#: means a different thing through an API provider.
+GATE_PROVIDER = "claude-code-agent"
+
 
 class _HasPostingId(Protocol):
     @property
@@ -292,6 +299,7 @@ def run_gate_stage(
         already_gated = current_gate_verdicts(
             conn, [v.posting_version_id for v in versions.values()], *identity,
             engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
+            model=settings.gate.model,
         )
     # Never re-judge (D-477 point 5): a lead with a current gate row under this identity is
     # skipped entirely — it never enters a request, let alone a `claude` call.
@@ -301,6 +309,11 @@ def run_gate_stage(
     # row identity cannot carry this: `profile_hash` drops a family the live policy `ignore`s,
     # while the judge reads every fact under an all-blocker policy, so a work_auth flip was
     # invisible here while changing the request (T99).
+    #
+    # `model` is the third argument for the same reason and it is the one a judge SWITCH needs
+    # (T108): nothing else here moves with `settings.gate.model`, so a verdict the previous judge
+    # reached counted as current forever and the switch reached only leads nobody had judged yet.
+    # A row written before this shipped names no model, so it misses and is re-judged once.
     #
     # `engine_version` is EXACT here, not the prefix the display readers use (D-512). "Current"
     # has to mean current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that
@@ -335,6 +348,7 @@ def run_gate_stage(
         result = apply_gate_verdicts(
             write_conn, verdicts, versions=versions, facts=facts, policy=policy,
             catalog=catalog, run_id=run_id, shortlist_ranks=shortlist_ranks,
+            provider=GATE_PROVIDER, model=settings.gate.model,
         )
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)
