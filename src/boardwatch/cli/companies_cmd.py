@@ -23,7 +23,7 @@ from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.github_lists import candidate_document, discover, fetch_listings, select
-from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED
+from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED, SeedCoverage
 from boardwatch.lanes.grnh_seeds import candidate_document as grnh_candidate_document
 from boardwatch.lanes.grnh_seeds import resolve as grnh_resolve
 from boardwatch.lanes.grnh_seeds import without_known as grnh_without_known
@@ -42,7 +42,7 @@ from boardwatch.store.queries import (
     unwatch,
     upsert_watch,
 )
-from boardwatch.store.seed_queries import unresolved_seeds
+from boardwatch.store.seed_queries import unresolved_seed_count, unresolved_seeds
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
@@ -505,7 +505,8 @@ def export(ctx: typer.Context) -> None:
 def discover_grnh_(
     ctx: typer.Context,
     limit: int = typer.Option(
-        200, "--limit", min=1, help="How many stored grnh.se seeds to follow."
+        200, "--limit", min=0,
+        help="How many stored grnh.se seeds to follow; 0 follows every selectable one.",
     ),
     out: Annotated[
         Path | None,
@@ -523,6 +524,11 @@ def discover_grnh_(
     it, delete any row whose evidence URL is ATS chrome rather than an employer board, then
     `companies import` it. That human step is the owner's ruling (D-291 build).
 
+    **Because it writes nothing, a bounded `--limit` reads the SAME seeds every time** — the
+    `(attempts, id)` order cannot move if no attempt is ever charged. So the document states its
+    own coverage, and `--limit 0` follows every selectable seed. Re-running at the default does
+    not advance; it re-reads the same prefix.
+
     **This is not wired into a run.** Arming these boards costs ~3.2s each on every future run,
     so admission stays a separate, deliberate act.
     """
@@ -534,7 +540,22 @@ def discover_grnh_(
         raise typer.Exit(code=1)
     with app_ctx.engine.connect() as conn:
         seeds = unresolved_seeds(
-            conn, hosts=GRNH_HOSTS, max_attempts=MAX_ATTEMPTS_CONSIDERED, limit=limit
+            conn,
+            hosts=GRNH_HOSTS,
+            max_attempts=MAX_ATTEMPTS_CONSIDERED,
+            # `--limit 0` is the whole queue, not SQLite's `LIMIT 0`. Nothing here advances the
+            # seed order, so a caller that needs the seeds behind the prefix has no resume
+            # token to carry -- it has to ask for all of them, deliberately, at one request each.
+            limit=None if limit == 0 else limit,
+        )
+        # Counted AFTER the select and on the same predicate: the only drift two SQLite snapshots
+        # can produce here is a concurrent INSERT, and a seed inserted mid-read really was not
+        # examined. `SeedCoverage.not_examined` floors the other direction at 0.
+        coverage = SeedCoverage(
+            selectable=unresolved_seed_count(
+                conn, hosts=GRNH_HOSTS, max_attempts=MAX_ATTEMPTS_CONSIDERED
+            ),
+            followed=len(seeds),
         )
     resolution = grnh_resolve(seeds, Fetcher(app_ctx.settings))
     # Boards already stored are dropped, the same rule `discover` applies via `is_known`. This
@@ -545,7 +566,9 @@ def discover_grnh_(
         resolution = grnh_without_known(
             resolution, is_known=lambda p, s: company_exists(conn, provider=p, slug=s)
         )
-    document = grnh_candidate_document(resolution, generated_on=date.today())
+    document = grnh_candidate_document(
+        resolution, generated_on=date.today(), coverage=coverage
+    )
     if out is None:
         # Plain stdout, not `console.print`: rich WORD-WRAPS at the console width, which breaks
         # a header comment across lines that no longer start with `#` and makes the document
@@ -553,7 +576,12 @@ def discover_grnh_(
         typer.echo(document, nl=False)
         return
     out.write_text(document, encoding="utf-8")
-    console.print(f"Wrote {len(resolution.boards)} candidate board(s) to {out}")
+    # The coverage goes to the terminal as well as into the file: an operator who never opens the
+    # document must still be able to tell a partial read from a complete one.
+    console.print(
+        f"Wrote {len(resolution.boards)} candidate board(s) to {out} — {coverage.summary()}",
+        markup=False, highlight=False, soft_wrap=True,
+    )
 
 
 @companies_app.command("discover")

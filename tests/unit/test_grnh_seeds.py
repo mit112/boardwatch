@@ -19,7 +19,13 @@ import yaml
 from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
-from boardwatch.lanes.grnh_seeds import candidate_document, resolve, without_known
+from boardwatch.lanes.grnh_seeds import (
+    GrnhResolution,
+    SeedCoverage,
+    candidate_document,
+    resolve,
+    without_known,
+)
 from boardwatch.registry.validate import CompanyEntry
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run
@@ -43,6 +49,13 @@ def _seed(token: str, seed_id: int = 1) -> LaneSeed:
     return LaneSeed(
         id=seed_id, url=f"https://grnh.se/{token}", host="grnh.se",
         discovered_by="indeed", attempts=0,
+    )
+
+
+def _all_of(resolution: GrnhResolution) -> SeedCoverage:
+    """Coverage for a pass that read the whole queue — the case these tests are not about."""
+    return SeedCoverage(
+        selectable=resolution.census.seeds_read, followed=resolution.census.seeds_read
     )
 
 
@@ -151,7 +164,9 @@ def test_the_candidate_file_validates_as_the_registry_format_import_accepts(
     _redirect(respx_mock, "abc123", BOARD)
     result = resolve((_seed("abc123"),), _fetcher(tmp_path))
 
-    document = candidate_document(result, generated_on=date(2026, 9, 2))
+    document = candidate_document(
+        result, generated_on=date(2026, 9, 2), coverage=_all_of(result),
+    )
     parsed = yaml.safe_load(document)
 
     assert [CompanyEntry.model_validate(row).slug for row in parsed["companies"]] == ["speechify"]
@@ -172,7 +187,9 @@ def test_every_candidate_carries_its_evidence_url_for_review(
     _redirect(respx_mock, "chrome", embed)
 
     result = resolve((_seed("chrome"),), _fetcher(tmp_path))
-    document = candidate_document(result, generated_on=date(2026, 9, 2))
+    document = candidate_document(
+        result, generated_on=date(2026, 9, 2), coverage=_all_of(result),
+    )
 
     assert ("greenhouse", "embed") == (result.boards[0].provider, result.boards[0].slug)
     assert f"greenhouse:embed | {embed}" in document
@@ -196,7 +213,9 @@ def test_a_newline_in_a_resolved_value_cannot_break_out_of_the_header_comment(
         census=GrnhCensus(seeds_read=1, resolved=1, duplicate=0, off_board=0, failed=0),
         errors=(),
     )
-    document = candidate_document(resolution, generated_on=date(2026, 9, 2))
+    document = candidate_document(
+        resolution, generated_on=date(2026, 9, 2), coverage=_all_of(resolution),
+    )
 
     # Asserted by PARSING rather than by splitting on a marker: a split on "companies:" is itself
     # defeated by a value containing that string, which is the very injection being tested.
@@ -327,7 +346,9 @@ def test_an_exception_repr_cannot_break_out_of_the_header_comment() -> None:
         errors=("https://grnh.se/x: Boom(\ncompanies: [{name: evil}]\n)",),
     )
 
-    document = candidate_document(resolution, generated_on=date(2026, 9, 2))
+    document = candidate_document(
+        resolution, generated_on=date(2026, 9, 2), coverage=_all_of(resolution),
+    )
 
     assert yaml.safe_load(document) == {"companies": []}
 
@@ -391,3 +412,266 @@ def test_two_expired_postings_on_one_board_are_deduped_and_counted(
     assert (c.seeds_read, c.resolved, c.duplicate, c.failed) == (2, 1, 1, 0)
     assert c.reconciles()
     assert c.from_expired_posting == 1
+
+
+# ------------------------------------------------------------------------------------------
+# T141 -- the command read a FIXED PREFIX of the queue and said nothing about the rest.
+#
+# Nothing here charges an attempt or sets `resolved_at`, so `ORDER BY attempts, id LIMIT 200`
+# selects the same first 200 seeds on every invocation, forever. Measured live: all 449 stored
+# `grnh.se` seeds sit at `attempts=0, resolved_at IS NULL`, so 249 of them were unreachable at
+# the default limit -- and the operator was shown a shrinking candidate list that reads exactly
+# like a drained queue.
+# ------------------------------------------------------------------------------------------
+
+
+def _store_with_seeds(tmp_path: Path, tokens: tuple[str, ...]) -> Path:
+    """A data dir holding one unresolved `grnh.se` seed per token, `attempts=0`.
+
+    Written through `record_seeds`, the sanctioned single write point, not a raw insert: it is
+    what applies `is_seedable_url`, so every row here is one production could actually hold.
+    """
+    data = tmp_path / "data"
+    data.mkdir(parents=True, exist_ok=True)
+    engine = get_engine(data)
+    ensure_schema(engine)  # `init` PROMPTS; this is what it calls underneath
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            tuple(f"https://grnh.se/{t}" for t in tokens),
+            discovered_by="indeed",
+            run_id=run,
+            now=utcnow(),
+        )
+    return data
+
+
+def _record_followed(router: respx.Router, boards: dict[str, str]) -> list[str]:
+    """Mock every seed's redirect and return the list of tokens actually FETCHED.
+
+    The call record is the point: a seed the command never looked at is invisible in the output
+    (it proposes nothing either way) and visible only here.
+    """
+    followed: list[str] = []
+
+    def _seed_response(request: httpx.Request) -> httpx.Response:
+        token = request.url.path.lstrip("/")
+        followed.append(token)
+        return httpx.Response(302, headers={"Location": boards[token]})
+
+    router.get(url__regex=r"https://grnh\.se/.+").mock(side_effect=_seed_response)
+    router.get(url__regex=r"https://job-boards\.greenhouse\.io/.+").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+    return followed
+
+
+def _no_real_sleeping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop the per-host pacing wait. These tests are about SELECTION, not politeness.
+
+    `resolve` asks for a 1.0s floor per seed, so a 201-seed pass would otherwise sleep for
+    three and a half minutes. The pacing itself is `test_politeness.py`'s subject.
+    """
+    from boardwatch.core import politeness
+
+    monkeypatch.setattr(politeness.time, "sleep", lambda seconds: None)
+
+
+@respx.mock
+def test_a_seed_behind_the_default_limit_is_never_even_looked_at(
+    respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """201 seeds, the first 200 already stored: invocation after invocation proposes nothing.
+
+    This is the falsifier. The command writes nothing, so the `(attempts, id)` order never moves
+    and the default limit is a permanent wall -- the 201st seed is not merely unproposed, it is
+    never FETCHED, which is why the assertion is on the call record and not on the document.
+    """
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+    from boardwatch.store.queries import upsert_watch
+
+    _no_real_sleeping(monkeypatch)
+    tokens = tuple(f"s{i:03d}" for i in range(1, 202))
+    boards = {
+        token: f"https://job-boards.greenhouse.io/{'known' + token if i < 200 else 'newco'}/jobs/1"
+        for i, token in enumerate(tokens)
+    }
+    followed = _record_followed(respx_mock, boards)
+    data = _store_with_seeds(tmp_path, tokens)
+    engine = get_engine(data)
+    with engine.begin() as conn:
+        for token in tokens[:200]:
+            upsert_watch(
+                conn, provider="greenhouse", slug=f"known{token}", name=token, source="user"
+            )
+
+    runner = CliRunner()
+    base = ["--data-dir", str(data), "companies", "discover-grnh"]
+    first = runner.invoke(app, base)
+    second = runner.invoke(app, base)
+
+    assert (first.exit_code, second.exit_code) == (0, 0), (first.output, second.output)
+    assert yaml.safe_load(first.stdout)["companies"] == []
+    assert yaml.safe_load(second.stdout)["companies"] == []
+    # Twice at the default, and the last seed was never once fetched.
+    assert "s201" not in followed
+    assert len(followed) == 400
+
+    every = runner.invoke(app, [*base, "--limit", "0"])
+
+    assert every.exit_code == 0, every.output
+    assert "s201" in followed
+    assert [c["slug"] for c in yaml.safe_load(every.stdout)["companies"]] == ["newco"]
+
+
+@respx.mock
+def test_the_document_names_the_seeds_this_run_did_not_examine(
+    respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An under-read must be readable without arithmetic, and it travels with the document.
+
+    The header is where it goes because the owner reviews this file away from the terminal that
+    produced it -- the same reason the census and the evidence URLs are there.
+    """
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    _no_real_sleeping(monkeypatch)
+    tokens = ("a", "b", "c")
+    followed = _record_followed(
+        respx_mock,
+        {t: f"https://job-boards.greenhouse.io/co{t}/jobs/1" for t in tokens},
+    )
+    data = _store_with_seeds(tmp_path, tokens)
+
+    invoked = CliRunner().invoke(
+        app, ["--data-dir", str(data), "companies", "discover-grnh", "--limit", "2"]
+    )
+
+    assert invoked.exit_code == 0, invoked.output
+    assert len(followed) == 2
+    assert "followed 2 of 3 selectable grnh.se seed(s)" in invoked.stdout
+    assert "1 NOT EXAMINED" in invoked.stdout
+    # and it is still a document `companies import` can read
+    assert [c["slug"] for c in yaml.safe_load(invoked.stdout)["companies"]] == ["coa", "cob"]
+
+    # The `--out` path reports it to the TERMINAL too: an operator who never opens the file must
+    # still be able to tell a partial read from a complete one.
+    written = tmp_path / "candidates.yaml"
+    to_file = CliRunner().invoke(
+        app,
+        ["--data-dir", str(data), "companies", "discover-grnh", "--limit", "2",
+         "--out", str(written)],
+    )
+
+    assert to_file.exit_code == 0, to_file.output
+    assert "1 NOT EXAMINED" in to_file.stdout
+    assert "1 NOT EXAMINED" in written.read_text(encoding="utf-8")
+
+
+@respx.mock
+def test_a_run_that_read_the_whole_queue_says_so(
+    respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other branch of the same message, so full coverage is not reported as a constant."""
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    _no_real_sleeping(monkeypatch)
+    tokens = ("a", "b")
+    _record_followed(
+        respx_mock, {t: f"https://job-boards.greenhouse.io/co{t}/jobs/1" for t in tokens}
+    )
+    data = _store_with_seeds(tmp_path, tokens)
+
+    invoked = CliRunner().invoke(
+        app, ["--data-dir", str(data), "companies", "discover-grnh", "--limit", "5"]
+    )
+
+    assert invoked.exit_code == 0, invoked.output
+    assert "followed all 2 selectable grnh.se seed(s)" in invoked.stdout
+    assert "NOT EXAMINED" not in invoked.stdout
+
+
+@pytest.mark.parametrize("limit", ["9", "0"])
+@respx.mock
+def test_the_command_still_writes_no_seed_state_at_all(
+    limit: str, respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control that stops a traversal fix from quietly becoming a seed-state write.
+
+    Includes a seed whose fetch FAILS, because that is the turn an in-run resolver would charge
+    an attempt for. A board candidate is not a resolved posting: `resolved_at` and `attempts`
+    mean something else and must keep meaning it.
+
+    Both spellings of "read the whole queue" are driven: `--limit 9` is the CONTROL that was
+    already green, `--limit 0` is the new traversal being held to the same rule.
+    """
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    _no_real_sleeping(monkeypatch)
+    respx_mock.get("https://grnh.se/dead").mock(return_value=httpx.Response(404))
+    respx_mock.get("https://grnh.se/live").mock(
+        return_value=httpx.Response(302, headers={"Location": BOARD})
+    )
+    respx_mock.get(BOARD).mock(return_value=httpx.Response(200, text="ok"))
+    data = _store_with_seeds(tmp_path, ("dead", "live"))
+    engine = get_engine(data)
+
+    def _seed_state() -> list[tuple[object, ...]]:
+        with engine.connect() as conn:
+            return [
+                tuple(row)
+                for row in conn.exec_driver_sql(
+                    "SELECT id, url, attempts, resolved_at, last_attempt_run_id, last_attempt_at"
+                    " FROM lane_seeds ORDER BY id"
+                )
+            ]
+
+    before = _seed_state()
+    invoked = CliRunner().invoke(
+        app, ["--data-dir", str(data), "companies", "discover-grnh", "--limit", limit]
+    )
+
+    assert invoked.exit_code == 0, invoked.output
+    assert before == _seed_state()
+    assert all(row[2] == 0 and row[3] is None for row in before)
+
+
+@pytest.mark.parametrize("limit", ["9", "0"])
+@respx.mock
+def test_a_seed_whose_redirect_failed_stays_eligible_for_a_later_pass(
+    limit: str, respx_mock: respx.Router, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed seed is not consumed. Traversal must not be able to retire one.
+
+    `--limit 9` is the control that was already green; `--limit 0` is the new traversal.
+    """
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+    from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED
+    from boardwatch.store.seed_queries import unresolved_seeds
+
+    _no_real_sleeping(monkeypatch)
+    respx_mock.get("https://grnh.se/dead").mock(return_value=httpx.Response(404))
+    data = _store_with_seeds(tmp_path, ("dead",))
+
+    invoked = CliRunner().invoke(
+        app, ["--data-dir", str(data), "companies", "discover-grnh", "--limit", limit]
+    )
+
+    assert invoked.exit_code == 0, invoked.output
+    with get_engine(data).connect() as conn:
+        still_open = unresolved_seeds(
+            conn, hosts=GRNH_HOSTS, max_attempts=MAX_ATTEMPTS_CONSIDERED, limit=9
+        )
+    assert [s.url for s in still_open] == ["https://grnh.se/dead"]
+    assert still_open[0].attempts == 0

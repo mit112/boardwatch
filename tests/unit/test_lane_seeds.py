@@ -24,6 +24,7 @@ from boardwatch.store.seed_queries import (
     record_seed_attempt,
     record_seeds,
     seed_host,
+    unresolved_seed_count,
     unresolved_seeds,
 )
 from boardwatch.store.tables import lane_seeds
@@ -674,3 +675,42 @@ def test_a_resolver_that_is_registered_but_not_passed_claims_nothing(tmp_path: P
                 ResolverCatalog(hosts=HOSTS, host_suffixes=frozenset(), max_attempts=3),
             ),
         ).unclaimed_hosts == ()
+
+
+def test_the_count_answers_exactly_what_the_unbounded_select_returns(tmp_path: Path) -> None:
+    """A coverage report is only honest if its denominator is the SELECT's own predicate.
+
+    Both filters are exercised, because either one missing from the count inflates "not examined"
+    with rows no caller could have taken: a RESOLVED seed is done, and a seed AT THE CEILING is
+    permanently unselectable (a leak `boardwatch seeds` reports, not an under-read this reader
+    could fix). Counting them would send an operator looking for seeds that are not there.
+
+    `limit=None` is the other half of the same pair: the unbounded select and the count must
+    agree, or "0 not examined" is a claim nobody checked.
+    """
+    engine = _engine(tmp_path)
+    run = insert_run(engine)
+    with engine.begin() as conn:
+        record_seeds(
+            conn,
+            ("https://x.test/a", "https://x.test/b", "https://x.test/c", "https://z.test/d"),
+            discovered_by="indeed",
+            run_id=run,
+            now=NOW,
+        )
+        ids = {s.url: s.id for s in unresolved_seeds(conn, hosts=HOSTS, max_attempts=2, limit=99)}
+        record_seed_attempt(conn, ids["https://x.test/a"], run_id=run, now=NOW, resolved=True)
+        record_seed_attempt(conn, ids["https://x.test/b"], run_id=run, now=NOW, resolved=False)
+        record_seed_attempt(conn, ids["https://x.test/b"], run_id=run, now=NOW, resolved=False)
+
+        every = unresolved_seeds(conn, hosts=HOSTS, max_attempts=2, limit=None)
+        counted = unresolved_seed_count(conn, hosts=HOSTS, max_attempts=2)
+        bounded = unresolved_seeds(conn, hosts=HOSTS, max_attempts=2, limit=1)
+        # No host set claims nothing, the same answer `unresolved_seeds` gives.
+        unclaimed = unresolved_seed_count(conn, hosts=frozenset(), max_attempts=2)
+
+    # `a` resolved, `b` is at the ceiling, `d` is on a host this catalog does not claim.
+    assert [s.url for s in every] == ["https://x.test/c"]
+    assert counted == len(every) == 1
+    assert [s.url for s in bounded] == ["https://x.test/c"]
+    assert unclaimed == 0
