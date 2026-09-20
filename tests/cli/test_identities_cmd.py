@@ -125,3 +125,41 @@ def test_reap_on_a_single_generation_says_nothing_is_stale(seed_dedup):
     assert result.exit_code == 0
     assert "nothing stale" in result.output
     assert _identity_rows(seed.engine) == before
+
+
+def test_memberships_reports_a_divergence_through_the_real_cli(seed_dedup):
+    """End-to-end wiring: two merged duplicates, one retitled without a body revision, come
+    back as one diverged job carrying a live disposition."""
+    seed = seed_dedup(count=2, identical=True)
+    assert _run(seed.data_dir, ["identities", "backfill"]).exit_code == 0
+    assert _run(seed.data_dir, ["identities", "regroup"]).exit_code == 0
+    with seed.engine.connect() as conn:
+        job_id = job_anchors(conn, seed.posting_ids)[seed.posting_ids[0]]
+    with seed.engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == seed.posting_ids[1])
+            .values(title="Embedded Firmware", normalized_title="embedded firmware")
+        )
+        record_disposition(
+            conn, job_id, disposition="built", reason="lead_built",
+            policy_version="p1", now=seed.now,
+        )
+    assert _run(seed.data_dir, ["identities", "backfill"]).exit_code == 0
+
+    result = _run(seed.data_dir, ["identities", "memberships"])
+
+    assert result.exit_code == 0
+    assert "1 multi-posting job(s)" in result.output
+    assert "0 justified, 1 diverged" in result.output
+    assert f"diverged job {job_id}" in result.output
+    assert "live disposition: yes" in result.output
+    assert "application: no" in result.output
+
+
+def test_memberships_reports_a_store_with_no_merged_job(seed_dedup):
+    """A measured zero, stated as one — not silence."""
+    seed = seed_dedup(count=2, identical=True)
+    result = _run(seed.data_dir, ["identities", "memberships"])
+    assert result.exit_code == 0
+    assert "no job anchors more than one posting" in result.output

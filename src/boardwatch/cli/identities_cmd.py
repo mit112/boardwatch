@@ -1,8 +1,9 @@
-"""`boardwatch identities backfill|reap|regroup|verify|leakage` (design §6.3, §7)."""
+"""`boardwatch identities backfill|reap|regroup|verify|leakage|memberships` (design §6.3, §7)."""
 
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import asdict
 
 import typer
@@ -15,11 +16,13 @@ from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.reports.leakage import DEFAULT_WINDOW_DAYS, compute_leakage_report
 from boardwatch.store.identity_queries import (
+    MembershipStanding,
     count_stale_identities,
     delete_stale_identities,
     identities_complete,
     load_identities,
     load_identity_inputs,
+    load_job_memberships,
     write_identities,
 )
 from boardwatch.store.regroup import (
@@ -263,3 +266,48 @@ def leakage(
         "An UPPER bound, not a duplicate count — this key spans genuinely different jobs "
         "and nothing here is suppressed."
     )
+
+
+@identities_app.command("memberships")
+def memberships(ctx: typer.Context) -> None:
+    """Report multi-posting jobs whose recorded grouping evidence no longer holds (T118).
+
+    A job groups several postings, and the grouping is durable by design (D-104) — but the
+    evidence that justified it is not. `postings.job_id` has three writers and none of them
+    ever splits a job: there is no split CLI, no drain, no nightly pass, and `scan/apply.py`
+    refreshes a posting's identities after a revision without ever re-deriving its `job_id`.
+    So two postings merged as duplicates keep sharing one disposition and one application
+    forever, however far their JDs later drift apart.
+
+    This is the detection half only. It writes nothing: no job is split, no disposition is
+    released, no suppression changes. Sizing the repair is the owner's call, against what
+    this finds.
+
+    Exits 0 even with divergences to report. There is no fix to point an operator at, and a
+    check that is permanently red is a discarded check (`verify`'s design §2.3 reasoning);
+    `reap`'s dry run sets the same precedent for a read-only maintenance report.
+    """
+    engine = build_context(ctx.obj).engine
+    with engine.connect() as conn:
+        rows = load_job_memberships(conn, now=utcnow())
+    if not rows:
+        typer.echo("memberships: no job anchors more than one posting")
+        return
+    counts = Counter(row.standing for row in rows)
+    tally = ", ".join(f"{counts[standing]} {standing}" for standing in MembershipStanding)
+    typer.echo(f"memberships: {len(rows)} multi-posting job(s) — {tally}")
+    for row in rows:
+        if row.standing is MembershipStanding.JUSTIFIED:
+            continue
+        evidence = (
+            "no suppressing merge event"
+            if not row.methods
+            else f"merged as {'/'.join(row.methods)} at "
+            f"{'/'.join(v or 'no version' for v in row.algorithm_versions)}"
+        )
+        typer.echo(
+            f"  {row.standing} job {row.job_id}: postings "
+            f"{', '.join(str(p) for p in row.posting_ids)} ({evidence}); "
+            f"live disposition: {'yes' if row.has_live_disposition else 'no'}; "
+            f"application: {'yes' if row.has_application else 'no'}"
+        )
