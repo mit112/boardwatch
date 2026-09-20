@@ -45,8 +45,10 @@ BAND_ORDER: dict[str, int] = dict(entry=0, mid=1, senior=2, staff_plus=3)
 # catalog's `grammars:` section actually decides behaviour — otherwise it is declared data
 # nothing reads, and editing it would silently change nothing.
 _PATTERNS: dict[str, re.Pattern[str]] = dict(
-    # "Level 5" — measured unambiguous (33/33 live hits are real levels).
-    level_n=re.compile(r"\blevel\s+(\d{1,2})\b", re.IGNORECASE),
+    # "Level 5" — measured unambiguous (33/33 live hits are real levels). The separator may be
+    # whitespace, a hyphen or a colon ("Level-5", "Level: 5"): same rung, same meaning. It stays
+    # anchored on the WORD, so none of the bare letter+digit shapes below can reach this branch.
+    level_n=re.compile(r"\blevel(?:\s+|\s*[-:]\s*)(\d{1,2})\b", re.IGNORECASE),
     # Bare letter+digit. Measured NOT to be levels: OSI layer 2, support tiers, facility codes.
     # Matched only so the gate can ABSTAIN loudly instead of silently ignoring them.
     l_prefix=re.compile(r"\b(L\s?-?\d{1,2})\b"),
