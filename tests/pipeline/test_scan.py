@@ -311,6 +311,40 @@ def test_a_partial_only_scan_is_degraded_success_not_a_systemic_outage(
     )
 
 
+def test_a_partial_only_STANDALONE_scan_records_that_it_was_degraded(  # noqa: N802
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The five live instances (runs 23/26/31/36/37) were STANDALONE `boardwatch scan` calls —
+    every one has `corpus_evaluated IS NULL`, and two of them ingested 879 and 344 postings.
+
+    T130 correctly stopped calling them fatal. But the degraded alert it added lives in
+    `run_pipeline`, which this caller never reaches, so without this the exact measured
+    population goes from `failed`-with-a-reason to `ok`-with-nothing — quieter than before the
+    fix. `degraded_scan_alert`'s own docstring is the rule being enforced: a run that stops
+    being fatal must not become silent.
+
+    Recorded only when `finish`, exactly like the outage sentence beside it: under
+    `boardwatch run` the scan is called with `finish=False` and the pipeline records its own
+    copy, so appending here too would write one event onto one row twice.
+    """
+    _add_company(engine, "acme", "greenhouse")
+    payload = json.dumps({"jobs": [gh_jobs()[0], {"id": 999}]}).encode()
+    with respx.mock:
+        respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=payload))
+        summary = run_scan(engine, _settings(tmp_path))
+
+    assert (summary.companies, summary.complete, summary.unchanged, summary.partial) == (
+        1, 0, 0, 1,
+    ), f"guard: not the partial-only shape, so this test proves nothing: {summary}"
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs.c.status, tables.runs.c.errors_json)).one()
+    assert row.status == "ok", "guard: T130's status change regressed"
+    assert any("scan degraded" in note for note in (row.errors_json or [])), (
+        "a standalone partial-only scan recorded NOTHING — it is now quieter than when it "
+        f"was wrongly fatal, which is the one outcome the fix must not produce: {row.errors_json}"
+    )
+
+
 def test_a_scan_where_every_board_returned_NOTHING_is_still_fatal_and_says_why(  # noqa: N802
     engine: Engine, tmp_path: Path
 ) -> None:

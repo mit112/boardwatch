@@ -29,6 +29,7 @@ from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SE
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher, host_key
 from boardwatch.core.settings import Settings
+from boardwatch.notify.scan_health import degraded_scan_alert
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.apply import apply_board
@@ -545,6 +546,22 @@ def _scan_body(
     # already careful to avoid.
     if outage and finish:
         summary.errors.append(systemic_scan_outage_reason(summary.companies))
+    elif finish:
+        # The degraded half, and it exists because narrowing the predicate above moved this
+        # caller from `failed`-with-a-reason to `ok`-with-NOTHING. The five live instances of
+        # the partial-only shape (runs 23/26/31/36/37) were all STANDALONE scans — every one
+        # carries `corpus_evaluated IS NULL`, and two ingested 879 and 344 postings — so the
+        # pipeline-side alert `run_pipeline` raises cannot see any of them. A run that stops
+        # being fatal must not become silent, which is `degraded_scan_alert`'s own rule.
+        #
+        # Gated on `finish` for exactly the reason the outage sentence above is: under
+        # `boardwatch run` the scan is called with `finish=False` and the pipeline appends its
+        # own copy, so recording here too would write one event onto one row twice.
+        degraded = degraded_scan_alert(
+            summary.companies, summary.complete, summary.unchanged, summary.partial
+        )
+        if degraded is not None:
+            summary.errors.append(degraded)
     finalize_run(
         engine, active_run_id,
         boards_attempted=summary.companies,

@@ -2360,6 +2360,17 @@ def test_a_partial_only_pipeline_run_is_degraded_not_fatal_and_says_so_in_the_ru
     assert any("scan degraded" in e for e in summary.errors), (
         f"the run stopped being fatal and became silent instead: {summary.errors}"
     )
+    # EXACTLY once, on both, and this is the assertion the `finish` gate exists for. The scan
+    # stage records the degraded sentence only when it owns the terminal status; `run_pipeline`
+    # calls `run_scan(..., finish=False)` and records its own copy, so dropping that gate writes
+    # one event onto one row twice. Verified discriminating: with `elif finish:` relaxed to
+    # `else:` in `scan/coordinator.py`, 136 tests passed and NOTHING caught the duplicate.
+    assert sum("scan degraded" in e for e in summary.errors) == 1, (
+        f"one degraded scan was reported more than once: {summary.errors}"
+    )
+    assert sum("scan degraded" in e for e in stored) == 1, (
+        f"one degraded scan was persisted onto the row more than once: {stored}"
+    )
     assert any("scan degraded" in e for e in stored), (
         f"the degraded alert never reached runs.errors_json: {stored}"
     )
