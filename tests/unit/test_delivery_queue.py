@@ -43,6 +43,7 @@ from filelock import FileLock
 from sqlalchemy import Connection, Engine, insert, select, update
 
 from boardwatch.core import lock_reclaim
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.politeness import FetchFailure
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import DRAIN_DIRS, queue
@@ -2505,15 +2506,27 @@ def test_a_review_lead_returns_to_the_apply_queue_when_it_becomes_software(
 # --------------------------------------------------------------------- D-498 rule (a)'s drain
 
 
-def _cross_host(conn: Connection, posting_id: int, key: str) -> None:
+def _cross_host(
+    conn: Connection,
+    posting_id: int,
+    key: str,
+    *,
+    version: str = IDENTITY_ALGORITHM_VERSION,
+) -> None:
     """One `cross_host` identity row. Written by hand because `_deliver` writes none, and this
-    drain is defined entirely by that grouping."""
+    drain is defined entirely by that grouping.
+
+    `version` defaults to the CURRENT generation and must: the readers behind this drain select
+    it, so a fixture at any other value describes a group no correct reader sees and every
+    assertion below it becomes vacuous. `RETIRED` is passed explicitly where a test is about a
+    generation the identity subsystem has withdrawn.
+    """
     conn.execute(
         insert(posting_identities).values(
             posting_id=posting_id,
             kind="cross_host",
             identity_key=key,
-            algorithm_version=1,
+            algorithm_version=version,
             created_at=NOW,
         )
     )
@@ -2618,6 +2631,100 @@ def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     assert drained.to_ineligible == 1
     assert len(_folders(root / INELIGIBLE_DIR)) == 1
     assert _folders(root / LANE_COPY_DIR) == []
+
+
+# ------------------------------- the drain reads the CURRENT identity generation only (T114)
+
+#: A generation the identity subsystem has retired. `write_identities` writes BESIDE history — the
+#: UNIQUE key is (posting_id, kind, algorithm_version) — and `identities reap` is manual,
+#: so retired rows stay on disk. Filing a standing lead under `_lane_copy` on a withdrawn key is
+#: a quarantine with no evidence behind it, so the two readers this drain sits on
+#: (`standing_board_cross_host_keys` and `lane_copy_job_ids`) select the current one.
+RETIRED = "p6.1"
+assert RETIRED != IDENTITY_ALGORITHM_VERSION  # the fixtures below must actually be stale
+
+
+@pytest.mark.parametrize("board_first", [True, False])
+def test_a_group_held_only_at_a_RETIRED_generation_drains_nothing(
+    engine: Engine, root: Path, apps: Path, board_first: bool
+) -> None:
+    """Both standing leads carry a `cross_host` key at a retired generation and nothing current,
+    so no current evidence says one covers the other -- and the lane copy stays in front of the
+    owner. Missing evidence means no quarantine, which is the fail-open direction.
+
+    Both seeding orders are run because neither production read carries an `ORDER BY`.
+    """
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
+            _cross_host(conn, posting_id, "same-job", version=RETIRED)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_lane_copy == 0
+    assert _folders(root / LANE_COPY_DIR) == []
+    assert len(_folders(root)) == 2
+
+
+def test_a_board_twin_at_a_RETIRED_generation_holds_nothing(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """`standing_board_cross_host_keys` in isolation: the LANE copy's key is current, so only the
+    holder set can move. The board copy's only row is retired, so it elects nothing and the lane
+    copy is not a redundant rendering of anything the owner can see."""
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        _cross_host(conn, board_id, "same-job", version=RETIRED)
+        _cross_host(conn, lane_id, "same-job")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_lane_copy == 0
+    assert _folders(root / LANE_COPY_DIR) == []
+
+
+def test_a_lane_twin_at_a_RETIRED_generation_is_not_matched_to_a_CURRENT_holder(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The mirror image, isolating `lane_copy_job_ids`: the holder set is current and correct, and
+    it is the LANE row whose only key is retired. The two rows are in no current group together,
+    so the lane lead is work rather than a copy."""
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job", version=RETIRED)
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_lane_copy == 0
+    assert _folders(root / LANE_COPY_DIR) == []
+
+
+@pytest.mark.parametrize("board_first", [True, False])
+def test_the_control_a_group_held_at_the_CURRENT_generation_still_drains(
+    engine: Engine, root: Path, apps: Path, board_first: bool
+) -> None:
+    """The control the three tests above are worthless without, run under both seeding orders: at
+    the current generation the lane copy still files under `_lane_copy` and the employer's own
+    copy is the one left in front of the owner."""
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
+            _cross_host(conn, posting_id, "same-job")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+    assert drained.to_lane_copy == 1
+    assert len(_folders(root / LANE_COPY_DIR)) == 1
+    assert len(_folders(root)) == 1
 
 
 # ---------------------------------------------- the Greenhouse application form's hard stops (T91)

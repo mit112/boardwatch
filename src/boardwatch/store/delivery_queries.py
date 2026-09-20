@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Connection, Row, Select, func, null, select
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
@@ -689,6 +690,12 @@ def standing_board_cross_host_keys(
     reason it is there: `STATUS_UNVERIFIABLE` is derived at the read boundary, so an unverifiable
     posting is stored `open` and correctly keeps holding (D-324).
 
+    **The CURRENT `algorithm_version` only.** Identity rows are written beside history — the
+    UNIQUE key includes the version — and `identities reap` is manual with no scheduler behind it,
+    so a retired generation sits on disk indefinitely. A board copy elected on a key the identity
+    subsystem has withdrawn would hold a lane copy back on evidence that no longer speaks for
+    either row; no current key means no holder, which is the fail-open direction here.
+
     **Reached by a JOIN outward from `artifacts`, never by collecting ids and binding them.** This
     module binds no id list at all — that shape hit SQLite's 32,766 bound-parameter cap at six call
     sites on 2026-08-23 and killed every scheduled run from that day on — so the drain sets and the
@@ -702,7 +709,8 @@ def standing_board_cross_host_keys(
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)
-            & (posting_identities.c.kind == "cross_host"),
+            & (posting_identities.c.kind == "cross_host")
+            & (posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION),
         )
         .where(postings.c.status == "open", postings.c.job_id.is_not(None))
     ).all()
@@ -744,6 +752,10 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
     same-title Redmond requisitions — is four EMPLOYER-BOARD rows, and the provider test excludes
     every one of them, so this can no more collapse them than rule (a) can.
 
+    **The CURRENT `algorithm_version` only, on both sides.** The seed carries the filter and so
+    does the read below it: matching a delivered lane row's RETIRED key against a current holder
+    would file a standing lead under `_lane_copy` on a generation nothing else reads.
+
     **It self-heals in both directions with no extra machinery**, which is the property that makes
     it a deferral and not a hole. The set is recomputed every reconcile from
     `standing_board_cross_host_keys`, whose own ladder stops a board copy holding once the owner
@@ -769,7 +781,8 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
         .join(
             posting_identities,
             (posting_identities.c.posting_id == postings.c.id)
-            & (posting_identities.c.kind == "cross_host"),
+            & (posting_identities.c.kind == "cross_host")
+            & (posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION),
         )
         .where(postings.c.status == "open", postings.c.job_id.is_not(None))
     ).all()

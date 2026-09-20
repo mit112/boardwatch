@@ -238,13 +238,21 @@ class StaleIdentityGeneration:
 def count_stale_identities(conn: Connection) -> tuple[StaleIdentityGeneration, ...]:
     """Identity rows at every `algorithm_version` that is NOT the current one.
 
-    This is the whole reapable set, and the bound on it is what makes it safe: every reader
-    in this module filters to `IDENTITY_ALGORITHM_VERSION`, so a row at any other version is
-    unreadable by construction — `load_identities`, `identities_complete`,
-    `load_surfaced_identities` and `load_surfaced_keys` all carry the filter, and
-    `write_identities` documents that it never touches another version's rows. Deleting them
-    therefore cannot change any verdict, any suppression, or any report; it only stops the
-    table carrying a generation nothing will ever read again.
+    This is the whole reapable set, and the bound on it is what makes it safe — but the
+    property it relies on is that every reader **repo-wide** filters to
+    `IDENTITY_ALGORITHM_VERSION`, not merely every reader in this module. The narrower claim
+    was true and the wider one was not: `cli/top_cmd._suppress_lane_copies`,
+    `store/delivery_queries.standing_board_cross_host_keys` and
+    `store/delivery_queries.lane_copy_job_ids` each selected `kind == 'cross_host'` with no
+    version predicate, so a retired row was readable by them and reaping it WOULD have changed
+    which leads the owner saw. All three now carry the filter, alongside `load_identities`,
+    `identities_complete`, `load_surfaced_identities`, `load_surfaced_keys` and
+    `store/run_funnel_queries`; `write_identities` documents that it never touches another
+    version's rows. What is checked is that list, by grep over `posting_identities` readers —
+    nothing enforces it, so a new unfiltered reader would make this docstring wrong again.
+
+    Given that, deleting a retired generation cannot change any verdict, any suppression, or
+    any report; it only stops the table carrying rows nothing will ever read again.
 
     **Rows on CLOSED postings at the CURRENT version are deliberately NOT reapable, and that
     is a decision, not an omission.** 11.0% of the live table (52,571 of 476,277 on

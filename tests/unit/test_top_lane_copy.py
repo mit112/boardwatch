@@ -33,10 +33,13 @@ from sqlalchemy import Engine, insert, select
 
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.settings import Settings
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import (
+    artifacts,
     companies,
     jobs,
     posting_identities,
@@ -119,7 +122,7 @@ def _seed(data_dir: Path, rows: Sequence[Row]) -> Engine:
             if key is not None:
                 conn.execute(insert(posting_identities).values(
                     posting_id=posting_id, kind="cross_host", identity_key=key,
-                    algorithm_version=1, created_at=NOW,
+                    algorithm_version=IDENTITY_ALGORITHM_VERSION, created_at=NOW,
                 ))
     return engine
 
@@ -321,3 +324,210 @@ def test_two_lane_rows_in_DIFFERENT_groups_are_both_delivered(env: Path) -> None
                           *FILLER])
     assert results.hidden_lane_copy == 0
     assert sorted(_providers(env, results)) == ["greenhouse", "greenhouse", "indeed", "jobapps"]
+
+
+# ------------------------------------------- retired identity generations (T114)
+
+#: A generation the identity subsystem has retired. `write_identities` writes BESIDE history — the
+#: UNIQUE key is (posting_id, kind, algorithm_version) — and `identities reap` is manual-only
+#: with no scheduler behind it, so retired rows sit on disk indefinitely. Live population is 0
+#: today only because the machine reset rebuilt the store; the version has already moved twice
+#: (p6.1 -> p6.2 -> p6.3), so this is a latent reader defect, not an unreachable one.
+RETIRED = "p6.1"
+assert RETIRED != IDENTITY_ALGORITHM_VERSION  # the fixtures below must actually be stale
+
+#: A second group, for the posting that carries BOTH generations at once.
+OTHER_GROUP = "acme|backend developer|austin, tx"
+
+
+def _identity(engine: Engine, posting_id: int, key: str, version: str) -> None:
+    """One `cross_host` row at an EXPLICIT generation.
+
+    The tests below seed their postings with `key=None` and write every identity row by hand,
+    because what they pin is the generation the reader selects and `_seed` can express only one
+    per run. Insertion ORDER is the caller's, which is what lets a test show that the answer does
+    not depend on which row SQLite hands back first.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            insert(posting_identities).values(
+                posting_id=posting_id, kind="cross_host", identity_key=key,
+                algorithm_version=version, created_at=NOW,
+            )
+        )
+
+
+def _posting_id(engine: Engine, slug: str) -> int:
+    """By company SLUG, never by provider: `FILLER` is two more `greenhouse` rows, so a
+    provider lookup would match three postings and the seed would be ambiguous."""
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                select(postings.c.id)
+                .join(companies, companies.c.id == postings.c.company_id)
+                .where(companies.c.slug == slug)
+            ).scalars().one()
+        )
+
+
+def _delivered_by_a_PRIOR_run(engine: Engine, posting_id: int) -> int:
+    """Put `posting_id` in the STANDING queue the way a previous run leaves it.
+
+    Both halves are required: the artifact is what puts the lead in the queue, and the `built`
+    disposition is what stops it ranking again. Without the second the board copy re-ranks, lands
+    on the slate, and rule (a)'s ON-SLATE arm answers the question — so the test would pass
+    whether or not `standing_board_cross_host_keys` was consulted at all.
+    """
+    with engine.begin() as conn:
+        version_id = int(
+            conn.execute(
+                posting_versions.select()
+                .where(posting_versions.c.posting_id == posting_id)
+                .order_by(posting_versions.c.id.desc())
+            ).first().id
+        )
+        conn.execute(insert(artifacts).values(
+            posting_version_id=version_id, kind="resume_tailored",
+            uri=f"/out/{posting_id}.typ", generator="boardwatch.tailor",
+            media_type="text/x-typst", meta_json={}, created_at=NOW, run_id=None,
+        ))
+        job_id = int(
+            conn.execute(postings.select().where(postings.c.id == posting_id)).one().job_id
+        )
+        record_disposition(
+            conn, job_id, disposition="built", reason="lead_built", policy_version="v1", now=NOW,
+        )
+        return job_id
+
+
+# -------------------------------------- reader 1: `_suppress_lane_copies`, on-slate
+
+
+@pytest.mark.parametrize("board_first", [False, True])
+def test_a_group_held_only_at_a_RETIRED_generation_suppresses_nothing(
+    env: Path, board_first: bool
+) -> None:
+    """The defect. Both copies carry a `cross_host` key the identity subsystem has RETIRED, so
+    no current evidence says these two rows are the same job — and missing current evidence must
+    mean no suppression, which is the fail-open direction for a delivery policy.
+
+    Run under both insertion orders because the production read carries no `ORDER BY`: a filter
+    that happened to keep the last row seen would pass one order and fail the other.
+    """
+    engine = _seed(env, [_lane(0, key=None), _board(1, key=None), *FILLER])
+    lane, board = _posting_id(engine, "jobapps-acme"), _posting_id(engine, "acme")
+    for posting_id in ((board, lane) if board_first else (lane, board)):
+        _identity(engine, posting_id, GROUP, RETIRED)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert "jobapps" in _providers(env, results)
+
+
+@pytest.mark.parametrize("board_first", [False, True])
+def test_the_control_a_group_held_at_the_CURRENT_generation_still_defers_the_lane_copy(
+    env: Path, board_first: bool
+) -> None:
+    """The control the test above is worthless without: the same shape at the CURRENT generation
+    must still defer the lane copy, under either insertion order. Without it, a reader that had
+    simply stopped suppressing would look identical."""
+    engine = _seed(env, [_lane(0, key=None), _board(1, key=None), *FILLER])
+    lane, board = _posting_id(engine, "jobapps-acme"), _posting_id(engine, "acme")
+    for posting_id in ((board, lane) if board_first else (lane, board)):
+        _identity(engine, posting_id, GROUP, IDENTITY_ALGORITHM_VERSION)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 1
+    assert "jobapps" not in _providers(env, results)
+
+
+@pytest.mark.parametrize("retired_first", [True, False])
+def test_a_retired_key_is_not_matched_against_a_current_one(
+    env: Path, retired_first: bool
+) -> None:
+    """A posting that carries BOTH generations: a retired key matching the board's group, and a
+    current key that does not. The current key is the only one that speaks for this posting, so
+    the lane row belongs to no group the board is in and must be delivered.
+
+    **This test does NOT go red against the unfiltered read, and that is measured, not assumed.**
+    SQLite answers the production select through `sqlite_autoindex_posting_identities_1`
+    (posting_id, kind, algorithm_version), so a posting's rows come back in VERSION order and a
+    retired generation sorts below the current one — the unfiltered "last row wins" loop
+    therefore lands on the current key here by accident of the query plan, under either
+    insertion order. What makes the property real is the filter plus that UNIQUE key: together
+    they leave exactly one `cross_host` row per posting, so the answer cannot depend on row
+    order at all, and no `ORDER BY` is needed to pin it.
+
+    Justified by mutation: drop the version predicate AND read the first row instead of the last
+    (`key_of.setdefault`) — the other choice an unordered read permits — and both parameter sets
+    fail with `assert 1 == 0`.
+    """
+    engine = _seed(env, [_lane(0, key=None), _board(1, key=None), *FILLER])
+    lane, board = _posting_id(engine, "jobapps-acme"), _posting_id(engine, "acme")
+    rows = [(GROUP, RETIRED), (OTHER_GROUP, IDENTITY_ALGORITHM_VERSION)]
+    for key, version in rows if retired_first else reversed(rows):
+        _identity(engine, lane, key, version)
+    _identity(engine, board, GROUP, IDENTITY_ALGORITHM_VERSION)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert "jobapps" in _providers(env, results)
+
+
+def test_rule_b_does_not_group_two_lane_rows_at_a_RETIRED_generation(env: Path) -> None:
+    """Rule (b) reads the same `key_of` map, so it inherits the same defect: a lanes-only group
+    held only at a retired generation must keep every member, not elect a survivor."""
+    engine = _seed(env, [_lane(0, key=None), _lane(1, provider="indeed", key=None), *FILLER])
+    for slug in ("jobapps-acme", "indeed-acme"):
+        _identity(engine, _posting_id(engine, slug), GROUP, RETIRED)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert sorted(_providers(env, results)) == ["greenhouse", "greenhouse", "indeed", "jobapps"]
+
+
+# --------------- reader 2: `standing_board_cross_host_keys`, reached from the ranker
+
+
+def test_a_STANDING_board_copy_at_a_RETIRED_generation_holds_no_slot(env: Path) -> None:
+    """Rule (a)'s standing arm. The board copy is in the queue but its only `cross_host` row is
+    retired, so nothing current says it covers this lane row — and the lane row is work.
+
+    The lane row is seeded at the CURRENT generation, so the reader under test here is
+    `standing_board_cross_host_keys` alone: `_suppress_lane_copies` finds a current key for the
+    visible lane row either way, and only the holder set moves.
+    """
+    engine = _seed(env, [_lane(0, key=None), _board(1, key=None), *FILLER])
+    lane, board = _posting_id(engine, "jobapps-acme"), _posting_id(engine, "acme")
+    _identity(engine, lane, GROUP, IDENTITY_ALGORITHM_VERSION)
+    _identity(engine, board, GROUP, RETIRED)
+    _delivered_by_a_PRIOR_run(engine, board)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert "jobapps" in _providers(env, results)
+
+
+def test_the_control_a_STANDING_board_copy_at_the_CURRENT_generation_holds(env: Path) -> None:
+    """The control for the test above, and the proof the standing arm is reached at all: the
+    board copy never enters `visible` — it carries a live `built` disposition — so the ON-SLATE
+    arm cannot be what defers the lane row here."""
+    engine = _seed(env, [_lane(0, key=None), _board(1, key=None), *FILLER])
+    lane, board = _posting_id(engine, "jobapps-acme"), _posting_id(engine, "acme")
+    _identity(engine, lane, GROUP, IDENTITY_ALGORITHM_VERSION)
+    _identity(engine, board, GROUP, IDENTITY_ALGORITHM_VERSION)
+    _delivered_by_a_PRIOR_run(engine, board)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 1
+    assert "jobapps" not in _providers(env, results)
+
+
+def test_a_lane_row_at_a_RETIRED_generation_is_not_held_by_a_CURRENT_standing_board_copy(
+    env: Path,
+) -> None:
+    """The mirror image, isolating `_suppress_lane_copies` against a standing holder: the holder
+    set is correct and current, and it is the LANE row whose only key is retired. It carries no
+    current group, so no group rule can reach it."""
+    engine = _seed(env, [_lane(0, key=None), _board(1, key=None), *FILLER])
+    lane, board = _posting_id(engine, "jobapps-acme"), _posting_id(engine, "acme")
+    _identity(engine, lane, GROUP, RETIRED)
+    _identity(engine, board, GROUP, IDENTITY_ALGORITHM_VERSION)
+    _delivered_by_a_PRIOR_run(engine, board)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert "jobapps" in _providers(env, results)
