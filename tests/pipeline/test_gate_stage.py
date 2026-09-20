@@ -808,6 +808,7 @@ def test_the_recorded_rank_is_the_rankers_own_and_not_a_post_liveness_index(
 # ---------------------------------------------------------------------------
 
 
+@_needs_an_executable_fake
 def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

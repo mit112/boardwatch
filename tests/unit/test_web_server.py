@@ -3025,6 +3025,13 @@ def test_the_follow_up_due_count_is_dates_up_to_today_and_no_further(
     assert counts["in_queue"] == 3
 
 
+@pytest.mark.skipif(
+    not hasattr(time, "tzset"),
+    reason="`time.tzset()` is POSIX-only, and on Windows the TZ environment variable cannot "
+    "retune the C library's zone, so the two-zone harness below cannot be built at all. "
+    "`local_today()` itself is platform-neutral -- what is skipped here is the APPARATUS, "
+    "not the behaviour it pins.",
+)
 def test_local_today_is_the_servers_own_zone_and_never_utc() -> None:
     """The date a follow-up is written in is the one on the owner's wall calendar.
 
