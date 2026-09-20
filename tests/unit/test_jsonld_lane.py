@@ -528,6 +528,27 @@ def test_the_snapshot_is_always_partial(respx_mock: respx.Router, tmp_path: Path
 
 
 @respx.mock
+def test_an_admission_never_asks_for_its_board_to_be_watched(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    """SCOPE CONTROL for the hiring.cafe watch ruling (2026-09-20), which is that lane's alone.
+
+    This lane resolves a posting from a seed URL, one page at a time; it never enumerates an
+    employer board and its providers are not ones the scanner has an adapter for, so nothing here
+    is evidence that a board is live and scannable. A watched row would add an `unknown provider`
+    line to every run forever (D-285). The stored column is `upsert_lane_company`'s
+    `watched=False` default; what is pinned here is that this lane never asks for anything else.
+    """
+    _mock_lists(respx_mock)
+    respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
+
+    result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
+
+    assert result.snapshots
+    assert all(s.watch is False for s in result.snapshots)
+
+
+@respx.mock
 def test_admits_is_asked_once_per_company_before_any_body_is_fetched(
     respx_mock: respx.Router, tmp_path: Path
 ) -> None:

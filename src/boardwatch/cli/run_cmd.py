@@ -63,9 +63,11 @@ def _lane_lines(summary: PipelineSummary) -> list[str]:
     recovered no body is the condition this whole tally exists to make visible, and the prior
     art's browser tier ran 11 scheduled runs in exactly that state with nothing saying so.
 
-    `admitted` counts only companies the store did not already hold, so it reads as reach ADDED.
-    A run whose admitted count is 0 while `refused` is non-zero is a lane at its cap; one where
-    both are 0 is a lane that found only companies already known.
+    `admitted` counts the companies the cap APPROVED and the store did not already hold at that
+    moment — NOT the reach added, because approval happens before any body is fetched and an
+    approval whose bodies were all unavailable is never stored. A run whose admitted count is 0
+    while `refused` is non-zero is a lane at its cap; one where both are 0 is a lane that found
+    only companies already known. The funnel artifact carries the persisted subset.
     """
     lines: list[str] = []
     for lane in summary.lanes:

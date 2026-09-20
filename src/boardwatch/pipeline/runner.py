@@ -1159,6 +1159,17 @@ def _apply_lane(
         raise _LaneApplyFailed(apply_error, seed_refusal=seed_refusal) from apply_error
 
     tally = result.tally
+    # The reach the run actually ADDED, which `budget.admitted` is not: the cap approves a
+    # company BEFORE its bodies are fetched, so one whose every body request failed emits no
+    # snapshot, is never handed to `upsert_lane_company` above, and gets no company row. Both
+    # halves are in scope right here -- the budget knows which pairs it judged new, and
+    # `result.snapshots` is exactly what `_apply_snapshots` just landed -- so this is an
+    # intersection rather than a store round-trip, and it is honest because it is reached only
+    # after `_apply_snapshots` returned cleanly (a partial apply raises above). Intersecting
+    # rather than counting snapshots is what keeps an already-stored company, which also lands a
+    # snapshot, out of a number that means new reach. The lane's own spelling on both sides: the
+    # protocol requires `admits` and the snapshot to carry the same `(provider, slug)`.
+    landed = {(company.provider, company.slug) for company in result.snapshots}
     return (
         LaneReport(
             name=lane.name,
@@ -1168,6 +1179,7 @@ def _apply_lane(
             is_silent_outage=tally.is_silent_outage,
             admitted=budget.admitted,
             refused=budget.refused,
+            persisted_new=tuple(key for key in budget.admitted if key in landed),
             search_pages=result.search_pages,
             fetch_seconds=fetched.fetch_seconds,
             apply_seconds=perf_counter() - apply_started,

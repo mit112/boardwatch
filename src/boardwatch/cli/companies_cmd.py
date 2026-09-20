@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated, NamedTuple
+from typing import Annotated, Any, NamedTuple
 
 import typer
 import yaml
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
-from sqlalchemy import inspect
+from sqlalchemy import Row, inspect
 
 from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli.context import build_context
@@ -22,13 +22,19 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes.admission import CompanyBudget
-from boardwatch.lanes.github_lists import candidate_document, discover, fetch_listings, select
-from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED
+from boardwatch.lanes.github_lists import (
+    candidate_document,
+    discover,
+    fetch_listings,
+    one_line,
+    select,
+)
+from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED, SeedCoverage
 from boardwatch.lanes.grnh_seeds import candidate_document as grnh_candidate_document
 from boardwatch.lanes.grnh_seeds import resolve as grnh_resolve
 from boardwatch.lanes.grnh_seeds import without_known as grnh_without_known
 from boardwatch.providers.base import BoardHealth, Provider
-from boardwatch.providers.registry import derive_employer_name
+from boardwatch.providers.registry import PROVIDER_NAMES, derive_employer_name
 from boardwatch.providers.workday import FacetBucket, FacetUnavailable, read_facet_catalog
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
@@ -40,9 +46,10 @@ from boardwatch.store.queries import (
     set_company_name,
     stored_slug,
     unwatch,
+    unwatched_scannable_companies,
     upsert_watch,
 )
-from boardwatch.store.seed_queries import unresolved_seeds
+from boardwatch.store.seed_queries import unresolved_seed_count, unresolved_seeds
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
@@ -505,7 +512,8 @@ def export(ctx: typer.Context) -> None:
 def discover_grnh_(
     ctx: typer.Context,
     limit: int = typer.Option(
-        200, "--limit", min=1, help="How many stored grnh.se seeds to follow."
+        200, "--limit", min=0,
+        help="How many stored grnh.se seeds to follow; 0 follows every selectable one.",
     ),
     out: Annotated[
         Path | None,
@@ -523,6 +531,11 @@ def discover_grnh_(
     it, delete any row whose evidence URL is ATS chrome rather than an employer board, then
     `companies import` it. That human step is the owner's ruling (D-291 build).
 
+    **Because it writes nothing, a bounded `--limit` reads the SAME seeds every time** — the
+    `(attempts, id)` order cannot move if no attempt is ever charged. So the document states its
+    own coverage, and `--limit 0` follows every selectable seed. Re-running at the default does
+    not advance; it re-reads the same prefix.
+
     **This is not wired into a run.** Arming these boards costs ~3.2s each on every future run,
     so admission stays a separate, deliberate act.
     """
@@ -534,7 +547,22 @@ def discover_grnh_(
         raise typer.Exit(code=1)
     with app_ctx.engine.connect() as conn:
         seeds = unresolved_seeds(
-            conn, hosts=GRNH_HOSTS, max_attempts=MAX_ATTEMPTS_CONSIDERED, limit=limit
+            conn,
+            hosts=GRNH_HOSTS,
+            max_attempts=MAX_ATTEMPTS_CONSIDERED,
+            # `--limit 0` is the whole queue, not SQLite's `LIMIT 0`. Nothing here advances the
+            # seed order, so a caller that needs the seeds behind the prefix has no resume
+            # token to carry -- it has to ask for all of them, deliberately, at one request each.
+            limit=None if limit == 0 else limit,
+        )
+        # Counted AFTER the select and on the same predicate: the only drift two SQLite snapshots
+        # can produce here is a concurrent INSERT, and a seed inserted mid-read really was not
+        # examined. `SeedCoverage.not_examined` floors the other direction at 0.
+        coverage = SeedCoverage(
+            selectable=unresolved_seed_count(
+                conn, hosts=GRNH_HOSTS, max_attempts=MAX_ATTEMPTS_CONSIDERED
+            ),
+            followed=len(seeds),
         )
     resolution = grnh_resolve(seeds, Fetcher(app_ctx.settings))
     # Boards already stored are dropped, the same rule `discover` applies via `is_known`. This
@@ -545,7 +573,9 @@ def discover_grnh_(
         resolution = grnh_without_known(
             resolution, is_known=lambda p, s: company_exists(conn, provider=p, slug=s)
         )
-    document = grnh_candidate_document(resolution, generated_on=date.today())
+    document = grnh_candidate_document(
+        resolution, generated_on=date.today(), coverage=coverage
+    )
     if out is None:
         # Plain stdout, not `console.print`: rich WORD-WRAPS at the console width, which breaks
         # a header comment across lines that no longer start with `#` and makes the document
@@ -553,7 +583,12 @@ def discover_grnh_(
         typer.echo(document, nl=False)
         return
     out.write_text(document, encoding="utf-8")
-    console.print(f"Wrote {len(resolution.boards)} candidate board(s) to {out}")
+    # The coverage goes to the terminal as well as into the file: an operator who never opens the
+    # document must still be able to tell a partial read from a complete one.
+    console.print(
+        f"Wrote {len(resolution.boards)} candidate board(s) to {out} — {coverage.summary()}",
+        markup=False, highlight=False, soft_wrap=True,
+    )
 
 
 @companies_app.command("discover")
@@ -616,6 +651,187 @@ def discover_(
         f"({len(selection.already_known)} already stored, {len(selection.refused)} held back by "
         f"the cap of {cap}). Review it, then: boardwatch companies import {out}"
     )
+
+
+@companies_app.command("unscanned")
+def unscanned(
+    ctx: typer.Context,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the candidate file here instead of stdout."),
+    ] = None,
+) -> None:
+    """Census the boards this store already holds but never scans, for review before import.
+
+    `upsert_lane_company` writes `watched=False` for a new row, and that default is correct for
+    an AGGREGATOR-keyed row: `scan/coordinator.py` looks every watched company's provider up in
+    the registry, so a watched `hiringcafe` row would append `unknown provider` to every future
+    run's errors. But a lane also discovers companies sitting on a REAL supported board, and
+    those are stored unwatched too — so `get_watched_companies` (`watched IS TRUE`) never sees
+    them and the scan fleet never reads them. Until this command the only way to see that
+    population was hand-written SQL, which is why it went unnoticed and then refilled.
+
+    Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise, and
+    no network. Review it, delete any row you do not want, then `companies import`. That human
+    step is the owner's ruling (D-291 build): nothing here promotes a board, and `companies
+    import` stays the only admission route.
+
+    A provider with no scanner adapter is EXCLUDED, not bucketed. Watching one would add an
+    `unknown provider` line to every run forever, so it is not a candidate in any sense — the
+    adapter set comes from the provider registry, never from a list written here.
+
+    Two classes are SHOWN but never proposed: a `source='user'` row, which may have been retired
+    on purpose, and a stored slug `companies import` refuses, which would abort the import of
+    every row beside it.
+    """
+    # ensure=False for the reason `discover` states: a command whose docstring promises no store
+    # write must not migrate a production database as a side effect of being asked a question.
+    app_ctx = build_context(ctx.obj, ensure=False)
+    if not inspect(app_ctx.engine).has_table("companies"):
+        console.print("[red]no companies table — run `boardwatch init` first[/red]")
+        raise typer.Exit(code=1)
+    with app_ctx.engine.connect() as conn:
+        rows = unwatched_scannable_companies(conn, providers=PROVIDER_NAMES)
+    # `source='user'` is held back, never proposed. D-324/D-325 measured 274 postings in that
+    # provenance class: an unwatched user row may have been deliberately RETIRED by `companies
+    # remove`, and this command cannot tell that apart from one that was never watched. "Safe to
+    # rewatch" is not inferable from `watched=0`, so the row is shown and the decision is left
+    # to the reader, who can `companies add` it by hand.
+    held_back = [row for row in rows if row.source == "user"]
+    proposed, unimportable = _admissible([row for row in rows if row.source != "user"])
+    document = _unscanned_document(proposed, held_back, unimportable, utcnow().date())
+    if out is None:
+        # Plain stdout, not `console.print`: the document is YAML a human pipes into a file, and
+        # rich would read its brackets as markup and word-wrap the header's comment lines.
+        typer.echo(document, nl=False)
+        return
+    out.write_text(document, encoding="utf-8")
+    console.print(
+        f"Wrote {len(proposed)} candidate board(s) to {out} ({len(held_back)} source=user row(s) "
+        f"held back for review, {len(unimportable)} unimportable). Review it, then: "
+        f"boardwatch companies import {out}"
+    )
+
+
+def _admissible(rows: list[Row[Any]]) -> tuple[list[Row[Any]], list[tuple[Row[Any], str]]]:
+    """Split the proposals into the ones `companies import` can actually read and the rest.
+
+    THE CANDIDATE SLUG IS NOT THIS COMMAND'S OWN OUTPUT — it is whatever a lane wrote into the
+    store, and `companies import` runs every entry through `parse_board_target` before it writes
+    anything. One slug that parser refuses raises `UnknownBoardURL` out of `validate_entries`
+    and the import aborts for the WHOLE file, so a single malformed row would make the other
+    proposals unimportable and the operator would have to find and delete it by hand.
+
+    Checked against the importer's own parser rather than a shape test of our own, so the two
+    cannot disagree. A refused row is still SHOWN with its reason — this is the same
+    propose-nothing treatment a `source='user'` row gets, not a new admission bucket: nothing
+    here decides the slug is wrong, only that this route cannot carry it.
+    """
+    keep: list[Row[Any]] = []
+    refused: list[tuple[Row[Any], str]] = []
+    for row in rows:
+        try:
+            parse_board_target(f"{row.provider}:{row.slug}")
+        except UnknownBoardURL as exc:
+            refused.append((row, str(exc)))
+            continue
+        keep.append(row)
+    return keep, refused
+
+
+def _unscanned_document(
+    proposed: list[Row[Any]],
+    held_back: list[Row[Any]],
+    unimportable: list[tuple[Row[Any], str]],
+    generated_on: date,
+) -> str:
+    """The registry-format file `companies import` accepts, behind a reviewable header.
+
+    The header is comments, which `yaml.safe_load` ignores, and that is the only place the
+    provenance can go: `CompanyEntry` sets `extra="forbid"`, so a per-entry `postings` field
+    would fail the very validator the file has to pass.
+    """
+    payload = {
+        "companies": [
+            {"name": row.name, "provider": row.provider, "slug": row.slug, "tags": []}
+            for row in proposed
+        ]
+    }
+    # `safe_dump` quotes any scalar whose plain form would resolve to something else, so a board
+    # named `no`, `123` or `~` survives the round trip through `safe_load`.
+    body: str = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+    return _unscanned_header(proposed, held_back, unimportable, generated_on) + body
+
+
+def _evidence(row: Row[Any]) -> str:
+    """One row as the reviewer reads it. `one_line` on every stored string: a lane wrote these
+    names and slugs from a third-party document, so a newline in one would end the `#` comment
+    and let the remainder parse as top-level YAML (see `github_lists.one_line`).
+
+    `first_seen_at` is the OLDEST posting this store holds for the board, or `never` when it
+    holds none — which is the one value that says the board was recorded but never actually
+    observed, and the reviewer's cue to check the slug before importing it.
+    """
+    first_seen = "never" if row.first_seen_at is None else str(row.first_seen_at)
+    return (
+        f"{row.provider}:{one_line(row.slug)} | {one_line(row.name)} "
+        f"| {row.postings} posting(s) | first seen {one_line(first_seen)} "
+        f"| source={one_line(row.source)}"
+    )
+
+
+def _unscanned_header(
+    proposed: list[Row[Any]],
+    held_back: list[Row[Any]],
+    unimportable: list[tuple[Row[Any], str]],
+    generated_on: date,
+) -> str:
+    lines = [
+        "# boardwatch companies unscanned - boards this store holds but never scans, for review",
+        "#",
+        f"# generated {generated_on.isoformat()} by reading the store. No fetch, no store write:",
+        "# nothing in this file is watched until you run `companies import` on it.",
+        "#",
+        "# THE POPULATION: companies.watched = 0 on a provider that HAS a scanner adapter, so",
+        "# `get_watched_companies` (watched IS TRUE) never hands the board to the scan fleet.",
+        "# A provider with NO adapter and an aggregator placeholder are absent from this file",
+        "# entirely - not as a bucket, not as a comment - because watching one appends",
+        "# `unknown provider` to every future run's errors. The adapter set is read from the",
+        "# provider registry at generation time, so this list is what it meant today:",
+        f"#   {', '.join(sorted(PROVIDER_NAMES))}",
+        "#",
+        f"# unscanned boards {len(proposed) + len(held_back) + len(unimportable)} "
+        f"| proposed {len(proposed)} | held back for review {len(held_back)} "
+        f"| unimportable {len(unimportable)}",
+        "#",
+        "# ARMING A BOARD COSTS RUN TIME FOREVER: ~3.2s per board on EVERY future run once",
+        "# watched. Delete any row you do not want before `companies import`.",
+        "#",
+    ]
+    if proposed:
+        lines.append("# Check each row's evidence before importing it:")
+        lines += [f"#   {_evidence(row)}" for row in proposed]
+        lines.append("#")
+    else:
+        lines += ["# No unscanned board to propose. Nothing to import.", "#"]
+    if held_back:
+        lines += [
+            "# HELD BACK FOR REVIEW - source=user, and therefore proposed by nothing above.",
+            "# A user row that is unwatched may have been RETIRED on purpose (`companies",
+            "# remove`), and `watched = 0` cannot tell that apart from one never watched. If you",
+            "# want one of these back, `companies add` it by hand - deliberately, one at a time:",
+        ]
+        lines += [f"#   {_evidence(row)}" for row in held_back]
+        lines.append("#")
+    if unimportable:
+        lines += [
+            "# UNIMPORTABLE - `companies import` refuses the stored slug, so proposing it would",
+            "# abort the import of every row above it. Shown with the parser's own reason; fix",
+            "# the slug by hand if the board is real:",
+        ]
+        lines += [f"#   {_evidence(row)} | {one_line(reason)}" for row, reason in unimportable]
+        lines.append("#")
+    return "\n".join(lines) + "\n"
 
 
 @companies_app.command("import")

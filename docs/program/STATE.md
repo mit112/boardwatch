@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer). Nothing was deleted on any of the eleven passes. **295 is still over the bar, deliberately:** what remains above it is run 467's 92-line block and this session's own, both CURRENT standing rather than settled history. Run 467's becomes movable once its B8 volume reading and Gate 1 bars are discharged. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1). Nothing was deleted on any of the twelve passes. **309 is still over the bar, deliberately:** what remains above it is run 467's 92-line block and this session's own, both CURRENT standing rather than settled history. **Run 467's is now HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,51 +20,67 @@
 
 ## Current standing
 
-### 2026-09-20b — **ASTRA REVIEW 04 IS CONSUMED (D-526): ALL TEN FINDINGS CONFIRMED, THE RANKING INVERTS AGAIN, AND THE VERIFIER FOUND A WRONG-NOW BUG ASTRA HAD FILED AS SOUND. T129/T130/T132 SHIPPED, ONE GATED WAVE. T131 + T133–T139 TICKETED in `TICKETS-2026-09-20-ASTRA-04.md`. TWO OWNER QUESTIONS RULED, BOTH PRICED FIRST. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
+### 2026-09-20c — **ASTRA REVIEW 05 IS CONSUMED (D-527): ALL SEVEN FINDINGS CONFIRMED, THE RANKING INVERTS FOR THE THIRD REVIEW RUNNING, AND FOUR OWNER RULINGS LAND. T140–T143 SHIPPED, ONE GATED WAVE. T144–T148 TICKETED in `TICKETS-2026-09-20-ASTRA-05.md`. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
 
-Falsifier re-run at `main` (**7 passed, byte for byte**); every `file:symbol` opened by a read-only
-Opus verifier on the seat (`.agent/astra/verify/04-report.md`, **120 turns, $10.75**). Nothing
-refuted; F9 lowered. **Gate: `make check` exit 0, 10,498 passed (baseline 10,470), 9m51s,
-coverage 95.23%.** Seat spend $20.20 over four dispatches.
+Every `file:symbol` opened by a read-only Opus verifier on the seat (`.agent/astra/verify/05-report.md`,
+**70 turns, $5.19**). Nothing refuted. Astra supplied no falsifier for this slice, so the findings
+rest on their cited symbols plus this session's live measurement. **One cited symbol does not exist
+anywhere** — F2's `death_probe._population_predicate`; the real one is `unreachable_by_the_scanner`
+(`death_probe.py:265`). **Seat spend $25.83 over five dispatches.**
 
-**The severity ranking inverts under measurement for the SECOND review running.** Four of astra's
-five `wrong-now` findings have **zero** live population — **F1** 0 pipeline×pipeline overlaps in
-468 runs · **F3** 0 (`app_state` holds 0 rows) · **F4** 0 · **F7** 1,396/1,396 `.tex` present, and
-the 494 PDF-less folders are all `pending_tailor` review stubs. **F10, marked `improvement`, has
-FIVE** (runs 23/26/31/36/37), and its control decides it: **0 of 70 scanning runs ever had zero
-usable evidence**, so the outage predicate has never once fired on a real outage.
+**The ranking inverts AGAIN.** Astra's flagship `wrong-now` (**F3**, the hiring.cafe all-late
+discard) has **ZERO** live population — 0 of 468 runs, and the only hiringcafe lane failure ever
+recorded is run 57's all-EMPTY branch. Meanwhile **F1, filed `improvement`, is the one actively
+refilling: 120 boards on a parseable provider sit `watched=0`, and 12 arrived in the two ticks
+since the import closed.** F6 is **249 of 449 grnh.se seeds** unreachable at the default; **F7 is
+214 of 1,342 admissions (15.9%) across 27 of 27 funnels.**
 
-**SHIPPED.** **T129** — the heartbeat gate asked `fatal`/`funnel`/`morning` and never whether the
-run closed its own row, so a run stuck `running` pinged the success-only monitor; the finish-failure
-note also sat ABOVE `escalatable_from`, making it the one alert excluded from the channel it most
-needed. Four finalize alerts with **no `try` at all** are guarded. **T130** — `partial` enters the
-outage predicate; fatal is now zero-usable-evidence only. **T132** — `_is_locked` tests codes 5/6,
-but a DEFERRED read-then-write gets **517** with the same `database is locked` message, so an
-owner's skip during a run escaped as a dead connection (`RemoteDisconnected`).
+**F7 IMPEACHES A NUMBER THE PROGRAM ALREADY USED.** `funnel-467.md` — cited in D-522 §6 — prints
+*"19 new companies admitted"* under a note claiming `admitted` is "the reach this run ADDED", and
+**7** of the 19 exist as rows. The cap approves BEFORE bodies are fetched. Controls: 1,128/1,342
+lookups resolve; 0 of 27 funnels overcounts the other way.
 
-**T130 SHIPPED INCOMPLETE AND ONLY THE LIVE MEASUREMENT COULD SHOW IT.** All five instances were
-**standalone `boardwatch scan`** calls (`corpus_evaluated IS NULL`; two ingested 879 and 344
-postings), so a pipeline-only alert turned them from `failed`-with-a-reason into
-**`ok`-with-NOTHING**. Fixed in `_scan_body`, gated on `finish`. **Nothing pinned non-duplication** —
-relax the gate and 136 tests pass, because the assertion was `any(...)`; it is exactly-once now.
+**FOUR OWNER RULINGS (Mit, 2026-09-20), all priced first.** (1) **The promotion gap: CENSUS +
+AUTO-WATCH — this REVERSES D-521/D-522's stage-2/3 refusal for this one case.** (2) **Scheduler:
+DO NOT BUILD** — scan runtime is not a product constraint. (3) **Pizza board: LEAVE IT** — company
+139 is already `watched=0`; its 801 open rows are 0.31% of the corpus and can never close (D-314).
+(4) **GATE 1 MET as recorded, B8 HELD OPEN** — M4's last condition discharged; no retirement today.
 
-**TWO APPARATUS CORRECTIONS, both caught before the number was used.** The overlap probe first read
-**259** — but **396 of 468 run rows are CLI invocations, not pipelines** (p50 duration 0.0 min), and
-restricted to pipelines it is 0. A delivered-unapplied query returned a clean 0 because
-**`artifacts.job_id` is NULL on all 1,396 `resume_tailored` rows**.
+**THE RULING REACHES 51 OF THE 120, AND ONLY REVIEWING THE DIFF SHOWED IT.** T143's gate draws
+`board` from `_body_inlined_providers()` = `build_providers()` filtered to `_BodyInlinedProvider`
+— **ashby, greenhouse, lever, workable and nothing else.** The other **69** (workday 44,
+eightfold 9, oraclehcm 8, smartrecruiters 8) come only through T142's census under human import.
+**The ongoing leak IS closed:** all 12 arrivals since the import were on those four providers. The
+69 are a standing backlog, not a leak. Fleet **1,807 → ~1,858** at ~3.2s/board/run.
 
-**OWNER RULINGS (Mit, 2026-09-20), both priced before asking.** A partial-only scan is **degraded,
-not fatal** (5 live instances; 0 of 70 runs a true outage). Delivery-queue publication is **NOT** a
-run-success condition (**0** queue failures in 468 runs) — which bounds T129.
+**That gate is safe for a specific reason:** `scan/coordinator.py:402` appends `unknown provider`
+for a watched row outside `build_providers()`, so T143 relies on the SAME dict rather than a second
+catalog free to drift from the error site it exists to prevent. Its third condition is
+`if postings:` — a board that resolved but served nothing is not proven live.
 
-**Corrected here:** `RUN_CONTRACT.md` fatal row 1, wrong in both clauses after T130. Its wider drift
-— the table lists **five** fatal conditions and the code has **13**, and it says `except Exception`
-where the code catches `BaseException` — is **T139's**, and refactoring against the stale table
-would change semantics silently.
+**THE VERIFIER FOUND A THIRD F7 CALL SITE ASTRA MISSED** — `lanes/jsonld.py:772`. T140's fix landed
+in `_apply_lane`, which `_apply_lanes:831` calls for every lane, **so jsonld is covered by
+construction — verified at review, not assumed.** It also narrowed F3 (any page-0 failure suppresses
+the raise) and found that **`lanes/indeed.py:871-897` is the identical branch, with
+`tests/unit/test_indeed_lane.py:1422` ASSERTING the discard** — which bounds T144.
 
-**Known unpinned assumption, recorded not hidden:** `_finish_run_with_one_retry`'s docstring claims
-the attempt that raised committed nothing, but the test's fake raises before calling through, so the
-commit-then-raise path is untested.
+**TWO EXECUTOR JUDGMENT CALLS ACCEPTED, BOTH BETTER THAN THE TICKET.** T141 **declined the resume
+cursor the ticket offered**: the command writes nothing, so a resume token lives only in the
+operator's hands and a shifted `(attempts, id)` order silently skips a batch — the failure class
+the ticket exists to close. T142's **mutation #2 initially did NOT fire, and that found a real
+defect** — a self-matching `superseded` EXISTS made `watched IS FALSE` redundant; fixed with
+`peer.c.id != companies.c.id`. T142 also round-tripped its output through the importer's own
+validator and **it FAILED**: a lane-written Workday slug the parser refuses would abort an entire
+import file, so refused rows go to an `UNIMPORTABLE` block with the parser's verbatim reason.
+
+**B8's volume could NOT be re-derived from the store** — `job_dispositions` holds only `built`
+(1,007) and `seen` (219), and `built` is **40 on every run**: the `--top 40` slate cap, not
+apply-lane volume. The recorded 9-of-14 stands, which is why Q1 was put rather than answered.
+
+**`store/queries.py:619 upsert_watched_company` has ZERO callers anywhere** — a dead wrapper, left
+in place and ticketed (T148) rather than removed inside four other diffs.
+
+### 2026-09-20b — astra review 04 (the runner, the store, concurrency) consumed: all ten findings confirmed, the ranking inverted under measurement, and the verifier found a wrong-now bug astra had filed as SOUND. T129/T130/T132 shipped in one gated wave; T131 and T133–T139 ticketed. Two owner questions ruled, both priced first. **Held WHOLE in D-526 and `TICKETS-2026-09-20-ASTRA-04.md`; do not re-derive.** Its live residual is T139's `RUN_CONTRACT.md` drift (the table lists **five** fatal conditions, the code has **13**, and it says `except Exception` where the code catches `BaseException`) and one recorded unpinned assumption: `_finish_run_with_one_retry`'s docstring claims the attempt that raised committed nothing, but the test's fake raises before calling through, so the commit-then-raise path is untested.
 
 ### 2026-09-20 — astra review 03 (identity, liveness, ledger, dedup, queue) consumed: all seven findings confirmed, T114–T119 shipped in two gated waves and **merged to `main`**, T120–T128 ticketed, one owner ruling. **The follow-up docs PR left on auto-merge DID land — verified here, PRs #394 and #395 both MERGED; that check is discharged, do not re-run it.** **Held WHOLE in D-525 and `TICKETS-2026-09-20-ASTRA-03.md`; do not re-derive.** Its live residual is F6's **16,510 open postings (6.3%) under 8 boards that have never scanned `complete`** — T122 corrects `_status`'s `watched` column, and T123 builds on that argument, not on "expand sweep selection".
 
@@ -169,12 +185,19 @@ density; predict yield from the sample. Never the reverse.
    reached NEW leads only and left every standing verdict on the old judge. The first armed run
    after T99+T108 re-judges the delivered slate ONCE (≤ `--top`) and comes back keyed on facts
    AND model — read the funnel's gate block on that run, not just the verdicts.
-5. **Stages 2-3 stay REFUSED** on measured lead density (workday 0.17, smartrecruiters 0.08,
-   oraclehcm **0.00** per 1k open). Run 467 does not revisit that — its density win is an
-   INLINE-BODY figure.
-6. **Still open and unruled:** purge the 801 Domino's rows (T95 is one pizza board and would
-   falsely close 701 postings as specified); import Gap C's 43 `grnh.se` boards; the
-   `--include-non-swe` / `--include-zero-signal` drains are inert at production N.
+5. **Stages 2-3 stay REFUSED for the density argument** (workday 0.17, smartrecruiters 0.08,
+   oraclehcm **0.00** per 1k open) — but **D-527 REVERSES the refusal for ONE case**: a
+   body-inlined board (ashby/greenhouse/lever/workable) that hiring.cafe resolved AND read is now
+   auto-watched (T143). That is the inline-body population run 467's density win was measured on,
+   and it is the only population the reversal covers. The **69** unwatched boards on
+   workday/eightfold/oraclehcm/smartrecruiters are NOT reversed — they reach the fleet only
+   through `companies unscanned` (T142) and the owner's `companies import`.
+6. **The 801 Domino's rows are RULED: LEAVE THEM (D-527).** Company 139 is already `watched=0`,
+   so astra's actual ask was already the state; the rows are 0.31% of the open corpus and can
+   never close (D-314). Do not re-raise it. **Still open and unruled:** import Gap C's 43
+   `grnh.se` boards — now reachable, since `discover-grnh --limit 0` reads all 449 seeds where the
+   default read 200 (T141); the `--include-non-swe` / `--include-zero-signal` drains are inert at
+   production N.
 7. **LinkedIn is the untouched backlog** — still ~423 companies refused by its cap every run,
    while hiringcafe's admissions fell 78 → 19 and jobapps' to 0 as Gap A was absorbed.
 

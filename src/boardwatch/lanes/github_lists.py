@@ -406,8 +406,8 @@ def _header(selection: Selection, census: RecordCensus, generated_on: date) -> s
     if selection.admitted:
         lines.append("# Check each evidence URL names a real employer board and not ATS chrome:")
         lines += [
-            f"#   {c.provider}:{_one_line(c.slug)} | {_one_line(c.name)} "
-            f"| {c.records} record(s) | {_one_line(c.evidence_url)}"
+            f"#   {c.provider}:{one_line(c.slug)} | {one_line(c.name)} "
+            f"| {c.records} record(s) | {one_line(c.evidence_url)}"
             for c in selection.admitted
         ]
     else:
@@ -417,16 +417,20 @@ def _header(selection: Selection, census: RecordCensus, generated_on: date) -> s
 
 
 # C0 controls plus DEL, each mapped to a space. Applied to every untrusted value echoed into the
-# header. Not a display nicety: see `_one_line`.
+# header. Not a display nicety: see `one_line`.
 _CONTROL_CHARS = dict.fromkeys(range(0x20), " ") | {0x7F: " "}
 
 
-def _one_line(value: str) -> str:
+def one_line(value: str) -> str:
     """Flatten an untrusted value so it cannot escape a `#` comment line.
 
     `company_name` and the raw `url` come from a public repo anyone can open a pull request
     against, and `parse_board_target` does not validate the slug it derives -- it returns
     `'ac\x00me'` for a URL containing a NUL. All three are echoed into the header.
+
+    PUBLIC because `companies unscanned` builds the same kind of reviewable header over company
+    names and slugs an aggregator lane wrote into the store, which are third-party in exactly
+    the same way. One flattener, so the two headers cannot diverge on what they let through.
 
     The measured failure is worse than a broken file. `"Acme\nEvil: pwned"` does not fail to
     parse: the comment ends at the newline and the remainder becomes a TOP-LEVEL YAML key, so

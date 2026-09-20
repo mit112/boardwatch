@@ -39,14 +39,26 @@ from hiringcafe_shape import (
     search_hits,
     search_page_html,
 )
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.politeness import Fetcher, identifying_user_agent
 from boardwatch.core.settings import Settings
 from boardwatch.lanes import hiringcafe
 from boardwatch.lanes.base import Lane
-from boardwatch.lanes.hiringcafe import SEARCH_URL, HiringCafeLane, SearchPageError, hit_identity
+from boardwatch.lanes.hiringcafe import (
+    LANE_PROVIDER,
+    SEARCH_URL,
+    HiringCafeLane,
+    SearchPageError,
+    hit_identity,
+)
+from boardwatch.pipeline.runner import _collect_lane
 from boardwatch.providers.greenhouse import GreenhouseProvider
 from boardwatch.providers.registry import build_providers
+from boardwatch.scan.coordinator import run_scan
+from boardwatch.store import tables
+from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import get_watched_companies, insert_run
 
 # The UA `pipeline.runner` gives the lane client. Spelled out here rather than imported: the
 # point of `_browser_fetcher` is to reproduce a client whose identity DIFFERS from the one the
@@ -1342,3 +1354,240 @@ def test_the_search_header_set_asserts_nothing_the_user_agent_does_not_already(t
     assert "cookie" not in keys
     assert "referer" not in keys
     assert "user-agent" not in keys  # the client owns identity; the lane owns request shape
+
+
+# ---------------------------------------------------------------------------------------
+# WATCHING A BOARD THIS LANE ACTUALLY READ (owner ruling, 2026-09-20).
+# ---------------------------------------------------------------------------------------
+#
+# A supported employer board hiring.cafe resolved is WATCHED, so the scan holds that employer
+# on every later run rather than only while the aggregator indexes them. The ruling reverses
+# the stage-2/3 refusal for this one case, and its whole risk is the gate: `scan/coordinator`
+# appends `unknown provider` to `summary.errors` for a watched row whose provider the registry
+# does not know, so ONE wrongly-watched row adds an error line to every run forever (D-285).
+#
+# Three conditions, all required, and none of them is a new list: the provider has a scanner
+# adapter, it is not the lane's own placeholder key, and the board served postings THIS RUN.
+
+
+def _store(tmp_path: Path) -> tuple[Engine, Settings]:
+    """A fresh store plus the `Settings` that names it, for the end-to-end half."""
+    engine = get_engine(tmp_path / "store")
+    ensure_schema(engine)
+    return engine, Settings(
+        data_dir=tmp_path / "store",
+        config_dir=tmp_path / "cfg",
+        retry_attempts=1,
+        per_host_delay_seconds=0.25,
+    )
+
+
+def _seed_company(
+    engine: Engine,
+    provider: str,
+    slug: str,
+    *,
+    name: str,
+    source: str = "user",
+    watched: bool = False,
+) -> None:
+    """A company row the store already holds before the lane runs."""
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name=name, provider=provider, slug=slug, source=source, watched=watched
+            )
+        )
+
+
+def _company_rows(engine: Engine) -> dict[tuple[str, str], Any]:
+    with engine.connect() as conn:
+        return {(r.provider, r.slug): r for r in conn.execute(select(tables.companies)).all()}
+
+
+def _watched_boards(engine: Engine) -> set[tuple[str, str]]:
+    """The scan's fleet, read through `get_watched_companies` -- the ONLY source the coordinator
+    takes its companies from, so a broken link anywhere from the flag to the column reddens."""
+    with engine.connect() as conn:
+        return {(r.provider, r.slug) for r in get_watched_companies(conn)}
+
+
+def _apply_lane(engine: Engine, settings: Settings, tmp_path: Path) -> None:
+    """One whole lane run landed in the store, through the runner's own seam."""
+    _collect_lane(engine, settings, HiringCafeLane(), _fetcher(tmp_path), insert_run(engine))
+
+
+def test_every_board_this_lane_can_resolve_is_one_the_scan_coordinator_can_look_up():
+    """THE GATE'S FIRST CONDITION, stated where it actually holds -- and the reason the promotion
+    needs no scannable-provider list of its own.
+
+    `collect` promotes a company only after `_body_inlined_providers()` answered for it, and that
+    map is BUILT from `build_providers()`, the same call `scan/coordinator` makes before deciding
+    whether a watched row's provider is known. So membership in one implies membership in the
+    other by construction, and the `unknown provider` line cannot be reached from a row this lane
+    watched. A second hardcoded catalog here could drift away from the error site it exists to
+    prevent; this assertion is what keeps the single source honest instead.
+    """
+    resolvable = set(hiringcafe._body_inlined_providers())
+    scannable = set(build_providers())
+
+    assert resolvable  # the subset claim is worthless if the lane can resolve nothing
+    assert resolvable <= scannable
+    # ...and the lane's own placeholder key is not one of them, which is gate condition 2:
+    # a hit `hit_identity` could only key under `hiringcafe` fails condition 1 first.
+    assert LANE_PROVIDER not in scannable
+    assert LANE_PROVIDER not in resolvable
+
+
+@respx.mock
+def test_a_supported_board_the_lane_read_asks_for_itself_to_be_watched(tmp_path):
+    """THE RULING, at the snapshot. A greenhouse board resolved and read this run is offered with
+    `watch=True`, so `upsert_lane_company` arms it.
+
+    Asserted on the snapshot as well as end to end below because the two failures are different:
+    a lane that stopped setting the flag and a runner that stopped threading it both leave the
+    board scanned by nothing, and only the pair tells them apart.
+    """
+    hits = _reachable("acme-inline", range(3))
+    _mock_search(hits)
+    _mock_boards(hits)
+
+    result = HiringCafeLane().collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert [(s.provider, s.slug) for s in result.snapshots] == [("greenhouse", "acme-inline")]
+    assert all(s.watch is True for s in result.snapshots)
+
+
+@respx.mock
+def test_a_supported_board_is_watched_after_the_lane_applies_end_to_end(tmp_path):
+    """The whole chain, read back off the store through `get_watched_companies`."""
+    engine, settings = _store(tmp_path)
+    hits = _reachable("acme-inline", range(3))
+    _mock_search(hits)
+    _mock_boards(hits)
+
+    _apply_lane(engine, settings, tmp_path)
+
+    assert _watched_boards(engine) == {("greenhouse", "acme-inline")}
+
+
+@respx.mock
+def test_an_existing_unwatched_row_is_upgraded_without_being_relabelled(tmp_path):
+    """THE BACKFILL CASE, which is most of the live population: 121 companies already sit on a
+    scannable provider `watched=0`, and they are promoted as the lane re-encounters them -- on
+    THIS run's evidence, one snapshot at a time, never by a sweep.
+
+    `name` and `source` must survive untouched. `scan/apply.py` feeds `companies.name` into the
+    `cross_host` posting identity, so overwriting the name silently re-keys that company's
+    identities; `upsert_lane_company` only ever sets `watched` on an existing row, and this is
+    the assertion that keeps it that way.
+    """
+    engine, settings = _store(tmp_path)
+    _seed_company(engine, "greenhouse", "acme-inline", name="Acme Holdings, Inc.", source="user")
+    hits = _reachable("acme-inline", range(3))
+    _mock_search(hits)
+    _mock_boards(hits)
+
+    _apply_lane(engine, settings, tmp_path)
+
+    row = _company_rows(engine)[("greenhouse", "acme-inline")]
+    assert row.watched is True
+    assert row.name == "Acme Holdings, Inc."
+    assert row.source == "user"
+
+
+@respx.mock
+def test_a_company_on_a_provider_with_no_adapter_is_left_out_of_the_fleet(tmp_path):
+    """GATE CONDITION 1, and the hazard the whole ticket turns on.
+
+    An iCIMS employer is the majority shape in the recorded mix and this repo has no adapter for
+    it, so the lane never resolves a board for it, never writes a company row for it, and cannot
+    promote it. The pre-seeded `jazzhr` row stands for the ~100 live rows on adapterless
+    providers: the run must leave every one of them at `watched=0`.
+
+    The assertion that matters is the last one. A scan over the resulting fleet emits NO
+    `unknown provider` error -- checked against the coordinator itself rather than against a
+    restatement of its rule -- and `summary.companies` proves the fleet was not simply empty.
+    """
+    engine, settings = _store(tmp_path)
+    _seed_company(engine, "jazzhr", "acme-jazz", name="Acme Jazz")
+    hits = _reachable("acme-inline", range(2)) + _unreachable("acme-icims", range(2, 4))
+    _mock_search(hits)
+    _mock_boards(hits)
+
+    _apply_lane(engine, settings, tmp_path)
+    summary = run_scan(engine, settings)
+
+    assert _watched_boards(engine) == {("greenhouse", "acme-inline")}
+    assert _company_rows(engine)[("jazzhr", "acme-jazz")].watched is False
+    assert summary.companies == 1
+    assert [e for e in summary.errors if "unknown provider" in e] == []
+    assert summary.errors == []
+
+
+@respx.mock
+def test_a_company_keyed_under_the_lanes_own_placeholder_provider_stays_unwatched(tmp_path):
+    """GATE CONDITION 2, which condition 1 already enforces -- confirmed rather than re-listed.
+
+    A hit whose employer sits on an ATS with no adapter keeps the lane's own `hiringcafe` key
+    (`hit_identity`'s fallback), and `hiringcafe` is not a provider the scanner can reach. Such a
+    row already exists in the store from other paths, so the run is asked to leave it alone, and
+    no new one is armed.
+    """
+    engine, settings = _store(tmp_path)
+    _seed_company(engine, LANE_PROVIDER, "icims2:acme-icims", name="Acme iCIMS")
+    hits = _unreachable("acme-icims", range(4))
+    _mock_search(hits)
+
+    _apply_lane(engine, settings, tmp_path)
+
+    assert _watched_boards(engine) == set()
+    assert _company_rows(engine)[(LANE_PROVIDER, "icims2:acme-icims")].watched is False
+
+
+@respx.mock
+def test_a_board_that_resolved_but_served_no_postings_is_not_watched(tmp_path):
+    """GATE CONDITION 3 -- the dead-board control, and what replaces the human probe.
+
+    The board is genuinely greenhouse and genuinely resolvable; it just answers with no jobs. That
+    is exactly what the stage-1 import's live probe caught 14 times, `greenhouse:embed` among
+    them, and it is why resolution alone is not evidence: arming such a board buys a 3.2s request
+    every run forever and never a posting. Only postings this run prove the board live.
+    """
+    engine, settings = _store(tmp_path)
+    _seed_company(engine, "greenhouse", "acme-dead", name="Acme Dead")
+    hits = _reachable("acme-dead", range(3))
+    _mock_search(hits)
+    _mock_boards(hits, content=b'{"jobs": []}')
+
+    _apply_lane(engine, settings, tmp_path)
+
+    assert _watched_boards(engine) == set()
+    assert _company_rows(engine)[("greenhouse", "acme-dead")].watched is False
+
+
+@respx.mock
+def test_watching_only_ever_turns_on_and_never_off(tmp_path):
+    """MONOTONICITY, both directions that could break it.
+
+    A board the USER already watches is re-seen by the lane and stays watched, under its own name
+    and source; and a board this lane armed in run N is seen again in run N+1 and is still armed.
+    `upsert_lane_company` guarantees this and nothing here may add a path around it -- an unwatch
+    would silently drop an employer out of the fleet with no record that it was ever in it.
+    """
+    engine, settings = _store(tmp_path)
+    _seed_company(
+        engine, "greenhouse", "acme-user", name="Acme User", source="user", watched=True
+    )
+    hits = _reachable("acme-user", range(2)) + _reachable("acme-inline", range(2, 4))
+    _mock_search(hits)
+    _mock_boards(hits)
+
+    _apply_lane(engine, settings, tmp_path)
+    first = _watched_boards(engine)
+    _apply_lane(engine, settings, tmp_path)
+
+    assert first == {("greenhouse", "acme-user"), ("greenhouse", "acme-inline")}
+    assert _watched_boards(engine) == first
+    user_row = _company_rows(engine)[("greenhouse", "acme-user")]
+    assert (user_row.name, user_row.source) == ("Acme User", "user")
