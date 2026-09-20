@@ -34,7 +34,7 @@ RUN re-judges every delivered lead once (≤ `--top`) — expect ~3 judge batche
 and read the funnel's gate block, not just the verdicts.** **Re-key rule for the rest:**
 T100–T104 touch digested modules or `rules.yaml` and land as ONE bump with next-action 4; T105 is
 designed before any executor sees it. The session's split, ruled by Mit:
-this session orchestrates and judges; the enterprise seat executes (review $6.59 total).
+this session orchestrates and judges; the enterprise seat executes ($11.29 total: verify $4.73, T98 $1.86, T99 $4.70).
 
 ### 2026-09-19b — **AN EXTERNAL DESIGN REVIEW IS COMMISSIONED. Five prompts for GPT astra sit in `.agent/astra/prompts/` (gitignored); the owner runs each in its own astra session and brings the findings file back to a NEW boardwatch session, one review per session.** No run was read, no code changed, no metric moved.
 
