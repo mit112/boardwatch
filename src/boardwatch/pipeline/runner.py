@@ -82,7 +82,7 @@ from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
 from boardwatch.notify.liveness_blind import check_liveness_blind
-from boardwatch.notify.scan_health import scan_outage_alert
+from boardwatch.notify.scan_health import degraded_scan_alert, scan_outage_alert
 from boardwatch.pipeline.death_probe import ListingProber, sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import collect_run_funnel
@@ -1934,6 +1934,7 @@ def run_pipeline(
                 attempted=attempted,
                 complete=scan_summary.complete,
                 unchanged=scan_summary.unchanged,
+                partial=scan_summary.partial,
             ):
                 summary.fatal = systemic_scan_outage_reason(attempted)
             # NOT added to stage_errors: the scan stage already persisted these into
@@ -2958,6 +2959,28 @@ def run_pipeline(
                     append_run_error(engine, run_id, outage)
             except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
                 console.print(f"  ! scan-outage alert not recorded: {exc}", markup=False)
+        # Degraded-scan soft alert (T130), and it is the other half of narrowing the fatal
+        # predicate above: every board that returned anything returned `partial`, which the
+        # predicate used to call a systemic outage and refuse. It no longer does — `partial`
+        # holds real postings — so the run succeeds, the heartbeat fires, and without this the
+        # owner would never learn the listings it ranked, closed and delivered against were
+        # incomplete. Its sibling above cannot cover it: no board FAILED, so the ratio is zero.
+        # Same guard, same reason (T129): a store fault on this one write must not cost the
+        # digest. Above `_emit_morning` like every soft alert in this block.
+        if scan_summary is not None:
+            try:
+                degraded = degraded_scan_alert(
+                    scan_summary.companies,
+                    scan_summary.complete,
+                    scan_summary.unchanged,
+                    scan_summary.partial,
+                )
+                if degraded is not None:
+                    console.print(f"  ! {degraded}", markup=False)
+                    summary.errors.append(degraded)
+                    append_run_error(engine, run_id, degraded)
+            except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+                console.print(f"  ! degraded-scan alert not recorded: {exc}", markup=False)
         # Delivery-drought soft alert. Intake can be healthy while the tailor, rank, or delivery
         # path silently ships nothing; the heartbeat stays green and intake-death cannot see it
         # (net-new > 0). Fires only when the last clean runs each judged a candidate yet

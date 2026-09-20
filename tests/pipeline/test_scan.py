@@ -274,35 +274,64 @@ def test_coordinator_passes_known_posting_ids_after_first_scan(
     assert budgets == [7, 7]
 
 
-def test_a_systemic_outage_records_WHY_the_run_failed(  # noqa: N802
+def test_a_partial_only_scan_is_degraded_success_not_a_systemic_outage(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """Run 132's exact shape: one board attempted, it came back `partial`, none completed.
+    """Runs 23/26/31/36/37's exact shape: one board attempted, it came back `partial`.
 
-    `partial` is counted neither complete nor failed, so the per-board error line that
-    explains an ordinary bad scan is never written — the row was stamped `failed` with
-    `errors_json = []`, and the only account of the outage lived in a console log that
-    scrolled away. A `failed` run nobody can diagnose two weeks later is the whole failure
-    this closes, and this is the standalone caller: it owns the terminal status here, so it
-    owns the reason too.
+    A `partial` board holds REAL POSTINGS — the scan has usable evidence in hand — so the run
+    is degraded success, not the silent-empty-day outage the fatal guard exists to catch
+    (owner ruling, 2026-09-20). The predicate used to test only `complete == 0 and unchanged
+    == 0`, which counted `partial` as nothing and stamped these five live runs `failed` with
+    `errors_json = []` — a fatal sentence and not one error line to justify it. This is the
+    standalone caller: it owns the terminal status here, so it is where the status is checked.
     """
     _add_company(engine, "acme", "greenhouse")
     # One job that parses and one that cannot. Greenhouse reports `partial` for a board that
-    # still yielded SOME postings, which is what makes this the empty-error-list case rather
-    # than the `failed` one the sibling tests above already cover.
+    # still yielded SOME postings, which is the whole point: those postings are the usable
+    # evidence that makes this run degraded rather than dark.
     payload = json.dumps({"jobs": [gh_jobs()[0], {"id": 999}]}).encode()
     with respx.mock:
         respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=payload))
         summary = run_scan(engine, _settings(tmp_path))
 
     assert (summary.companies, summary.complete, summary.unchanged) == (1, 0, 0), (
-        f"guard: not the outage shape, so this test proves nothing: {summary}"
+        f"guard: not the partial-only shape, so this test proves nothing: {summary}"
     )
     assert summary.partial == 1, f"guard: the board did not come back partial: {summary}"
-    assert summary.failed == 0, "guard: a failed board would write its own error line"
+    assert summary.failed == 0, "guard: a failed board would make this the outage case"
     with engine.connect() as conn:
         row = conn.execute(select(tables.runs.c.status, tables.runs.c.errors_json)).one()
-    assert row.status == "failed", "guard: the outage was not classified fatal"
+    assert row.status == "ok", (
+        "a scan holding real postings was classified a systemic outage — `partial` is usable "
+        "evidence, and this run is degraded, not dark"
+    )
+    assert not any("systemic scan outage" in note for note in (row.errors_json or [])), (
+        f"the fatal outage sentence was persisted onto a run that succeeded: {row.errors_json}"
+    )
+
+
+def test_a_scan_where_every_board_returned_NOTHING_is_still_fatal_and_says_why(  # noqa: N802
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The control that makes the test above a narrowing rather than a deletion of the guard.
+
+    Zero usable evidence — 0 complete, 0 unchanged AND 0 partial — is the DNS/network-wide
+    failure CLAUDE.md's fail-safe table calls fatal ("systemic outage => fatal (prevents the
+    silent empty day)"). It stays fatal, and the shared sentence stays on the row: a `failed`
+    run nobody can diagnose two weeks later is its own failure.
+    """
+    _add_company(engine, "acme", "greenhouse")
+    with respx.mock:
+        respx.get(BOARD_URL).mock(return_value=httpx.Response(500))
+        summary = run_scan(engine, _settings(tmp_path))
+
+    assert (summary.companies, summary.complete, summary.unchanged, summary.partial) == (
+        1, 0, 0, 0,
+    ), f"guard: not the zero-usable-evidence shape: {summary}"
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs.c.status, tables.runs.c.errors_json)).one()
+    assert row.status == "failed", "the systemic-outage guard no longer fires on a dark scan"
     assert any("systemic scan outage" in note for note in (row.errors_json or [])), (
         f"the run recorded failed with no reason at all: {row.errors_json}"
     )
