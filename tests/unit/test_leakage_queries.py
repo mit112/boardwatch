@@ -23,7 +23,12 @@ from boardwatch.store.identity_queries import (
     load_surfaced_exact_quad,
 )
 from boardwatch.store.ledger_queries import record_disposition
-from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
+from boardwatch.store.regroup import (
+    apply_merges,
+    job_anchors,
+    protected_job_ids,
+    queue_action_job_ids,
+)
 from boardwatch.store.tables import job_dispositions, posting_identities, postings
 
 
@@ -220,7 +225,10 @@ def test_a_leak_that_regroup_later_reconciles_stops_appearing_twice(
             )
     with seed.engine.begin() as conn:
         plan = plan_regrouping(
-            suppressions, anchors_before, protected_job_ids=protected_job_ids(conn)
+            suppressions,
+            anchors_before,
+            protected_job_ids=protected_job_ids(conn),
+            queue_action_job_ids=queue_action_job_ids(conn),
         )
         apply_merges(conn, plan.merges, identity_kind="exact_quad", now=seed.now)
     with seed.engine.connect() as conn:

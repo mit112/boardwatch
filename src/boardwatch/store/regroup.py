@@ -7,7 +7,9 @@ append-only triggers are what make that true.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import insert, select, update
@@ -18,7 +20,22 @@ from boardwatch.core.ledger import is_live
 from boardwatch.core.regroup import JobMerge
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import id_chunks
+from boardwatch.store.queue_state import followup_job_dates, reported_job_ids, skipped_job_ids
 from boardwatch.store.tables import applications, artifacts, job_grouping_events, postings
+
+
+@dataclass(frozen=True)
+class MergeOutcome:
+    """What `apply_merges` did: postings moved, and decisions deliberately left behind.
+
+    `refused_non_empty` counts source jobs whose live decision was NOT carried because the job
+    still anchored postings after the move. A refusal that nobody can count is a leak, the same
+    way an unreported `plan_regrouping` refusal would be — so it travels out with the count of
+    rows moved rather than being inferred from the ledger afterwards.
+    """
+
+    moved: int
+    refused_non_empty: int
 
 
 def protected_job_ids(conn: Connection) -> frozenset[int]:
@@ -38,6 +55,26 @@ def protected_job_ids(conn: Connection) -> frozenset[int]:
         )
     ).all()
     return frozenset(int(row[0]) for row in rows if row[0] is not None)
+
+
+def queue_action_job_ids(conn: Connection) -> frozenset[int]:
+    """Jobs a regrouping may not move a posting off: those carrying a review-queue action.
+
+    A skip, a report and a follow-up (`store/queue_state.py`) are all keyed on `job_id` and every
+    reader resolves through the CURRENT job id, so a merge that moved the posting would leave the
+    key naming a job nothing anchors — and no later sync could recover the intent, because the
+    owner's statement is the key itself and nothing else records it. These are the only job-keyed
+    `app_state` families; the digest and notify cursors are not.
+
+    Refusing rather than transferring is the conservative half on purpose: combining two members'
+    exclusions, or resolving two follow-up dates, is a merge policy nobody has specified. A
+    refused group keeps a statement that is unambiguously the owner's.
+    """
+    return frozenset(
+        skipped_job_ids(conn).keys()
+        | reported_job_ids(conn).keys()
+        | followup_job_dates(conn).keys()
+    )
 
 
 def job_anchors(conn: Connection, posting_ids: Sequence[int]) -> dict[int, int]:
@@ -81,8 +118,8 @@ def apply_merges(
     *,
     identity_kind: str,
     now: datetime,
-) -> int:
-    """Record each merge in the trail, move the projection, carry the ledger. Returns rows moved.
+) -> MergeOutcome:
+    """Record each merge in the trail, move the projection, carry the ledger.
 
     The event is written first on purpose: if the transaction fails between the two statements
     nothing is committed at all, and if a future change ever separates them the trail is the
@@ -92,10 +129,11 @@ def apply_merges(
     anything.
 
     `_carry_dispositions` runs last, inside the same transaction: the postings and the decision
-    that governs them move together or not at all.
+    that governs them move together or not at all. Its refusals ride out on `MergeOutcome`
+    beside the moved count, so a run can report a decision it declined to carry.
     """
     if not merges:
-        return 0
+        return MergeOutcome(moved=0, refused_non_empty=0)
     # Only merges whose anchor still reads what the plan was built against. Re-checked HERE, in
     # the writing transaction, because the trail is the documented undo path: an event for an
     # UPDATE that then matches 0 rows claims a move that never happened, and rebuilding the
@@ -116,7 +154,7 @@ def apply_merges(
         )
     live = [merge for merge in merges if current.get(merge.posting_id) == merge.from_job_id]
     if not live:
-        return 0
+        return MergeOutcome(moved=0, refused_non_empty=0)
     conn.execute(
         insert(job_grouping_events),
         [
@@ -143,18 +181,57 @@ def apply_merges(
             .values(job_id=merge.to_job_id)
         )
         moved += int(result.rowcount)
-    _carry_dispositions(conn, live, now=now)
-    return moved
+    refused = _carry_dispositions(conn, live, now=now)
+    return MergeOutcome(moved=moved, refused_non_empty=refused)
 
 
-def _carry_dispositions(conn: Connection, merges: Sequence[JobMerge], *, now: datetime) -> None:
-    """Move each emptied job's ledger decision onto the canonical job, then release the original.
+def _jobs_still_anchoring_postings(
+    conn: Connection, job_ids: Sequence[int]
+) -> frozenset[int]:
+    """Which of `job_ids` still have at least one posting pointing at them.
+
+    Read inside `apply_merges`' transaction AFTER the `postings.job_id` UPDATEs, so it is the
+    membership the merge actually left behind rather than the one the plan assumed.
+
+    Chunked (D-288); a set union is the exact merge shape because the result is keyed on the very
+    column being chunked. Losing a chunk here reads a still-populated job as empty, which is the
+    precise defect this query exists to stop.
+    """
+    anchored: set[int] = set()
+    for chunk in id_chunks(list(job_ids)):
+        anchored.update(
+            int(row[0])
+            for row in conn.execute(
+                select(postings.c.job_id).where(postings.c.job_id.in_(chunk)).distinct()
+            ).all()
+        )
+    return frozenset(anchored)
+
+
+def _carry_dispositions(conn: Connection, merges: Sequence[JobMerge], *, now: datetime) -> int:
+    """Carry each EMPTIED source job's live decision onto every job its members moved to, then
+    release the source. Returns how many sources kept their decision instead.
 
     Without this a merge silently un-suppresses an already-handled group. The decision is keyed on
     a job; regrouping moves the postings off that job onto the survivor's, so a `built` row is left
     governing a job nothing anchors while the canonical job carries nothing — and the lead the
     program already built is surfaced and tailored a second time. That is the exact defect this
     slice exists to remove, reintroduced through the projection it added.
+
+    **Emptiness is checked, never assumed.** The planner moves postings one at a time
+    (`core/regroup.py` plans per member, and `apply_merges` updates one posting per merge), so a
+    source can be left holding postings of its own — and one source's members can be split across
+    several targets. Three cases, and only the first is what this originally handled:
+
+    * empty, one target — carry there and release.
+    * empty, several targets — carry to EVERY target and release. Not a widening: the decision
+      governed each of those postings while they shared this job, `record_disposition` is
+      monotonic, and a target already holding a stronger decision is left alone.
+    * **still holds postings — carry nothing and release nothing**, counted in the return.
+      Carrying would hand a target a decision that is not about it, and releasing would
+      un-suppress postings that never moved. Refusing means the moved posting loses suppression
+      and may re-surface, which is the FAIL-OPEN direction and the correct one here: never
+      silently hide a real job.
 
     `record_disposition` is monotonic, so carrying is safe in both directions: the strongest
     decision among the group's members wins and a canonical job already `built` is left alone.
@@ -171,24 +248,38 @@ def _carry_dispositions(conn: Connection, merges: Sequence[JobMerge], *, now: da
     arithmetic is unaffected; only which window the job falls into moves, and that now depends on
     when this last ran.
     """
-    from_jobs = {merge.from_job_id for merge in merges}
-    to_by_from = {merge.from_job_id: merge.to_job_id for merge in merges}
-    carried = load_dispositions(conn, sorted(from_jobs))
+    targets_by_source: dict[int, set[int]] = defaultdict(set)
+    for merge in merges:
+        if merge.to_job_id != merge.from_job_id:
+            targets_by_source[merge.from_job_id].add(merge.to_job_id)
+    if not targets_by_source:
+        return 0
+    sources = sorted(targets_by_source)
+    still_anchored = _jobs_still_anchoring_postings(conn, sources)
+    carried = load_dispositions(conn, sources)
     released: list[int] = []
-    for from_job, row in carried.items():
-        if not is_live(expires_at=row.expires_at, reopened_at=row.reopened_at, now=now):
+    refused = 0
+    for from_job in sources:
+        row = carried.get(from_job)
+        # A source with nothing live to carry is not a refusal: nothing was withheld, and the
+        # count has to mean "a decision stayed behind" or it cannot be acted on.
+        if row is None or not is_live(
+            expires_at=row.expires_at, reopened_at=row.reopened_at, now=now
+        ):
             continue
-        to_job = to_by_from[from_job]
-        if to_job == from_job:
+        if from_job in still_anchored:
+            refused += 1
             continue
-        record_disposition(
-            conn,
-            to_job,
-            disposition=row.disposition,
-            reason=row.reason,
-            policy_version=row.policy_version,
-            expires_at=row.expires_at,
-            now=now,
-        )
+        for to_job in sorted(targets_by_source[from_job]):
+            record_disposition(
+                conn,
+                to_job,
+                disposition=row.disposition,
+                reason=row.reason,
+                policy_version=row.policy_version,
+                expires_at=row.expires_at,
+                now=now,
+            )
         released.append(from_job)
     reopen_jobs(conn, released, now=now)
+    return refused

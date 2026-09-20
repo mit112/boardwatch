@@ -477,7 +477,7 @@ def test_apply_merges_re_reads_more_posting_ids_than_the_cap(
         JobMerge(posting_id=posting_b, from_job_id=job_b, to_job_id=survivor),
     ]
     with db.begin() as conn:
-        moved = apply_merges(conn, merges, identity_kind="exact_quad", now=utcnow())
+        moved = apply_merges(conn, merges, identity_kind="exact_quad", now=utcnow()).moved
     assert moved == 2, "a dropped chunk loses a real merge and still reports success"
     with db.connect() as conn:
         assert job_anchors(conn, [posting_a, posting_b]) == {

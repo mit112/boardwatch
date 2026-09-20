@@ -145,7 +145,12 @@ from boardwatch.store.queries import (
     upsert_lane_company,
     watched_company_names,
 )
-from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
+from boardwatch.store.regroup import (
+    apply_merges,
+    job_anchors,
+    protected_job_ids,
+    queue_action_job_ids,
+)
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.seed_queries import (
     LaneSeed,
@@ -1706,7 +1711,9 @@ def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, 
     """Move each suppressed posting onto its survivor's job. Returns (moved, messages).
 
     Refusals are returned as non-fatal messages, not swallowed: a group left ungrouped because a
-    member's job carries an application is a correct outcome, but an invisible one is a leak.
+    member's job carries an application is a correct outcome, but an invisible one is a leak. The
+    same holds for a decision `apply_merges` declined to carry off a source that still has
+    postings.
     """
     if not suppressions:
         return 0, []
@@ -1719,14 +1726,20 @@ def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, 
             suppressions,
             job_anchors(conn, member_ids),
             protected_job_ids=protected_job_ids(conn),
+            queue_action_job_ids=queue_action_job_ids(conn),
         )
-        moved = apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
+        outcome = apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
+    if outcome.refused_non_empty:
+        messages.append(
+            f"regroup: {outcome.refused_non_empty} source job(s) kept their live decision — "
+            "still anchor postings after the move"
+        )
     for refusal in plan.refusals:
         messages.append(
             f"regroup: group of posting {refusal.survivor_posting_id} left ungrouped "
             f"({refusal.reason}): {', '.join(str(p) for p in refusal.member_posting_ids)}"
         )
-    return moved, messages
+    return outcome.moved, messages
 
 
 def _slug(company: str, posting_id: int) -> str:
