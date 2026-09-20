@@ -21,9 +21,17 @@ alone would be enough:
   a skip landing in it would inflate every one of those counts.
 
 So a skip is one row: `queue.skipped.<job_id>` -> the ISO-8601 instant it was skipped. Keyed
-on the canonical `job_id`, matching `applications`, so a skip survives its posting being
-revised, closed, or regrouped. Skip and applied are independent dimensions and a job may be
-both; nothing here reads `applications`.
+on the canonical `job_id`, matching `applications`, so a skip survives its posting being revised
+or closed. Skip and applied are independent dimensions and a job may be both; nothing here reads
+`applications`.
+
+**Regrouping does not carry these keys — it refuses instead.** Every reader resolves a job action
+through the posting's CURRENT job id, so a merge would strand the key on a job nothing anchors,
+and nothing else records the owner's intent to recover it from. `store/regroup.py`'s
+`queue_action_job_ids` therefore adds any job carrying one of the three keys to the set a
+regrouping may not move a posting off, exactly as a job carrying an application already is.
+Combining two members' exclusions, or resolving two follow-up dates, is a merge policy nobody has
+specified; a refused group keeps a statement that is unambiguously the owner's.
 
 Functions take the caller's open Connection and never begin or commit.
 """

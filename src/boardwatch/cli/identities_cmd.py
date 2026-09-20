@@ -22,7 +22,13 @@ from boardwatch.store.identity_queries import (
     load_identity_inputs,
     write_identities,
 )
-from boardwatch.store.regroup import apply_merges, job_anchors, protected_job_ids
+from boardwatch.store.regroup import (
+    MergeOutcome,
+    apply_merges,
+    job_anchors,
+    protected_job_ids,
+    queue_action_job_ids,
+)
 
 identities_app = typer.Typer(no_args_is_help=True, help="Posting identity maintenance (dedup).")
 
@@ -126,16 +132,24 @@ def regroup(
             suppressions,
             job_anchors(conn, member_ids),
             protected_job_ids=protected_job_ids(conn),
+            queue_action_job_ids=queue_action_job_ids(conn),
         )
-        moved = 0 if dry_run else apply_merges(
-            conn, plan.merges, identity_kind="exact_quad", now=utcnow()
+        outcome = (
+            MergeOutcome(moved=0, refused_non_empty=0)
+            if dry_run
+            else apply_merges(conn, plan.merges, identity_kind="exact_quad", now=utcnow())
         )
     verb = "would move" if dry_run else "moved"
-    count = len(plan.merges) if dry_run else moved
+    count = len(plan.merges) if dry_run else outcome.moved
     typer.echo(
         f"regroup: {len(suppressions)} suppressed postings, {verb} {count} onto a "
         f"canonical job, {len(plan.refusals)} group(s) refused"
     )
+    if outcome.refused_non_empty:
+        typer.echo(
+            f"  {outcome.refused_non_empty} source job(s) kept their live decision: still "
+            "anchor postings after the move"
+        )
     for refusal in plan.refusals:
         typer.echo(
             f"  refused ({refusal.reason}): postings "
