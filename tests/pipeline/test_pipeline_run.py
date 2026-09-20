@@ -14,6 +14,7 @@ import httpx
 import pytest
 import respx
 from filelock import FileLock
+from gh_fixtures import gh_jobs
 from rich.console import Console
 from sqlalchemy import func, insert, select
 from typer.testing import CliRunner
@@ -23,7 +24,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import _cohort_guard, _slug, _zero_output_guard, run_pipeline
 from boardwatch.providers.registry import build_providers
-from boardwatch.scan.coordinator import ScanLockHeldError
+from boardwatch.scan.coordinator import ScanLockHeldError, run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
@@ -2268,3 +2269,184 @@ def test_the_three_gate_alerts_that_record_cleanly_behave_as_before(
         assert any(marker in e for e in summary.errors), f"{marker!r} missing from summary.errors"
         assert any(marker in e for e in stored), f"{marker!r} missing from runs.errors_json"
     assert summary.morning is not None and pings == [1]
+
+
+# --- T130: a scan that returned usable postings is DEGRADED, not a systemic outage ---------
+#
+# `is_systemic_scan_outage` counted a `partial` board as neither complete nor failed, so a
+# scan whose only board came back `partial` — real postings in hand — tripped the fatal guard
+# with an EMPTY per-board error list. Five live runs (23, 26, 31, 36, 37) sit in exactly that
+# state; across 70 scanning runs not one has ever had zero usable evidence, so the guard has
+# never once fired on a true outage. Owner ruling (2026-09-20): fatal is reserved for 0
+# complete, 0 unchanged AND 0 partial. The run stops being fatal, so it must not become
+# silent — hence the soft alert below, raised above `_emit_morning` like its siblings.
+
+# One job that parses and one that cannot: Greenhouse's `partial`, which still yields postings.
+PARTIAL_BODY = json.dumps({"jobs": [gh_jobs()[0], {"id": 999}]}).encode()
+
+
+def _standalone_scan_status(data_dir: Path, body: bytes) -> str:
+    """`boardwatch scan`'s OWN classification of one board outcome (`finish=True`, so this
+    caller owns the terminal status). A fresh store, so it shares nothing with the pipeline's
+    run but the predicate."""
+    engine = get_engine(data_dir)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(tables.companies).values(
+                name="Acme", provider="greenhouse", slug="acme", source="user", watched=True
+            )
+        )
+    settings = load_settings(data_dir=data_dir).model_copy(update={"retry_attempts": 1})
+    with respx.mock:
+        respx.get(_GH.board_url("acme")).mock(return_value=httpx.Response(200, content=body))
+        summary = run_scan(engine, settings, finish=True)
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                select(tables.runs.c.status).where(tables.runs.c.id == summary.run_id)
+            ).scalar_one()
+        )
+
+
+def test_a_partial_only_pipeline_run_is_degraded_not_fatal_and_says_so_in_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs 23/26/31/36/37 under `boardwatch run`: every attempted board came back `partial`.
+
+    Three assertions, and all three are the ruling: the run is not fatal, the row is `ok`, and
+    the degraded alert is on the row so a run that stopped being fatal did not become silent.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=PARTIAL_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    with get_engine(env).connect() as conn:
+        row = conn.execute(
+            select(tables.runs).where(tables.runs.c.id == summary.run_id)
+        ).one()
+    assert (
+        row.boards_attempted,
+        row.boards_complete,
+        row.boards_unchanged,
+        row.boards_partial,
+    ) == (2, 0, 0, 2), f"guard: not the partial-only shape, so this test proves nothing: {row}"
+
+    assert summary.fatal is None, (
+        f"a scan holding real postings was refused as a systemic outage: {summary.fatal}"
+    )
+    assert row.status == "ok", "the partial-only run was still persisted failed"
+    stored = list(row.errors_json or [])
+    assert not any("systemic scan outage" in e for e in stored), (
+        f"the fatal outage sentence was persisted onto a run that succeeded: {stored}"
+    )
+    assert any("scan degraded" in e for e in summary.errors), (
+        f"the run stopped being fatal and became silent instead: {summary.errors}"
+    )
+    assert any("scan degraded" in e for e in stored), (
+        f"the degraded alert never reached runs.errors_json: {stored}"
+    )
+    assert pings == [1], "a degraded run still succeeded, so the heartbeat must fire"
+
+
+def test_D_037_parity_one_scan_outcome_cannot_be_ok_under_run_and_failed_under_scan(  # noqa: N802
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-037's whole reason for existing: ONE predicate, both callers, so the SAME event can
+    never record `ok` under `boardwatch scan` and `failed` under `boardwatch run`.
+
+    Asserted on equality first and on the value second — a second predicate added for one
+    caller passes every other test in this file and fails only here.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None, raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=PARTIAL_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    with get_engine(env).connect() as conn:
+        pipeline_status = conn.execute(
+            select(tables.runs.c.status).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    standalone_status = _standalone_scan_status(tmp_path / "standalone", PARTIAL_BODY)
+
+    assert pipeline_status == standalone_status, (
+        f"the two callers disagree about one scan outcome: `boardwatch run` says "
+        f"{pipeline_status!r}, `boardwatch scan` says {standalone_status!r}"
+    )
+    assert pipeline_status == "ok", (
+        f"a partial-only scan is degraded success under both callers, not fatal: "
+        f"{pipeline_status!r}"
+    )
+
+
+def test_the_degraded_scan_alert_reaches_the_MORNING_DIGEST(  # noqa: N802
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins the CALL SITE's position, not merely that the alert is raised.
+
+    Fails against the same detector wired in below `_emit_morning`: `summary.errors` would
+    still carry the marker (so an assertion on that list cannot tell the two apart) while the
+    rendered digest — the one artifact an unattended owner reads — would not.
+    """
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "degraded_scan_alert", lambda *_a, **_k: "MARKER-degraded")
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None, raising=False)
+    settings = load_settings(data_dir=env)
+
+    with respx.mock:
+        for slug in SEEDED_BOARDS:
+            respx.get(_GH.board_url(slug)).mock(
+                return_value=httpx.Response(200, content=HEALTHY_BODY)
+            )
+        summary = run_pipeline(
+            get_engine(env),
+            settings,
+            console=Console(quiet=True),
+            out_root=tmp_path / "apps",
+            resume_path=settings.config_dir / "resume.yaml",
+        )
+
+    assert summary.morning is not None, "guard: the digest must have been written"
+    assert any("MARKER-degraded" in e for e in summary.errors), (
+        "guard: the alert must reach summary.errors at all"
+    )
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "MARKER-degraded" in rendered, (
+        "the degraded-scan alert is missing from the morning digest — the call sits BELOW "
+        "`_emit_morning`, where it fires, is recorded, and is invisible to an absent owner"
+    )
