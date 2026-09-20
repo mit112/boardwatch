@@ -29989,3 +29989,5 @@ the parser's verbatim reason.
 zero live population), **T145** (F2, reference only under the owner's refusal), **T146** (F4, the
 recall instrument), **T147** (F5, LinkedIn stays closed), **T148** (the dead wrapper). Held WHOLE
 in `TICKETS-2026-09-20-ASTRA-05.md`; do not re-derive.
+
+**LANDED.** `make check` exit 0 on the integrated branch and again on the merge commit — **10,542 passed** (baseline 10,498), 1 skipped, 4 xfailed, coverage 95.24%, 8m13s. Pushed as a PR rather than to `main` directly, because `enforce_admins:false` means a direct push silently bypasses the six required checks `make check` does not run. **PR #396: 26/26 CI checks passed, merged at `836025b8`**, local `main` fast-forwarded, branch deleted.

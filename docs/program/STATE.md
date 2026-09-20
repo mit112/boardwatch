@@ -20,7 +20,7 @@
 
 ## Current standing
 
-### 2026-09-20c — **ASTRA REVIEW 05 IS CONSUMED (D-527): ALL SEVEN FINDINGS CONFIRMED, THE RANKING INVERTS FOR THE THIRD REVIEW RUNNING, AND FOUR OWNER RULINGS LAND. T140–T143 SHIPPED, ONE GATED WAVE. T144–T148 TICKETED in `TICKETS-2026-09-20-ASTRA-05.md`. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
+### 2026-09-20c — **ASTRA REVIEW 05 IS CONSUMED (D-527): ALL SEVEN FINDINGS CONFIRMED, THE RANKING INVERTS FOR THE THIRD REVIEW RUNNING, AND FOUR OWNER RULINGS LAND. T140–T143 SHIPPED AND **MERGED TO `main`** (PR #396, 26/26 CI checks). T144–T148 TICKETED in `TICKETS-2026-09-20-ASTRA-05.md`. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
 
 Every `file:symbol` opened by a read-only Opus verifier on the seat (`.agent/astra/verify/05-report.md`,
 **70 turns, $5.19**). Nothing refuted. Astra supplied no falsifier for this slice, so the findings
@@ -76,6 +76,10 @@ import file, so refused rows go to an `UNIMPORTABLE` block with the parser's ver
 **B8's volume could NOT be re-derived from the store** — `job_dispositions` holds only `built`
 (1,007) and `seen` (219), and `built` is **40 on every run**: the `--top 40` slate cap, not
 apply-lane volume. The recorded 9-of-14 stands, which is why Q1 was put rather than answered.
+
+**Gate: `make check` exit 0, 10,542 passed (baseline 10,498), coverage 95.24%, 8m13s — run on the
+integrated branch AND again on the merge commit. CI: all 26 checks passed; PR #396 merged at
+`836025b8`. The wave is on `main`, not parked.**
 
 **`store/queries.py:619 upsert_watched_company` has ZERO callers anywhere** — a dead wrapper, left
 in place and ticketed (T148) rather than removed inside four other diffs.
