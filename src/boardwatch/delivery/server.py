@@ -129,11 +129,18 @@ CONTENT_SECURITY_POLICY = (
     "frame-ancestors 'none'"
 )
 
-#: Two SQLite result codes, by number, from `sqlite3.Error.sqlite_errorcode`. Read as a code and
-#: never by matching "database is locked" in a message: this repository classifies at the raise
-#: site, and a driver is free to reword its prose.
+#: The SQLite result codes that mean contention, by number, from `sqlite3.Error.sqlite_errorcode`.
+#: Read as a code and never by matching "database is locked" in a message: this repository
+#: classifies at the raise site, and a driver is free to reword its prose.
 SQLITE_BUSY = 5
 SQLITE_LOCKED = 6
+#: The EXTENDED code a DEFERRED read-then-write gets when an unrelated commit invalidates its
+#: snapshot — which every route here is, since each reads before it writes. Its message is
+#: `database is locked` too, so prose cannot tell it from `SQLITE_BUSY`, and it is NOT 5: an
+#: obsolete WAL read snapshot cannot be upgraded in place, so SQLite refuses immediately instead
+#: of consulting `busy_timeout`. Retrying the WHOLE transaction is the only fix, which is exactly
+#: what `_write` does.
+SQLITE_BUSY_SNAPSHOT = 517
 
 #: A bounded retry, then 503. The point is the bound: `get_engine`'s 5000 ms default would make a
 #: contended write look like a hung page, and a stall ending in a traceback is the worst of both.
@@ -928,7 +935,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
 def _is_locked(exc: OperationalError) -> bool:
     """A busy or locked store, by SQLite result code rather than by message prose."""
-    return getattr(exc.orig, "sqlite_errorcode", None) in (SQLITE_BUSY, SQLITE_LOCKED)
+    return getattr(exc.orig, "sqlite_errorcode", None) in (
+        SQLITE_BUSY,
+        SQLITE_LOCKED,
+        SQLITE_BUSY_SNAPSHOT,
+    )
 
 
 def _disposition(filename: str) -> str:
