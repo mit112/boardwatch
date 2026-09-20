@@ -5,9 +5,12 @@ Routes through the EXISTING handshake — `eligibility.gate_handshake.build_gate
 than a parallel path. This module's own job is narrow: decide which leads still need judging
 (never re-judge a lead with a current gate row), invoke headless `claude` in batches of
 `settings.gate.batch_size`, parse its output into `OracleVerdict`s, and fail OPEN at every seam
-(D-074): a missing binary, a non-zero exit, a timeout, unparseable JSON, a wrong item count, or
-a response with no usable evidence all drop that BATCH's verdicts — never a real job — and are
-counted so the run reports them rather than looking silently clean.
+(D-074): a missing binary, any other failure to launch the process, a non-zero exit, a timeout,
+unparseable JSON, an envelope that is not an object, an out-of-vocabulary `decision` or
+`confidence`, a wrong item count, or a response with no usable evidence all drop that BATCH's
+verdicts — never a real job — and are counted so the run reports them rather than looking
+silently clean. Nothing here may reach `run_pipeline`'s outer handler: that sets `summary.fatal`
+and re-raises BEFORE tailoring, so one malformed response would cost the day's whole slate.
 
 `gate.enabled` defaults False (multi-tenancy): a caller must opt in before this spawns a single
 subprocess.
@@ -29,10 +32,23 @@ from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts, parse_policy
 from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
-from boardwatch.eligibility.oracle import OracleVerdict, OracleVerdictError, accept_oracle_verdict
+from boardwatch.eligibility.oracle import (
+    _CONFIDENCE,
+    _VERDICTS,
+    OracleVerdict,
+    OracleVerdictError,
+    accept_oracle_verdict,
+)
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_gate_verdicts
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
+
+#: What this stage writes to the gate row's `provider` column: the `claude` CLI under the
+#: operator's own subscription, no API key. The same name the agent tailor lane already
+#: records (`tailor_cmd`'s `llm_provider_override`), so the ledger has ONE name for that
+#: judge rather than two — `settings.gate.model` alone cannot say it, since the same alias
+#: means a different thing through an API provider.
+GATE_PROVIDER = "claude-code-agent"
 
 
 class _HasPostingId(Protocol):
@@ -104,7 +120,9 @@ def _call_claude(
     Returns the raw stdout text. Raises on any failure the caller must fail open on
     (`FileNotFoundError` — binary missing; `subprocess.TimeoutExpired`; a non-zero exit,
     raised here as `subprocess.CalledProcessError` via `check=True` so every failure mode
-    the caller must catch is an exception, never a magic return value).
+    the caller must catch is an exception, never a magic return value; and any other
+    process-launch `OSError` — EACCES, E2BIG, ENOMEM — which the caller catches as a family
+    rather than by member, since the list of ways a launch can fail is the platform's).
     """
     env = dict(os.environ)
     if claude_config_dir is not None:
@@ -158,6 +176,24 @@ def _seniority_fit(value: object) -> str:
     return str(value) if str(value) in _SENIORITY_FIT else "unclear"
 
 
+def _in_vocabulary(value: object, vocabulary: frozenset[str], field: str) -> str:
+    """The opposite direction to `_seniority_fit`, for the two fields that decide a VERDICT.
+
+    `OracleVerdict` has no validating constructor, so before T106 `decision` was carried out of
+    the batch boundary raw and refused only later — by `accept_oracle_verdict`, inside
+    `run_gate_stage`'s write transaction, where an `OracleVerdictError` aborted the whole RUN
+    rather than the batch. `confidence` was validated nowhere at all and persisted verbatim.
+    Raising here, inside the boundary, is what makes a malformed item cost its batch (D-074).
+
+    Returns the value UNCHANGED, not folded to lower case: `accept_oracle_verdict` does its own
+    `.strip().lower()`, and normalizing here would silently change what gets persisted.
+    """
+    text = str(value)
+    if text.strip().lower() not in vocabulary:
+        raise OracleVerdictError(f"{field} {text!r} not in {sorted(vocabulary)}")
+    return text
+
+
 def _parse_verdicts(
     stdout: str, expected_labels: Sequence[str]
 ) -> tuple[list[OracleVerdict], tuple[str, ...]]:
@@ -177,6 +213,10 @@ def _parse_verdicts(
     stage cannot trust, and coercing one is the direction that drops a real job.
     """
     envelope = json.loads(stdout)
+    if not isinstance(envelope, Mapping):
+        # Established BEFORE any key is read: a top-level `[]` or `null` used to reach
+        # `.get("is_error")` and raise `AttributeError`, which the caller does not catch.
+        raise TypeError(f"expected a JSON object envelope, got {type(envelope).__name__}")
     if envelope.get("is_error"):
         raise ValueError(f"claude reported is_error: {envelope.get('result')!r}")
     result_text = envelope["result"]
@@ -191,10 +231,10 @@ def _parse_verdicts(
     verdicts = [
         OracleVerdict(
             label=str(item["label"]),
-            decision=str(item["decision"]),
+            decision=_in_vocabulary(item["decision"], _VERDICTS, "decision"),
             reason=item.get("reason"),
             evidence=str(item["evidence"]),
-            confidence=str(item["confidence"]),
+            confidence=_in_vocabulary(item["confidence"], _CONFIDENCE, "confidence"),
             seniority_fit=_seniority_fit(item.get("seniority_fit")),
         )
         for item in parsed
@@ -232,6 +272,12 @@ def _judge_batch(
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()[:300]
         return None, f"claude exited {exc.returncode}: {stderr}"
+    except OSError as exc:
+        # Everything else `subprocess.run` can raise launching a process: EACCES on a binary
+        # that is not executable, E2BIG on a batch whose argv exceeds the platform limit,
+        # ENOMEM under fork. `FileNotFoundError` is an `OSError` too, so it is handled above
+        # and keeps its own note; this is the readable fallback, never an escape.
+        return None, f"claude could not be launched ({type(exc).__name__}, errno {exc.errno})"
     try:
         verdicts, missing = _parse_verdicts(stdout, [str(item["label"]) for item in batch])
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OracleVerdictError) as exc:
@@ -246,6 +292,42 @@ def _judge_batch(
             "those leads were left unchanged, never dropped"
         )
     return verdicts, None
+
+
+def _accepted(
+    verdicts: list[OracleVerdict],
+    versions: dict[int, CurrentVersion],
+    catalog: RulesCatalog,
+) -> tuple[list[OracleVerdict], list[str]]:
+    """Drop, item by item, any verdict `accept_oracle_verdict` refuses — BEFORE the write
+    transaction opens.
+
+    Two writers run that same function and neither catches it: `apply_gate_verdicts` inside
+    `with engine.begin()`, and `_tally_eligible_and_uncertain` AFTER that transaction has
+    committed. An `OracleVerdictError` from either escapes the stage and aborts the run, which
+    is the reverse of D-074's direction — and from the second site it does so with the batch
+    already persisted. Running acceptance here first means neither site can raise, and one
+    refused item costs its own lead rather than the good batches beside it.
+
+    The body text is resolved exactly as both writers resolve it, so this pass sees what they
+    will; a verdict naming no known version is accepted against `""`, since the only thing
+    that raises is `decision` and the writers skip such a verdict anyway. Acceptance is pure,
+    so both of them re-running it afterwards cannot diverge from what is decided here.
+    """
+    kept: list[OracleVerdict] = []
+    refused: list[str] = []
+    for verdict in verdicts:
+        try:
+            body = versions[int(verdict.label)].body_text
+        except (KeyError, ValueError):
+            body = ""
+        try:
+            accept_oracle_verdict(verdict, body, catalog)
+        except OracleVerdictError as exc:
+            refused.append(f"gate: verdict for lead {verdict.label} refused: {exc}")
+            continue
+        kept.append(verdict)
+    return kept, refused
 
 
 def run_gate_stage(
@@ -292,6 +374,7 @@ def run_gate_stage(
         already_gated = current_gate_verdicts(
             conn, [v.posting_version_id for v in versions.values()], *identity,
             engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
+            model=settings.gate.model,
         )
     # Never re-judge (D-477 point 5): a lead with a current gate row under this identity is
     # skipped entirely — it never enters a request, let alone a `claude` call.
@@ -301,6 +384,11 @@ def run_gate_stage(
     # row identity cannot carry this: `profile_hash` drops a family the live policy `ignore`s,
     # while the judge reads every fact under an all-blocker policy, so a work_auth flip was
     # invisible here while changing the request (T99).
+    #
+    # `model` is the third argument for the same reason and it is the one a judge SWITCH needs
+    # (T108): nothing else here moves with `settings.gate.model`, so a verdict the previous judge
+    # reached counted as current forever and the switch reached only leads nobody had judged yet.
+    # A row written before this shipped names no model, so it misses and is re-judged once.
     #
     # `engine_version` is EXACT here, not the prefix the display readers use (D-512). "Current"
     # has to mean current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that
@@ -328,6 +416,8 @@ def run_gate_stage(
             errors.append(f"gate: batch {index + 1}/{len(batches)} partly failed open: {note}")
         verdicts.extend(batch_verdicts)
 
+    verdicts, refused = _accepted(verdicts, versions, catalog)
+    errors.extend(refused)
     if not verdicts:
         return leads, GateStageResult(failed_open_batches=failed_batches, errors=tuple(errors))
 
@@ -335,6 +425,7 @@ def run_gate_stage(
         result = apply_gate_verdicts(
             write_conn, verdicts, versions=versions, facts=facts, policy=policy,
             catalog=catalog, run_id=run_id, shortlist_ranks=shortlist_ranks,
+            provider=GATE_PROVIDER, model=settings.gate.model,
         )
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)

@@ -21,12 +21,14 @@ collision is a foreign city carrying a token that is also a US state code ("Bang
 it resolves `us` (kept) — a fail-open leak, never a drop; the spelled-out "Bangalore, India"
 still reads non-US via the country name. Ambiguous whole-segment names that INCLUDE the US
 ("Americas", "Worldwide") short-circuit to `unknown` rather than guessing. Matching is
-word-bounded, so region token "uk" does not fire inside "Milwaukee".
+word-bounded, so region token "uk" does not fire inside "Milwaukee", and every lexical test
+runs on a Unicode-normalized form so "Montréal" resolves exactly as "Montreal" does.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Sequence
 from typing import Literal
 
@@ -48,6 +50,20 @@ LocationClass = Literal["us", "non_us", "unknown"]
 _SEGMENT_SPLIT = re.compile(r"[;|/•]| or ", re.IGNORECASE)
 
 
+def _fold(text: str) -> str:
+    """The single lexical form every catalog test is written against.
+
+    NFKD plus combining-mark stripping, then casefold: an accented spelling of a catalogued
+    city has to reach the same token as its plain spelling. "Montréal" was only casefolded, so
+    it matched no catalog at all and resolved `unknown` — kept, fail-open, while "Montreal"
+    read `non_us`. Applied to the CATALOG TOKENS as well as the input, because a token whose
+    only spelling is accented ("łódź" — `ł` carries no combining mark, so it normalizes to
+    "łodz", which no catalog spells) would otherwise stop matching its own city.
+    """
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).strip().casefold()
+
+
 def _alternation(tokens: Sequence[str] | frozenset[str]) -> re.Pattern[str]:
     """Word-bounded alternation over casefolded tokens, longest match first.
 
@@ -65,7 +81,9 @@ def _alternation(tokens: Sequence[str] | frozenset[str]) -> re.Pattern[str]:
     randomisation, so the same store and the same code classified a city differently run to
     run. `test_no_token_matches_inside_a_longer_word` pins the invariant seed-independently.
     """
-    body = "|".join(re.escape(t) for t in sorted(tokens, key=len, reverse=True))
+    body = "|".join(
+        re.escape(t) for t in sorted({_fold(t) for t in tokens}, key=len, reverse=True)
+    )
     return re.compile(rf"(?<![a-z])(?:{body})(?![a-z])")
 
 
@@ -99,7 +117,7 @@ def _non_us_country_code(segment: str) -> bool:
 
 
 def _classify_segment(segment: str) -> LocationClass:
-    low = segment.strip().casefold()
+    low = _fold(segment)
     if not low or low in POLICY_ONLY:
         return "unknown"
     if low in AMBIGUOUS_REGIONS:  # "Americas" / "Worldwide" — includes the US, undecidable

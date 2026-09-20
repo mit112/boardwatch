@@ -14,7 +14,7 @@ Only STRUCTURAL conventions are read, never vocabulary:
 
   - the DACH gender marker — "(m/w/d)", "(w/m/d)", "(d/f/m)", "(m/f/d)" — which German,
     Austrian and Swiss equal-treatment law makes near-universal in job ads;
-  - the French equivalent "(H/F)";
+  - the French equivalent, in either order — "(H/F)" and "(F/H)";
   - "Ingénieur" / "Ingenieur", the French job noun and its German cognate;
   - a title written in CJK script — Han ideographs, kana or hangul.
 
@@ -53,7 +53,9 @@ import re
 # One to three gendered letters separated by slashes inside parentheses. The slash is REQUIRED:
 # "(m)" and "(f)" are an ordinary parenthesised letter, not the convention.
 _DACH_GENDER_MARKER = re.compile(r"\((?:\s*[mwfdx]\s*/){1,3}\s*[mwfdx]\s*\)", re.IGNORECASE)
-_FRENCH_GENDER_MARKER = re.compile(r"\(\s*h\s*/\s*f\s*\)", re.IGNORECASE)
+# Either order: "(H/F)" and "(F/H)" are the same convention. `h` is deliberately NOT added to
+# the DACH class above, which reads a different convention where `h` means nothing.
+_FRENCH_GENDER_MARKER = re.compile(r"\(\s*(?:h\s*/\s*f|f\s*/\s*h)\s*\)", re.IGNORECASE)
 # Deliberately NOT word-bounded on the left: the French inclusive suffix ("Ingénieur(e)") and
 # the German compound ("Betriebsingenieur") both have to hit. No English word contains it.
 _ENGINEER_FR_DE = re.compile(r"ing[eé]nieur", re.IGNORECASE)

@@ -309,3 +309,62 @@ class TestInvertedManagementTitle:
     ])
     def test_trailing_product_noun_manager_is_kept(self, title, cat, tier):
         assert V(title, cat, tier)[0] == "in_band", title
+
+
+class TestLevelSeparator:
+    """`Level-5` and `Level: 5` are the same rung as `Level 5`.
+
+    The grammar required whitespace between the word and the number, so a punctuated spelling
+    carried no signal at all and the title fell through to the entry default -- `in_band`, no
+    abstain, nothing reported. The assertions are PAIRED against the spaced spelling: the
+    property is that the three agree.
+    """
+
+    @pytest.mark.parametrize("title", [
+        "Software Engineer, Level-5",
+        "Software Engineer, Level - 5",
+        "Software Engineer, Level: 5",
+        "Software Engineer, Level:5",
+        "Software Engineer, level-5",
+    ])
+    def test_a_punctuated_level_resolves_as_the_spaced_spelling(self, title, cat, tier):
+        scheme = cat.schemes["ic_1_to_7"]
+        spaced, _ = V("Software Engineer, Level 5", cat, tier, scheme=scheme)
+        verdict, reason = V(title, cat, tier, scheme=scheme)
+        assert verdict == spaced == "above_band"
+        # The reason quotes the text that actually decided it, not the spaced form.
+        assert title.split(", ")[1] in reason
+
+    @pytest.mark.parametrize("title", ["Software Engineer, Level-5", "Software Engineer, Level: 5"])
+    def test_a_punctuated_level_abstains_without_a_scheme_just_as_the_spaced_form_does(
+        self, title, cat, tier
+    ):
+        verdict, reason = V(title, cat, tier)
+        assert verdict == V("Software Engineer, Level 5", cat, tier)[0] == "uncertain"
+        assert "no scheme" in reason.lower()
+
+    @pytest.mark.parametrize("title", [
+        "Software Development Engineer - Routing Platforms & L2 - Routing",
+        "L2 Support Engineer (Automation Focused)",
+        "Machine Learning Engineer (T25)",
+        "Support Engineer, E-5",
+        "Platform Engineer IC-3",
+        "Network Engineer L-2",
+    ])
+    def test_the_widened_separator_never_reaches_a_letter_prefix_shape(self, title):
+        # Control: `level_n` was adopted because 33/33 live hits were real levels. It stays
+        # anchored on the WORD, so none of the bare letter+digit shapes the gate deliberately
+        # abstains on can reach it -- they are still resolved by their own grammars.
+        from boardwatch.rank.seniority_gate import _PATTERNS
+
+        assert _PATTERNS["level_n"].search(title) is None
+
+    def test_case_sensitivity_stays_per_branch(self, cat, tier):
+        # Control: `level_n` is case-INSENSITIVE, the letter prefixes are not, and widening the
+        # separator must not disturb either. Lowercase `l-2` is a network layer.
+        from boardwatch.rank.seniority_gate import _PATTERNS
+
+        assert _PATTERNS["level_n"].search("software engineer, level-5") is not None
+        assert _PATTERNS["l_prefix"].search("Network Engineer L-2") is not None
+        assert _PATTERNS["l_prefix"].search("Network Engineer l-2") is None
+        assert V("Network Engineer l-2", cat, tier)[0] == "in_band"
