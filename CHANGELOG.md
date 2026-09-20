@@ -8,6 +8,51 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A lane now reports the reach it ADDED separately from the reach its cap APPROVED (2026-09-20, T140).**
+  `LaneReport.admitted` was documented as "the reach this run ADDED", and it is not: the per-run
+  company cap approves a company *before* any of its bodies are fetched, so one whose every body
+  request failed — or whose bodies fell outside the remaining body budget — emits no snapshot, is
+  never handed to `upsert_lane_company`, and gets no company row. It is approved and never stored.
+  Measured over every funnel on disk, **214 of 1,342 admissions (15.9%) across 27 of 27 runs were
+  never persisted, never once in the other direction**; the headline expansion run reported 19
+  admitted against 7 rows. `persisted_new` is now a third quantity beside `admitted` and `refused`,
+  rendered in the lane block and the JSON payload. It is the *intersection* of the approvals with
+  the snapshots that landed, not a count of applied snapshots — a company the store already held
+  also lands a snapshot and belongs in neither number. `admitted` and `refused` keep their names
+  and their meaning: they are what says whether the cap bound the run.
+
+- **`companies discover-grnh` says what it did not look at, and can read the whole queue
+  (2026-09-20, T141).** The command charges no attempt and sets no `resolved_at` — deliberately,
+  because a board candidate is not a resolved posting — so `ORDER BY attempts, id LIMIT 200` was a
+  fixed prefix that every invocation re-read. With **449 stored `grnh.se` seeds, all at
+  `attempts=0`, 249 were unreachable at the default**, and as the good boards inside the prefix got
+  imported the candidate file shrank toward empty and read as a drained queue. The document header
+  and the terminal now both carry the coverage — selectable, followed, not examined — and
+  `--limit 0` follows every selectable seed. The count and the select share one predicate, so "not
+  examined" can never mean "the two disagree about what is eligible". No seed state is written.
+
+- **`companies unscanned`: the boards the store holds but never scans (2026-09-20, T142).** A
+  read-only census of companies with `watched=0` on a provider that has a scanner adapter, emitted
+  in the registry format `companies import` already accepts. Provenance travels with each row
+  (postings held, first seen, source). `source='user'` rows are held back in a review block and
+  never proposed — an unwatched user row may have been intentionally retired, and "safe to rewatch"
+  is not inferable from `watched=False`. Case-variant slugs and Workday facet slices fold to one
+  board, so a board is proposed once or not at all. A candidate slug the importer's own parser
+  refuses goes to an `UNIMPORTABLE` block with the parser's verbatim reason rather than aborting
+  the import of the whole file. The command writes nothing; no path it adds can set `watched=True`.
+
+- **hiring.cafe watches a supported employer board it resolved and read (2026-09-20, T143).** The
+  lane admits real greenhouse/ashby/lever/workable boards and wrote every one `watched=False`, so
+  the scan fleet never saw them: **120 such boards had accumulated, and 12 more arrived in the two
+  daily ticks after the 1,155-board import closed.** A board the lane resolved AND got postings
+  from this run now joins the fleet. Three conditions, all required and all established by code
+  above the decision rather than re-checked: the provider is in `build_providers()` — the same dict
+  the scan coordinator looks a watched row up in before appending `unknown provider` to every run's
+  errors, so there is no second catalog free to drift from the error site it exists to prevent; it
+  is not an aggregator placeholder; and it served postings this run, since a board that resolved
+  but served nothing is not proven live. The flag only ever turns watching on, and leaves an
+  existing row's `name` and `source` untouched.
+
 - **A run may no longer claim success it never durably recorded (2026-09-20, T129).** The
   heartbeat gate asked whether the run had a `fatal`, a funnel and a morning file, and never
   whether it had closed its own row — so `finish_run` raising left `status='running'` with
