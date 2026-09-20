@@ -8,6 +8,45 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The gate stage's row names the judge that wrote it (2026-09-19, T108).** `record_gate_verdict`
+  fills the `provider`/`model` columns that already existed and `current_gate_verdicts` gains a
+  `model` narrowing, applied INSIDE its `max(id)` subquery exactly as `facts_key` is. Nothing in the
+  gate row key varied with `settings.gate.model` before — not the identity, not
+  `gate_engine_version()`, not the facts key — so changing the configured judge moved the run's
+  `config_hash` and invalidated no verdict, and the change would have reached only leads nobody had
+  judged yet. A row written before this names no model, misses, and is re-judged once (bounded by
+  `--top`). `gate_engine_version()` is deliberately unchanged so the display readers'
+  `LIKE 'final_gate:%'` prefix does not fragment, and the `eligibility gate apply` CLI still writes
+  NULL because its verdicts come from an arbitrary agent session rather than the configured judge.
+
+### Fixed
+
+- **The gate judge fails open at every seam it documents (2026-09-19, T106).** Three classes of
+  external defect escaped the batch boundary and aborted the run instead, reversing the stage's own
+  stated direction: a top-level JSON array or `null` reached `envelope.get` and raised
+  `AttributeError`; an out-of-vocabulary `decision` cleared the parser and raised from
+  `accept_oracle_verdict` inside the write transaction and again after it committed; and the process
+  catch named three exception types, so `PermissionError` and `E2BIG` escaped. `confidence` was
+  validated nowhere. The envelope's shape is now established before any key is read, `decision` and
+  `confidence` are checked against their existing closed vocabularies inside the batch, every
+  process-launch failure is a typed batch failure with its own readable note, and acceptance runs
+  over every verdict before the transaction opens — so one malformed item costs its own lead rather
+  than the whole day's slate. No policy or prompt version bump: nothing already persisted is wrong.
+- **Accented and reordered spellings no longer classify differently from their plain forms
+  (2026-09-19, T112).** The location gate normalizes Unicode (NFKD, combining marks stripped) on both
+  the input and the catalog tokens before any lexical test, so a catalogued city spelled with accents
+  resolves as the plain spelling does instead of reading `unknown` and riding the visa gate's
+  fail-open into the apply lane; folding only the input would have regressed a token whose sole
+  spelling carries a stroked letter, which NFKD leaves alone. The French gender marker matches either
+  order rather than one, and the level token accepts a hyphen or colon separator as well as
+  whitespace. The DACH marker's character class, `rank/role_gate.py` and every catalog data file are
+  untouched.
+- **Two web tests no longer depend on the calendar day (2026-09-19).** They pinned a future date as a
+  literal; the follow-up chip changes its wording once that date is today or past, so the assertion
+  silently became a different one on arrival — and CI, running in UTC, crossed the boundary five
+  hours before local did. Both now derive the date from today with the helper the rest of the file
+  already used.
+
 - **An imported application can carry a follow-up date (2026-09-18, T94).**
   `POST /api/applied/<job_id>/followup` and `/unfollowup`, keyed on the JOB rather than a posting
   and guarded on that job holding an application. The stored key was job-keyed from the start

@@ -3285,3 +3285,43 @@ D-494: seed the cluster cap from the standing queue; ratify `apple`'s `board_rep
 (5) D-498's rule (b) (+18) and 0-D's REPAIR half (117 bodies, 301 `raw_json` rows) are sized and
 unbuilt — neither was ruled on.
 
+
+## The five settled 2026-09-14b … 2026-09-18 STATE blocks, moved WHOLE out of `STATE.md` on 2026-09-19e
+
+Nothing deleted. Each was already a pointer to its decisions; they moved because adding D-524's block took `STATE.md` past its ~250-line bar, and the file's own rule is to move settled blocks out rather than summarise them away.
+
+### 2026-09-18 — run 434 (confirm day 13), T88–T91 read live, six owner decisions ruled. **Held WHOLE in D-519, D-520 and `METRICS.md`; do not re-derive.** **One correction: D-519 ruling 6 records the years ceiling as 3; the LIVE value is 1** (run 434's own rules snapshot; `catalog.py:252` has the policy override beat the catalog default), so its "7 leads at a bar ≤ 3" sizing was taken against the wrong value and must be re-read before it is cited. The ruling — change nothing — stands.
+
+### 2026-09-17b — the first autoapply pre-flight, verified and ticketed; T88–T91 + T93 shipped inside the freeze. **Held WHOLE in D-518 and `TICKETS-2026-09-17.md`; do not re-derive.**
+
+16 of the 22 leads the owner withdrew were review-lane holds, not apply-lane leads — **source a
+pre-flight from the apply lane alone**. The six real slips split into liveness (T88–T90) and the
+Greenhouse form (T91); all read live on run 434 with the manifest unmoved. **Every owner decision
+the tickets file left open is now RULED in D-519 — §3 carries nothing live.** T92 is parked for the
+post-M5 batch.
+
+### 2026-09-17 — run 433 (confirm day 12) and web wave 2 shipped after a blind review of a green union found six defects. **Held WHOLE in D-517 and `METRICS.md` (session 2026-09-17); do not re-derive.**
+
+Run 433's manifest is byte-identical to run 432's across the wave-1 merge — D-515's claim that web
+work cannot move the confirm window, measured, and reproduced again on run 434. The wave-2
+features (follow-up dates, the applied history at `#/applied`) are shipped; **the job-keyed
+follow-up route that made the 58 imported applications usable is T94 (D-520).**
+
+### 2026-09-16 — run 432 (confirm day 11), the web-only-UI ruling, web wave 1 (PR #381). **Held WHOLE in D-515, D-516 and `METRICS.md` (session 2026-09-16); do not re-derive.**
+
+`boardwatch web` is the ONLY UI — never publish an artifact, sheet or CSV of the queue — and web
+work continues through the confirm window because `delivery/`, `store/delivery_queries.py` and
+`web/` are outside the four digested engine modules (D-515). Wave 1: gate verdict on every row,
+"new since last visit", ATS sort, bulk skip, `jurisdiction` in words, the dialog sheet; and
+`judge_seniority_above_band` had never been on the wire (D-516). Stale-policy gate rows 36 → 5:
+D-512 works.
+
+### 2026-09-14b → 2026-09-15 — B8's PRECISION half MET (its VOLUME half was never read — see 2026-09-19); every bar clear except the two dated readings on 09-19, both since taken. **Held WHOLE in D-506 … D-514 and `METRICS.md` (sessions 2026-09-14b and 2026-09-15); do not re-derive.**
+
+The apply lane read end to end by the production judge (D-507: 23% is NOT a defect rate); rule
+(a)'s standing-side drain (D-506); the ≤1-YoE harvest (D-509); applied history imported 18 → 61;
+D-508's corrected count; D-510's review of the live store; D-511's prefix-match defect and the
+797-lead re-judge; **the judge does not reproduce (65.6% self-agreement on `decision`)**; D-512's
+exact-version freshness fix; D-513's B8 mis-quote; **D-514: B8 MET post-drain at 6.9% / 5.6%**,
+the hold demoting ~26 applyable leads per 160 as its cost. Owner's worklist
+`~/boardwatch-apply-2026-09-14/` is superseded by the web app (D-515).
