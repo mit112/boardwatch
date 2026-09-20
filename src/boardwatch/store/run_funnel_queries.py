@@ -46,6 +46,7 @@ from boardwatch.store.queries import body_is_empty
 from boardwatch.store.tables import (
     applications,
     artifacts,
+    board_scans,
     companies,
     eligibility_evaluations,
     eligibility_inputs,
@@ -901,4 +902,80 @@ def count_applied_for_postings(conn: Connection, posting_ids: list[int]) -> int:
                 applications.c.status.in_(APPLIED_STATUSES),
             )
         ).scalar_one()
+    )
+
+
+@dataclass(frozen=True)
+class NeverCompleteBoard:
+    """One watched board that has never recorded a `complete` scan, and what hangs on it.
+
+    **Counts "no `complete` board scan has ever been recorded", which INCLUDES a board that
+    has never been scanned at all.** The two causes differ; the consequence does not. Absence
+    closure (`scan/apply.py::apply_board`) reaches `_process_missing` only under a `complete`
+    snapshot, and the death sweep's `unreachable_by_the_scanner` excludes a watched company by
+    construction — so under either cause no owner can ever retire these postings. Splitting
+    them would add a second field with no second remedy behind it.
+
+    **"Never" carries no time window, and must not grow one.** A threshold would need a
+    configured staleness horizon and its own justification; "has this board ever produced a
+    complete inventory" needs neither, and self-clears the moment one lands.
+
+    `open_postings` is the size of the hole, counted straight out of `postings` rather than
+    from `board_scans.postings_listed` — the same "count the deliverable through a different
+    path" rule the rest of this module follows. A board holding none is not reported: there
+    is nothing under it that cannot be retired.
+    """
+
+    provider: str
+    board_slug: str
+    open_postings: int
+
+    @property
+    def board(self) -> str:
+        return f"{self.provider}:{self.board_slug}"
+
+
+def watched_boards_never_complete(conn: Connection) -> tuple[NeverCompleteBoard, ...]:
+    """The standing population neither liveness owner can retire (T117).
+
+    Distinct from `ScanContext.boards_partial`, which is this run's EVENT: one partial scan is
+    ordinary, and every provider emits one on a single per-posting parse error. What had no
+    counter anywhere is the board that has produced nothing BUT those, run after run.
+
+    `status = 'complete'` is checked over the board's whole history with no `run_id` and no
+    `scan_kind` filter. Kind is deliberately not filtered: `apply_board` runs the same absence
+    closure whatever wrote the snapshot, so a `complete` row of any kind is a real owner. (No
+    lane can produce one today — `lanes/base.py` hard-codes `partial` — which is why the live
+    population is what it is.)
+    """
+    # Aggregated BEFORE the company join, and the `complete` test is a flat `NOT IN` over
+    # company ids rather than a correlated `NOT EXISTS`. Both matter: a correlated subquery
+    # evaluated per joined POSTING row costs 7.8 s on a live-sized store (260k open postings,
+    # 44k scan rows, no index on `board_scans.company_id`), and this shape costs 0.04 s for the
+    # same answer. Measured, not assumed. `NOT IN` is safe here where `no_current_evaluation`'s
+    # warning would bite: `board_scans.company_id` is NOT NULL, so the subquery cannot yield a
+    # NULL and silently empty the result.
+    open_by_company = (
+        select(postings.c.company_id, func.count().label("open_postings"))
+        .where(postings.c.status == "open")
+        .group_by(postings.c.company_id)
+        .subquery()
+    )
+    ever_complete = select(board_scans.c.company_id).where(board_scans.c.status == "complete")
+    rows = conn.execute(
+        select(companies.c.provider, companies.c.slug, open_by_company.c.open_postings)
+        .select_from(
+            companies.join(open_by_company, open_by_company.c.company_id == companies.c.id)
+        )
+        .where(companies.c.watched.is_(True))
+        .where(companies.c.id.not_in(ever_complete))
+        # Biggest hole first: the operator triages by how many postings are stranded, and a
+        # stable order is what lets two runs' artifacts be diffed.
+        .order_by(
+            open_by_company.c.open_postings.desc(), companies.c.provider, companies.c.slug
+        )
+    ).all()
+    return tuple(
+        NeverCompleteBoard(provider=str(provider), board_slug=str(slug), open_postings=int(count))
+        for provider, slug, count in rows
     )

@@ -31,8 +31,17 @@ from boardwatch.store.run_funnel_queries import (
     lead_provenance,
     posting_ids_judged_this_run,
     sweep_duplicates,
+    watched_boards_never_complete,
 )
-from boardwatch.store.tables import applications, companies, jobs, posting_versions, postings, runs
+from boardwatch.store.tables import (
+    applications,
+    board_scans,
+    companies,
+    jobs,
+    posting_versions,
+    postings,
+    runs,
+)
 
 NOW = utcnow()
 KIND, VERSION = "deterministic", "v1"
@@ -414,9 +423,12 @@ def test_merely_being_interested_is_not_being_applied(engine: Engine) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def _board(conn: Connection, slug: str, *, source: str = "user", provider: str = "greenhouse") -> int:
+def _board(
+    conn: Connection, slug: str, *, source: str = "user", provider: str = "greenhouse",
+    watched: bool = True,
+) -> int:
     return int(conn.execute(insert(companies).values(
-        name=slug, provider=provider, slug=slug, source=source, watched=True,
+        name=slug, provider=provider, slug=slug, source=source, watched=watched,
     )).inserted_primary_key[0])
 
 
@@ -773,3 +785,134 @@ def test_a_whitespace_only_body_of_tabs_and_newlines_counts_as_a_stub(engine: En
         _posting(conn, "x", body_text="\t\n  ")
     with engine.connect() as conn:
         assert sum(count_stub_postings_by_company(conn).values()) == 1
+
+
+# --------------------------------------------------------------------------------------
+# Watched boards no liveness owner can retire (T117)
+# --------------------------------------------------------------------------------------
+#
+# Two owners retire a dead posting and a class falls between them. Absence-based closure
+# (`scan/apply.py::apply_board`) only calls `_process_missing` under a `complete` snapshot, and
+# the death sweep's `unreachable_by_the_scanner` predicate excludes a WATCHED company by
+# construction. A watched board whose scans are never `complete` therefore has neither, and
+# every provider demotes a whole board to `partial` on one per-posting parse error — so the
+# class is fleet-wide rather than one provider's quirk. These tests pin the standing population
+# the run funnel had no counter for.
+
+
+def _scan(
+    conn: Connection, company_id: int, status: str, *, scan_kind: str = "board"
+) -> None:
+    conn.execute(insert(board_scans).values(
+        run_id=_run(conn), company_id=company_id, started_at=NOW, finished_at=NOW,
+        status=status, postings_listed=0, scan_kind=scan_kind,
+    ))
+
+
+def test_a_watched_board_that_never_scanned_complete_is_named_with_its_open_postings(
+    engine: Engine,
+) -> None:
+    """The reported class: watched, scanned, never `complete`, still holding open postings.
+
+    Both halves are asserted because both are the operator's question — WHICH board (nothing
+    else in the artifact says it) and HOW MANY postings sit under it (the size of the hole).
+    """
+    with engine.begin() as conn:
+        board = _board(conn, "half")
+        _scan(conn, board, "partial")
+        _scan(conn, board, "partial")
+        _posting_on(conn, board, "a")
+        _posting_on(conn, board, "b")
+        _posting_on(conn, board, "c")
+
+    with engine.connect() as conn:
+        rows = watched_boards_never_complete(conn)
+
+    assert [(r.board, r.open_postings) for r in rows] == [("greenhouse:half", 3)]
+
+
+def test_a_watched_board_with_one_complete_scan_ever_is_not_named(engine: Engine) -> None:
+    """The discriminating control. Without it the query could be "every watched board" —
+    or "every watched board whose LATEST scan was not complete" — and still look right on
+    the test above. One `complete` scan in the whole history gives the board an
+    absence-closure owner, and "never" carries no time window, so it is cleared for good.
+    """
+    with engine.begin() as conn:
+        board = _board(conn, "recovered")
+        _scan(conn, board, "partial")
+        _scan(conn, board, "complete")
+        _scan(conn, board, "partial")
+        _posting_on(conn, board, "a")
+
+    with engine.connect() as conn:
+        assert watched_boards_never_complete(conn) == ()
+
+
+def test_an_unwatched_board_that_never_scanned_complete_is_not_named(engine: Engine) -> None:
+    """An unwatched board is `unreachable_by_the_scanner`, so the death sweep DOES own it.
+
+    Counting it here would merge two populations with different remedies and put the 274
+    unwatched `source='user'` companies D-314 already routed to the sweep back into a report
+    that says nothing can retire them.
+    """
+    with engine.begin() as conn:
+        board = _board(conn, "swept", watched=False)
+        _scan(conn, board, "partial")
+        _posting_on(conn, board, "a")
+
+    with engine.connect() as conn:
+        assert watched_boards_never_complete(conn) == ()
+
+
+def test_a_watched_board_with_no_scan_row_at_all_is_named(engine: Engine) -> None:
+    """Resolved INTO the class, not out of it.
+
+    "Scanned but never complete" and "never scanned" are different causes with one
+    consequence: no `complete` snapshot has ever reached `_process_missing`, and the board is
+    watched, so the sweep will not look either. The field counts the consequence — see its
+    docstring — because the operator's remedy is the same and splitting it would need a
+    second field with no second action behind it.
+    """
+    with engine.begin() as conn:
+        board = _board(conn, "never-ran")
+        _posting_on(conn, board, "a")
+
+    with engine.connect() as conn:
+        rows = watched_boards_never_complete(conn)
+
+    assert [(r.board, r.open_postings) for r in rows] == [("greenhouse:never-ran", 1)]
+
+
+def test_a_watched_board_holding_no_open_postings_is_not_named(engine: Engine) -> None:
+    """Zero open postings is zero unretirable postings — there is no hole to report.
+
+    A closed posting is already retired, so it must not keep its board on the list either:
+    without the status filter the row below would report a board with nothing at stake.
+    """
+    with engine.begin() as conn:
+        empty = _board(conn, "empty")
+        _scan(conn, empty, "partial")
+        shut = _board(conn, "shut")
+        _scan(conn, shut, "partial")
+        _posting_on(conn, shut, "a", status="closed")
+
+    with engine.connect() as conn:
+        assert watched_boards_never_complete(conn) == ()
+
+
+def test_the_biggest_hole_is_named_first(engine: Engine) -> None:
+    """Ordered by postings at risk, descending — the operator triages by size, and a stable
+    order is what lets two runs' artifacts be diffed at all."""
+    with engine.begin() as conn:
+        small = _board(conn, "small")
+        _scan(conn, small, "partial")
+        _posting_on(conn, small, "a")
+        big = _board(conn, "big")
+        _scan(conn, big, "failed")
+        for tag in ("b", "c", "d"):
+            _posting_on(conn, big, tag)
+
+    with engine.connect() as conn:
+        rows = watched_boards_never_complete(conn)
+
+    assert [r.board for r in rows] == ["greenhouse:big", "greenhouse:small"]
