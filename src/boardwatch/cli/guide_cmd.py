@@ -529,6 +529,11 @@ only.""",
         ("reads store",),
         "Duplicate leakage over `--days` (the Gate P6 number). Takes `--json`.",
     ),
+    "identities memberships": Entry(
+        ("reads store",),
+        """Multi-posting jobs whose recorded grouping evidence no longer holds, and whether each
+carries a live disposition or an application. Reports only — nothing splits a job.""",
+    ),
     "ledger show": Entry(
         ("reads store",),
         """Every job the delivery ledger is suppressing, with disposition, reason and whether it
