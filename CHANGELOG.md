@@ -8,6 +8,34 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run may no longer claim success it never durably recorded (2026-09-20, T129).** The
+  heartbeat gate asked whether the run had a `fatal`, a funnel and a morning file, and never
+  whether it had closed its own row — so `finish_run` raising left `status='running'` with
+  `finished_at` NULL while the success-only monitor was pinged anyway. Runs 310 and 312 sat in
+  exactly that state for 35.2 hours before the reaper closed them, and nothing else noticed.
+  Terminal persistence is now a fourth clause on that gate and is retried once as a bounded unit.
+  The failure note also moved below `escalatable_from`: it was appended above the boundary, making
+  the most consequential alert the block can raise the one alert excluded from the escalation
+  channel. Four finalize-block alerts that had no `try` at all — scan outage, gate failed-open,
+  T107 item coverage and seniority — are guarded, since a store fault on any of them aborted
+  `_emit_morning`, the heartbeat and the escalation beneath it.
+- **A scan that returned usable postings is degraded, not a systemic outage (2026-09-20, T130).**
+  `is_systemic_scan_outage` tested `complete == 0 and unchanged == 0` and ignored `partial`, so a
+  board returning real postings counted as nothing: five live runs (23/26/31/36/37) were stamped
+  `failed` with an empty error list, and no run in the store has ever been a true outage. Fatal is
+  now reserved for zero usable evidence — none complete, none unchanged, none partial — and the
+  partial-only shape raises a new non-fatal `degraded_scan_alert` instead. Recorded on both callers:
+  all five instances were standalone `boardwatch scan` calls, which `run_pipeline`'s copy of the
+  alert cannot see, and the standalone append is gated on `finish` so the pipeline cannot
+  double-record. Owner ruling, 2026-09-20. One predicate still serves both callers (D-037).
+- **The web app retries a SQLite snapshot conflict instead of dropping the connection
+  (2026-09-20, T132).** `_is_locked` classified contention by result code — correctly refusing to
+  match message prose — but tested only `SQLITE_BUSY` (5) and `SQLITE_LOCKED` (6). Every write
+  route reads before it writes, so the contention it actually meets is `SQLITE_BUSY_SNAPSHOT`
+  (517), whose message is also `database is locked`. The bounded retry was skipped and the owner's
+  skip, unskip or applied click escaped the handler as a dropped connection. An obsolete WAL read
+  snapshot cannot be upgraded in place, so retrying the whole transaction — which `_write` already
+  did — is the only thing that fixes it.
 - **Lane-copy suppression reads only the current identity generation (2026-09-20, T114).** The
   three readers of `posting_identities` that elect a lane copy's holder — `_suppress_lane_copies`,
   `standing_board_cross_host_keys` and `lane_copy_job_ids` — selected `kind == "cross_host"` with no

@@ -20,66 +20,53 @@
 
 ## Current standing
 
-### 2026-09-20 — **ASTRA REVIEW 03 IS CONSUMED (D-525): ALL SEVEN FINDINGS CONFIRMED, AND THE SEVERITY RANKING INVERTS UNDER MEASUREMENT. T114–T119 ALL SHIPPED, TWO GATED WAVES. T120–T127 TICKETED in `TICKETS-2026-09-20-ASTRA-03.md`. ONE OWNER QUESTION RULED; THE OTHER DELIBERATELY NOT PUT. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
+### 2026-09-20b — **ASTRA REVIEW 04 IS CONSUMED (D-526): ALL TEN FINDINGS CONFIRMED, THE RANKING INVERTS AGAIN, AND THE VERIFIER FOUND A WRONG-NOW BUG ASTRA HAD FILED AS SOUND. T129/T130/T132 SHIPPED, ONE GATED WAVE. T131 + T133–T139 TICKETED in `TICKETS-2026-09-20-ASTRA-04.md`. TWO OWNER QUESTIONS RULED, BOTH PRICED FIRST. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
 
-All three falsifiers re-run here (**byte for byte, every line**); every cited `file:symbol` opened
-by a read-only Opus verifier on the seat (`.agent/astra/verify/03-report.md`, 84 turns, $4.67).
-Nothing refuted.
+Falsifier re-run at `main` (**7 passed, byte for byte**); every `file:symbol` opened by a read-only
+Opus verifier on the seat (`.agent/astra/verify/04-report.md`, **120 turns, $10.75**). Nothing
+refuted; F9 lowered. **Gate: `make check` exit 0, 10,498 passed (baseline 10,470), 9m51s,
+coverage 95.23%.** Seat spend $20.20 over four dispatches.
 
-**The finding to act on is NOT the one astra ranked first.** Measured read-only, each with a null
-control: **F1 0 diverged** of 383 multi-posting jobs · **F2 0** (only `p6.3` on disk) · **F3 0**
-(535 merge events, all whole-job) · **F4 0** (`app_state` empty) · **F5 0** (1,018/1,018 folder
-hashes, 901/901 PDF digests). All five are marked `wrong-now`. The one marked `design-limit`,
-**F6, is 16,510 open postings — 6.3% of the open corpus** — under 8 watched boards that have NEVER
-recorded a `complete` scan, retirable by neither absence-closure nor the death sweep. **So the
-tests are the only evidence five of these six fixes work**, which is why every ticket demanded a
-discriminating red and mutation evidence.
+**The severity ranking inverts under measurement for the SECOND review running.** Four of astra's
+five `wrong-now` findings have **zero** live population — **F1** 0 pipeline×pipeline overlaps in
+468 runs · **F3** 0 (`app_state` holds 0 rows) · **F4** 0 · **F7** 1,396/1,396 `.tex` present, and
+the 494 PDF-less folders are all `pending_tailor` review stubs. **F10, marked `improvement`, has
+FIVE** (runs 23/26/31/36/37), and its control decides it: **0 of 70 scanning runs ever had zero
+usable evidence**, so the outage predicate has never once fired on a real outage.
 
-**Shipped, both waves gated: `make check` exit 0, 10,432 then 10,470 passed (baseline 10,383),
-9m01s and 9m33s, coverage 95.18% → 95.23%.** T114 lane-copy readers filter to the current identity
-generation · T115 a regroup may not release a non-empty source nor strand a queue action · T116
-queue sync verifies the destination's own bytes · T117 the funnel names the unretirable boards ·
-T118 `identities memberships` · T119 a revised built lead re-enters review.
+**SHIPPED.** **T129** — the heartbeat gate asked `fatal`/`funnel`/`morning` and never whether the
+run closed its own row, so a run stuck `running` pinged the success-only monitor; the finish-failure
+note also sat ABOVE `escalatable_from`, making it the one alert excluded from the channel it most
+needed. Four finalize alerts with **no `try` at all** are guarded. **T130** — `partial` enters the
+outage predicate; fatal is now zero-usable-evidence only. **T132** — `_is_locked` tests codes 5/6,
+but a DEFERRED read-then-write gets **517** with the same `database is locked` message, so an
+owner's skip during a run escaped as a dead connection (`RemoteDisconnected`).
 
-**Three verifications run HERE rather than taken from an executor's report.** T114's red against
-unchanged `main`: 9 failed / 120 passed. T116's: 8 failed / 2 passed. T117's mutations re-run
-against the LIVE store, which its fixtures cannot reach — dropping `watched` gives 2,770 boards
-instead of 8, and scoping to the LATEST scan rather than the whole history gives 1,238 / 131,607,
-which is why "never" is the defensible claim.
+**T130 SHIPPED INCOMPLETE AND ONLY THE LIVE MEASUREMENT COULD SHOW IT.** All five instances were
+**standalone `boardwatch scan`** calls (`corpus_evaluated IS NULL`; two ingested 879 and 344
+postings), so a pipeline-only alert turned them from `failed`-with-a-reason into
+**`ok`-with-NOTHING**. Fixed in `_scan_body`, gated on `finish`. **Nothing pinned non-duplication** —
+relax the gate and 136 tests pass, because the assertion was `any(...)`; it is exactly-once now.
 
-**Two figures produced in this session were corrected by the work itself.**
-1. **The ruling was put to Mit as "34 of 887"; the shipped rule makes it 23.** T119 routes on
-   `capture_reason='revised'` only. All 11 jobs whose post-build capture is `new` are
-   MULTI-posting, 0 are single-posting — so a post-build `new` is a sibling requisition appearing
-   after the build, never the built posting changing.
-2. **T119 overturned this session's ordering instruction and was right.** `classify` has TWO exits
-   to the apply queue; the branch belongs at `review_gate.py:376`, ABOVE the `eligible`
-   short-circuit. Below it would have gutted the hold, since `eligible` is precisely the verdict
-   that reaches blind-apply.
+**TWO APPARATUS CORRECTIONS, both caught before the number was used.** The overlap probe first read
+**259** — but **396 of 468 run rows are CLI invocations, not pipelines** (p50 duration 0.0 min), and
+restricted to pipelines it is 0. A delivered-unapplied query returned a clean 0 because
+**`artifacts.job_id` is NULL on all 1,396 `resume_tailored` rows**.
 
-**OWNER RULING (2026-09-20).** A built-but-unapplied lead whose posting is materially revised
-**auto-routes to review** under its own reason. **Astra's second owner question was NOT put** —
-its own F7 requires the blind pair adjudication first, and a ruling is only as wide as the question
-put. Recorded as owed a measurement (T125), not a ruling.
+**OWNER RULINGS (Mit, 2026-09-20), both priced before asking.** A partial-only scan is **degraded,
+not fatal** (5 live instances; 0 of 70 runs a true outage). Delivery-queue publication is **NOT** a
+run-success condition (**0** queue failures in 468 runs) — which bounds T129.
 
-**THE NEXT LIVENESS TICKET HAS ITS ARGUMENT, and it is not astra's.**
-`store/delivery_queries.py:343` (`_status`) asks "does anything enumerate this board?" and answers
-it with `companies.watched` — which means *configured for scans*, not *enumeration succeeds*. The
-16,510 therefore render to the owner as verified-`open` while being exactly as unverifiable as the
-`not watched` class D-314/D-324 already named. **T122 corrects the column; build T123's full
-inventory/detail split on that, not on "expand sweep selection".**
+**Corrected here:** `RUN_CONTRACT.md` fatal row 1, wrong in both clauses after T130. Its wider drift
+— the table lists **five** fatal conditions and the code has **13**, and it says `except Exception`
+where the code catches `BaseException` — is **T139's**, and refactoring against the stale table
+would change semantics silently.
 
-**The seat executed; this session orchestrated, verified and gated.** Six executors plus one
-read-only verifier, four at once on Mit's answer. Windows was dispatched **deliberately**: D-151
-keeps it off the per-push path and the cross-platform job is `if: != 'pull_request'`, so a PR runs
-only Ubuntu shards, lint and type — and T116's change exists *because* of cross-platform byte
-determinism. **Result: 3 failed / 10,348 passed on each Python, and none of the three is this
-work's** — a path separator, `time.tzset` (which does not exist on Windows), and a non-executable
-shell stub. **All three are already red on `main`:** the scheduled run at 2026-09-20T12:08Z, before
-any commit here, failed with exactly those three. **T128** re-greens them. Note for whoever takes
-it: T119 edits both files the path-separator test names, so a reader could mistake a portability
-bug for a D-332 violation — it failed only on slash direction, never on the call-site count.
+**Known unpinned assumption, recorded not hidden:** `_finish_run_with_one_retry`'s docstring claims
+the attempt that raised committed nothing, but the test's fake raises before calling through, so the
+commit-then-raise path is untested.
 
+### 2026-09-20 — astra review 03 (identity, liveness, ledger, dedup, queue) consumed: all seven findings confirmed, T114–T119 shipped in two gated waves, T120–T128 ticketed, one owner ruling. **Held WHOLE in D-525 and `TICKETS-2026-09-20-ASTRA-03.md`; do not re-derive.** Its live residual is F6's **16,510 open postings (6.3%) under 8 boards that have never scanned `complete`** — T122 corrects `_status`'s `watched` column, and T123 builds on that argument, not on "expand sweep selection".
 
 ### 2026-09-19e — astra review 02 (the apply-lane stack) consumed: all eight findings confirmed, T106–T109 and T112 shipped, T110/T111/T113 ticketed, three owner questions ruled. **Held WHOLE in D-524 and `TICKETS-2026-09-19-ASTRA-02.md`; do not re-derive.** Its live residual is next action 4's one-time re-judge (with T108 folded in) and T113's 97 uncovered delivered versions. `main`'s four-commit CI red — two `web/` tests pinning a literal future date, reproducible only under `TZ=UTC` — was fixed there and is unrelated to the review.
 
