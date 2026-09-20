@@ -28,8 +28,8 @@ lane's defect is that its CONSUMERS do not honour the distinctions the stack dra
 does not fail open at three seams it claims to (F2, **fixed: T106**); a PARTIAL judge outage is
 neither counted nor escalated — run 467 carried one (F4, **fixed: T107**); the gate row key does not vary
 with the judge MODEL, so the pending model move would reach new leads only (F1, **fixed: T108**);
-four standing call sites drop the title-seniority hold and none can see a judge NEGATIVE (F3, **fixed:
-**T109**); three lexical spellings classify inconsistently (F5, **fixed: T112**); B8's instrument is
+four standing call sites drop the title-seniority hold and none can see a judge NEGATIVE
+(F3, **fixed: T109** — the 12 leads below leave the apply lane for review the day it lands); three lexical spellings classify inconsistently (F5, **fixed: T112**); B8's instrument is
 the pre-form-sweep render count (F6, **T110**) and a routing change moves no manifest hash (**T111**);
 a stale gate negative suppresses its own repair and the one manual path reads through the same hide
 (F1, **T113**).
@@ -56,6 +56,14 @@ recorded as the v2 boundary.
 
 **T108 must land before the judge-model move** (next-action 4): without it the move reaches new
 leads only. It also collapses T99's pending one-time re-judge into the same run.
+
+**The session's split, and its cost.** This session orchestrated, verified and gated; the enterprise
+seat executed. **Seat total $43.57** — verify $3.56 (54 turns), T106 $4.75 (55), T107 $6.97 (66),
+T108 $6.01 (88), T109 **$19.17 (165)**, T112 $3.11 (45). **T109 cost 3-4x every other ticket** and
+is the number to size the next plumbing-shaped ticket against: it rewrote five call sites into one,
+touched `web/` (the `ReviewReason` catalog is mirrored in TypeScript), and ran seven mutations.
+Four `make check` runs were spent here, not on the seat (executors are barred from the gate):
+union 10:39, docs 12:20, wave-2 08:14, final 07:19 — all exit 0, 10,348 then 10,383 passed.
 
 **`main`'s CI was RED for four consecutive commits before this session and is now GREEN — the cause
 was NOT the review.** Two tests in `web/src/__tests__/followUp.test.tsx` pinned `2026-09-20` as a

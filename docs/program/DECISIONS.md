@@ -29611,3 +29611,24 @@ field of the same row, armed at one place upstream (`settings.gate.seniority_hol
 `Record<ReviewReason, …>`, so the new member would not compile without it — and therefore required
 a `make web` rebuild, because `tests/unit/test_web_bundle_freshness.py` hashes every file under
 `web/`, test files included.
+
+**The session's cost, recorded because the sizing is the reusable part.** Seat total **$43.57**:
+verify $3.56 (54 turns), T106 $4.75 (55), T107 $6.97 (66), T108 $6.01 (88), **T109 $19.17 (165)**,
+T112 $3.11 (45). **T109 alone cost 3-4x every other ticket** — it collapsed five call sites into
+one, crossed into `web/` because `ReviewReason` is mirrored in TypeScript, and ran seven mutations.
+Size the next plumbing-shaped ticket against T109, not against the four pattern-shaped ones. The
+four `make check` runs stayed in the orchestrating session (executors are barred from the gate):
+10:39, 12:20, 08:14, 07:19, all exit 0.
+
+**One thing outside the review was fixed because it blocked everything: `main`'s CI had been RED for
+FOUR consecutive commits** (`9a7f2940`, `b7a9c3ab`, `88eb56a6`, and it would have taken this
+session's first push too). Two tests in `web/src/__tests__/followUp.test.tsx` pinned `2026-09-20` as
+a LITERAL future date; the follow-up chip renders `follow-up <d>` while `d` is future and
+`follow-up due <d>` once it is today or past, so the assertion silently became a different one the
+day the literal arrived — and CI, running in UTC, crossed that boundary five hours before local did.
+**A green local gate could not predict it and a re-run could not reproduce it**; `TZ=UTC` reproduces
+it exactly (2 of 25 fail, the two CI named). Both tests now derive the date from
+`isoDaysFromToday(7)`, the helper the rest of the file already used. The other 14 date literals in
+that file compare dates to each other or to an input's own value, never to today, and were left
+alone. Editing a test under `web/` also owes `make web`: the bundle manifest hashes every file
+under `web/`, test files included.
