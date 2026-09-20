@@ -101,6 +101,16 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: this employer's application form asks a citizenship or export-control question that the job description never mentions. Read the form before applying.",
   },
+  revised_since_build: {
+    label: "revised since build",
+    // States what MOVED, never what the posting now requires. Every other member reports a
+    // reading of the current version; this one reports only that the version the résumé was
+    // tailored against is no longer the one on the board, which is a fact about our own history
+    // and not a finding about the job. Worded to send the reader to the diff rather than to a
+    // verdict: there is no verdict here to weigh.
+    reason:
+      "Held for review: a résumé was built for this lead and the posting has been revised since. The job description has moved under the document that was tailored for it — re-read it before applying.",
+  },
   unevaluated: {
     label: "not evaluated",
     reason:

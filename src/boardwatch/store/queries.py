@@ -782,6 +782,57 @@ def canonical_job_ids(conn: Connection, posting_ids: Sequence[int]) -> dict[int,
     return resolved
 
 
+#: The one `posting_versions.capture_reason` that means THIS posting's body moved under us.
+#:
+#: Read positively against the closed column catalog, never as `!= "new"`. `scan/apply.py` writes
+#: `revised` at exactly one place (`:243`), inside the branch that fires when
+#: `row.content_hash != new_hash`. `new` (`:199`) is written only in the branch that INSERTS the
+#: posting, so it is the first capture of a posting and not a change to one; the two `backfill_*`
+#: reasons are reconstructions of history rather than observations of a change. None of those
+#: three is evidence that a body moved, so none of them may be read as one.
+REVISION_CAPTURE_REASON = "revised"
+
+
+def latest_revision_at(conn: Connection, posting_ids: Sequence[int]) -> dict[int, datetime]:
+    """posting_id -> when its body was last observed to CHANGE, for the postings where it has.
+
+    A posting with no `revised` capture is ABSENT rather than present with a null date: "never
+    revised" and "revised at an unknown time" are different claims, and only the caller knows
+    which of them is safe to treat as "no".
+
+    The MAX rather than the newest version's timestamp: the question is when this posting last
+    moved, which a later `backfill_*` row must not be able to answer and a later `new` row cannot
+    exist to answer. Ordering by `captured_at` alone is safe here for the same reason
+    `current_posting_versions` needs a tie-break and this does not — two revisions captured in one
+    transaction share a timestamp, and the aggregate does not have to choose between them.
+
+    Chunked past SQLite's 32,766 bound-parameter cap exactly as `current_posting_versions` below
+    is, and chunk-and-merge is exact because the aggregate is grouped per posting: a posting's
+    answer does not depend on which chunk it arrived in.
+    """
+    if not posting_ids:
+        return {}
+    stmt = (
+        select(
+            posting_versions.c.posting_id,
+            func.max(posting_versions.c.captured_at).label("captured_at"),
+        )
+        .where(posting_versions.c.capture_reason == REVISION_CAPTURE_REASON)
+        .group_by(posting_versions.c.posting_id)
+    )
+    out: dict[int, datetime] = {}
+    for chunk in id_chunks(list(posting_ids)):
+        out.update(
+            {
+                int(row.posting_id): row.captured_at
+                for row in conn.execute(
+                    stmt.where(posting_versions.c.posting_id.in_(chunk))
+                ).all()
+            }
+        )
+    return out
+
+
 def current_posting_versions(
     conn: Connection, posting_ids: Sequence[int] | None = None
 ) -> dict[int, CurrentVersion]:

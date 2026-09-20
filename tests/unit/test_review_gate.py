@@ -42,6 +42,7 @@ _INERT: dict[str, object] = {
     "seniority_above_band": False,
     "judge_verdict": None,
     "judge_seniority_above_band": False,
+    "revised_since_build": False,
 }
 
 
@@ -1131,6 +1132,94 @@ def test_lane_projects_the_rejection_too() -> None:
     boolean (D-332)."""
     for judged in (None, "eligible", "uncertain", "ineligible"):
         kwargs = {"verdict": "eligible", **_US_SWE, "judge_verdict": judged}
+        decision = classify(**kwargs)  # type: ignore[arg-type]
+        assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
+        assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# ------------------------------------------------------------------------------------------
+# T119 — the posting was REVISED after the lead was built, and the lead is still unapplied.
+# ------------------------------------------------------------------------------------------
+
+
+def test_a_lead_revised_since_its_build_is_held_under_its_OWN_reason() -> None:
+    """The owner's ruling, 2026-09-20, and the placement that makes it reach anything.
+
+    A `built` disposition governs its job permanently and `pipeline/policy.run_policy_version`
+    hashes the five run-manifest components, NOT posting content — so a body change moves no
+    stamp and D-103's stale-policy drain never fires for it. The lead sits in the apply queue
+    against a JD that has since changed, held on the evidence it was built against.
+
+    Asserted with `verdict="eligible"`, which is the whole of the placement claim: the hold sits
+    directly ABOVE the `eligible` short-circuit, so a lead the engine cleared on the REVISED body
+    is still held — the résumé was tailored against the body that moved, and the re-evaluation
+    says nothing about that. Below the short-circuit this branch would be inert for exactly the
+    population that reaches the blind-apply queue.
+    """
+    assert classify(verdict="eligible", **_US_SWE, revised_since_build=True) == LaneDecision(
+        REVIEW_DIR, "revised_since_build"
+    )
+
+
+def test_an_unrevised_lead_is_untouched_by_the_new_hold() -> None:
+    """The control, and it is the live majority: 853 of the 887 built-but-unapplied jobs
+    measured on 2026-09-20 carry no posting version captured after their build decision."""
+    assert classify(verdict="eligible", **_US_SWE, revised_since_build=False) == LaneDecision(
+        "", None
+    )
+    assert classify(
+        verdict="uncertain", **_US_SWE, judge_verdict="eligible", revised_since_build=False
+    ) == LaneDecision("", None)
+
+
+@pytest.mark.parametrize(
+    ("above", "reason"),
+    [
+        ({"posting_closed": True}, None),
+        ({"form_question_hit": "Are you a U.S. citizen?"}, "form_question_hard_stop"),
+        ({"verdict": "ineligible"}, "ineligible_verdict"),
+        ({"locations": ["Kaunas, Lithuania"]}, "non_us_location"),
+        ({"title": "Registered Nurse Practitioner"}, "role_vetoed"),
+        ({"title": "Front Office Agent"}, "role_unconfirmed"),
+        ({"seniority_above_band": True}, "seniority_above_band"),
+        ({"judge_verdict": "ineligible"}, "judged_ineligible_verdict"),
+        ({"judge_seniority_above_band": True}, "seniority_judged_above_band"),
+    ],
+    ids=[
+        "closed", "form-hard-stop", "deterministic-ineligible", "non-us", "role-vetoed",
+        "role-unconfirmed", "title-band", "judged-ineligible", "judged-senior-body",
+    ],
+)
+def test_every_stronger_hold_outranks_the_revision(
+    above: dict[str, object], reason: str | None
+) -> None:
+    """The ordering argument, asserted rather than asserted-in-a-comment.
+
+    A revision makes the engine re-evaluate the NEW version, so `verdict`, `locations`, `title`
+    and both judge readings above already describe the revised posting. A current `ineligible`,
+    a confirmed non-US location or a vetoed title on the revised body is strictly MORE
+    informative than "it changed", so each must win; "the JD moved under the résumé you built"
+    is what is left when nothing more specific holds.
+    """
+    kwargs = {"verdict": "uncertain", **_US_SWE, "revised_since_build": True, **above}
+    assert classify(**kwargs).reason == reason  # type: ignore[arg-type]
+
+
+def test_the_revision_hold_outranks_nothing_below_it_because_nothing_is_below_it() -> None:
+    """The other side of the placement: it is the LAST hold, so every reason that can still be
+    reported under it is reported. `eligible` is the first apply exit and the hold sits above it;
+    the three gates below that exit are only reachable with a non-`eligible` verdict, and there
+    the revision must still win, because it is read first."""
+    for flag in ("no_requirement_rows", "experience_unconfirmed", "eligibility_unconfirmed"):
+        assert classify(
+            verdict="uncertain", **_US_SWE, revised_since_build=True, **{flag: True}
+        ) == LaneDecision(REVIEW_DIR, "revised_since_build")
+
+
+def test_lane_projects_the_revision_hold_too() -> None:
+    """`lane` must not become a second opinion now that `classify` takes one more input (D-332)."""
+    for revised in (False, True):
+        kwargs = {"verdict": "eligible", **_US_SWE, "revised_since_build": revised}
         decision = classify(**kwargs)  # type: ignore[arg-type]
         assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
         assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)

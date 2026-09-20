@@ -44,7 +44,7 @@ write: `load_settings` creates no directory, and neither does `load_rules`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -69,8 +69,14 @@ from boardwatch.eligibility.read import (
 from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
 from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
+from boardwatch.store.ledger_queries import live_dispositions
 from boardwatch.store.quarantine_queries import is_quarantined
-from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
+from boardwatch.store.queries import (
+    CurrentVersion,
+    current_posting_versions,
+    get_profile,
+    latest_revision_at,
+)
 from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.tables import (
@@ -187,6 +193,17 @@ class QueueRow:
     #: consumers cannot each derive their own answer and disagree about one lead. Four of them did
     #: exactly that by omission — they took `classify`'s old `False` default — until T109.
     seniority_above_band: bool = False
+    #: T119. Whether this lead's job holds a LIVE `built` disposition, carries no application, and
+    #: this posting was `revised` after that build decision — i.e. the JD moved under the résumé
+    #: that was tailored for it.
+    #:
+    #: Derived ONCE per read by `revised_since_build_ids`, beside every other fact on this row and
+    #: for the same reason (D-332). Not persisted and not derivable from any column here: it is a
+    #: comparison between `job_dispositions.decided_at` and this posting's version history, and
+    #: the ledger stamp it would otherwise be read off is content-blind by construction.
+    #:
+    #: Defaulted `False` so a fixture built before this field existed routes exactly as it did.
+    revised_since_build: bool = False
 
     @property
     def closed(self) -> bool:
@@ -409,6 +426,7 @@ def _queue_row(
     judge_seniority_fit: str = "unclear",
     form_question_hit: str | None = None,
     band: TitleBandReader | None = None,
+    revised_since_build: bool = False,
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -444,6 +462,7 @@ def _queue_row(
             if band is None
             else band.above_band(str(row.title), (str(row.provider), str(row.slug)))
         ),
+        revised_since_build=revised_since_build,
     )
 
 
@@ -489,6 +508,7 @@ def lane_decision(row: QueueRow) -> LaneDecision:
         seniority_above_band=row.seniority_above_band,
         judge_verdict=row.judge_verdict,
         judge_seniority_above_band=row.judge_seniority_fit == "no",
+        revised_since_build=row.revised_since_build,
         form_question_hit=row.form_question_hit,
     )
 
@@ -980,6 +1000,12 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # of `profile_hash`, which is exactly why it must be recomputed here rather than stored.
     band = _title_band(conn, settings)
     now = utcnow()
+    # T119. Bounded by the same winner list as every read above it, and read here rather than
+    # per row: the ledger and the version history are two more tables, and a per-row derivation
+    # would be one query per lead against both.
+    revised = revised_since_build_ids(
+        conn, {int(row.posting_id): int(row.job_id) for row in ordered}, now=now
+    )
     return [
         _queue_row(
             row,
@@ -990,9 +1016,76 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             judge_seniority_fit=seniority.get(int(row.posting_id), "unclear"),
             form_question_hit=form_questions.get(int(row.posting_id)),
             band=band,
+            revised_since_build=int(row.posting_id) in revised,
         )
         for row in ordered
     ]
+
+
+def revised_since_build_ids(
+    conn: Connection, job_of: Mapping[int, int], *, now: datetime
+) -> set[int]:
+    """Which of `job_of`'s postings are BUILT, UNAPPLIED leads whose posting has moved since (T119).
+
+    `job_of` is `posting_id -> job_id`, supplied by the caller rather than looked up here, for
+    the reason this module binds no id list of its own: both callers already hold the pairing —
+    `delivered_unapplied` off its own winner rows, `_lead_lanes` off the select it already issues
+    for locations — and re-reading it would be a third query for a fact twice in hand.
+
+    PUBLIC because it has two readers and they must not each have their own, exactly as
+    `form_question_hits` below does: `delivered_unapplied` (the standing queue, the folder tree
+    and the page) and `pipeline.runner._lead_lanes` (the run's pre-tailor split). Two derivations
+    of "did this posting move after we built for it" would be the second opinion `_review` exists
+    to prevent (D-332), and they would disagree the first time either one was touched.
+
+    **The fact this answers, and why nothing else already reports it.** A `built` disposition
+    governs its job permanently, and `pipeline/policy.run_policy_version` hashes the five
+    run-manifest components and NOT posting content — so a body change moves no stamp and D-103's
+    stale-policy drain (`ledger reopen --stale`) never fires for it. Measured on the live store
+    read-only, 2026-09-20: of 887 built-but-unapplied jobs, 34 (3.8%) carry a `posting_versions`
+    row captured after `job_dispositions.decided_at`. Inverting the date comparison returns the
+    full 887, so the comparison discriminates rather than passing by construction.
+
+    **Three filters, and the hold is wrong without any one of them.**
+
+    * **A live `built` only.** Read through `ledger_queries.live_dispositions`, so
+      `core.ledger.is_live` decides and no liveness predicate is written in SQL here — the
+      reader/writer disagreement that module exists to prevent. A row the drain has already
+      REOPENED is therefore not `built` here: that lead is back in front of the owner by the
+      ordinary path and has nothing to re-enter. `disposition == "built"` is a plain catalog
+      comparison and not a liveness one, exactly as `facet_queries._built_job_ids` reads it.
+    * **Unapplied only.** An applied lead is done, and re-routing it would put finished work back
+      in front of the owner. Keyed on the canonical `job_id` through `applied_job_ids`, as every
+      other suppression is, so applying to one posting retires every sibling. Filtered HERE and
+      not left to the caller because `_lead_lanes` holds no applied set, and a fact that is true
+      at only one of two call sites is the drift T109 was written to stop.
+    * **A `revised` capture only** — see `queries.REVISION_CAPTURE_REASON`.
+
+    This function WRITES NOTHING and reads no ledger decision back into one. The `built` row keeps
+    governing: the lead is routed, never reopened.
+    """
+    if not job_of:
+        return set()
+    applied = applied_job_ids(conn)
+    built = {
+        job_id: row.decided_at
+        for job_id, row in live_dispositions(
+            conn,
+            now=now,
+            job_ids=sorted({job_id for job_id in job_of.values() if job_id not in applied}),
+        ).items()
+        if row.disposition == "built"
+    }
+    if not built:
+        return set()
+    revised = latest_revision_at(
+        conn, [posting_id for posting_id, job_id in job_of.items() if job_id in built]
+    )
+    return {
+        posting_id
+        for posting_id, captured_at in revised.items()
+        if captured_at > built[job_of[posting_id]]
+    }
 
 
 def form_question_hits(
@@ -1341,6 +1434,11 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # `form_question_hard_stop` -- the same field, the same lead, two answers, and the pane is the
     # surface where the reader decides. Same function, so the quote and the hold cannot differ.
     form_questions = form_question_hits(conn, {} if version is None else {posting_id: version})
+    # T119, read HERE for the reason every fact above it is, and this file records three separate
+    # times what happens when one is missed: the pane published `review_reason: null` for a lead
+    # the LIST held, on the surface where the reader decides whether to apply. `row.job_id` is
+    # non-`None` by the guard at the top of this function.
+    revised = revised_since_build_ids(conn, {posting_id: int(row.job_id)}, now=utcnow())
     return QueueDetail(
         row=_queue_row(
             row,
@@ -1354,6 +1452,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             # reported no hold for a lead the LIST holds as `seniority_above_band` -- the same
             # field, the same lead, two answers, on the surface where the reader decides.
             band=_title_band(conn, settings),
+            revised_since_build=posting_id in revised,
         ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(
