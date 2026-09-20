@@ -204,6 +204,47 @@ def test_reap_stale_runs_leaves_recent_running_and_old_ok_rows_untouched(engine:
     assert _run_row(engine, old_ok).status == RUN_OK
 
 
+def test_a_reap_that_matches_nothing_mutates_no_row_at_all(engine: Engine) -> None:
+    """D-020's claim is "writes nothing at all", and nothing pinned it.
+
+    The test above asserts the returned list is empty and checks ONE column on each of two rows.
+    That leaves the stronger claim uncovered: a reap that matches nothing could still stamp
+    `finished_at`, append a `reaped:` note, or touch a row it did not report, and every existing
+    assertion would still pass. `reap_stale_runs` always ISSUES its atomic UPDATE — the predicate
+    lives inside the statement — so "wrote nothing" can only mean "mutated no row", which is a
+    claim about the whole table rather than about two columns.
+
+    Snapshot every column of every row, not a count: a count is exactly what cannot see an
+    in-place overwrite.
+    """
+    recent_running = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=1))
+    old_ok = _insert_run_row(
+        engine, started_at=utcnow() - timedelta(hours=25), status=RUN_OK, finished_at=utcnow()
+    )
+    errored = _insert_run_row(
+        engine, started_at=utcnow() - timedelta(hours=1), errors_json=["scan: board x failed"]
+    )
+
+    def snapshot() -> list[tuple[object, ...]]:
+        with engine.connect() as conn:
+            return [tuple(row) for row in conn.execute(select(tables.runs).order_by(tables.runs.c.id))]
+
+    before = snapshot()
+    assert len(before) == 3, "the fixture must seed rows, or this test proves nothing"
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == []
+    assert snapshot() == before, "a reap that matched nothing still mutated a row"
+    # Named control: the same call against a row that IS stale must mutate exactly that row, so a
+    # reaper that had simply stopped working could not pass the assertion above.
+    stale = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=25))
+    assert reap_stale_runs(engine, older_than=timedelta(hours=24)) == [stale]
+    assert _run_row(engine, recent_running).status == RUN_RUNNING
+    assert _run_row(engine, old_ok).status == RUN_OK
+    assert _run_row(engine, errored).errors_json == ["scan: board x failed"]
+
+
 def test_reap_stale_runs_discriminates_a_stale_row_from_a_fresh_one_in_the_same_call(
     engine: Engine,
 ) -> None:
