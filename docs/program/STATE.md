@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines). Nothing was deleted on any of the ten passes. **273 is still over the bar, deliberately:** what remains above it is run 467's 92-line block, which is the CURRENT standing rather than settled history. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer). Nothing was deleted on any of the eleven passes. **295 is still over the bar, deliberately:** what remains above it is run 467's 92-line block and this session's own, both CURRENT standing rather than settled history. Run 467's becomes movable once its B8 volume reading and Gate 1 bars are discharged. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,59 +20,68 @@
 
 ## Current standing
 
-### 2026-09-19e — **ASTRA REVIEW 02 IS CONSUMED (D-524): ALL EIGHT FINDINGS CONFIRMED; T106, T107, T108, T109 AND T112 ALL SHIPPED; T110, T111 AND T113 TICKETED in `TICKETS-2026-09-19-ASTRA-02.md`. THREE OWNER QUESTIONS RULED. NOTHING HERE TOUCHES THE ENGINE — no ledger re-key, no drain, no confirm-clock restart. `main`'s FOUR-COMMIT CI RED IS FIXED and unrelated to the review.**
+### 2026-09-20 — **ASTRA REVIEW 03 IS CONSUMED (D-525): ALL SEVEN FINDINGS CONFIRMED, AND THE SEVERITY RANKING INVERTS UNDER MEASUREMENT. T114–T119 ALL SHIPPED, TWO GATED WAVES. T120–T127 TICKETED in `TICKETS-2026-09-20-ASTRA-03.md`. ONE OWNER QUESTION RULED; THE OTHER DELIBERATELY NOT PUT. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
 
-Both falsifiers re-run here (every row of five tables reproduces); every cited `file:symbol` opened
-by a read-only Opus verifier on the seat (`.agent/astra/verify/02-report.md`, $3.56). **The apply
-lane's defect is that its CONSUMERS do not honour the distinctions the stack draws:** the gate judge
-does not fail open at three seams it claims to (F2, **fixed: T106**); a PARTIAL judge outage is
-neither counted nor escalated — run 467 carried one (F4, **fixed: T107**); the gate row key does not vary
-with the judge MODEL, so the pending model move would reach new leads only (F1, **fixed: T108**);
-four standing call sites drop the title-seniority hold and none can see a judge NEGATIVE
-(F3, **fixed: T109** — the 12 leads below leave the apply lane for review the day it lands); three lexical spellings classify inconsistently (F5, **fixed: T112**); B8's instrument is
-the pre-form-sweep render count (F6, **T110**) and a routing change moves no manifest hash (**T111**);
-a stale gate negative suppresses its own repair and the one manual path reads through the same hide
-(F1, **T113**).
+All three falsifiers re-run here (**byte for byte, every line**); every cited `file:symbol` opened
+by a read-only Opus verifier on the seat (`.agent/astra/verify/03-report.md`, 84 turns, $4.67).
+Nothing refuted.
 
-**Measured here, read-only, each with a null control:**
-- **B8's 25 on run 467 is NOT an overcount** — 0 of its 25 rendered leads match a form hard stop
-  (7 have a fetched form at all); the same call over all 48 forms store-wide returns 3. **Rule
-  next-action 3 on 25 as recorded.** T110 is still owed — the base rate is ~6% of fetched forms.
-- **F3's judge-negative half is 12 leads today**: 45 delivered versions carry a current judge
-  `ineligible`, 17 of those also carry a deterministic `eligible` (⇒ APPLY via row 9), 12 open and
-  unapplied. D-511's 19, still live.
-- **97 of 984 delivered posting-versions have no current-identity gate row at all** — size T113 there.
-- **T112's level-separator fix has NO live population**: 1,010 → 1,011 matches over 261,626 open
-  postings, and the one new match is a false positive the role gate already vetoes. Kept; never
-  cite it as a win.
+**The finding to act on is NOT the one astra ranked first.** Measured read-only, each with a null
+control: **F1 0 diverged** of 383 multi-posting jobs · **F2 0** (only `p6.3` on disk) · **F3 0**
+(535 merge events, all whole-job) · **F4 0** (`app_state` empty) · **F5 0** (1,018/1,018 folder
+hashes, 901/901 PDF digests). All five are marked `wrong-now`. The one marked `design-limit`,
+**F6, is 16,510 open postings — 6.3% of the open corpus** — under 8 watched boards that have NEVER
+recorded a `complete` scan, retirable by neither absence-closure nor the death sweep. **So the
+tests are the only evidence five of these six fixes work**, which is why every ticket demanded a
+discriminating red and mutation evidence.
 
-**Owner's three rulings (2026-09-19 ~22:35).** (1) A current judge `ineligible` **HOLDS a standing
-lead in review** under its own reason — folded into T109. (2) Routing gets a **SEPARATE lane-policy
-fingerprint**, not a reclassification of `_GATE_IRRELEVANT` — T111; the five-hash manifest keeps its
-meaning. (3) F7's targeted second reading is **NOT NOW** — ship the judge-model move first, one
-variable at a time, and re-read repeatability on the new model before pricing it. **F8 (portability)
-is DROPPED, not deferred** — D-477 point 4 already rules it; its seven confirmed hardcodings are
-recorded as the v2 boundary.
+**Shipped, both waves gated: `make check` exit 0, 10,432 then 10,470 passed (baseline 10,383),
+9m01s and 9m33s, coverage 95.18% → 95.23%.** T114 lane-copy readers filter to the current identity
+generation · T115 a regroup may not release a non-empty source nor strand a queue action · T116
+queue sync verifies the destination's own bytes · T117 the funnel names the unretirable boards ·
+T118 `identities memberships` · T119 a revised built lead re-enters review.
 
-**T108 must land before the judge-model move** (next-action 4): without it the move reaches new
-leads only. It also collapses T99's pending one-time re-judge into the same run.
+**Three verifications run HERE rather than taken from an executor's report.** T114's red against
+unchanged `main`: 9 failed / 120 passed. T116's: 8 failed / 2 passed. T117's mutations re-run
+against the LIVE store, which its fixtures cannot reach — dropping `watched` gives 2,770 boards
+instead of 8, and scoping to the LATEST scan rather than the whole history gives 1,238 / 131,607,
+which is why "never" is the defensible claim.
 
-**The session's split, and its cost.** This session orchestrated, verified and gated; the enterprise
-seat executed. **Seat total $43.57** — verify $3.56 (54 turns), T106 $4.75 (55), T107 $6.97 (66),
-T108 $6.01 (88), T109 **$19.17 (165)**, T112 $3.11 (45). **T109 cost 3-4x every other ticket** and
-is the number to size the next plumbing-shaped ticket against: it rewrote five call sites into one,
-touched `web/` (the `ReviewReason` catalog is mirrored in TypeScript), and ran seven mutations.
-Four `make check` runs were spent here, not on the seat (executors are barred from the gate):
-union 10:39, docs 12:20, wave-2 08:14, final 07:19 — all exit 0, 10,348 then 10,383 passed.
+**Two figures produced in this session were corrected by the work itself.**
+1. **The ruling was put to Mit as "34 of 887"; the shipped rule makes it 23.** T119 routes on
+   `capture_reason='revised'` only. All 11 jobs whose post-build capture is `new` are
+   MULTI-posting, 0 are single-posting — so a post-build `new` is a sibling requisition appearing
+   after the build, never the built posting changing.
+2. **T119 overturned this session's ordering instruction and was right.** `classify` has TWO exits
+   to the apply queue; the branch belongs at `review_gate.py:376`, ABOVE the `eligible`
+   short-circuit. Below it would have gutted the hold, since `eligible` is precisely the verdict
+   that reaches blind-apply.
 
-**`main`'s CI was RED for four consecutive commits before this session and is now GREEN — the cause
-was NOT the review.** Two tests in `web/src/__tests__/followUp.test.tsx` pinned `2026-09-20` as a
-LITERAL future date; the follow-up chip reads "follow-up due <d>" once d is today or past, so the
-assertion silently became a different one on arrival, and CI (UTC) crossed that boundary five hours
-before local did. **A green local gate could not predict it and a re-run could not reproduce it** —
-`TZ=UTC` reproduces it exactly (2 of 25 fail, the two CI named). Both now derive the date from
-today. The other 14 date literals in that file compare dates to each other or to an input value,
-never to today, and were left alone.
+**OWNER RULING (2026-09-20).** A built-but-unapplied lead whose posting is materially revised
+**auto-routes to review** under its own reason. **Astra's second owner question was NOT put** —
+its own F7 requires the blind pair adjudication first, and a ruling is only as wide as the question
+put. Recorded as owed a measurement (T125), not a ruling.
+
+**THE NEXT LIVENESS TICKET HAS ITS ARGUMENT, and it is not astra's.**
+`store/delivery_queries.py:343` (`_status`) asks "does anything enumerate this board?" and answers
+it with `companies.watched` — which means *configured for scans*, not *enumeration succeeds*. The
+16,510 therefore render to the owner as verified-`open` while being exactly as unverifiable as the
+`not watched` class D-314/D-324 already named. **T122 corrects the column; build T123's full
+inventory/detail split on that, not on "expand sweep selection".**
+
+**The seat executed; this session orchestrated, verified and gated.** Six executors plus one
+read-only verifier, four at once on Mit's answer. Windows was dispatched **deliberately**: D-151
+keeps it off the per-push path and the cross-platform job is `if: != 'pull_request'`, so a PR runs
+only Ubuntu shards, lint and type — and T116's change exists *because* of cross-platform byte
+determinism. **Result: 3 failed / 10,348 passed on each Python, and none of the three is this
+work's** — a path separator, `time.tzset` (which does not exist on Windows), and a non-executable
+shell stub. **All three are already red on `main`:** the scheduled run at 2026-09-20T12:08Z, before
+any commit here, failed with exactly those three. **T128** re-greens them. Note for whoever takes
+it: T119 edits both files the path-separator test names, so a reader could mistake a portability
+bug for a D-332 violation — it failed only on slash direction, never on the call-site count.
+
+
+### 2026-09-19e — astra review 02 (the apply-lane stack) consumed: all eight findings confirmed, T106–T109 and T112 shipped, T110/T111/T113 ticketed, three owner questions ruled. **Held WHOLE in D-524 and `TICKETS-2026-09-19-ASTRA-02.md`; do not re-derive.** Its live residual is next action 4's one-time re-judge (with T108 folded in) and T113's 97 uncovered delivered versions. `main`'s four-commit CI red — two `web/` tests pinning a literal future date, reproducible only under `TZ=UTC` — was fixed there and is unrelated to the review.
 
 ### 2026-09-19c — astra review 01 (the deterministic eligibility engine) consumed: all ten findings confirmed, T98 and T99 shipped, T100–T105 ticketed. **Held WHOLE in D-523 and `TICKETS-2026-09-19-ASTRA-01.md`; do not re-derive.** Its live residual is in next action 4: **the first armed run after T99 (and now T108) re-judges the delivered slate ONCE** (≤ `--top`, ~3 batches on the 04:00 tick) — read the funnel's gate block on that run, not just the verdicts.
 

@@ -3325,3 +3325,59 @@ D-508's corrected count; D-510's review of the live store; D-511's prefix-match 
 exact-version freshness fix; D-513's B8 mis-quote; **D-514: B8 MET post-drain at 6.9% / 5.6%**,
 the hold demoting ~26 applyable leads per 160 as its cost. Owner's worklist
 `~/boardwatch-apply-2026-09-14/` is superseded by the web app (D-515).
+
+## The settled 2026-09-19e STATE block, moved WHOLE out of `STATE.md` on 2026-09-20
+
+### 2026-09-19e — **ASTRA REVIEW 02 IS CONSUMED (D-524): ALL EIGHT FINDINGS CONFIRMED; T106, T107, T108, T109 AND T112 ALL SHIPPED; T110, T111 AND T113 TICKETED in `TICKETS-2026-09-19-ASTRA-02.md`. THREE OWNER QUESTIONS RULED. NOTHING HERE TOUCHES THE ENGINE — no ledger re-key, no drain, no confirm-clock restart. `main`'s FOUR-COMMIT CI RED IS FIXED and unrelated to the review.**
+
+Both falsifiers re-run here (every row of five tables reproduces); every cited `file:symbol` opened
+by a read-only Opus verifier on the seat (`.agent/astra/verify/02-report.md`, $3.56). **The apply
+lane's defect is that its CONSUMERS do not honour the distinctions the stack draws:** the gate judge
+does not fail open at three seams it claims to (F2, **fixed: T106**); a PARTIAL judge outage is
+neither counted nor escalated — run 467 carried one (F4, **fixed: T107**); the gate row key does not vary
+with the judge MODEL, so the pending model move would reach new leads only (F1, **fixed: T108**);
+four standing call sites drop the title-seniority hold and none can see a judge NEGATIVE
+(F3, **fixed: T109** — the 12 leads below leave the apply lane for review the day it lands); three lexical spellings classify inconsistently (F5, **fixed: T112**); B8's instrument is
+the pre-form-sweep render count (F6, **T110**) and a routing change moves no manifest hash (**T111**);
+a stale gate negative suppresses its own repair and the one manual path reads through the same hide
+(F1, **T113**).
+
+**Measured here, read-only, each with a null control:**
+- **B8's 25 on run 467 is NOT an overcount** — 0 of its 25 rendered leads match a form hard stop
+  (7 have a fetched form at all); the same call over all 48 forms store-wide returns 3. **Rule
+  next-action 3 on 25 as recorded.** T110 is still owed — the base rate is ~6% of fetched forms.
+- **F3's judge-negative half is 12 leads today**: 45 delivered versions carry a current judge
+  `ineligible`, 17 of those also carry a deterministic `eligible` (⇒ APPLY via row 9), 12 open and
+  unapplied. D-511's 19, still live.
+- **97 of 984 delivered posting-versions have no current-identity gate row at all** — size T113 there.
+- **T112's level-separator fix has NO live population**: 1,010 → 1,011 matches over 261,626 open
+  postings, and the one new match is a false positive the role gate already vetoes. Kept; never
+  cite it as a win.
+
+**Owner's three rulings (2026-09-19 ~22:35).** (1) A current judge `ineligible` **HOLDS a standing
+lead in review** under its own reason — folded into T109. (2) Routing gets a **SEPARATE lane-policy
+fingerprint**, not a reclassification of `_GATE_IRRELEVANT` — T111; the five-hash manifest keeps its
+meaning. (3) F7's targeted second reading is **NOT NOW** — ship the judge-model move first, one
+variable at a time, and re-read repeatability on the new model before pricing it. **F8 (portability)
+is DROPPED, not deferred** — D-477 point 4 already rules it; its seven confirmed hardcodings are
+recorded as the v2 boundary.
+
+**T108 must land before the judge-model move** (next-action 4): without it the move reaches new
+leads only. It also collapses T99's pending one-time re-judge into the same run.
+
+**The session's split, and its cost.** This session orchestrated, verified and gated; the enterprise
+seat executed. **Seat total $43.57** — verify $3.56 (54 turns), T106 $4.75 (55), T107 $6.97 (66),
+T108 $6.01 (88), T109 **$19.17 (165)**, T112 $3.11 (45). **T109 cost 3-4x every other ticket** and
+is the number to size the next plumbing-shaped ticket against: it rewrote five call sites into one,
+touched `web/` (the `ReviewReason` catalog is mirrored in TypeScript), and ran seven mutations.
+Four `make check` runs were spent here, not on the seat (executors are barred from the gate):
+union 10:39, docs 12:20, wave-2 08:14, final 07:19 — all exit 0, 10,348 then 10,383 passed.
+
+**`main`'s CI was RED for four consecutive commits before this session and is now GREEN — the cause
+was NOT the review.** Two tests in `web/src/__tests__/followUp.test.tsx` pinned `2026-09-20` as a
+LITERAL future date; the follow-up chip reads "follow-up due <d>" once d is today or past, so the
+assertion silently became a different one on arrival, and CI (UTC) crossed that boundary five hours
+before local did. **A green local gate could not predict it and a re-run could not reproduce it** —
+`TZ=UTC` reproduces it exactly (2 of 25 fail, the two CI named). Both now derive the date from
+today. The other 14 date literals in that file compare dates to each other or to an input value,
+never to today, and were left alone.
