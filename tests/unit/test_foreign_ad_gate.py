@@ -21,7 +21,7 @@ clause to "not ASCII" would drop all 1,061.
 
 import pytest
 
-from boardwatch.rank.foreign_ad_gate import has_non_us_ad_marker
+from boardwatch.rank.foreign_ad_gate import _ENGINEER_FR_DE, has_non_us_ad_marker
 
 
 class TestFires:
@@ -144,3 +144,41 @@ class TestDoesNotFire:
         # Frankfurt belongs to the location catalog. This gate reads the AD CONVENTION only, so
         # the two signals stay independently reviewable.
         assert has_non_us_ad_marker("Backend Engineer - Frankfurt") is False
+
+
+class TestTheFrenchMarkerOrdering:
+    """`(F/H)` is the same convention as `(H/F)` and must classify the same way.
+
+    The French marker was written for the H/F order only, and `f`/`h` cannot both come from the
+    DACH class — `h` is not one of its letters and must not become one, because that class reads
+    a different convention. A title whose only foreign signal is `(F/H)` therefore passed the
+    hard filter while the identical `(H/F)` title was dropped.
+    """
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Software Engineer (F/H)",
+            "Software Engineer (f/h)",
+            "Software Engineer ( F / H )",
+            "Développeur Full Stack (F/H)",
+        ],
+    )
+    def test_the_marker_fires_in_either_order(self, title: str) -> None:
+        assert has_non_us_ad_marker(title) is True
+        assert has_non_us_ad_marker(title.replace("F/H", "H/F").replace("f/h", "h/f")) is True
+
+    def test_the_engineer_noun_not_the_widened_marker_catches_the_french_engineer_title(
+        self,
+    ) -> None:
+        # Control: this title was ALREADY caught, by the job noun. Widening the gender marker
+        # is not what decides it.
+        title = "CDI - Ingénieur logiciel (F/H)"
+        assert _ENGINEER_FR_DE.search(title) is not None
+        assert has_non_us_ad_marker(title) is True
+
+    @pytest.mark.parametrize("title", ["Software Engineer (m/h)", "Software Engineer (h/d)"])
+    def test_h_is_still_not_a_dach_letter(self, title: str) -> None:
+        # Control: `h` must not be added to `[mwfdx]`. That class reads the German convention,
+        # where `h` means nothing; only the French PAIR is a signal.
+        assert has_non_us_ad_marker(title) is False
