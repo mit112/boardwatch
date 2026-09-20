@@ -397,3 +397,65 @@ class TestAlternationWordBoundary:
     )
     def test_spelled_out_foreign_forms_are_still_non_us(self, loc: str) -> None:
         assert _c(loc) == "non_us"
+
+
+class TestUnicodeNormalization:
+    """An accented spelling must classify exactly as its plain spelling does.
+
+    `Montréal` read `unknown` — kept, fail-open, so an otherwise eligible SWE lead reached the
+    APPLY lane — while `Montreal` read `non_us`. The segment was only casefolded, so no lexical
+    catalog could reach the accented form. The assertions are PAIRED: the property is that the
+    two spellings agree, not that either one has a particular verdict.
+
+    The catalogs carry both spellings for some cities and only one for others; normalizing the
+    INPUT alone would have broken the entries that exist only in their accented form (`łódź`),
+    so the same normalization is applied to the catalog tokens when the alternation is compiled.
+    """
+
+    @pytest.mark.parametrize(
+        ("accented", "plain"),
+        [
+            ("Montréal", "Montreal"),
+            ("Montréal, Québec", "Montreal, Quebec"),
+            ("Remote - Montréal", "Remote - Montreal"),
+            ("Zürich", "Zurich"),
+            ("Kraków", "Krakow"),
+            ("Bogotá", "Bogota"),
+            ("Medellín", "Medellin"),
+            ("Ciudad Juárez", "Ciudad Juarez"),
+            ("São Paulo", "Sao Paulo"),
+            ("Düsseldorf", "Dusseldorf"),
+            ("Reykjavík", "Reykjavik"),
+            ("Florianópolis", "Florianopolis"),
+            ("São José dos Campos", "Sao Jose dos Campos"),
+        ],
+    )
+    def test_an_accented_city_classifies_as_its_plain_spelling(
+        self, accented: str, plain: str
+    ) -> None:
+        assert _c(accented) == _c(plain) == "non_us"
+
+    @pytest.mark.parametrize("loc", ["Łódź", "Lodz", "Wrocław", "Wroclaw"])
+    def test_a_stroked_letter_still_resolves_from_either_spelling(self, loc: str) -> None:
+        # `ł` carries no combining mark, so NFKD leaves it alone: `łódź` normalizes to `łodz`,
+        # which is in NEITHER catalog spelling. It resolves only because the catalog tokens are
+        # normalized by the same function as the input.
+        assert _c(loc) == "non_us"
+
+    @pytest.mark.parametrize(
+        "loc", ["Vienna, VA", "Athens, GA", "Lebanon, NH", "Mexico, MO", "Paris, TX"]
+    )
+    def test_us_namesake_precedence_survives_normalization(self, loc: str) -> None:
+        # The state-suffix-before-foreign-token ordering is the whole defence against false US
+        # drops in hard mode. Normalizing the segment must not reach it.
+        assert _c(loc) == "us"
+
+    def test_the_accepted_state_and_country_collisions_are_unchanged(self) -> None:
+        # D-251's accepted fail-open leaks. Normalization must not "fix" them into drops.
+        assert _c("Tbilisi, Georgia") == "us"
+        assert _c("Bangalore, IN") == "us"
+
+    def test_an_accented_us_namesake_still_beats_its_foreign_reading(self) -> None:
+        # The normalized form reaches the non-US catalog, but the US state suffix is resolved
+        # first, so the ordering still decides.
+        assert _c("Montréal, MO") == "us"
