@@ -1,10 +1,11 @@
 import io
+import threading
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 from rich.console import Console
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, event, insert, select
 
 from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import Settings
@@ -12,6 +13,7 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.queries import insert_run
 
 
 @pytest.fixture()
@@ -210,3 +212,62 @@ def test_crash_between_batches_is_resumable(
     stats = run_preflight(engine, settings, _console()[0])
     assert stats.postings_backfilled == 1  # resumes exactly the remaining work
     assert len(_extraction_versions(engine)) == 3  # no duplicates (UNIQUE key)
+
+
+def test_the_stale_profile_refresh_survives_an_unrelated_concurrent_writer(
+    engine: Engine, settings: Settings
+) -> None:
+    """The representative case for T134's CLI read-modify-writes.
+
+    This block SELECTs `profile` and then UPDATEs it. Under `BEGIN DEFERRED` the WAL snapshot is
+    taken at the SELECT and SQLite cannot upgrade an obsolete snapshot, so a writer that commits
+    before the UPDATE fails it with `SQLITE_BUSY_SNAPSHOT` — which `busy_timeout` does NOT retry,
+    because the snapshot is obsolete rather than stale-but-waiting. `write_connection` takes the
+    write lock at BEGIN, so the competitor queues on `busy_timeout` instead and lands after.
+
+    The competitor runs on its own THREAD, and it has to: fired inline it would be the loser of
+    the very lock this asserts is held, and would deadlock against the transaction that called
+    it. The thread is joined with a timeout rather than fully — under IMMEDIATE it is still
+    blocked at that point, which is the whole point — and drained at the end.
+
+    Seven sibling sites share the shape (`death_probe`, `identities backfill/reap/regroup`,
+    `postings reparse-bodies`, `track add/status`); this is the one that can be driven without a
+    CLI harness, and the property is identical at each.
+    """
+    _seed_profile(engine, "stale-version")
+    competitors: list[threading.Thread] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _interpose(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        if competitors or not statement.lstrip().upper().startswith("UPDATE PROFILE"):
+            return
+        thread = threading.Thread(target=insert_run, args=(engine,))
+        competitors.append(thread)
+        thread.start()
+        # Long enough for an unblocked writer to finish on local SQLite, short enough that a
+        # BLOCKED one is still waiting: under DEFERRED this returns with the commit already
+        # landed, which is what makes the UPDATE below meet an obsolete snapshot.
+        thread.join(timeout=1.0)
+
+    console, _ = _console()
+    try:
+        stats = run_preflight(engine, settings, console)
+    finally:
+        for thread in competitors:
+            thread.join(timeout=10.0)
+
+    assert competitors, "the competing writer never started, so this test proved nothing"
+    assert stats.profile_refreshed is True
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.profile)).one()
+    assert row.taxonomy_version == load_taxonomy(settings.config_dir).version
+    # The competitor is not starved either -- it queued and then landed.
+    with engine.connect() as conn:
+        assert conn.execute(select(tables.runs)).all()

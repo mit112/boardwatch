@@ -19,6 +19,7 @@ from sqlalchemy import Engine, select, update
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy, write_extraction
+from boardwatch.store.db import write_connection
 from boardwatch.store.tables import extractions, postings, profile
 
 BATCH_SIZE = 200
@@ -37,7 +38,11 @@ def run_preflight(
     taxonomy = load_taxonomy(settings.config_dir)
     stats = PreflightStats()
 
-    with engine.begin() as conn:
+    # T134: read-then-write, so IMMEDIATE at BEGIN. A DEFERRED transaction takes its WAL
+    # snapshot at the SELECT and SQLite cannot upgrade an obsolete one, so any writer
+    # committing before the UPDATE fails it with `SQLITE_BUSY_SNAPSHOT`, which
+    # `busy_timeout` does not retry.
+    with write_connection(engine) as conn, conn.begin():
         row = conn.execute(select(profile).where(profile.c.id == 1)).one_or_none()
         if row is not None and row.taxonomy_version != taxonomy.version:
             skills = sorted(taxonomy.extract(row.text))

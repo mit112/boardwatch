@@ -2216,7 +2216,10 @@ def test_a_form_hard_stop_reaches_the_page_with_the_question_it_quotes(
             url="https://job-boards.greenhouse.io/tenet3/jobs/8810809002",
         )
         clear, _ = _deliver(conn, "clear", body=JD_ELIGIBLE)
-    with engine.begin() as conn:
+    # `connect`, not `begin`: the sweep owns its own transaction boundaries — it ends the read
+    # transaction before the first GET and commits each response on its own — so a caller-owned
+    # `begin()` block would be closed under it after the first row.
+    with engine.connect() as conn:
         sweep_form_questions(conn, fetcher=_Fetcher(), budget=10)  # type: ignore[arg-type]
 
     payload = call(live, "/api/queue", bearer=live.token).json()

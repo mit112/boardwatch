@@ -34,6 +34,7 @@ from boardwatch.store.applications import (
     get_applications,
     set_application_status,
 )
+from boardwatch.store.db import write_connection
 from boardwatch.store.funnel_queries import job_id_for_posting, list_funnel
 from boardwatch.store.jobapps_history import read_jobapps_dir
 from boardwatch.store.queries import current_posting_versions
@@ -64,7 +65,7 @@ def add(
     """Start tracking a posting."""
     _validate_status(status)
     app_ctx = build_context(ctx.obj)
-    with app_ctx.engine.begin() as conn:
+    with write_connection(app_ctx.engine) as conn, conn.begin():  # T134: read-then-write
         job_id = job_id_for_posting(conn, posting_id)
         if job_id is None:
             console.print(f"no posting {posting_id}. Run `boardwatch top` to see ids.")
@@ -100,7 +101,7 @@ def status_(
     """Move an application to a new status."""
     _validate_status(status)
     app_ctx = build_context(ctx.obj)
-    with app_ctx.engine.begin() as conn:
+    with write_connection(app_ctx.engine) as conn, conn.begin():  # T134: read-then-write
         if get_application(conn, application_id) is None:
             console.print(f"no application {application_id}. Run `boardwatch track list`.")
             raise typer.Exit(code=1)

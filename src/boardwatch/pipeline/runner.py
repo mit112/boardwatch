@@ -2784,10 +2784,10 @@ def run_pipeline(
         # The mark sits ABOVE the `finish_run` attempt rather than below the form sweep (T129),
         # and that move costs nothing and buys the one alert that most needed the channel:
         # NOTHING between here and the funnel write below appends to `summary.errors` except
-        # the terminal-persistence failure itself — the coverage load and the form sweep both
-        # print and deliberately do not record — so the slice gains that note and no stage
-        # error. A run row left `running` is the most consequential thing this block can
-        # report, and it was the one thing excluded from the report.
+        # the terminal-persistence failure itself and a form sweep that RAISED (T134) — the
+        # coverage load still only prints — so the slice gains those notes and no stage error.
+        # Both belong in it: a run row left `running` is the most consequential thing this block
+        # can report, and a sweep that asked no board anything is the second.
         escalatable_from = len(summary.errors)
         try:
             _finish_run_with_one_retry(
@@ -2849,7 +2849,7 @@ def run_pipeline(
         try:
             with engine.connect() as conn:
                 summary.form_questions = _sweep_form_questions(
-                    conn, settings, console, form_fetcher
+                    conn, settings, console, form_fetcher, summary
                 )
         except Exception as exc:  # noqa: BLE001 - a mute section beats a lost funnel
             # ONLY reachable for a connection this could not open or close: the sweep itself
@@ -2857,9 +2857,10 @@ def run_pipeline(
             # for the same reason `_load_board_coverage` above is: this runs inside a `finally`
             # that may already be unwinding, and everything after it — the funnel, the queue,
             # the soft detectors, the morning digest, the heartbeat — is unreachable if it
-            # raises. Printed and NOT appended to `summary.errors`, on the sweep's own recorded
-            # reasoning: a form nobody fetched produces a HOLD at worst, and a hold that did not
-            # happen leaves the lead in the apply lane, which is where it already was.
+            # raises. Printed and NOT appended to `summary.errors`: this arm covers only opening
+            # or closing the connection, and a failure to do that is reported by every other
+            # store write in this block. A sweep that RAISES is recorded, inside
+            # `_sweep_form_questions` itself.
             console.print(f"  ! application forms: not swept ({exc})", markup=False)
         if summary.form_questions is not None:
             console.print(
@@ -3660,7 +3661,11 @@ def _sync_queue(
 
 
 def _sweep_form_questions(
-    conn: SAConnection, settings: Settings, console: Console, fetcher: Fetcher | None
+    conn: SAConnection,
+    settings: Settings,
+    console: Console,
+    fetcher: Fetcher | None,
+    summary: PipelineSummary,
 ) -> FormQuestionSweep | None:
     """Ask Greenhouse for the APPLICATION FORM behind each delivered lead, once per version.
 
@@ -3683,9 +3688,13 @@ def _sweep_form_questions(
     `None` means UNMEASURED, never zero: no fetcher was supplied, the budget is 0 (disarmed), or
     the sweep raised. Caught rather than propagated for the reason the call site's own block
     comment gives -- the queue holds COPIES of work the run already delivered, so a fault here
-    must cost the extra reach and nothing else. Not on `summary.errors`: the fetch produces a HOLD
-    at worst, and a hold nobody learned about is a lead in the apply lane, which is exactly where
-    it already was.
+    must cost the extra reach and nothing else.
+
+    A RAISE is recorded on `summary.errors` as well as printed (T134), and that is a different
+    question from whether it is fatal -- it is not. Fail-open keeps the lead in the apply lane,
+    which is where it already was; silence makes a run that asked no board anything read
+    identically, in the funnel and everywhere downstream of it, to a run whose queue was clean.
+    The two disarmed arms above stay unrecorded: "nobody asked" is a setting, not a fault.
 
     **`fetcher is None` is the whole reason this is not built here**, and it is a test-suite
     property as much as an API one: `make check` runs on three operating systems and must make no
@@ -3702,9 +3711,9 @@ def _sweep_form_questions(
             budget=settings.form_question_fetch_budget,
         )
     except Exception as exc:  # noqa: BLE001 - never cost the queue its own sync
-        console.print(
-            f"  ! application forms: sweep failed ({type(exc).__name__}: {exc})", markup=False
-        )
+        note = f"application forms: sweep failed ({type(exc).__name__}: {exc})"
+        console.print(f"  ! {note}", markup=False)
+        summary.errors.append(note)
         return None
 
 
