@@ -30126,5 +30126,16 @@ check needs the run-namespaced artifact paths astra's F7 describes; only the per
 after measuring that all **1,396** live `resume_tailored` rows have their `.tex` so the stricter
 predicate false-fatals on nothing.
 
+**THE DISPATCH PAID FOR ITSELF TWICE.** T128's three failures are confirmed gone (0 occurrences
+in the dispatched run), **and the same run exposed a FOURTH, unrelated Windows break no nightly had
+seen**: 46 tests in `tests/unit/test_delivery_queries.py` failing `ValueError: Invalid format
+string`, because `f"{captured_at:%s}"` routes through `strftime` and **`%s` is a glibc/BSD
+extension Windows refuses**. It came from **`7093b804` (T119) at 11:30 on 2026-09-20, four hours
+AFTER that day's 07:08 nightly**, so it was already on `main` and invisible. Fixed with
+`int(captured_at.timestamp())` — the value differs, because `%s` resolves against local time, and
+that is immaterial for an opaque per-version fixture hash nothing asserts on. **Without this, the
+nightly would have gone red tomorrow for a NEW reason and T128 would have read as a failed fix** —
+which is the precise way a platform-gated suite converts one fix into an apparent regression.
+
 **Still open after this: T113 (re-sized above), T123, T124, T125, T127, T133, T135, T137, T139's
 stage extraction, T144, T138's two remaining halves — and T100-T105 held for the engine bump.**

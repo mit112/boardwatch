@@ -255,6 +255,15 @@ forward-slash literals so Windows failed on SEPARATORS, not on a real second cal
 asserted the fake `claude` ran without wearing `_needs_an_executable_fake`, the marker its twenty
 siblings carry.
 
+**THE DISPATCH FOUND A FOURTH, UNRELATED WINDOWS BREAK THAT NO NIGHTLY HAD YET SEEN.** T128's
+three are confirmed FIXED (0 occurrences in the dispatched run). But the same run went red on
+**46 tests in `tests/unit/test_delivery_queries.py`**, all `ValueError: Invalid format string`:
+`f"v-{posting_id}-{captured_at:%s}"` formats a datetime through `strftime`, and **`%s` is a
+glibc/BSD extension Windows refuses**. Introduced by **`7093b804` (T119) at 11:30 on 2026-09-20 —
+four hours AFTER that day's 07:08 nightly** — so it was on `main` and unseen, and tonight's nightly
+would have gone red on it. Fixed with `int(captured_at.timestamp())`. **Had this not been caught,
+the nightly would have stayed red for a new reason and T128 would have looked like it failed.**
+
 **WHY IT STAYED INVISIBLE, AND THE ONLY WAY TO SEE IT.** Windows is in the matrix for
 `schedule` **and `workflow_dispatch`** and nothing else (`ci.yml`'s `os:` expression is the
 authority) — so a green 27-job CI on a `main` push says **nothing** about Windows, and a PR cannot

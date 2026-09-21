@@ -192,6 +192,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A glibc-only `%s` strftime took 46 tests red on Windows (2026-09-20).**
+  `f"v-{posting_id}-{captured_at:%s}"` formats a datetime through `strftime`, and `%s` is a
+  glibc/BSD extension Windows raises `ValueError: Invalid format string` on. It landed four hours
+  after that day's nightly, so no scheduled run had seen it; the `workflow_dispatch` validating
+  T128 found it first. `int(captured_at.timestamp())` is portable.
+
 - **The three Windows-only test failures are portable (2026-09-20, T128).** The scheduled build had
   been red for five consecutive nights (last green 2026-09-15) while every push CI stayed green,
   because Windows runs on `schedule`/`workflow_dispatch` only. `time.tzset()` is POSIX-only and the
