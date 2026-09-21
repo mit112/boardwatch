@@ -242,6 +242,17 @@ density; predict yield from the sample. Never the reverse.
 
 ### Owed, and specifically NOT done
 
+- **NEW, found while pressure-testing T104 and NOT in T104's scope: the equivalence escape's
+  VOCABULARY has a recall gap that deletes jobs.** `degree_equivalence` is
+  `or\s+equivalent|equivalent\s+(?:experience|work)|in\s+lieu\s+of|may\s+be\s+substituted`, so
+  **"An equivalent combination of education and experience is acceptable."** — a very common JD
+  phrasing — matches NOTHING. `A PhD is required. An equivalent combination of education and
+  experience is acceptable.` reads **`ineligible`** against a bachelor's, and it read that way on
+  `main` BEFORE T104 as well: verified against the unmodified catalog, so this is a pre-existing
+  vocabulary gap, not a reach bug and not a T104 regression. Five other waiver phrasings were
+  checked and all hold. **UNSIZED** — the count of open postings carrying an out-of-vocabulary
+  waiver was not measured, and it should be before anything is added to the catalog, because
+  widening an escape moves verdicts toward `uncertain` and that is its own trade.
 - **T51 SHIPPED (D-484) before the freeze.** Its residual: a hedged bar carrying a domain noun has no
   `*_preferred` sibling to land in and writes no row; a recall change for M3's window.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
