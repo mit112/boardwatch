@@ -112,11 +112,16 @@ it reproduces on `main`, whose tree is byte-identical to the last exit-0 gate (`
 generalization OK, both indexes current, ruff, `mypy --strict` 365 files, and **1,668 eligibility
 tests** including the 1,061-golden corpus. **THE GATE IS OWED ON AN IDLE MACHINE.**
 
-**Still held for Mit, all asked and none answered before he stepped away:** the docs branch push,
-a `workflow_dispatch` on `engine-batch`, and pruning **65 of 71 worktrees** (all clean AND fully
-merged into `origin/main`; `projectY` is **25 GB** across 70 venvs and the disk has **35 GiB**
-free — branches survive, so `git worktree add` reverses it). PR #400 merged as `21bb2403`; the
-primary checkout is synced and still on `main`.
+**All three held items were RULED AND EXECUTED at session close.** `engine-batch` is pushed at
+`c988383b`; the docs branch is **PR #401** with auto-merge armed; and **65 of 72 worktrees were
+pruned** — every one clean AND fully merged into `origin/main`. **33 → 46 GiB free, 13 GB
+reclaimed.** The seven kept are the primary checkout, `bw-engine` and `bw-docs20g` (both
+unmerged), the three detached `bw-verify*`, and the dirty `bw-webaudit`. **Every branch survives**
+(`t99`, `t122`, `astra05`, `close-2026-09-17` spot-checked), so any of them reverses with
+`git worktree add`, and no `.git` lock was left behind. A `workflow_dispatch` was fired on the
+final state — **run `35565660891`, IN FLIGHT at close.** **Read it by job NAME, never colour
+(D-528's lesson), and confirm the Windows job actually RAN.** PR #400 merged as `21bb2403`; the
+primary checkout is synced and still on `main`, so the 04:00 tick runs `main`.
 
 
 ### 2026-09-20f — **THE ENGINE BATCH IS OPEN ON AN UNMERGED BRANCH. `engine-batch` (worktree `bw-engine`) HOLDS T100, T102 AND T103, GATED exit 0 — 10,612 passed, 95.26%. IT IS DELIBERATELY NOT MERGED (D-530).**
