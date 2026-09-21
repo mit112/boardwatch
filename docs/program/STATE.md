@@ -75,6 +75,17 @@ pins a standalone waiver still abstaining); only its assumption about REACH move
 **1,064**; the `rules.yaml` pin was rewritten twice and the corpus pin once, each keyed on the
 unique full old hash with the count asserted at **90** and one line changed.
 
+**GATED: `make check` exit 0 on `c988383b`** — **10,625 passed**, 1 skipped, 4 xfailed, vitest
+211/211, coverage **95.26%**, 11m28s on an idle machine. The same tree took **51m21s** under the
+Dota-era load, which is the clearest measure of what that load was doing.
+
+**Test-count delta, counted through a different path than the gate.** `main` collects 10,589,
+`engine-batch` 10,630 — **+41**. Mine is **+9** (6 new test functions, 1 removed with the rename,
++4 corpus rows, verified by diffing `83c22796..c988383b`); the three prior batch commits are the
+other **+32**. **That means the inherited figure is 4 low:** 2026-09-20f records `83c22796` at
+10,612 passed, but working back from this measurement it was **10,616**. Small, but quote the
+measured one.
+
 **THE BATCH'S RE-KEY, WITH THE CONCRETE VALUES — owed at MERGE, not now.** Both keys have moved
 off `main`, and D-528/D-530's whole point is that the batch pays for this **once**:
 
