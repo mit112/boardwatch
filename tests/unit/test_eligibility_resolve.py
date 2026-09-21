@@ -993,3 +993,169 @@ def test_every_resolution_carries_a_rationale(catalog) -> None:
         resolution = resolve(det, facts, catalog.family(det.family))
         assert resolution.rationale.strip()
         assert resolution.disposition in {"met", "unmet", "unknown"}
+
+
+# ---- T100 (astra F5): a CONSUMED choice value that is not in the catalog must ABSTAIN.
+# ---- `facts.py` types these four as bare `str`, so a typo survives `parse_facts`. Measured
+# ---- before the fix: it does not merely reach `met`, it INVERTS `unmet` to `met` on three
+# ---- of the four. Every case below was confirmed to fail against the unfixed resolver.
+
+_T100_FAMILIES = frozenset({"work_auth", "clearance", "contract_not_fte", "internship"})
+
+_T100_WORK_AUTH = "We do not offer visa sponsorship for this role."
+_T100_CLEARANCE = "An active security clearance is required."
+_T100_CONTRACT = "This is a 12-month contract role, not a permanent position."
+_T100_INTERNSHIP = "This posting is a summer internship."
+
+
+def _t100(catalog, body: str, facts: Facts, pattern_id: str):
+    """Resolve one detection with the four T100 families enabled.
+
+    `_one`'s `ALL` predates contract_not_fte and internship, and widening it there would
+    change what every other test in this file detects.
+    """
+    dets = [
+        d
+        for d in detect(body, catalog, enabled_families=_T100_FAMILIES)
+        if d.pattern.id == pattern_id
+    ]
+    assert len(dets) == 1, f"expected exactly one {pattern_id}, got {len(dets)}"
+    return resolve(dets[0], facts, catalog.family(dets[0].family))
+
+
+@pytest.mark.parametrize(
+    ("body", "facts", "pattern_id", "field"),
+    [
+        (
+            _T100_WORK_AUTH,
+            Facts(work_authorization=WorkAuthFact(status="citzen", jurisdiction="us")),
+            "no_sponsorship_offered",
+            "work_authorization.status",
+        ),
+        (
+            _T100_CLEARANCE,
+            Facts(
+                security_clearance=ClearanceFact(
+                    scheme="us_dod", level="secrett", state="active"
+                )
+            ),
+            "generic_clearance_required",
+            "security_clearance.level",
+        ),
+        (
+            _T100_CONTRACT,
+            Facts(employment_type_preference="fte_onlyy"),
+            "contract_engagement_declared",
+            "employment_type_preference",
+        ),
+        (
+            _T100_INTERNSHIP,
+            Facts(internship_preference="excludee"),
+            "internship_role_declared",
+            "internship_preference",
+        ),
+    ],
+)
+def test_an_out_of_catalog_choice_value_abstains_and_names_the_field(
+    catalog, body: str, facts: Facts, pattern_id: str, field: str
+) -> None:
+    """The keystone's own shape: unresolvable profile field => ABSTAIN, naming the field.
+
+    Naming it is not decoration. An abstain the report cannot attribute is indistinguishable
+    from a rule that merely declined, which is what the abstain report exists to separate.
+    """
+    resolution = _t100(catalog, body, facts, pattern_id)
+    assert resolution.disposition == "unknown"
+    assert resolution.rationale == f"missing_profile_field:{field}"
+
+
+@pytest.mark.parametrize(
+    ("body", "facts", "pattern_id", "expected"),
+    [
+        # Every VALID choice keeps exactly the result it had before T100 -- including both
+        # EAD arms, which are the cases the fix is most likely to have broken.
+        (_T100_WORK_AUTH, WorkAuthFact(status="needs_sponsorship", jurisdiction="us"),
+         "no_sponsorship_offered", "unmet"),
+        (_T100_WORK_AUTH, WorkAuthFact(status="citizen", jurisdiction="us"),
+         "no_sponsorship_offered", "met"),
+        (_T100_WORK_AUTH, WorkAuthFact(status="ead_or_similar", jurisdiction="us"),
+         "no_sponsorship_offered", "unknown"),
+        (_T100_WORK_AUTH,
+         WorkAuthFact(status="ead_or_similar", jurisdiction="us", needs_sponsorship=True),
+         "no_sponsorship_offered", "unmet"),
+    ],
+)
+def test_a_valid_work_auth_choice_keeps_its_result(
+    catalog, body: str, facts: WorkAuthFact, pattern_id: str, expected: str
+) -> None:
+    assert _t100(catalog, body, Facts(work_authorization=facts), pattern_id).disposition == expected
+
+
+@pytest.mark.parametrize(
+    ("body", "facts", "pattern_id", "expected"),
+    [
+        (_T100_CLEARANCE,
+         Facts(security_clearance=ClearanceFact(scheme="us_dod", level="secret", state="active")),
+         "generic_clearance_required", "met"),
+        # A level that is ABSENT is not out-of-catalog -- it keeps its own abstain, which is a
+        # different rationale. Without this the fix could have swallowed the None path whole.
+        (_T100_CLEARANCE,
+         Facts(security_clearance=ClearanceFact(scheme="us_dod", level=None, state="active")),
+         "generic_clearance_required", "unknown"),
+        (_T100_CONTRACT, Facts(employment_type_preference="fte_only"),
+         "contract_engagement_declared", "unmet"),
+        (_T100_CONTRACT, Facts(employment_type_preference="open_to_contract"),
+         "contract_engagement_declared", "met"),
+        (_T100_INTERNSHIP, Facts(internship_preference="exclude"),
+         "internship_role_declared", "unmet"),
+        (_T100_INTERNSHIP, Facts(internship_preference="open"),
+         "internship_role_declared", "met"),
+    ],
+)
+def test_a_valid_choice_keeps_its_result(
+    catalog, body: str, facts: Facts, pattern_id: str, expected: str
+) -> None:
+    assert _t100(catalog, body, facts, pattern_id).disposition == expected
+
+
+def test_a_level_that_is_absent_abstains_for_its_OWN_reason_not_the_catalog_one(
+    catalog,
+) -> None:
+    """Pins the two abstains apart. Both read `unknown`, so a test on the disposition alone
+    cannot tell a missing level from an out-of-catalog one, and the fix collapsing them
+    would pass it."""
+    facts = Facts(security_clearance=ClearanceFact(scheme="us_dod", level=None, state="active"))
+    assert (
+        _t100(catalog, _T100_CLEARANCE, facts, "generic_clearance_required").rationale
+        == "held clearance names no level"
+    )
+
+
+def test_a_choice_removed_by_an_override_stops_clearing(tmp_path: Path) -> None:
+    """THE DISCRIMINATING ONE. The check must read the family's LIVE `FieldSpec.choices`,
+    not a constant copied out of the bundled catalog -- otherwise it enforces yesterday's
+    vocabulary and a multi-tenant override silently means nothing.
+
+    `exclude` is a perfectly valid bundled choice that resolves `unmet` here. An override
+    that drops it must make the SAME profile abstain. A hardcoded list passes the four typo
+    tests above and fails only this one.
+    """
+    from boardwatch.eligibility.catalog import bundled_rules_text
+
+    text = bundled_rules_text()
+    before = "choices: [exclude, open, prefer_not_to_say]"
+    assert text.count(before) == 1, "the internship choices line moved; re-pin this test"
+    (tmp_path / "rules.yaml").write_text(
+        text.replace(before, "choices: [open, prefer_not_to_say]"), encoding="utf-8"
+    )
+    overridden = load_rules(tmp_path)
+    assert overridden.source == "override", "the override did not load; the test is vacuous"
+
+    facts = Facts(internship_preference="exclude")
+    # Control: against the BUNDLED catalog the very same profile still decides.
+    bundled = load_rules(tmp_path / "absent")
+    assert _t100(bundled, _T100_INTERNSHIP, facts, "internship_role_declared").disposition == "unmet"
+
+    resolution = _t100(overridden, _T100_INTERNSHIP, facts, "internship_role_declared")
+    assert resolution.disposition == "unknown"
+    assert resolution.rationale == "missing_profile_field:internship_preference"

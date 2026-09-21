@@ -125,6 +125,32 @@ def _fact_support(field: str, value: object) -> tuple[SupportItem, ...]:
     )
 
 
+def _out_of_catalog(
+    family: FamilySpec, field_name: str, fact_path: str, value: object
+) -> Resolution | None:
+    """Abstain when a declared fact value is not one of the family's own catalog choices.
+
+    `facts.py` types four consumed choice values as bare `str` (T100/F5), so a typo survives
+    `parse_facts` and reaches a resolver's affirmative fallthrough as though it were a real
+    choice. Measured: that does not merely reach `met`, it INVERTS `unmet` to `met` on three
+    of the four -- a citizen-shaped typo clears a "we do not sponsor" bar, and `fte_onlyy`
+    accepts a contract role. A wrong `met` is the worst failure this module can produce.
+
+    The catalog is closed, so an unrecognised value is a failure and never a new bucket, and
+    the keystone reserves ABSTAIN for precisely this: a profile field that cannot be resolved.
+
+    Reads `family.fields` rather than a module constant, so a choice a user's OVERRIDE removes
+    stops clearing the moment the override loads. A field the catalog does not declare abstains
+    too -- the safe direction when the catalog cannot answer at all.
+    """
+    for spec in family.fields:
+        if spec.name == field_name:
+            if value in spec.choices:
+                return None
+            break
+    return Resolution(UNKNOWN, f"missing_profile_field:{fact_path}")
+
+
 def _named_jurisdiction(detection: Detection) -> str | None:
     """The jurisdiction this detection's sentence scopes itself to, if it names one.
 
@@ -150,6 +176,9 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
     # that would return `met` for a Brazilian citizen on an Australian posting.
     if status in (None, "prefer_not_to_say") or juris in (None, "unspecified", "other"):
         return Resolution(UNKNOWN, "status or jurisdiction not declared or not identifying")
+    off_catalog = _out_of_catalog(family, "status", "work_authorization.status", status)
+    if off_catalog is not None:
+        return off_catalog
     pattern = detection.pattern
     support = _fact_support("work_authorization.status", status)
     if pattern.implies in ("sponsorship_available", "sponsorship_unavailable"):
@@ -412,6 +441,10 @@ def _resolve_clearance(detection: Detection, facts: Facts, family: FamilySpec) -
         return Resolution(UNKNOWN, f"clearance state is {sc.state!r}")
     if sc is None:
         return Resolution(UNKNOWN, "no clearance declared")
+    if sc.level is not None:
+        off_catalog = _out_of_catalog(family, "level", "security_clearance.level", sc.level)
+        if off_catalog is not None:
+            return off_catalog
     support = _fact_support("security_clearance.level", sc.level)
     state = sc.state
     if state == "none":
@@ -462,6 +495,11 @@ def _resolve_contract_not_fte(
     stated = facts.employment_type_preference
     if stated in (None, "prefer_not_to_say"):
         return Resolution(UNKNOWN, "no employment-type preference declared")
+    off_catalog = _out_of_catalog(
+        family, "employment_type_preference", "employment_type_preference", stated
+    )
+    if off_catalog is not None:
+        return off_catalog
     support = _fact_support("employment_type_preference", stated)
     if detection.pattern.implies == "fte_role":
         if stated == "contract_only":
@@ -573,6 +611,11 @@ def _resolve_internship(detection: Detection, facts: Facts, family: FamilySpec) 
     stated = facts.internship_preference
     if stated in (None, "prefer_not_to_say"):
         return Resolution(UNKNOWN, "no internship preference declared")
+    off_catalog = _out_of_catalog(
+        family, "internship_preference", "internship_preference", stated
+    )
+    if off_catalog is not None:
+        return off_catalog
     support = _fact_support("internship_preference", stated)
     if stated == "exclude":
         return Resolution(UNMET, "posting is an internship, which is excluded", support)
