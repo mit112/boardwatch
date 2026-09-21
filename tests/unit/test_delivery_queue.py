@@ -575,6 +575,55 @@ def test_a_changed_jd_rewrites_the_folder(engine: Engine, root: Path, apps: Path
     assert _snapshot(root) != before
 
 
+def test_an_ordinary_update_keeps_the_owners_own_files(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T121. `_install` swaps the whole directory, which took the owner's work with it.
+
+    `_repair` goes file-by-file precisely to protect a hand-written cover letter and its `.tex`
+    source, and `_destination_intact` refuses to call an unrecognised file an integrity failure.
+    Both had already decided the folder is partly the owner's. The ordinary `updated` path had
+    not, so every genuine content change silently deleted work boardwatch cannot regenerate.
+    """
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    folder = _sole_folder(root)
+    letter = folder / "cover-letter.tex"
+    letter.write_text("\\documentclass{article} % mine, not boardwatch's\n", encoding="utf-8")
+    notes = folder / "notes"
+    notes.mkdir()
+    (notes / "call.md").write_text("recruiter call 3pm\n", encoding="utf-8")
+
+    revised = JD + " Updated: now also requires Rust."
+    with engine.begin() as conn:
+        revised_version = int(
+            conn.execute(
+                insert(posting_versions).values(
+                    posting_id=posting_id,
+                    content_hash="v-one-revised",
+                    body_text=revised,
+                    captured_at=NOW + timedelta(hours=1),
+                    run_id=None,
+                    capture_reason="revised",
+                )
+            ).inserted_primary_key[0]
+        )
+        _judge_version(conn, revised_version, revised)
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.updated, report.unchanged, report.failed) == (0, 1, 0, 0)
+    # The owner's work survives -- a file AND a directory, since the swap took both.
+    assert letter.read_text(encoding="utf-8").endswith("% mine, not boardwatch's\n")
+    assert (notes / "call.md").read_text(encoding="utf-8") == "recruiter call 3pm\n"
+    # Control: carrying the old files over must NOT resurrect the superseded JD. Without this the
+    # test would pass against an implementation that simply skipped the update.
+    assert (folder / JD_FILE).read_text(encoding="utf-8") == revised
+
+
 def test_a_replaced_source_pdf_rewrites_the_folder(
     engine: Engine, root: Path, apps: Path
 ) -> None:
