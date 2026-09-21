@@ -255,6 +255,11 @@ def test_gate_ineligible_with_span_excludes_the_lead_and_persists_final_gate_ine
     empty-day guard fired instead; and it never asserted `summary.fatal`, so it was green on
     the exact run that failed. With a second lead that stays, the cohort guard is the guard
     that runs, and the fatal assertion is the one that matters.
+
+    **The one-posting path is no longer a hole to dodge: T131 made a valid gate rejection an
+    explainer of the empty-day guard**, and `tests/pipeline/test_zero_output_guard.py` covers it
+    directly. The second posting stays because it is what points this test at the COHORT guard,
+    which is still the thing it was written to pin — not because the other path is unsafe.
     """
     _ready(env)
     posting_id = _seed(env)
@@ -278,6 +283,35 @@ def test_gate_ineligible_with_span_excludes_the_lead_and_persists_final_gate_ine
     assert _current_gate_verdict(env, posting_id) == "ineligible"
     assert summary.fatal is None, summary.fatal
     assert summary.gate_excluded_ids == [posting_id]
+
+
+@_needs_an_executable_fake
+def test_a_slate_the_gate_rejected_ENTIRELY_is_not_an_empty_day(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T131, end to end: ONE posting, validly rejected, so the slate empties.
+
+    This is the path the test above was given a second posting to avoid. The empty-day guard
+    subtracted handled/applied/duplicate/dead but not gate exclusions, so a run where the judge
+    worked perfectly went FATAL — which also withholds the heartbeat. A gate `ineligible`
+    carrying a quoted span from the frozen JD is an honest suppression by the guard's own
+    standard, and is now its fifth explainer.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
+    monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(posting_id))
+    monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert fake_claude.exists(), "the gate never attempted a call"
+    assert summary.gate_excluded_ids == [posting_id]
+    assert not summary.tailored, "the only candidate was rejected, so nothing may be delivered"
+    assert summary.fatal is None, (
+        "a slate the judge validly emptied is not an unexplained empty day: " f"{summary.fatal}"
+    )
 
 
 # ---------------------------------------------------------------------------

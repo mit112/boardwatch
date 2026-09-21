@@ -1641,6 +1641,7 @@ def _zero_output_guard(
     applied_this_run: int = 0,
     duplicate_this_run: int = 0,
     dead_this_run: int = 0,
+    gate_rejected_this_run: int = 0,
 ) -> str | None:
     """P3 item 5 (B5) — 0 leads is provably right IFF every candidate THIS run judged
     (`eligible`/`uncertain`) was either delivered or honestly SUPPRESSED (already built/skipped/
@@ -1654,12 +1655,22 @@ def _zero_output_guard(
     `ineligible` cannot), run_id-attributed (not a cross-run handled ledger): a steady-state day
     where every candidate posting is a cache hit from a PRIOR run has this at 0 and is honest.
 
-    Each of the four twins is a run-scoped SUBSET of the candidates judged this run, and the
-    four subsets are disjoint — a posting leaves the ranker at exactly one `continue`, and
+    A final-gate `ineligible` IS an honest suppression by this standard and is the fifth
+    explainer (T131). The keystone requires such a verdict to carry a quoted span from the frozen
+    JD, so the judge did its job and named its evidence — that is the opposite of a filter
+    silently eating the shortlist. Without it, one new candidate plus one valid gate rejection
+    produced a FALSE fatal and withheld the heartbeat on a run that behaved correctly.
+
+    Each of the five twins is a run-scoped SUBSET of the candidates judged this run, and the
+    five subsets are disjoint — a posting leaves the ranker at exactly one `continue`, and
     `dead` is a post-rank fate of a posting that was surfaced, disjoint from the three
-    suppressions that `continue` before surfacing. `unexplained` is what is left after
-    subtracting all four; a negative value is a counting bug and raises
-    `ZeroOutputReconciliationError` rather than being silently clamped to 0.
+    suppressions that `continue` before surfacing. `gate_rejected` is a post-rank fate too, so
+    it is disjoint from those three by the same argument; against `dead`, its nearest neighbour,
+    the caller CONSTRUCTS disjointness by removing the dead ids rather than arguing it, because
+    these are counts and an overlap would be subtracted twice and underflow.
+
+    `unexplained` is what is left after subtracting all five; a negative value is a counting bug
+    and raises `ZeroOutputReconciliationError` rather than being silently clamped to 0.
     """
     unexplained = (
         candidate_judged_this_run
@@ -1667,11 +1678,13 @@ def _zero_output_guard(
         - applied_this_run
         - duplicate_this_run
         - dead_this_run
+        - gate_rejected_this_run
     )
     if unexplained < 0:
         raise ZeroOutputReconciliationError(
             f"run-scoped suppression twins ({handled_this_run}+{applied_this_run}+"
-            f"{duplicate_this_run}+{dead_this_run}) exceed candidates judged this run "
+            f"{duplicate_this_run}+{dead_this_run}+{gate_rejected_this_run}) exceed candidates "
+            f"judged this run "
             f"({candidate_judged_this_run})"
         )
     if unexplained > 0:
@@ -2620,12 +2633,21 @@ def run_pipeline(
             # `dead_lead_ids`) runs after that point. `ShortlistCounts` is frozen.
             summary.shortlist = replace(summary.shortlist, dead_this_run=dead_this_run)
         if summary.fatal is None and not summary.tailored:
+            # T131. INTERSECTED with `judged`, because the denominator counts only postings whose
+            # deterministic evaluation THIS run wrote: a lead the gate excluded on a verdict
+            # computed in a prior run is not in it, and subtracting the raw count would underflow
+            # and turn a false fatal into a crash. Minus `dead_lead_ids` so the two post-rank
+            # fates cannot both claim one posting — disjointness built, not asserted.
+            gate_rejected_this_run = len(
+                (set(summary.gate_excluded_ids) & judged) - set(summary.dead_lead_ids)
+            )
             summary.fatal = _zero_output_guard(
                 len(judged),
                 handled_this_run=ranked.hidden_handled_this_run,
                 applied_this_run=ranked.hidden_applied_this_run,
                 duplicate_this_run=ranked.hidden_duplicate_this_run,
                 dead_this_run=dead_this_run,
+                gate_rejected_this_run=gate_rejected_this_run,
             )
 
         # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which
