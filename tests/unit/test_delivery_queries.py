@@ -52,7 +52,15 @@ from boardwatch.store.delivery_queries import (
 from boardwatch.store.ledger_queries import record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
+from boardwatch.store.tables import (
+    artifacts,
+    board_scans,
+    companies,
+    jobs,
+    posting_versions,
+    postings,
+    runs,
+)
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 
@@ -101,8 +109,16 @@ def _company(
     tags: list[str] | None = None,
     source: str = "user",
     watched: bool = True,
+    scans: tuple[str, ...] = ("complete",),
 ) -> int:
-    return int(
+    """One company, plus the `board_scans` history that decides whether its board is enumerated.
+
+    `scans` defaults to one `complete` row because that is what an ordinary enumerated board has,
+    and it is what `_status` now requires before it will call an open posting `open` (T122).
+    `scans=()` is a board that has never completed; `("partial",)` is one that has only ever
+    failed part-way — the 16,510-posting live class.
+    """
+    company_id = int(
         conn.execute(
             insert(companies).values(
                 name=name, provider=provider, slug=slug, source=source,
@@ -110,6 +126,14 @@ def _company(
             )
         ).inserted_primary_key[0]
     )
+    for status in scans:
+        conn.execute(
+            insert(board_scans).values(
+                run_id=_run(conn), company_id=company_id, started_at=NOW, finished_at=NOW,
+                status=status, postings_listed=1,
+            )
+        )
+    return company_id
 
 
 def _job(conn: Connection) -> int:
@@ -205,6 +229,7 @@ def _deliver(
     watched: bool = True,
     provider: str = "greenhouse",
     url: str | None = "https://boards.test/apply",
+    scans: tuple[str, ...] = ("complete",),
 ) -> tuple[int, int]:
     """One delivered lead — company, job, posting, frozen version, tailored artifact.
 
@@ -212,7 +237,8 @@ def _deliver(
     one canonical job, which is the population deduplication has to collapse.
     """
     company_id = _company(
-        conn, f"acme-{key}", provider=provider, tags=tags, source=source, watched=watched
+        conn, f"acme-{key}", provider=provider, tags=tags, source=source, watched=watched,
+        scans=scans,
     )
     job = _job(conn) if job_id is None else job_id
     posting_id = _posting(
@@ -481,6 +507,65 @@ def test_a_closed_posting_is_never_relabelled_unverifiable(engine: Engine) -> No
     with engine.connect() as conn:
         by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
     assert by_posting[closed_unwatched].status == "closed"
+
+
+def test_a_watched_board_that_never_completes_a_scan_is_unverifiable_too(engine: Engine) -> None:
+    """`companies.watched` means CONFIGURED for scans, not ENUMERATED (T122).
+
+    Absence closure runs only under a `complete` snapshot (`scan/apply.py::apply_board` calls
+    `_process_missing` for those alone), so a watched board whose scans never reach `complete`
+    can no more produce a `closed` than an unwatched one can. Its open postings were never
+    measured as still listed either. Measured live 2026-09-20: 16,510 open postings on 8 such
+    boards, 98% of them on four Workday/oraclehcm boards.
+
+    The `complete` control beside it is what stops a predicate that flags every watched board
+    from passing: without it, "always unverifiable" is green.
+    """
+    with engine.begin() as conn:
+        partial_only, _ = _deliver(conn, "partial-only", watched=True, scans=("partial",))
+        never_scanned, _ = _deliver(conn, "never-scanned", watched=True, scans=())
+        completed, _ = _deliver(conn, "completed", watched=True, scans=("partial", "complete"))
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert by_posting[partial_only].status == "unverifiable"
+    assert by_posting[never_scanned].status == "unverifiable"
+    assert by_posting[completed].status == "open"
+
+
+def test_relabelling_a_never_complete_board_moves_no_lead_out_of_its_lane(
+    engine: Engine,
+) -> None:
+    """T122 is a RENDERED-STATUS change and nothing else.
+
+    `review_gate.classify` asks `status == "closed"`, never `!= "open"`, so an `unverifiable`
+    lead stays the live work it is. Asserting the whole `LaneDecision` rather than the status
+    string is the point: a diff that quietly drained these 16,510 postings would be
+    indistinguishable from this one by any status assertion.
+    """
+    with engine.begin() as conn:
+        _save_profile(conn)
+        stranded, _ = _deliver(conn, "stranded", watched=True, scans=("partial",))
+        enumerated, _ = _deliver(conn, "enumerated", watched=True, scans=("complete",))
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert by_posting[stranded].status == "unverifiable", "premise: the label must be reached"
+    assert by_posting[stranded].closed is False
+    assert delivery_queries.lane_decision(by_posting[stranded]) == delivery_queries.lane_decision(
+        by_posting[enumerated]
+    )
+
+
+def test_a_closed_posting_on_a_never_complete_board_still_reads_closed(engine: Engine) -> None:
+    """`closed` is only ever written off a `complete` snapshot, so it is a real measurement
+    wherever it is found — including on a board whose LATER history holds no complete scan.
+    Only the `open` claim is unsupported, and T122 widens that claim's guard, not this one."""
+    with engine.begin() as conn:
+        closed_id, _ = _deliver(
+            conn, "closed-partial", status="closed", watched=True, scans=("partial",)
+        )
+    with engine.connect() as conn:
+        by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
+    assert by_posting[closed_id].status == "closed"
 
 
 def test_queue_detail_reports_the_same_unverifiable_status_as_the_row(engine: Engine) -> None:

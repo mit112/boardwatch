@@ -78,6 +78,7 @@ from boardwatch.store.tables import (
     application_events,
     applications,
     artifacts,
+    board_scans,
     companies,
     jobs,
     posting_versions,
@@ -244,6 +245,25 @@ def _run(conn: Connection, *, finished: datetime | None = NOW) -> int:
     )
 
 
+def _complete_scan(conn: Connection, company_id: int) -> None:
+    """The `board_scans` row that makes a watched board ENUMERATED rather than merely configured.
+
+    Without one, `delivery_queries._status` renders every open posting `unverifiable` (T122):
+    absence closure needs a `complete` snapshot, so a board that has never produced one can no
+    more retire a posting than an unwatched board can.
+    """
+    # The NEWEST existing run, not a fresh one: `/api/runs` lists every row, so minting a run
+    # per delivery would change what the run tests count.
+    existing = conn.execute(select(func.max(runs.c.id))).scalar()
+    run_id = _run(conn) if existing is None else int(existing)
+    conn.execute(
+        insert(board_scans).values(
+            run_id=run_id, company_id=company_id, started_at=NOW, finished_at=NOW,
+            status="complete", postings_listed=1,
+        )
+    )
+
+
 def _deliver(
     conn: Connection,
     key: str,
@@ -283,6 +303,7 @@ def _deliver(
             )
         ).inserted_primary_key[0]
     )
+    _complete_scan(conn, company_id)
     job = job_id
     if job is None:
         job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
@@ -463,6 +484,7 @@ def _undelivered(conn: Connection, key: str, *, title: str = "Data Engineer") ->
             )
         ).inserted_primary_key[0]
     )
+    _complete_scan(conn, company_id)
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     conn.execute(
         insert(postings).values(
