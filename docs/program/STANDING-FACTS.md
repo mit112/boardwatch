@@ -3381,3 +3381,48 @@ before local did. **A green local gate could not predict it and a re-run could n
 `TZ=UTC` reproduces it exactly (2 of 25 fail, the two CI named). Both now derive the date from
 today. The other 14 date literals in that file compare dates to each other or to an input value,
 never to today, and were left alone.
+
+## The settled 2026-09-20d/e STATE block, moved WHOLE out of `STATE.md` on 2026-09-20g
+
+### 2026-09-20d/e — **THE ASTRA REMEDIATION BACKLOG IS CLOSED TO THIRTEEN TICKETS IN ONE GATED WAVE, AND IT IS MERGED (D-528, PR #398 → `09df0e87`). WINDOWS IS GREEN AND THE FIVE-NIGHT RED IS OVER. THE ENGINE BATCH IS THE ONLY DEFERRAL. NOTHING HERE RE-KEYS — no drain, no confirm-clock restart.**
+
+**The gate, on the commit that actually merged.** `make check` exit 0 on **`82ad88da`** — 10,584 passed (baseline 10,542), 1 skipped, 4 xfailed, coverage 95.25%, 9m16s, all six targets present. The earlier reading was on `42bc2696`, one commit short of HEAD; the gap was four program docs plus one line in `tests/unit/test_delivery_queries.py`. **After the merge, `git diff 82ad88da HEAD` is empty** — the merge tree is byte-identical, so this reading is valid for `09df0e87` and the 04:00 tick runs exactly the gated code.
+
+Shipped: **T110, T111, T120, T121, T122, T126, T128, T131, T134, T136, T138 (per-file half),
+T139 (doc half), T148.** Five came from three enterprise-seat executors in their own worktrees
+(`t122`, `t134`, `t110`), **each gated here, never by itself**; all three merged with zero
+conflicts. **Held WHOLE in D-528; do not re-derive.**
+
+**T128 WAS THE ONLY THING ACTUALLY BROKEN, AND IT WAS WORSE THAN RECORDED.** The scheduled build
+was red **five** consecutive nights (09-16…09-20), not four. Three Windows-only failures, invisible
+to every push CI because **Windows runs on `schedule`/`workflow_dispatch` ONLY**. Validated by an
+explicit `workflow_dispatch` on the branch — the only way to see that matrix before merge.
+
+**NEXT ACTION 4's ONE-TIME RE-JUDGE HAS FIRED AND IS CLEAN — it was recorded as owed and was
+already discharged.** Run **468**: `funnel-468.md` reads `120 candidates · 0 already current ·
+120 sent`, 0 failed open / 0 missing / 0 refused; the store independently shows run 468 = **120
+rows `model='haiku'`** against `model=NULL` on 434/447/467. **T108 is discharged and PROVEN LIVE** —
+the gate row varies with the model, so the Sonnet move reaches standing verdicts, not only new leads.
+
+**THREE MEASUREMENTS CLOSED ITEMS WITHOUT CODE.** (1) **The composite-title asymmetry is REFUTED**
+— astra's "only harmful" long-qualifier case reads `uncertain` (held for review), NOT `not_swe`;
+of 26,830 open "software" titles the 563 reading `not_swe` are 540 non-engineering nouns plus 23
+correct vetoes, so **genuinely-SWE titles hidden: 0 of 260,306**, null-controlled. **Do not rewrite
+the parser.** (2) **T136's `ge=1` deliberately NOT changed** — 12 of 25 real runs exceed 60 min
+(median 59.3, max 200.2) so a one-hour reaper would close a LIVE run, but a flat floor breaks
+multi-tenancy. **The number is Mit's; the missing test shipped.** (3) **T122 re-measured after run
+468 reproduces exactly** — 16,510 under 8 boards, 6.34%, partition-verified.
+
+**T113 IS RE-SIZED BY AN ORDER OF MAGNITUDE.** The freshness test compares `model`, so every
+pre-T108 row is stale: **1,203 of 1,323** posting-versions, not the ticket's **97**. And **the
+re-judge is a ROLLING backlog** bounded by `gate.depth` per tick, not one run — true of the SLATE,
+false of the stored corpus. **Do not quote the 97 again.**
+
+**Two executor judgment calls accepted, both flagged by the executor.** T134 made a RAISED form
+sweep escalate (right — a failed sweep means T91 hard-stop leads shipped UNHELD). T110 kept the B8
+volume reading OFF `summary.errors`, so it reaches the funnel but not the escalation channel;
+**that one is Mit's to reverse** and one line at the call site does it.
+
+**The finalize-block order was CHECKED after the three-way merge** (D-374's marker had drifted and
+was repaired): `form-sweep → funnel → queue → intake → scan → drought → lane-volume → liveness →
+corpus → morning → heartbeat`. Nothing below `_emit_morning`; heartbeat last.
