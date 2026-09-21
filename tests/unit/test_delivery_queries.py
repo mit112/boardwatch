@@ -179,7 +179,11 @@ def _version(
     return int(
         conn.execute(
             insert(posting_versions).values(
-                posting_id=posting_id, content_hash=f"v-{posting_id}-{captured_at:%s}",
+                # `int(...timestamp())`, NOT `{captured_at:%s}`: `%s` is a glibc/BSD
+                # strftime extension and Windows raises `ValueError: Invalid format
+                # string` on it, which took 46 tests in this file red on the nightly.
+                posting_id=posting_id,
+                content_hash=f"v-{posting_id}-{int(captured_at.timestamp())}",
                 body_text=body, captured_at=captured_at, run_id=None,
                 capture_reason=capture_reason,
             )
