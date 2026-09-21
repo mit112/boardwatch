@@ -1,8 +1,10 @@
-"""P0 item 4: the two new manifest hashes (`config_hash`, `profile_row_hash`).
+"""P0 item 4: the new manifest hashes (`config_hash`, `profile_row_hash`), and T111's sixth.
 
-These pin the two claims the manifest makes and could get wrong: that the config hash tracks
-exactly the decision-relevant settings and nothing else, and that it FAILS closed on an
-unclassified field rather than silently covering the wrong set.
+These pin the claims the manifest makes and could get wrong: that the config hash tracks exactly
+the decision-relevant settings and nothing else, that it FAILS closed on an unclassified field
+rather than silently covering the wrong set, and — since T111 — that `routing_hash` sees the
+routing knobs those hashes deliberately do not, with the same closure and without moving a single
+one of them.
 """
 
 from __future__ import annotations
@@ -11,12 +13,16 @@ from pathlib import Path
 
 import pytest
 
-from boardwatch.core.settings import LLMTier, Settings
+from boardwatch.core.settings import GateTier, LLMTier, Settings
+from boardwatch.eligibility.engine import engine_version
 from boardwatch.reports import manifest
 from boardwatch.reports.manifest import (
+    UnclassifiedRoutingFieldError,
     UnclassifiedSettingError,
     config_hash,
+    policy_version,
     profile_row_hash,
+    routing_hash,
 )
 
 
@@ -171,3 +177,174 @@ def test_taxonomy_drift_moves_both_identities(tmp_path: Path) -> None:
     assert first_manifest is not None and second_manifest is not None
     assert first_manifest != second_manifest, "the manifest called two runs identical"
     assert first_stamp != second_stamp, "a permanent disposition would carry the wrong policy"
+
+
+# ------------------------------------------------------- T111: the sixth value, and its closure
+
+#: The five values `routing_hash` must not move. Named as a list so each assertion below is
+#: explicit rather than a loop over whatever the manifest happens to expose — this is the
+#: assertion that keeps a routing change from reopening a permanent disposition, and a test that
+#: silently checked four of five would not say so.
+def _five(settings: Settings) -> dict[str, str | None]:
+    return {
+        "code_fingerprint": engine_version(),
+        "config_hash": config_hash(settings),
+        # The three profile-derived values are pure functions of the PROFILE, not of `Settings`,
+        # so they are computed over a fixed profile here: a routing knob cannot reach them at all,
+        # and pinning them makes that structural fact an assertion rather than an assumption.
+        "profile_row_hash": profile_row_hash(
+            skills=["python"], target_titles=["swe"], exclude_titles=[], locations=["Boston"],
+            remote_only=False, target_seniority_band="entry", leveling_digest="lev",
+            taxonomy_version="tax",
+        ),
+        "profile_facts_hash": "facts-abc",
+        "rules_hash": "rules-abc",
+    }
+
+
+def test_flipping_the_seniority_hold_moves_the_sixth_value_and_only_the_sixth(
+    tmp_path: Path,
+) -> None:
+    """**The T111 defect and its guard in one test.**
+
+    The first block is the CHARACTERIZATION and it passed before this shipped: astra's probe
+    measured that flipping `seniority_hold` leaves `config_hash` byte-identical, so two runs can
+    carry identical five-hash manifests and route every lead differently — and B8's 14-day
+    evidence is read against those manifests.
+
+    The second block is what T111 adds. The third is the one that keeps dispositions from
+    reopening: all five existing values are asserted EXPLICITLY, because `policy_version` is
+    composed from them and any one of them moving would re-stamp every permanent decision.
+    """
+    off = _settings(tmp_path, gate=GateTier(seniority_hold=False))
+    on = _settings(tmp_path, gate=GateTier(seniority_hold=True))
+
+    assert config_hash(off) == config_hash(on)
+    assert routing_hash(off) != routing_hash(on)
+
+    before, after = _five(off), _five(on)
+    assert before["code_fingerprint"] == after["code_fingerprint"]
+    assert before["config_hash"] == after["config_hash"]
+    assert before["profile_row_hash"] == after["profile_row_hash"]
+    assert before["profile_facts_hash"] == after["profile_facts_hash"]
+    assert before["rules_hash"] == after["rules_hash"]
+    assert policy_version(**before) == policy_version(**after)  # type: ignore[arg-type]
+
+
+def test_the_other_routing_knobs_move_the_sixth_value_too(tmp_path: Path) -> None:
+    """`seniority_hold` is the knob F6 was raised on, not the only one it named. Each of these is
+    excluded from `config_hash` for a reason that is correct about VERDICTS and silent about
+    lanes: the three gate knobs decide which delivered leads carry a judge verdict when the lane
+    split runs, and the form budget decides which leads have a form to be hard-stopped by."""
+    base = routing_hash(_settings(tmp_path))
+
+    assert routing_hash(_settings(tmp_path, gate=GateTier(batch_size=7))) != base
+    assert routing_hash(_settings(tmp_path, gate=GateTier(call_timeout_s=30))) != base
+    assert routing_hash(_settings(tmp_path, gate=GateTier(depth=60))) != base
+    assert routing_hash(_settings(tmp_path, form_question_fetch_budget=0)) != base
+
+
+def test_an_acquisition_or_machine_local_change_does_not_move_the_sixth_value(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """The control the test above needs. A fingerprint that moved on everything would satisfy it
+    for the wrong reason and would make every pair of runs incomparable — which is the same as
+    having no segmentation at all. Acquisition changes how much corpus ARRIVES and machine-local
+    paths change nothing; neither can put a delivered lead in a different lane."""
+    base = routing_hash(_settings(tmp_path))
+    other = tmp_path_factory.mktemp("elsewhere")
+
+    assert routing_hash(_settings(tmp_path, scan_workers=8)) == base
+    assert routing_hash(_settings(tmp_path, lanes_enabled=["linkedin"])) == base
+    assert routing_hash(_settings(tmp_path, death_probe_budget=999)) == base
+    assert routing_hash(_settings(tmp_path, llm=LLMTier(max_calls_per_run=7))) == base
+    assert routing_hash(Settings(data_dir=other, config_dir=other)) == base
+
+
+def test_routing_hash_fails_closed_on_an_unclassified_knob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same closure `config_hash` has, extended to the new set — without it the next routing
+    knob is silently uncovered again, which is exactly how `seniority_hold` got here.
+
+    Dropping a member from the OUT set simulates a knob that `config_hash` classified irrelevant
+    and nobody then decided about for routing. Its own error type, so a caller cannot catch this
+    and "fix" it by editing the config classification.
+    """
+    monkeypatch.setattr(
+        manifest, "_ROUTING_IRRELEVANT", manifest._ROUTING_IRRELEVANT - {"scan_workers"}
+    )
+    with pytest.raises(UnclassifiedRoutingFieldError):
+        routing_hash(_settings(tmp_path))
+
+
+def test_routing_hash_covers_the_modules_that_decide_the_lane(tmp_path: Path) -> None:
+    """The second half: a routing change arrives through the CODE as often as through a knob, and
+    none of these five modules is inside `engine_version`'s four.
+
+    Checked rather than asserted — `digested_modules()` is read here, so this fails if that list
+    ever grows to cover a lane module and the two fingerprints start double-counting it.
+    """
+    from boardwatch.eligibility.engine import digested_modules
+
+    assert set(digested_modules()).isdisjoint(
+        {Path(name).name for name in manifest._ROUTING_MODULES}
+    )
+    assert all(
+        (Path(manifest.__file__).parent.parent / name).is_file()
+        for name in manifest._ROUTING_MODULES
+    )
+    # The source really is an input: a module whose text changes moves the value.
+    original = manifest._routing_source
+
+    def _mutated(relative: str) -> str:
+        text = original(relative)
+        return text + "\nZZZ_ROUTING_PROBE = 1\n" if relative.endswith("review_gate.py") else text
+
+    base = routing_hash(_settings(tmp_path))
+    manifest._routing_source = _mutated  # type: ignore[assignment]
+    try:
+        assert routing_hash(_settings(tmp_path)) != base
+    finally:
+        manifest._routing_source = original  # type: ignore[assignment]
+
+
+def test_a_permanent_disposition_survives_a_hold_flip(tmp_path: Path) -> None:
+    """**The ruling's hard constraint, asserted through the ledger rather than through the hash.**
+
+    "Permanent dispositions keep their current identity. Changing a hold must reopen NOTHING."
+    `policy_version` is composed from the five values above and `routing_hash` is not one of
+    them, so a `built` job stamped before the flip is still live AND not stale afterwards.
+    `stale_dispositions` is what the drain reads; an empty answer is the whole claim.
+    """
+    from datetime import datetime
+
+    from sqlalchemy import insert
+
+    from boardwatch.store import tables
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.ledger_queries import (
+        live_dispositions,
+        record_disposition,
+        stale_dispositions,
+    )
+
+    now = datetime(2026, 9, 19, 12, 0, 0)
+    engine = get_engine(tmp_path / "data")
+    ensure_schema(engine)
+    before = policy_version(**_five(_settings(tmp_path, gate=GateTier(seniority_hold=False))))  # type: ignore[arg-type]
+    after = policy_version(**_five(_settings(tmp_path, gate=GateTier(seniority_hold=True))))  # type: ignore[arg-type]
+
+    with engine.begin() as conn:
+        job_id = int(
+            conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
+        )
+        record_disposition(
+            conn, job_id, disposition="built", reason="lead_built",
+            policy_version=before, now=now,
+        )
+
+    with engine.connect() as conn:
+        assert job_id in live_dispositions(conn, now=now)
+        assert stale_dispositions(conn, policy_version=after, now=now) == {}
+    assert before == after
