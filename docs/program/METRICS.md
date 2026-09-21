@@ -15366,3 +15366,31 @@ last exit-0 gate (`git diff dcc594c7 21bb2403` is empty); and the failures read 
 
 **The gate is OWED on an idle machine.** Last known green on `engine-batch`: exit 0, 10,612
 passed, 95.26%, 9m19s — at `83c22796`, one commit behind `f0e5a009`.
+
+### T104's live verdict delta over the COMPLETE movable population (measured after the ruling)
+
+Sharded across 8 workers. Each shard asserts its own rewrite is not a no-op and that the alias
+sweep left no site behind, before evaluating anything.
+
+**Completeness, checked rather than assumed:** the delta evaluates `postings.body_text` while the
+pipeline evaluates the current `posting_versions.body_text`. They are **identical for all 260,306
+open postings, zero divergence**, so the 67,587-posting filter is complete, not a sample.
+
+**Baseline control: 67,400 of 67,446 re-evaluations match the LIVE stored verdict — 99.93%.**
+The 46 disagreements are 0.07%, consistent with postings re-versioned since evaluation.
+
+| scope | moved | % | `uncertain->ineligible` | `uncertain->eligible` | `ineligible->uncertain` |
+|---|---:|---:|---:|---:|---:|
+| adj2 — the 2 patterns T104 names | 231 | 0.342% | 209 | 3 | 19 |
+| **adjALL — all 11 document-scoped sites** | **339** | **0.502%** | 225 | **94** | 20 |
+
+**adjALL is a strict superset:** 0 postings move under adj2 that do not move under adjALL; its
+extra **108** are **+91 eligible against +16 rejected**. Chosen on that basis.
+
+**Sampled, not just counted.** All three sampled `uncertain->eligible` are correct and all three
+are adjALL-only, sitting on `bachelor_required` which the literal ticket never moves: `157728`
+("Bachelor's ... required. Master's degree **or equivalent** preferred"), `52162` (escape on
+PMP/PRINCE2 certifications), `210636` (escape on "MLR review or equivalent compliance processes").
+`327377` is the intended rejection — a separate "2 years of Python" bar that a disjunction
+elsewhere was waiving, which is D-449's ruling. **Known residual, T105's not T104's:** `261677`
+is a bullet ladder whose bare-bachelor's arm clears, and it now reads `ineligible`.

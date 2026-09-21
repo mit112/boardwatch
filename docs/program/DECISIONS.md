@@ -30332,3 +30332,53 @@ before pytest ran. Three grounds that it is environmental: the failure count var
 assertions. Cause: load average **13.23 on 10 cores**, with Dota 2 at **352% CPU**. Nothing was
 killed. `generalization`, both program indexes, `ruff` and `mypy --strict` (365 files) all pass,
 and the eligibility catalog suite passes 58. **The gate is OWED on an idle machine.**
+
+**ADDENDUM (same session, after Mit ruled).** He chose **(c)**, the ownership-guarded adjacent
+reach, and authorised the push. `engine-batch` is on origin with no PR. **Correction to what he was
+told when he chose:** the option said pushing would run CI. It does not — `ci.yml` triggers `push`
+only on `branches: [main]`, so a branch push fires nothing. The push bought off-machine backup, not
+a signal; `workflow_dispatch` is the only CI this branch can get and the only way to see Windows.
+
+**Scope: adjALL — all eleven document-scoped sites move, measured over the COMPLETE population.**
+
+| | postings moved | `uncertain->ineligible` | `uncertain->eligible` | `ineligible->uncertain` |
+|---|---:|---:|---:|---:|
+| adj2 (the 2 the ticket names) | 231 (0.342%) | 209 | 3 | 19 |
+| **adjALL (11)** | **339 (0.502%)** | 225 | **94** | 20 |
+
+**Baseline control: 67,400 of 67,446 re-evaluations match the LIVE stored verdict (99.93%).** The
+46 disagreements are 0.07% and consistent with postings re-versioned since evaluation.
+
+**adjALL is a STRICT SUPERSET** — zero postings move under adj2 that do not move under adjALL. Its
+extra **108** are **+91 eligible against +16 rejected**. The sweep is therefore NOT the
+job-deleting choice, which inverts the risk framing this entry carried before the measurement.
+
+**Sampled and verified, not just counted.** All three sampled `uncertain->eligible` are correct and
+all three are adjALL-only, because they sit on `bachelor_required` — a pattern the literal ticket
+never moves: `157728` ("Bachelor's ... required. Master's degree **or equivalent** preferred."),
+`52162` (the escape is on PMP/PRINCE2 **certifications**), `210636` (on "MLR review or equivalent
+**compliance processes**"). In each, document scope let an escape about something else waive a
+required degree bar. `327377` is the intended `->ineligible`: a separate "2 years of Python" bar
+that a degree-or-years disjunction elsewhere was wrongly waiving, which is D-449's ruling exactly.
+
+**Known residual, NOT fixed here and owned by T105:** `261677` is a bullet ladder ("HS Diploma
+(or equivalent) AND 4+ yrs / OR Associate's AND 2+ / OR Bachelor's") that now reads `ineligible`
+although the bare-bachelor's arm clears. Bullet-list inheritance is T105's, and T104 must not
+grow to cover it.
+
+**ONE golden re-baselined, and it was pinning the bug.** `m0334` — "A Master's degree is required.
+A PhD **or equivalent** research experience is preferred." with a bachelor's — went `uncertain` ->
+`ineligible`, `master_required` `unknown` -> `unmet`. The escape belongs to the *preferred* PhD
+line and never waived the *required* master's. **F38's ruling is untouched**: it ruled
+abstain-rather-than-drop, which still holds (corpus `m1063` pins a standalone waiver still
+abstaining). What F38 assumed about REACH was what finding 4 refuted, and `rules.yaml`'s comment
+asserting "it stays DOCUMENT-scoped" was corrected in the same change rather than left to rot.
+
+**`abstain_by` now has ZERO users** — all eleven moved. The field stays in the loader for an
+override, and the census pins the pair (`abstain_by: 0`, `abstain_by_adjacent: 11`) so a future
+pattern taking the unbounded reach fails the gate.
+
+Corpus 1,060 -> **1,064** (`m1061`-`m1064`: both red-first regressions, a standalone-waiver control
+and a two-sentences-away control), with `CORPUS_ROWS` and the completeness assert moved together.
+The `rules.yaml` pin was rewritten twice, each time keyed on the unique full old hash with the pin
+count asserted at **90** and exactly **one** line changed.

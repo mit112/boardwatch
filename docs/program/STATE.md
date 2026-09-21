@@ -53,23 +53,45 @@ states no requirement of its own") satisfies **all six** cases and is held as a 
 committed — its failure direction is job-deleting and the live delta over the **67,587** movable
 postings is unmeasured.
 
-**Shipped to `engine-batch` (`f0e5a009`, 4 commits now): the mechanism only.**
-`abstain_by_adjacent` on `PatternSpec`, in the parser, and in `detect.py`'s now-enumerated unit
-loop. **No catalog entry uses it**, so behaviour is unchanged and the census pins it at **0** as a
-tripwire. Four tests pin the reach against BOTH neighbours, and two mutations prove them
-non-vacuous. `rules.yaml` is UNTOUCHED — no pin moved.
+**MIT RULED (c) AND IT IS BUILT AT THE WIDER SCOPE.** `engine-batch` is PUSHED (no PR) and holds
+the mechanism at `f0e5a009` plus the ownership-guarded reach with **all eleven** document-scoped
+escapes moved. **`abstain_by` now has ZERO users**; the census pins the pair (`abstain_by: 0`,
+`abstain_by_adjacent: 11`) so a future pattern taking the unbounded reach fails the gate.
 
-**`make check` COULD NOT BE REACHED AND NO GREEN IS CLAIMED.** It exited 2 at `web-test` before
-pytest ran. Three grounds it is environmental: the count varies (18, 6, 7 failures across runs);
+**The scope was decided by measurement, and it inverts the risk framing.** Over the COMPLETE
+67,587-posting movable population — completeness checked, `postings.body_text` is identical to the
+current `posting_versions.body_text` for all 260,306 open rows — **adjALL is a strict superset of
+adj2** (0 postings move under adj2 that do not under adjALL), and its extra **108** are **+91
+`eligible` against +16 rejected**. adj2 would have been 209 rejections for 3 finds. Baseline
+control: **67,400 of 67,446 re-evaluations match the LIVE stored verdict (99.93%)**. Three sampled
+finds were each verified correct and each is adjALL-only. **Known residual, owned by T105 and NOT
+to be folded into T104:** a bullet ladder (`261677`) whose bare-bachelor's arm clears now reads
+`ineligible`.
+
+**ONE golden re-baselined and it was pinning the bug** — `m0334`, where an escape on a *preferred*
+PhD line was waiving a *required* master's. **F38's abstain-not-drop ruling is untouched** (m1063
+pins a standalone waiver still abstaining); only its assumption about REACH moved, and
+`rules.yaml`'s comment asserting document scope was corrected in the same change. Corpus 1,060 →
+**1,064**; the `rules.yaml` pin was rewritten twice and the corpus pin once, each keyed on the
+unique full old hash with the count asserted at **90** and one line changed.
+
+**`engine-batch` HAS NO CI.** `ci.yml` triggers `push` only on `branches: [main]`, so pushing a
+branch fires nothing — the push bought off-machine backup, not a signal. **A `workflow_dispatch` is
+the only CI this branch can get and the only way to see Windows, and it is OWED before merge.**
+
+**The machine-load gate failure earlier in the session was environmental, and is recorded below
+because it will recur.** It exited 2 at `web-test` before pytest ran. Three grounds it is environmental: the count varies (18, 6, 7 failures across runs);
 it reproduces on `main`, whose tree is byte-identical to the last exit-0 gate (`git diff dcc594c7
 21bb2403` empty); and the failures are `Test timed out in 5000ms`, not assertions. **Load average
 13.23 on 10 cores, Dota 2 at 352% CPU.** Nothing was killed. Verified separately instead:
 generalization OK, both indexes current, ruff, `mypy --strict` 365 files, and **1,668 eligibility
 tests** including the 1,061-golden corpus. **THE GATE IS OWED ON AN IDLE MACHINE.**
 
-**Unpushed and unasked.** `engine-batch` still has no upstream — the push was put to Mit twice and
-went unanswered, and it is his call, not the session's. PR #400 merged as `21bb2403`; the primary
-checkout is synced to it and still on `main`.
+**Still held for Mit, all asked and none answered before he stepped away:** the docs branch push,
+a `workflow_dispatch` on `engine-batch`, and pruning **65 of 71 worktrees** (all clean AND fully
+merged into `origin/main`; `projectY` is **25 GB** across 70 venvs and the disk has **35 GiB**
+free — branches survive, so `git worktree add` reverses it). PR #400 merged as `21bb2403`; the
+primary checkout is synced and still on `main`.
 
 
 ### 2026-09-20f — **THE ENGINE BATCH IS OPEN ON AN UNMERGED BRANCH. `engine-batch` (worktree `bw-engine`) HOLDS T100, T102 AND T103, GATED exit 0 — 10,612 passed, 95.26%. IT IS DELIBERATELY NOT MERGED (D-530).**
@@ -95,7 +117,8 @@ but not nested); its headline example already resolves as same-`implies` corrobo
 same-span mixed groups measure **0 across five profile shapes** over 8,000 postings, null-
 controlled. **Do not re-raise it.** Corpus: 1,061 goldens pass, zero re-baselined.
 
-**Still owed in the batch: T101, T104, T105, T92, `education_timing`, the Sonnet judge move.**
+**Still owed in the batch: T101, T105, T92, `education_timing`, the Sonnet judge move.**
+**T104 is DONE (D-531).**
 **`education_timing` ALREADY EXISTS as a family** in `rules.yaml` (`currently_enrolled`,
 `graduation_yyyymm`) — re-read D-521 §8.5 against the catalog before building anything.
 
@@ -181,12 +204,12 @@ density; predict yield from the sample. Never the reverse.
    is a question about the 9-of-14 RECORD, not about the instrument.
 4. **The batched engine landing — OPEN AND UNDER WAY ON `engine-batch`, three tickets in
    (T100, T102, T103), gated exit 0, NOT merged. See the 2026-09-20f block above and D-530
-   before doing anything here.** Still owed: T101, T104, T105, T92, `education_timing`, and
-   the Sonnet judge move (D-477, D-514). **T104 IS BLOCKED ON A RULING, NOT ON WORK (D-531):
-   its stated design cannot reach its own regressions 8 and 9, the mechanism is committed
-   UNUSED at `f0e5a009`, and the three readings are (a) literal two-pattern, (b) sentence scope
-   on all eleven, (c) the verified ownership-guarded reach. Mit picks; the live delta over the
-   67,587 movable postings is owed before (c) ships.** The rest of this item is the original framing and
+   before doing anything here.** Still owed: T101, T105, T92, `education_timing`, and
+   the Sonnet judge move (D-477, D-514). **T104 IS DONE (D-531).** Mit ruled (c), the
+   ownership-guarded adjacent reach, and it shipped at the WIDER scope — all eleven
+   document-scoped escapes moved, chosen because adjALL is a strict superset of adj2 whose
+   extra 108 moves are +91 `eligible` against +16 rejected over the complete 67,587-posting
+   population. **What T104 does NOT cover: bullet ladders — that residual is T105's.** The rest of this item is the original framing and
    still stands — the Sonnet judge move, T92, **and
    `education_timing`** (D-521 §8.5: one nullable field, correctly rejects 7 unapplyable
    2027-start leads). **T108 (shipped, D-524) was its missing prerequisite**: until it landed,
