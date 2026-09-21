@@ -75,6 +75,20 @@ pins a standalone waiver still abstaining); only its assumption about REACH move
 **1,064**; the `rules.yaml` pin was rewritten twice and the corpus pin once, each keyed on the
 unique full old hash with the count asserted at **90** and one line changed.
 
+**THE BATCH'S RE-KEY, WITH THE CONCRETE VALUES — owed at MERGE, not now.** Both keys have moved
+off `main`, and D-528/D-530's whole point is that the batch pays for this **once**:
+
+| | `main` | `engine-batch` |
+|---|---|---|
+| `engine_version` | `1+223421634827` | **`1+fcef17f526a3`** |
+| `catalog.version` (drives `rules_hash`) | `f55a8b638aefdbdc…` | **`36d11ed322355a0b…`** |
+
+So **every stored deterministic verdict is re-keyed on merge and a ledger drain is OWED** — see
+`boardwatch ledger reopen --stale`. A drain reopens DISPOSITIONS, not verdicts, so it re-surfaces
+already-built leads rather than changing any answer. **The confirm-clock restart is NOT a live cost
+(D-351).** Do not merge without doing this, and do not do it before the batch is closed — T101,
+T105, T92, `education_timing` and the Sonnet judge move would each re-key it again.
+
 **`engine-batch` HAS NO CI.** `ci.yml` triggers `push` only on `branches: [main]`, so pushing a
 branch fires nothing — the push bought off-machine backup, not a signal. **A `workflow_dispatch` is
 the only CI this branch can get and the only way to see Windows, and it is OWED before merge.**
