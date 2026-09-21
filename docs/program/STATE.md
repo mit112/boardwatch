@@ -9,10 +9,10 @@
 >
 > **States only what is true now**; no sha or commit count (D-017). **Rewrite it, never prepend.**
 > **This file holds only what changes between sessions** — current standing, next action, live blockers,
-> owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
-> Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
-> 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1) **and on 2026-09-20d** (ALL FIVE astra-consumption blocks condensed to ONE pointer now that D-528 closes the remediation, 313 → 267 lines). Nothing was deleted on any of the fourteen passes. **The file is now 327 lines and that is over the bar by more than the usual margin.** What holds it up is run 467's 92-line block plus the 2026-09-20d/e block; **the latter was MOVED WHOLE on 2026-09-20g** (43 lines → 1 pointer), which is the fourteenth such pass. **The next thing to move is run 467's 2026-09-19 block**: 2026-09-20g now carries the second reading that supersedes its expansion numbers, so only its B8 half is still live — but it is still NOT movable whole while D-527 holds that half open, and a session with the budget should split it rather than summarise it away. **Run 467's is still HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
+> owner calls. **Settled subsystem history is moved WHOLE into `STANDING-FACTS.md`, never summarised
+> away** — fifteen passes so far, most recently **2026-09-21** (the 2026-09-20g, 2026-09-20f and
+> 2026-09-19 blocks, 378 → 272 lines). **Nothing has been deleted on any pass.** Do not narrate a
+> decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,137 +20,64 @@
 
 ## Current standing
 
-### 2026-09-20g — **RUN 468 ANSWERS NEXT ACTION 1: the new boards' 2.05% RATE HOLDS EXACTLY, the VOLUME was a first-scan bulge (584x), and the 70%-of-slate share is now PURE BACKLOG DRAWDOWN — 25 of 25 new-board leads were first seen in run 467, ZERO in run 468. T104's DESIGN IS REFUTED AGAINST ITS OWN CASES (D-531); its mechanism ships UNUSED on `engine-batch`. `make check` IS BLOCKED BY MACHINE LOAD, NOT BY CODE.**
+### 2026-09-21 — **THE ENGINE BATCH IS MERGED. RUN 469 SETTLES THE EXPANSION QUESTION AND IT INVERTS THE PROGRAM'S PRIORITY: THE BINDING CONSTRAINT IS THE SLATE CAP, NOT DISCOVERY (D-532). THE DRAIN IS MEASURED AND REFUSED (D-533). B8'S 9-OF-14 RECORD IS SUPERSEDED, NOT BLOCKING (D-534). THE NIGHTLY'S NEW WINDOWS RED IS A REAL PRODUCT GAP AND IS FIXED (D-535).**
 
-**Next action 1 is DISCHARGED. Both halves of the question were true at once.** Cohort = the 1,155
-boards with `scan_kind='board'` in run 467 but not 447; it sizes to exactly 1,155 and the same
-apparatus reproduces run 467's recorded **28 of 40** slate share, which is the null control.
+**Read D-532 before proposing ANY discovery work.** Run 469 is the third tick on 1,807 boards
+and the cohort read (null control passes: 1,155 boards, reproduces run 467's 28 of 40) gives:
+new-board leads **28 → 25 → 5**, while the eligible RATE holds at **2.04%** across all three.
+The mechanism is displacement, not exhaustion — only **75 of the cohort's 1,213 eligible have
+ever been drawn (6.2%)**, and `capped_by_top_n` is **10,533** postings that cleared EVERY filter
+and lost only on rank against a **40**-slot slate. The `--top 40` plist comment already named the
+cause: **the ranker is recency-dominated and rank-cut postings are BURIED, not queued.**
 
-| | run 467 | **run 468** |
-|---|---:|---:|
-| new-board **stock** open / eligible | 59,622 / 1,222 = **2.05%** | 59,618 / 1,219 = **2.04%** |
-| new-board **flow** (`kind='new'`) / eligible | 56,635 / 1,159 = **2.05%** | 97 / 2 = **2.06%** |
-| leads from the new boards | **28 of 40 (70%)** | **25 of 40 (62%)** |
-| provenance of those leads | 27 first seen THAT run | **25 of 25 first seen run 467** |
+**Consequence, and it is the session's main finding: anything sized in "eligible postings added"
+is sized in the WRONG UNIT.** Stages 2–3 stay refused and are better evidenced than before.
+**Gap C re-priced from "~74 eligible" to ~0.2 leads/day and was IMPORTED anyway** (29 of 37 boards, fleet 1,842 → 1,871; the 8 with zero swe-titled openings dropped) — cheap enough that the correction did not change the call. Precision work on the delivered 40
+now pays better than discovery that adds to a pool already 263× the daily slate. **This is NOT a
+decision to raise `--top`** — that trades against B8's precision half and is unmeasured.
 
-**The rate generalises; the lead contribution does not, yet.** 28→25 is inside noise (z≈0.71), but
-zero of run 468's own 97 fresh new-board postings produced a lead. Steady-state replenishment is
-**~2 eligible/day** against a ~25/day draw, over **1,139 undrawn** eligible (of 1,219; only 80
-carry a disposition). **Days-of-runway is UNSIZED and must not be quoted** — eligible is not
-slate-reachable (8,518 eligible → 75 shortlisted → 40 delivered, `capped_by_top_n` 10,562). **A
-third tick is what distinguishes decay from plateau.** Old boards read **3.69%**, denser per
-posting than the new ones. Reconciles four ways against funnel-468's own stage counts.
+**The batch merged with T100, T102, T103 and T104**, gated exit 0 on the merge commit (10,625
+passed, 95.26%) with the code tree byte-identical to the Windows-green dispatch. **No drain**
+(D-533): a two-arm blast radius over all 1,318 live-disposition postings found **1,316 unchanged,
+1 loosening (on a self-draining `seen` row), 0 that a drain would buy.** The re-key still
+re-judges the corpus at the next preflight — that is where T104's +91 `eligible` are released.
 
-**T104 IS REFUTED AS SPECIFIED (D-531) — do not build it from the ticket.** Regressions 8 and 9
-both put the escape in the immediately following sentence, which is exactly what
-`abstain_by_adjacent` is defined to see, so both keep reading `uncertain`; only sentence scope
-reaches them, and sentence scope breaks the waiver control. They are **the same shape at the same
-distance** — no distance-based reach separates them. Astra's own waiver example is a **vacuous**
-control (it fires `master_required`, which the ticket never moves); re-positioned onto
-`doctorate_required` it reverses. The ticket also names **2 of the 11** patterns holding those two
-**shared YAML anchors**. A verified non-distance discriminator ("reach the next unit only if it
-states no requirement of its own") satisfies **all six** cases and is held as a patch, NOT
-committed — its failure direction is job-deleting and the live delta over the **67,587** movable
-postings is unmeasured.
+**B8 (D-534): the 9-of-14 record is retired, not weighed.** All 14 days are on the 652-board
+fleet. Post-expansion `pdf.entered` reads **25 / 22 / 26 on runs 467/468/469 — 3 of 3, mean 24.3
+against a bar of 20.** And the batch's `rules_hash` move **restarts the 14-day confirm by
+`PROGRAM.md` §1's own rule**, so a fresh window begins at this merge regardless. **B8's PRECISION
+half is the live risk and is where the work is.**
 
-**MIT RULED (c) AND IT IS BUILT AT THE WIDER SCOPE.** `engine-batch` is PUSHED (no PR) and holds
-the mechanism at `f0e5a009` plus the ownership-guarded reach with **all eleven** document-scoped
-escapes moved. **`abstain_by` now has ZERO users**; the census pins the pair (`abstain_by: 0`,
-`abstain_by_adjacent: 11`) so a future pattern taking the unbounded reach fails the gate.
+**The nightly was red on a NEW Windows failure and it was a real product gap (D-535).** Not
+T128's three — those read zero. `promotion` commits by `os.replace`-ing `CURRENT`; that is atomic
+on POSIX but on Windows denies every concurrent open for the instant of the swap, so the
+lock-free reader saw **neither** revision — the third outcome §6 clause 1 says cannot happen.
+The reader now waits it out, bounded at 1s, `PermissionError` only. **Only a Windows dispatch can
+confirm the race is gone and ONE green run is not enough.**
 
-**The scope was decided by measurement, and it inverts the risk framing.** Over the COMPLETE
-67,587-posting movable population — completeness checked, `postings.body_text` is identical to the
-current `posting_versions.body_text` for all 260,306 open rows — **adjALL is a strict superset of
-adj2** (0 postings move under adj2 that do not under adjALL), and its extra **108** are **+91
-`eligible` against +16 rejected**. adj2 would have been 209 rejections for 3 finds. Baseline
-control: **67,400 of 67,446 re-evaluations match the LIVE stored verdict (99.93%)**. Three sampled
-finds were each verified correct and each is adjALL-only. **Known residual, owned by T105 and NOT
-to be folded into T104:** a bullet ladder (`261677`) whose bare-bachelor's arm clears now reads
-`ineligible`.
+**PREDICTION FOR RUN 470, RECORDED SO IT CAN BE CHECKED.** The batch re-keys `rules_hash`, so
+the next preflight re-judges the whole stored corpus rather than the day's new postings. D-460
+timed a full re-key at 151,626 postings in ~13 min; the corpus is now ~261k, so expect **~20-25
+min added** to a run that took 56 min — call it **75-85 min**, plus the 29 Gap C boards. That is
+well inside the heartbeat's 1-day period plus 2h grace. **If run 470 comes in near 56 min, the
+re-key did NOT fire and that is the thing to investigate**, not the duration. Also expect the
+confirm clock to restart here (D-534) and B8's volume half to be read fresh from this run.
 
-**ONE golden re-baselined and it was pinning the bug** — `m0334`, where an escape on a *preferred*
-PhD line was waiving a *required* master's. **F38's abstain-not-drop ruling is untouched** (m1063
-pins a standalone waiver still abstaining); only its assumption about REACH moved, and
-`rules.yaml`'s comment asserting document scope was corrected in the same change. Corpus 1,060 →
-**1,064**; the `rules.yaml` pin was rewritten twice and the corpus pin once, each keyed on the
-unique full old hash with the count asserted at **90** and one line changed.
+**The 2026-09-17 autoapply pre-flight findings are now tracked and re-measured.** Its "single
+largest fixable category" re-sizes: all five named dead postings have since CLOSED (2–4 days
+later), so §8 is **closure LATENCY, not blindness**, and it is already instrumented by T117/T126
+— do not re-ticket it. Population: 114 of 8,495 open+eligible carry `consecutive_missing ≥ 1`;
+closure latency is mean **8.33 days**. **§5 (comp band as a seniority input) is the cheapest real
+fix in the file** — `salary_min`/`salary_max` are already columns and the band gate already
+exists; it is missing an input, not a subsystem.
 
-**GATED: `make check` exit 0 on `c988383b`** — **10,625 passed**, 1 skipped, 4 xfailed, vitest
-211/211, coverage **95.26%**, 11m28s on an idle machine. The same tree took **51m21s** under the
-Dota-era load, which is the clearest measure of what that load was doing.
-
-**Test-count delta, counted through a different path than the gate.** `main` collects 10,589,
-`engine-batch` 10,630 — **+41**. Mine is **+9** (6 new test functions, 1 removed with the rename,
-+4 corpus rows, verified by diffing `83c22796..c988383b`); the three prior batch commits are the
-other **+32**. **That means the inherited figure is 4 low:** 2026-09-20f records `83c22796` at
-10,612 passed, but working back from this measurement it was **10,616**. Small, but quote the
-measured one.
-
-**THE BATCH'S RE-KEY, WITH THE CONCRETE VALUES — owed at MERGE, not now.** Both keys have moved
-off `main`, and D-528/D-530's whole point is that the batch pays for this **once**:
-
-| | `main` | `engine-batch` |
-|---|---|---|
-| `engine_version` | `1+223421634827` | **`1+fcef17f526a3`** |
-| `catalog.version` (drives `rules_hash`) | `f55a8b638aefdbdc…` | **`36d11ed322355a0b…`** |
-
-So **every stored deterministic verdict is re-keyed on merge and a ledger drain is OWED** — see
-`boardwatch ledger reopen --stale`. A drain reopens DISPOSITIONS, not verdicts, so it re-surfaces
-already-built leads rather than changing any answer. **The confirm-clock restart is NOT a live cost
-(D-351).** Do not merge without doing this, and do not do it before the batch is closed — T101,
-T105, T92, `education_timing` and the Sonnet judge move would each re-key it again.
-
-**`engine-batch` HAS NO CI.** `ci.yml` triggers `push` only on `branches: [main]`, so pushing a
-branch fires nothing — the push bought off-machine backup, not a signal. **A `workflow_dispatch` is
-the only CI this branch can get and the only way to see Windows, and it is OWED before merge.**
-
-**The machine-load gate failure earlier in the session was environmental, and is recorded below
-because it will recur.** It exited 2 at `web-test` before pytest ran. Three grounds it is environmental: the count varies (18, 6, 7 failures across runs);
-it reproduces on `main`, whose tree is byte-identical to the last exit-0 gate (`git diff dcc594c7
-21bb2403` empty); and the failures are `Test timed out in 5000ms`, not assertions. **Load average
-13.23 on 10 cores, Dota 2 at 352% CPU.** Nothing was killed. Verified separately instead:
-generalization OK, both indexes current, ruff, `mypy --strict` 365 files, and **1,668 eligibility
-tests** including the 1,061-golden corpus. **THE GATE IS OWED ON AN IDLE MACHINE.**
-
-**All three held items were RULED AND EXECUTED at session close.** `engine-batch` is pushed at
-`c988383b`; the docs branch is **PR #401** with auto-merge armed; and **65 of 72 worktrees were
-pruned** — every one clean AND fully merged into `origin/main`. **33 → 46 GiB free, 13 GB
-reclaimed.** The seven kept are the primary checkout, `bw-engine` and `bw-docs20g` (both
-unmerged), the three detached `bw-verify*`, and the dirty `bw-webaudit`. **Every branch survives**
-(`t99`, `t122`, `astra05`, `close-2026-09-17` spot-checked), so any of them reverses with
-`git worktree add`, and no `.git` lock was left behind. A `workflow_dispatch` was fired on the
-final state — **run `35565660891`, IN FLIGHT at close.** **Read it by job NAME, never colour
-(D-528's lesson), and confirm the Windows job actually RAN.** PR #400 merged as `21bb2403`; the
-primary checkout is synced and still on `main`, so the 04:00 tick runs `main`.
-
-
-### 2026-09-20f — **THE ENGINE BATCH IS OPEN ON AN UNMERGED BRANCH. `engine-batch` (worktree `bw-engine`) HOLDS T100, T102 AND T103, GATED exit 0 — 10,612 passed, 95.26%. IT IS DELIBERATELY NOT MERGED (D-530).**
-
-**Read this before touching the engine.** Mit ruled on 2026-09-20e: build next action 4's batch,
-**hold the merge until after the 04:00 tick** so the night runs the code the astra wave gated.
-**The branch ACCUMULATES the batch** — landing three tickets now and the rest later costs ONE
-`engine_version`/`rules_hash` re-key, not two. Continue ON `engine-batch`; do not open a second
-branch, and do not merge until the batch is done. Its base `86d9b3e6` is in `origin/main`, so it
-rebases cleanly. **The primary checkout stays on `main`** — the launchd driver runs its editable
-venv, so a branch switch there changes what the tick executes.
-
-**In: T100** (resolvers abstain on out-of-catalog choice values — the bug **inverts `unmet` to
-`met`** on three of four fields), **T102** (`us_person_required`; stops calling refugee/asylee EAD
-holders `unmet` on ITAR/EAR clauses they satisfy), **T103's unanimity half** (an all-`unmet` or
-all-`met` exclusive group now decides instead of dissolving — Mit's 2026-09-19 ruling; it reads
-`ineligible` on his own review-lane clearance holds). **T100 and T102 each move 0 of Mit's live
-verdicts**; T103 is the live-moving one.
-
-**T103's OTHER half — same-span subsumption — is REFUTED and NOT BUILT (D-530).** Its stated rule
-("spans equal or nested") cannot reach its own case (real spans (0,38) vs (20,50), overlapping
-but not nested); its headline example already resolves as same-`implies` corroboration; and
-same-span mixed groups measure **0 across five profile shapes** over 8,000 postings, null-
-controlled. **Do not re-raise it.** Corpus: 1,061 goldens pass, zero re-baselined.
-
-**Still owed in the batch: T101, T105, T92, `education_timing`, the Sonnet judge move.**
-**T104 is DONE (D-531).**
-**`education_timing` ALREADY EXISTS as a family** in `rules.yaml` (`currently_enrolled`,
-`graduation_yyyymm`) — re-read D-521 §8.5 against the catalog before building anything.
+### 2026-09-20g / 2026-09-20f / 2026-09-19 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-21.**
+Run 468's second reading (superseded by run 469, D-532); T104's refutation and rebuild (D-531, shipped);
+the engine batch's opening (D-530 — it MERGED as `ea95c42c`); run 467, Gate 1's second reading clearing
+all four employer-board bars, Indeed confirmed dead, and the stage-1 import that took the fleet 652 →
+1,807 (D-521, D-522). **Do not re-derive any of it.** One correction carried forward: D-522 §3's sizing
+rule (size from fleet density, predict yield from the sample) is **superseded by D-532** — both halves
+are denominated in eligible postings, which is the wrong unit once the slate cap binds.
 
 ### 2026-09-20d/e — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-20g.** The astra remediation wave: thirteen tickets in one gated wave, merged (D-528, PR #398 → `09df0e87`); Windows green and the five-night red over; the composite-title asymmetry REFUTED; T136's `ge=1` deliberately unchanged; next action 4's one-time re-judge FIRED and CLEAN on run 468. **Held in D-528 — do not re-derive.**
 
@@ -179,71 +106,46 @@ both of those recorded values too. Three more ticks and the condition is satisfi
 
 **Next action.**
 
-0. **ASTRA IS DONE — all five slices consumed AND the remediation closed (D-528).** 33 of 51
-   tickets shipped. What is left is listed in the astra pointer block above; **T100–T105 are item
-   4's batch and nothing else is owed to the reviews.** Mit's standing answer on the seat
-   (2026-09-19 18:40, re-confirmed 2026-09-20): fan out **2–3 executors at once, never more**;
-   ask for the usage reading again before a fan-out on a later day. **The pattern is proven** —
-   three executors, zero merge conflicts, each gated by the dispatching session.
-1. **DISCHARGED on run 468 (2026-09-20g block, D-531).** The rate HELD exactly (2.04% stock,
-   2.06% flow); the volume WAS a first-scan bulge (56,635 → 97 new postings, 584x); the slate
-   share held at 62% but is **pure drawdown** — 25 of 25 new-board leads were first seen in run
-   467, zero in run 468. **What replaces it: read run 469 the same way.** Two readings cannot
-   tell decay from plateau, and the ~2 eligible/day replenishment against a ~25/day draw is what
-   the stage-2/3 argument now turns on. Same method: cohort by `scan_kind='board'` in 467 not
-   447, and confirm it still reproduces run 467's 28 of 40 before reading anything new.
-2. **Rule on Indeed** (above). If accepted, size it as a dead lane rather than fixing it.
-3. **Rule on B8.** Its volume half now PASSES at 25, but it failed 9 of the 14 confirm days and
-   `PROGRAM.md` §1's replacement table includes it while M5's exit criterion does not. Does the
-   record block the retirement decision? **The 25 itself is now VERIFIED sound** — D-524 measured
-   the one defect that could have inflated it (`pdf.entered` is counted before the form sweep
-   re-routes) and it moved zero leads on run 467, with a null control proving the probe. So this
-   is a question about the 9-of-14 RECORD, not about the instrument.
-4. **The batched engine landing — OPEN AND UNDER WAY ON `engine-batch`, three tickets in
-   (T100, T102, T103), gated exit 0, NOT merged. See the 2026-09-20f block above and D-530
-   before doing anything here.** Still owed: T101, T105, T92, `education_timing`, and
-   the Sonnet judge move (D-477, D-514). **T104 IS DONE (D-531).** Mit ruled (c), the
-   ownership-guarded adjacent reach, and it shipped at the WIDER scope — all eleven
-   document-scoped escapes moved, chosen because adjALL is a strict superset of adj2 whose
-   extra 108 moves are +91 `eligible` against +16 rejected over the complete 67,587-posting
-   population. **What T104 does NOT cover: bullet ladders — that residual is T105's.** The rest of this item is the original framing and
-   still stands — the Sonnet judge move, T92, **and
-   `education_timing`** (D-521 §8.5: one nullable field, correctly rejects 7 unapplyable
-   2027-start leads). **T108 (shipped, D-524) was its missing prerequisite**: until it landed,
-   no component of the gate row key varied with `settings.gate.model`, so the move would have
-   reached NEW leads only and left every standing verdict on the old judge. **THE RE-JUDGE HAS
-   FIRED AND IS CLEAN — run 468, verified two ways (D-528). This condition is DISCHARGED; do not
-   wait for it again.** `funnel-468.md` reads `120 candidates · 0 already current · 120 sent`,
-   0 failed open / 0 missing / 0 refused, and the store shows run 468 = 120 rows `model='haiku'`
-   against `model=NULL` on 434/447/467. **But note what it does NOT mean:** the SLATE was
-   re-judged once; the stored corpus still holds **1,203 of 1,323** posting-versions on a stale
-   key, and the judge clears at most `gate.depth` per tick. That backlog is T113's, re-sized.
-5. **Stages 2-3 stay REFUSED for the density argument** (workday 0.17, smartrecruiters 0.08,
-   oraclehcm **0.00** per 1k open) — but **D-527 REVERSES the refusal for ONE case**: a
-   body-inlined board (ashby/greenhouse/lever/workable) that hiring.cafe resolved AND read is now
-   auto-watched (T143). That is the inline-body population run 467's density win was measured on,
-   and it is the only population the reversal covers. The **69** unwatched boards on
-   workday/eightfold/oraclehcm/smartrecruiters are NOT reversed — they reach the fleet only
-   through `companies unscanned` (T142) and the owner's `companies import`.
-6. **GAP C IS NOW SIZED (2026-09-20g), which was the thing missing from the ruling.** Its 43
-   `grnh.se` boards priced at the live greenhouse density — **84.1 open postings per board**,
-   measured over the 608 watched greenhouse boards holding 51,149 open postings — come to
-   **~3,617 open postings**, and at the new boards' measured 2.05% rate **~74 eligible**. The
-   scan cost is negligible: greenhouse fetch latency is **1.08 s/board** on run 468, so 43 boards
-   is **~46 seconds** added to a 1,807-board run. For scale, stage 1 was 1,155 boards → 59,622
-   postings → 1,222 eligible, so Gap C is ~6% of that yield for 3.7% of the boards. **Still the
-   owner's call, but it is no longer unpriced.**
-7. **The 801 Domino's rows are RULED: LEAVE THEM (D-527).** Company 139 is already `watched=0`,
-   so astra's actual ask was already the state; the rows are 0.31% of the open corpus and can
-   never close (D-314). Do not re-raise it. **Still open and unruled:** import Gap C's 43
-   `grnh.se` boards — now reachable, since `discover-grnh --limit 0` reads all 449 seeds where the
-   default read 200 (T141); the `--include-non-swe` / `--include-zero-signal` drains are inert at
-   production N.
-8. **LinkedIn is the untouched backlog** — still ~423 companies refused by its cap every run,
-   while hiringcafe's admissions fell 78 → 19 and jobapps' to 0 as Gap A was absorbed.
-
-**T96 and T97 are MERGED** (union gated before push: exit 0, 10,274 passed). Both were held off
-`main` until run 467 was read so the expansion was measured as one variable.
+0. **ASTRA IS DONE and its engine batch is MERGED.** 37 of 51 tickets shipped (T100, T102, T103,
+   T104 landed today as `ea95c42c`). Still open from the reviews: **T101, T105, T92,
+   `education_timing`, the Sonnet judge move**, plus T113, T123, T124, T125, T127, T133, T135,
+   T137, T139's stage extraction, T144 and T138's two remaining halves. Mit's standing answer on
+   the seat: fan out **2–3 executors at once, never more**; ask for the usage reading again
+   before a fan-out on a later day.
+1. **READ THE UNIT BEFORE SIZING ANY DISCOVERY WORK (D-532).** This replaces the old
+   "read the next tick" item, which is discharged — 28 → 25 → 5 across runs 467/468/469 settles
+   it. The live question is no longer whether boards yield; it is that **`capped_by_top_n` is
+   10,533 against a 40-slot slate**, so eligible-posting counts do not convert. Anything proposed
+   in "eligible added" must be restated in slate slots or refused.
+2. **THE HIGHEST-VALUE OPEN WORK IS B8's PRECISION HALF, NOT RECALL.** With the slate cap
+   binding, every unapplyable lead removed is replaced from a 10,533-deep queue — so a precision
+   fix converts one-for-one into an applyable lead. The 2026-09-17 autoapply pre-flight file
+   (now tracked, re-measured 2026-09-21) is the ranked list. **Cheapest real fix: §5, comp band
+   as an input to the seniority gate** — `salary_min`/`salary_max` are already columns and the
+   gate already exists. **Do NOT re-ticket §8** (dead postings): it is closure LATENCY, already
+   instrumented by T117/T126, and all five of its named postings have since closed.
+3. **`--top` IS THE UNMEASURED LEVER AND IS NOT RULED.** Raising it converts buried postings into
+   leads at unknown precision cost; B8's precision half is the instrument and it has never been
+   read above n = 40/day. **Do not raise it without measuring leads 41–80 first.** Owner's call.
+4. **Still owed in the engine line:** T101, T105 (bullet-ladder inheritance — T104's known
+   residual, posting `261677`), T92, `education_timing` (D-521 §8.5 — **the family ALREADY
+   EXISTS** in `rules.yaml` as `currently_enrolled`/`graduation_yyyymm`; re-read D-521 §8.5
+   against the catalog before building), and **the Sonnet judge move** (D-477, D-514), whose
+   prerequisite T108 is shipped and whose one-time re-judge fired clean on run 468. Each re-keys
+   `engine_version`, so batch them on one branch again.
+5. **Rule on Indeed** — deferred by Mit on 2026-09-21 to a later session. Second consecutive
+   silent refusal; evasion refused (D-368). If accepted, size it as a dead lane rather than
+   fixing it. Note run 467 met B8 with Indeed already dead.
+6. **Stages 2–3 stay REFUSED and D-532 strengthens the refusal** (workday 0.17,
+   smartrecruiters 0.08, oraclehcm **0.00** per 1k open). D-527's one reversal stands: a
+   body-inlined board that hiring.cafe resolved AND read is auto-watched (T143). The **69**
+   unwatched workday/eightfold/oraclehcm/smartrecruiters boards are NOT reversed.
+7. **GAP C IS DONE (2026-09-21).** 449 seeds followed, 37 new boards found, all 37 probed live,
+   **29 imported** and 8 dropped for carrying zero swe-titled openings. Fleet **1,842 → 1,871**.
+   Measured at 1,319 open postings / 432 swe-titled / ~27 eligible — **not** the ~74 the
+   extrapolation priced. The 801 Domino's rows stay (D-527); do not re-raise.
+8. **LinkedIn is the untouched backlog** — ~423 companies refused by its cap every run. Size it
+   in slate slots (D-532) before proposing work, not in companies reached.
 
 ### Owed, and specifically NOT done
 
@@ -311,6 +213,13 @@ re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
 
 ## Open questions — Mit's, not to be resolved by fiat
 
+**B8's RETIREMENT question is RULED and CLOSED (2026-09-21, D-534) — do not re-raise it.** The
+9-of-14 volume record does not block: all 14 days are on the 652-board fleet, post-expansion
+`pdf.entered` reads **25 / 22 / 26 (3 of 3, mean 24.3)**, and the engine batch's `rules_hash`
+move restarts the 14-day confirm by `PROGRAM.md` §1's own rule anyway. **What is owed is B8's
+volume half holding 14 days on the 1,807-board fleet, counted from `ea95c42c`.** This is a
+DIFFERENT question from item 0 below, which is about the alert CHANNEL.
+
 0. **B8's volume reading on the escalation channel — RULED 2026-09-20e, held WHOLE in D-529.**
    Keep it OFF `summary.errors`; **no code change**, and `pipeline/runner.py:3083` plus its pinning
    test stand as T110 shipped them. **This is a deferral with a CONDITION, not a closed question:**
@@ -347,13 +256,16 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 
 ## Live blockers and carried gaps
 
-**THE WINDOWS RED IS OVER — VERIFIED GREEN AND MERGED (2026-09-20e).** The scheduled build was
-red five consecutive nights (09-16 … 09-20; last green 2026-09-15 `2b980ebb`). T128's three fixes
-and the `%s` strftime fix both hold: `workflow_dispatch` **35549392270** on `astra-closeout` came
-back **`success`, 30 of 31 jobs**, all three `windows-latest` jobs green, 1 correctly skipped
-(`nightly-watch`, schedule-only). **PR #398 merged as `09df0e87`.** Numbers and the
-reconciliation are in `METRICS.md` (session 2026-09-20e); the four failures themselves are history
-and are held in D-528. **Tonight's nightly is expected green — confirm it, do not assume it.**
+**THE FIVE-NIGHT WINDOWS RED IS OVER, AND THE 2026-09-21 NIGHTLY WAS A DIFFERENT, REAL DEFECT
+(D-535).** T128's three fixes and the `%s` strftime fix hold — all three read **zero occurrences**
+on every run since. What took the 09-21 nightly (`35607814820`) red was ONE test on Windows 3.12
+alone: `test_a_lock_free_reader_only_ever_sees_a_complete_tree`, `CURRENT is unreadable:
+Permission denied`, on **1 failed / 10,499 passed**. It had passed on the 09-19 and 09-20
+nightlies and on both dispatches, so it is an **intermittent race, not a break** — and the race is
+real: `os.replace` on `CURRENT` denies concurrent opens on Windows, so the lock-free reader saw
+neither revision. Fixed; see D-535. **Only a Windows dispatch can confirm the race is gone and ONE
+green run is not enough** — at the observed rate a single pass proves almost nothing, so read
+several nightlies before calling it closed.
 
 **READ A WINDOWS RESULT BY TEST NAME AND COUNT, NEVER BY COLOUR.** The dispatch before this one
 (**35547739139**) was also red, and it did NOT mean the fix had failed: T128's three targets were
