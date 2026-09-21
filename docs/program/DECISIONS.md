@@ -30346,8 +30346,15 @@ a signal; `workflow_dispatch` is the only CI this branch can get and the only wa
 | adj2 (the 2 the ticket names) | 231 (0.342%) | 209 | 3 | 19 |
 | **adjALL (11)** | **339 (0.502%)** | 225 | **94** | 20 |
 
-**Baseline control: 67,400 of 67,446 re-evaluations match the LIVE stored verdict (99.93%).** The
-46 disagreements are 0.07% and consistent with postings re-versioned since evaluation.
+**Baseline control: 67,400 of 67,446 re-evaluations match the LIVE stored verdict (99.93%).**
+**The 46 disagreements are NOT re-versioning — that first explanation was written without
+probing it and is withdrawn.** Six inspected all have `versions = 1` and were evaluated
+2026-09-06; all read `stored = uncertain` against a fresh verdict that decides; and the rate
+tracks age (0.54% over the id-ordered first 4,000, 0.068% over the population). A slice of stored
+verdicts is therefore STALE while its key claims currency. **Cause unproven and owed a probe** —
+the leading hypothesis is that `engine_version` digests only four modules, so a behaviour change
+outside them moves the verdict without moving the key. The delta above is unaffected, being a
+difference against this same baseline.
 
 **adjALL is a STRICT SUPERSET** — zero postings move under adj2 that do not move under adjALL. Its
 extra **108** are **+91 eligible against +16 rejected**. The sweep is therefore NOT the

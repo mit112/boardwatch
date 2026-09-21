@@ -15377,7 +15377,22 @@ pipeline evaluates the current `posting_versions.body_text`. They are **identica
 open postings, zero divergence**, so the 67,587-posting filter is complete, not a sample.
 
 **Baseline control: 67,400 of 67,446 re-evaluations match the LIVE stored verdict — 99.93%.**
-The 46 disagreements are 0.07%, consistent with postings re-versioned since evaluation.
+
+**The 46 disagreements are NOT re-versioning, and the first explanation written here was wrong.**
+Probed rather than assumed: the join is already on the CURRENT version and `postings.body_text` is
+byte-identical to it, so a stale body cannot be the cause. Six inspected disagreements all have
+**`versions = 1`** (the posting has only ever had one version) and all were evaluated on
+**2026-09-06**, two weeks before the reading. Every one is `stored = uncertain` against a fresh
+verdict that DECIDES. And the rate tracks AGE: **21 of 3,866 (0.54%)** over the id-ordered first
+4,000 — which skews old — against **0.068%** over the whole population.
+
+So a slice of stored deterministic verdicts is **STALE while its key claims currency**: same
+`profile_hash`, same `rules_hash`, same `engine_version`, different answer. **Cause UNPROVEN.** The
+leading hypothesis is that `engine_version` digests only `eligibility/{catalog,detect,resolve,engine}.py`,
+so a behaviour-affecting change anywhere else — `facts.py`, `hashing.py`, a helper — moves the
+verdict without moving the key, and nothing re-evaluates. That is a hypothesis, not a finding, and
+it is **owed a probe**. It does not touch the delta above, which is a difference measured against
+this same baseline, so a constant apparatus offset cancels.
 
 | scope | moved | % | `uncertain->ineligible` | `uncertain->eligible` | `ineligible->uncertain` |
 |---|---:|---:|---:|---:|---:|
