@@ -7,6 +7,19 @@ switch-off condition) or `STATE.md` (where things stand today); it orders them i
 with exit criteria, and says what is deliberately NOT on the path. Rewrite it when a milestone
 closes, not every session.
 
+## 2026-09-21 — the priority between these milestones INVERTED, and the file below has not been rewritten for it
+
+**Read D-532 before using this file to pick work.** M4 ("find what job-apps finds") is written as
+though recall were the binding constraint. Measured over runs 467–469 it is not: `capped_by_top_n`
+is **10,533** postings that clear every filter and lose only on rank, against a **40**-slot slate,
+and a 2.8× board expansion settled at ~5 of 40 leads/day once its recency bulge passed. **Adding
+eligible postings behind a cap that already binds does not add leads.**
+
+So the milestone ORDER below still stands, but the expected VALUE of M4-style discovery work is
+much lower than when this file was written, and precision work on the delivered 40 (B8's precision
+half) now converts one-for-one into applyable leads. This file is not rewritten here because a
+milestone has not closed — that is its own rule — but do not size discovery work from it.
+
 ## The goal, in one line
 
 **Every morning, one unattended command hands Mit a queue of live, deduplicated, profile-eligible
