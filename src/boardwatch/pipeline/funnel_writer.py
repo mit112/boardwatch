@@ -35,6 +35,7 @@ from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash
 from boardwatch.reports.run_funnel import (
+    ApplyLaneCohort,
     BoardCoverageReport,
     DeathProbeReport,
     GateCounters,
@@ -50,6 +51,7 @@ from boardwatch.reports.run_funnel import (
     build_run_funnel,
 )
 from boardwatch.store.abstain_queries import count_requirement_dispositions
+from boardwatch.store.delivery_queries import apply_lane_cohort
 from boardwatch.store.queries import current_posting_versions, get_profile, record_corpus_counts
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
@@ -215,6 +217,20 @@ def collect_run_funnel(
         projected_lineage_rows = (
             count_projected_tailored_artifacts(conn, run_id) if projection_ran else 0
         )
+        # T110. B8's volume cohort, read HERE and not from the leads this function was handed.
+        # The two answer different questions and the ordering is what separates them: a lead's
+        # `pending_tailor` flag — which the `pdf` stage enters at — was stamped before the tailor
+        # loop, while `runner`'s application-form sweep runs after the render and before this
+        # artifact is written. So a rendered apply-lane lead that the sweep hard-stopped in the
+        # same run is inside `pdf.entered` and is NOT in this cohort, which is the whole point.
+        #
+        # Read through `apply_lane_cohort` rather than recomputed from `tailored` for the reason
+        # every other count in this block is read back out of the store: the funnel must count
+        # the deliverable through a different path than the one that produced it, and this one
+        # re-runs the real `review_gate.lane` over the state the run actually left behind.
+        apply_lane = ApplyLaneCohort(
+            placements=apply_lane_cohort(conn, run_ids={run_id}).get(run_id, ())
+        )
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
@@ -314,6 +330,7 @@ def collect_run_funnel(
         death_probe=death_probe,
         form_questions=form_questions,
         gate=gate,
+        apply_lane=apply_lane,
         dedup=dedup,
         sources=sources,
         leads=leads,

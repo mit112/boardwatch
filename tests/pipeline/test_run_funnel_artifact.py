@@ -106,6 +106,63 @@ def test_the_artifact_describes_the_run_that_just_happened(env: Path, tmp_path: 
     assert stages["attribution"]["advanced"] == 2, "both postings were judged by THIS run"
 
 
+def test_a_real_run_carries_b8s_volume_cohort_and_offers_it_to_the_alert(
+    env: Path, tmp_path: Path
+) -> None:
+    """T110. The cohort is read from the STORE at finalize time, so only a real run can show
+    that it is wired at all — the unit tests call `collect_run_funnel` directly and would pass
+    with `runner` never touching it.
+
+    `summary.apply_lane` is the half `check_apply_lane_volume` reads: the alert and the artifact
+    are required to report ONE number, so a run where the artifact carries a cohort and the
+    summary does not would leave the alert permanently abstaining with nothing to say so.
+    """
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    summary = _pipeline(env, out_root)
+    payload = _payload(out_root)
+
+    assert summary.apply_lane is not None, "the run collected no apply-lane cohort"
+    assert payload["apply_lane"]["instrumented"] is True
+    assert payload["apply_lane"]["in_apply"] == summary.apply_lane.in_apply
+    assert payload["apply_lane"]["placeable"] == len(payload["apply_lane"]["leads"])
+    # Named, not summed: an audit of B8's volume has to draw from this population.
+    assert {lead["posting_id"] for lead in payload["apply_lane"]["leads"]} == {
+        placement.posting_id for placement in summary.apply_lane.placements
+    }
+
+
+def test_a_below_bar_volume_reading_reaches_the_run_row_but_not_the_escalation_channel(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T110's volume diagnostic, and the one place it differs from every other soft detector.
+
+    This run delivers a single lead, which is under B8's bar of 20, so the reading fires. It is
+    a GATE READING and not a fault — nothing is broken — so it must not reach `summary.errors`,
+    which is what `escalate_alerts` pushes: a near-daily "19 against 20" on that channel is how
+    it would train its reader to ignore it. It must still be durable on the run row, because a
+    reading that exists only in a console line is a reading nobody has on return.
+    """
+    _ready(env)
+    captured: list[tuple[str, ...]] = []
+    monkeypatch.setattr(runner, "send_heartbeat", lambda: None)
+    monkeypatch.setattr(
+        runner, "escalate_alerts", lambda run_id, alerts, **_k: captured.append(tuple(alerts))
+    )
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.apply_lane is not None and summary.apply_lane.in_apply < 20, "guard"
+    with get_engine(env).connect() as conn:
+        errors = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    assert any("under B8's bar" in str(err) for err in errors or []), errors
+    assert not any("under B8's bar" in err for err in summary.errors)
+    assert captured and not any("under B8's bar" in a for a in captured[-1])
+
+
 def test_a_real_run_reconciles(env: Path, tmp_path: Path) -> None:
     """Gate P0's headline property, on an actual pipeline run rather than fed counts.
 

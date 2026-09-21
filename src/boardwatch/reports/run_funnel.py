@@ -57,6 +57,7 @@ from boardwatch.reports.board_coverage import (
     board_coverage_table,
     board_coverage_to_dict,
 )
+from boardwatch.store.delivery_queries import LanePlacement
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
@@ -189,6 +190,17 @@ _TOP_MISSING = 10
 # before this exists simply lacks the keys, which is the ABSENT-not-zero direction this block
 # already uses for `instrumented: false`: a pre-instrumentation run must not read as a run with
 # zero missing items.
+#
+# **T110's `apply_lane` section does NOT bump it**, on T96's `form_questions` precedent — the
+# other top-level section added since v8 and the closest case there is. Both tests come out the
+# same way. It is a NEW section, but the bump v6 earned was for a section that supplied a
+# denominator an EXISTING block had been read without, and this supplies none: every stage keeps
+# its own `entered`/`advanced`, and `pdf.entered` in particular keeps meaning exactly what it
+# meant — the leads that attempted a render. What is new is a SECOND cohort beside it, read after
+# the form sweep rather than before the tailor loop, and `METRICS.md` moving B8's volume half onto
+# it is a change to which key that document reads, not to what any key says. A funnel written
+# before this simply lacks the section, which reads as `instrumented: false` rather than as a run
+# that placed nothing — the absent-not-zero direction this block uses throughout.
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -834,6 +846,113 @@ _STRUCTURAL_FILTER_REASONS = frozenset({"empty", "not_single_line", "too_long"})
 
 
 @dataclass(frozen=True)
+class ApplyLaneCohort:
+    """B8's volume cohort: the leads this run delivered that SURVIVED to the apply lane (T110).
+
+    **Named `apply_lane` and not `lanes`, and the two are different populations one word apart.**
+    `lanes` above is the JD-ACQUISITION tier (hiringcafe, linkedin) — what a lane fetched INTO the
+    corpus. This is the DELIVERY apply lane: which of the leads that came out the far end are
+    blindly appliable. The collision is closed in the names rather than in a comment, the same way
+    `board_coverage` is kept apart from `coverage`.
+
+    **Why it exists beside the `pdf` stage rather than replacing it.** `pdf.entered` is the leads
+    the tailor RENDERED, and it is right about rendering: `pending_tailor` is stamped once, before
+    the tailor loop, so the stage's denominator is exactly the population that attempted a render.
+    What it is NOT is the population that can be applied to. `runner`'s application-form sweep runs
+    AFTER the render and before this artifact is written, so a lead that was rendered into the
+    apply lane and then form-hard-stopped in the same run (T91) is counted in `pdf.entered` and is
+    held in `_review`, never applyable. `METRICS.md` reads B8's volume half off that stage, so the
+    gate was read against a pre-sweep cohort. This is the post-sweep one; the stage keeps its own
+    meaning and its own number.
+
+    **Every member is named, not summed.** B8 is a program gate, and a gate read off a bare count
+    cannot be audited afterwards: a sample has to be drawn from the population the number came
+    from. `placements` carries each lead's `posting_id`, `job_id`, final lane and — for a held one
+    — the review reason, so a later audit draws from exactly this cohort.
+
+    `None` on the funnel means the cohort was NOT READ, never that it was empty — the same
+    absent-not-zero direction `death_probe`, `form_questions` and `gate` use. An instrumented run
+    that delivered no placeable lead carries an empty `placements`, which is a measured zero.
+    """
+
+    #: Every PLACEABLE lead this run delivered, in `delivered_unapplied` order. `ineligible` and
+    #: `closed` leads are excluded upstream in `store.delivery_queries.apply_lane_cohort`, which
+    #: is where the reasoning for each exclusion lives.
+    placements: tuple[LanePlacement, ...]
+
+    @property
+    def placeable(self) -> int:
+        """The denominator: delivered leads that were neither ineligible nor closed."""
+        return len(self.placements)
+
+    @property
+    def in_apply(self) -> int:
+        """**B8's volume reading.** Placeable leads whose final lane is the blind-apply queue."""
+        return sum(1 for placement in self.placements if placement.lane == "")
+
+
+def apply_lane_to_dict(cohort: ApplyLaneCohort | None) -> dict[str, object]:
+    """The apply-lane section. `instrumented: false` and nulls when the cohort was not read —
+    never a block of zeros, which would claim a measurement nobody took."""
+    if cohort is None:
+        return {"instrumented": False, "placeable": None, "in_apply": None, "leads": []}
+    return {
+        "instrumented": True,
+        "placeable": cohort.placeable,
+        # B8's volume half. Read THIS, not `stages[].pdf.entered`, which is the render
+        # denominator and still counts a lead the form sweep hard-stopped after it rendered.
+        "in_apply": cohort.in_apply,
+        "leads": [
+            {
+                "posting_id": placement.posting_id,
+                "job_id": placement.job_id,
+                # `""` is the blind-apply queue, `_review` a held lead. Named rather than
+                # reduced to a boolean so the value is the same string the folder tree uses.
+                "lane": placement.lane,
+                # null exactly when `lane` is the apply queue. From the SAME lane decision as
+                # `lane` beside it, so the two can never name different branches.
+                "review_reason": placement.review_reason,
+            }
+            for placement in cohort.placements
+        ],
+    }
+
+
+def _apply_lane_lines(cohort: ApplyLaneCohort | None) -> list[str]:
+    """The human half of the apply-lane section."""
+    lines = ["", "## Apply lane", ""]
+    if cohort is None:
+        return lines + [
+            "*NOT READ. The final-lane cohort was not collected for this run, so how many of "
+            "its leads are blindly appliable is unknown and is reported as unmeasured rather "
+            "than as zero.*",
+        ]
+    held: Counter[str] = Counter(
+        placement.review_reason or "unnamed"
+        for placement in cohort.placements
+        if placement.lane != ""
+    )
+    lines += [
+        f"**{cohort.in_apply} of {cohort.placeable} placeable lead(s) reached the blind-apply "
+        "queue.**",
+        "",
+        "*This is B8's volume reading, and it is NOT the `pdf` stage's `entered` above. That "
+        "stage counts leads that attempted a RENDER, which is decided before the tailor loop; "
+        "this counts leads that survive every gate that runs after it — including the "
+        "application-form sweep, which routes a rendered lead to review in the same run. The two "
+        "agree exactly when nothing downstream of the render moved a lead.*",
+    ]
+    if held:
+        lines += [
+            "",
+            "| held for | leads |",
+            "|---|---:|",
+            *(f"| {reason} | {count} |" for reason, count in held.most_common()),
+        ]
+    return lines
+
+
+@dataclass(frozen=True)
 class FabricationCounters:
     """P0 item 8 / bar metric B4: the fabrication gate's per-lane tally.
 
@@ -1309,6 +1428,11 @@ class RunFunnel:
     # not the same as an armed run that judged nothing, the same omission direction
     # `death_probe` above uses.
     gate: GateCounters | None = None
+    # T110. `None` means the final-lane cohort was NOT read — a funnel built without a store
+    # behind it, or one written before this existed — never that no lead reached the apply lane.
+    # Same omission direction as `gate` above, and it matters here for the same reason it does
+    # there: B8's volume half is read off this, and a zeroed block would read as a failed gate.
+    apply_lane: ApplyLaneCohort | None = None
     # Wall clock per pipeline stage, in the order the stages ran. `None` means NOT MEASURED —
     # a stored funnel written before this shipped, or a caller that did not time the run —
     # which is a different statement from `()`, "timed, and no stage boundary was reached".
@@ -1494,6 +1618,9 @@ def build_run_funnel(
     # T42. Omitted means the gate was not armed this run, and the section says so rather than
     # reporting zero judged — the same omission direction as `death_probe` above.
     gate: GateCounters | None = None,
+    # T110. Omitted means the final-lane cohort was not read, and the section reports itself
+    # UNMEASURED rather than zero — the same omission direction as `gate` above.
+    apply_lane: ApplyLaneCohort | None = None,
     # Omitted means the run was NOT timed, and the section says so rather than reporting a
     # stageless run — the same omission direction as `liveness` and `death_probe` above.
     stage_durations: Sequence[StageDuration] | None = None,
@@ -2046,6 +2173,7 @@ def build_run_funnel(
         death_probe=death_probe,
         form_questions=form_questions,
         gate=gate,
+        apply_lane=apply_lane,
         stage_durations=None if stage_durations is None else tuple(stage_durations),
     )
 
@@ -2191,6 +2319,12 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # delivered slate, not the shortlist re-fetch), that also WRITES (a persisted
         # `final_gate:` row).
         "gate": gate_to_dict(funnel.gate),
+        # T110. Its own section, and NOT more keys under `stages[].pdf`: a different population
+        # (the leads that SURVIVE to the apply lane, not the leads that attempted a render) read
+        # at a later moment (after the form sweep, not before the tailor loop). Folding it into
+        # that stage would redefine a denominator every earlier funnel already published.
+        # Distinct from `lanes` below, which is JD ACQUISITION — see `ApplyLaneCohort`.
+        "apply_lane": apply_lane_to_dict(funnel.apply_lane),
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
             "stubs": funnel.stub_rate.stubs,
@@ -2999,6 +3133,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "that genuinely could not tell returns: 215 of 1,999 stored verdicts are a REAL "
         "explicit `unclear` and counting those as malformed would report a seventh of the "
         "corpus as a parse failure.*",
+        *_apply_lane_lines(funnel.apply_lane),
         "",
         "## Stub rate",
         "",
@@ -3118,6 +3253,7 @@ def write_run_funnel(funnel: RunFunnel, out_dir: Path) -> WrittenArtifact:
 # Re-exported so callers assembling a funnel need one import, not four.
 __all__ = [
     "ARTIFACT_VERSION",
+    "ApplyLaneCohort",
     "BoardCoverageReport",
     "CoverageSummary",
     "CrossCheck",
@@ -3136,6 +3272,7 @@ __all__ = [
     "Stage",
     "StubRate",
     "WrittenArtifact",
+    "apply_lane_to_dict",
     "build_coverage_summary",
     "build_fabrication_counters",
     "build_projection_counters",

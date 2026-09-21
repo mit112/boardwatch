@@ -77,6 +77,7 @@ from boardwatch.lanes.linkedin import LinkedInLane, search_urls
 from boardwatch.llm.gate_judge import run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
+from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
 from boardwatch.notify.corpus_regression import check_corpus_regression
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
@@ -107,6 +108,7 @@ from boardwatch.reports.board_coverage import build_report as build_board_covera
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
+    ApplyLaneCohort,
     DeathProbeReport,
     GateCounters,
     LaneReport,
@@ -540,6 +542,11 @@ class PipelineSummary:
     # reader of a requirement that is on the FORM and not in the frozen JD, so a block of zeros
     # here would claim the delivered slate was asked about when nobody asked.
     form_questions: FormQuestionSweep | None = None
+    # T110 — B8's volume cohort, as the funnel published it. Set by `_emit_funnel` so the alert
+    # below and the artifact report ONE number; `None` means the funnel was not collected (it
+    # raised and the caller stayed fail-open, D-287), which is silence about the lane rather
+    # than a reading of zero.
+    apply_lane: ApplyLaneCohort | None = None
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
@@ -3031,6 +3038,35 @@ def run_pipeline(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
+        # B8's volume half, and it sits HERE for the same reason the drought check sits below
+        # `check_delivery_drought`: the sibling above cannot see this fault. That one fires only
+        # when NO lead reaches the apply lane across a window, so a run that placed 19 against
+        # B8's bar of 20 is invisible to it — nineteen arrivals are nineteen reasons for it to
+        # stay quiet. Reads the cohort the funnel already published rather than counting again,
+        # so the alert and the artifact can never disagree; abstains when the funnel was not
+        # collected, and when the run placed nothing (the sibling's story).
+        #
+        # **The ONE detector here that is deliberately NOT added to `summary.errors`,** and the
+        # asymmetry is the point. Everything else in this block reports a FAULT: something is
+        # broken, or an instrument has gone blind. This reports a program-gate READING — the run
+        # succeeded, nothing is misclassifying, the day was simply thin — and B8's volume half
+        # was under its bar on 9 of the 14 recorded acceptance days. `summary.errors` is what
+        # `escalate_alerts` below pushes, and a near-daily "19 against 20" on that channel is
+        # precisely how it would train its reader to ignore it, which is the reason the slice
+        # exists at all. It is printed and made durable on the run row instead, and the record
+        # a gate is actually read from is the funnel's own `apply_lane` section.
+        try:
+            volume_alert = check_apply_lane_volume(summary.apply_lane)
+            if volume_alert is not None:
+                console.print(f"  ! {volume_alert}", markup=False)
+                append_run_error(engine, run_id, volume_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            # The FAILURE is an ordinary soft alert and is escalatable like every other one: a
+            # detector that has silently stopped working is a fault, whatever it was measuring.
+            note = f"apply-lane-volume check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
         # Liveness-blindness soft alert. The liveness stage is fail-open by design — any
         # transport fault is `unknown`, and `unknown` is served — so a prober whose egress has
         # broken (DNS, a proxy, a blocked IP) returns `unknown` for the whole shortlist, drops
@@ -3475,6 +3511,10 @@ def _emit_funnel(
         errors=summary.errors,
         fatal=summary.fatal,
     )
+    # Before the write, so a failure to render the artifact still leaves the volume alert its
+    # number — the funnel is the only place this cohort is built, and losing both to one
+    # rendering fault would take out B8's instrument as well as its record.
+    summary.apply_lane = funnel.apply_lane
     return write_run_funnel(funnel, day_dir)
 
 
