@@ -12,13 +12,40 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1) **and on 2026-09-20d** (ALL FIVE astra-consumption blocks condensed to ONE pointer now that D-528 closes the remediation, 313 → 267 lines). Nothing was deleted on any of the thirteen passes. **The file is now 285 lines and that is over the bar by more than the usual margin.** What holds it up is run 467's 92-line block plus the 2026-09-20d/e block; **the latter is now SETTLED — the wave is merged and held in D-528 — and is the next thing to move WHOLE**, which a session with the budget should do rather than summarising it away. It was left in place on 2026-09-20e deliberately: that session's owner questions went unanswered, and condensing a block while its open items are still being put to Mit risks dropping one. **Run 467's is still HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1) **and on 2026-09-20d** (ALL FIVE astra-consumption blocks condensed to ONE pointer now that D-528 closes the remediation, 313 → 267 lines). Nothing was deleted on any of the thirteen passes. **The file is now 312 lines and that is over the bar by more than the usual margin.** What holds it up is run 467's 92-line block plus the 2026-09-20d/e block; **the latter is now SETTLED — the wave is merged and held in D-528 — and is the next thing to move WHOLE**, which a session with the budget should do rather than summarising it away. It was left in place on 2026-09-20e deliberately: that session's owner questions went unanswered, and condensing a block while its open items are still being put to Mit risks dropping one. **Run 467's is still HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
 ---
 
 ## Current standing
+
+### 2026-09-20f — **THE ENGINE BATCH IS OPEN ON AN UNMERGED BRANCH. `engine-batch` (worktree `bw-engine`) HOLDS T100, T102 AND T103, GATED exit 0 — 10,612 passed, 95.26%. IT IS DELIBERATELY NOT MERGED (D-530).**
+
+**Read this before touching the engine.** Mit ruled on 2026-09-20e: build next action 4's batch,
+**hold the merge until after the 04:00 tick** so the night runs the code the astra wave gated.
+**The branch ACCUMULATES the batch** — landing three tickets now and the rest later costs ONE
+`engine_version`/`rules_hash` re-key, not two. Continue ON `engine-batch`; do not open a second
+branch, and do not merge until the batch is done. Its base `86d9b3e6` is in `origin/main`, so it
+rebases cleanly. **The primary checkout stays on `main`** — the launchd driver runs its editable
+venv, so a branch switch there changes what the tick executes.
+
+**In: T100** (resolvers abstain on out-of-catalog choice values — the bug **inverts `unmet` to
+`met`** on three of four fields), **T102** (`us_person_required`; stops calling refugee/asylee EAD
+holders `unmet` on ITAR/EAR clauses they satisfy), **T103's unanimity half** (an all-`unmet` or
+all-`met` exclusive group now decides instead of dissolving — Mit's 2026-09-19 ruling; it reads
+`ineligible` on his own review-lane clearance holds). **T100 and T102 each move 0 of Mit's live
+verdicts**; T103 is the live-moving one.
+
+**T103's OTHER half — same-span subsumption — is REFUTED and NOT BUILT (D-530).** Its stated rule
+("spans equal or nested") cannot reach its own case (real spans (0,38) vs (20,50), overlapping
+but not nested); its headline example already resolves as same-`implies` corroboration; and
+same-span mixed groups measure **0 across five profile shapes** over 8,000 postings, null-
+controlled. **Do not re-raise it.** Corpus: 1,061 goldens pass, zero re-baselined.
+
+**Still owed in the batch: T101, T104, T105, T92, `education_timing`, the Sonnet judge move.**
+**`education_timing` ALREADY EXISTS as a family** in `rules.yaml` (`currently_enrolled`,
+`graduation_yyyymm`) — re-read D-521 §8.5 against the catalog before building anything.
 
 ### 2026-09-20d/e — **THE ASTRA REMEDIATION BACKLOG IS CLOSED TO THIRTEEN TICKETS IN ONE GATED WAVE, AND IT IS MERGED (D-528, PR #398 → `09df0e87`). WINDOWS IS GREEN AND THE FIVE-NIGHT RED IS OVER. THE ENGINE BATCH IS THE ONLY DEFERRAL. NOTHING HERE RE-KEYS — no drain, no confirm-clock restart.**
 
@@ -137,7 +164,11 @@ density; predict yield from the sample. Never the reverse.
    the one defect that could have inflated it (`pdf.entered` is counted before the form sweep
    re-routes) and it moved zero leads on run 467, with a null control proving the probe. So this
    is a question about the 9-of-14 RECORD, not about the instrument.
-4. **The batched engine landing** — the Sonnet judge move (D-477, D-514), T92, **and
+4. **The batched engine landing — OPEN AND UNDER WAY ON `engine-batch`, three tickets in
+   (T100, T102, T103), gated exit 0, NOT merged. See the 2026-09-20f block above and D-530
+   before doing anything here.** Still owed: T101, T104, T105, T92, `education_timing`, and
+   the Sonnet judge move (D-477, D-514). The rest of this item is the original framing and
+   still stands — the Sonnet judge move, T92, **and
    `education_timing`** (D-521 §8.5: one nullable field, correctly rejects 7 unapplyable
    2027-start leads). **T108 (shipped, D-524) was its missing prerequisite**: until it landed,
    no component of the gate row key varied with `settings.gate.model`, so the move would have
