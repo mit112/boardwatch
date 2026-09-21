@@ -99,6 +99,8 @@ families:
           - "or equivalent experience"
         abstain_by_sentence:
           - "or [0-9]+ years"
+        abstain_by_adjacent:
+          - "may be substituted"
         consumes_cues: ["no"]
         pattern: "bachelor"
 """
@@ -133,6 +135,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         "subject_suppressors": sum(bool(p.subject_suppressors) for p in patterns),
         "abstain_by": sum(bool(p.abstain_by) for p in patterns),
         "abstain_by_sentence": sum(bool(p.abstain_by_sentence) for p in patterns),
+        "abstain_by_adjacent": sum(bool(p.abstain_by_adjacent) for p in patterns),
         "jurisdiction_map": sum(bool(p.jurisdiction_map) for p in patterns),
         "consumes_cues": sum(bool(p.consumes_cues) for p in patterns),
     }
@@ -187,6 +190,10 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-04: +1, `scoped_months_minimum`, same sentence-scoped form as the six
         # scoped/domain years patterns it mirrors.
         "abstain_by_sentence": 7,
+        # The sixth scope ships as MECHANISM ONLY: T104 added the field, and which patterns
+        # move onto it is the owner's ruling, not the loader's. A 0 here is the tripwire --
+        # the first catalog entry to use it must come with that ruling recorded.
+        "abstain_by_adjacent": 0,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
     }
@@ -215,6 +222,7 @@ def test_optional_pattern_members_are_compiled_and_carried(tmp_path: Path) -> No
         pattern.suppressed_by_sentence,
         pattern.abstain_by,
         pattern.abstain_by_sentence,
+        pattern.abstain_by_adjacent,
         pattern.cue_idioms,
     ):
         assert len(carried) == 1

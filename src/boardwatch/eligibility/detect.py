@@ -287,7 +287,7 @@ def detect(
         for pattern in family.patterns:
             if (units := units_by_scope.get(pattern.scope)) is None:
                 units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
-            for offset, unit in units:
+            for index, (offset, unit) in enumerate(units):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):
@@ -327,6 +327,20 @@ def detect(
                         abstained = _suppressed(
                             unit, lo, hi, pattern.abstain_by_sentence, inside_span=True
                         )
+                    if abstained is None and pattern.abstain_by_adjacent:
+                        # Own unit first, then the one immediately after it and no further.
+                        # The forward step is the whole point: an equivalence escape is
+                        # normally written as the NEXT sentence, while document scope let an
+                        # alternative waive a bar arbitrarily far away (finding 4).
+                        abstained = _suppressed(
+                            unit, lo, hi, pattern.abstain_by_adjacent, inside_span=True
+                        )
+                        if abstained is None and index + 1 < len(units):
+                            following = units[index + 1][1]
+                            abstained = _suppressed(
+                                following, 0, len(following),
+                                pattern.abstain_by_adjacent, inside_span=True,
+                            )
                     found.append(
                         Detection(
                             family=family.id,
