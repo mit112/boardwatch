@@ -239,8 +239,16 @@ def evaluate(
     # conflicts when two or more DISTINCT implies values of THAT group are present. Two
     # detections of the SAME implies value are corroboration, not conflict.
     present: dict[str, set[str]] = {}
+    # The live dispositions behind each (family, implies), so a group can be tested for
+    # UNANIMITY before it is called a contradiction. Collected in the same pass as `present`
+    # because both describe the SAME staged rows -- recomputing it later would let a row this
+    # stage rewrites keep voting on its own dissolution.
+    verdicts_for: dict[tuple[str, str], set[str]] = {}
     for item in staged:
         present.setdefault(item.detection.family, set()).add(item.detection.pattern.implies)
+        verdicts_for.setdefault(
+            (item.detection.family, item.detection.pattern.implies), set()
+        ).add(item.disposition)
     # (family, implies) PAIRS, never bare implies strings. `implies` is only unique WITHIN a
     # family: the vocabulary is declared per family, so nothing stops a user-supplied
     # override from reusing a name across two of them, and a bare-string set would then let
@@ -251,10 +259,32 @@ def evaluate(
         seen = present.get(family.id, set())
         for group in family.exclusive_groups:
             overlap = seen & group
-            if len(overlap) >= 2:
-                # only THIS group's values in THIS family, never another group's or
-                # another family's
-                conflicted |= {(family.id, value) for value in overlap}
+            if len(overlap) < 2:
+                continue
+            # A UNANIMOUS group is not a contradiction (T103, Mit's ruling 2026-09-19).
+            # Presence alone used to dissolve the group, but two members that AGREE are two
+            # statements of one outcome, not a posting arguing with itself. The owner's words
+            # on the case that motivated it -- an active clearance required AND an obtainable
+            # one, against a profile that can obtain neither: "both of those cases mean the
+            # same thing for me: that they are not eligible jobs."
+            #
+            # This deliberately does NOT test spans. Measured over 8,000 open postings, every
+            # one of the 53 live collisions (38 degree, 15 clearance) is unanimous and none is
+            # same-span, so a span-subsumption rule would serve an empty population -- see the
+            # T103 note in METRICS. Agreement is the property that matters; where the two
+            # statements sit is not.
+            #
+            # MIXED keeps the old presence-semantics rewrite, and that is the conservative
+            # half: any `unknown`, or a `met` beside an `unmet`, means the posting genuinely
+            # does not resolve and dissolving it to `unknown` is right.
+            group_verdicts: set[str] = set()
+            for value in overlap:
+                group_verdicts |= verdicts_for.get((family.id, value), set())
+            if group_verdicts in ({UNMET}, {MET}):
+                continue
+            # only THIS group's values in THIS family, never another group's or
+            # another family's
+            conflicted |= {(family.id, value) for value in overlap}
     staged = [
         _Staged(
             item.detection,
