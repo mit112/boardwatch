@@ -49,6 +49,7 @@ still holds exactly: the exit code does not move, only the ambiguity goes away.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -99,6 +100,16 @@ CURRENT_PATH = "CURRENT"
 COMPLETE_PATH = "COMPLETE"
 
 _MANIFEST_ADAPTER: Final[TypeAdapter[BundleManifest]] = TypeAdapter(BundleManifest)
+
+#: How long a reader waits out a promotion's commit before calling a denied `CURRENT` a real
+#: failure. `os.replace` is atomic on POSIX, but on Windows it holds the destination exclusively
+#: for the instant of the swap and every concurrent open is denied — so a reader there sees
+#: neither the old pointer nor the new one, which is the third outcome §6 clause 1 says cannot
+#: happen. The window is one file replacement, so this only has to outlast a scheduling hiccup;
+#: it is deliberately not a budget for a busy disk, because the cost of a generous deadline is
+#: paid entirely by a bundle whose `CURRENT` is genuinely unreadable.
+_POINTER_SWAP_DEADLINE_SECONDS: Final = 1.0
+_POINTER_SWAP_PAUSE_SECONDS: Final = 0.01
 
 #: Why one ancestor could not be verified. Typed at the raise site so a consumer classifies on
 #: `details["reason"]` rather than on the message text.
@@ -179,7 +190,7 @@ def read_current(bundle_root: Path) -> CurrentPointer:
     """
     path = current_path(bundle_root)
     try:
-        raw = path.read_bytes()
+        raw = _read_through_a_pointer_swap(path)
     except OSError as exc:
         raise PointerError(f"{CURRENT_PATH} is unreadable: {io_reason(exc)}") from exc
     try:
@@ -197,6 +208,27 @@ def read_current(bundle_root: Path) -> CurrentPointer:
         )
     return pointer
 
+
+def _read_through_a_pointer_swap(path: Path) -> bytes:
+    """Read `CURRENT`, waiting out the instant a concurrent promotion holds it exclusively.
+
+    `promotion` commits by `os.replace`-ing a staged pointer over this file, and that is the only
+    writer it has. A reader denied by that swap has not found a broken bundle — it has arrived
+    during the one operation §6 clause 1 promises is invisible to it — so the denial is waited out
+    rather than reported. Bounded, because a denial that outlives the deadline is a genuine
+    permission problem and must still surface as one under its own code.
+
+    Only `PermissionError` is retried. An absent `CURRENT` is `NO_CURRENT_REVISION` and means the
+    bundle has no selected revision, which no amount of waiting changes.
+    """
+    deadline = time.monotonic() + _POINTER_SWAP_DEADLINE_SECONDS
+    while True:
+        try:
+            return path.read_bytes()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_POINTER_SWAP_PAUSE_SECONDS)
 
 def read_complete(revision_dir: Path) -> str:
     """Parse a `COMPLETE` marker, whose entire content is `sha256:<64hex>` and one newline."""

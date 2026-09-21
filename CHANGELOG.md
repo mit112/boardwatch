@@ -192,6 +192,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A promotion's `CURRENT` swap denied the lock-free reader on Windows (2026-09-21).** The
+  scheduled build went red on one Windows-only failure — `CURRENT is unreadable: Permission
+  denied` — that was not one of T128's three and had passed on the two prior nightlies and both
+  dispatches, so an intermittent race rather than a break. `promotion` commits by `os.replace`-ing
+  a staged pointer over `CURRENT`, which is atomic on POSIX but on Windows holds the destination
+  exclusively for the instant of the swap and denies every concurrent open. A reader arriving then
+  saw neither the old revision nor the new one — the third outcome design §6 clause 1 says cannot
+  happen, so the contract was true on the platform it was written on and false on the one CI runs
+  it on. The reader now waits the denial out, bounded at one second, and only for
+  `PermissionError`: an absent `CURRENT` means the bundle has no selected revision, which no
+  waiting changes and which every fresh bundle would otherwise pay the deadline to be told. Of the
+  three tests, only the first discriminates against the unfixed reader; the second defends the
+  bound against an unbounded retry and the third defends the narrow `except`.
+
 - **An out-of-catalog choice value inverted `unmet` to `met` (2026-09-21, T100).** `facts.py`
   types `work_authorization.status`, `security_clearance.level`, `employment_type_preference` and
   `internship_preference` as bare `str`, so a typo survived `parse_facts` and reached each

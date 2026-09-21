@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -431,6 +432,83 @@ def test_a_missing_current_file_is_refused(promoted_tree: PromotedRevisionTree) 
     current_path(promoted_tree.bundle_root).unlink()
     with pytest.raises(PointerError):
         read_current(promoted_tree.bundle_root)
+
+
+def _denying_reader(
+    monkeypatch: pytest.MonkeyPatch, pointer: Path, denials: int
+) -> Callable[[], int]:
+    """Deny the first `denials` reads of `pointer`, then behave. Returns the attempt count.
+
+    A negative `denials` never relents. Only this one path is affected: everything else the reader
+    opens goes through the real `read_bytes`, so a test that passes because the whole filesystem
+    was stubbed out is not possible here.
+    """
+    real = Path.read_bytes
+    attempts = 0
+
+    def read_bytes(self: Path) -> bytes:
+        nonlocal attempts
+        if self != pointer:
+            return real(self)
+        attempts += 1
+        if denials < 0 or attempts <= denials:
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    return lambda: attempts
+
+
+def test_a_reader_waits_out_the_instant_a_promotion_holds_the_pointer(
+    promoted_tree: PromotedRevisionTree, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§6 clause 1 promises a reader sees the old pointer or the new one, never neither.
+
+    `os.replace` delivers that on POSIX unaided, but on Windows it holds the destination
+    exclusively while it runs and denies every concurrent open — the third outcome. The denial is
+    injected rather than raced because the platform that produces it is not the one this suite
+    runs on; the reader's answer to it is the same code on every platform. **This is the test the
+    fix exists for: a reader that reports the first denial fails it.**
+    """
+    pointer = current_path(promoted_tree.bundle_root)
+    attempts = _denying_reader(monkeypatch, pointer, denials=3)
+    assert read_current(promoted_tree.bundle_root) == CurrentPointer(
+        bundle_digest=promoted_tree.bundle_digest, revision=promoted_tree.revision
+    )
+    assert attempts() == 4
+
+
+def test_a_denial_that_outlives_the_deadline_is_still_a_refusal(
+    promoted_tree: PromotedRevisionTree, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait is bounded, or a genuinely unreadable `CURRENT` hangs instead of being reported.
+
+    This does **not** discriminate against the pre-fix reader, which refuses here too. What it
+    defends is the bound — an unbounded retry satisfies every other test in this file — so the
+    attempt count is asserted above one: the refusal has to be the deadline's, not the first try's.
+    """
+    monkeypatch.setattr(
+        "boardwatch.profile_bundle.validation.digest._POINTER_SWAP_DEADLINE_SECONDS", 0.05
+    )
+    pointer = current_path(promoted_tree.bundle_root)
+    attempts = _denying_reader(monkeypatch, pointer, denials=-1)
+    with pytest.raises(PointerError, match="unreadable"):
+        read_current(promoted_tree.bundle_root)
+    assert attempts() > 1
+
+
+def test_an_absent_pointer_is_not_waited_on(
+    promoted_tree: PromotedRevisionTree, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a denial is transient. A `CURRENT` that is not there means the bundle has no selected
+    revision, which no amount of waiting changes — and every fresh bundle would pay the deadline
+    to be told so. Defends `except PermissionError` against being widened to `OSError`."""
+    pointer = current_path(promoted_tree.bundle_root)
+    attempts = _denying_reader(monkeypatch, pointer, denials=0)
+    pointer.unlink()
+    with pytest.raises(PointerError):
+        read_current(promoted_tree.bundle_root)
+    assert attempts() == 1
 
 
 def test_an_unreadable_current_pointer_is_reported_not_raised(
