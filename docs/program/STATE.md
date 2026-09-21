@@ -228,13 +228,21 @@ density; predict yield from the sample. Never the reverse.
    and it is the only population the reversal covers. The **69** unwatched boards on
    workday/eightfold/oraclehcm/smartrecruiters are NOT reversed — they reach the fleet only
    through `companies unscanned` (T142) and the owner's `companies import`.
-6. **The 801 Domino's rows are RULED: LEAVE THEM (D-527).** Company 139 is already `watched=0`,
+6. **GAP C IS NOW SIZED (2026-09-20g), which was the thing missing from the ruling.** Its 43
+   `grnh.se` boards priced at the live greenhouse density — **84.1 open postings per board**,
+   measured over the 608 watched greenhouse boards holding 51,149 open postings — come to
+   **~3,617 open postings**, and at the new boards' measured 2.05% rate **~74 eligible**. The
+   scan cost is negligible: greenhouse fetch latency is **1.08 s/board** on run 468, so 43 boards
+   is **~46 seconds** added to a 1,807-board run. For scale, stage 1 was 1,155 boards → 59,622
+   postings → 1,222 eligible, so Gap C is ~6% of that yield for 3.7% of the boards. **Still the
+   owner's call, but it is no longer unpriced.**
+7. **The 801 Domino's rows are RULED: LEAVE THEM (D-527).** Company 139 is already `watched=0`,
    so astra's actual ask was already the state; the rows are 0.31% of the open corpus and can
    never close (D-314). Do not re-raise it. **Still open and unruled:** import Gap C's 43
    `grnh.se` boards — now reachable, since `discover-grnh --limit 0` reads all 449 seeds where the
    default read 200 (T141); the `--include-non-swe` / `--include-zero-signal` drains are inert at
    production N.
-7. **LinkedIn is the untouched backlog** — still ~423 companies refused by its cap every run,
+8. **LinkedIn is the untouched backlog** — still ~423 companies refused by its cap every run,
    while hiringcafe's admissions fell 78 → 19 and jobapps' to 0 as Gap A was absorbed.
 
 **T96 and T97 are MERGED** (union gated before push: exit 0, 10,274 passed). Both were held off
@@ -250,9 +258,13 @@ density; predict yield from the sample. Never the reverse.
   experience is acceptable.` reads **`ineligible`** against a bachelor's, and it read that way on
   `main` BEFORE T104 as well: verified against the unmodified catalog, so this is a pre-existing
   vocabulary gap, not a reach bug and not a T104 regression. Five other waiver phrasings were
-  checked and all hold. **UNSIZED** — the count of open postings carrying an out-of-vocabulary
-  waiver was not measured, and it should be before anything is added to the catalog, because
-  widening an escape moves verdicts toward `uncertain` and that is its own trade.
+  checked and all hold. **NOW SIZED: 3,762 open postings** state an out-of-vocabulary waiver AND
+  carry no in-vocabulary escape either, out of **141,756** that mention a degree (2.65%); a
+  further 3,365 have both, so the catalog already sees those. **That 3,762 is a LOWER BOUND** —
+  the probe searched phrasings chosen by hand (`equivalent combination`, `combination of education
+  and experience`, `comparable experience`, `equivalent qualification/education/training/skills`,
+  `experience in place of`), not an enumeration, so an unlisted phrasing is uncounted. Widening
+  the escape moves verdicts toward `uncertain`, which is its own trade and needs its own ruling.
 - **T51 SHIPPED (D-484) before the freeze.** Its residual: a hedged bar carrying a domain noun has no
   `*_preferred` sibling to land in and writes no row; a recall change for M3's window.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
