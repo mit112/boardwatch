@@ -3381,3 +3381,94 @@ before local did. **A green local gate could not predict it and a re-run could n
 `TZ=UTC` reproduces it exactly (2 of 25 fail, the two CI named). Both now derive the date from
 today. The other 14 date literals in that file compare dates to each other or to an input value,
 never to today, and were left alone.
+
+## The settled 2026-09-20d/e STATE block, moved WHOLE out of `STATE.md` on 2026-09-20g
+
+### 2026-09-20d/e — **THE ASTRA REMEDIATION BACKLOG IS CLOSED TO THIRTEEN TICKETS IN ONE GATED WAVE, AND IT IS MERGED (D-528, PR #398 → `09df0e87`). WINDOWS IS GREEN AND THE FIVE-NIGHT RED IS OVER. THE ENGINE BATCH IS THE ONLY DEFERRAL. NOTHING HERE RE-KEYS — no drain, no confirm-clock restart.**
+
+**The gate, on the commit that actually merged.** `make check` exit 0 on **`82ad88da`** — 10,584 passed (baseline 10,542), 1 skipped, 4 xfailed, coverage 95.25%, 9m16s, all six targets present. The earlier reading was on `42bc2696`, one commit short of HEAD; the gap was four program docs plus one line in `tests/unit/test_delivery_queries.py`. **After the merge, `git diff 82ad88da HEAD` is empty** — the merge tree is byte-identical, so this reading is valid for `09df0e87` and the 04:00 tick runs exactly the gated code.
+
+Shipped: **T110, T111, T120, T121, T122, T126, T128, T131, T134, T136, T138 (per-file half),
+T139 (doc half), T148.** Five came from three enterprise-seat executors in their own worktrees
+(`t122`, `t134`, `t110`), **each gated here, never by itself**; all three merged with zero
+conflicts. **Held WHOLE in D-528; do not re-derive.**
+
+**T128 WAS THE ONLY THING ACTUALLY BROKEN, AND IT WAS WORSE THAN RECORDED.** The scheduled build
+was red **five** consecutive nights (09-16…09-20), not four. Three Windows-only failures, invisible
+to every push CI because **Windows runs on `schedule`/`workflow_dispatch` ONLY**. Validated by an
+explicit `workflow_dispatch` on the branch — the only way to see that matrix before merge.
+
+**NEXT ACTION 4's ONE-TIME RE-JUDGE HAS FIRED AND IS CLEAN — it was recorded as owed and was
+already discharged.** Run **468**: `funnel-468.md` reads `120 candidates · 0 already current ·
+120 sent`, 0 failed open / 0 missing / 0 refused; the store independently shows run 468 = **120
+rows `model='haiku'`** against `model=NULL` on 434/447/467. **T108 is discharged and PROVEN LIVE** —
+the gate row varies with the model, so the Sonnet move reaches standing verdicts, not only new leads.
+
+**THREE MEASUREMENTS CLOSED ITEMS WITHOUT CODE.** (1) **The composite-title asymmetry is REFUTED**
+— astra's "only harmful" long-qualifier case reads `uncertain` (held for review), NOT `not_swe`;
+of 26,830 open "software" titles the 563 reading `not_swe` are 540 non-engineering nouns plus 23
+correct vetoes, so **genuinely-SWE titles hidden: 0 of 260,306**, null-controlled. **Do not rewrite
+the parser.** (2) **T136's `ge=1` deliberately NOT changed** — 12 of 25 real runs exceed 60 min
+(median 59.3, max 200.2) so a one-hour reaper would close a LIVE run, but a flat floor breaks
+multi-tenancy. **The number is Mit's; the missing test shipped.** (3) **T122 re-measured after run
+468 reproduces exactly** — 16,510 under 8 boards, 6.34%, partition-verified.
+
+**T113 IS RE-SIZED BY AN ORDER OF MAGNITUDE.** The freshness test compares `model`, so every
+pre-T108 row is stale: **1,203 of 1,323** posting-versions, not the ticket's **97**. And **the
+re-judge is a ROLLING backlog** bounded by `gate.depth` per tick, not one run — true of the SLATE,
+false of the stored corpus. **Do not quote the 97 again.**
+
+**Two executor judgment calls accepted, both flagged by the executor.** T134 made a RAISED form
+sweep escalate (right — a failed sweep means T91 hard-stop leads shipped UNHELD). T110 kept the B8
+volume reading OFF `summary.errors`, so it reaches the funnel but not the escalation channel;
+**that one is Mit's to reverse** and one line at the call site does it.
+
+**The finalize-block order was CHECKED after the three-way merge** (D-374's marker had drifted and
+was repaired): `form-sweep → funnel → queue → intake → scan → drought → lane-volume → liveness →
+corpus → morning → heartbeat`. Nothing below `_emit_morning`; heartbeat last.
+
+## The DISCHARGED half of the 2026-09-19 STATE block, split out on 2026-09-20g
+
+Run 467's expansion numbers are superseded by run 468's second reading (2026-09-20g block,
+D-531 era). Held in **D-521** and **D-522**. The B8 and Indeed paragraphs stayed in `STATE.md`
+because both are still unruled.
+
+**Run 447 (readout in `METRICS.md`).** `ok`, RECONCILES, **manifest byte-identical to run 434's on
+all five hashes**, one identity across the whole run. B1 40 · B2 19/19 · B3 0 failures ·
+B5 40 artifacts · B6 RECONCILES · B7 0% abstain. **B4 is VACUOUS, not met** — 0 bullets seen, so it
+contributes nothing to n ≥ 100. **B8's volume half reads 19 against ≥ 20.**
+
+**Owner's word, 2026-09-18 22:56: "I am giving you permission to count it as Day 14."** Run 447 was
+hand-launched on run 434's commit and the UNCHANGED 652-board fleet, so day 14 read on the frozen
+corpus and the expansion landed after. **The confirm therefore evidences 13 unattended ticks plus
+one attended run** — it no longer evidences "the plist fired on the 14th day", which 13 prior ticks
+and Gate P3's own counter already cover. Do not let a later reader mistake it for 14 unattended days.
+
+**Gate 1, the reading of record** (7 days after D-499, as D-482 required): greenhouse **99.3%**,
+ashby **100%**, workday **100%**, lever **100%** against ≥ 85% — clear on both readings.
+Drawn-from total 35.2% → **44.6%**. **M4's exit condition is met.**
+
+**Discovery was three disjoint backlogs (D-521 §1).** Gap A **958** stored-but-unwatched on a
+parseable provider — cause: **hiring.cafe admits ~78 real employer boards per run and writes every
+one unwatched**; Gap B **593** GitHub new-grad-list boards; Gap C **43** behind the `grnh.se` seeds.
+Stage 1 (ashby/greenhouse/lever/workable) was live-probed — 14 dead caught, including
+`greenhouse:embed` — and **1,155 imported, exit 0, zero skipped. Fleet 652 → 1,807**, verified by
+counting the store, provenance intact. **Stages 2–3 (workday 230, oraclehcm 62, smartrecruiters 78)
+are REFUSED** on measured lead density: ashby 3.05 vs workday 0.17 vs oraclehcm **0.00** per 1k open.
+**Gap C is emitted but NOT imported — never put to the owner.**
+
+**Volume is not the constraint (D-521 §4).** 99.77% of the corpus is evaluated; ~40 delivered/day
+against ~841 standing. `--top` stays 40 and the lane caps stay.
+
+**RUN 467 — the first tick on 1,807 boards (readout in `METRICS.md`).** A REAL tick
+(`launchctl runs = 9 → 10`); it is run **467**, not 448, because web renders consumed 446-466.
+`ok`, **RECONCILES**, **manifest byte-identical to 447 and 434 on all five hashes** — the measured
+proof that watching boards moves no hash. **65 min** on 2.8× the fleet. **1,155 of 1,155 new
+boards scanned `complete`, zero failures added.** Corpus 208,847 → **261,626**; eligible verdicts
+7,675 → **8,581**; **B8's volume half 19 → 25, MET** after failing 9 of 14 confirm days;
+**28 of the 40 delivered leads came from the new boards.**
+
+**THE SIZING RULE (D-522 §3), which inverts what was assumed:** a lane's secondhand sample of a
+board is a **terrible** predictor of its SIZE (2.6 postings vs a real **51.6**, off 20×) and an
+**excellent** predictor of its ELIGIBLE RATE (2.1% vs a measured **2.05%**). Size from fleet
+density; predict yield from the sample. Never the reverse.
