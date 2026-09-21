@@ -247,6 +247,31 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
     # The bit stays out of both branches, so `met` remains unreachable here for an EAD holder
     # (the CRITICAL SAFETY property in facts.py:3-6). Undeclared still abstains: `None` and
     # `prefer_not_to_say` returned UNKNOWN at the top of this function.
+    if pattern.implies == "us_person_required":
+        # Export control (T102). Deliberately NOT the citizen-or-LPR branch below: "US person"
+        # under ITAR/EAR admits protected individuals -- refugees and asylees -- and no fact
+        # declares that arm, so a status-alone reading returns `unmet` for people the clause
+        # actually clears. The keystone reserves ABSTAIN for exactly this shape.
+        if status in ("citizen", "permanent_resident"):
+            return Resolution(MET, "citizen or permanent resident", support)
+        if status == "needs_sponsorship":
+            return Resolution(UNMET, "needs sponsorship, so not a US person", support)
+        # ead_or_similar. The sponsorship bit is what separates the two EAD populations: a
+        # refugee or asylee holder would not need sponsorship, so needing it excludes the
+        # protected-individual arm and the two facts together decide (D-322; keeps m1018).
+        if wa.needs_sponsorship:
+            return Resolution(
+                UNMET, "holds an EAD and needs sponsorship, so not a US person", support
+            )
+        if wa.needs_sponsorship is None:
+            return Resolution(
+                UNKNOWN, "missing_profile_field:work_authorization.needs_sponsorship"
+            )
+        # Declared as needing none: that is consistent with a refugee or asylee, who IS a US
+        # person, and with several statuses who are not. Undecidable, not unmet.
+        return Resolution(
+            UNKNOWN, "an EAD holder needing no sponsorship may be a protected individual"
+        )
     if pattern.implies == "citizen_or_lpr_required":
         if status in ("citizen", "permanent_resident"):
             return Resolution(MET, "citizen or permanent resident", support)

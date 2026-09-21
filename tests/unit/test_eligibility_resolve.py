@@ -1159,3 +1159,96 @@ def test_a_choice_removed_by_an_override_stops_clearing(tmp_path: Path) -> None:
     resolution = _t100(overridden, _T100_INTERNSHIP, facts, "internship_role_declared")
     assert resolution.disposition == "unknown"
     assert resolution.rationale == "missing_profile_field:internship_preference"
+
+
+# ---- T102 (astra F6): the export-control predicate gets its OWN implies value.
+# ---- ITAR/EAR "US person" admits citizens, LPRs AND protected individuals. Borrowing
+# ---- `citizen_or_lpr_required` -- whose resolver reads STATUS alone -- made every EAD holder
+# ---- `unmet`, including the refugees and asylees the clause actually clears.
+
+_T102_EXPORT = (
+    "To conform to U.S. Government export regulations, applicant must be a (i) U.S. citizen "
+    "or national, (ii) U.S. lawful, permanent resident (aka green card holder), (iii) Refugee "
+    "under 8 U.S.C. 1157."
+)
+_T102_CITIZEN_ONLY = "Applicants must be US citizens."
+
+
+def _t102(catalog, body: str, wa: WorkAuthFact, pattern_id: str):
+    dets = [
+        d
+        for d in detect(body, catalog, enabled_families=frozenset({"work_auth"}))
+        if d.pattern.id == pattern_id
+    ]
+    assert len(dets) == 1, f"expected exactly one {pattern_id}, got {len(dets)}"
+    return resolve(dets[0], Facts(work_authorization=wa), catalog.family("work_auth"))
+
+
+def test_the_export_control_predicate_no_longer_borrows_citizen_or_lpr(catalog) -> None:
+    """The change itself, at the catalog level. If this pattern ever points back at
+    `citizen_or_lpr_required` the resolver below stops being reachable and every assertion in
+    this section starts passing for the wrong reason."""
+    pattern = next(
+        p
+        for p in catalog.family("work_auth").patterns
+        if p.id == "us_person_export_control_required"
+    )
+    assert pattern.implies == "us_person_required"
+    assert "us_person_required" in catalog.family("work_auth").implies_vocabulary
+
+
+@pytest.mark.parametrize(
+    ("wa", "expected"),
+    [
+        # THE FIX. A refugee or asylee EAD holder IS a US person; the fact model cannot tell
+        # them from an EAD holder who is not, so this is undecidable rather than `unmet`.
+        (WorkAuthFact(status="ead_or_similar", jurisdiction="us", needs_sponsorship=False),
+         "unknown"),
+        (WorkAuthFact(status="ead_or_similar", jurisdiction="us"), "unknown"),
+        # CONTROLS -- every one of these was already right and must not move. m1018 and m1019
+        # are corpus goldens riding on the first and third.
+        (WorkAuthFact(status="ead_or_similar", jurisdiction="us", needs_sponsorship=True),
+         "unmet"),
+        (WorkAuthFact(status="needs_sponsorship", jurisdiction="us"), "unmet"),
+        (WorkAuthFact(status="citizen", jurisdiction="us", needs_sponsorship=False), "met"),
+        (WorkAuthFact(status="permanent_resident", jurisdiction="us"), "met"),
+    ],
+)
+def test_a_us_person_clause_abstains_only_on_the_undeclared_protected_arm(
+    catalog, wa: WorkAuthFact, expected: str
+) -> None:
+    resolution = _t102(catalog, _T102_EXPORT, wa, "us_person_export_control_required")
+    assert resolution.disposition == expected
+
+
+def test_an_absent_sponsorship_bit_abstains_by_FIELD_NAME_not_by_prose(catalog) -> None:
+    """Two different abstains hide behind one disposition: "the bit is missing" and "the bit
+    says no, and that is consistent with a protected individual". Only the first is a
+    keystone `missing_profile_field`, and the abstain report has to tell them apart."""
+    absent = _t102(
+        catalog, _T102_EXPORT,
+        WorkAuthFact(status="ead_or_similar", jurisdiction="us"),
+        "us_person_export_control_required",
+    )
+    declared_no = _t102(
+        catalog, _T102_EXPORT,
+        WorkAuthFact(status="ead_or_similar", jurisdiction="us", needs_sponsorship=False),
+        "us_person_export_control_required",
+    )
+    assert absent.rationale == "missing_profile_field:work_authorization.needs_sponsorship"
+    assert declared_no.rationale != absent.rationale
+    assert "protected individual" in declared_no.rationale
+
+
+def test_a_citizen_only_clause_is_untouched_by_the_us_person_split(catalog) -> None:
+    """THE CONTROL THAT BOUNDS THE BLAST RADIUS. T102 must widen nothing outside export
+    control: the same EAD profile that now abstains on a US-person clause must still be
+    decisively `unmet` on "Applicants must be US citizens." If this ever reads `unknown`,
+    the split leaked into `citizenship_required` and a real hard stop went soft."""
+    resolution = _t102(
+        catalog, _T102_CITIZEN_ONLY,
+        WorkAuthFact(status="ead_or_similar", jurisdiction="us", needs_sponsorship=False),
+        "us_citizen_required",
+    )
+    assert resolution.disposition == "unmet"
+    assert resolution.rationale == "not a citizen"
