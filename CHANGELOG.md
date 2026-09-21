@@ -192,6 +192,49 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An out-of-catalog choice value inverted `unmet` to `met` (2026-09-21, T100).** `facts.py`
+  types `work_authorization.status`, `security_clearance.level`, `employment_type_preference` and
+  `internship_preference` as bare `str`, so a typo survived `parse_facts` and reached each
+  resolver's affirmative fallthrough as though it were a real choice. Measured before the fix it
+  did not merely reach `met`: on three of the four it inverted `unmet` to `met` — a citizen-shaped
+  typo cleared a "we do not sponsor" bar, `fte_onlyy` accepted a contract role, `excludee`
+  accepted an internship. A wrong `met` is the worst failure this module can produce. The
+  resolvers now compare against the family's own `FieldSpec.choices` and return
+  `unknown(missing_profile_field:X)`. Reading `family.fields` rather than a module constant is
+  load-bearing: a choice a user's override removes stops clearing the moment the override loads,
+  which is what makes the check multi-tenant rather than a copy of yesterday's bundled vocabulary.
+
+- **An ITAR/EAR "US person" clause called protected individuals `unmet` (2026-09-21, T102).**
+  "US person" admits citizens, lawful permanent residents **and** protected individuals, but the
+  export-control pattern pointed at `citizen_or_lpr_required`, whose resolver reads status alone
+  and returns `unmet` for every `ead_or_similar` — so a refugee or asylee EAD holder was told they
+  fail a clause they satisfy. `us_person_required` is its own predicate: citizen/LPR `met`,
+  `needs_sponsorship` `unmet`, and an EAD holder *with* a declared sponsorship need `unmet`,
+  because needing sponsorship excludes the protected-individual arm. An EAD holder who needs none
+  is undecidable — no fact declares the protected arm — so it abstains. No new fact, and the
+  citizen-only clause is untouched.
+
+- **A unanimous exclusive group dissolved instead of deciding (2026-09-21, T103).** The group
+  dissolved to `unknown` on PRESENCE alone: two distinct `implies` values in one family were
+  treated as the posting contradicting itself. Two members that AGREE are two statements of one
+  outcome. Against a profile holding no clearance and unable to obtain one, "Active Secret
+  clearance required; candidates must be able to obtain a clearance." reads `unmet` on both
+  members and is now `ineligible` where it was `uncertain`. MIXED is unchanged and is the
+  conservative half: any `unknown`, or a `met` beside an `unmet`, still dissolves. The ticket's
+  other half — same-span subsumption — is deliberately NOT built; see D-530.
+
+- **A degree escape in one sentence waived an unrelated bar in another (2026-09-21, T104).** Both
+  document-scoped escapes were searched over the whole body. `abstain_by_adjacent` is a sixth
+  scope — the detection's own unit and the one immediately after it, never further — and the
+  discriminator is ownership, not distance: the escape reaches the next unit only when that unit
+  states no requirement of its own. All eleven patterns holding the document scope move onto it,
+  so `abstain_by` has no users; the field stays in the loader for an override and the catalog
+  census pins the pair so a future pattern cannot silently take the unbounded reach back. Scope
+  chosen by measurement over the whole movable population (67,587 postings): sweeping all eleven
+  is a strict superset of moving the two the ticket names, and its extra 108 verdicts are 91 newly
+  eligible against 16 newly rejected. One golden re-baselined — `m0334` had an escape on a
+  *preferred* PhD line waiving a *required* master's. See D-531.
+
 - **A glibc-only `%s` strftime took 46 tests red on Windows (2026-09-20).**
   `f"v-{posting_id}-{captured_at:%s}"` formats a datetime through `strftime`, and `%s` is a
   glibc/BSD extension Windows raises `ValueError: Invalid format string` on. It landed four hours
