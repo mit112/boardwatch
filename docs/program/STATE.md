@@ -55,6 +55,14 @@ lock-free reader saw **neither** revision — the third outcome §6 clause 1 say
 The reader now waits it out, bounded at 1s, `PermissionError` only. **Only a Windows dispatch can
 confirm the race is gone and ONE green run is not enough.**
 
+**PREDICTION FOR RUN 470, RECORDED SO IT CAN BE CHECKED.** The batch re-keys `rules_hash`, so
+the next preflight re-judges the whole stored corpus rather than the day's new postings. D-460
+timed a full re-key at 151,626 postings in ~13 min; the corpus is now ~261k, so expect **~20-25
+min added** to a run that took 56 min — call it **75-85 min**, plus the 29 Gap C boards. That is
+well inside the heartbeat's 1-day period plus 2h grace. **If run 470 comes in near 56 min, the
+re-key did NOT fire and that is the thing to investigate**, not the duration. Also expect the
+confirm clock to restart here (D-534) and B8's volume half to be read fresh from this run.
+
 **The 2026-09-17 autoapply pre-flight findings are now tracked and re-measured.** Its "single
 largest fixable category" re-sizes: all five named dead postings have since CLOSED (2–4 days
 later), so §8 is **closure LATENCY, not blindness**, and it is already instrumented by T117/T126
