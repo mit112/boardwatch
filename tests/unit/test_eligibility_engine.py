@@ -1136,3 +1136,84 @@ def test_the_floor_does_not_reach_a_bar_the_profile_already_clears(tmp_path: Pat
     )
     result = evaluate("We require 1+ years of experience.", facts, floored, catalog)
     assert result.verdict != "ineligible"
+
+
+# ---- T103: a UNANIMOUS exclusive group is not a contradiction (Mit's ruling, 2026-09-19).
+# ---- Presence alone used to dissolve the group. Two members that AGREE are two statements of
+# ---- one outcome, not a posting arguing with itself.
+
+_T103_BOTH = (
+    "Active Secret clearance required; candidates must be able to obtain a clearance."
+)
+
+
+def test_an_exclusive_group_whose_members_all_say_unmet_decides_ineligible(catalog) -> None:
+    """THE RED-FIRST. Against a profile that holds no clearance AND cannot obtain one, both
+    members read `unmet`, so the posting is not contradicting itself -- it is saying the same
+    thing twice. The owner's words: "both of those cases mean the same thing for me: that they
+    are not eligible jobs, because I will never be able to obtain a clearance."
+
+    Before T103 this was `uncertain` and the lead sat in the review lane forever.
+    """
+    result = evaluate(
+        _T103_BOTH,
+        Facts(security_clearance=ClearanceFact(
+            scheme="unspecified", level="none", state="none", obtainable=False,
+        )),
+        Policy(families={"clearance": "blocker"}),
+        catalog,
+    )
+    rows = [row for row in result.requirements if row.rule_id.startswith("clearance:")]
+    assert rows, "no clearance rows; the fixture is wrong"
+    assert {row.disposition for row in rows} == {"unmet"}
+    assert not any(
+        "conflicting statements" in row.rationale for row in rows
+    ), "the group was still dissolved on presence"
+    assert result.verdict == "ineligible"
+
+
+def test_an_exclusive_group_whose_members_all_say_met_stays_met(catalog) -> None:
+    """The other unanimity arm, and it is not symmetric decoration: without it a candidate who
+    BOTH holds an active clearance and can obtain one would be dissolved to `unknown` for
+    over-qualifying, which is the same defect pointing the other way."""
+    result = evaluate(
+        "Active Secret clearance is required. "
+        "Ability to obtain a security clearance is required.",
+        Facts(security_clearance=ClearanceFact(
+            scheme="us_dod", level="secret", state="active", obtainable=True,
+        )),
+        Policy(families={"clearance": "blocker"}),
+        catalog,
+    )
+    rows = [row for row in result.requirements if row.rule_id.startswith("clearance:")]
+    assert rows, "no clearance rows; the fixture is wrong"
+    assert {row.disposition for row in rows} == {"met"}
+    assert not any("conflicting statements" in row.rationale for row in rows)
+
+
+def test_a_group_is_still_dissolved_when_a_member_ABSTAINS(catalog) -> None:
+    """m0079's own golden shape, and the control that keeps T103 honest.
+
+    With no `obtainable` fact the clearable member is `unknown`, so the group is MIXED and the
+    old presence-semantics rewrite must still apply. This is why the 1,061-row corpus does not
+    move: every clearance case in it declares no `obtainable`. A widening that also swallowed
+    `unknown` would pass the two tests above and silently convert abstains into verdicts --
+    the exact thing the keystone forbids.
+    """
+    result = evaluate(
+        _T103_BOTH,
+        Facts(security_clearance=ClearanceFact(
+            scheme="unspecified", level="none", state="none",
+        )),
+        Policy(families={"clearance": "blocker"}),
+        catalog,
+    )
+    rows = [
+        row for row in result.requirements
+        if row.rule_id in {"clearance:active_secret_required", "clearance:clearable_required"}
+    ]
+    assert {row.disposition for row in rows} == {"unknown"}
+    assert {row.rationale for row in rows} == {
+        "conflicting statements about this requirement appear in the posting"
+    }
+    assert result.verdict == "uncertain"

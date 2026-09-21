@@ -287,7 +287,7 @@ def detect(
         for pattern in family.patterns:
             if (units := units_by_scope.get(pattern.scope)) is None:
                 units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
-            for offset, unit in units:
+            for index, (offset, unit) in enumerate(units):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):
@@ -327,6 +327,33 @@ def detect(
                         abstained = _suppressed(
                             unit, lo, hi, pattern.abstain_by_sentence, inside_span=True
                         )
+                    if abstained is None and pattern.abstain_by_adjacent:
+                        # Own unit first, then the one immediately after it and no further.
+                        # The forward step is the whole point: an equivalence escape is
+                        # normally written as the NEXT sentence, while document scope let an
+                        # alternative waive a bar arbitrarily far away (finding 4).
+                        abstained = _suppressed(
+                            unit, lo, hi, pattern.abstain_by_adjacent, inside_span=True
+                        )
+                        if abstained is None and index + 1 < len(units):
+                            following = units[index + 1][1]
+                            # The escape reaches back only if the following unit states no
+                            # requirement of its OWN in this family. Distance alone cannot
+                            # decide it (D-531): "A PhD is required. Equivalent experience
+                            # may be substituted." and "A PhD is required. A bachelor's
+                            # degree or equivalent experience is preferred." put the same
+                            # escape regex at the same distance and must resolve OPPOSITELY.
+                            # What separates them is ownership -- the second sentence states
+                            # its own bar, so its `or equivalent` belongs to THAT bar and
+                            # cannot waive the one before it.
+                            owned = any(
+                                other.regex.search(following) for other in family.patterns
+                            )
+                            if not owned:
+                                abstained = _suppressed(
+                                    following, 0, len(following),
+                                    pattern.abstain_by_adjacent, inside_span=True,
+                                )
                     found.append(
                         Detection(
                             family=family.id,

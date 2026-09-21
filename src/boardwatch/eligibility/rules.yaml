@@ -106,6 +106,11 @@ families:
       - authorization_required
       - citizenship_required
       - citizen_or_lpr_required
+      # The export-control predicate is NOT citizen-or-LPR (T102). "US person" under ITAR/EAR
+      # admits a third arm -- protected individuals -- that no fact declares, so borrowing the
+      # citizen-or-LPR resolver made every refugee/asylee EAD holder `unmet` on a clause they
+      # actually satisfy. Its own value lets the resolver abstain on exactly that arm.
+      - us_person_required
       - sponsorship_unavailable
       - sponsorship_available
     exclusive_groups:
@@ -242,11 +247,13 @@ families:
       # mandatory marker exist to close. Narrow siblings keep the parity table intact.
       - id: us_person_export_control_required
         requiredness: required
-        # ITAR/EAR "US person" admits citizens, LPRs AND protected individuals, so this is the
-        # citizen-OR-LPR surface, not the citizen-only one. It still decides `unmet` for
-        # ead_or_similar with needs_sponsorship -- a refugee or asylee EAD holder would not
-        # need sponsorship, so the two facts together exclude the protected-individual arm.
-        implies: citizen_or_lpr_required
+        # ITAR/EAR "US person" admits citizens, LPRs AND protected individuals. That third arm
+        # is why this cannot be `citizen_or_lpr_required`: that resolver reads STATUS alone and
+        # returns `unmet` for every `ead_or_similar`, including the refugee and asylee holders
+        # who ARE US persons. It still decides `unmet` for ead_or_similar WITH needs_sponsorship
+        # -- a refugee or asylee EAD holder would not need sponsorship, so the two facts
+        # together exclude the protected-individual arm and m1018 is unchanged.
+        implies: us_person_required
         jurisdiction: us
         scope: sentence
         requirement_text: "Must be a US person under export-control regulations"
@@ -549,7 +556,7 @@ families:
         # must bridge a degree DIRECTLY to a years-of-experience arm, both same-line (no \n
         # in the gap) — "degree in X, Y, or a related field" coordinates FIELDS, not a
         # degree-vs-experience choice, and must not abstain a genuine floor elsewhere.
-        abstain_by:
+        abstain_by_adjacent:
           - &degree_alternative_to_years "(?:(?:Bachelor['’‘]?s?|Master['’‘]?s?|Doctora\\w+|Ph\\.?D\\.?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?:Graduate|Advanced|Undergraduate)\\s+degree|degree\\s+in)[^.\\n]{0,80}?\\bor\\b\\s*(?:a\\s+minimum\\s+of\\s+|at\\s+least\\s+)?\\d{1,2}\\s*\\+?\\s*years?\\b[^.\\n]{0,25}?experience)|(?:\\d{1,2}\\s*\\+?\\s*years?\\b[^.\\n]{0,25}?experience[^.\\n]{0,40}?\\bor\\b[^.\\n]{0,40}?(?:Bachelor['’‘]?s?|Master['’‘]?s?|Doctora\\w+|Ph\\.?D\\.?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?:Graduate|Advanced|Undergraduate)\\s+degree|degree\\s+in))"
       # A bar stated in MONTHS is the same bar. Every pattern above requires `years?`, so
       # "at least 18 months of professional experience" wrote NO row at all and the posting
@@ -592,7 +599,7 @@ families:
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
-        abstain_by: [*degree_alternative_to_years]
+        abstain_by_adjacent: [*degree_alternative_to_years]
       - id: scoped_months_minimum
         requiredness: required
         implies: scoped_years_minimum
@@ -614,7 +621,7 @@ families:
         suppressed_by_unit: [*years_hedges]
         # Same either-path disjunction guard as total_years_minimum: "3-5 years ... or a
         # Master's degree" clears on either arm and must abstain, not resolve `unmet`.
-        abstain_by: [*degree_alternative_to_years]
+        abstain_by_adjacent: [*degree_alternative_to_years]
       # The subject suppressor goes on ALL THREE, not just total_years_minimum. Left off
       # here, scoped_years_minimum fires on the company-side sentence on its own and the
       # refinement group these three share can rewrite the genuine row to unknown on a straddle.
@@ -874,7 +881,7 @@ families:
         pattern: '\bexperience(?:\s+(?:required|requirements?|needed|level|range))?\s*[:\-–—]+\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of|min\.?)\s+)?(?P<years>\d{1,2})\s*(?:(?:[-–—]|\s+to\s+)\s*\d{1,2})?\s*\+?\s*(?:years?|yrs?)(?!\w)\.?'
         subject_suppressors: [*company_side_years]
         suppressed_by_unit: [*years_hedges]
-        abstain_by: [*degree_alternative_to_years]
+        abstain_by_adjacent: [*degree_alternative_to_years]
 
       # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
       # preferred." told a 2-year candidate they were INELIGIBLE. Two alternatives per
@@ -1335,11 +1342,16 @@ families:
         pattern: '(?:(?P<coord_rank4_a>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w))\s*(?:degree)?\s*(?:,\s*)?(?:or|/)\s*)?(?:Ph\.?D\.?|Doctorate|Doctoral\s+degree|Doctor\s+of\s+(?:Philosophy|Science|Engineering))(?:\s*(?:,\s*)?(?:or|/)\s*(?P<coord_rank4_b>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w))\s*(?:degree)?)?\s*(?:degree\s*)?(?:is\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\s+must|a\s+requirement|non-negotiable)(?!\w)|(?:require[sd]?(?:\s+to\s+(?:have|hold|possess))?|must\s+(?:have|hold|possess|be)|(?:will\s+)?needs?|(?<!\w)mandator(?:y|ily)(?!\w))\s*:?\s*(?:at\s+least\s+|a\s+minimum\s+of\s+)?(?:(?:an?\s+)?(?P<coord_rank4_c>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w))\s*(?:degree)?\s*(?:,\s*)?(?:or|/)\s*)?(?:(?!\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\b)[^.]){0,20}(?:Ph\.?D\.?|Doctorate|Doctoral\s+degree|Doctor\s+of\s+(?:Philosophy|Science|Engineering))(?:\s*(?:,\s*)?(?:or|/)\s*(?P<coord_rank4_d>Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|(?<![\w.])M\.?B\.?A\.?(?!\w)))?(?![\w-])'
         # THREE ROLES were conflated in one document-scoped suppressed_by list here and on every
         # other plain degree pattern, which is findings 38 and 52. They are separated by role:
-        #   an EQUIVALENCE ESCAPE is inherently cross-sentence ("A Master's degree is required.
-        #     Equivalent experience may be substituted.") so it stays DOCUMENT-scoped, but it
-        #     moves to abstain_by: a suppressor DROPS, and dropping a requirement the posting
-        #     merely MIGHT waive returns `eligible` by silence, the worst direction. Abstaining
-        #     keeps the row and answers "this may be waived and I cannot tell".
+        #   an EQUIVALENCE ESCAPE is cross-sentence ("A Master's degree is required.
+        #     Equivalent experience may be substituted.") and it ABSTAINS rather than drops: a
+        #     suppressor DROPS, and dropping a requirement the posting merely MIGHT waive
+        #     returns `eligible` by silence, the worst direction. Abstaining keeps the row and
+        #     answers "this may be waived and I cannot tell". **Its REACH was narrowed from
+        #     document to `abstain_by_adjacent` by T104/D-531** -- own unit plus the next, and
+        #     only where that next unit states no requirement of its own. F38's ruling was
+        #     abstain-not-drop and is untouched; what it assumed about reach was wrong, and
+        #     document scope let "A PhD or equivalent research experience is preferred." waive
+        #     a master's REQUIRED bar in the sentence before it (corpus m0334).
         #   a SPECIFICITY stand-down ("a more specific statement exists") is a claim about THIS
         #     SENTENCE, so it becomes UNIT-scoped. Document-scoped it deleted requirements in
         #     other sentences: "A Bachelor's degree is required. We value a degree in Physics."
@@ -1349,7 +1361,7 @@ families:
         # it and agreed.
         # ITEM anchors, not list anchors: any_degree_required composes the specificity entry with
         # its own level list, and a list anchor cannot be extended.
-        abstain_by:
+        abstain_by_adjacent:
           - &degree_equivalence "or\\s+equivalent|equivalent\\s+(?:experience|work)|in\\s+lieu\\s+of|may\\s+be\\s+substituted"
         suppressed_by_unit:
           - &degree_in_field "degree\\s+in\\s+\\S"
@@ -1392,7 +1404,7 @@ families:
         required_rank: 4
         requirement_text: "A master's degree is required"
         pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s*(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:(?:an?\\s+)?(?P<coord_rank3_c>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?!\\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\\b)[^.]){0,20}(?:Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_d>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate))?(?![\\w-])"
-        abstain_by: [*degree_equivalence]
+        abstain_by_adjacent: [*degree_equivalence]
         suppressed_by_unit: [*degree_in_field]
       - id: bachelor_or_equivalent_required
         requiredness: required
@@ -1412,7 +1424,7 @@ families:
         required_rank: 3
         requirement_text: "A bachelor's degree is required"
         pattern: "(?:Bachelor['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Applied\\s+Science|Business\\s+Administration))?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:(?!\\b(?:and|but|while|whereas|preferred|desirable|ideally|bonus|plus|desired|nice|for|in|of|at|on|from|by|with|as|within|under|across)\\b)[^.]){0,20}(?:Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)(?![\\w-])"
-        abstain_by: [*degree_equivalence]
+        abstain_by_adjacent: [*degree_equivalence]
         suppressed_by_unit: [*degree_in_field]
       # "Bachelor's degree in X is required" is the single most common degree phrasing and
       # was previously missed entirely. The rank is decided first (no field can rescue a
@@ -1452,7 +1464,7 @@ families:
         # matches outside its own span in any posting that names a field twice, so
         # "A Bachelor's degree in CS is required. A Master's degree in Physics is preferred."
         # dropped BOTH rows and returned `eligible` to a candidate with no degree at all.
-        abstain_by: [*degree_equivalence]
+        abstain_by_adjacent: [*degree_equivalence]
       - id: master_in_field_required
         requiredness: required
         implies: degree_required_with_field
@@ -1461,7 +1473,7 @@ families:
         requirement_text: "A master's degree in a named field is required"
         pattern: "(?:(?P<coord_rank3_a>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_b>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+(?:(?=(?P<study_field>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,160})))?(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,160}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank3_c>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:(?:Master['’‘]?s?(?:\\s+of\\s+(?:Science|Arts|Engineering|Business\\s+Administration|Applied\\s+Science))?|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?|(?<!\\w)(?:Graduate|Advanced)\\s+degree)(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank3_d>Bachelor['’‘]?s?|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|Undergraduate)\\s*(?:degree)?)?\\s+in\\s+(?:(?=(?P<study_field_alt>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,160})))?\\S"
         # See bachelor_in_field_required: the "degree in" suppressor is self-defeating here.
-        abstain_by: [*degree_equivalence]
+        abstain_by_adjacent: [*degree_equivalence]
       # FINDING 56: the bachelor and master levels each had an in-field pattern and the
       # doctorate had none, so "A Ph.D. in Physics is required." produced ZERO rows and told a
       # candidate with a bachelor's they were eligible. Modelled exactly on
@@ -1480,7 +1492,7 @@ families:
         requirement_text: "A doctorate in a named field is required"
         pattern: "(?:(?P<coord_rank4_a>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_b>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+(?:(?=(?P<study_field>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,160})))?(?:(?!\\b(?:preferred|desirable|desired|advantageous|nice\\s+to\\s+have|bonus|ideally|a\\s+plus|plus)\\b)[^.;:]){2,160}?(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:(?P<coord_rank4_c>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_d>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s+in\\s+(?:(?=(?P<study_field_alt>(?:(?!\\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\\b)[^.;:]){2,160})))?\\S"
         # See bachelor_in_field_required: the "degree in" suppressor is self-defeating here.
-        abstain_by: [*degree_equivalence]
+        abstain_by_adjacent: [*degree_equivalence]
       - id: any_degree_required
         requiredness: required
         implies: degree_required
@@ -1493,7 +1505,7 @@ families:
         # "degree is required"). `degree(?!\s+of\b)` is that guard.
         pattern: "(?:a\\s+|an\\s+)?(?:college\\s+|university\\s+)?degree\\s+(?:is\\s+)?(?:required|mandatory|necessary|essential|compulsory|needed|a\\s+must|a\\s+requirement|non-negotiable)(?!\\w)|(?:require[sd]?(?:\\s+to\\s+(?:have|hold|possess))?|must\\s+(?:have|hold|possess|be)|(?:will\\s+)?needs?|(?<!\\w)mandator(?:y|ily)(?!\\w))\\s*:?\\s*(?:at\\s+least\\s+|a\\s+minimum\\s+of\\s+)?(?:an?\\s+)?(?:completed\\s+)?(?:college\\s+|university\\s+)?degree(?!\\s+of\\b)"
         # Deliberately unleveled, so it must stand down whenever the document names a level.
-        abstain_by: [*degree_equivalence]
+        abstain_by_adjacent: [*degree_equivalence]
         suppressed_by_unit:
           - "bachelor|master|doctora|ph\\.?d\\.?|associate|advanced|undergraduate|graduate|(?<![\\w.])B\\.?S\\.?(?!\\w)|(?<![\\w.])B\\.?A\\.?(?!\\w)|(?<![\\w.])B\\.?Sc\\.?(?!\\w)|(?<![\\w.])B\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?S\\.?(?!\\w)(?!\\s*(?:Office|Excel|Word|PowerPoint|Outlook|Project|Teams|SQL|Access|Visio|Dynamics|Azure|365|Exchange|SharePoint|Windows|Server)\\b)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)"
           - *degree_in_field

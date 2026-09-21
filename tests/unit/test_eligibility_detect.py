@@ -211,20 +211,50 @@ def test_a_plain_years_floor_with_no_degree_alternative_is_still_decided(catalog
     assert dets and all(d.abstained is None for d in dets)
 
 
-def test_the_disjunction_abstain_is_document_scoped(catalog) -> None:
-    """SETTLED behaviour, locked so it is not misread as a bug. `abstain_by` is
-    document-scoped by design (like the degree family's equivalence escape), so a
-    disjunction anywhere in a posting abstains EVERY years bar in it, including a plain
-    co-located floor. This is the safe direction — abstaining never deletes a real job, and
-    the two-stage gate decides the abstained rows — and it kept the Gate-P5 blast radius to
-    the single SpaceX row on the real 173-case set."""
+def test_the_disjunction_abstain_waives_only_the_bar_its_OR_joins(catalog) -> None:
+    """T104/D-531 REPLACED the document-scoped form this test used to lock.
+
+    It previously asserted that a disjunction ANYWHERE abstains EVERY years bar in the
+    posting, "including a plain co-located floor" — which is astra finding 4's complaint
+    stated as settled behaviour, and it contradicted D-449: the word `or` is what clears a
+    bar, so it clears the bar it JOINS and not a separate floor stated elsewhere. The escape
+    now reaches its own unit and the next, and only where that next unit states no
+    requirement of its own.
+
+    The 3-year arm is inside the disjunction and still abstains. The 10-year floor is a
+    separate bar and now DECIDES."""
     body = (
         "A Bachelor's degree in CS or 3+ years of experience is required. "
         "10+ years of professional experience is required."
     )
-    dets = [d for d in detect(body, catalog, enabled_families=ALL)
-            if d.pattern.id == "total_years_minimum"]
-    assert len(dets) == 2 and all(d.abstained for d in dets)
+    by_years = {d.values.get("years"): d
+                for d in detect(body, catalog, enabled_families=ALL)
+                if d.pattern.id == "total_years_minimum"}
+    assert set(by_years) == {"3", "10"}
+    assert by_years["3"].abstained          # joined by `or` to the degree
+    assert by_years["10"].abstained is None  # a separate floor, decided
+
+
+def test_reordering_unrelated_requirements_does_not_change_which_is_waived(catalog) -> None:
+    """THE TICKET'S OWN CONTROL for T104, and it is only satisfiable under a bounded reach.
+
+    The reach is forward-only, so without the ownership guard this pair would disagree:
+    putting the disjunction FIRST would leave the floor untouched, and putting it SECOND
+    would let it waive the floor in the sentence before. The guard makes the two orders
+    agree for the right reason — in the second order the escape's own sentence carries its
+    own years bar, so it belongs to that bar and cannot reach back.
+    """
+    first = ("A Bachelor's degree in CS or 3+ years of experience is required. "
+             "10+ years of professional experience is required.")
+    second = ("10+ years of professional experience is required. "
+              "A Bachelor's degree in CS or 3+ years of experience is required.")
+
+    def waived(body: str) -> dict[str, bool]:
+        return {d.values["years"]: bool(d.abstained)
+                for d in detect(body, catalog, enabled_families=ALL)
+                if d.pattern.id == "total_years_minimum"}
+
+    assert waived(first) == waived(second) == {"3": True, "10": False}
 
 
 def test_a_SAME_sentence_disjunction_abstains_the_SCOPED_arm(catalog) -> None:
@@ -643,3 +673,83 @@ def test_the_years_word_without_a_bar_writes_no_experience_row(catalog, body) ->
     dets = [d for d in detect(body, catalog, enabled_families=ALL)
             if d.family == "experience_years"]
     assert dets == [], _ids(dets)
+
+
+# ------------------------------------------------- abstain_by_adjacent (T104 mechanism)
+
+_ADJACENT_CATALOG = """
+version: 1
+negation_cues: ["not"]
+families:
+  - id: degree
+    label: Degree
+    tier: profile
+    fact: highest_degree
+    answer_type: choice
+    default_policy: blocker
+    question: "Highest degree?"
+    fields:
+      - name: highest_degree
+        type: choice
+        choices: [none, bachelor]
+        ranks: {none: 0, bachelor: 3}
+    implies_vocabulary: [degree_required]
+    exclusive_groups: []
+    patterns:
+      - id: bachelor_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree is required"
+        %(key)s:
+          - "may be substituted"
+        pattern: "A degree is required"
+"""
+
+
+def _reach(tmp_path: Path, key: str, body: str) -> bool:
+    """Whether the lone `bachelor_required` detection in `body` abstained, under `key`."""
+    config = tmp_path / key
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "rules.yaml").write_text(_ADJACENT_CATALOG % {"key": key}, encoding="utf-8")
+    dets = detect(body, load_rules(config), enabled_families=frozenset({"degree"}))
+    assert len(dets) == 1, f"fixture broke: expected one detection, got {_ids(dets)}"
+    return bool(dets[0].abstained)
+
+
+_OWN = "A degree is required, though it may be substituted."
+_NEXT = "A degree is required. Equivalent experience may be substituted."
+_TWO_AWAY = "A degree is required. We write Python. Equivalent experience may be substituted."
+
+
+def test_abstain_by_adjacent_reaches_its_own_unit_and_the_next_one(tmp_path: Path) -> None:
+    """An equivalence escape is normally written as the FOLLOWING sentence, which is why
+    `abstain_by_sentence` cannot carry it and `abstain_by` (document) over-reaches."""
+    assert _reach(tmp_path, "abstain_by_adjacent", _OWN)
+    assert _reach(tmp_path, "abstain_by_adjacent", _NEXT)
+
+
+def test_abstain_by_adjacent_stops_at_the_next_unit(tmp_path: Path) -> None:
+    """THE WHOLE POINT OF THE SCOPE, and the assertion that makes the pair above non-vacuous.
+
+    One sentence further and the escape no longer reaches — that is the difference between
+    this scope and `abstain_by`, and without this the new field would be indistinguishable
+    from the document-scoped one it narrows (astra finding 4).
+    """
+    assert not _reach(tmp_path, "abstain_by_adjacent", _TWO_AWAY)
+
+
+def test_the_document_scope_DOES_reach_two_units_away(tmp_path: Path) -> None:
+    """The control for the test above: same body, same escape, only the scope differs.
+
+    If this ever stops abstaining, the test above starts passing for the wrong reason — the
+    escape would be failing to match at all rather than being held back by its reach.
+    """
+    assert _reach(tmp_path, "abstain_by", _TWO_AWAY)
+
+
+def test_abstain_by_sentence_does_NOT_reach_the_next_unit(tmp_path: Path) -> None:
+    """The other neighbour, pinned for the same reason: `abstain_by_adjacent` is a SIXTH
+    scope only if it differs from the fifth. Same body as the adjacent test that passes."""
+    assert not _reach(tmp_path, "abstain_by_sentence", _NEXT)

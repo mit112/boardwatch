@@ -99,6 +99,8 @@ families:
           - "or equivalent experience"
         abstain_by_sentence:
           - "or [0-9]+ years"
+        abstain_by_adjacent:
+          - "may be substituted"
         consumes_cues: ["no"]
         pattern: "bachelor"
 """
@@ -133,6 +135,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         "subject_suppressors": sum(bool(p.subject_suppressors) for p in patterns),
         "abstain_by": sum(bool(p.abstain_by) for p in patterns),
         "abstain_by_sentence": sum(bool(p.abstain_by_sentence) for p in patterns),
+        "abstain_by_adjacent": sum(bool(p.abstain_by_adjacent) for p in patterns),
         "jurisdiction_map": sum(bool(p.jurisdiction_map) for p in patterns),
         "consumes_cues": sum(bool(p.consumes_cues) for p in patterns),
     }
@@ -177,7 +180,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         #
         # 2026-09-05: +1, `labeled_years_minimum` implies `total_years_minimum`, so it carries
         # that value's degree-disjunction abstain rather than deciding where its twin abstains.
-        "abstain_by": 11,
+        "abstain_by": 0,
         # The SAME regex as two of those nine, at a different SCOPE, on the six
         # scoped/domain minimum patterns. The owner ruled that the `or` in
         # "a Bachelor's OR N years of X experience" clears the bar it joins, and the word
@@ -187,6 +190,11 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-04: +1, `scoped_months_minimum`, same sentence-scoped form as the six
         # scoped/domain years patterns it mirrors.
         "abstain_by_sentence": 7,
+        # T104/D-531: ALL ELEVEN document-scoped escapes moved here, so `abstain_by` above is
+        # now ZERO -- the field stays in the loader for an override, but no bundled pattern
+        # uses it. The pair must move together: an `abstain_by` that climbs off 0 means a new
+        # pattern took the UNBOUNDED reach that finding 4 exists to remove.
+        "abstain_by_adjacent": 11,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
     }
@@ -215,6 +223,7 @@ def test_optional_pattern_members_are_compiled_and_carried(tmp_path: Path) -> No
         pattern.suppressed_by_sentence,
         pattern.abstain_by,
         pattern.abstain_by_sentence,
+        pattern.abstain_by_adjacent,
         pattern.cue_idioms,
     ):
         assert len(carried) == 1

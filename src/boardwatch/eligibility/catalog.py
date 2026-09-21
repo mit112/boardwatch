@@ -92,6 +92,12 @@ class PatternSpec:
     # disjunction waives the bar its own `or` joins it to, and does NOT waive a separate
     # skill bar stated elsewhere in the posting (D-449). One scope cannot express both.
     abstain_by_sentence: tuple[re.Pattern[str], ...]
+    # The same abstain, reaching the detection's own unit AND the one immediately after it,
+    # never further. A SIXTH scope because neither neighbour expresses it: an equivalence
+    # escape is inherently cross-sentence ("A Master's degree is required. Equivalent
+    # experience may be substituted.") so `abstain_by_sentence` cannot see it, while
+    # document scope lets an alternative in one sentence waive an unrelated bar in another.
+    abstain_by_adjacent: tuple[re.Pattern[str], ...]
     # Surface form -> jurisdiction code, for a pattern that CAPTURES the jurisdiction its
     # sentence scopes itself to. An absent surface resolves to `other`, which abstains.
     jurisdiction_map: dict[str, str]
@@ -675,6 +681,9 @@ def _pattern(
         abstain_by=_regex_list(raw.get("abstain_by"), at, "abstain_by"),
         abstain_by_sentence=_regex_list(
             raw.get("abstain_by_sentence"), at, "abstain_by_sentence"
+        ),
+        abstain_by_adjacent=_regex_list(
+            raw.get("abstain_by_adjacent"), at, "abstain_by_adjacent"
         ),
         jurisdiction_map={
             str(k): str(v) for k, v in (raw.get("jurisdiction_map") or {}).items()
