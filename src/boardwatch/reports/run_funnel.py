@@ -58,10 +58,13 @@ from boardwatch.reports.board_coverage import (
     board_coverage_to_dict,
 )
 from boardwatch.store.run_funnel_queries import (
+    NAMED_STALE_BOARDS,
+    STALE_COMPLETE_BANDS,
     CorpusCounts,
     DedupSweep,
     NeverCompleteBoard,
     SourceOutcome,
+    StaleCompleteBoard,
     TailoredArtifactCounts,
 )
 from boardwatch.tailor.coverage import CoverageReport
@@ -173,6 +176,12 @@ _TOP_MISSING = 10
 # and the new key is a standing cohort that is explicitly not a subset of them. A funnel written
 # before this simply lacks the key, which reads as "not measured" rather than as an empty
 # population — the same absent-not-zero direction the block uses throughout.
+#
+# **T126's `scan.watched_stale_complete` does NOT bump it either**, for exactly T117's reason one
+# paragraph up: same section, no existing key changes meaning, and an absent key reads as "not
+# measured". The two cohorts are disjoint by construction — that one requires no `complete` row
+# in the board's history, this one requires at least one — so neither is a subset of the other
+# and no consumer's arithmetic over the older key moves.
 #
 # **v8 is T60's two terminal states, and it bumps for the v5 reason rather than the v6 one.** It
 # adds no top-level section — `gate_rejected` and `routed_to_review_lane` are drop reasons inside
@@ -1252,6 +1261,19 @@ class ScanContext:
     # `None` means NOT MEASURED, exactly as `fetch_cost` above: a `--no-scan` run leaves the
     # scan history a run older than the artifact, and `()` would be a false all-clear.
     watched_never_complete: tuple[NeverCompleteBoard, ...] | None = None
+    # T126. The SECOND liveness cohort, beside the one above and DISJOINT from it: a board that
+    # HAS completed a scan, but not within a day. `watched_never_complete` cannot see it — the
+    # board has a `complete` on record — so a board that completed once and stopped was in
+    # neither cohort and nothing reported it. Carried as an age per board rather than as one
+    # number: "which board, and how far behind" is the actionable part, and the run log renders
+    # it as banded counts so a fleet-sized cohort stays readable.
+    #
+    # REPORTING ONLY. Nothing consumes it: no posting is retired, probed or suppressed by age,
+    # and a stale board may simply be answering `304 Not Modified` every run.
+    #
+    # `None` means NOT MEASURED, on the `watched_never_complete` / `fetch_cost` rule: `()` here
+    # is the measured all-clear (every watched board completed on its last opportunity).
+    watched_stale_complete: tuple[StaleCompleteBoard, ...] | None = None
 
     @property
     def boards_reconciled(self) -> bool | None:
@@ -2076,6 +2098,56 @@ def _watched_never_complete_markdown(
     ]
 
 
+def _watched_stale_complete_markdown(
+    rows: tuple[StaleCompleteBoard, ...] | None,
+) -> list[str]:
+    """The second liveness cohort: watched boards that have completed, but not lately (T126).
+
+    Rendered immediately under T117's block because the two are read together and are disjoint —
+    a board is in exactly one of them, or in neither. Banded rather than listed in full: this
+    cohort is every watched board that has fallen a day behind, which is a different order of
+    magnitude from T117's 8, and a list that long is not read.
+
+    `None` / `()` carry T117's meanings unchanged: not measured this run, versus measured and
+    every board fresh.
+    """
+    if rows is None:
+        return [
+            "",
+            "Watched boards whose last `complete` scan is stale: **not measured** this run.",
+        ]
+    if not rows:
+        return ["", "Every watched board recorded a `complete` scan on its last opportunity."]
+    stranded = sum(row.open_postings for row in rows)
+    out = [
+        "",
+        f"**{len(rows)} watched board(s) have completed a scan before but not within a day, and "
+        f"{stranded} open posting(s) sit under them.** *Disjoint from the block above, which "
+        "counts boards that have NEVER completed. Age alone does not mean dead and nothing is "
+        "retired on it: a board here may simply be answering `304 Not Modified`. What the age "
+        "measures is how long it has been since anything could have CLOSED a posting on it.*",
+        "",
+        "| last complete | boards | open postings |",
+        "|---|---:|---:|",
+    ]
+    by_band = {label: [r for r in rows if r.band == label] for _, _, label in STALE_COMPLETE_BANDS}
+    for _, _, label in STALE_COMPLETE_BANDS:
+        band = by_band[label]
+        out.append(f"| {label} | {len(band)} | {sum(r.open_postings for r in band)} |")
+    named = rows[:NAMED_STALE_BOARDS]
+    tail = "" if len(rows) == len(named) else f", and {len(rows) - len(named)} more"
+    out += [
+        "",
+        "*Stalest first: "
+        + ", ".join(
+            f"`{row.board}` ({row.days_since_complete}d, {row.open_postings})" for row in named
+        )
+        + tail
+        + ".*",
+    ]
+    return out
+
+
 def _fetch_cost_markdown(rows: tuple[ProviderFetchCost, ...] | None) -> list[str]:
     """The per-provider fetch cost, or an explicit statement that it was not measured."""
     if rows is None:
@@ -2260,6 +2332,19 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                     "open_postings": row.open_postings,
                 }
                 for row in funnel.scan.watched_never_complete
+            ],
+            # T126. `null` when not measured, on the rule above. Already ordered stalest-first
+            # by the query. `band` is serialized beside `days_since_complete` so a consumer
+            # reads the same closed catalog the markdown bands on rather than re-deriving one.
+            "watched_stale_complete": None if funnel.scan.watched_stale_complete is None else [
+                {
+                    "provider": row.provider,
+                    "board_slug": row.board_slug,
+                    "open_postings": row.open_postings,
+                    "days_since_complete": row.days_since_complete,
+                    "band": row.band,
+                }
+                for row in funnel.scan.watched_stale_complete
             ],
             # Ordered most-expensive first so the constraint is the first row a reader sees.
             "fetch_cost": None if funnel.scan.fetch_cost is None else [
@@ -2630,6 +2715,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             )
             lines.append("")
         lines.extend(_watched_never_complete_markdown(funnel.scan.watched_never_complete))
+        lines.extend(_watched_stale_complete_markdown(funnel.scan.watched_stale_complete))
         lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")

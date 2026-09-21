@@ -97,6 +97,10 @@ def test_the_scan_block_names_the_watched_board_that_has_never_scanned_complete(
     assert scan["watched_never_complete"] == [
         {"provider": "greenhouse", "board_slug": _PARTIAL, "open_postings": 1}
     ]
+    # T126's cohort, read end to end for the same reason: every board here completed (or failed
+    # to) inside THIS run, so none of them is a day behind and the measured all-clear is `[]`.
+    # A pipeline that never asked the store would have no key at all.
+    assert scan["watched_stale_complete"] == []
     markdown = out["markdown"]
     assert isinstance(markdown, str)
     assert f"`greenhouse:{_PARTIAL}` (1)" in markdown
@@ -118,6 +122,7 @@ def test_a_run_that_did_not_scan_reports_not_measured_rather_than_an_empty_list(
     scan = out["scan"]
     assert isinstance(scan, dict)
     assert scan["watched_never_complete"] is None
+    assert scan["watched_stale_complete"] is None
     markdown = out["markdown"]
     assert isinstance(markdown, str)
     assert "skipped (`--no-scan`)" in markdown

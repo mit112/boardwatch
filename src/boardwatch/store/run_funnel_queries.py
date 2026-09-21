@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import Connection, Select, case, distinct, func, literal, select, tuple_
 
@@ -979,3 +980,136 @@ def watched_boards_never_complete(conn: Connection) -> tuple[NeverCompleteBoard,
         NeverCompleteBoard(provider=str(provider), board_slug=str(slug), open_postings=int(count))
         for provider, slug, count in rows
     )
+
+
+#: How long a board may go without a `complete` scan before it is reported STALE, and the bands
+#: the cohort is distributed over. A CLOSED catalog with an open-ended last band, so every age is
+#: in exactly one band and an out-of-catalog age is not expressible.
+#:
+#: The 1-day floor is the program's own cadence, not a configured horizon: `get_watched_companies`
+#: returns EVERY watched row and `scan.coordinator` reads from nowhere else, so a watched board is
+#: attempted once per daily run. A board whose last `complete` is more than a day old therefore
+#: missed at least one opportunity it was given, which is a measurement rather than a threshold.
+#: Below that floor the board completed on its most recent opportunity and is reported as fresh.
+STALE_COMPLETE_BANDS: tuple[tuple[int, int | None, str], ...] = (
+    (1, 7, "1-6 days"),
+    (7, 30, "7-29 days"),
+    (30, None, "30+ days"),
+)
+
+#: How many boards `run_funnel` names before it summarises the rest as a count. T117 names all of
+#: its boards because the class is 8 wide; this cohort is every watched board that has fallen a
+#: day behind, which on the live store is a different order of magnitude.
+NAMED_STALE_BOARDS = 10
+
+
+def stale_complete_band(days: int) -> str:
+    """Which band of :data:`STALE_COMPLETE_BANDS` an age falls in. Raises outside the catalog.
+
+    A typed failure at the raise site rather than a `"other"` bucket: the last band is open-ended,
+    so the only way here is an age below the fresh floor, which is a caller bug.
+    """
+    for low, high, label in STALE_COMPLETE_BANDS:
+        if days >= low and (high is None or days < high):
+            return label
+    raise ValueError(f"age {days} days is below the stale floor and has no band")
+
+
+@dataclass(frozen=True)
+class StaleCompleteBoard:
+    """One watched board that HAS completed a scan, but not recently, and what sits under it.
+
+    **The complement of `NeverCompleteBoard`, and disjoint from it by construction** — that one
+    requires no `complete` row in the whole history, this one requires at least one. A board that
+    completed once and has not completed since was in neither cohort and nothing reported it.
+
+    **Reporting only, and deliberately inert.** Nothing here retires, closes, probes or
+    suppresses a posting: age alone never means dead, and a board at 30 days may simply have been
+    answering `304 Not Modified` — `apply_board` writes `unchanged` for those and they are a
+    genuine statement that the listing has not moved. What the age measures is how long it has
+    been since anything could have CLOSED a posting on this board, which is the fact no artifact
+    carried.
+
+    `open_postings` is counted straight out of `postings`, on the same "count the deliverable
+    through a different path" rule `NeverCompleteBoard` follows, and a board holding none is not
+    reported.
+    """
+
+    provider: str
+    board_slug: str
+    open_postings: int
+    last_complete_at: datetime
+    days_since_complete: int
+
+    @property
+    def board(self) -> str:
+        return f"{self.provider}:{self.board_slug}"
+
+    @property
+    def band(self) -> str:
+        return stale_complete_band(self.days_since_complete)
+
+
+def watched_boards_stale_complete(
+    conn: Connection, *, now: datetime
+) -> tuple[StaleCompleteBoard, ...]:
+    """The second liveness cohort (T126): completed once, not completed lately.
+
+    Reached by the same grouped-aggregate shape `watched_boards_never_complete` uses and for the
+    same measured reason — a correlated subquery per posting row costs 7.8 s on a live-sized
+    store and this costs 0.04 s. `scan_kind` is not filtered here either: `apply_board` runs the
+    same absence closure whatever wrote the snapshot.
+
+    `now` is a parameter rather than a call to `utcnow()` so the age is the run's own instant,
+    the same one every other funnel measurement is taken at, and so a test can pin a band without
+    sleeping.
+
+    Ordered STALEST FIRST, then by board, which is both the operator's triage order and a stable
+    order two runs' artifacts can be diffed on.
+    """
+    open_by_company = (
+        select(postings.c.company_id, func.count().label("open_postings"))
+        .where(postings.c.status == "open")
+        .group_by(postings.c.company_id)
+        .subquery()
+    )
+    last_complete = (
+        select(
+            board_scans.c.company_id,
+            func.max(board_scans.c.finished_at).label("last_complete_at"),
+        )
+        .where(board_scans.c.status == "complete")
+        .group_by(board_scans.c.company_id)
+        .subquery()
+    )
+    rows = conn.execute(
+        select(
+            companies.c.provider,
+            companies.c.slug,
+            open_by_company.c.open_postings,
+            last_complete.c.last_complete_at,
+        )
+        .select_from(
+            companies.join(open_by_company, open_by_company.c.company_id == companies.c.id).join(
+                last_complete, last_complete.c.company_id == companies.c.id
+            )
+        )
+        .where(companies.c.watched.is_(True))
+        .order_by(last_complete.c.last_complete_at, companies.c.provider, companies.c.slug)
+    ).all()
+    floor = STALE_COMPLETE_BANDS[0][0]
+    out = []
+    for provider, slug, count, last_complete_at in rows:
+        days = (now - last_complete_at).days
+        if days < floor:
+            continue
+        out.append(
+            StaleCompleteBoard(
+                provider=str(provider),
+                board_slug=str(slug),
+                open_postings=int(count),
+                last_complete_at=last_complete_at,
+                days_since_complete=days,
+            )
+        )
+    return tuple(out)

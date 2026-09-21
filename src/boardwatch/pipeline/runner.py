@@ -155,6 +155,7 @@ from boardwatch.store.run_funnel_queries import (
     TAILORED_KIND,
     lead_provenance,
     watched_boards_never_complete,
+    watched_boards_stale_complete,
 )
 from boardwatch.store.seed_queries import (
     LaneSeed,
@@ -3368,9 +3369,15 @@ def _emit_funnel(
     # `None` on a `--no-scan` run, on the `fetch_cost` rule below — the history is then a run
     # older than the artifact, and `()` would read as a measured all-clear.
     watched_never_complete = None
+    # T126. The second cohort, read on the same connection and under the same rule: `None` on a
+    # `--no-scan` run, because the scan history is then a run older than the artifact and `()`
+    # would read as a measured all-clear. `utcnow()` is taken once so every board's age is
+    # measured against one instant.
+    watched_stale_complete = None
     if scan_summary is not None:
         with engine.connect() as conn:
             watched_never_complete = watched_boards_never_complete(conn)
+            watched_stale_complete = watched_boards_stale_complete(conn, now=utcnow())
     funnel = collect_run_funnel(
         engine,
         settings,
@@ -3409,6 +3416,7 @@ def _emit_funnel(
                 for provider, cost in scan_summary.fetch_cost.items()
             ),
             watched_never_complete=watched_never_complete,
+            watched_stale_complete=watched_stale_complete,
         ),
         shortlist=summary.shortlist,
         liveness=LivenessCheck(

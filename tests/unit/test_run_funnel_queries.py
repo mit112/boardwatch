@@ -10,6 +10,7 @@ rows are shaped the way real ones are.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ from boardwatch.store.run_funnel_queries import (
     posting_ids_judged_this_run,
     sweep_duplicates,
     watched_boards_never_complete,
+    watched_boards_stale_complete,
 )
 from boardwatch.store.tables import (
     applications,
@@ -801,10 +803,11 @@ def test_a_whitespace_only_body_of_tabs_and_newlines_counts_as_a_stub(engine: En
 
 
 def _scan(
-    conn: Connection, company_id: int, status: str, *, scan_kind: str = "board"
+    conn: Connection, company_id: int, status: str, *, scan_kind: str = "board",
+    finished_at: datetime = NOW,
 ) -> None:
     conn.execute(insert(board_scans).values(
-        run_id=_run(conn), company_id=company_id, started_at=NOW, finished_at=NOW,
+        run_id=_run(conn), company_id=company_id, started_at=NOW, finished_at=finished_at,
         status=status, postings_listed=0, scan_kind=scan_kind,
     ))
 
@@ -916,3 +919,108 @@ def test_the_biggest_hole_is_named_first(engine: Engine) -> None:
         rows = watched_boards_never_complete(conn)
 
     assert [r.board for r in rows] == ["greenhouse:big", "greenhouse:small"]
+
+
+# ------------------------------------------------- T126: the second liveness cohort, by age
+#
+# `watched_boards_never_complete` above cannot see a board that completed ONCE and stopped: it
+# has a `complete` row on record. That board is in neither cohort and nothing reported it. These
+# pin the new one and, more importantly, that the two are DISJOINT — which is the whole design,
+# because a board counted twice would double the reported hole.
+
+
+def test_a_board_whose_last_complete_is_old_is_named_with_its_age(engine: Engine) -> None:
+    """The reported class: watched, HAS completed, but not within the day the daily run gives it.
+
+    The age and the open-posting count are both asserted because both are the operator's
+    question — how far behind, and how much sits under it.
+    """
+    with engine.begin() as conn:
+        board = _board(conn, "lapsed")
+        _scan(conn, board, "complete", finished_at=NOW - timedelta(days=9))
+        _scan(conn, board, "partial", finished_at=NOW - timedelta(days=1))
+        _posting_on(conn, board, "a")
+        _posting_on(conn, board, "b")
+
+    with engine.connect() as conn:
+        rows = watched_boards_stale_complete(conn, now=NOW)
+
+    assert [(r.board, r.days_since_complete, r.open_postings, r.band) for r in rows] == [
+        ("greenhouse:lapsed", 9, 2, "7-29 days")
+    ]
+
+
+def test_the_two_liveness_cohorts_are_disjoint(engine: Engine) -> None:
+    """The design, asserted in one place: a board is in at most one of them.
+
+    `never` requires NO `complete` row in the whole history; `stale` requires at least one. Run
+    against both queries with both boards present, because either alone is satisfied by a query
+    that returns everything.
+    """
+    with engine.begin() as conn:
+        never = _board(conn, "never")
+        _scan(conn, never, "partial", finished_at=NOW - timedelta(days=40))
+        _posting_on(conn, never, "a")
+        lapsed = _board(conn, "lapsed")
+        _scan(conn, lapsed, "complete", finished_at=NOW - timedelta(days=40))
+        _posting_on(conn, lapsed, "b")
+
+    with engine.connect() as conn:
+        assert [r.board for r in watched_boards_never_complete(conn)] == ["greenhouse:never"]
+        assert [r.board for r in watched_boards_stale_complete(conn, now=NOW)] == [
+            "greenhouse:lapsed"
+        ]
+
+
+def test_a_board_that_completed_on_its_last_opportunity_is_not_named(engine: Engine) -> None:
+    """The discriminating control. Without it "every watched board with a complete scan" passes
+    the test above. The floor is the program's own cadence: `get_watched_companies` returns every
+    watched row and the coordinator reads from nowhere else, so a board completing within the day
+    completed on the last opportunity it was given."""
+    with engine.begin() as conn:
+        board = _board(conn, "fresh")
+        _scan(conn, board, "complete", finished_at=NOW - timedelta(hours=20))
+        _posting_on(conn, board, "a")
+
+    with engine.connect() as conn:
+        assert watched_boards_stale_complete(conn, now=NOW) == ()
+
+
+def test_an_unwatched_or_empty_board_is_not_named_however_stale(engine: Engine) -> None:
+    """Both exclusions the class claims, in one place. An unwatched board is
+    `unreachable_by_the_scanner` and the death sweep owns it; a board holding no open posting has
+    no hole to report at all."""
+    with engine.begin() as conn:
+        unwatched = _board(conn, "swept", watched=False)
+        _scan(conn, unwatched, "complete", finished_at=NOW - timedelta(days=40))
+        _posting_on(conn, unwatched, "a")
+        empty = _board(conn, "empty")
+        _scan(conn, empty, "complete", finished_at=NOW - timedelta(days=40))
+        _posting_on(conn, empty, "b", status="closed")
+        control = _board(conn, "control")
+        _scan(conn, control, "complete", finished_at=NOW - timedelta(days=40))
+        _posting_on(conn, control, "c")
+
+    with engine.connect() as conn:
+        rows = watched_boards_stale_complete(conn, now=NOW)
+
+    assert [r.board for r in rows] == ["greenhouse:control"]
+
+
+def test_the_stalest_board_is_named_first(engine: Engine) -> None:
+    """Stalest first — the operator's triage order, and a stable order two runs can be diffed
+    on. Each board lands in a different band, so this pins the banding too."""
+    with engine.begin() as conn:
+        for slug, days in (("recent", 3), ("older", 20), ("ancient", 200)):
+            board = _board(conn, slug)
+            _scan(conn, board, "complete", finished_at=NOW - timedelta(days=days))
+            _posting_on(conn, board, slug)
+
+    with engine.connect() as conn:
+        rows = watched_boards_stale_complete(conn, now=NOW)
+
+    assert [(r.board, r.band) for r in rows] == [
+        ("greenhouse:ancient", "30+ days"),
+        ("greenhouse:older", "7-29 days"),
+        ("greenhouse:recent", "1-6 days"),
+    ]
