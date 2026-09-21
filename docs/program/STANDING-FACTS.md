@@ -3712,3 +3712,37 @@ both of those recorded values too. Three more ticks and the condition is satisfi
 **T96 and T97 are MERGED** (union gated before push: exit 0, 10,274 passed). Both were held off
 `main` until run 467 was read so the expansion was measured as one variable.
 
+---
+
+## Owner-gated items moved out of STATE on 2026-09-21 (verbatim) — all four say outright they are settled
+
+0-B/0-C/0-D shipped (D-502/D-503); the <= 1-YoE floor is ruled, planned and executed (D-478/479/480);
+0-1 was already marked RETIRED/ANSWERED; and the per-source thresholds are FULLY RULED (D-482, D-505)
+with nothing owed. They sat in STATE's owner-gated section describing decisions nobody can still take.
+**One live residual is kept in STATE rather than moved: 0-D's REPAIR half** (117 overwritten bodies,
+301 lane-payload `raw_json` rows) was never part of the ruling and is still available if Mit wants it.
+
+**0-B, 0-C and 0-D are ALL SHIPPED (2026-09-13, D-502/D-503) and are no longer owner-gated.** 0-D
+shipped narrower than the ruling and the correction is in D-502; 0-D's REPAIR half (117 overwritten
+bodies, 301 lane-payload `raw_json` rows) was not part of the ruling and remains available if Mit
+wants it. **D-498's rule (b) IS BUILT and shipped under D-504** — `_suppress_lane_copies`
+(`top_cmd.py:1062`) implements it; the previous "not ruled on and is not built" here was false
+(D-521 §8.2). Rule (c) stays refused.
+
+**0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), ALL DECISIONS TAKEN (D-480).** D1 = T47
+(per-user policy data). D2 = floor first, then arm the judge, both before run 4. D3 = above-band
+stays hidden, no ticket. Reach confirmed for 2–3 y total bars, scoped bars > 1 y and 13–36-month
+bars; hedged/preferred bars do not move. Nothing here is still owner-gated; it is execution.
+
+**0-1. RETIRED / ANSWERED — held WHOLE in `STANDING-FACTS.md`.** Gate 1 is PER-SOURCE RECALL (D-421)
+and only the per-source THRESHOLD is still owed; job-apps keeps running until it is met
+(`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410, re-scoped by D-450). **Do not
+re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
+
+1. **PER-SOURCE THRESHOLDS — FULLY RULED (D-482 structure, D-505 the last two).** Employer-board
+   sources ≥ 85%; **LinkedIn, Indeed and hiring.cafe: NO BAR** — a reach lane's recall against
+   job-apps' ledger measures its OVERLAP with the system it exists to go beyond, so a bar there
+   would mean job-apps runs forever. **Nothing is owed here any more.** M4's exit is the
+   employer-board half alone and all four already clear it (greenhouse 97.2 / ashby 100 /
+   workday 96.6 / lever 100, D-499); the only condition left is D-482's SECOND reading a week
+   after D-499, owed **~2026-09-19**.

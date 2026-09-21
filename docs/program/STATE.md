@@ -10,8 +10,12 @@
 > **States only what is true now**; no sha or commit count (D-017). **Rewrite it, never prepend.**
 > **This file holds only what changes between sessions** — current standing, next action, live blockers,
 > owner calls. **Settled subsystem history is moved WHOLE into `STANDING-FACTS.md`, never summarised
-> away** — fifteen passes so far, most recently **2026-09-21** (the 2026-09-20g, 2026-09-20f and
-> 2026-09-19 blocks, 378 → 272 lines). **Nothing has been deleted on any pass.** Do not narrate a
+> away** — fifteen passes so far, most recently **2026-09-21**, which moved TWO sets: the
+> 2026-09-20g / 2026-09-20f / 2026-09-19 session blocks, and the four settled owner-gated items.
+> **Nothing has been deleted on any pass.** That session also ADDED a lot, so the file closed at
+> **303 lines and is over the bar.** **The next thing to move is the 2026-09-21 block itself,
+> once PR #404 is confirmed merged and run 470 has been read against its recorded prediction** —
+> both are conditions inside it, so it is not movable before then. Do not narrate a
 > decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
@@ -54,6 +58,36 @@ on POSIX but on Windows denies every concurrent open for the instant of the swap
 lock-free reader saw **neither** revision — the third outcome §6 clause 1 says cannot happen.
 The reader now waits it out, bounded at 1s, `PermissionError` only. **Only a Windows dispatch can
 confirm the race is gone and ONE green run is not enough.**
+
+**SESSION CLOSE — ONE THING IS IN FLIGHT AND MUST BE CHECKED FIRST.** **PR #404**
+(`windows-pointer-swap`, the D-535 fix) was left **OPEN with auto-merge armed** at 12:41 CDT.
+Its PR CI was 11 of 22 jobs done with **none failing** and, decisively, **`web-bundle`
+completed `success`** — that is the same vitest suite the local gate kept failing, green on a
+clean runner. A Windows `workflow_dispatch` (**35631812260**) had all three `windows-latest`
+jobs in progress. **Confirm it merged — do not assume it.** If it did not, the branch and the
+reasoning are intact; nothing else in this session depends on it.
+
+**THE LOCAL GATE WAS NEVER MADE GREEN ON THAT BRANCH, AND THIS IS THE HONEST RECORD OF WHY.**
+Dota 2 held the machine at **415% CPU, load 15–20**, for the whole session. `generalization`,
+`index-check`, `ruff` and `mypy --strict` passed. `web-test` failed with **2, then 11, then 13**
+vitest failures across three separate runs — **all `Test timed out in 5000ms`, no assertions**,
+and the varying count is the tell. `pytest` came back 1 failed / 10,627 passed, the failure a
+wall-clock assertion missing by **0.14s on a 3.0s margin** (`3.14 < 6.0/2`) in
+`test_lane_stage.py`, which never imports `profile_bundle` and passes in isolation.
+**CI's `web-bundle` job runs the same `npm test` on a clean runner and is the uncontended
+reading** — that is by design, and `ci.yml` says so in a comment. A Python-only change in
+`profile_bundle` cannot reach the React suite.
+
+**STANDING: a contended gate is a FALSE NEGATIVE and this is the second session it has cost.**
+Check `uptime` and `ps -Ao pcpu,comm -r | head -3` BEFORE launching `make check`; if load is
+above ~8, the vitest 5s timeouts will fail and the count will vary run to run. Two runaway
+recursive-glob processes were also found and killed at session start, one of them **16 hours
+old** from a prior session, each burning a core.
+
+**AFTER #404 MERGES, ONE GREEN WINDOWS RUN IS NOT CONFIRMATION (D-535).** The race fired roughly
+one nightly in five. **Read the next several scheduled builds** before calling it closed, with
+`gh run list --branch main --json event,conclusion` filtered to `event=="schedule"` — `--limit 1`
+shows the newest run of EITHER kind, which is how a red nightly reads as green.
 
 **PREDICTION FOR RUN 470, RECORDED SO IT CAN BE CHECKED.** The batch re-keys `rules_hash`, so
 the next preflight re-judges the whole stored corpus rather than the day's new postings. D-460
@@ -179,30 +213,13 @@ both of those recorded values too. Three more ticks and the condition is satisfi
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-**0-B, 0-C and 0-D are ALL SHIPPED (2026-09-13, D-502/D-503) and are no longer owner-gated.** 0-D
-shipped narrower than the ruling and the correction is in D-502; 0-D's REPAIR half (117 overwritten
-bodies, 301 lane-payload `raw_json` rows) was not part of the ruling and remains available if Mit
-wants it. **D-498's rule (b) IS BUILT and shipped under D-504** — `_suppress_lane_copies`
-(`top_cmd.py:1062`) implements it; the previous "not ruled on and is not built" here was false
-(D-521 §8.2). Rule (c) stays refused.
+**0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
+`STANDING-FACTS.md` on 2026-09-21** (0-B/0-C/0-D shipped, the <= 1-YoE floor ruled and executed,
+0-1 retired, per-source thresholds fully ruled — **nothing is owed on any of them**). The repair:
+117 overwritten bodies and 301 lane-payload `raw_json` rows, never part of the ruling, still
+available if Mit wants it. **D-498's rule (b) IS BUILT** (`_suppress_lane_copies`,
+`top_cmd.py:1062`); rule (c) stays refused.
 
-**0. THE ≤ 1-YoE FLOOR — RULED (D-478 §5), PLANNED (D-479), ALL DECISIONS TAKEN (D-480).** D1 = T47
-(per-user policy data). D2 = floor first, then arm the judge, both before run 4. D3 = above-band
-stays hidden, no ticket. Reach confirmed for 2–3 y total bars, scoped bars > 1 y and 13–36-month
-bars; hedged/preferred bars do not move. Nothing here is still owner-gated; it is execution.
-
-**0-1. RETIRED / ANSWERED — held WHOLE in `STANDING-FACTS.md`.** Gate 1 is PER-SOURCE RECALL (D-421)
-and only the per-source THRESHOLD is still owed; job-apps keeps running until it is met
-(`RETIREMENT-PLAN.md`); Indeed's posture is decided (D-410, re-scoped by D-450). **Do not
-re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
-
-1. **PER-SOURCE THRESHOLDS — FULLY RULED (D-482 structure, D-505 the last two).** Employer-board
-   sources ≥ 85%; **LinkedIn, Indeed and hiring.cafe: NO BAR** — a reach lane's recall against
-   job-apps' ledger measures its OVERLAP with the system it exists to go beyond, so a bar there
-   would mean job-apps runs forever. **Nothing is owed here any more.** M4's exit is the
-   employer-board half alone and all four already clear it (greenhouse 97.2 / ashby 100 /
-   workday 96.6 / lever 100, D-499); the only condition left is D-482's SECOND reading a week
-   after D-499, owed **~2026-09-19**.
 2. **TRACK 1 — CLOSED (D-482): accept the loss**, per D-453. Do not re-raise it from the 382 or
    the 113.
 3. **Mit's résumé calls** — whether to send a document at all; the D-220 prose rewrite of the submitted "sole iOS developer" answer (outside the bundle); the per-lens formatting session.
