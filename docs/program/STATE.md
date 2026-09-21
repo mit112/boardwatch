@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1) **and on 2026-09-20d** (ALL FIVE astra-consumption blocks condensed to ONE pointer now that D-528 closes the remediation, 313 → 267 lines). Nothing was deleted on any of the thirteen passes. **267 is still over the bar, deliberately:** what remains above it is run 467's 92-line block and this session's own, both CURRENT standing rather than settled history. **Run 467's is still HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1) **and on 2026-09-20d** (ALL FIVE astra-consumption blocks condensed to ONE pointer now that D-528 closes the remediation, 313 → 267 lines). Nothing was deleted on any of the thirteen passes. **The file is now 285 lines and that is over the bar by more than the usual margin.** What holds it up is run 467's 92-line block plus the 2026-09-20d/e block; **the latter is now SETTLED — the wave is merged and held in D-528 — and is the next thing to move WHOLE**, which a session with the budget should do rather than summarising it away. It was left in place on 2026-09-20e deliberately: that session's owner questions went unanswered, and condensing a block while its open items are still being put to Mit risks dropping one. **Run 467's is still HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,7 +20,9 @@
 
 ## Current standing
 
-### 2026-09-20d — **THE ASTRA REMEDIATION BACKLOG IS CLOSED TO THIRTEEN TICKETS IN ONE GATED WAVE (D-528, PR #398). `make check` exit 0 on `42bc2696`: 10,584 passed (baseline 10,542), coverage 95.25%, 9m32s. THE ENGINE BATCH IS THE ONLY DEFERRAL. NOTHING HERE RE-KEYS — no drain, no confirm-clock restart.**
+### 2026-09-20d/e — **THE ASTRA REMEDIATION BACKLOG IS CLOSED TO THIRTEEN TICKETS IN ONE GATED WAVE, AND IT IS MERGED (D-528, PR #398 → `09df0e87`). WINDOWS IS GREEN AND THE FIVE-NIGHT RED IS OVER. THE ENGINE BATCH IS THE ONLY DEFERRAL. NOTHING HERE RE-KEYS — no drain, no confirm-clock restart.**
+
+**The gate, on the commit that actually merged.** `make check` exit 0 on **`82ad88da`** — 10,584 passed (baseline 10,542), 1 skipped, 4 xfailed, coverage 95.25%, 9m16s, all six targets present. The earlier reading was on `42bc2696`, one commit short of HEAD; the gap was four program docs plus one line in `tests/unit/test_delivery_queries.py`. **After the merge, `git diff 82ad88da HEAD` is empty** — the merge tree is byte-identical, so this reading is valid for `09df0e87` and the 04:00 tick runs exactly the gated code.
 
 Shipped: **T110, T111, T120, T121, T122, T126, T128, T131, T134, T136, T138 (per-file half),
 T139 (doc half), T148.** Five came from three enterprise-seat executors in their own worktrees
@@ -216,6 +218,14 @@ re-litigate 80%, do not re-derive "most", do not re-probe Indeed.**
 
 ## Open questions — Mit's, not to be resolved by fiat
 
+0. **B8's volume reading on the escalation channel — RULED 2026-09-20e, held WHOLE in D-529.**
+   Keep it OFF `summary.errors`; **no code change**, and `pipeline/runner.py:3083` plus its pinning
+   test stand as T110 shipped them. **This is a deferral with a CONDITION, not a closed question:**
+   the "near-daily noise" argument rests on 9 of 14 confirm days under the bar and **all 14 are
+   pre-expansion**; run 467's **25** is the only reading on the 1,807-board fleet, so the firing
+   rate now is unmeasured at n = 1. **Revisit at n ≥ 5 post-expansion readings.** Do not re-derive
+   the argument — read D-529.
+
 1. **The projection spec's six open questions** (§12).
 2. **The Snap `Level 3`/`Level 5` leak stays open by design** — with no bindings file every level
    token abstains. boardwatch ships no verifiable claim about any company's ladder.
@@ -244,33 +254,29 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 
 ## Live blockers and carried gaps
 
-**THE SCHEDULED (WINDOWS) BUILD WAS RED FOR FIVE CONSECUTIVE NIGHTS (09-16 … 09-20; last green
-2026-09-15 `2b980ebb`). T128 FIXES ALL THREE FAILURES — shipped in D-528's wave, PR #398.** The
-count was FOUR in this file and was wrong; it had gone one more night.
+**THE WINDOWS RED IS OVER — VERIFIED GREEN AND MERGED (2026-09-20e).** The scheduled build was
+red five consecutive nights (09-16 … 09-20; last green 2026-09-15 `2b980ebb`). T128's three fixes
+and the `%s` strftime fix both hold: `workflow_dispatch` **35549392270** on `astra-closeout` came
+back **`success`, 30 of 31 jobs**, all three `windows-latest` jobs green, 1 correctly skipped
+(`nightly-watch`, schedule-only). **PR #398 merged as `09df0e87`.** Numbers and the
+reconciliation are in `METRICS.md` (session 2026-09-20e); the four failures themselves are history
+and are held in D-528. **Tonight's nightly is expected green — confirm it, do not assume it.**
 
-The three, all Windows-only: `time.tzset()` does not exist on Windows (`test_web_server.py`, from
-`3652f583` on 2026-09-17); an AST call-site guard compared `str(path.relative_to(root))` against
-forward-slash literals so Windows failed on SEPARATORS, not on a real second call site
-(`test_review_gate.py`); and `test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy`
-asserted the fake `claude` ran without wearing `_needs_an_executable_fake`, the marker its twenty
-siblings carry.
+**READ A WINDOWS RESULT BY TEST NAME AND COUNT, NEVER BY COLOUR.** The dispatch before this one
+(**35547739139**) was also red, and it did NOT mean the fix had failed: T128's three targets were
+already at 0 occurrences while 46 *different* tests failed on the unrelated `%s` break. A red
+dispatch is a list of names to compare against the ones you expect. The green one was confirmed a
+real run the same way: Windows 3.13 read 10,500 passed / 85 skipped against local's 10,584 / 1, and
+**10,584 − 10,500 = 85 − 1 = 84**, so every missing pass is an accounted-for platform skip rather
+than a collection failure.
 
-**THE DISPATCH FOUND A FOURTH, UNRELATED WINDOWS BREAK THAT NO NIGHTLY HAD YET SEEN.** T128's
-three are confirmed FIXED (0 occurrences in the dispatched run). But the same run went red on
-**46 tests in `tests/unit/test_delivery_queries.py`**, all `ValueError: Invalid format string`:
-`f"v-{posting_id}-{captured_at:%s}"` formats a datetime through `strftime`, and **`%s` is a
-glibc/BSD extension Windows refuses**. Introduced by **`7093b804` (T119) at 11:30 on 2026-09-20 —
-four hours AFTER that day's 07:08 nightly** — so it was on `main` and unseen, and tonight's nightly
-would have gone red on it. Fixed with `int(captured_at.timestamp())`. **Had this not been caught,
-the nightly would have stayed red for a new reason and T128 would have looked like it failed.**
-
-**WHY IT STAYED INVISIBLE, AND THE ONLY WAY TO SEE IT.** Windows is in the matrix for
-`schedule` **and `workflow_dispatch`** and nothing else (`ci.yml`'s `os:` expression is the
-authority) — so a green 27-job CI on a `main` push says **nothing** about Windows, and a PR cannot
-show it either. **Validate a Windows fix with `gh workflow run ci.yml --ref <branch>`** before
-merging; that is what D-528 did rather than waiting a night. Read the nightly with
-`gh run list --branch main --json event,conclusion` filtered to `event=="schedule"` — `--limit 1`
-shows the newest run of EITHER kind, which is how a red nightly reads as green.
+**WINDOWS IS STILL INVISIBLE TO ORDINARY CI, AND THIS DOES NOT CHANGE.** It is in the matrix for
+`schedule` **and `workflow_dispatch`** only (`ci.yml`'s `os:` expression is the authority) — a green
+27-job CI on a `main` push says **nothing** about Windows, and a PR cannot show it either.
+**Validate any Windows-touching fix with `gh workflow run ci.yml --ref <branch>` before merging.**
+Read the nightly with `gh run list --branch main --json event,conclusion` filtered to
+`event=="schedule"`; `--limit 1` shows the newest run of EITHER kind, which is how a red nightly
+reads as green.
 
 | Item | Detail | Owner |
 |---|---|---|
