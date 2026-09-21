@@ -33,7 +33,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.leveling import load_leveling
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
-from boardwatch.reports.manifest import config_hash, profile_row_hash
+from boardwatch.reports.manifest import config_hash, profile_row_hash, routing_hash
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
     BoardCoverageReport,
@@ -290,6 +290,10 @@ def collect_run_funnel(
         # tell a reader whether the hard US gate was armed, and without that each lead's
         # `location_class` is a verdict with no claim attached to it.
         location_filter_mode=settings.location_filter_mode,
+        # T111. The SIXTH value, computed here beside the other two this module builds. It reads
+        # the same `settings` object and adds nothing to any hash above it — a run that flips a
+        # routing knob moves this and only this.
+        routing_hash=routing_hash(settings),
     )
 
     leads = [

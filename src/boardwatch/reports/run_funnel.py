@@ -201,6 +201,13 @@ _TOP_MISSING = 10
 # it is a change to which key that document reads, not to what any key says. A funnel written
 # before this simply lacks the section, which reads as `instrumented: false` rather than as a run
 # that placed nothing — the absent-not-zero direction this block uses throughout.
+#
+# **T111's `manifest.routing_hash` does NOT bump it either**, on the `scan.fetch_cost` /
+# `empty_complete_guarded` precedent: an additive key inside a block that has been here since v1,
+# changing no existing key's MEANING. `config_hash` covers exactly what it always covered, and
+# the new value is folded into none of the five beside it — that is the point of it. A funnel
+# written before this lacks the key, which reads as `null` and means "this run recorded no
+# routing fingerprint", not "this run routed by default".
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -478,6 +485,13 @@ class RunManifest:
     `profile_facts_hash` is the eligibility `profile_hash`, and start/end + `status` come off
     the `runs` row. `config_hash` and `profile_row_hash` are the two genuinely-new hashes.
 
+    `routing_hash` (T111) is a SIXTH value beside those five and is folded into none of them.
+    Every hash above it answers "which postings became leads"; it answers "which LANE did a lead
+    land in", which nothing else here could see — flipping `gate.seniority_hold` leaves all five
+    byte-identical. It is `None` on a funnel built without one, never `""`, so a reader can tell
+    an artifact that predates it from a run that computed one. It is deliberately NOT part of
+    `policy_version`: a routing change must reopen no permanent disposition.
+
     The hashes that depend on a profile are `None` on a run with no profile — the same run that
     reports the whole corpus as `no_current_evaluation`. `code_fingerprint`, `config_hash` and
     `status` are always present.
@@ -498,6 +512,7 @@ class RunManifest:
     rules_hash: str | None
     status: str
     location_filter_mode: str
+    routing_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2296,6 +2311,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "rules_hash": funnel.manifest.rules_hash,
             "status": funnel.manifest.status,
             "location_filter_mode": funnel.manifest.location_filter_mode,
+            # T111. A SIXTH value, not a sixth component of any hash above it. null means the
+            # funnel was built without one; a run that computed it always publishes it.
+            "routing_hash": funnel.manifest.routing_hash,
         },
         "liveness": {
             # All None when the shortlist was not probed. `instrumented` is emitted so a reader
@@ -2700,6 +2718,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"| profile facts hash | {m.profile_facts_hash or '—'} |",
         f"| profile row hash | {m.profile_row_hash or '—'} |",
         f"| rules hash | {m.rules_hash or '—'} |",
+        f"| routing hash | {m.routing_hash or '—'} |",
         f"| location filter mode | {m.location_filter_mode} |",
         "",
         "*`config hash` covers the decision-relevant `Settings`; `profile row hash` covers the "
@@ -2707,6 +2726,13 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "user-overridable catalogs that decide a drop bucket — `leveling.yaml` and "
         "`taxonomy.yaml`. Corpus membership is in neither: watching a board changes which "
         "postings exist without moving any hash here.*",
+        "",
+        "*`routing hash` is the one value above that is NOT about which postings became leads "
+        "(T111). It covers which LANE a delivered lead lands in — the knobs `config hash` "
+        "excludes that can still move a lead between the apply queue and `_review`, plus the "
+        "source of the five modules that decide the lane. Two runs whose five hashes agree and "
+        "whose routing hash differs are not comparable as apply-lane volume readings. It is "
+        "outside `policy_version`, so a routing change reopens no disposition.*",
         "",
         "## Scan",
         "",
