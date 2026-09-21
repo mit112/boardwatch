@@ -78,6 +78,7 @@ from boardwatch.store.tables import (
     application_events,
     applications,
     artifacts,
+    board_scans,
     companies,
     jobs,
     posting_versions,
@@ -244,6 +245,25 @@ def _run(conn: Connection, *, finished: datetime | None = NOW) -> int:
     )
 
 
+def _complete_scan(conn: Connection, company_id: int) -> None:
+    """The `board_scans` row that makes a watched board ENUMERATED rather than merely configured.
+
+    Without one, `delivery_queries._status` renders every open posting `unverifiable` (T122):
+    absence closure needs a `complete` snapshot, so a board that has never produced one can no
+    more retire a posting than an unwatched board can.
+    """
+    # The NEWEST existing run, not a fresh one: `/api/runs` lists every row, so minting a run
+    # per delivery would change what the run tests count.
+    existing = conn.execute(select(func.max(runs.c.id))).scalar()
+    run_id = _run(conn) if existing is None else int(existing)
+    conn.execute(
+        insert(board_scans).values(
+            run_id=run_id, company_id=company_id, started_at=NOW, finished_at=NOW,
+            status="complete", postings_listed=1,
+        )
+    )
+
+
 def _deliver(
     conn: Connection,
     key: str,
@@ -283,6 +303,7 @@ def _deliver(
             )
         ).inserted_primary_key[0]
     )
+    _complete_scan(conn, company_id)
     job = job_id
     if job is None:
         job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
@@ -463,6 +484,7 @@ def _undelivered(conn: Connection, key: str, *, title: str = "Data Engineer") ->
             )
         ).inserted_primary_key[0]
     )
+    _complete_scan(conn, company_id)
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     conn.execute(
         insert(postings).values(
@@ -2216,7 +2238,10 @@ def test_a_form_hard_stop_reaches_the_page_with_the_question_it_quotes(
             url="https://job-boards.greenhouse.io/tenet3/jobs/8810809002",
         )
         clear, _ = _deliver(conn, "clear", body=JD_ELIGIBLE)
-    with engine.begin() as conn:
+    # `connect`, not `begin`: the sweep owns its own transaction boundaries — it ends the read
+    # transaction before the first GET and commits each response on its own — so a caller-owned
+    # `begin()` block would be closed under it after the first row.
+    with engine.connect() as conn:
         sweep_form_questions(conn, fetcher=_Fetcher(), budget=10)  # type: ignore[arg-type]
 
     payload = call(live, "/api/queue", bearer=live.token).json()
@@ -3025,6 +3050,13 @@ def test_the_follow_up_due_count_is_dates_up_to_today_and_no_further(
     assert counts["in_queue"] == 3
 
 
+@pytest.mark.skipif(
+    not hasattr(time, "tzset"),
+    reason="`time.tzset()` is POSIX-only, and on Windows the TZ environment variable cannot "
+    "retune the C library's zone, so the two-zone harness below cannot be built at all. "
+    "`local_today()` itself is platform-neutral -- what is skipped here is the APPARATUS, "
+    "not the behaviour it pins.",
+)
 def test_local_today_is_the_servers_own_zone_and_never_utc() -> None:
     """The date a follow-up is written in is the one on the owner's wall calendar.
 

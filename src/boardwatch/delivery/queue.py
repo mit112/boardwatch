@@ -191,6 +191,14 @@ class SyncReport:
     `retired` is orthogonal too, and counts DUPLICATE folders deleted because identity resolution
     converged two postings onto one canonical job. It is reported rather than silent because it
     is the only destructive thing this function does.
+
+    `repaired` is orthogonal in the same way `moved` is, and for the same reason the partition
+    must hold: a repaired lead is one whose RECORDED hash matched but whose bytes on disk did
+    not, so it was rewritten and belongs in `updated`. Counting it only there would make it
+    indistinguishable from an ordinary content change — which is the whole point of T116's
+    destination check, since a repair means the disk silently diverged from what the store
+    believed it had written. A non-zero value here is the signal that something outside
+    boardwatch is editing the queue.
     """
 
     created: int = 0
@@ -198,6 +206,7 @@ class SyncReport:
     unchanged: int = 0
     moved: int = 0
     retired: int = 0
+    repaired: int = 0
     failures: tuple[LeadFailure, ...] = ()
     contended: bool = False
 
@@ -456,7 +465,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
             failed.add(row.posting_id)
 
-    created = updated = unchanged = 0
+    created = updated = unchanged = repaired = 0
     staging = root / f"{STAGING_PREFIX}{token_hex(8)}"
     staging.mkdir()
     try:
@@ -489,6 +498,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                         unchanged += 1
                         continue
                     _repair(staging, target, payload)
+                    repaired += 1
                     updated += 1
                     continue
                 _install(staging, target, payload)
@@ -507,6 +517,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         unchanged=unchanged,
         moved=moved,
         retired=retired,
+        repaired=repaired,
         failures=tuple(failures),
     )
 
@@ -854,12 +865,62 @@ def _install(staging: Path, target: Path, payload: _Payload) -> None:
     Windows, and it keeps the window in which the owner could see nothing at all down to a single
     rename. Worst case a crash leaves the superseded copy under `.staging-…`, which the next sync
     clears — the target itself is only ever the whole old folder or the whole new one.
+
+    **Whatever the owner kept in the superseded folder is carried over** (T121). Swapping the
+    whole directory is what makes the write atomic, but it also took the owner's own work with it
+    on every ordinary content change — the hand-written cover letter and its `.tex` source that
+    `_repair` goes file-by-file precisely to protect, and that `_destination_intact` already
+    refuses to treat as an integrity failure. Those three had agreed the folder is partly the
+    owner's; only this path still behaved as though it were wholly ours.
     """
     built = staging / f"build-{token_hex(8)}"
     _write_lead(built, payload)
+    superseded: Path | None = None
     if target.exists():
-        os.replace(target, staging / f"old-{token_hex(8)}")
+        superseded = staging / f"old-{token_hex(8)}"
+        os.replace(target, superseded)
     os.replace(built, target)
+    if superseded is not None:
+        _carry_over_unauthored(superseded, target)
+
+
+def _carry_over_unauthored(superseded: Path, target: Path) -> None:
+    """Move back everything in the superseded folder that boardwatch did not write.
+
+    "Did not write" is decided by the superseded folder's OWN `details.json`, which names every
+    file this code put there — `pdf_filename`, `job_description_file`, `apply_link_file`, and
+    `details.json` itself. Reading the record the old write left behind is what makes a RETITLED
+    lead work: its PDF name is derived from the title, so after a retitle the old name is one
+    this payload no longer uses, and carrying it over would leave two résumés in the folder. The
+    old folder's record is the only thing that knows the old name.
+
+    A name the new folder already holds is skipped, so the new bytes always win.
+
+    If `details.json` is unreadable, only `details.json` itself is treated as ours and everything
+    else is carried over. That folder is already corrupt by `_destination_intact`'s standard, and
+    between leaving a stale file and deleting work boardwatch cannot regenerate, the stale file
+    is the recoverable one.
+    """
+    authored = _authored_names(superseded)
+    for path in sorted(superseded.iterdir()):
+        if path.name in authored:
+            continue
+        destination = target / path.name
+        if destination.exists():
+            continue
+        os.replace(path, destination)
+
+
+def _authored_names(folder: Path) -> frozenset[str]:
+    """The files `_write_lead` put in `folder`, according to that folder's own `details.json`."""
+    names = {DETAILS_FILE}
+    details = _read_details(folder)
+    if details is not None:
+        for key in ("pdf_filename", "job_description_file", "apply_link_file"):
+            name = _as_str(details.get(key))
+            if name is not None:
+                names.add(name)
+    return frozenset(names)
 
 
 def _repair(staging: Path, target: Path, payload: _Payload) -> None:

@@ -2,12 +2,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, event, insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import (
+    _JSON_INSERT_PAIRS,
     RUN_FAILED,
     RUN_OK,
     RUN_RUNNING,
@@ -202,6 +203,47 @@ def test_reap_stale_runs_leaves_recent_running_and_old_ok_rows_untouched(engine:
     assert reaped == []
     assert _run_row(engine, recent_running).status == RUN_RUNNING
     assert _run_row(engine, old_ok).status == RUN_OK
+
+
+def test_a_reap_that_matches_nothing_mutates_no_row_at_all(engine: Engine) -> None:
+    """D-020's claim is "writes nothing at all", and nothing pinned it.
+
+    The test above asserts the returned list is empty and checks ONE column on each of two rows.
+    That leaves the stronger claim uncovered: a reap that matches nothing could still stamp
+    `finished_at`, append a `reaped:` note, or touch a row it did not report, and every existing
+    assertion would still pass. `reap_stale_runs` always ISSUES its atomic UPDATE — the predicate
+    lives inside the statement — so "wrote nothing" can only mean "mutated no row", which is a
+    claim about the whole table rather than about two columns.
+
+    Snapshot every column of every row, not a count: a count is exactly what cannot see an
+    in-place overwrite.
+    """
+    recent_running = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=1))
+    old_ok = _insert_run_row(
+        engine, started_at=utcnow() - timedelta(hours=25), status=RUN_OK, finished_at=utcnow()
+    )
+    errored = _insert_run_row(
+        engine, started_at=utcnow() - timedelta(hours=1), errors_json=["scan: board x failed"]
+    )
+
+    def snapshot() -> list[tuple[object, ...]]:
+        with engine.connect() as conn:
+            return [tuple(row) for row in conn.execute(select(tables.runs).order_by(tables.runs.c.id))]
+
+    before = snapshot()
+    assert len(before) == 3, "the fixture must seed rows, or this test proves nothing"
+
+    reaped = reap_stale_runs(engine, older_than=timedelta(hours=24))
+
+    assert reaped == []
+    assert snapshot() == before, "a reap that matched nothing still mutated a row"
+    # Named control: the same call against a row that IS stale must mutate exactly that row, so a
+    # reaper that had simply stopped working could not pass the assertion above.
+    stale = _insert_run_row(engine, started_at=utcnow() - timedelta(hours=25))
+    assert reap_stale_runs(engine, older_than=timedelta(hours=24)) == [stale]
+    assert _run_row(engine, recent_running).status == RUN_RUNNING
+    assert _run_row(engine, old_ok).status == RUN_OK
+    assert _run_row(engine, errored).errors_json == ["scan: board x failed"]
 
 
 def test_reap_stale_runs_discriminates_a_stale_row_from_a_fresh_one_in_the_same_call(
@@ -542,3 +584,107 @@ def test_append_run_error_leaves_the_runs_terminal_status_and_finished_at_alone(
     assert after.status == before.status == RUN_OK
     assert after.finished_at == before.finished_at
     assert list(after.errors_json) == ["funnel artifact not written: boom"]
+
+
+# --- finish_run's append is atomic (T134) --------------------------------------------
+
+
+def _commit_an_unrelated_run_error(engine: Engine, run_id: int) -> list[str]:
+    """Commit to a DIFFERENT run row immediately before `finish_run`'s UPDATE.
+
+    Hooked on `before_cursor_execute` for the UPDATE rather than after the SELECT, because the
+    SELECT is the thing under test: an implementation that no longer reads before it writes must
+    still meet the interposed commit, or the test would go green by never firing the hook.
+    """
+    fired: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _interpose(
+        conn: object,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        if fired or not statement.lstrip().upper().startswith("UPDATE RUNS"):
+            return
+        fired.append(statement)
+        append_run_error(engine, run_id, "unrelated writer")
+
+    return fired
+
+
+def test_finish_run_appends_errors_across_an_unrelated_concurrent_commit(
+    engine: Engine,
+) -> None:
+    """A writer committing to ANOTHER row must not cost this run its errors (T134).
+
+    `BEGIN DEFERRED` takes its WAL snapshot at the first read, and SQLite cannot upgrade an
+    obsolete snapshot — a read-then-write `finish_run` raises `SQLITE_BUSY_SNAPSHOT` (517), which
+    `busy_timeout` does not retry. The append must therefore be one atomic statement.
+    """
+    other_id = insert_run(engine)
+    run_id = insert_run(engine)
+    append_run_error(engine, run_id, "scan: board x failed")
+
+    fired = _commit_an_unrelated_run_error(engine, other_id)
+    finish_run(engine, run_id, errors=["tailor: boom"], status=RUN_FAILED)
+
+    assert fired, "the interposed commit never ran, so this test proved nothing"
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    # The CONTENT, not the count: a row count would pass against an implementation that
+    # replaced the prior errors instead of appending to them.
+    assert list(row.errors_json) == ["scan: board x failed", "tailor: boom"]
+    assert row.status == RUN_FAILED
+    assert row.finished_at is not None
+
+
+def test_finish_run_appends_errors_with_no_concurrent_commit(engine: Engine) -> None:
+    """Control for the test above: this one already passes today.
+
+    It is what proves the interposed commit is what fires in the paired test, rather than
+    something about the fixture.
+    """
+    run_id = insert_run(engine)
+    append_run_error(engine, run_id, "scan: board x failed")
+
+    finish_run(engine, run_id, errors=["tailor: boom"], status=RUN_FAILED)
+
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert list(row.errors_json) == ["scan: board x failed", "tailor: boom"]
+
+
+def test_finish_run_appends_every_error_it_was_given_in_order(engine: Engine) -> None:
+    """More than one error in a single call, since the atomic form appends them one path at a
+    time rather than concatenating a list."""
+    run_id = insert_run(engine)
+    append_run_error(engine, run_id, "scan: board x failed")
+
+    finish_run(engine, run_id, errors=["a", "b", "c"], status=RUN_FAILED)
+
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert list(row.errors_json) == ["scan: board x failed", "a", "b", "c"]
+
+
+def test_finish_run_appends_a_long_error_list_in_order_across_chunk_boundaries(
+    engine: Engine,
+) -> None:
+    """`errors` is unbounded but a SQL function's argument count is not, so the append is
+    chunked — and the chunks must nest in the order they were given, or a run's errors come
+    back shuffled at every boundary.
+
+    Sized past two boundaries so a single-chunk implementation and an off-by-one both show.
+    """
+    run_id = insert_run(engine)
+    append_run_error(engine, run_id, "scan: board x failed")
+    notes = [f"lane {index}: collect failed" for index in range(_JSON_INSERT_PAIRS * 2 + 5)]
+
+    finish_run(engine, run_id, errors=notes, status=RUN_FAILED)
+
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
+    assert list(row.errors_json) == ["scan: board x failed", *notes]

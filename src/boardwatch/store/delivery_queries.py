@@ -50,6 +50,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Connection, Row, Select, func, null, select
+from sqlalchemy.sql import Subquery
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
@@ -83,6 +84,7 @@ from boardwatch.store.tables import (
     application_events,
     applications,
     artifacts,
+    board_scans,
     companies,
     posting_identities,
     posting_versions,
@@ -90,7 +92,7 @@ from boardwatch.store.tables import (
 )
 
 if TYPE_CHECKING:  # its runtime import is function-local, to break the delivery <-> store cycle
-    from boardwatch.delivery.review_gate import LaneDecision
+    from boardwatch.delivery.review_gate import LaneDecision, ReviewReason
 
 #: The audit's requirement view, reused rather than re-shaped. `load_audit` already slices each
 #: quote from the frozen `posting_versions.body_text` and version-gates the label; a second
@@ -273,6 +275,26 @@ class QueueDetail:
     board_target: str | None
 
 
+def _board_ever_complete() -> Subquery:
+    """The company ids whose board has EVER recorded a `complete` scan. One pass, grouped.
+
+    Aggregated over `board_scans` and LEFT JOINed to the company, never a correlated
+    `EXISTS (...)` per posting row: measured against the live store (260k open postings, 44k scan
+    rows, no index on `board_scans.company_id`), the correlated shape did not finish in two
+    minutes and this one is a single grouped scan. `watched_boards_never_complete` reaches the
+    same fact by the same route for the same reason.
+
+    No `run_id` and no `scan_kind` filter, exactly as that query does: `apply_board` runs the same
+    absence closure whatever wrote the snapshot, so a `complete` row of any kind is a real owner.
+    """
+    return (
+        select(board_scans.c.company_id)
+        .where(board_scans.c.status == "complete")
+        .group_by(board_scans.c.company_id)
+        .subquery()
+    )
+
+
 def _delivered_select() -> Select[Any]:
     """One tailored artifact joined out to its posting and company. A local query builder.
 
@@ -286,6 +308,7 @@ def _delivered_select() -> Select[Any]:
     stored an explicit null for a résumé that never built a PDF, and both mean the same thing to a
     reader: there is no PDF to open.
     """
+    ever_complete = _board_ever_complete()
     return (
         select(
             artifacts.c.id.label("artifact_id"),
@@ -314,10 +337,14 @@ def _delivered_select() -> Select[Any]:
             companies.c.slug,
             companies.c.tags_json,
             companies.c.watched,
+            # T122. `watched` alone does not answer "does anything enumerate this board?" — see
+            # `_status`. LEFT JOIN, so a board with no `complete` scan on record yields NULL.
+            ever_complete.c.company_id.is_not(None).label("board_ever_complete"),
         )
         .join(posting_versions, artifacts.c.posting_version_id == posting_versions.c.id)
         .join(postings, posting_versions.c.posting_id == postings.c.id)
         .join(companies, postings.c.company_id == companies.c.id)
+        .outerjoin(ever_complete, ever_complete.c.company_id == companies.c.id)
         .where(artifacts.c.kind == TAILORED_KIND)
     )
 
@@ -358,7 +385,7 @@ def _posted_days(posted_at: datetime | None, now: datetime) -> int | None:
     return max((now - posted_at).days, 0)
 
 
-def _status(status: object, watched: object) -> str:
+def _status(status: object, watched: object, board_ever_complete: object) -> str:
     """`open` only where a board is actually enumerated; otherwise `unverifiable` (D-314).
 
     `_process_missing` is the sole writer of `closed` and it runs on `complete` snapshots only,
@@ -368,12 +395,29 @@ def _status(status: object, watched: object) -> str:
     never measured as still listed, merely never contradicted. Probing 45 such rows found 40
     alive and 0 dead, so this is not "probably gone" either — it is not known.
 
-    Keyed on `companies.watched`, which is the literal question ("does anything enumerate this
-    board?"), and NOT on `source='lane'`. Measured on the live store 2026-08-27: 274 of the 722
-    affected rows are on `source='user'` companies, and 23 lane-acquired postings sit on watched
-    companies where `open` IS a measurement. The source predicate is wrong in both directions.
+    **Two conditions, because `companies.watched` does not by itself answer the question it is
+    read for.** It means the board is CONFIGURED for scans; absence closure additionally needs a
+    `complete` snapshot, since `scan/apply.py::apply_board` calls `_process_missing` for those
+    alone. A watched board whose scans only ever reach `partial` therefore produces no `closed`
+    verdict either, and its open postings are exactly as unmeasured as the unwatched class
+    D-314/D-324 named. Measured on the live store 2026-09-20 after run 468: **16,510 open
+    postings on 8 such boards**, seven of them Workday/oraclehcm — Workday returns `partial` on
+    ANY detail error — against 231,749 open postings on 1,792 boards that have completed at least
+    once. The three cohorts (this one, unwatched, watched-and-complete) partition the whole
+    260,306-posting open corpus exactly, so the predicate discriminates.
+
+    The watched half is NOT keyed on `source='lane'`. Measured on the live store 2026-08-27: 274
+    of the 722 affected rows are on `source='user'` companies, and 23 lane-acquired postings sit
+    on watched companies where `open` IS a measurement. The source predicate is wrong in both
+    directions.
+
+    **Rendered status only.** Nothing is retired, closed or suppressed: `QueueRow.closed` and
+    `delivery/review_gate.classify` ask `status == "closed"` and never `!= "open"`, so an
+    `unverifiable` lead keeps the lane and the listing it has today.
     """
-    return STATUS_UNVERIFIABLE if str(status) == "open" and not watched else str(status)
+    if str(status) != "open":
+        return str(status)
+    return str(status) if watched and board_ever_complete else STATUS_UNVERIFIABLE
 
 
 def _supersedes(row: Row[Any], incumbent: Row[Any]) -> bool:
@@ -411,9 +455,12 @@ def _supersedes(row: Row[Any], incumbent: Row[Any]) -> bool:
     under `_closed` is an application never sent. Fail-open is the correct side of THIS gate even
     though it is the wrong side of others.
     """
-    if _status(row.status, row.watched) != STATUS_CLOSED:
+    if _status(row.status, row.watched, row.board_ever_complete) != STATUS_CLOSED:
         return True
-    return _status(incumbent.status, incumbent.watched) == STATUS_CLOSED
+    return (
+        _status(incumbent.status, incumbent.watched, incumbent.board_ever_complete)
+        == STATUS_CLOSED
+    )
 
 
 def _queue_row(
@@ -441,7 +488,7 @@ def _queue_row(
         ),
         posted_days=_posted_days(row.posted_at, now),
         first_seen=row.first_seen_at,
-        status=_status(row.status, row.watched),
+        status=_status(row.status, row.watched, row.board_ever_complete),
         verdict=verdict,
         apply_url=str(row.url) if row.url is not None else None,
         delivered_run_id=(
@@ -878,6 +925,68 @@ def review_job_ids(conn: Connection) -> set[int]:
     }
 
 
+@dataclass(frozen=True)
+class LanePlacement:
+    """Where ONE placeable lead of a run finally landed, and the reason that put it there.
+
+    The NAMED form of what `apply_lane_placements` below counts. It exists because a count cannot
+    be audited: B8's volume half is read off this cohort (T110), and a sampled audit of that
+    reading has to draw from the same population the number came from, which means the population
+    has to be written down rather than summed away.
+
+    `lane` is `""` for the blind-apply queue and `REVIEW_DIR` for a held lead. Never `CLOSED_DIR`:
+    a closed posting is not placeable and never reaches this list.
+
+    `review_reason` is carried straight off the SAME `LaneDecision` that produced `lane` — never
+    re-derived — so the pair cannot disagree, which is the property `lane_decision` exists for
+    (D-332). It is non-`None` exactly when `lane` is `REVIEW_DIR`.
+    """
+
+    posting_id: int
+    job_id: int
+    lane: str
+    review_reason: ReviewReason | None
+
+
+def apply_lane_cohort(
+    conn: Connection, *, run_ids: set[int]
+) -> dict[int, tuple[LanePlacement, ...]]:
+    """Per delivering run: every PLACEABLE lead it delivered, NAMED, with its FINAL lane.
+
+    The one derivation of this cohort. `apply_lane_placements` below folds it to two counts and
+    the funnel's apply-lane section publishes it in full, so the alert, the artifact and any later
+    audit are reading one population rather than three that agree today.
+
+    FINAL is the whole point for T110. The funnel's `pdf` stage enters at the leads the tailor
+    RENDERED, which is a pre-sweep cohort: `pending_tailor` is written once, before the tailor
+    loop, and `runner`'s application-form sweep runs afterwards — so a lead that was rendered into
+    the apply lane and then form-hard-stopped in the same run is still inside `pdf.entered`, and
+    was inside B8's reading with it. This re-runs `review_gate.lane` over the state that exists
+    when the funnel is written, so that lead is here as `_review` with
+    `form_question_hard_stop` instead.
+
+    The exclusions and the whole-corpus attribution are `apply_lane_placements`' — see it for why
+    `ineligible` and `closed` are not placeable, and for why an OLDER run's cohort is what
+    survives to today rather than what it shipped on the day.
+    """
+    cohort: dict[int, list[LanePlacement]] = {rid: [] for rid in run_ids}
+    for row in delivered_unapplied(conn, skipped=set()):
+        if row.delivered_run_id not in run_ids:
+            continue
+        if row.verdict == "ineligible" or row.closed:
+            continue
+        decision = lane_decision(row)
+        cohort[row.delivered_run_id].append(
+            LanePlacement(
+                posting_id=row.posting_id,
+                job_id=row.job_id,
+                lane=decision.lane,
+                review_reason=decision.reason,
+            )
+        )
+    return {rid: tuple(rows) for rid, rows in cohort.items()}
+
+
 def apply_lane_placements(
     conn: Connection, *, run_ids: set[int]
 ) -> dict[int, tuple[int, int]]:
@@ -910,17 +1019,15 @@ def apply_lane_placements(
     what it shipped on the day. That is the right quantity for this question (the detector asks
     whether apply-lane work EXISTS, not what was once created) and it is why the counts must never
     be read as a delivery-day record.
+
+    A FOLD of `apply_lane_cohort` above rather than a second sweep of its own (T110). The two
+    numbers this returns and the named cohort the funnel publishes therefore cannot disagree about
+    which leads are placeable or which of them reached the lane — there is one lane call, not two.
     """
-    placed: dict[int, tuple[int, int]] = {rid: (0, 0) for rid in run_ids}
-    for row in delivered_unapplied(conn, skipped=set()):
-        if row.delivered_run_id not in run_ids:
-            continue
-        if row.verdict == "ineligible" or row.closed:
-            continue
-        reached = lane_decision(row).lane == ""
-        placeable, in_apply = placed[row.delivered_run_id]
-        placed[row.delivered_run_id] = (placeable + 1, in_apply + int(reached))
-    return placed
+    return {
+        rid: (len(rows), sum(1 for row in rows if row.lane == ""))
+        for rid, rows in apply_lane_cohort(conn, run_ids=run_ids).items()
+    }
 
 
 def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow]:
@@ -1135,6 +1242,7 @@ def _job_posting_select() -> Select[Any]:
     identically — including a `null` `pdf_uri` — so one row constructor serves both shapes and
     `_supersedes` can pick between them by the same rule the queue uses.
     """
+    ever_complete = _board_ever_complete()
     return select(
         postings.c.id.label("posting_id"),
         postings.c.job_id,
@@ -1146,11 +1254,14 @@ def _job_posting_select() -> Select[Any]:
         postings.c.url,
         companies.c.name.label("company"),
         companies.c.watched,
+        ever_complete.c.company_id.is_not(None).label("board_ever_complete"),
         # No artifact, so no delivered résumé. `null()` rather than a missing column: the
         # constructor below reads the attribute on both shapes, and an absent one would be an
         # AttributeError at exactly the row this branch exists to serve.
         null().label("pdf_uri"),
-    ).join(companies, postings.c.company_id == companies.c.id)
+    ).join(companies, postings.c.company_id == companies.c.id).outerjoin(
+        ever_complete, ever_complete.c.company_id == companies.c.id
+    )
 
 
 def _applied_row(
@@ -1182,7 +1293,11 @@ def _applied_row(
         apply_url=(
             None if posting is None or posting.url is None else str(posting.url)
         ),
-        posting_status=None if posting is None else _status(posting.status, posting.watched),
+        posting_status=(
+            None
+            if posting is None
+            else _status(posting.status, posting.watched, posting.board_ever_complete)
+        ),
         closed_at=None if posting is None else posting.closed_at,
         pdf_uri=(
             str(posting.pdf_uri)

@@ -160,6 +160,14 @@ def finalize_run(
         conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
 
 
+#: How many `(path, value)` pairs one `json_insert` call may carry. SQLite bounds a function's
+#: arguments at `SQLITE_MAX_FUNCTION_ARG`, which is a COMPILE-TIME setting: 127 upstream, 1000 in
+#: several distributed builds. A run's error list has no such bound -- one lane fault per lead is
+#: a routine shape -- so the append is chunked to stay inside the LOWEST of those on every
+#: platform `make check` runs on, rather than inside whichever one happened to be measured.
+_JSON_INSERT_PAIRS = 60
+
+
 def finish_run(
     engine: Engine, run_id: int, *, errors: list[str] | None = None, status: str = RUN_OK
 ) -> None:
@@ -181,13 +189,14 @@ def finish_run(
     Errors are appended, not replaced: the scan stage has already written its own into
     errors_json by the time the pipeline finishes, and overwriting would lose them.
 
-    Known narrow race: the `errors` branch is a SELECT-then-UPDATE read-modify-write on
-    errors_json, not a single atomic statement (unlike `reap_stale_runs`'s `json_insert`). In
-    WAL mode, `SQLITE_BUSY_SNAPSHOT` — which `busy_timeout` does not retry — is possible if
-    `reap_stale_runs` commits a write to this same row between this function's SELECT and
-    UPDATE. It requires a run finishing WITH errors while concurrently crossing the reaper's
-    >24h threshold in this exact microsecond gap — extraordinarily narrow, and not worth
-    restructuring this function's read-modify-write for.
+    The append is one atomic `json_insert`, exactly as `append_run_error` and `reap_stale_runs`
+    do it, and NOT a SELECT-then-UPDATE read-modify-write (T134). What rules the read-modify-write
+    out is a property of every transaction here, not a rare coincidence of two: connections open
+    `BEGIN DEFERRED`, which takes its WAL snapshot at the first READ, and SQLite cannot
+    upgrade an obsolete snapshot — so ANY other writer committing between the SELECT and the
+    UPDATE, on ANY row, fails the UPDATE with `SQLITE_BUSY_SNAPSHOT`, which `busy_timeout` does
+    not retry. Reading nothing leaves the UPDATE as the transaction's first statement, so there
+    is no snapshot to go obsolete.
     """
     with engine.begin() as conn:
         values: dict[str, object] = {
@@ -195,10 +204,17 @@ def finish_run(
             "status": _checked_status(status),
         }
         if errors:
-            existing = conn.execute(
-                select(runs.c.errors_json).where(runs.c.id == run_id)
-            ).scalar_one_or_none()
-            values["errors_json"] = list(existing or []) + errors
+            # One `$[#]` path per error, applied left to right by SQLite, so the column is
+            # appended to in the order given without ever being read back. Chunked because
+            # `errors` is unbounded and a function's argument count is not; the chunks nest,
+            # which preserves that order across their boundaries.
+            column: Any = func.coalesce(runs.c.errors_json, literal_column("'[]'"))
+            for start in range(0, len(errors), _JSON_INSERT_PAIRS):
+                appended: list[object] = []
+                for note in errors[start : start + _JSON_INSERT_PAIRS]:
+                    appended += ["$[#]", note]
+                column = func.json_insert(column, *appended)
+            values["errors_json"] = column
         conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
 
 
@@ -714,11 +730,6 @@ def unwatched_scannable_companies(
         .order_by(companies.c.provider, companies.c.slug)
     )
     return list(conn.execute(stmt).all())
-
-
-# keep the P0 signature working — it is now a thin wrapper (no caller churn)
-def upsert_watched_company(conn: Connection, *, provider: str, slug: str, name: str) -> None:
-    upsert_watch(conn, provider=provider, slug=slug, name=name, source="user")
 
 
 def unwatch(conn: Connection, *, provider: str, slug: str) -> int:

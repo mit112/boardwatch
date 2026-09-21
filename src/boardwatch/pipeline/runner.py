@@ -77,6 +77,7 @@ from boardwatch.lanes.linkedin import LinkedInLane, search_urls
 from boardwatch.llm.gate_judge import run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
+from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
 from boardwatch.notify.corpus_regression import check_corpus_regression
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
@@ -107,6 +108,7 @@ from boardwatch.reports.board_coverage import build_report as build_board_covera
 from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
+    ApplyLaneCohort,
     DeathProbeReport,
     GateCounters,
     LaneReport,
@@ -155,6 +157,7 @@ from boardwatch.store.run_funnel_queries import (
     TAILORED_KIND,
     lead_provenance,
     watched_boards_never_complete,
+    watched_boards_stale_complete,
 )
 from boardwatch.store.seed_queries import (
     LaneSeed,
@@ -540,6 +543,11 @@ class PipelineSummary:
     # reader of a requirement that is on the FORM and not in the frozen JD, so a block of zeros
     # here would claim the delivered slate was asked about when nobody asked.
     form_questions: FormQuestionSweep | None = None
+    # T110 — B8's volume cohort, as the funnel published it. Set by `_emit_funnel` so the alert
+    # below and the artifact report ONE number; `None` means the funnel was not collected (it
+    # raised and the caller stayed fail-open, D-287), which is silence about the lane rather
+    # than a reading of zero.
+    apply_lane: ApplyLaneCohort | None = None
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
@@ -1641,6 +1649,7 @@ def _zero_output_guard(
     applied_this_run: int = 0,
     duplicate_this_run: int = 0,
     dead_this_run: int = 0,
+    gate_rejected_this_run: int = 0,
 ) -> str | None:
     """P3 item 5 (B5) — 0 leads is provably right IFF every candidate THIS run judged
     (`eligible`/`uncertain`) was either delivered or honestly SUPPRESSED (already built/skipped/
@@ -1654,12 +1663,22 @@ def _zero_output_guard(
     `ineligible` cannot), run_id-attributed (not a cross-run handled ledger): a steady-state day
     where every candidate posting is a cache hit from a PRIOR run has this at 0 and is honest.
 
-    Each of the four twins is a run-scoped SUBSET of the candidates judged this run, and the
-    four subsets are disjoint — a posting leaves the ranker at exactly one `continue`, and
+    A final-gate `ineligible` IS an honest suppression by this standard and is the fifth
+    explainer (T131). The keystone requires such a verdict to carry a quoted span from the frozen
+    JD, so the judge did its job and named its evidence — that is the opposite of a filter
+    silently eating the shortlist. Without it, one new candidate plus one valid gate rejection
+    produced a FALSE fatal and withheld the heartbeat on a run that behaved correctly.
+
+    Each of the five twins is a run-scoped SUBSET of the candidates judged this run, and the
+    five subsets are disjoint — a posting leaves the ranker at exactly one `continue`, and
     `dead` is a post-rank fate of a posting that was surfaced, disjoint from the three
-    suppressions that `continue` before surfacing. `unexplained` is what is left after
-    subtracting all four; a negative value is a counting bug and raises
-    `ZeroOutputReconciliationError` rather than being silently clamped to 0.
+    suppressions that `continue` before surfacing. `gate_rejected` is a post-rank fate too, so
+    it is disjoint from those three by the same argument; against `dead`, its nearest neighbour,
+    the caller CONSTRUCTS disjointness by removing the dead ids rather than arguing it, because
+    these are counts and an overlap would be subtracted twice and underflow.
+
+    `unexplained` is what is left after subtracting all five; a negative value is a counting bug
+    and raises `ZeroOutputReconciliationError` rather than being silently clamped to 0.
     """
     unexplained = (
         candidate_judged_this_run
@@ -1667,11 +1686,13 @@ def _zero_output_guard(
         - applied_this_run
         - duplicate_this_run
         - dead_this_run
+        - gate_rejected_this_run
     )
     if unexplained < 0:
         raise ZeroOutputReconciliationError(
             f"run-scoped suppression twins ({handled_this_run}+{applied_this_run}+"
-            f"{duplicate_this_run}+{dead_this_run}) exceed candidates judged this run "
+            f"{duplicate_this_run}+{dead_this_run}+{gate_rejected_this_run}) exceed candidates "
+            f"judged this run "
             f"({candidate_judged_this_run})"
         )
     if unexplained > 0:
@@ -2620,12 +2641,21 @@ def run_pipeline(
             # `dead_lead_ids`) runs after that point. `ShortlistCounts` is frozen.
             summary.shortlist = replace(summary.shortlist, dead_this_run=dead_this_run)
         if summary.fatal is None and not summary.tailored:
+            # T131. INTERSECTED with `judged`, because the denominator counts only postings whose
+            # deterministic evaluation THIS run wrote: a lead the gate excluded on a verdict
+            # computed in a prior run is not in it, and subtracting the raw count would underflow
+            # and turn a false fatal into a crash. Minus `dead_lead_ids` so the two post-rank
+            # fates cannot both claim one posting — disjointness built, not asserted.
+            gate_rejected_this_run = len(
+                (set(summary.gate_excluded_ids) & judged) - set(summary.dead_lead_ids)
+            )
             summary.fatal = _zero_output_guard(
                 len(judged),
                 handled_this_run=ranked.hidden_handled_this_run,
                 applied_this_run=ranked.hidden_applied_this_run,
                 duplicate_this_run=ranked.hidden_duplicate_this_run,
                 dead_this_run=dead_this_run,
+                gate_rejected_this_run=gate_rejected_this_run,
             )
 
         # P3 item 9 — cohort completeness. Every SHORTLISTED candidate (`ranked.visible`, which
@@ -2784,10 +2814,10 @@ def run_pipeline(
         # The mark sits ABOVE the `finish_run` attempt rather than below the form sweep (T129),
         # and that move costs nothing and buys the one alert that most needed the channel:
         # NOTHING between here and the funnel write below appends to `summary.errors` except
-        # the terminal-persistence failure itself — the coverage load and the form sweep both
-        # print and deliberately do not record — so the slice gains that note and no stage
-        # error. A run row left `running` is the most consequential thing this block can
-        # report, and it was the one thing excluded from the report.
+        # the terminal-persistence failure itself and a form sweep that RAISED (T134) — the
+        # coverage load still only prints — so the slice gains those notes and no stage error.
+        # Both belong in it: a run row left `running` is the most consequential thing this block
+        # can report, and a sweep that asked no board anything is the second.
         escalatable_from = len(summary.errors)
         try:
             _finish_run_with_one_retry(
@@ -2849,7 +2879,7 @@ def run_pipeline(
         try:
             with engine.connect() as conn:
                 summary.form_questions = _sweep_form_questions(
-                    conn, settings, console, form_fetcher
+                    conn, settings, console, form_fetcher, summary
                 )
         except Exception as exc:  # noqa: BLE001 - a mute section beats a lost funnel
             # ONLY reachable for a connection this could not open or close: the sweep itself
@@ -2857,9 +2887,10 @@ def run_pipeline(
             # for the same reason `_load_board_coverage` above is: this runs inside a `finally`
             # that may already be unwinding, and everything after it — the funnel, the queue,
             # the soft detectors, the morning digest, the heartbeat — is unreachable if it
-            # raises. Printed and NOT appended to `summary.errors`, on the sweep's own recorded
-            # reasoning: a form nobody fetched produces a HOLD at worst, and a hold that did not
-            # happen leaves the lead in the apply lane, which is where it already was.
+            # raises. Printed and NOT appended to `summary.errors`: this arm covers only opening
+            # or closing the connection, and a failure to do that is reported by every other
+            # store write in this block. A sweep that RAISES is recorded, inside
+            # `_sweep_form_questions` itself.
             console.print(f"  ! application forms: not swept ({exc})", markup=False)
         if summary.form_questions is not None:
             console.print(
@@ -3028,6 +3059,35 @@ def run_pipeline(
                 append_run_error(engine, run_id, lane_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"apply-lane-drought check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
+        # B8's volume half, and it sits HERE for the same reason the drought check sits below
+        # `check_delivery_drought`: the sibling above cannot see this fault. That one fires only
+        # when NO lead reaches the apply lane across a window, so a run that placed 19 against
+        # B8's bar of 20 is invisible to it — nineteen arrivals are nineteen reasons for it to
+        # stay quiet. Reads the cohort the funnel already published rather than counting again,
+        # so the alert and the artifact can never disagree; abstains when the funnel was not
+        # collected, and when the run placed nothing (the sibling's story).
+        #
+        # **The ONE detector here that is deliberately NOT added to `summary.errors`,** and the
+        # asymmetry is the point. Everything else in this block reports a FAULT: something is
+        # broken, or an instrument has gone blind. This reports a program-gate READING — the run
+        # succeeded, nothing is misclassifying, the day was simply thin — and B8's volume half
+        # was under its bar on 9 of the 14 recorded acceptance days. `summary.errors` is what
+        # `escalate_alerts` below pushes, and a near-daily "19 against 20" on that channel is
+        # precisely how it would train its reader to ignore it, which is the reason the slice
+        # exists at all. It is printed and made durable on the run row instead, and the record
+        # a gate is actually read from is the funnel's own `apply_lane` section.
+        try:
+            volume_alert = check_apply_lane_volume(summary.apply_lane)
+            if volume_alert is not None:
+                console.print(f"  ! {volume_alert}", markup=False)
+                append_run_error(engine, run_id, volume_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            # The FAILURE is an ordinary soft alert and is escalatable like every other one: a
+            # detector that has silently stopped working is a fault, whatever it was measuring.
+            note = f"apply-lane-volume check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
@@ -3368,9 +3428,15 @@ def _emit_funnel(
     # `None` on a `--no-scan` run, on the `fetch_cost` rule below — the history is then a run
     # older than the artifact, and `()` would read as a measured all-clear.
     watched_never_complete = None
+    # T126. The second cohort, read on the same connection and under the same rule: `None` on a
+    # `--no-scan` run, because the scan history is then a run older than the artifact and `()`
+    # would read as a measured all-clear. `utcnow()` is taken once so every board's age is
+    # measured against one instant.
+    watched_stale_complete = None
     if scan_summary is not None:
         with engine.connect() as conn:
             watched_never_complete = watched_boards_never_complete(conn)
+            watched_stale_complete = watched_boards_stale_complete(conn, now=utcnow())
     funnel = collect_run_funnel(
         engine,
         settings,
@@ -3409,6 +3475,7 @@ def _emit_funnel(
                 for provider, cost in scan_summary.fetch_cost.items()
             ),
             watched_never_complete=watched_never_complete,
+            watched_stale_complete=watched_stale_complete,
         ),
         shortlist=summary.shortlist,
         liveness=LivenessCheck(
@@ -3475,6 +3542,10 @@ def _emit_funnel(
         errors=summary.errors,
         fatal=summary.fatal,
     )
+    # Before the write, so a failure to render the artifact still leaves the volume alert its
+    # number — the funnel is the only place this cohort is built, and losing both to one
+    # rendering fault would take out B8's instrument as well as its record.
+    summary.apply_lane = funnel.apply_lane
     return write_run_funnel(funnel, day_dir)
 
 
@@ -3643,7 +3714,7 @@ def _sync_queue(
     console.print(
         f"  queue → {root}: {synced.created} new, {synced.updated} updated, "
         f"{synced.unchanged} unchanged, {synced.moved + drained.moved} moved, "
-        f"{synced.retired} retired, "
+        f"{synced.retired} retired, {synced.repaired} repaired, "
         f"{synced.failed + drained.failed} failed{contended}",
         markup=False,
     )
@@ -3660,7 +3731,11 @@ def _sync_queue(
 
 
 def _sweep_form_questions(
-    conn: SAConnection, settings: Settings, console: Console, fetcher: Fetcher | None
+    conn: SAConnection,
+    settings: Settings,
+    console: Console,
+    fetcher: Fetcher | None,
+    summary: PipelineSummary,
 ) -> FormQuestionSweep | None:
     """Ask Greenhouse for the APPLICATION FORM behind each delivered lead, once per version.
 
@@ -3683,9 +3758,13 @@ def _sweep_form_questions(
     `None` means UNMEASURED, never zero: no fetcher was supplied, the budget is 0 (disarmed), or
     the sweep raised. Caught rather than propagated for the reason the call site's own block
     comment gives -- the queue holds COPIES of work the run already delivered, so a fault here
-    must cost the extra reach and nothing else. Not on `summary.errors`: the fetch produces a HOLD
-    at worst, and a hold nobody learned about is a lead in the apply lane, which is exactly where
-    it already was.
+    must cost the extra reach and nothing else.
+
+    A RAISE is recorded on `summary.errors` as well as printed (T134), and that is a different
+    question from whether it is fatal -- it is not. Fail-open keeps the lead in the apply lane,
+    which is where it already was; silence makes a run that asked no board anything read
+    identically, in the funnel and everywhere downstream of it, to a run whose queue was clean.
+    The two disarmed arms above stay unrecorded: "nobody asked" is a setting, not a fault.
 
     **`fetcher is None` is the whole reason this is not built here**, and it is a test-suite
     property as much as an API one: `make check` runs on three operating systems and must make no
@@ -3702,9 +3781,9 @@ def _sweep_form_questions(
             budget=settings.form_question_fetch_budget,
         )
     except Exception as exc:  # noqa: BLE001 - never cost the queue its own sync
-        console.print(
-            f"  ! application forms: sweep failed ({type(exc).__name__}: {exc})", markup=False
-        )
+        note = f"application forms: sweep failed ({type(exc).__name__}: {exc})"
+        console.print(f"  ! {note}", markup=False)
+        summary.errors.append(note)
         return None
 
 

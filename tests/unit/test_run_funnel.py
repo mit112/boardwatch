@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import json
+from datetime import datetime
 from pathlib import Path
 
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
@@ -40,6 +41,7 @@ from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
     SourceOutcome,
+    StaleCompleteBoard,
     TailoredArtifactCounts,
 )
 from boardwatch.tailor.coverage import CoverageReport
@@ -108,6 +110,7 @@ def run_manifest(
     rules_hash: str | None = "ru1e5",
     status: str = "ok",
     location_filter_mode: str = "soft",
+    routing_hash: str | None = None,
 ) -> RunManifest:
     return RunManifest(
         code_fingerprint=code_fingerprint,
@@ -117,6 +120,7 @@ def run_manifest(
         rules_hash=rules_hash,
         status=status,
         location_filter_mode=location_filter_mode,
+        routing_hash=routing_hash,
     )
 
 
@@ -687,6 +691,48 @@ def test_a_run_that_did_not_scan_reports_no_reconciliation_rather_than_a_pass() 
     payload = funnel_to_dict(funnel(scan=ScanContext(ran=False)))["scan"]
 
     assert payload["boards_reconciled"] is None
+
+
+def test_a_scan_that_found_no_stale_complete_board_says_so_rather_than_going_quiet() -> None:
+    """T126, on T117's rule one test down: the measured all-clear and the not-measured state are
+    different statements and both have to be readable.
+
+    The three-state rendering is the only thing stopping a `--no-scan` run — where the scan
+    history is a run older than the artifact — from reading as "every board is fresh".
+    """
+    stale = StaleCompleteBoard(
+        provider="workday", board_slug="lowes", open_postings=7822,
+        last_complete_at=datetime(2026, 8, 1, 12, 0, 0), days_since_complete=50,
+    )
+    named = funnel(scan=ScanContext(
+        ran=True, boards_attempted=2, boards_complete=2, postings_seen=7,
+        watched_stale_complete=(stale,),
+    ))
+    assert funnel_to_dict(named)["scan"]["watched_stale_complete"] == [
+        {
+            "provider": "workday", "board_slug": "lowes", "open_postings": 7822,
+            "days_since_complete": 50, "band": "30+ days",
+        }
+    ]
+    assert "`workday:lowes` (50d, 7822)" in funnel_to_markdown(named)
+
+    measured = funnel(scan=ScanContext(
+        ran=True, boards_attempted=2, boards_complete=2, postings_seen=7,
+        watched_stale_complete=(),
+    ))
+    assert funnel_to_dict(measured)["scan"]["watched_stale_complete"] == []
+    assert (
+        "Every watched board recorded a `complete` scan on its last opportunity"
+        in funnel_to_markdown(measured)
+    )
+
+    unmeasured = funnel(scan=ScanContext(
+        ran=True, boards_attempted=2, boards_complete=2, postings_seen=7,
+    ))
+    assert funnel_to_dict(unmeasured)["scan"]["watched_stale_complete"] is None
+    assert (
+        "last `complete` scan is stale: **not measured**" in funnel_to_markdown(unmeasured)
+    )
 
 
 def test_a_scan_that_found_no_never_complete_board_says_so_rather_than_going_quiet() -> None:
@@ -1328,6 +1374,7 @@ def test_manifest_renders_in_both_halves() -> None:
             rules_hash="RULESHASH",
             status="ok",
             location_filter_mode="hard",
+            routing_hash="ROUTINGHASH",
         )
     )
     payload = funnel_to_dict(report)["manifest"]
@@ -1339,12 +1386,17 @@ def test_manifest_renders_in_both_halves() -> None:
         "rules_hash": "RULESHASH",
         "status": "ok",
         "location_filter_mode": "hard",
+        # T111. The SIXTH value, beside the five and folded into none of them. Asserted in the
+        # exact-dict form the rest of this block uses, so it cannot be dropped silently.
+        "routing_hash": "ROUTINGHASH",
     }
     body = funnel_to_markdown(report)
     config_row = next(line for line in body.splitlines() if line.startswith("| config hash |"))
     assert "CONFIGHASH" in config_row
     prow = next(line for line in body.splitlines() if line.startswith("| profile row hash |"))
     assert "PRHASH" in prow
+    routing = next(line for line in body.splitlines() if line.startswith("| routing hash |"))
+    assert "ROUTINGHASH" in routing
 
 
 def test_manifest_shows_dash_for_absent_profile_hashes() -> None:

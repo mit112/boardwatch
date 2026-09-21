@@ -95,18 +95,28 @@ class Freshness:
 
 
 def _existing_lead_folders(conn: Connection, run_id: int) -> int:
-    """How many of run_id's OWN `resume_tailored` artifact rows resolve to a lead folder that
-    actually exists on disk. `uri` stores the `.tex` path (`run_funnel_queries.py`'s own
-    docstring); its parent directory is the `<slug>/` folder the tailor loop created. Checked
-    per row, not deduplicated into a folder set first, so a row whose folder went missing is
-    caught even if another row for the same run happens to share a folder.
+    """How many of run_id's OWN `resume_tailored` artifact rows resolve to a file that actually
+    exists on disk. `uri` stores the `.tex` path (`run_funnel_queries.py`'s own docstring).
+
+    **The claimed FILE, not merely its parent directory (T138).** Checking the parent proved only
+    that the `<slug>/` folder the tailor loop created was still there, so a row whose `.tex` had
+    been deleted, or was never written, reconciled cleanly as long as a sibling file kept the
+    folder alive — and the filesystem-truth fatal is built on this number. Measured on the live
+    store before the change: all 1,396 `resume_tailored` rows have their `.tex` present, so the
+    stricter predicate false-fatals on nothing that exists today.
+
+    Review-lane stubs are not affected: they are delivered with no render and write no
+    `resume_tailored` row at all, so they never enter this query.
+
+    Checked per row, not deduplicated into a folder set first, so a row whose file went missing
+    is caught even if another row for the same run happens to share a folder.
     """
     uris = conn.execute(
         select(artifacts.c.uri).where(
             artifacts.c.run_id == run_id, artifacts.c.kind == TAILORED_KIND
         )
     ).scalars().all()
-    return sum(1 for uri in uris if Path(str(uri)).parent.is_dir())
+    return sum(1 for uri in uris if Path(str(uri)).is_file())
 
 
 def folders_reconcile(conn: Connection, run_id: int) -> tuple[int, int]:

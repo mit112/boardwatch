@@ -8,6 +8,36 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A queue repair is counted apart from an ordinary update (2026-09-20, T120).** T116 made
+  `sync_queue` verify the destination before reporting it unchanged, and rewrite it when the bytes
+  on disk had diverged from the hash the store recorded — but that rewrite was counted as
+  `updated`, the same number an ordinary content change produces. The one event worth noticing was
+  invisible. `repaired` is orthogonal to the created/updated/unchanged/failed partition the way
+  `moved` and `retired` already are, and a non-zero value is the signal that something outside
+  boardwatch is editing the queue.
+
+- **A second liveness cohort, by last-complete-scan age (2026-09-20, T126).** T117 named the
+  watched boards that have NEVER recorded a `complete` scan. A board that completed once and has
+  not completed since was in neither cohort and nothing reported its staleness. Reporting only: age
+  alone still never means dead, and nothing is retired by it. `None` stays distinguishable from
+  empty, as T117's block already does — "not measured this run" is a different statement from
+  "every board is fresh".
+
+- **B8's volume reads the final lane cohort (2026-09-20, T110).** `pdf.entered` is computed from
+  `pending_tailor`, which is written once before the tailor loop and never rewritten — while the
+  form sweep runs after the render and before the funnel. A lead rendered into the apply lane and
+  then form-hard-stopped in the same run was still counted, and `METRICS.md` records `pdf.entered`
+  as B8's daily instrument. The cohort is built from `apply_lane_placements`, which already re-runs
+  the lane classifier, so the alert, the artifact and the drought check cannot disagree about which
+  leads were placeable. `pdf.entered` keeps its meaning as the render-stage denominator.
+
+- **A sixth manifest value for the routing knobs the five hashes miss (2026-09-20, T111).**
+  Flipping `seniority_hold` left `config_hash` byte-identical, so two runs could carry identical
+  five-hash manifests and route every lead differently — and B8's 14-day evidence is read against
+  those manifests. Per the owner's ruling this is a SEPARATE fingerprint, not a reclassification:
+  permanent dispositions keep their current identity, so changing a hold reopens nothing. The
+  fail-closed property `config_hash` already has on an unclassified field extends to the new set.
+
 - **A lane now reports the reach it ADDED separately from the reach its cap APPROVED (2026-09-20, T140).**
   `LaneReport.admitted` was documented as "the reach this run ADDED", and it is not: the per-run
   company cap approves a company *before* any of its bodies are fetched, so one whose every body
@@ -161,6 +191,68 @@ All notable changes to this project are documented here. The format follows
   NULL because its verdicts come from an arbitrary agent session rather than the configured judge.
 
 ### Fixed
+
+- **A glibc-only `%s` strftime took 46 tests red on Windows (2026-09-20).**
+  `f"v-{posting_id}-{captured_at:%s}"` formats a datetime through `strftime`, and `%s` is a
+  glibc/BSD extension Windows raises `ValueError: Invalid format string` on. It landed four hours
+  after that day's nightly, so no scheduled run had seen it; the `workflow_dispatch` validating
+  T128 found it first. `int(captured_at.timestamp())` is portable.
+
+- **The three Windows-only test failures are portable (2026-09-20, T128).** The scheduled build had
+  been red for five consecutive nights (last green 2026-09-15) while every push CI stayed green,
+  because Windows runs on `schedule`/`workflow_dispatch` only. `time.tzset()` is POSIX-only and the
+  two-zone harness cannot be built on Windows, so the apparatus is skipped rather than the
+  assertion weakened; an AST call-site guard compared `str(path.relative_to(root))` against
+  forward-slash literals and so failed on separators rather than on a real second call site; and a
+  gate test asserting the fake `claude` ran now wears the marker its twenty siblings already carry.
+
+- **A slate the final gate validly rejected is not an unexplained empty day (2026-09-20, T131).**
+  `run_pipeline` subtracted gate exclusions from `renderable` and from the cohort guard but not
+  from the zero-output guard, whose own contract counts an honest suppression as an explainer — and
+  an `ineligible` carrying a quoted span from the frozen JD is exactly that. One candidate plus one
+  valid rejection produced a false fatal and withheld the heartbeat. The explainer is intersected
+  with the postings judged this run, and the dead ids removed, so it can neither underflow nor
+  double-claim a posting.
+
+- **An ordinary queue update no longer deletes the owner's own files (2026-09-20, T121).**
+  `_install` swapped the whole directory, taking with it anything the owner kept there — the
+  hand-written cover letter and its `.tex` source that `_repair` goes file-by-file to protect and
+  that `_destination_intact` refuses to call an integrity failure. What the superseded folder held
+  that boardwatch did not write is carried over, with the authored set read from that folder's own
+  `details.json` rather than from the new payload, which is what keeps a retitled lead from ending
+  up with two résumés.
+
+- **Deferred read-to-write transactions that a concurrent commit can abort (2026-09-20, T134).** A
+  connection opens `BEGIN DEFERRED` and takes its WAL snapshot at the first read; SQLite cannot
+  upgrade an obsolete snapshot, so any other writer committing in between fails the UPDATE with
+  `SQLITE_BUSY_SNAPSHOT` on any row, and the busy timeout cannot retry it. `finish_run`'s error
+  append is now one atomic `json_insert` — chunked, because `SQLITE_MAX_FUNCTION_ARG` is
+  compile-time and an unbounded error list would have failed on one platform and not another. The
+  form sweep materialises its candidates and ends the read transaction before the first GET, each
+  response committing in its own short transaction under the posting-version key it was fetched
+  for. A sweep that raises is recorded on the run rather than only printed. Eight short CLI
+  read-modify-writes take the write lock at BEGIN.
+
+- **An open posting on a watched board that has never scanned `complete` renders `unverifiable`
+  (2026-09-20, T122).** `_status` asked "does anything enumerate this board?" and answered it with
+  `companies.watched`, which means configured for scans. Absence closure needs a `complete`
+  snapshot, so such a board produces no `closed` verdict either: 16,510 open postings under 8
+  boards — 6.34% of the open corpus — were rendering as a verified `open` while being exactly as
+  unverifiable as the unwatched class. Lane routing is unchanged, and a test pins the whole
+  `LaneDecision` rather than the status string.
+
+- **Reconciliation resolves a lead's claimed file, not its parent directory (2026-09-20, T138,
+  per-file half).** A row whose `.tex` had been deleted reconciled cleanly as long as anything else
+  kept the folder alive, and the filesystem-truth fatal is built on that number. Measured before
+  changing a fatal path: all 1,396 live `resume_tailored` rows have their `.tex`, so the stricter
+  predicate false-fatals on nothing. Review-lane stubs write no such row and are unaffected.
+
+- **The run contract is corrected to the 13 real fatal sites (2026-09-20, T139, first half).** The
+  table documented five fatal conditions plus a crash path; `runner.py` holds 13 `summary.fatal`
+  assignments, and the crash arm catches `BaseException`, not `Exception`. Added, all previously
+  undocumented: an unreadable profile row, a projection refusal raised inside the tailor loop, a
+  malformed master résumé, a malformed persona registry, the zero-output guard, the cohort guard
+  and filesystem-truth. Two of the thirteen may decline, and the table now says which.
 
 - **The gate judge fails open at every seam it documents (2026-09-19, T106).** Three classes of
   external defect escaped the batch boundary and aborted the run instead, reversing the stage's own
@@ -367,6 +459,17 @@ All notable changes to this project are documented here. The format follows
   already the employer's and is not touched.
 
 ### Changed
+
+- **`reap_stale_runs` is pinned against D-020's "writes nothing at all" (2026-09-20, T136).** The
+  function always issues its atomic UPDATE, the staleness predicate living inside the statement, so
+  the claim can only mean "mutated no row" — and nothing pinned it. Measured while sizing the
+  matching bound: 12 of 25 real pipeline runs exceed 60 minutes (median 59.3, max 200.2), so the
+  `ge=1` a caller may configure would reap a live run. The bound is deliberately left alone: a flat
+  floor is the wrong shape for an install whose runs take two minutes, and there is no exposure at
+  the 24 h default.
+
+- **Removed the dead `upsert_watched_company` wrapper (2026-09-20, T148).** Kept at P0 to spare
+  callers a rename; those callers are gone, and the symbol had zero references anywhere in the tree.
 
 - **At most two leads per company, title and location may share one slate.** One run spent five of
   its forty slots on a single opening written five ways. The existing cap keys on the byte-identical

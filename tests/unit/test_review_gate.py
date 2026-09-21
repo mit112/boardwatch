@@ -869,7 +869,7 @@ def test_the_lane_classifier_has_exactly_two_call_sites_in_the_tree() -> None:
             # different function and must not be dragged in by name alone.
             if "no_requirement_rows" not in {k.arg for k in node.keywords}:
                 continue
-            sites.append(str(path.relative_to(root)))
+            sites.append(path.relative_to(root).as_posix())
     assert sites == ["pipeline/runner.py", "store/delivery_queries.py"], (
         "the lane classifier must be called from exactly these two places; a new call site is a "
         f"second opinion about one lead (D-332). Found: {sites}"

@@ -36,6 +36,7 @@ from boardwatch.core.posting_identity import compute_identities
 # run the exact function the scan path runs, or it repairs rows into a third, different shape.
 from boardwatch.providers.smartrecruiters import _body_text as _smartrecruiters_body
 from boardwatch.store.body_revision import record_body_revision
+from boardwatch.store.db import write_connection
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
 from boardwatch.store.tables import companies, postings
 
@@ -74,7 +75,7 @@ def reparse_bodies(
     changed: list[int] = []
     scanned = skipped = 0
 
-    with engine.begin() as conn:
+    with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
         rows = conn.execute(
             select(postings.c.id, postings.c.content_hash, postings.c.raw_json)
             .join(companies, companies.c.id == postings.c.company_id)

@@ -85,11 +85,16 @@ def _lead(
     status: str = "open",
     delivered_at: datetime = NOW,
     body: str = JD,
-) -> None:
-    """One delivered lead on its own company and its own canonical job.
+) -> tuple[int, int]:
+    """One delivered lead on its own company and its own canonical job. Returns
+    `(posting_id, posting_version_id)`.
 
     Its own job matters: `delivered_unapplied` collapses to ONE row per job, so two leads sharing
     a job would silently seed one row and a count assertion would be off by the difference.
+
+    The ids are returned rather than discarded because `test_apply_lane_cohort.py` seeds this
+    lead's APPLICATION FORM (keyed on the version) and asserts on the cohort's posting ids; every
+    caller in this file ignores them.
     """
     key = f"k{next(_counter)}"
     company_id = int(
@@ -148,6 +153,7 @@ def _lead(
             created_at=delivered_at, run_id=run_id,
         )
     )
+    return posting_id, version_id
 
 
 def _run(

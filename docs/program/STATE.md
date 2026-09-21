@@ -12,7 +12,7 @@
 > owner calls. Settled subsystem history was moved WHOLE into `STANDING-FACTS.md` on 2026-08-23d by
 > Mit's ruling, **again on 2026-08-26** (30 settled blocks, 511 → ~260 lines), and **again on
 > 2026-09-03d** (95 lines: the whole nine-decision apparatus, run 145's readout, and five closed
-> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1). Nothing was deleted on any of the twelve passes. **309 is still over the bar, deliberately:** what remains above it is run 467's 92-line block and this session's own, both CURRENT standing rather than settled history. **Run 467's is now HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
+> blocks), **on 2026-09-12** (the four settled 2026-09-06 session blocks), **on 2026-09-12b** (the 2026-09-07 early and mid blocks) **on 2026-09-13c** (the 2026-09-07 review block and the whole 2026-09-12 session) and **on 2026-09-14** (run 57's block, superseded twice) **and on 2026-09-16** (the 2026-09-14b → 09-15 block, condensed to its decision pointers) **and on 2026-09-17** (the 2026-09-16 block, the same way) **and on 2026-09-18** (both 2026-09-17 blocks, condensed to their decision pointers) **and on 2026-09-19e** (the five settled 2026-09-14b … 2026-09-18 blocks moved WHOLE, and 2026-09-19c condensed to its pointer — 324 → 273 lines) **and on 2026-09-20** (the 2026-09-19e block moved WHOLE, condensed to its pointer) **and on 2026-09-20c** (the 2026-09-20b astra-04 block condensed to its pointer, 46 lines → 1) **and on 2026-09-20d** (ALL FIVE astra-consumption blocks condensed to ONE pointer now that D-528 closes the remediation, 313 → 267 lines). Nothing was deleted on any of the thirteen passes. **267 is still over the bar, deliberately:** what remains above it is run 467's 92-line block and this session's own, both CURRENT standing rather than settled history. **Run 467's is still HALF discharged and still not movable** — D-527 declares Gate 1 MET as recorded, but B8's volume reading is explicitly HELD OPEN by the same ruling, and its own condition requires both. Do not narrate a decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -20,94 +20,48 @@
 
 ## Current standing
 
-### 2026-09-20c — **ASTRA REVIEW 05 IS CONSUMED (D-527): ALL SEVEN FINDINGS CONFIRMED, THE RANKING INVERTS FOR THE THIRD REVIEW RUNNING, AND FOUR OWNER RULINGS LAND. T140–T143 SHIPPED AND **MERGED TO `main`** (PR #396, 26/26 CI checks). T144–T148 TICKETED in `TICKETS-2026-09-20-ASTRA-05.md`. NOTHING HERE TOUCHES THE ENGINE — no re-key, no drain, no confirm-clock restart.**
+### 2026-09-20d — **THE ASTRA REMEDIATION BACKLOG IS CLOSED TO THIRTEEN TICKETS IN ONE GATED WAVE (D-528, PR #398). `make check` exit 0 on `42bc2696`: 10,584 passed (baseline 10,542), coverage 95.25%, 9m32s. THE ENGINE BATCH IS THE ONLY DEFERRAL. NOTHING HERE RE-KEYS — no drain, no confirm-clock restart.**
 
-Every `file:symbol` opened by a read-only Opus verifier on the seat (`.agent/astra/verify/05-report.md`,
-**70 turns, $5.19**). Nothing refuted. Astra supplied no falsifier for this slice, so the findings
-rest on their cited symbols plus this session's live measurement. **One cited symbol does not exist
-anywhere** — F2's `death_probe._population_predicate`; the real one is `unreachable_by_the_scanner`
-(`death_probe.py:265`). **Seat spend $25.83 over five dispatches.**
+Shipped: **T110, T111, T120, T121, T122, T126, T128, T131, T134, T136, T138 (per-file half),
+T139 (doc half), T148.** Five came from three enterprise-seat executors in their own worktrees
+(`t122`, `t134`, `t110`), **each gated here, never by itself**; all three merged with zero
+conflicts. **Held WHOLE in D-528; do not re-derive.**
 
-**The ranking inverts AGAIN.** Astra's flagship `wrong-now` (**F3**, the hiring.cafe all-late
-discard) has **ZERO** live population — 0 of 468 runs, and the only hiringcafe lane failure ever
-recorded is run 57's all-EMPTY branch. Meanwhile **F1, filed `improvement`, is the one actively
-refilling: 120 boards on a parseable provider sit `watched=0`, and 12 arrived in the two ticks
-since the import closed.** F6 is **249 of 449 grnh.se seeds** unreachable at the default; **F7 is
-214 of 1,342 admissions (15.9%) across 27 of 27 funnels.**
+**T128 WAS THE ONLY THING ACTUALLY BROKEN, AND IT WAS WORSE THAN RECORDED.** The scheduled build
+was red **five** consecutive nights (09-16…09-20), not four. Three Windows-only failures, invisible
+to every push CI because **Windows runs on `schedule`/`workflow_dispatch` ONLY**. Validated by an
+explicit `workflow_dispatch` on the branch — the only way to see that matrix before merge.
 
-**F7 IMPEACHES A NUMBER THE PROGRAM ALREADY USED.** `funnel-467.md` — cited in D-522 §6 — prints
-*"19 new companies admitted"* under a note claiming `admitted` is "the reach this run ADDED", and
-**7** of the 19 exist as rows. The cap approves BEFORE bodies are fetched. Controls: 1,128/1,342
-lookups resolve; 0 of 27 funnels overcounts the other way.
+**NEXT ACTION 4's ONE-TIME RE-JUDGE HAS FIRED AND IS CLEAN — it was recorded as owed and was
+already discharged.** Run **468**: `funnel-468.md` reads `120 candidates · 0 already current ·
+120 sent`, 0 failed open / 0 missing / 0 refused; the store independently shows run 468 = **120
+rows `model='haiku'`** against `model=NULL` on 434/447/467. **T108 is discharged and PROVEN LIVE** —
+the gate row varies with the model, so the Sonnet move reaches standing verdicts, not only new leads.
 
-**FOUR OWNER RULINGS (Mit, 2026-09-20), all priced first.** (1) **The promotion gap: CENSUS +
-AUTO-WATCH — this REVERSES D-521/D-522's stage-2/3 refusal for this one case.** (2) **Scheduler:
-DO NOT BUILD** — scan runtime is not a product constraint. (3) **Pizza board: LEAVE IT** — company
-139 is already `watched=0`; its 801 open rows are 0.31% of the corpus and can never close (D-314).
-(4) **GATE 1 MET as recorded, B8 HELD OPEN** — M4's last condition discharged; no retirement today.
+**THREE MEASUREMENTS CLOSED ITEMS WITHOUT CODE.** (1) **The composite-title asymmetry is REFUTED**
+— astra's "only harmful" long-qualifier case reads `uncertain` (held for review), NOT `not_swe`;
+of 26,830 open "software" titles the 563 reading `not_swe` are 540 non-engineering nouns plus 23
+correct vetoes, so **genuinely-SWE titles hidden: 0 of 260,306**, null-controlled. **Do not rewrite
+the parser.** (2) **T136's `ge=1` deliberately NOT changed** — 12 of 25 real runs exceed 60 min
+(median 59.3, max 200.2) so a one-hour reaper would close a LIVE run, but a flat floor breaks
+multi-tenancy. **The number is Mit's; the missing test shipped.** (3) **T122 re-measured after run
+468 reproduces exactly** — 16,510 under 8 boards, 6.34%, partition-verified.
 
-**THE RULING REACHES 51 OF THE 120, AND ONLY REVIEWING THE DIFF SHOWED IT.** T143's gate draws
-`board` from `_body_inlined_providers()` = `build_providers()` filtered to `_BodyInlinedProvider`
-— **ashby, greenhouse, lever, workable and nothing else.** The other **69** (workday 44,
-eightfold 9, oraclehcm 8, smartrecruiters 8) come only through T142's census under human import.
-**The ongoing leak IS closed:** all 12 arrivals since the import were on those four providers. The
-69 are a standing backlog, not a leak. Fleet **1,807 → ~1,858** at ~3.2s/board/run.
+**T113 IS RE-SIZED BY AN ORDER OF MAGNITUDE.** The freshness test compares `model`, so every
+pre-T108 row is stale: **1,203 of 1,323** posting-versions, not the ticket's **97**. And **the
+re-judge is a ROLLING backlog** bounded by `gate.depth` per tick, not one run — true of the SLATE,
+false of the stored corpus. **Do not quote the 97 again.**
 
-**That gate is safe for a specific reason:** `scan/coordinator.py:402` appends `unknown provider`
-for a watched row outside `build_providers()`, so T143 relies on the SAME dict rather than a second
-catalog free to drift from the error site it exists to prevent. Its third condition is
-`if postings:` — a board that resolved but served nothing is not proven live.
+**Two executor judgment calls accepted, both flagged by the executor.** T134 made a RAISED form
+sweep escalate (right — a failed sweep means T91 hard-stop leads shipped UNHELD). T110 kept the B8
+volume reading OFF `summary.errors`, so it reaches the funnel but not the escalation channel;
+**that one is Mit's to reverse** and one line at the call site does it.
 
-**THE VERIFIER FOUND A THIRD F7 CALL SITE ASTRA MISSED** — `lanes/jsonld.py:772`. T140's fix landed
-in `_apply_lane`, which `_apply_lanes:831` calls for every lane, **so jsonld is covered by
-construction — verified at review, not assumed.** It also narrowed F3 (any page-0 failure suppresses
-the raise) and found that **`lanes/indeed.py:871-897` is the identical branch, with
-`tests/unit/test_indeed_lane.py:1422` ASSERTING the discard** — which bounds T144.
+**The finalize-block order was CHECKED after the three-way merge** (D-374's marker had drifted and
+was repaired): `form-sweep → funnel → queue → intake → scan → drought → lane-volume → liveness →
+corpus → morning → heartbeat`. Nothing below `_emit_morning`; heartbeat last.
 
-**TWO EXECUTOR JUDGMENT CALLS ACCEPTED, BOTH BETTER THAN THE TICKET.** T141 **declined the resume
-cursor the ticket offered**: the command writes nothing, so a resume token lives only in the
-operator's hands and a shifted `(attempts, id)` order silently skips a batch — the failure class
-the ticket exists to close. T142's **mutation #2 initially did NOT fire, and that found a real
-defect** — a self-matching `superseded` EXISTS made `watched IS FALSE` redundant; fixed with
-`peer.c.id != companies.c.id`. T142 also round-tripped its output through the importer's own
-validator and **it FAILED**: a lane-written Workday slug the parser refuses would abort an entire
-import file, so refused rows go to an `UNIMPORTABLE` block with the parser's verbatim reason.
-
-**B8's volume could NOT be re-derived from the store** — `job_dispositions` holds only `built`
-(1,007) and `seen` (219), and `built` is **40 on every run**: the `--top 40` slate cap, not
-apply-lane volume. The recorded 9-of-14 stands, which is why Q1 was put rather than answered.
-
-**Gate: `make check` exit 0, 10,542 passed (baseline 10,498), coverage 95.24%, 8m13s — run on the
-integrated branch AND again on the merge commit. CI: all 26 checks passed; PR #396 merged at
-`836025b8`. The wave is on `main`, not parked.**
-
-**`store/queries.py:619 upsert_watched_company` has ZERO callers anywhere** — a dead wrapper, left
-in place and ticketed (T148) rather than removed inside four other diffs.
-
-### 2026-09-20b — astra review 04 (the runner, the store, concurrency) consumed: all ten findings confirmed, the ranking inverted under measurement, and the verifier found a wrong-now bug astra had filed as SOUND. T129/T130/T132 shipped in one gated wave; T131 and T133–T139 ticketed. Two owner questions ruled, both priced first. **Held WHOLE in D-526 and `TICKETS-2026-09-20-ASTRA-04.md`; do not re-derive.** Its live residual is T139's `RUN_CONTRACT.md` drift (the table lists **five** fatal conditions, the code has **13**, and it says `except Exception` where the code catches `BaseException`) and one recorded unpinned assumption: `_finish_run_with_one_retry`'s docstring claims the attempt that raised committed nothing, but the test's fake raises before calling through, so the commit-then-raise path is untested.
-
-### 2026-09-20 — astra review 03 (identity, liveness, ledger, dedup, queue) consumed: all seven findings confirmed, T114–T119 shipped in two gated waves and **merged to `main`**, T120–T128 ticketed, one owner ruling. **The follow-up docs PR left on auto-merge DID land — verified here, PRs #394 and #395 both MERGED; that check is discharged, do not re-run it.** **Held WHOLE in D-525 and `TICKETS-2026-09-20-ASTRA-03.md`; do not re-derive.** Its live residual is F6's **16,510 open postings (6.3%) under 8 boards that have never scanned `complete`** — T122 corrects `_status`'s `watched` column, and T123 builds on that argument, not on "expand sweep selection".
-
-### 2026-09-19e — astra review 02 (the apply-lane stack) consumed: all eight findings confirmed, T106–T109 and T112 shipped, T110/T111/T113 ticketed, three owner questions ruled. **Held WHOLE in D-524 and `TICKETS-2026-09-19-ASTRA-02.md`; do not re-derive.** Its live residual is next action 4's one-time re-judge (with T108 folded in) and T113's 97 uncovered delivered versions. `main`'s four-commit CI red — two `web/` tests pinning a literal future date, reproducible only under `TZ=UTC` — was fixed there and is unrelated to the review.
-
-### 2026-09-19c — astra review 01 (the deterministic eligibility engine) consumed: all ten findings confirmed, T98 and T99 shipped, T100–T105 ticketed. **Held WHOLE in D-523 and `TICKETS-2026-09-19-ASTRA-01.md`; do not re-derive.** Its live residual is in next action 4: **the first armed run after T99 (and now T108) re-judges the delivered slate ONCE** (≤ `--top`, ~3 batches on the 04:00 tick) — read the funnel's gate block on that run, not just the verdicts.
-
-### 2026-09-19b — **AN EXTERNAL DESIGN REVIEW IS COMMISSIONED. Five prompts for GPT astra sit in `.agent/astra/prompts/` (gitignored); the owner runs each in its own astra session and brings the findings file back to a NEW boardwatch session, one review per session.** No run was read, no code changed, no metric moved.
-
-The slices, in the order to consume them: **01** the deterministic eligibility engine; **02** the
-apply-lane stack (rank gates → judge → `review_gate` → B8); **03** identity, liveness, the ledger,
-dedup and the on-disk queue; **04** `run_pipeline`, the coordinator, the WAL/`BEGIN` model and the
-run contract; **05** discovery strategy (optional). `.agent/astra/README.md` is the index. Astra
-writes `.agent/astra/findings/<NN>-<slice>.md` under a fixed schema (verdict → ranked findings
-with `file:symbol` evidence, proposal, what it re-keys, falsifier, confidence → checked-and-sound →
-owner questions → not read).
-
-**How a session consumes one.** A finding is a POINTER, not proof: re-verify every cited symbol
-against the code, run the stated falsifier, and only then ticket it. Anything that touches a
-digested engine module re-keys the ledger and restarts the confirm window — say so in the ticket.
-Anything astra proposes inside the refused scope (automation, evasion, re-opening a cited ruling
-without new evidence) is dropped with one line, not argued. The prompts ask astra to cite the
-`D-nnn` it disagrees with, so a disagreement is a review item for the owner, not a re-litigation.
+### Astra reviews 01–05 — **CONSUMED AND CLOSED.** All five slices, 42 findings, nothing refuted. Held WHOLE in **D-523 … D-527** and the five `TICKETS-2026-09-*-ASTRA-0*.md` files; the remediation that followed is **D-528**. **Do not re-derive any of it.** Of T98–T148 (51 tickets), **33 shipped**; **T145/T146/T147 are not build work** (owner DO-NOT-BUILD, future-reading guidance, LinkedIn posture); **T100–T105 are held as ONE engine bump** with next action 4; and **T113, T123, T124, T125, T127, T133, T135, T137, T139's stage extraction, T144 and T138's two remaining halves stay open.**
 
 ### 2026-09-19 — **THE EXPANSION IS MEASURED AND IT WORKS (run 467, D-522): 1,155 boards → 59,622 postings → 1,222 eligible → 28 of 40 DELIVERED LEADS, and B8's VOLUME half PASSES at 25. INDEED IS CONFIRMED DEAD. M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
 
@@ -165,13 +119,12 @@ density; predict yield from the sample. Never the reverse.
 
 **Next action.**
 
-0. **Consume astra reviews 03 → 04 (05 if it exists) as they arrive** — one findings file per
-   session, the way 01 and 02 were: probes re-run here, symbols verified on the seat, then
-   ticketed. **From review 01: T98 and T99 shipped; T100–T104 join item 4's batch; T105 needs a
-   design. From review 02 (D-524): T106, T107, T108, T109 and T112 ALL SHIPPED; T110, T111 and
-   T113 ticketed.** Mit's standing answer on the seat (2026-09-19 18:40): fan out
-   **2–3 executors at once, never more**; ask for the usage reading again before a fan-out on a
-   later day.
+0. **ASTRA IS DONE — all five slices consumed AND the remediation closed (D-528).** 33 of 51
+   tickets shipped. What is left is listed in the astra pointer block above; **T100–T105 are item
+   4's batch and nothing else is owed to the reviews.** Mit's standing answer on the seat
+   (2026-09-19 18:40, re-confirmed 2026-09-20): fan out **2–3 executors at once, never more**;
+   ask for the usage reading again before a fan-out on a later day. **The pattern is proven** —
+   three executors, zero merge conflicts, each gated by the dispatching session.
 1. **Read the 04:00 tick by `boards_attempted > 0`, NEVER `max(runs.id)`.** Watch whether the
    new boards' 2.05% rate and 70%-of-slate share HOLD on a second run, or whether run 467 was a
    first-scan bulge — the whole stage-2/3 argument turns on that.
@@ -186,9 +139,13 @@ density; predict yield from the sample. Never the reverse.
    `education_timing`** (D-521 §8.5: one nullable field, correctly rejects 7 unapplyable
    2027-start leads). **T108 (shipped, D-524) was its missing prerequisite**: until it landed,
    no component of the gate row key varied with `settings.gate.model`, so the move would have
-   reached NEW leads only and left every standing verdict on the old judge. The first armed run
-   after T99+T108 re-judges the delivered slate ONCE (≤ `--top`) and comes back keyed on facts
-   AND model — read the funnel's gate block on that run, not just the verdicts.
+   reached NEW leads only and left every standing verdict on the old judge. **THE RE-JUDGE HAS
+   FIRED AND IS CLEAN — run 468, verified two ways (D-528). This condition is DISCHARGED; do not
+   wait for it again.** `funnel-468.md` reads `120 candidates · 0 already current · 120 sent`,
+   0 failed open / 0 missing / 0 refused, and the store shows run 468 = 120 rows `model='haiku'`
+   against `model=NULL` on 434/447/467. **But note what it does NOT mean:** the SLATE was
+   re-judged once; the stored corpus still holds **1,203 of 1,323** posting-versions on a stale
+   key, and the judge clears at most `gate.depth` per tick. That backlog is T113's, re-sized.
 5. **Stages 2-3 stay REFUSED for the density argument** (workday 0.17, smartrecruiters 0.08,
    oraclehcm **0.00** per 1k open) — but **D-527 REVERSES the refusal for ONE case**: a
    body-inlined board (ashby/greenhouse/lever/workable) that hiring.cafe resolved AND read is now
@@ -287,24 +244,33 @@ moved WHOLE into `STANDING-FACTS.md` on 2026-09-01e.** Read it there. Only these
 
 ## Live blockers and carried gaps
 
-**THE SCHEDULED (WINDOWS) BUILD HAS BEEN RED FOR FOUR CONSECUTIVE NIGHTS AND NOBODY OWNS IT —
-found 2026-09-19, NOT caused by that session's work.** Last green scheduled run **2026-09-15
-(`2b980ebb`)**; red on 09-16 `70b99689`, 09-17 `1882e198`, 09-18 `15531462`, 09-19 `a2366bbf`.
-**Every PUSH ci run in that window is GREEN** — Windows runs ONLY on the schedule, which is why
-this is structurally invisible to a PR and to `make check` on macOS. Three failures, all
-Windows-only:
+**THE SCHEDULED (WINDOWS) BUILD WAS RED FOR FIVE CONSECUTIVE NIGHTS (09-16 … 09-20; last green
+2026-09-15 `2b980ebb`). T128 FIXES ALL THREE FAILURES — shipped in D-528's wave, PR #398.** The
+count was FOUR in this file and was wrong; it had gone one more night.
 
-- `tests/unit/test_web_server.py::test_local_today_is_the_servers_own_zone_and_never_utc` —
-  **`AttributeError: module 'time' has no attribute 'tzset'`** at lines 2918 and 2928.
-  `time.tzset()` is Unix-only and does not exist on Windows. Introduced by **`3652f583`
-  (2026-09-17, "Pin a follow-up date to a lead")** — three days before it was noticed.
-- `tests/pipeline/test_gate_stage.py::test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy`
-  — `assert fake_claude.exists()` fails; the D-511/D-512 superseded-policy path.
+The three, all Windows-only: `time.tzset()` does not exist on Windows (`test_web_server.py`, from
+`3652f583` on 2026-09-17); an AST call-site guard compared `str(path.relative_to(root))` against
+forward-slash literals so Windows failed on SEPARATORS, not on a real second call site
+(`test_review_gate.py`); and `test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy`
+asserted the fake `claude` ran without wearing `_needs_an_executable_fake`, the marker its twenty
+siblings carry.
 
-**Attribution checked, not assumed:** the breakage predates 2026-09-19's commits by three days and
-none of them touch those files. Read it with `gh run list --branch main --json event,conclusion`
-and filter `event=="schedule"` — `--limit 1` shows the newest run of EITHER kind and will report
-whichever landed last, which is how a red nightly reads as green.
+**THE DISPATCH FOUND A FOURTH, UNRELATED WINDOWS BREAK THAT NO NIGHTLY HAD YET SEEN.** T128's
+three are confirmed FIXED (0 occurrences in the dispatched run). But the same run went red on
+**46 tests in `tests/unit/test_delivery_queries.py`**, all `ValueError: Invalid format string`:
+`f"v-{posting_id}-{captured_at:%s}"` formats a datetime through `strftime`, and **`%s` is a
+glibc/BSD extension Windows refuses**. Introduced by **`7093b804` (T119) at 11:30 on 2026-09-20 —
+four hours AFTER that day's 07:08 nightly** — so it was on `main` and unseen, and tonight's nightly
+would have gone red on it. Fixed with `int(captured_at.timestamp())`. **Had this not been caught,
+the nightly would have stayed red for a new reason and T128 would have looked like it failed.**
+
+**WHY IT STAYED INVISIBLE, AND THE ONLY WAY TO SEE IT.** Windows is in the matrix for
+`schedule` **and `workflow_dispatch`** and nothing else (`ci.yml`'s `os:` expression is the
+authority) — so a green 27-job CI on a `main` push says **nothing** about Windows, and a PR cannot
+show it either. **Validate a Windows fix with `gh workflow run ci.yml --ref <branch>`** before
+merging; that is what D-528 did rather than waiting a night. Read the nightly with
+`gh run list --branch main --json event,conclusion` filtered to `event=="schedule"` — `--limit 1`
+shows the newest run of EITHER kind, which is how a red nightly reads as green.
 
 | Item | Detail | Owner |
 |---|---|---|

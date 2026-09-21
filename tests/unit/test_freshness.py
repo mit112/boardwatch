@@ -54,9 +54,21 @@ def _touch_funnel(day_dir: Path, run_id: int) -> None:
     (day_dir / f"funnel-{run_id}.md").write_text("stub\n", encoding="utf-8")
 
 
+#: The basename `_tailored_artifact_row` records in the row's `uri`. Shared so the fixture that
+#: WRITES the file and the fixture that CLAIMS it can never name it differently.
+LEAD_TEX = "resume.tex"
+
+
 def _lead_folder(day_dir: Path, name: str) -> Path:
+    """A lead folder as the tailor loop actually leaves it: the directory AND the `.tex` in it.
+
+    Writing the file matters since T138 — reconciliation resolves the row's claimed FILE, not
+    merely its parent — and a fixture that stopped at `mkdir` modelled a state production never
+    produces, which is precisely the corruption the guard now catches.
+    """
     folder = day_dir / name
     folder.mkdir()
+    (folder / LEAD_TEX).write_text("% tailored\n", encoding="utf-8")
     return folder
 
 
@@ -73,7 +85,7 @@ def _tailored_artifact_row(engine: Engine, run_id: int, day_dir: Path, folder: s
             insert(artifacts).values(
                 job_id=job_id,
                 kind="resume_tailored",
-                uri=str(day_dir / folder / "resume.tex"),
+                uri=str(day_dir / folder / LEAD_TEX),
                 created_at=SAME_DAY,
                 run_id=run_id,
             )
@@ -247,6 +259,28 @@ def test_folders_reconcile_flags_a_folder_missing_from_disk(
 
     assert folder_count == 0
     assert artifact_rows == 1
+
+
+def test_folders_reconcile_flags_a_lead_whose_tex_was_deleted_under_it(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T138. The folder is intact and a sibling file keeps it alive; only the claimed `.tex` is
+    gone. The old predicate asked `parent.is_dir()` and reconciled this cleanly — and the
+    filesystem-truth FATAL is built on that number, so a run could claim an artifact it had not
+    written. The sibling is the point: without it the directory would be empty but still a
+    directory, and the test would pass for the weaker reason."""
+    run_id = insert_run(engine)
+    day_dir = _day_dir(tmp_path)
+    folder = _lead_folder(day_dir, "acme-1")
+    _tailored_artifact_row(engine, run_id, day_dir, "acme-1")
+    (folder / "notes.txt").write_text("still here\n", encoding="utf-8")
+    (folder / LEAD_TEX).unlink()
+
+    with engine.connect() as conn:
+        folder_count, artifact_rows = folders_reconcile(conn, run_id)
+
+    assert folder.is_dir(), "the folder must survive, or this proves only the old check"
+    assert (folder_count, artifact_rows) == (0, 1)
 
 
 def test_a_failed_run_is_still_a_valid_terminal_status(engine: Engine, tmp_path: Path) -> None:
