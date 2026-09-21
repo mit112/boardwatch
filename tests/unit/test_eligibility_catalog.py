@@ -180,7 +180,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         #
         # 2026-09-05: +1, `labeled_years_minimum` implies `total_years_minimum`, so it carries
         # that value's degree-disjunction abstain rather than deciding where its twin abstains.
-        "abstain_by": 11,
+        "abstain_by": 0,
         # The SAME regex as two of those nine, at a different SCOPE, on the six
         # scoped/domain minimum patterns. The owner ruled that the `or` in
         # "a Bachelor's OR N years of X experience" clears the bar it joins, and the word
@@ -190,10 +190,11 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-04: +1, `scoped_months_minimum`, same sentence-scoped form as the six
         # scoped/domain years patterns it mirrors.
         "abstain_by_sentence": 7,
-        # The sixth scope ships as MECHANISM ONLY: T104 added the field, and which patterns
-        # move onto it is the owner's ruling, not the loader's. A 0 here is the tripwire --
-        # the first catalog entry to use it must come with that ruling recorded.
-        "abstain_by_adjacent": 0,
+        # T104/D-531: ALL ELEVEN document-scoped escapes moved here, so `abstain_by` above is
+        # now ZERO -- the field stays in the loader for an override, but no bundled pattern
+        # uses it. The pair must move together: an `abstain_by` that climbs off 0 means a new
+        # pattern took the UNBOUNDED reach that finding 4 exists to remove.
+        "abstain_by_adjacent": 11,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
     }

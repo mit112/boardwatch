@@ -211,20 +211,50 @@ def test_a_plain_years_floor_with_no_degree_alternative_is_still_decided(catalog
     assert dets and all(d.abstained is None for d in dets)
 
 
-def test_the_disjunction_abstain_is_document_scoped(catalog) -> None:
-    """SETTLED behaviour, locked so it is not misread as a bug. `abstain_by` is
-    document-scoped by design (like the degree family's equivalence escape), so a
-    disjunction anywhere in a posting abstains EVERY years bar in it, including a plain
-    co-located floor. This is the safe direction — abstaining never deletes a real job, and
-    the two-stage gate decides the abstained rows — and it kept the Gate-P5 blast radius to
-    the single SpaceX row on the real 173-case set."""
+def test_the_disjunction_abstain_waives_only_the_bar_its_OR_joins(catalog) -> None:
+    """T104/D-531 REPLACED the document-scoped form this test used to lock.
+
+    It previously asserted that a disjunction ANYWHERE abstains EVERY years bar in the
+    posting, "including a plain co-located floor" — which is astra finding 4's complaint
+    stated as settled behaviour, and it contradicted D-449: the word `or` is what clears a
+    bar, so it clears the bar it JOINS and not a separate floor stated elsewhere. The escape
+    now reaches its own unit and the next, and only where that next unit states no
+    requirement of its own.
+
+    The 3-year arm is inside the disjunction and still abstains. The 10-year floor is a
+    separate bar and now DECIDES."""
     body = (
         "A Bachelor's degree in CS or 3+ years of experience is required. "
         "10+ years of professional experience is required."
     )
-    dets = [d for d in detect(body, catalog, enabled_families=ALL)
-            if d.pattern.id == "total_years_minimum"]
-    assert len(dets) == 2 and all(d.abstained for d in dets)
+    by_years = {d.values.get("years"): d
+                for d in detect(body, catalog, enabled_families=ALL)
+                if d.pattern.id == "total_years_minimum"}
+    assert set(by_years) == {"3", "10"}
+    assert by_years["3"].abstained          # joined by `or` to the degree
+    assert by_years["10"].abstained is None  # a separate floor, decided
+
+
+def test_reordering_unrelated_requirements_does_not_change_which_is_waived(catalog) -> None:
+    """THE TICKET'S OWN CONTROL for T104, and it is only satisfiable under a bounded reach.
+
+    The reach is forward-only, so without the ownership guard this pair would disagree:
+    putting the disjunction FIRST would leave the floor untouched, and putting it SECOND
+    would let it waive the floor in the sentence before. The guard makes the two orders
+    agree for the right reason — in the second order the escape's own sentence carries its
+    own years bar, so it belongs to that bar and cannot reach back.
+    """
+    first = ("A Bachelor's degree in CS or 3+ years of experience is required. "
+             "10+ years of professional experience is required.")
+    second = ("10+ years of professional experience is required. "
+              "A Bachelor's degree in CS or 3+ years of experience is required.")
+
+    def waived(body: str) -> dict[str, bool]:
+        return {d.values["years"]: bool(d.abstained)
+                for d in detect(body, catalog, enabled_families=ALL)
+                if d.pattern.id == "total_years_minimum"}
+
+    assert waived(first) == waived(second) == {"3": True, "10": False}
 
 
 def test_a_SAME_sentence_disjunction_abstains_the_SCOPED_arm(catalog) -> None:

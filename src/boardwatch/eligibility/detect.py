@@ -337,10 +337,23 @@ def detect(
                         )
                         if abstained is None and index + 1 < len(units):
                             following = units[index + 1][1]
-                            abstained = _suppressed(
-                                following, 0, len(following),
-                                pattern.abstain_by_adjacent, inside_span=True,
+                            # The escape reaches back only if the following unit states no
+                            # requirement of its OWN in this family. Distance alone cannot
+                            # decide it (D-531): "A PhD is required. Equivalent experience
+                            # may be substituted." and "A PhD is required. A bachelor's
+                            # degree or equivalent experience is preferred." put the same
+                            # escape regex at the same distance and must resolve OPPOSITELY.
+                            # What separates them is ownership -- the second sentence states
+                            # its own bar, so its `or equivalent` belongs to THAT bar and
+                            # cannot waive the one before it.
+                            owned = any(
+                                other.regex.search(following) for other in family.patterns
                             )
+                            if not owned:
+                                abstained = _suppressed(
+                                    following, 0, len(following),
+                                    pattern.abstain_by_adjacent, inside_span=True,
+                                )
                     found.append(
                         Detection(
                             family=family.id,
