@@ -128,52 +128,19 @@ controlled. **Do not re-raise it.** Corpus: 1,061 goldens pass, zero re-baseline
 
 ### 2026-09-19 — **THE EXPANSION IS MEASURED AND IT WORKS (run 467, D-522): 1,155 boards → 59,622 postings → 1,222 eligible → 28 of 40 DELIVERED LEADS, and B8's VOLUME half PASSES at 25. INDEED IS CONFIRMED DEAD. M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
 
-**Run 447 (readout in `METRICS.md`).** `ok`, RECONCILES, **manifest byte-identical to run 434's on
-all five hashes**, one identity across the whole run. B1 40 · B2 19/19 · B3 0 failures ·
-B5 40 artifacts · B6 RECONCILES · B7 0% abstain. **B4 is VACUOUS, not met** — 0 bullets seen, so it
-contributes nothing to n ≥ 100. **B8's volume half reads 19 against ≥ 20.**
-
-**Owner's word, 2026-09-18 22:56: "I am giving you permission to count it as Day 14."** Run 447 was
-hand-launched on run 434's commit and the UNCHANGED 652-board fleet, so day 14 read on the frozen
-corpus and the expansion landed after. **The confirm therefore evidences 13 unattended ticks plus
-one attended run** — it no longer evidences "the plist fired on the 14th day", which 13 prior ticks
-and Gate P3's own counter already cover. Do not let a later reader mistake it for 14 unattended days.
+**The expansion half is DISCHARGED and was split out to `STANDING-FACTS.md` on 2026-09-20g** — run 447, M5 day 14, Gate 1's reading of record, the three discovery gaps, run 467's readout and the sizing rule. Held in **D-521** and **D-522**; run **468** is the second reading and supersedes its numbers (2026-09-20g block). **The two paragraphs below stayed because both are still UNRULED.**
 
 **B8's VOLUME half had never been recorded and fails 9 of the 14 confirm days** (7/13/10/12/3/10/9
 then 26/22/26/19/21/19 against ≥ 20). The acceptance-run table in `METRICS.md` reads
 `_(not started)_`, which is why nobody saw it; the instrument was validated against two recorded
 values before this was believed. Its precision half stays MET at 6.9%/5.6% (D-514). **Whether a
 9-of-14 volume record blocks the REPLACEMENT decision is Mit's — `PROGRAM.md` §1's table includes
-B8, M5's exit criterion does not.**
-
-**Gate 1, the reading of record** (7 days after D-499, as D-482 required): greenhouse **99.3%**,
-ashby **100%**, workday **100%**, lever **100%** against ≥ 85% — clear on both readings.
-Drawn-from total 35.2% → **44.6%**. **M4's exit condition is met.**
-
-**Discovery was three disjoint backlogs (D-521 §1).** Gap A **958** stored-but-unwatched on a
-parseable provider — cause: **hiring.cafe admits ~78 real employer boards per run and writes every
-one unwatched**; Gap B **593** GitHub new-grad-list boards; Gap C **43** behind the `grnh.se` seeds.
-Stage 1 (ashby/greenhouse/lever/workable) was live-probed — 14 dead caught, including
-`greenhouse:embed` — and **1,155 imported, exit 0, zero skipped. Fleet 652 → 1,807**, verified by
-counting the store, provenance intact. **Stages 2–3 (workday 230, oraclehcm 62, smartrecruiters 78)
-are REFUSED** on measured lead density: ashby 3.05 vs workday 0.17 vs oraclehcm **0.00** per 1k open.
-**Gap C is emitted but NOT imported — never put to the owner.**
-
-**Volume is not the constraint (D-521 §4).** 99.77% of the corpus is evaluated; ~40 delivered/day
-against ~841 standing. `--top` stays 40 and the lane caps stay.
-
-**RUN 467 — the first tick on 1,807 boards (readout in `METRICS.md`).** A REAL tick
-(`launchctl runs = 9 → 10`); it is run **467**, not 448, because web renders consumed 446-466.
-`ok`, **RECONCILES**, **manifest byte-identical to 447 and 434 on all five hashes** — the measured
-proof that watching boards moves no hash. **65 min** on 2.8× the fleet. **1,155 of 1,155 new
-boards scanned `complete`, zero failures added.** Corpus 208,847 → **261,626**; eligible verdicts
-7,675 → **8,581**; **B8's volume half 19 → 25, MET** after failing 9 of 14 confirm days;
-**28 of the 40 delivered leads came from the new boards.**
-
-**THE SIZING RULE (D-522 §3), which inverts what was assumed:** a lane's secondhand sample of a
-board is a **terrible** predictor of its SIZE (2.6 postings vs a real **51.6**, off 20×) and an
-**excellent** predictor of its ELIGIBLE RATE (2.1% vs a measured **2.05%**). Size from fleet
-density; predict yield from the sample. Never the reverse.
+B8, M5's exit criterion does not.** **POST-EXPANSION READING 2 OF THE 5 D-529 ASKS FOR, TAKEN
+2026-09-20g: run 468 = 22, MET.** So the post-expansion record is **25, 22 — two for two**, against
+a 9-of-14 record that is entirely pre-expansion. **Verified three ways on run 468** — the funnel's
+`pdf` stage (22), its own Leads table (`PDF: yes` = 22) and **22 `.pdf` files on disk**; and the 44
+PDFs under `2026-09-19/` decompose as **25 (run 467) + 19 (run 447)**, which independently confirms
+both of those recorded values too. Three more ticks and the condition is satisfiable either way.
 
 **INDEED IS CONFIRMED DEAD** — a second consecutive silent refusal (HTTP 200, valid GraphQL,
 `results: []`, identical 68-byte body across three probe shapes including unfaceted-and-unfiltered).

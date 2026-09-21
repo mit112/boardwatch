@@ -3426,3 +3426,49 @@ volume reading OFF `summary.errors`, so it reaches the funnel but not the escala
 **The finalize-block order was CHECKED after the three-way merge** (D-374's marker had drifted and
 was repaired): `form-sweep → funnel → queue → intake → scan → drought → lane-volume → liveness →
 corpus → morning → heartbeat`. Nothing below `_emit_morning`; heartbeat last.
+
+## The DISCHARGED half of the 2026-09-19 STATE block, split out on 2026-09-20g
+
+Run 467's expansion numbers are superseded by run 468's second reading (2026-09-20g block,
+D-531 era). Held in **D-521** and **D-522**. The B8 and Indeed paragraphs stayed in `STATE.md`
+because both are still unruled.
+
+**Run 447 (readout in `METRICS.md`).** `ok`, RECONCILES, **manifest byte-identical to run 434's on
+all five hashes**, one identity across the whole run. B1 40 · B2 19/19 · B3 0 failures ·
+B5 40 artifacts · B6 RECONCILES · B7 0% abstain. **B4 is VACUOUS, not met** — 0 bullets seen, so it
+contributes nothing to n ≥ 100. **B8's volume half reads 19 against ≥ 20.**
+
+**Owner's word, 2026-09-18 22:56: "I am giving you permission to count it as Day 14."** Run 447 was
+hand-launched on run 434's commit and the UNCHANGED 652-board fleet, so day 14 read on the frozen
+corpus and the expansion landed after. **The confirm therefore evidences 13 unattended ticks plus
+one attended run** — it no longer evidences "the plist fired on the 14th day", which 13 prior ticks
+and Gate P3's own counter already cover. Do not let a later reader mistake it for 14 unattended days.
+
+**Gate 1, the reading of record** (7 days after D-499, as D-482 required): greenhouse **99.3%**,
+ashby **100%**, workday **100%**, lever **100%** against ≥ 85% — clear on both readings.
+Drawn-from total 35.2% → **44.6%**. **M4's exit condition is met.**
+
+**Discovery was three disjoint backlogs (D-521 §1).** Gap A **958** stored-but-unwatched on a
+parseable provider — cause: **hiring.cafe admits ~78 real employer boards per run and writes every
+one unwatched**; Gap B **593** GitHub new-grad-list boards; Gap C **43** behind the `grnh.se` seeds.
+Stage 1 (ashby/greenhouse/lever/workable) was live-probed — 14 dead caught, including
+`greenhouse:embed` — and **1,155 imported, exit 0, zero skipped. Fleet 652 → 1,807**, verified by
+counting the store, provenance intact. **Stages 2–3 (workday 230, oraclehcm 62, smartrecruiters 78)
+are REFUSED** on measured lead density: ashby 3.05 vs workday 0.17 vs oraclehcm **0.00** per 1k open.
+**Gap C is emitted but NOT imported — never put to the owner.**
+
+**Volume is not the constraint (D-521 §4).** 99.77% of the corpus is evaluated; ~40 delivered/day
+against ~841 standing. `--top` stays 40 and the lane caps stay.
+
+**RUN 467 — the first tick on 1,807 boards (readout in `METRICS.md`).** A REAL tick
+(`launchctl runs = 9 → 10`); it is run **467**, not 448, because web renders consumed 446-466.
+`ok`, **RECONCILES**, **manifest byte-identical to 447 and 434 on all five hashes** — the measured
+proof that watching boards moves no hash. **65 min** on 2.8× the fleet. **1,155 of 1,155 new
+boards scanned `complete`, zero failures added.** Corpus 208,847 → **261,626**; eligible verdicts
+7,675 → **8,581**; **B8's volume half 19 → 25, MET** after failing 9 of 14 confirm days;
+**28 of the 40 delivered leads came from the new boards.**
+
+**THE SIZING RULE (D-522 §3), which inverts what was assumed:** a lane's secondhand sample of a
+board is a **terrible** predictor of its SIZE (2.6 postings vs a real **51.6**, off 20×) and an
+**excellent** predictor of its ELIGIBLE RATE (2.1% vs a measured **2.05%**). Size from fleet
+density; predict yield from the sample. Never the reverse.
