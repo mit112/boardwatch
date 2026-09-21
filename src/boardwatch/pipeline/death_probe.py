@@ -119,6 +119,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.pipeline.liveness import LivenessProber
 from boardwatch.reports.run_funnel import DeathProbeReport
 from boardwatch.scan.apply import CLOSE_AFTER_MISSES
+from boardwatch.store.db import write_connection
 from boardwatch.store.delivery_queries import standing_lead_job_ids
 from boardwatch.store.events import append_event
 from boardwatch.store.tables import companies, postings
@@ -478,7 +479,10 @@ def sweep_unwatched_deaths(
             # One transaction per COMPANY — the unit that was actually asked about, mirroring
             # `apply_board`'s per-board atomicity. The open rows are re-read inside it so the
             # membership test runs against the same snapshot the writes land on.
-            with engine.begin() as write:
+            # T134: the re-read below and the writes that follow it are one read-then-write,
+            # so IMMEDIATE at BEGIN — a DEFERRED snapshot taken at that SELECT cannot be
+            # upgraded once any other writer commits.
+            with write_connection(engine) as write, write.begin():
                 open_rows = write.execute(
                     select(
                         postings.c.id,

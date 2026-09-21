@@ -15,6 +15,7 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.reports.leakage import DEFAULT_WINDOW_DAYS, compute_leakage_report
+from boardwatch.store.db import write_connection
 from boardwatch.store.identity_queries import (
     MembershipStanding,
     count_stale_identities,
@@ -42,7 +43,7 @@ def backfill(ctx: typer.Context) -> None:
     engine = build_context(ctx.obj).engine
     now = utcnow()
     written = 0
-    with engine.begin() as conn:
+    with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
         for row in load_identity_inputs(conn):
             written += write_identities(conn, row.posting_id, compute_identities(row), now=now)
     typer.echo(f"identities: wrote {written} rows")
@@ -73,7 +74,7 @@ def reap(
     a side effect: this is the only path that removes an identity row.
     """
     engine = build_context(ctx.obj).engine
-    with engine.begin() as conn:
+    with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
         generations = count_stale_identities(conn)
         total = sum(g.rows for g in generations)
         deleted = delete_stale_identities(conn) if apply_ and total else 0
@@ -119,7 +120,7 @@ def regroup(
     order-dependence to disk permanently.
     """
     engine = build_context(ctx.obj).engine
-    with engine.begin() as conn:
+    with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
         if not identities_complete(conn):
             typer.echo(
                 "identities: incomplete — regrouping a partial corpus would persist a "

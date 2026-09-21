@@ -349,6 +349,9 @@ def sweep_form_questions(
     `budget` bounds the GETs, never the cache reads. `0` disarms the sweep while still reporting
     the whole candidate population as refused, so a disarmed pass reads as declined work rather
     than as a clean queue. Each row commits on its own, so a fault mid-sweep keeps what landed.
+
+    **No transaction is held across a GET.** The candidate list is materialized and the read
+    transaction ends before the first request; see the comment at that boundary.
     """
     # Function-local, like `delivery_queries.review_job_ids`' own import of `review_gate`: the
     # store module reads this module's catalog on every queue read, so the two can only meet at
@@ -380,6 +383,18 @@ def sweep_form_questions(
         pending.append((version.posting_version_id, *target))
 
     known = cached_form_questions(conn, [version_id for version_id, _, _ in pending])
+    # Every read is now materialized, so END THE TRANSACTION before the first GET (T134). A
+    # connection opens `BEGIN DEFERRED`, which takes its WAL snapshot at the first read, and
+    # SQLite cannot upgrade an obsolete snapshot: holding one across HTTP gives any concurrent
+    # writer the whole length of a fetch to make it obsolete, and the sweep's own next write
+    # then fails with `SQLITE_BUSY_SNAPSHOT`, which `busy_timeout` does not retry. `commit`
+    # rather than `rollback` because this connection belongs to the caller — the reads above
+    # have nothing to discard, but a caller's own pending write must not be thrown away by a
+    # boundary this function chose. Each response below opens its own fresh short transaction;
+    # IMMEDIATE is never held across HTTP here, and `pending` already carries each response's
+    # `posting_version_id` from before the fetch, so a version that moves mid-sweep cannot
+    # collect an answer fetched for a different one.
+    conn.commit()
     cached = fetched = unfetched = refused = 0
     for version_id, slug, posting_ref in pending:
         if version_id in known:

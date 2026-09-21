@@ -81,8 +81,14 @@ from boardwatch.store.delivery_queries import (
     delivered_unapplied,
     lane_decision,
 )
+from boardwatch.store.form_question_queries import cached_form_questions
 from boardwatch.store.quarantine_queries import record_quarantine
-from boardwatch.store.queries import current_posting_versions, save_eligibility, save_profile
+from boardwatch.store.queries import (
+    current_posting_versions,
+    insert_run,
+    save_eligibility,
+    save_profile,
+)
 from boardwatch.store.queue_state import (
     mark_job_reported,
     mark_job_skipped,
@@ -3227,17 +3233,172 @@ def test_the_pipeline_makes_no_form_request_unless_a_caller_supplies_a_fetcher(
 
         # No fetcher -> UNMEASURED, and nothing is asked. `None` rather than a zeroed report,
         # because "nobody asked" and "asked and found nothing" are different facts.
-        assert runner_mod._sweep_form_questions(conn, settings, console, None) is None
+        assert (
+            runner_mod._sweep_form_questions(
+                conn, settings, console, None, runner_mod.PipelineSummary(run_id=1)
+            )
+            is None
+        )
         # The budget disarms it even when a caller DOES supply one, without the exploding fetcher
         # being reached.
         disarmed = settings.model_copy(update={"form_question_fetch_budget": 0})
         assert (
-            runner_mod._sweep_form_questions(conn, disarmed, console, _Explode())  # type: ignore[arg-type]
+            runner_mod._sweep_form_questions(
+                conn, disarmed, console, _Explode(), runner_mod.PipelineSummary(run_id=1)  # type: ignore[arg-type]
+            )
             is None
         )
         # And neither call stored anything, which is what says no request was made.
         assert cached_form_questions(conn, [version.posting_version_id]) == {}
 
+
+def test_a_form_sweep_that_raises_is_recorded_on_the_run_and_not_only_printed(
+    engine: Engine, apps: Path
+) -> None:
+    """A swept-nothing run must not read as a found-nothing run (T134).
+
+    `_sweep_form_questions` fail-opens — that direction is right, the queue holds COPIES of work
+    the run already delivered — but fail-open and silent are different things. A console line in
+    a log nobody opens is the only trace a failed sweep used to leave, so a run that asked no
+    board anything was byte-identical, everywhere a gate reads, to a run whose whole queue was
+    clean. The note is NON-FATAL: the run still succeeds.
+    """
+    from rich.console import Console  # noqa: PLC0415
+
+    from boardwatch.pipeline import runner as runner_mod  # noqa: PLC0415
+
+    def _boom(conn: Connection, *, fetcher: object, budget: int) -> None:
+        raise RuntimeError("the store refused the sweep")
+
+    settings = load_settings()
+    assert settings.form_question_fetch_budget > 0  # control: the budget cannot disarm this
+    summary = runner_mod.PipelineSummary(run_id=1)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(runner_mod, "sweep_form_questions", _boom)
+    try:
+        with engine.connect() as conn:
+            result = runner_mod._sweep_form_questions(
+                conn, settings, Console(quiet=True), _FormFetcher(), summary  # type: ignore[arg-type]
+            )
+    finally:
+        monkeypatch.undo()
+
+    assert result is None
+    assert summary.errors == [
+        "application forms: sweep failed (RuntimeError: the store refused the sweep)"
+    ]
+    # Non-fatal: `run_pipeline` stamps `failed` only on `summary.fatal`, so the run stays `ok`.
+    assert summary.fatal is None
+
+
+# --- T134: the sweep holds no read transaction across the network -------------------------
+
+
+#: A second Greenhouse posting, so a sweep can have two responses to file separately.
+GREENHOUSE_URL_TWO = "https://job-boards.greenhouse.io/tenet3/jobs/8810809003"
+
+
+class _InterposingFetcher(_FormFetcher):
+    """A fetcher that records whether the sweep's connection is mid-transaction, and commits an
+    unrelated write before answering.
+
+    Both halves matter and they check different things. `in_transaction` is the STRUCTURAL
+    assertion — a sweep holding a DEFERRED read snapshot across a GET has a transaction open
+    here. The unrelated commit is what turns that into the observable fault: SQLite cannot
+    upgrade an obsolete snapshot, so the sweep's own next write would raise
+    `SQLITE_BUSY_SNAPSHOT`, which `busy_timeout` does not retry.
+    """
+
+    def __init__(self, conn: Connection, engine: Engine, *responses: object) -> None:
+        super().__init__(*responses)
+        self._conn = conn
+        self._engine = engine
+        self.in_transaction: list[bool] = []
+
+    def get(self, url: str) -> object:
+        self.in_transaction.append(self._conn.in_transaction())
+        insert_run(self._engine)  # an unrelated writer, committed mid-fetch
+        return super().get(url)
+
+
+def test_the_form_sweep_opens_no_transaction_across_the_fetch(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """A single unrelated commit during a GET must not cost the whole sweep (T134).
+
+    An aborted sweep leaves every uncached form unfetched, and an unasked hard stop is
+    fail-open — the lead rides into the blind-apply queue, which is the T91 class this module
+    exists to catch. So the read transaction ends when the reads do, before any HTTP.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one", company="One Co", url=GREENHOUSE_URL)
+        _deliver(conn, apps, "two", company="Two Co", url=GREENHOUSE_URL_TWO)
+
+    payloads = [_FormResult(_questions_payload("First Name")) for _ in range(2)]
+    with engine.connect() as conn:
+        fetcher = _InterposingFetcher(conn, engine, *payloads)
+        sweep = sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+
+    assert sweep == FormQuestionSweep(candidates=2, fetched=2)
+    # Structural: no transaction is open at either call, so there is no snapshot to go obsolete.
+    assert fetcher.in_transaction == [False, False]
+    # And both responses actually landed, which is what says the interposed writer cost nothing.
+    with engine.connect() as conn:
+        version_ids = [
+            v.posting_version_id
+            for v in current_posting_versions(
+                conn, [row.posting_id for row in delivered_unapplied(conn, skipped=set())]
+            ).values()
+        ]
+        assert sorted(cached_form_questions(conn, version_ids)) == sorted(version_ids)
+
+
+def test_a_form_response_that_lands_stays_committed_when_the_next_one_raises(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Per-response transactions, stated as the property that needs them (T134).
+
+    The first response is durable the moment it is written; a fault on the second cannot take it
+    back. Without that, a sweep is all-or-nothing across a network pass and one bad write throws
+    away every GET the run already spent.
+    """
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one", company="One Co", url=GREENHOUSE_URL)
+        _deliver(conn, apps, "two", company="Two Co", url=GREENHOUSE_URL_TWO)
+    with engine.connect() as conn:
+        by_posting = current_posting_versions(
+            conn, [row.posting_id for row in delivered_unapplied(conn, skipped=set())]
+        )
+    version_ids = [v.posting_version_id for v in by_posting.values()]
+
+    from boardwatch.store import form_question_queries  # noqa: PLC0415
+
+    real = form_question_queries.record_form_questions
+    recorded: list[int] = []
+
+    def _second_write_fails(
+        conn: Connection, posting_version_id: int, questions_json: list[dict[str, object]]
+    ) -> None:
+        if recorded:
+            raise RuntimeError("the store refused the second response")
+        recorded.append(posting_version_id)
+        real(conn, posting_version_id, questions_json)
+
+    payloads = [_FormResult(_questions_payload("First Name")) for _ in range(2)]
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(form_question_queries, "record_form_questions", _second_write_fails)
+    try:
+        with engine.connect() as conn:
+            fetcher = _InterposingFetcher(conn, engine, *payloads)
+            with pytest.raises(RuntimeError, match="refused the second response"):
+                sweep_form_questions(conn, fetcher=fetcher, budget=100)  # type: ignore[arg-type]
+    finally:
+        monkeypatch.undo()
+
+    with engine.connect() as conn:
+        cached = cached_form_questions(conn, version_ids)
+    assert list(cached) == recorded, "the response that landed must survive the one that did not"
+    assert len(cached) == 1
 
 # ------------------------------------ T109: the standing lane's title band and the judge's NO
 
