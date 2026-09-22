@@ -35,8 +35,9 @@ from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
 # 6: NON_US_ISO3_SUFFIX added, a curated inclusion list read as a trailing comma component
-# ("Dublin, IRL"), and fji / png added to NON_US_ISO3. 777 open postings whose every segment ended in a non-US alpha-3 code read `unknown` and
-# failed open (CAN 220, IRL 130, KOR 87, JPN 80 ...), three of them in the apply lane. The code
+# ("Dublin, IRL"), and fji / png added to NON_US_ISO3. 777 open postings whose every segment
+# ended in a non-US alpha-3 code read `unknown` and failed open (CAN 220, IRL 130, KOR 87,
+# JPN 80 ...), three of them in the apply lane. The code
 # beats a US city token, so "San Francisco,CRI" (Costa Rica) and "Kirkland, QC, CAN" now read
 # non-US. The US territories stay out of the set, and so stay fail-open.
 # 5: hengelo added. An audit of the post-run apply lane found 4 genuinely foreign postings in
@@ -235,6 +236,10 @@ NON_US_ISO3 = frozenset(
 # passing the curation test at the top of this file. PHL, IND and AUS were observed too and are
 # left out BY NAME: they are the airport codes of Philadelphia, Indianapolis and Austin, which
 # employers use as site codes, so 10 open postings ending in them stay `unknown`, as they were.
+# Audited the same day over ALL 3,713 stored segments, open and closed, that end in one of these
+# codes: every place before the code is foreign (Shanghai, Hiroshima, London, Toronto, ...). A town
+# that merely HAS an FAA identifier among them (Challis CHL, Tullahoma THA) is the gazetteer
+# namesake the curation rule excludes: no posting writes a US place as "Town, <airport id>".
 # Every member must also be in `NON_US_ISO3`.
 NON_US_ISO3_SUFFIX = frozenset(
     {
