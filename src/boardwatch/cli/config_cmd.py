@@ -220,6 +220,7 @@ _GATE_KEYS: dict[str, str] = {
     "model": "claude model alias, e.g. haiku; next run",
     "batch_size": "leads per call, ≥1; next run",
     "call_timeout_s": "seconds per call, ≥1; next run",
+    "effort": "claude --effort level (low|medium|high|xhigh|max); unset = CLI default; next run",
     "depth": "leads JUDGED, against --top delivered; 0 = only the shortlist; next run",
     "seniority_hold": (
         "hold a lead for review when the judge reads its BODY as above the target band; "

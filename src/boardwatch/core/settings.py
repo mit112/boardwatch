@@ -83,6 +83,14 @@ class GateTier(BaseModel):
     model: str = "sonnet"
     batch_size: int = Field(default=13, ge=1)
     call_timeout_s: int = Field(default=300, ge=1)
+    #: The headless call's `--effort`. `None` passes no flag, so the CLI's own default applies —
+    #: the behaviour before this field existed. Closed to the CLI's five levels, so a misspelt
+    #: value fails at load rather than failing open on every batch of the run.
+    #:
+    #: Changing it re-judges NOTHING already judged: a gate row records `model` but not `effort`,
+    #: so the freshness test `run_gate_stage` applies cannot see the change, and a new level
+    #: reaches only leads judged after it (T155).
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     depth: int = Field(default=0, ge=0)
     #: Whether the judge's `seniority_fit` reading HOLDS a lead for review (2026-09-13).
     #:

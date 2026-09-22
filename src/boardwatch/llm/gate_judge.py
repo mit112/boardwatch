@@ -139,11 +139,14 @@ def _prompt(judging_policy: str, batch: list[dict[str, object]]) -> str:
 
 
 def _call_claude(
-    prompt: str, *, model: str, claude_config_dir: object, timeout_s: int
+    prompt: str, *, model: str, claude_config_dir: object, timeout_s: int,
+    effort: str | None = None,
 ) -> str:
     """One headless call. Exactly the argv the 2026-09-08 calibration harness proved works:
     `claude -p --model <m> --tools "" --max-turns 1 --output-format json`, stdin `/dev/null`
     (never read — a batch prompt is a CLI arg, not stdin), `CLAUDE_CONFIG_DIR` from settings.
+    `--effort <level>` follows the model only when `gate.effort` is set; unset, the argv is
+    byte-identical to the calibrated one.
 
     Returns the raw stdout text. Raises on any failure the caller must fail open on
     (`FileNotFoundError` — binary missing; `subprocess.TimeoutExpired`; a non-zero exit,
@@ -155,9 +158,10 @@ def _call_claude(
     env = dict(os.environ)
     if claude_config_dir is not None:
         env["CLAUDE_CONFIG_DIR"] = str(claude_config_dir)
+    effort_args = [] if effort is None else ["--effort", effort]
     result = subprocess.run(  # noqa: S603 - argv is a fixed shape, no shell, no user input in argv[0]
-        ["claude", "-p", "--model", model, "--tools", "", "--max-turns", "1",
-         "--output-format", "json", prompt],
+        ["claude", "-p", "--model", model, *effort_args, "--tools", "", "--max-turns",
+         "1", "--output-format", "json", prompt],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
@@ -324,6 +328,7 @@ def _judge_batch(
             model=settings.gate.model,
             claude_config_dir=settings.gate.claude_config_dir,
             timeout_s=settings.gate.call_timeout_s,
+            effort=settings.gate.effort,
         )
     except FileNotFoundError:
         return None, "claude binary not found on PATH", ()
