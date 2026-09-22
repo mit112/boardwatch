@@ -35,6 +35,7 @@ catalogued disqualifier detected" (D-P2-18), never as a clean bill of health.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from boardwatch.eligibility.catalog import PatternSpec, RulesCatalog
@@ -125,6 +126,168 @@ def split_units(text: str, scope: str) -> list[tuple[int, str]]:
             inner = offset + len(clause)
             units.append((start + offset, clause))
     return units
+
+
+# ---------------------------------------------------------------- heading context (T105)
+#
+# A heading and its bullets are never in one unit, so no suppressor above can see a hedge or
+# an `OR` that a heading line states. This is a SEPARATE channel, bounded three ways and
+# carried beside the unit list rather than inside it, so `split_units` stays byte-identical:
+#   forward only, from a heading to the next header-like line or EOF (`qualifications_span`'s
+#   rule); one level, because the nearest heading is the only one that governs; and it can only
+#   drop a detection or mark it undecidable, never create one or decide an abstain.
+# The heading vocabulary is shared with tailor/requirement_echo.py and lives here so that
+# ENGINE_VERSION covers it.
+
+# A line matching one of the qualifications-section header phrasings the spec names.
+# `(?:Basic|Preferred|Minimum)\s+` is optional so "Requirements" and "Basic Qualifications"
+# are both recognized by one pattern.
+_QUAL_HEADER = re.compile(
+    r"^\s*(?:(?:Basic|Preferred|Minimum)\s+)?"
+    r"(?:Requirements|Qualifications|What You'?ll Need|Nice to Have|"
+    r"You(?:'ll Have| Have)|Must Have)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+# The generic "this line reads as SOME section heading" test used only to find where a
+# qualifications span ENDS -- deliberately looser than _QUAL_HEADER (which names what a
+# qualifications heading specifically says): short, no sentence-ending punctuation.
+# Over-matching here only SHRINKS the span, which is the fail-safe direction (less
+# corroboration material, never more).
+_ANY_HEADER = re.compile(r"^[A-Za-z][A-Za-z /&'-]{0,58}:?$")
+
+# Closed-class "glue" words that make up short, real section headers whose words AFTER
+# the first are NOT capitalized ("What you will get", "About the team") -- fix for a
+# real false-positive hole: the original end-boundary test required EVERY word
+# capitalized, so this common header shape ran the span past it into benefits/perks
+# prose. Deliberately NOT extended to open-class nouns: a genuine qualification line
+# ("Bachelors degree preferred", "Experience with distributed systems") has real
+# content words after the first, none of which are glue, so it is never mistaken for a
+# header by this path.
+_HEADER_GLUE_WORDS: frozenset[str] = frozenset(
+    {"you", "your", "we", "us", "our", "will", "get", "gets", "the", "a", "an", "team"}
+)
+
+
+def _looks_like_header(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _QUAL_HEADER.match(stripped):
+        return True
+    if not _ANY_HEADER.match(stripped):
+        return False
+    words = stripped.rstrip(":").split()
+    if not words or len(words) > 6 or not words[0][0].isupper():
+        return False
+    # Path 1: every significant word capitalized (Title-Case/ALL-CAPS headers like
+    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills").
+    if all(w[0].isupper() for w in words if w[0].isalpha()):
+        return True
+    # Path 2: a lowercase-continuation header whose words AFTER the first are all
+    # closed-class glue. A genuine qualification line's later words are real content,
+    # never glue-only, so this path never swallows one.
+    return all(w.lower() in _HEADER_GLUE_WORDS for w in words[1:])
+
+
+def qualifications_span(body_text: str) -> list[str]:
+    """The lines between a qualifications-section header and the next header-like line
+    (or EOF). `[]` if no header matches -- the fail-safe silent-miss case: corroboration
+    below can never fire against an empty span, so a JD with no recognizable header
+    structure simply cannot trigger requirement-echo, never a false positive."""
+    lines = body_text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if _QUAL_HEADER.match(line.strip()):
+            start = i + 1
+            break
+    if start is None:
+        return []
+    span: list[str] = []
+    for line in lines[start:]:
+        if _looks_like_header(line):
+            break
+        span.append(line)
+    return span
+
+
+def _on_heading_line(text: str, offset: int) -> tuple[bool, int]:
+    """Whether the line holding `offset` reads as a heading, and where that line starts.
+
+    A line that is only `OR` passes `_looks_like_header` as one capitalised word, and read as
+    a heading it would govern the arm after it and split the alternative in two.
+    """
+    start = text.rfind("\n", 0, offset) + 1
+    end = text.find("\n", offset)
+    line = text[start : len(text) if end < 0 else end]
+    return _looks_like_header(line) and not _or_only(line), start
+
+
+def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | None]:
+    """For each unit, the index of the heading unit that governs it, or None.
+
+    A heading unit is itself ungoverned, and a later heading ENDS the earlier one's reach
+    whether or not it says anything, so context never passes through a nested heading.
+    """
+    governing: list[int | None] = []
+    current: int | None = None
+    current_line = -1
+    for index, (offset, _unit) in enumerate(units):
+        heading, line = _on_heading_line(text, offset)
+        if heading:
+            if line != current_line:
+                current, current_line = index, line
+            governing.append(None)
+        else:
+            governing.append(current)
+    return governing
+
+
+_BULLET_LEAD = re.compile(r"[\s•‣●\-\*]*")
+_OR_LEAD = re.compile(_BULLET_LEAD.pattern + r"or(?:\s+|$)", re.IGNORECASE)
+# One arm of the inline twin: the bullet without its marker, its leading OR or its full stop,
+# because the alternative escapes read `[^.\n]` across the `or` they join.
+_ARM_LEAD = re.compile(_BULLET_LEAD.pattern + r"(?:or(?:\s+|$))?", re.IGNORECASE)
+_ARM_TAIL = re.compile(r"[\s.;!?]*$")
+
+
+def _or_only(unit: str) -> bool:
+    return _OR_LEAD.fullmatch(unit) is not None
+
+
+def _arm(unit: str) -> str:
+    return _ARM_TAIL.sub("", _ARM_LEAD.sub("", unit, count=1), count=1)
+
+
+def alternative_groups(
+    text: str, units: list[tuple[int, str]], governing: list[int | None]
+) -> list[str | None]:
+    """For each unit joined to its neighbours by an explicit OR between lines, the group
+    written as its inline twin (`arm or arm or arm`), else None.
+
+    The link is a line that is only `OR`, or a line that opens with it. It joins the units
+    either side, never a heading, and never across one. The group is then read by each
+    pattern's OWN alternative escapes, exactly as the one-line sentence would be: `or` stays
+    out of `_CLAUSE_BOUNDARY`, and a list form waives nothing its inline twin would not.
+    """
+    groups: list[list[int] | None] = [None] * len(units)
+    for index, (offset, unit) in enumerate(units):
+        if not (offset == 0 or text[offset - 1] == "\n") or not _OR_LEAD.match(unit):
+            continue
+        before, after = index - 1, index + 1 if _or_only(unit) else index
+        if before < 0 or after >= len(units) or _or_only(units[before][1]):
+            continue
+        if _or_only(units[after][1]) or governing[before] != governing[after]:
+            continue
+        if any(_on_heading_line(text, units[i][0])[0] for i in (before, after)):
+            continue
+        group = groups[before] or [before]
+        group.append(after)
+        groups[before] = groups[after] = group
+    return [
+        None if group is None else " or ".join(_arm(units[i][1]) for i in group)
+        for group in groups
+    ]
 
 
 def _clause_bounds(unit: str, lo: int, hi: int) -> tuple[int, int]:
@@ -265,6 +428,54 @@ def _suppressed(
     return None
 
 
+def _hedged_by_heading(
+    heading: str, unit: str, lo: int, hi: int, hedges: tuple[re.Pattern[str], ...]
+) -> str | None:
+    """The hedge introducer allowance, read over the inline twin `heading + " " + unit`.
+
+    "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would, and a
+    heading whose hedge is followed by more than delimiters ("Preferred Qualifications:")
+    reaches nothing, as its one-line form reaches nothing.
+    """
+    intro = f"{heading} {unit}"
+    shift = len(heading) + 1
+    lo, hi = lo + shift, hi + shift
+    return _suppressed(
+        intro, lo, hi, hedges,
+        bounds=_clause_bounds(intro, lo, hi), introducer=True, aside_owned=True,
+    )
+
+
+def _shifted(offset: int) -> Callable[[int], int]:
+    return lambda p: offset + p
+
+
+def _views(
+    units: list[tuple[int, str]], governing: list[int | None], pattern: PatternSpec
+) -> Iterator[tuple[int, str, Callable[[int], int], int | None]]:
+    """(unit index, text to match, text position -> absolute offset, join) for every unit.
+
+    A PREFERRED pattern also reads each governed unit as its inline twin, heading then bullet,
+    so "Nice to have:\n- 5 years of experience." carries the same `preferred` row as its
+    one-line form. `join` is where the bullet starts in that text, and only a match that
+    crosses it is new. A required pattern never gets this view: a heading may weaken a bar,
+    and "Must Have:\n- A bachelor's degree." must never read as the bar its one-line form is.
+    """
+    for index, (offset, unit) in enumerate(units):
+        yield index, unit, _shifted(offset), None
+        heading = governing[index]
+        if heading is None or pattern.requiredness != "preferred":
+            continue
+        head_offset, head = units[heading]
+        lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
+        join = len(head) + 1
+
+        def at(p: int, h: int = head_offset, o: int = offset + lead, j: int = join) -> int:
+            return h + p if p < j else o + p - j
+
+        yield index, f"{head} {unit[lead:]}", at, join
+
+
 def detect(
     body_text: str, catalog: RulesCatalog, *, enabled_families: frozenset[str]
 ) -> list[Detection]:
@@ -281,15 +492,24 @@ def detect(
     # Keyed on the scope string a pattern actually declares, so a scope no enabled pattern
     # uses is never computed and nothing here depends on how many scopes the catalog allows.
     units_by_scope: dict[str, list[tuple[int, str]]] = {}
+    # Heading context, computed once per scope beside the units and never folded into them.
+    context_by_scope: dict[str, tuple[list[int | None], list[str | None]]] = {}
     for family in catalog.families:
         if family.id not in enabled_families:
             continue
         for pattern in family.patterns:
             if (units := units_by_scope.get(pattern.scope)) is None:
                 units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
-            for index, (offset, unit) in enumerate(units):
+                governing = governing_headings(body_text, units)
+                context_by_scope[pattern.scope] = (
+                    governing, alternative_groups(body_text, units, governing)
+                )
+            governing, alternatives = context_by_scope[pattern.scope]
+            for index, unit, at, join in _views(units, governing, pattern):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
+                    if join is not None and not lo < join < hi:
+                        continue
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):
                         continue
                     if _cue_inside(
@@ -297,9 +517,7 @@ def detect(
                         pattern.cue_idioms,
                     ):
                         continue
-                    if _suppressed(
-                        body_text, offset + lo, offset + hi, pattern.suppressed_by
-                    ):
+                    if _suppressed(body_text, at(lo), at(hi), pattern.suppressed_by):
                         continue
                     if _suppressed(unit, lo, hi, pattern.suppressed_by_sentence):
                         continue
@@ -309,14 +527,18 @@ def detect(
                         bounds=bounds, introducer=True, aside_owned=True,
                     ):
                         continue
+                    heading = governing[index]
+                    if join is None and heading is not None and _hedged_by_heading(
+                        units[heading][1], unit, lo, hi, pattern.suppressed_by_unit
+                    ):
+                        continue
                     if _suppressed(
                         unit, lo, hi, pattern.subject_suppressors,
                         bounds=bounds, before_only=True,
                     ):
                         continue
                     abstained = _suppressed(
-                        body_text, offset + lo, offset + hi, pattern.abstain_by,
-                        inside_span=True,
+                        body_text, at(lo), at(hi), pattern.abstain_by, inside_span=True
                     )
                     if abstained is None:
                         # Searched over the UNIT, not over `body_text` with unit bounds: a
@@ -354,11 +576,19 @@ def detect(
                                     following, 0, len(following),
                                     pattern.abstain_by_adjacent, inside_span=True,
                                 )
+                    if abstained is None and (group := alternatives[index]) is not None:
+                        # An OR between lines, read as the one-line sentence it stands for,
+                        # by the pattern's own same-sentence and adjacent escapes only.
+                        abstained = _suppressed(
+                            group, 0, len(group),
+                            pattern.abstain_by_sentence + pattern.abstain_by_adjacent,
+                            inside_span=True,
+                        )
                     found.append(
                         Detection(
                             family=family.id,
                             pattern=pattern,
-                            span=(offset + lo, offset + hi),
+                            span=(at(lo), at(hi)),
                             values={
                                 name: value
                                 for name, value in match.groupdict().items()

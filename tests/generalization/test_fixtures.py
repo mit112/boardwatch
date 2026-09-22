@@ -297,6 +297,41 @@ def test_a_missing_corpus_fails() -> None:
     assert any("is not in the tree" in v.detail for v in violations)
 
 
+
+def test_an_edited_heading_case_fails(tmp_path: Path) -> None:
+    """The multi-line surface is pinned for the corpus's reason: flip one expected verdict."""
+    original = (REPO_ROOT / fx.HEADING_CASES_PATH).read_text(encoding="utf-8")
+    tampered = original.replace("BOUND_CONTROL, P_FACTS, ALL_BLOCKERS, 'ineligible'",
+                                "BOUND_CONTROL, P_FACTS, ALL_BLOCKERS, 'eligible'", 1)
+    assert tampered != original, "the tamper did not apply, so this test proves nothing"
+    violations = check_fixture_pins(
+        _substitute(fx.HEADING_CASES_PATH, tampered.encode(), tmp_path)
+    )
+    assert _rules(violations) == {"R14"}
+    assert any(
+        v.path == fx.HEADING_CASES_PATH and "content changed" in v.detail for v in violations
+    )
+
+
+def test_a_dropped_heading_case_fails_the_row_count_even_when_the_pin_agrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = (REPO_ROOT / fx.HEADING_CASES_PATH).read_text(encoding="utf-8")
+    head, sep, tail = original.partition("    ('h04:")
+    assert sep, "the anchor row is gone; re-pick a row label"
+    dropped = (head + tail.split("\n", 1)[1]).encode()
+    monkeypatch.setattr(fx, "HEADING_CASES_PIN", "sha256:" + hashlib.sha256(dropped).hexdigest())
+    violations = check_fixture_pins(_substitute(fx.HEADING_CASES_PATH, dropped, tmp_path))
+    assert _rules(violations) == {"R14"}
+    assert any("HEADING_CASES holds 8 rows, pinned at 9" in v.detail for v in violations)
+
+
+def test_a_missing_heading_surface_fails() -> None:
+    violations = check_fixture_pins(_without(fx.HEADING_CASES_PATH))
+    assert _rules(violations) == {"R14"}
+    assert any(v.path == fx.HEADING_CASES_PATH for v in violations)
+
+
 # --------------------------------------------------------------------------- R15 deadlines
 
 
