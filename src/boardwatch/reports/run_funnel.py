@@ -225,6 +225,12 @@ _TOP_MISSING = 10
 # read — while this counts stored rows the READ could not find, which is a different failure with
 # a different cause. A funnel written before this lacks the key, which reads as `null` and means
 # "this run did not measure gate-reading staleness", not "this run found none".
+#
+# **T113's four `gate.refresh_*` keys do NOT bump it either**, on the same precedent: additive keys
+# inside the `gate` block, changing no existing key's meaning. `candidates`/`sent` beside them keep
+# counting the SLATE; the refresh is counted apart because its leads were never on it. With the
+# budget at 0 the three counts are `null` — the refresh was not armed, which is not the same fact as
+# a refresh that found nothing stale — and a funnel written before this lacks all four.
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -790,6 +796,14 @@ class GateCounters:
     seniority_unclear: int = 0
     seniority_unreadable: int = 0
     readings_absent: int = 0
+    #: T113. The standing-queue refresh, apart from the slate counts above because its leads were
+    #: never on the slate. `refresh_budget` is the setting itself, so a budget of 0 — not armed —
+    #: can be told from an armed refresh that found nothing stale. `refresh_pending_after` is
+    #: RE-READ from the store after the refresh committed, never derived from what it sent.
+    refresh_budget: int = 0
+    refresh_candidates: int = 0
+    refresh_sent: int = 0
+    refresh_pending_after: int = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -813,7 +827,12 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "seniority_unclear": None,
             "seniority_unreadable": None,
             "readings_absent": None,
+            "refresh_budget": None,
+            "refresh_candidates": None,
+            "refresh_sent": None,
+            "refresh_pending_after": None,
         }
+    armed = gate.refresh_budget > 0
     return {
         "instrumented": True,
         "judged": gate.judged,
@@ -831,6 +850,10 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "seniority_unclear": gate.seniority_unclear,
         "seniority_unreadable": gate.seniority_unreadable,
         "readings_absent": gate.readings_absent,
+        "refresh_budget": gate.refresh_budget,
+        "refresh_candidates": gate.refresh_candidates if armed else None,
+        "refresh_sent": gate.refresh_sent if armed else None,
+        "refresh_pending_after": gate.refresh_pending_after if armed else None,
     }
 
 
@@ -871,6 +894,14 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         "identity — every gate-derived hold on them has silently released"
         if gate.readings_absent
         else "every delivered lead carried a readable gate reading under the live identity",
+        "",
+        # T113. The pending count is the one to watch: staying high run over run means the budget
+        # cannot keep up with the re-keys.
+        f"standing-queue refresh: {gate.refresh_candidates} lead(s) had a stale gate reading · "
+        f"{gate.refresh_sent} sent (budget {gate.refresh_budget}) · "
+        f"{gate.refresh_pending_after} still stale after"
+        if gate.refresh_budget
+        else "standing-queue refresh not armed (`gate.refresh_budget = 0`)",
     )
 
 

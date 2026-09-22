@@ -45,7 +45,12 @@ from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.api import resolve_owner_name
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
-from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT, reconcile_queue, sync_queue
+from boardwatch.delivery.queue import (
+    DEFAULT_QUEUE_ROOT,
+    reconcile_queue,
+    standing_queue_rows,
+    sync_queue,
+)
 from boardwatch.delivery.review_gate import REVIEW_DIR
 from boardwatch.delivery.review_gate import lane as review_lane
 from boardwatch.eligibility.audit import AuditView, load_audit
@@ -74,7 +79,7 @@ from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
-from boardwatch.llm.gate_judge import run_gate_stage
+from boardwatch.llm.gate_judge import GateRefreshResult, run_gate_refresh, run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
@@ -131,7 +136,12 @@ from boardwatch.scan.coordinator import (
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
-from boardwatch.store.delivery_queries import form_question_hits, revised_since_build_ids
+from boardwatch.store.delivery_queries import (
+    QueueRow,
+    form_question_hits,
+    lane_decision,
+    revised_since_build_ids,
+)
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import (
@@ -582,6 +592,12 @@ class PipelineSummary:
     gate_seniority_unclear: int = 0
     gate_seniority_unreadable: int = 0
     gate_readings_absent: int = 0
+    # T113 — the standing-queue refresh. All-zero when `gate.refresh_budget` is 0; the funnel
+    # reads the budget beside them, so "off" and "nothing was stale" do not read alike. See
+    # `llm.gate_judge.GateRefreshResult` for what each one is measured against.
+    gate_refresh_candidates: int = 0
+    gate_refresh_sent: int = 0
+    gate_refresh_pending_after: int = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -1410,6 +1426,27 @@ def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:
     outcomes[ProjectionLeadOutcome.PROJECTED] -= 1
     if outcomes[ProjectionLeadOutcome.PROJECTED] == 0:
         del outcomes[ProjectionLeadOutcome.PROJECTED]
+
+
+def _refresh_order(rows: list[QueueRow]) -> list[QueueRow]:
+    """T113: the standing queue in the order a stranded gate reading costs most.
+
+    First the leads a judge `eligible` would move INTO the apply lane — 0-B's two requirement
+    holds, which a re-key demotes (D-547: 237). Asked of `lane_decision` itself, with the verdict
+    substituted, rather than by naming the two reasons: the release is `review_gate.classify`'s
+    decision and a list restated here would drift from it. Then the apply lane, then the rest.
+    Newest first within each. A closed lead lands in `_closed` whatever the judge says, so it is
+    never sent.
+    """
+
+    def rank(row: QueueRow) -> tuple[int, int]:
+        if lane_decision(row).lane == "":
+            return (1, -row.posting_id)
+        if lane_decision(replace(row, judge_verdict="eligible")).lane == "":
+            return (0, -row.posting_id)
+        return (2, -row.posting_id)
+
+    return sorted((row for row in rows if row.status != "closed"), key=rank)
 
 
 def _lead_lanes(
@@ -2388,6 +2425,34 @@ def run_pipeline(
             console.print(f"  ! {note}", markup=False)
             stage_errors.append(note)
             summary.errors.append(note)
+        # T113 — the standing-queue refresh. A built lead is never on the slate again, so the
+        # stage above cannot reach it; after a re-key every standing reading is stranded and 0-B's
+        # promotions fall back into review until something re-judges them (D-547). HERE, after
+        # the slate is judged (a lead the slate just judged is current and not re-sent) and
+        # before the finalize block's `_sync_queue`, which files each folder by the readings this
+        # writes. Charged to the gate stage's clock, since it is that stage's judge spending.
+        #
+        # Guarded as the queue sync is: it repairs COPIES of past deliveries, so a fault here must
+        # cost the refresh and nothing else. Unguarded, anything it raised would reach the outer
+        # handler BEFORE the tailor loop and turn one bad standing row into a fatal, empty day.
+        if settings.gate.enabled and settings.gate.refresh_budget:
+            try:
+                with engine.connect() as refresh_conn:
+                    standing = _refresh_order(standing_queue_rows(refresh_conn))
+                refresh = run_gate_refresh(engine, settings, standing, run_id=run_id)
+            except Exception as exc:  # noqa: BLE001 - the refresh must never cost the slate
+                refresh = GateRefreshResult(errors=(f"gate refresh: not run: {exc}",))
+            summary.gate_refresh_candidates = refresh.candidates
+            summary.gate_refresh_sent = refresh.sent
+            summary.gate_refresh_pending_after = refresh.pending_after
+            console.print(
+                f"gate refresh: {refresh.candidates} standing lead(s) stale, {refresh.sent} "
+                f"sent, {refresh.pending_after} still stale"
+            )
+            for note in refresh.errors:
+                console.print(f"  ! {note}", markup=False)
+                stage_errors.append(note)
+                summary.errors.append(note)
         clock.mark("gate")
 
         # T43 — the lane split moves BEFORE the tailor loop, so the render is spent on
@@ -3570,6 +3635,10 @@ def _emit_funnel(
                 seniority_unclear=summary.gate_seniority_unclear,
                 seniority_unreadable=summary.gate_seniority_unreadable,
                 readings_absent=summary.gate_readings_absent,
+                refresh_budget=settings.gate.refresh_budget,
+                refresh_candidates=summary.gate_refresh_candidates,
+                refresh_sent=summary.gate_refresh_sent,
+                refresh_pending_after=summary.gate_refresh_pending_after,
             )
             if settings.gate.enabled
             else None

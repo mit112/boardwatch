@@ -311,6 +311,19 @@ def sync_queue(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
         return SyncReport(contended=True)
 
 
+def standing_queue_rows(conn: Connection) -> list[QueueRow]:
+    """Every lead the queue holds a folder for: delivered, unapplied, not skipped or reported,
+    and not `ineligible`. `_sync_locked` files exactly these, and T113's gate refresh re-judges
+    from exactly these, so the population is defined once — why each exclusion is there is
+    `_sync_locked`'s comment."""
+    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    return [
+        row
+        for row in delivered_unapplied(conn, skipped=withheld)
+        if row.verdict != "ineligible"
+    ]
+
+
 def reconcile_queue(conn: Connection, *, root: Path) -> ReconcileReport:
     """Move every folder to the drain the database says it belongs in, in both directions.
 
@@ -428,12 +441,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # the lead the owner reported would be in the apply queue again every run while the reconcile
     # count read a healthy 1. The tell is `moved`, not `created`: nothing is ever created here, so
     # a test asserting `created == 0` passes against the broken version and pins nothing.
-    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
-    rows = [
-        row
-        for row in delivered_unapplied(conn, skipped=withheld)
-        if row.verdict != "ineligible"
-    ]
+    rows = standing_queue_rows(conn)
     # `lane_decision`, which is `classify` over the WHOLE row: the folder a lead lands in and the
     # reason `details.json` publishes for it are ONE decision here, so neither can be re-derived
     # into disagreement with the other (D-332, and the same call `delivery/api.py` makes for the
