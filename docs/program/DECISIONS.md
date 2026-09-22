@@ -31553,7 +31553,27 @@ for.
 - **Naming the two promotable reasons in the runner.** The release is `classify`'s decision, and a
   restated list would drift from it.
 
-**Tests.** Five pipeline tests in `tests/pipeline/test_gate_stage.py` §(m): the re-key heals a
-demoted 0-B promotion; budget 0 sends nothing and the demotion stands (the control); the budget
-caps what is sent; order; a failed batch leaves its lead pending. Mutation campaign with a no-op
-control: see METRICS 2026-09-22d.
+**Review.** Codex (`gpt-5.6-sol`, medium) found four things, all fixed before merge:
+1. The budget was sliced off the front of the stale list BEFORE the send boundary withholds
+   foreign bodies. A prefix of withheld leads would have taken the slots every run. The walk now
+   spends the budget on what the stage actually `sent`.
+2. The raise path reported 0 stale, which reads as an empty backlog. It now reports unmeasured
+   (`null`).
+3. The full order and the one-stage-call-per-batch rule had no test.
+4. The docs miscounted the tests.
+
+A body the gate can never send stays in `candidates`/`pending_after` as a constant floor rather
+than being hidden by a restated predicate; the live queue held none.
+
+**Tests.** Nine in `tests/pipeline/test_gate_stage.py` §(m):
+- the re-key heals a demoted 0-B promotion;
+- budget 0 sends nothing and the demotion stands (the control);
+- the budget caps what is sent;
+- promotable before apply;
+- a failed batch leaves its lead pending;
+- a raising refresh costs the refresh, never the slate, and reports unmeasured;
+- the budget is spent past a withheld body;
+- one stage call per batch;
+- the full order, with closed leads excluded.
+
+Two mutation campaigns, each with a no-op control: see METRICS 2026-09-22d.

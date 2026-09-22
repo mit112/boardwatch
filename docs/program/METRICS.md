@@ -15896,7 +15896,9 @@ Standing queue: 3 in the apply lane, 3 in review.
 | of those, NOT current under the freshness key | **66** (det. `eligible` 42, `uncertain` 24) |
 | current `ineligible` (the control) | 44 |
 
-### T113 mutation campaign (5 pipeline tests, one arm at a time, source restored between arms)
+### T113 mutation campaigns (`tests/pipeline/test_gate_stage.py` §(m), nine tests; one arm at a time, source restored between arms)
+
+Before review, over the first five tests, plus M6 for the raise-path test added after them:
 
 | arm | tests failing |
 |---|---|
@@ -15906,6 +15908,18 @@ Standing queue: 3 in the apply lane, 3 in review.
 | M3 budget ignored | budget, order |
 | M4 `pending_after` derived as `candidates − sent` | failed-batch |
 | M5 budget 0 treated as unlimited | budget-0 control |
-| M6 the refresh's `except` re-raises | the raise test (the run went fatal) |
+| M6 the refresh's `except` re-raises | raise path (the run went fatal) |
 
-Every arm fails exactly the test aimed at it; the no-op arm fails none.
+After the Codex review (`gpt-5.6-sol`, medium), over all nine:
+
+| arm | tests failing |
+|---|---|
+| N0 no-op control | none (9 pass) |
+| N1 budget sliced off the front before the send boundary | spends-budget-on-sendable |
+| N2 one stage call over the whole refresh | one-batch-per-stage-call |
+| N3 rest ordered before the apply lane | full order |
+| N4 closed leads included | full order |
+| N5 oldest first within a tier | full order |
+| N6 raise path reports 0 instead of unmeasured | raise path |
+
+Every arm fails exactly the test aimed at it, and neither no-op arm fails anything.
