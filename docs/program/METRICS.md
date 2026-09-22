@@ -259,7 +259,7 @@ reports drift without writing, and `make check` depends on it (D-109).
 | METRICS.md | 15267 | Session — 2026-09-20g · run 468 read as the expansion's SECOND reading, and T104 measured against its own cases |
 | METRICS.md | 15418 | Session — 2026-09-21 · run 469 settles the expansion, the batch merges, the drain is refused, Gap C is reviewed and imported |
 | METRICS.md | 15519 | Session — 2026-09-22b · four tickets shipped; the degree escape was abstaining bars already MET (D-540 … D-546) |
-| METRICS.md | 15631 | Session — 2026-09-22 · §5 refuted, the re-key un-hold measured, the degree gap enumerated (D-536, D-537, D-538, D-539) |
+| METRICS.md | 15632 | Session — 2026-09-22 · §5 refuted, the re-key un-hold measured, the degree gap enumerated (D-536, D-537, D-538, D-539) |
 | METRICS.md | 14273 | Session — 2026-09-14b · the whole apply lane read by the judge, the ≤1-YoE harvest, the applied-history import, and rule (a)'s standing-side drain |
 | METRICS.md | 13962 | Run 308 — 2026-09-14 04:00 tick, confirm day 9: the first tick on 0-B, 0-C, rule (b), 0-D and the retail drop, and every one of the session's five predictions held |
 | METRICS.md | 14000 | Nightly 2026-09-14 RED, decomposed and half of it FIXED — a Windows-only regression the merge gate structurally could not see |
@@ -15614,9 +15614,10 @@ of **~21**. Half B: **49 of 407,150** unmet `experience_years` rows (0.012%).
 |---|---|---:|---:|---:|
 | #407 | T149 + T154 | **10,643** (+15, all accounted: 12 corpus + 3 span-gate) | 8m52s | 3.66 |
 | #408 | T92 | **10,656** (+13, exactly the tests added) | 9m32s | 3.66 |
-| #409 | T151 | see the run log | — | 1.30 |
+| #409 | T151 + session docs | **10,660** (+4, exactly the tests added) | 9m03s | 1.30 |
 
-Coverage 95.26% on every run. 1 skipped, 4 xfailed throughout.
+Coverage 95.26% on every run. 1 skipped, 4 xfailed throughout. **Every delta is exactly
+the tests added** — 15, 13 and 4 — which is the check that a gate ran the tree it claimed to.
 
 ### Non-vacuity, per change
 
