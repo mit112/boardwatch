@@ -177,8 +177,8 @@ CORPUS_ROWS = 1095
 # and a human-reviewed row count read by ast.
 HEADING_CASES_PATH = "tests/unit/test_eligibility_heading_context.py"
 HEADING_CASES_SYMBOL = "HEADING_CASES"
-HEADING_CASES_PIN = "sha256:7454e880b150b41a459c5c2d6b57f60a6b3e21119d5d002c508f20de6dfd26d1"
-HEADING_CASES_ROWS = 15
+HEADING_CASES_PIN = "sha256:88e305c683c62e7b9bea935d2e0651ebc771f989794a1ee8404950650de827da"
+HEADING_CASES_ROWS = 17
 
 
 def readme_path(provider: str) -> str:
