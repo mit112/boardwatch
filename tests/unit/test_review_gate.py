@@ -32,8 +32,9 @@ from boardwatch.rank.seniority_gate import seniority_verdict
 #: argument is what makes that a `mypy --strict` failure instead. A TEST wants the opposite —
 #: every assertion here is a claim about ONE input, and spelling seven inert values at 84 call
 #: sites would bury the claim in noise — so the defaulting lives here, in the two wrappers below,
-#: and nowhere in `src/`. `test_the_lane_classifier_has_one_standing_call_site` is what holds that
-#: boundary; `form_question_hit` is absent because it keeps a real default in production.
+#: and nowhere in `src/`. `mypy --strict` over `src/` and the `TypeError` the `_INERT` merge below
+#: raises on a stale key are what hold that boundary (T158: no test holds it, and none needs to);
+#: `form_question_hit` is absent because it keeps a real default in production.
 _INERT: dict[str, object] = {
     "experience_unconfirmed": False,
     "eligibility_unconfirmed": False,
