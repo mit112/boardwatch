@@ -99,7 +99,12 @@ function Flags({ row }: { row: QueueRow }) {
                  rather than rendering `undefined`. */
               row.review_reason === "form_question_hard_stop"
               ? (row.form_question ?? null)
-              : null
+              : /* T92. The provider's own employment type, routed exactly as the two above are:
+                   this reason names something the JD does not state, so the chip has to be able
+                   to quote the field. */
+                row.review_reason === "provider_employment_type"
+                ? (row.provider_employment_type ?? null)
+                : null
         }
       />
       {/* WHAT THE FINAL GATE SAID, which is not what the `VerdictChip` beside this cell says.

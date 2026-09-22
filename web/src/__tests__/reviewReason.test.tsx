@@ -214,4 +214,56 @@ describe("the form-hard-stop row quotes the question the JD does not contain", (
     expect(text).toMatch(/application form/i);
     expect(text).toMatch(/job description never mentions/i);
   });
+
+  it("states what the PROVIDER wrote for a non-full-time hold, never a verdict", () => {
+    // T92. A provider-authored structured field is not the frozen JD, so this copy may never
+    // read as a decision about the candidate or assert the JD says anything.
+    const { container } = render(
+      <ReviewReasonBadge reason="provider_employment_type" showReason />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/metadata/i);
+    expect(text).toMatch(/non-full-time/i);
+    // it must NOT claim the job description states it -- that is the error the copy avoids
+    expect(text).not.toMatch(/the job description (states|requires)/i);
+  });
+});
+
+describe("the not-full-time row quotes the provider field the JD does not contain", () => {
+  // T92, and the same audit-trail argument T91's block above makes: a reader who sees "not
+  // full-time", opens the JD and finds nothing about the engagement concludes the gate misfired.
+  // Measured 2026-09-22: on 671 of the 1,090 non-FullTime open postings the engine sees no
+  // contract or internship prose at all, so "the JD says nothing" is the NORMAL case here.
+  const renderRow = (value: string | null) =>
+    render(
+      <QueueRowItem
+        row={queueRow({
+          review_reason: "provider_employment_type",
+          provider_employment_type: value,
+        })}
+        rank={1}
+        selected={false}
+        active={false}
+        collapsing={false}
+        onSelect={() => undefined}
+        onApplied={() => undefined}
+        onSkip={() => undefined}
+        onReport={() => undefined}
+      />,
+    );
+
+  it("carries the provider's own value on the badge's tooltip", () => {
+    renderRow("Contract");
+    expect(screen.getAllByText("not full-time").length).toBeGreaterThan(0);
+    // Dropping the `detailReason` routing falls back to the generic copy and fails this.
+    expect(screen.getAllByTitle("Contract").length).toBeGreaterThan(0);
+  });
+
+  it("falls back to the generic copy when the server sent no value", () => {
+    // An older viewer serving this bundle omits the field: the honest render is the reason
+    // WITHOUT a quote, never `undefined` in a tooltip and never a missing chip.
+    renderRow(null);
+    expect(screen.getAllByText("not full-time").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle(/metadata/).length).toBeGreaterThan(0);
+  });
 });

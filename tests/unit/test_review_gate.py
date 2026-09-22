@@ -1223,3 +1223,144 @@ def test_lane_projects_the_revision_hold_too() -> None:
         decision = classify(**kwargs)  # type: ignore[arg-type]
         assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
         assert (decision.reason is not None) == (decision.lane == REVIEW_DIR)
+
+
+# --- T92: the provider's structured `employmentType` holds for review and can never decide ------
+#
+# `provider_employment_type` is absent from `_INERT` for the reason `form_question_hit` is: it
+# keeps a real default in production, because `None` there is a genuine third state (not an Ashby
+# lead / provider stated nothing / stated a full-time value) rather than a dropped argument.
+
+
+def test_a_non_full_time_provider_field_holds_an_otherwise_eligible_lead() -> None:
+    """The population T92 exists for, and it is ABOVE the `eligible` short-circuit.
+
+    Measured live 2026-09-22 on the 1,807-board fleet: the field is Ashby-only and reads
+    non-full-time on 1,090 open postings; on 671 the engine sees no contract or internship prose
+    at all, and 10 of THOSE read `eligible` — so ten leads were reaching the blind-apply queue
+    against a provider field that contradicts them. Below the short-circuit this gate would be
+    inert for exactly that population, which is the trap T119's comment records.
+    """
+    assert classify(
+        verdict="eligible", **_US_SWE, provider_employment_type="Contract"
+    ) == LaneDecision(REVIEW_DIR, "provider_employment_type")
+
+
+@pytest.mark.parametrize("value", ["Contract", "Intern", "PartTime", "Temporary"])
+def test_every_non_full_time_value_the_live_fleet_carries_holds(value: str) -> None:
+    """The four values actually present, not a hand-picked one (Contract 808, Intern 216,
+    PartTime 38, Temporary 28 open postings on 2026-09-22)."""
+    assert classify(
+        verdict="eligible", **_US_SWE, provider_employment_type=value
+    ) == LaneDecision(REVIEW_DIR, "provider_employment_type")
+
+
+def test_the_provider_field_is_inert_when_it_states_nothing() -> None:
+    """`None` is the normal case: the field is written by ONE provider and is present on 23,630 of
+    260,581 open postings, so absence must cost the owner nothing."""
+    assert classify(verdict="eligible", **_US_SWE) == LaneDecision("", None)
+    assert classify(
+        verdict="eligible", **_US_SWE, provider_employment_type=None
+    ) == LaneDecision("", None)
+
+
+def test_the_provider_employment_type_hold_can_never_yield_ineligible() -> None:
+    """The ticket's load-bearing acceptance clause, and D-519 ruling 5's whole point.
+
+    A provider-authored STRUCTURED field is not the frozen JD, so it can never satisfy
+    `INELIGIBLE`'s quoted-span requirement. Asserted across every verdict the engine can produce
+    AND every value the live fleet carries: wherever this reason is the one that held the lead,
+    the lane is `_review` — never the `_ineligible` drain, never the apply queue.
+    """
+    seen = False
+    for verdict in (None, "eligible", "uncertain", "ineligible"):
+        for value in ("Contract", "Intern", "PartTime", "Temporary"):
+            decision = classify(
+                verdict=verdict, **_US_SWE, provider_employment_type=value
+            )
+            if decision.reason == "provider_employment_type":
+                seen = True
+                assert decision.lane == REVIEW_DIR
+    # Without this the loop above passes vacuously if the reason stops firing altogether.
+    assert seen, "the hold never fired, so the assertion proved nothing"
+
+
+def test_a_jd_grounded_hold_outranks_the_provider_field() -> None:
+    """This module's stated rule: reporting the weaker of two holds understates the hold.
+
+    Every reason asserted here quotes the POSTING; the provider field quotes metadata beside it,
+    so each of these must win when both hold.
+    """
+    assert (
+        classify(
+            verdict="ineligible", **_US_SWE, provider_employment_type="Contract"
+        ).reason
+        == "ineligible_verdict"
+    )
+    assert (
+        classify(
+            verdict="eligible",
+            locations=["Kaunas, Lithuania"],
+            title="Software Engineer",
+            provider_employment_type="Contract",
+        ).reason
+        == "non_us_location"
+    )
+    assert (
+        classify(
+            verdict="eligible",
+            locations=["Austin, TX"],
+            title="Registered Nurse Practitioner",
+            provider_employment_type="Contract",
+        ).reason
+        == "role_vetoed"
+    )
+    assert (
+        classify(
+            verdict="eligible",
+            **_US_SWE,
+            judge_verdict="ineligible",
+            provider_employment_type="Contract",
+        ).reason
+        == "judged_ineligible_verdict"
+    )
+    assert (
+        classify(
+            verdict="eligible",
+            **_US_SWE,
+            seniority_above_band=True,
+            provider_employment_type="Contract",
+        ).reason
+        == "seniority_above_band"
+    )
+
+
+def test_the_provider_field_outranks_revised_since_build() -> None:
+    """T119 is "what is left when nothing more specific holds": it says the document MOVED, while
+    this says what the posting is. The more specific claim is reported."""
+    assert (
+        classify(
+            verdict="eligible",
+            **_US_SWE,
+            revised_since_build=True,
+            provider_employment_type="Contract",
+        ).reason
+        == "provider_employment_type"
+    )
+    # and T119 still fires on its own, so the ordering above is not hiding it
+    assert (
+        classify(verdict="eligible", **_US_SWE, revised_since_build=True).reason
+        == "revised_since_build"
+    )
+
+
+def test_lane_and_classify_agree_about_the_provider_hold() -> None:
+    """The two wrappers cannot disagree about a lead — the whole reason `lane` is a projection."""
+    kwargs = {
+        "verdict": "eligible",
+        **_US_SWE,
+        "provider_employment_type": "Contract",
+    }
+    decision = classify(**kwargs)  # type: ignore[arg-type]
+    assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]
+    assert decision.lane == REVIEW_DIR

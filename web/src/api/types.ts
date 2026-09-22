@@ -90,7 +90,16 @@ export type ReviewReason =
    * the QUOTED question (`form_question` below): a reader sent to the JD for this reason finds
    * nothing there and concludes the gate misfired.
    */
-  | "form_question_hard_stop";
+  | "form_question_hard_stop"
+  /*
+   * The provider's own STRUCTURED `employmentType` says this is not a full-time engagement while
+   * the job description says nothing a rule can quote. Measured live 2026-09-22 on the
+   * 1,807-board fleet: the field is written by one provider only and reads non-full-time on 1,090
+   * open postings; on 671 of those the engine sees no contract or internship prose at all, and 10
+   * of those were reaching the blind-apply queue. It HOLDS and can never DECIDE — a
+   * provider-authored field is not the frozen JD, so it cannot carry `ineligible`'s quoted span.
+   */
+  | "provider_employment_type";
 
 export interface QueueRow {
   posting_id: number;
@@ -210,6 +219,13 @@ export interface QueueRow {
    * "no hard stop" and "a hard stop we cannot quote" the same value.
    */
   form_question?: string | null;
+  /**
+   * T92. The provider's `employmentType` verbatim when it states a non-full-time engagement, for
+   * the `provider_employment_type` chip's tooltip. Optional for the reason `form_question` above
+   * is: an older server omits the key and `undefined` has to read as "no value available" rather
+   * than throw. `null` on every lead the gate does not hold for this reason.
+   */
+  provider_employment_type?: string | null;
   /**
    * The date this lead is to be looked at again, `YYYY-MM-DD`, or `null` when none is pinned.
    *

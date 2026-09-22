@@ -111,6 +111,16 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: a résumé was built for this lead and the posting has been revised since. The job description has moved under the document that was tailored for it — re-read it before applying.",
   },
+  provider_employment_type: {
+    label: "not full-time",
+    // States what the PROVIDER wrote, never what the job requires. The field is structured
+    // metadata and not the frozen JD, so this may never read as a verdict — and the wording has
+    // to send the reader to the employment type itself rather than to a description that does not
+    // mention it. The generic copy is a fallback; on a real row the provider's own value arrives
+    // as `detailReason`, which is the evidence the reader acts on.
+    reason:
+      "Held for review: the employer's job-board metadata marks this as a non-full-time engagement, and the job description says nothing about it. Check the employment type before applying.",
+  },
   unevaluated: {
     label: "not evaluated",
     reason:

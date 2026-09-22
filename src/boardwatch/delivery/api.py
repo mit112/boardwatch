@@ -433,6 +433,11 @@ def _row_json(
         # not state, so a chip that could not quote the form would send the reader to a JD that
         # says nothing about it. `None` on every lead the gate does not hold.
         "form_question": row.form_question_hit,
+        # T92. The provider's own `employmentType`, routed to the badge tooltip exactly as
+        # `form_question` above is and for the identical reason: this reason names something the
+        # JD does not state, so a chip that could not quote the field would send the reader to a
+        # description that never mentions it. `None` on every lead the gate does not hold.
+        "provider_employment_type": row.provider_employment_type,
         "apply_url": row.apply_url,
         "delivered_run_id": row.delivered_run_id,
         "tex_uri": row.tex_uri,
