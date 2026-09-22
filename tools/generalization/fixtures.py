@@ -161,7 +161,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
 # @pytest.mark.parametrize further down the file, so a digest over the literal alone stays green
 # while a `CASES[0] = (...)` line appended below rewrites the oracle. Byte-stable across
 # platforms because .gitattributes pins eol=lf repo-wide for exactly this reason.
-CORPUS_PIN = "sha256:b5a758b4194c00e386c1c6b7efcb106fa570c4c67b315700d0ff6f5243405ff3"
+CORPUS_PIN = "sha256:267a6f823ac9c0beff51e7b0815997502c77f0aaf0f6ddf8d7c8e5d651b9c2f2"
 
 # A HUMAN-REVIEWED constant, and that is the whole of its value. It is counted by ast rather than
 # by bytes, but that alone would not make it a second path: an earlier version let
@@ -170,14 +170,14 @@ CORPUS_PIN = "sha256:b5a758b4194c00e386c1c6b7efcb106fa570c4c67b315700d0ff6f52434
 # it prints the measured count and stops, and a human edits it. The independence is the human,
 # not the ast. The corpus asserts this number itself at its own tail; that assert lives INSIDE
 # the file being tampered with, which is why it is restated out here.
-CORPUS_ROWS = 1095
+CORPUS_ROWS = 1096
 
 # The multi-line eligibility surface (T105). The corpus holds no newline, so heading context is
 # pinned from its own file, in the same two ways and for the same reasons: a whole-file byte pin,
 # and a human-reviewed row count read by ast.
 HEADING_CASES_PATH = "tests/unit/test_eligibility_heading_context.py"
 HEADING_CASES_SYMBOL = "HEADING_CASES"
-HEADING_CASES_PIN = "sha256:88e305c683c62e7b9bea935d2e0651ebc771f989794a1ee8404950650de827da"
+HEADING_CASES_PIN = "sha256:958d2c497acd78a5bea880755b18be76d83516d236cacb811cbf0c0e169f376e"
 HEADING_CASES_ROWS = 17
 
 

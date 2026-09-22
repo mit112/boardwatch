@@ -547,12 +547,18 @@ families:
         #     after a comma, is `our <team|firm|...>` or `we <built|offer|...>` -- `you` and
         #     `the candidate` stay requirements, as do `we are looking|seeking|hiring`;
         #   * `experience is what our team|we bring(s)`, the lookbehind pinning it to the span.
+        # The first shape stands down when the SAME sentence also states a requirement (`must`,
+        # `required`, `at least`, `candidates should`, `you will need`, ...): the suppressor is
+        # sentence-wide, so without that guard "With 25 years of experience ..., our team has
+        # built ..., and candidates must have 5 years of experience." dropped the genuine 5-year
+        # bar along with the boast (review, 2026-09-22). Standing down keeps both rows, so the
+        # verdict is right and one row is wrong, which is the side this family fails toward.
         # SENTENCE-scoped (these patterns' unit is the sentence), so company prose in the next
         # sentence cannot reach a real bar (the document-scope incident at the top of this list). Known
         # cost: a second bar inside the SAME "With N years ..., we ..." sentence also stands
         # down; none was seen in the measured sample.
         suppressed_by_sentence:
-          - &company_tenure_after_bar "^\\W*with\\s+(?:over\\s+|more\\s+than\\s+|nearly\\s+|almost\\s+|about\\s+|close\\s+to\\s+|some\\s+)?(?=\\d{1,2}\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)[^;:]{0,160}?,\\s*(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)\\s+(?:is|are|has|have|brings?)(?!\\s+(?:looking|seeking|hiring|searching)\\b)|we\\s+(?:have\\s+built|(?:have\\s+)?(?:earned|established|grown|delivered|served|helped|developed)|['’]ve\\s+built|offer|bring|deliver|provide|pride)\\b))|(?<=\\bexperience)\\s+is\\s+what\\s+(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)|we)\\s+(?:brings?|offers?|delivers?|provides?)\\b"
+          - &company_tenure_after_bar "^(?![^\\n]*\\b(?:must|required?|requirements?|minimum|at\\s+least|(?:candidates?|applicants?)\\s+(?:should|must|will|need)|you\\s+(?:must|need|will\\s+need|should\\s+have))\\b)\\W*with\\s+(?:over\\s+|more\\s+than\\s+|nearly\\s+|almost\\s+|about\\s+|close\\s+to\\s+|some\\s+)?(?=\\d{1,2}\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)[^;:]{0,160}?,\\s*(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)\\s+(?:is|are|has|have|brings?)(?!\\s+(?:looking|seeking|hiring|searching)\\b)|we\\s+(?:have\\s+built|(?:have\\s+)?(?:earned|established|grown|delivered|served|helped|developed)|['’]ve\\s+built|offer|bring|deliver|provide|pride)\\b))|(?<=\\bexperience)\\s+is\\s+what\\s+(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)|we)\\s+(?:brings?|offers?|delivers?|provides?)\\b"
         # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
         # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
         # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."
