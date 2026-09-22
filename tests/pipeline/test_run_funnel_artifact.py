@@ -133,16 +133,15 @@ def test_a_real_run_carries_b8s_volume_cohort_and_offers_it_to_the_alert(
     }
 
 
-def test_a_below_bar_volume_reading_reaches_the_run_row_but_not_the_escalation_channel(
+def test_a_below_bar_volume_reading_reaches_the_run_row_and_the_escalation_channel(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """T110's volume diagnostic, and the one place it differs from every other soft detector.
+    """T110's volume diagnostic, escalated like every other soft detector (D-529).
 
-    This run delivers a single lead, which is under B8's bar of 20, so the reading fires. It is
-    a GATE READING and not a fault — nothing is broken — so it must not reach `summary.errors`,
-    which is what `escalate_alerts` pushes: a near-daily "19 against 20" on that channel is how
-    it would train its reader to ignore it. It must still be durable on the run row, because a
-    reading that exists only in a console line is a reading nobody has on return.
+    This run delivers a single lead, which is under B8's bar of 20, so the reading fires. It must
+    reach `summary.errors` and the payload `escalate_alerts` pushes, and it must be durable on the
+    run row. It was once held off the channel on a pre-expansion firing rate of 9 in 14; on the
+    1,807-board fleet that rate read 0 of 4, so the noise argument expired.
     """
     _ready(env)
     captured: list[tuple[str, ...]] = []
@@ -159,8 +158,8 @@ def test_a_below_bar_volume_reading_reaches_the_run_row_but_not_the_escalation_c
             select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
         ).scalar_one()
     assert any("under B8's bar" in str(err) for err in errors or []), errors
-    assert not any("under B8's bar" in err for err in summary.errors)
-    assert captured and not any("under B8's bar" in a for a in captured[-1])
+    assert any("under B8's bar" in err for err in summary.errors), summary.errors
+    assert captured and any("under B8's bar" in a for a in captured[-1]), captured
 
 
 def test_a_real_run_reconciles(env: Path, tmp_path: Path) -> None:

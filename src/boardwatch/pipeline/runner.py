@@ -3163,19 +3163,18 @@ def run_pipeline(
         # so the alert and the artifact can never disagree; abstains when the funnel was not
         # collected, and when the run placed nothing (the sibling's story).
         #
-        # **The ONE detector here that is deliberately NOT added to `summary.errors`,** and the
-        # asymmetry is the point. Everything else in this block reports a FAULT: something is
-        # broken, or an instrument has gone blind. This reports a program-gate READING — the run
-        # succeeded, nothing is misclassifying, the day was simply thin — and B8's volume half
-        # was under its bar on 9 of the 14 recorded acceptance days. `summary.errors` is what
-        # `escalate_alerts` below pushes, and a near-daily "19 against 20" on that channel is
-        # precisely how it would train its reader to ignore it, which is the reason the slice
-        # exists at all. It is printed and made durable on the run row instead, and the record
-        # a gate is actually read from is the funnel's own `apply_lane` section.
+        # It reports a program-gate READING, not a fault — the run succeeded, the day was simply
+        # thin — and it goes on `summary.errors`, which `escalate_alerts` below pushes, like every
+        # other soft detector here (D-529). It was once held off that channel on the argument that
+        # a near-daily "19 against 20" trains its reader to ignore it; that rested on 9 of 14
+        # PRE-expansion confirm days under the bar, and on the 1,807-board fleet it read 0 of the
+        # first 4. A frequency argument for silence expires with the population it was measured
+        # on, so re-read the firing rate before re-using it.
         try:
             volume_alert = check_apply_lane_volume(summary.apply_lane)
             if volume_alert is not None:
                 console.print(f"  ! {volume_alert}", markup=False)
+                summary.errors.append(volume_alert)
                 append_run_error(engine, run_id, volume_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             # The FAILURE is an ordinary soft alert and is escalatable like every other one: a
@@ -3320,8 +3319,7 @@ def run_pipeline(
         # still fires and is still recorded, but is invisible in the one artifact an unattended
         # owner reads.
         #
-        # It is a FAULT, not a reading, which is why it goes on `summary.errors` and escalates
-        # where D-529 deliberately kept B8's volume number off it. The count is taken over the
+        # It is a FAULT, so it goes on `summary.errors` and escalates. The count is taken over the
         # run's OWN delivered slate immediately after the gate stage judged at `gate.depth`, so on
         # a healthy run it is 0 and this is silent. A non-zero value means stored gate rows are
         # unreadable under the live identity — and per D-537 that does not merely fail to ADD a

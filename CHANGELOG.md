@@ -633,6 +633,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **B8's volume reading now escalates like every other soft alert (2026-09-23, D-529).** A run
+  whose apply lane lands under B8's bar of 20 now puts that reading on `summary.errors`, so it
+  reaches the morning digest and the escalation channel as well as the run row. It was held off
+  the channel because a near-daily "19 against 20" would train its reader to ignore it, an
+  argument that rested on 9 of 14 confirm days under the bar, all of them on the pre-expansion
+  fleet. On the 1,807-board fleet the first readings were 25, 22, 26 and 20, none of them under
+  the bar.
+
 - **`reap_stale_runs` is pinned against D-020's "writes nothing at all" (2026-09-20, T136).** The
   function always issues its atomic UPDATE, the staleness predicate living inside the statement, so
   the claim can only mean "mutated no row" — and nothing pinned it. Measured while sizing the
