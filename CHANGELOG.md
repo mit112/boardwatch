@@ -8,6 +8,33 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A provider's own `employmentType` holds a lead for review (2026-09-22, T92).** The Ashby job
+  board publishes a structured `employmentType` per posting, and ten open leads were reaching the
+  blind-apply queue marked `Contract`, `Intern` or `PartTime` by the employer itself while their
+  job descriptions said nothing a contract or internship rule could quote. `_review` now holds
+  them, carrying the provider's own value as the reason so the chip can quote the field rather
+  than sending the reader to a description that never mentions it.
+
+  **It HOLDS and can never DECIDE.** A provider-authored structured field is not the frozen JD, so
+  it cannot satisfy `INELIGIBLE`'s quoted-span requirement — the hold returns the review lane for
+  every verdict, and a test asserts that across each verdict and each value the live fleet
+  carries. It also sits BELOW every JD-grounded hold, because reporting the weaker of two holds
+  understates the hold, and ABOVE the `eligible` short-circuit, which is the half of the placement
+  that makes it reach anything: below the short-circuit it would be inert for exactly the
+  population that reaches the apply queue.
+
+  Read from `raw_json` rather than a new `postings` column, deliberately. `content_hash` covers the
+  body alone, so a provider flipping `employmentType` mints no new posting version while the
+  evaluation identity keys on `{posting_version_id, profile_hash, rules_hash}` — a column would
+  create a stale-verdict class the identity could not see. Neither `rules_hash` nor
+  `engine_version` moves.
+
+  **Reach re-measured on the current 1,807-board fleet**, because the ticket's figures predated the
+  652 → 1,807 expansion: the field is Ashby-only and reads non-full-time on **1,090** open postings
+  (Contract 808, Intern 216, PartTime 38, Temporary 28). On **671** the engine sees no contract or
+  internship prose at all, and **10** of those read `eligible`. The other 661 are already held by a
+  stronger reason, which is why the hold sits where it does rather than higher.
+
 - **A queue repair is counted apart from an ordinary update (2026-09-20, T120).** T116 made
   `sync_queue` verify the destination before reporting it unchanged, and rewrite it when the bytes
   on disk had diverged from the hash the store recorded — but that rewrite was counted as

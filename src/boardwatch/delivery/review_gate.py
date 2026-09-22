@@ -150,6 +150,7 @@ ReviewReason = Literal[
     "seniority_above_band",
     "seniority_judged_above_band",
     "judged_ineligible_verdict",
+    "provider_employment_type",
     "revised_since_build",
 ]
 
@@ -187,6 +188,7 @@ def classify(
     judge_seniority_above_band: bool,
     revised_since_build: bool,
     form_question_hit: str | None = None,
+    provider_employment_type: str | None = None,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the reasons held the lead.
 
@@ -199,7 +201,11 @@ def classify(
     classified one way for the run and another for the queue, with nothing failing. A caller that
     drops one now fails ``mypy --strict`` instead. ``form_question_hit`` keeps its default because
     ``None`` there is a real third state (not a Greenhouse lead / form not fetched / fetched and
-    nothing matched), not an absent input.
+    nothing matched), not an absent input. ``provider_employment_type`` (T92) keeps its default on
+    the SAME test and not for convenience: ``None`` there means the lead is not an Ashby one, or
+    the provider stated no ``employmentType``, or it stated a full-time one. Measured 2026-09-22
+    the field is present on 23,630 of 260,581 open postings and on a single provider, so absence
+    is the normal case rather than a dropped argument.
 
     ``judge_verdict`` is the gate's verdict VERBATIM — ``eligible``, ``ineligible``, ``uncertain``
     or ``None`` for no current gate row — replacing the ``judge_eligible`` boolean every call site
@@ -373,6 +379,34 @@ def classify(
     # It writes NOTHING: no ledger write, no drain, no reopen, no confirm-clock restart. The
     # `built` row keeps governing, which is what makes this a targeted changed-input review path
     # rather than a blanket re-open of every built job.
+    # T92, and it is the LAST hold that describes the posting as it reads today. The provider's
+    # own structured `employmentType` says this is not a full-time role, and the JD body says
+    # nothing a rule can quote.
+    #
+    # It HOLDS and can never DECIDE, which is the whole of D-519 ruling 5 and Mit's T92 ruling:
+    # a provider-authored structured field is NOT the frozen JD, so `INELIGIBLE`'s "quoted span
+    # from the frozen JD" keeps its literal reading and this may never yield a verdict. Same
+    # shape as `form_question_hard_stop` above, which quotes a form question for the same reason.
+    #
+    # BELOW every JD-grounded hold, because this module's rule is that reporting the weaker of two
+    # holds understates the hold, and provider metadata is the weakest reading here: a current
+    # `ineligible`, a vetoed title or a judge rejection all quote the posting itself. ABOVE T119
+    # because a revision says the document moved, not what it says. And ABOVE the `eligible`
+    # short-circuit, which is the half of the placement that makes the branch reach anything --
+    # below it the gate would be inert for exactly the population that reaches the blind-apply
+    # queue, the same trap T119's comment records.
+    #
+    # **Measured live 2026-09-22, read-only, on the 1,807-board fleet:** the field is Ashby-only
+    # and non-FullTime on 1,090 open postings (Contract 808, Intern 216, PartTime 38, Temporary
+    # 28). On 671 of those the engine sees NO contract or internship prose at all, and just 10 of
+    # THOSE currently read `eligible` -- so ten leads ride into the blind-apply queue against a
+    # provider field that contradicts them. The other 661 are already held by a stronger reason,
+    # which is why this sits where it does rather than higher.
+    #
+    # `None` covers "not an Ashby lead", "provider stated nothing" and "stated FullTime" alike:
+    # the caller normalises, so only a genuine non-full-time value can move anything.
+    if provider_employment_type is not None:
+        return LaneDecision(REVIEW_DIR, "provider_employment_type")
     if revised_since_build:
         return LaneDecision(REVIEW_DIR, "revised_since_build")
     # R1. `eligible` used to short-circuit ABOVE the two gates above, so an eligible posting was
@@ -459,6 +493,7 @@ def lane(
     judge_seniority_above_band: bool,
     revised_since_build: bool,
     form_question_hit: str | None = None,
+    provider_employment_type: str | None = None,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -480,4 +515,5 @@ def lane(
         judge_seniority_above_band=judge_seniority_above_band,
         revised_since_build=revised_since_build,
         form_question_hit=form_question_hit,
+        provider_employment_type=provider_employment_type,
     ).lane

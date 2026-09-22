@@ -181,6 +181,19 @@ class QueueRow:
     #: `delivery/form_questions.sweep_form_questions`, run once per run, and this module never
     #: writes.
     form_question_hit: str | None = None
+    #: T92. The provider's own structured `employmentType` for this posting when it states a
+    #: NON-full-time engagement, else `None`.
+    #:
+    #: `None` is three things at once and they are deliberately indistinguishable, exactly as
+    #: `form_question_hit` above: the lead is not on Ashby (measured 2026-09-22, no other provider
+    #: writes the field), the provider stated nothing, or it stated a full-time value. Only a
+    #: non-full-time value can move a lead, so a provider that says nothing costs the owner
+    #: nothing.
+    #:
+    #: It HOLDS for a human read and can never carry a verdict: a provider-authored structured
+    #: field is not the frozen JD (D-519 ruling 5), so it cannot satisfy `INELIGIBLE`'s
+    #: quoted-span requirement.
+    provider_employment_type: str | None = None
     #: T109. Whether this posting's TITLE levels above the operator's `target_seniority_band`,
     #: from `rank.title_band.TitleBandReader` — never from the JD body, which D-477 refused a
     #: deterministic family for.
@@ -331,6 +344,15 @@ def _delivered_select() -> Select[Any]:
             postings.c.url,
             companies.c.name.label("company"),
             companies.c.provider,
+            # T92. Read out of `raw_json` rather than a `postings` column, deliberately.
+            # `posting_versions` carries only `body_text` + `content_hash` and that hash covers
+            # the BODY, so a provider flipping `employmentType` mints no new posting version
+            # while `build_identity` keys on `{posting_version_id, profile_hash, rules_hash}` --
+            # a column would therefore create a stale-verdict class the identity cannot see.
+            # Selected here, in the one shared select, for the reason `closed_at` above is.
+            func.json_extract(postings.c.raw_json, "$.employmentType").label(
+                "provider_employment_type"
+            ),
             # T109. `resolve_schemes` keys its per-company level schemes on (provider, slug), so
             # the title band is read against the company's OWN ladder where it has one. Selected
             # here rather than in a second query for the reason `closed_at` above is: one join.
@@ -463,6 +485,27 @@ def _supersedes(row: Row[Any], incumbent: Row[Any]) -> bool:
     )
 
 
+#: The one `employmentType` value that is not a hold. A provider vocabulary, so it lives beside
+#: the reader that normalises it rather than in `review_gate`, which stays free of provider terms.
+_FULL_TIME_EMPLOYMENT_TYPE = "FullTime"
+
+
+def _provider_employment_type(value: object) -> str | None:
+    """The provider's `employmentType` when it states a NON-full-time engagement, else `None`.
+
+    Normalised HERE so `review_gate.classify` carries no provider vocabulary and so the reason it
+    publishes can quote the value the provider actually wrote. `json_extract` yields NULL both
+    when the key is absent and when the provider stored an explicit null, and both mean the same
+    thing to a reader: nothing was stated.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == _FULL_TIME_EMPLOYMENT_TYPE:
+        return None
+    return text
+
+
 def _queue_row(
     row: Row[Any],
     *,
@@ -501,6 +544,7 @@ def _queue_row(
         judge_verdict=judge_verdict,
         judge_seniority_fit=judge_seniority_fit,
         form_question_hit=form_question_hit,
+        provider_employment_type=_provider_employment_type(row.provider_employment_type),
         # `None` means the caller resolved no reader and the gate is therefore inert for this
         # row, which is what a fixture built before T109 gets. The live read paths always pass
         # one; `title_band_reader` itself is what makes an unset target band inert.
@@ -557,6 +601,7 @@ def lane_decision(row: QueueRow) -> LaneDecision:
         judge_seniority_above_band=row.judge_seniority_fit == "no",
         revised_since_build=row.revised_since_build,
         form_question_hit=row.form_question_hit,
+        provider_employment_type=row.provider_employment_type,
     )
 
 

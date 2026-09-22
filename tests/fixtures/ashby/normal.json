@@ -304,6 +304,54 @@
           }
         ]
       }
+    },
+    {
+      "id": "ashby-0007",
+      "title": "Software Engineer, Platform",
+      "department": "Engineering",
+      "team": "Platform",
+      "location": "San Francisco, CA",
+      "secondaryLocations": [],
+      "publishedAt": "2026-01-15T09:00:00.000+00:00",
+      "isRemote": false,
+      "employmentType": "Contract",
+      "isListed": true,
+      "jobUrl": "https://jobs.ashbyhq.com/acme/ashby-0007",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/ashby-0007/application",
+      "descriptionHtml": "<p>Build and operate the platform that serves our product. You will work across services, own delivery end to end, and partner with product on roadmap.</p>",
+      "descriptionPlain": "Build and operate the platform that serves our product. You will work across services, own delivery end to end, and partner with product on roadmap.",
+      "compensation": {
+        "compensationTierSummary": "Compensation",
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [
+          {
+            "id": "t-1",
+            "tierSummary": "Compensation",
+            "title": null,
+            "additionalInformation": null,
+            "components": [
+              {
+                "id": "c-sal",
+                "summary": "Salary range",
+                "compensationType": "Salary",
+                "interval": "1 YEAR",
+                "currencyCode": "USD",
+                "minValue": 180000,
+                "maxValue": 220000
+              }
+            ]
+          }
+        ],
+        "summaryComponents": [
+          {
+            "compensationType": "Salary",
+            "interval": "1 YEAR",
+            "currencyCode": "USD",
+            "minValue": 180000,
+            "maxValue": 220000
+          }
+        ]
+      }
     }
   ]
 }

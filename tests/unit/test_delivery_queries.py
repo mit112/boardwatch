@@ -1333,3 +1333,46 @@ def test_the_detail_pane_reports_the_revision_hold_the_list_reports(engine: Engi
     assert delivery_queries.lane_decision(detail.row) == LaneDecision(
         REVIEW_DIR, "revised_since_build"
     )
+
+
+# --- T92: normalising the provider's `employmentType` -------------------------------------------
+
+
+def test_the_provider_employment_type_normaliser_folds_every_non_hold_to_none() -> None:
+    """`None` has to mean all three non-holds, because `review_gate` only checks `is not None`.
+
+    `json_extract` yields NULL both when the key is absent and when the provider stored an
+    explicit null, and a full-time value is a stated non-hold — a reader cannot act on any of the
+    three, so collapsing them here is what keeps provider vocabulary out of the classifier.
+    """
+    from boardwatch.store.delivery_queries import _provider_employment_type
+
+    assert _provider_employment_type(None) is None
+    assert _provider_employment_type("FullTime") is None
+    assert _provider_employment_type("") is None
+    assert _provider_employment_type("   ") is None
+
+
+def test_the_provider_employment_type_normaliser_passes_a_hold_through_verbatim() -> None:
+    """VERBATIM, because the chip quotes it: the reader acts on the provider's own word.
+
+    The four values are the ones the live fleet actually carries (measured 2026-09-22: Contract
+    808, Intern 216, PartTime 38, Temporary 28 open postings), not a hand-picked sample.
+    """
+    from boardwatch.store.delivery_queries import _provider_employment_type
+
+    for value in ("Contract", "Intern", "PartTime", "Temporary"):
+        assert _provider_employment_type(value) == value
+    # surrounding whitespace is not a different engagement
+    assert _provider_employment_type("  Contract  ") == "Contract"
+
+
+def test_the_full_time_sentinel_is_the_value_the_live_fleet_writes() -> None:
+    """Pins the sentinel against the provider's spelling rather than a paraphrase of it.
+
+    22,540 of the 23,630 open postings carrying the field state exactly this, so a typo here
+    would turn the whole full-time corpus into a review hold.
+    """
+    from boardwatch.store.delivery_queries import _FULL_TIME_EMPLOYMENT_TYPE
+
+    assert _FULL_TIME_EMPLOYMENT_TYPE == "FullTime"
