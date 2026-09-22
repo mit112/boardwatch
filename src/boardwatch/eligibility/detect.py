@@ -211,16 +211,29 @@ def qualifications_span(body_text: str) -> list[str]:
     return span
 
 
-def _on_heading_line(text: str, offset: int) -> tuple[bool, int]:
-    """Whether the line holding `offset` reads as a heading, and where that line starts.
+def _on_heading_line(text: str, offset: int, unit: str) -> tuple[bool, int]:
+    """Whether the unit at `offset` is a heading, and where its line starts.
 
     A line that is only `OR` passes `_looks_like_header` as one capitalised word, and read as
     a heading it would govern the arm after it and split the alternative in two.
+
+    A unit that OPENS its line and reads as a heading on its own is one too when an inline
+    bullet follows it (`Requirements: • 8 years of experience.`). The whole line does not read
+    as a heading, but `_SENTENCE_SPLIT` has already cut the list off it, and missing it would
+    leave an earlier `Nice to have:` governing a genuine bar.
     """
     start = text.rfind("\n", 0, offset) + 1
     end = text.find("\n", offset)
     line = text[start : len(text) if end < 0 else end]
-    return _looks_like_header(line) and not _or_only(line), start
+    if _looks_like_header(line) and not _or_only(line):
+        return True, start
+    opens = not text[start:offset].strip() and bool(
+        _INLINE_BULLET_AFTER.match(text, offset + len(unit))
+    )
+    return opens and _looks_like_header(unit) and not _or_only(unit), start
+
+
+_INLINE_BULLET_AFTER = re.compile(r"[ \t]*[•‣●\-\*]\s")
 
 
 def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | None]:
@@ -242,7 +255,7 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
     governed = listed = False
     prev_end = 0
     for index, (offset, unit) in enumerate(units):
-        heading, line = _on_heading_line(text, offset)
+        heading, line = _on_heading_line(text, offset, unit)
         if heading:
             if line != current_line:
                 current, current_line = index, line
@@ -316,7 +329,7 @@ def alternative_groups(
             continue
         if _or_only(units[after][1]) or governing[before] != governing[after]:
             continue
-        if any(_on_heading_line(text, units[i][0])[0] for i in (before, after)):
+        if any(_on_heading_line(text, *units[i])[0] for i in (before, after)):
             continue
         group = groups[before] or [before]
         group.append(after)

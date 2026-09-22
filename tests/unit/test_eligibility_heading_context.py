@@ -80,12 +80,15 @@ HEADING_CASES: list[tuple] = [
     ("h15:an unmarked OR line under a heading joins its bullets rather than ending the list", "Requirements:\n- A master's degree.\nOR\n- 5 years of experience.", P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
     ('h16:261677 as posted, one line of inline bullets, abstains on every rung and never rejects', LADDER_261677_INLINE, P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown'], ['experience_years:total_years_minimum', 'required', 'unknown']]),
     ("h17:CONTROL inline bullets with no OR are separate bars, so the years bar rejects", "Requirements: • 5+ years of experience • A bachelor's degree", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h18:BOUND a heading that opens an inline-bulleted line ends the earlier heading, so its bar rejects', 'Nice to have:\nRequirements: • 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h19:a hedge heading that opens an inline-bulleted line governs the bullet after it', 'Nice to have: • 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
 INLINE_TWINS: list[tuple[str, str]] = [
     ("h02", "A master's degree or 5 years of experience."),
     ("h15", "A master's degree or 5 years of experience."),
+    ("h19", "Nice to have: 5 years of experience."),
     ("h16", "High School Diploma (or equivalent) AND 4+ years experience* or Associate’s Degree AND 2+ years experience* or Bachelor’s Degree *Relevant sales, clinical, or related experience in medical devices, medtech, healthcare, or life sciences."),
     ("h03", "HS Diploma (or equivalent) AND 4+ years of experience or Associate's degree AND 2+ years of experience or Bachelor's degree"),
     ("h08", _corpus("m0163")[1]),
@@ -94,7 +97,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "64c5be5b63c1e30982a2bac99c7640d0a82c497a243722e9ab16432a78a3978e"
+SPLIT_UNITS_DIGEST = "1c7077e023ea11e350f74f30b5ce69a42ee75a6d8a8b5583ca9cbc0075ae1221"
 
 
 @pytest.fixture(scope="module")
@@ -161,4 +164,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 17
+    assert len(HEADING_CASES) == 19
