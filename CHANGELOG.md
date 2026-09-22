@@ -192,6 +192,38 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A degree waiver the escape could not see deleted the job (2026-09-22, T149).** The
+  `degree_equivalence` escape recognised four phrasings — `or equivalent`, `equivalent
+  experience/work`, `in lieu of`, `may be substituted` — and an article was enough to defeat it, so
+  *an equivalent combination of education and experience* read as no waiver at all and the posting
+  resolved `ineligible`: the job was deleted on a requirement the posting had already said it would
+  waive. The escape now recognises ten arms, measured over the live corpus rather than hand-picked.
+  It is a strict superset: the previous four alternatives are a literal prefix of the new pattern,
+  so nothing the old escape reached can stop being reached.
+
+  The arms are constrained where the naive widening produces false positives. `commensurate` is
+  noun-adjacent, so salary boilerplate (*compensation is commensurate **with** experience*) does not
+  waive a degree bar. `equivalency` requires an education context, so an EDA posting's *logic
+  equivalence checking* does not. The article-blocked general form is noun-constrained, so *an
+  equivalent cloud stack* and *an equivalent CAD tool* do not. **`or foreign equivalent` stays
+  deliberately excluded** — a foreign-equivalent degree is still a degree — and is now pinned by a
+  control rather than missed by luck. The high-school/GED arm ships even though it is inert for a
+  profile that already holds a degree: the mechanism is generic and the profile is the only
+  user-specific layer, and a corpus row pins it firing against a no-degree profile.
+
+  One consequence is recorded rather than fixed here, because it is a pre-existing interaction the
+  widening makes more reachable: when a posting states two thresholds for the same requirement and
+  one is `met` while the other is `unmet`, the cluster abstains (`engine.py` stage 1b) rather than
+  letting the harsher threshold win. An escape landing on the **permissive** half removes it from
+  that cluster before stage 1b runs, and the strict half then becomes decisive — turning
+  `uncertain` into `ineligible`, which is the job-deleting direction. This is the hazard class
+  D-531 flagged as unmeasured; it is now measured and pinned by a corpus row.
+
+  Ten corpus rows added (m1065-m1074) — five arms, three controls that must never move, the known
+  conjunctive false positive, and the stage-1b case. Seven of the ten fail against the reverted
+  regex; the three controls pass in both arms, which is what a control has to do. `rules_hash`
+  moves and `engine_version` does not.
+
 - **A promotion's `CURRENT` swap denied the lock-free reader on Windows (2026-09-21).** The
   scheduled build went red on one Windows-only failure — `CURRENT is unreadable: Permission
   denied` — that was not one of T128's three and had passed on the two prior nightlies and both
