@@ -326,6 +326,34 @@ class TestStructuralCountryCode:
     def test_the_us_alpha_3_in_the_same_shape_is_us(self, loc: str) -> None:
         assert _c(loc) == "us"
 
+    @pytest.mark.parametrize(
+        "loc", ["Dublin, IRL", "Iasi, ROU", "San Francisco,CRI", "Kirkland, QC, CAN"]
+    )
+    def test_a_trailing_comma_country_code_is_non_us(self, loc: str) -> None:
+        # The code beats a US city token: "San Francisco" and "Kirkland" are both curated US
+        # cities, and these are Costa Rica and Quebec.
+        assert _c(loc) == "non_us"
+
+    @pytest.mark.parametrize(
+        ("loc", "expected"),
+        [
+            ("Dublin, OH", "us"),
+            ("Dublin, CA", "us"),
+            ("Austin, TX, USA", "us"),
+            # A US territory is a policy question, not this code table's: it stays fail-open.
+            ("San Juan, PRI", "unknown"),
+            # Uppercase as written, or the English words "Can"/"Per"/"Ind" would read as codes.
+            ("Remote, Can", "unknown"),
+            ("Remote, can", "unknown"),
+            ("Dublin", "unknown"),
+        ],
+    )
+    def test_the_trailing_code_leaves_its_neighbours_alone(self, loc: str, expected: str) -> None:
+        assert _c(loc) == expected
+
+    def test_a_us_segment_still_keeps_a_list_with_a_coded_foreign_one(self) -> None:
+        assert classify_location(["Dublin, IRL", "Austin, TX"]) == "us"
+
     @pytest.mark.parametrize("loc", ["IN - Indianapolis", "CA - San Francisco", "OR - Portland"])
     def test_a_two_letter_prefix_is_not_read_as_a_country(self, loc: str) -> None:
         # Deliberately unread: "IN"/"CA"/"OR" are Indiana/California/Oregon as often as

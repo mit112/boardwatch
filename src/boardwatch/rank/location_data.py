@@ -34,6 +34,11 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
+# 6: NON_US_ISO3 is now also read as a trailing comma component ("Dublin, IRL"), and fji / png
+# added. 777 open postings whose every segment ended in a non-US alpha-3 code read `unknown` and
+# failed open (CAN 220, IRL 130, KOR 87, JPN 80 ...), three of them in the apply lane. The code
+# beats a US city token, so "San Francisco,CRI" (Costa Rica) and "Kirkland, QC, CAN" now read
+# non-US. The US territories stay out of the set, and so stay fail-open.
 # 5: hengelo added. An audit of the post-run apply lane found 4 genuinely foreign postings in
 # 203, and Hengelo was the ONLY one a token can fix: the other three are Paris and Dublin, both
 # excluded BY NAME above and deliberately left costing us those postings. Measured the way this
@@ -49,7 +54,7 @@ from __future__ import annotations
 # 3: US_STATE_NAME_TO_ABBREV added and the two state sets derived from it. The classifier's
 # own tokens are unchanged — the map exists so `core.normalize.canonical_location` can fold
 # "Austin, Texas" and "Austin, TX" to one identity component.
-LOCATION_DATA_VERSION = 5
+LOCATION_DATA_VERSION = 6
 
 # The one source of truth for US states: both sets below are DERIVED from it, so adding a
 # state is one edit, not three that can disagree. Values are USPS abbreviations, which is
@@ -201,6 +206,10 @@ NON_US_REGIONS = frozenset(
 # suffix ("Remote (IND)"). Only the ALPHA-3 form is read: a 2-letter code collides with 51 US
 # state abbreviations ("IN" is Indiana as often as India, "DE" Delaware as often as Germany)
 # and with department and compass prefixes ("IT -", "SE -"). "usa" is deliberately absent.
+# So are the US territories "pri", "gum", "vir", "asm", "mnp" and "umi": they stay `unknown`,
+# fail-open, because whether a territory counts as the US is a policy question, not this table's.
+# The classifier also reads the code as a trailing comma component ("Dublin, IRL"), matched
+# UPPERCASE as written, so "Remote, Can" never reads as Canada.
 NON_US_ISO3 = frozenset(
     {
         "afg", "alb", "and", "are", "arg", "arm", "aus", "aut", "aze", "bel", "bgd", "bgr",
@@ -212,6 +221,8 @@ NON_US_ISO3 = frozenset(
         "nld", "nor", "npl", "nzl", "pak", "pan", "per", "phl", "pol", "prt", "pry", "qat",
         "rou", "rus", "rwa", "sau", "sgp", "slv", "srb", "svk", "svn", "swe", "tha", "tun",
         "tur", "twn", "tza", "uga", "ukr", "ury", "uzb", "ven", "vnm", "zaf",
+        # Fiji and Papua New Guinea: seen as a trailing ", FJI" / ", PNG" in the open pool.
+        "fji", "png",
     }
 )
 
