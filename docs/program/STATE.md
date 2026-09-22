@@ -21,7 +21,7 @@
 
 ## Current standing
 
-### 2026-09-22d — **T159 READ: THE SONNET-ERA APPLY LANE IS 5.4% UNAPPLYABLE, SO B8's PRECISION HALF IS MET ON IT (D-550). T113 SHIPS AS A BOUNDED STANDING-QUEUE REFRESH, OFF UNTIL THE OWNER ARMS IT (D-551). T127 AND T158 SHIP. RUN 471 HAD NOT HAPPENED — IT IS STILL THE NEXT READING.**
+### 2026-09-22d — **T159 READ: THE SONNET-ERA APPLY LANE IS 5.4% UNAPPLYABLE, SO B8's PRECISION HALF IS MET ON IT (D-550). T113 SHIPS AS A BOUNDED STANDING-QUEUE REFRESH, ARMED LIVE AT 130/RUN (D-551, D-552). T127 AND T158 SHIP. RUN 471 HAD NOT HAPPENED — IT IS STILL THE NEXT READING.**
 
 **The session ran on the afternoon of 2026-09-22, BEFORE the 04:00 CDT tick.** Run 471, D-529's
 n ≥ 5 revisit and B8's day 1 are all still owed, exactly as the 2026-09-22c block below states
@@ -40,18 +40,20 @@ The misses name two small tickets:
 
 **T113 (D-551).** `[gate] refresh_budget` re-judges up to that many stale standing-queue leads
 per run, through `run_gate_stage` itself, one batch per commit, promotable holds first. The
-funnel's `gate` block reports `refresh_*`. **Default 0, and the live config is NOT armed:**
-arming spends seat every run, so it is the owner's call. The recommendation is 130/run: ~5–7% of
-the seat per run while a backlog exists, a full re-key drained in ~7 runs, ~0 in steady state.
-**Until it is armed, the eligibility batch still strands the queue.** The original T113 half is
+funnel's `gate` block reports `refresh_*`. The shipped default is 0 (off). **The live config is
+ARMED at 130/run on the owner's ruling (D-552).** Read back through `Settings`, not from the file.
+That costs ~5–7% of the seat per run while a backlog exists, drains a full re-key in ~7 runs, and
+costs ~0 in steady state. The standing queue was 0 of 833 stale when it was armed, so run 471
+should read `refresh_candidates = 0`. The original T113 half is
 split out as **T113b**: 66 stale negatives that `top_cmd` hides, which the batch's `rules_hash`
 move frees anyway.
 
 **NEXT WORK, IN ORDER** (`TICKETS-2026-09-22c.md`, with its 2026-09-22d status section):
 0. **Read run 471** as the 2026-09-22c block below specifies, then **raise D-529 (n ≥ 5).**
-1. **Owner: arm `gate.refresh_budget`** in the live `config.toml` (back it up first). Verify it by
-   reading `Settings` back, never the file, and on the next run by the funnel's `refresh_*`.
-2. **The eligibility batch** (T152 + T156 + T157 + T105), only once #1 is armed.
+1. **Check run 471's funnel `gate.refresh_*`**: budget 130, candidates 0 (D-552). A non-zero
+   candidate count on a run with no re-key is a defect to read, not a backlog.
+2. **The eligibility batch** (T152 + T156 + T157 + T105), now unblocked. The refresh heals its
+   re-key over ~7 runs; watch `refresh_pending_after` fall run over run.
 3. **T155** (owner question first), **T160**, and T113b only if a model/effort/facts change
    recreates the backlog.
 4. **Parked, unchanged:** `TICKETS-2026-09-22c.md` §#5.
