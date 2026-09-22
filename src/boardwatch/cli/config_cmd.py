@@ -222,6 +222,10 @@ _GATE_KEYS: dict[str, str] = {
     "call_timeout_s": "seconds per call, ≥1; next run",
     "effort": "claude --effort level (low|medium|high|xhigh|max); unset = CLI default; next run",
     "depth": "leads JUDGED, against --top delivered; 0 = only the shortlist; next run",
+    "refresh_budget": (
+        "standing-queue leads re-judged per run when their gate reading is stale; 0 = off; "
+        "next run"
+    ),
     "seniority_hold": (
         "hold a lead for review when the judge reads its BODY as above the target band; "
         "off = the reading is still recorded, just not acted on; next run"

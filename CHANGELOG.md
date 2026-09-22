@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A re-key's damage to the standing queue now heals on its own (2026-09-22, T113).** A gate
+  reading is keyed on the live identity, and a built lead is never on the slate again, so every
+  re-key stranded every standing reading and nothing ever re-judged them: the holds those readings
+  carried released (D-537), and every 0-B promotion a judge `eligible` had bought fell back into
+  review (D-547: 237 leads) — repaired once, by hand, with a one-shot script (D-548). A new
+  `[gate] refresh_budget` re-judges up to that many standing-queue leads per run whose reading is
+  not current, through the daily gate's own `run_gate_stage`, one batch per commit so a timeout
+  costs one batch and not the refresh. Promotable holds go first, then the apply lane, then the
+  rest. `0` — the default — sends nothing.
+
+  The funnel's `gate` block reports `refresh_budget`, `refresh_candidates`, `refresh_sent` and
+  `refresh_pending_after`; the three counts are `null` when the budget is 0, so "not armed" does not
+  read as "nothing was stale". `refresh_pending_after` is re-read from the store after the refresh
+  commits, so a failed batch shows as still pending. The budget stays out of `config_hash`, like
+  `depth`, and goes into `routing_hash`, because it decides which standing leads carry a verdict
+  when the queue is filed.
+
 - **The final gate's headless call can carry an effort level (2026-09-22, D-548).** `[gate] effort`
   passes `--effort <level>` to the `claude -p` call, right after the model. The value is closed to
   the CLI's five levels (`low`, `medium`, `high`, `xhigh`, `max`), so a misspelt level fails when
@@ -252,6 +269,12 @@ All notable changes to this project are documented here. The format follows
   NULL because its verdicts come from an arbitrary agent session rather than the configured judge.
 
 ### Fixed
+
+- **The detail pane no longer shows `apply` for a lead the list holds for review (2026-09-22,
+  T127).** `queue_detail` built its row without the requirement summary, so a lead whose JD
+  yielded no requirement row read `no_requirements_found` in the list and `apply` in the pane —
+  the surface where the reader decides. 12 of 833 standing leads on 2026-09-22, and the count grows
+  with every re-key. The pane now reads the summary from the same evaluation as its verdict.
 
 - **A degree waiver the escape could not see deleted the job (2026-09-22, T149).** The
   `degree_equivalence` escape recognised four phrasings — `or equivalent`, `equivalent

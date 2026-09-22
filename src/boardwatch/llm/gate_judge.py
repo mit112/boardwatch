@@ -25,11 +25,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol, TypeVar
 
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine
 
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
-from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts, parse_policy
+from boardwatch.eligibility.facts import Facts, ProfileRowInvalid, parse_facts, parse_policy
 from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import (
@@ -405,6 +405,24 @@ def _accepted(
     return kept, refused
 
 
+def _current_gate_rows(
+    conn: Connection,
+    settings: Settings,
+    facts: Facts,
+    identity: tuple[str, str],
+    versions: Mapping[int, CurrentVersion],
+) -> dict[int, str | None]:
+    """posting_id -> its CURRENT gate verdict under the freshness key: the one definition of
+    "already judged" that `run_gate_stage` skips on and `run_gate_refresh` counts as done, so a
+    narrowing added to the key reaches both. Why each argument is there is `run_gate_stage`'s
+    comment below."""
+    return current_gate_verdicts(
+        conn, [v.posting_version_id for v in versions.values()], *identity,
+        engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
+        model=settings.gate.model,
+    )
+
+
 def run_gate_stage(
     engine: Engine,
     settings: Settings,
@@ -450,11 +468,7 @@ def run_gate_stage(
         if identity is None:
             return leads, GateStageResult(candidates=candidates)
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
-        already_gated = current_gate_verdicts(
-            conn, [v.posting_version_id for v in versions.values()], *identity,
-            engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
-            model=settings.gate.model,
-        )
+        already_gated = _current_gate_rows(conn, settings, facts, identity, versions)
     # Never re-judge (D-477 point 5): a lead with a current gate row under this identity is
     # skipped entirely — it never enters a request, let alone a `claude` call.
     #
@@ -539,6 +553,95 @@ def run_gate_stage(
         ineligible=result.ineligible,
         uncertain=uncertain_count,
         excluded_ids=excluded_ids,
+    )
+
+
+@dataclass(frozen=True)
+class GateRefreshResult:
+    """T113: one run's standing-queue refresh. All-zero when `gate.refresh_budget` is 0 — the
+    caller knows that from the setting and the funnel reports the refresh as not armed.
+
+    `candidates` is how many standing leads had NO current reading when the refresh began, `sent`
+    how many items its requests carried (at most `gate.refresh_budget`), and `pending_after` how
+    many still have none, RE-READ from the store after the last chunk committed rather than
+    derived from what the chunks reported — a failed batch leaves its leads pending, and the read
+    says so without trusting the stage's own tally. `pending_after` staying high run over run is
+    the signal that the budget cannot keep up with the re-keys. A lead whose body the send boundary
+    withholds (D-406) is stale and can never be sent, so it stays in both counts as a constant
+    floor rather than being hidden by a restated send predicate; the live queue held none of them
+    on 2026-09-22 (D-548 sent 833 of 833).
+    """
+
+    candidates: int = 0
+    sent: int = 0
+    pending_after: int = 0
+    errors: tuple[str, ...] = ()
+
+
+def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] | None:
+    """`leads`, in order, minus every lead with a current gate reading or no current version to
+    judge. `None` when the profile or identity is missing, `run_gate_stage`'s fail-open cases."""
+    with engine.connect() as conn:
+        profile_row = get_profile(conn)
+        if profile_row is None:
+            return None
+        try:
+            facts = parse_facts(profile_row.eligibility_facts_json)
+        except ProfileRowInvalid:
+            return None
+        identity = current_identity(conn, settings)
+        if identity is None:
+            return None
+        versions = current_posting_versions(conn, [p.posting_id for p in leads])
+        current = _current_gate_rows(conn, settings, facts, identity, versions)
+    return [p for p in leads if p.posting_id in versions and p.posting_id not in current]
+
+
+def run_gate_refresh(
+    engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None
+) -> GateRefreshResult:
+    """T113: re-judge up to `gate.refresh_budget` of `leads` — the standing queue, in the order
+    the caller wants them healed — whose gate reading is not current.
+
+    Every lead goes through `run_gate_stage` itself, so the judge, the request, the acceptance
+    rules and the write are the daily gate's own. It is called ONE BATCH AT A TIME because that
+    stage commits once, at its end: a single call over the whole refresh would lose every verdict
+    it had bought to a timeout or a kill in its last batch.
+
+    The budget is spent on what the stage actually SENDS, and the walk continues past a lead it
+    would not send: `build_gate_request` withholds a foreign body at the send boundary (D-406), and
+    slicing the budget off the front of the stale list would let a prefix of those leads take the
+    same slots every run while judgeable leads behind them stayed stale forever. The stage's own
+    `sent` is the count, so the send predicate is never restated here.
+
+    The slate the stage hands back is discarded — a standing lead is already delivered, and a
+    fresh `ineligible` holds it for review through the lane read (T109) rather than dropping it
+    here. No shortlist rank is recorded: these leads were not ranked this run.
+    """
+    budget = settings.gate.refresh_budget
+    if not settings.gate.enabled or budget == 0 or not leads:
+        return GateRefreshResult()
+    stale = _stale(engine, settings, leads)
+    if stale is None:
+        return GateRefreshResult()
+    size = max(1, settings.gate.batch_size)
+    sent = 0
+    position = 0
+    calls = 0
+    errors: list[str] = []
+    while position < len(stale) and sent < budget:
+        chunk = stale[position : position + min(size, budget - sent)]
+        position += len(chunk)
+        calls += 1
+        _, result = run_gate_stage(engine, settings, chunk, run_id=run_id)
+        sent += result.sent
+        errors.extend(f"gate refresh batch {calls}: {note}" for note in result.errors)
+    after = _stale(engine, settings, leads)
+    return GateRefreshResult(
+        candidates=len(stale),
+        sent=sent,
+        pending_after=len(stale) if after is None else len(after),
+        errors=tuple(errors),
     )
 
 

@@ -92,6 +92,13 @@ class GateTier(BaseModel):
     #: reaches only leads judged after it (T155).
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     depth: int = Field(default=0, ge=0)
+    #: T113. How many STANDING-QUEUE leads a run may send to the judge because their gate reading
+    #: is not current under the freshness key `run_gate_stage` applies. `0` — the default — sends
+    #: none. A re-key strands every standing reading (D-547: 947 of 987) and a built lead is never
+    #: on the slate again, so without this the damage never heals; with it, a full re-key drains in
+    #: about `queue size / refresh_budget` runs and a steady-state run sends nearly nothing. It
+    #: changes WHEN a lead is judged, never the verdict it receives — `depth`'s class exactly.
+    refresh_budget: int = Field(default=0, ge=0)
     #: Whether the judge's `seniority_fit` reading HOLDS a lead for review (2026-09-13).
     #:
     #: **Off by default, and the default is a measurement, not caution.** The reading is always

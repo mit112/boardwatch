@@ -200,12 +200,14 @@ def _arm_gate(
     batch_size: int = 13,
     model: str = "sonnet",
     seniority_hold: bool = False,
+    refresh_budget: int = 0,
 ) -> None:
     config_dir = load_settings(data_dir=data_dir).config_dir
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
         f"[gate]\nenabled = true\nmodel = \"{model}\"\nbatch_size = {batch_size}\n"
-        f"call_timeout_s = 30\nseniority_hold = {str(seniority_hold).lower()}\n",
+        f"call_timeout_s = 30\nseniority_hold = {str(seniority_hold).lower()}\n"
+        f"refresh_budget = {refresh_budget}\n",
         encoding="utf-8",
     )
 
@@ -1477,3 +1479,327 @@ def test_the_staleness_alarm_is_silent_when_the_gate_is_not_armed(
 
     assert summary.gate_readings_absent >= 1
     assert not [e for e in summary.errors if "no readable gate reading" in e], summary.errors
+
+
+# ---------------------------------------------------------------------------
+# (m) T113 — the standing-queue refresh heals a re-key without a hand-run script
+# ---------------------------------------------------------------------------
+
+#: `test_pipeline_run.BODY`: its `degree_preferred` row clears the deterministic engine to
+#: `eligible`, so the lead sits in the apply lane with or without a gate reading. `BODY` above
+#: trips no rule at all, so its lead is held `no_requirements_found` unless a judge `eligible`
+#: releases it (0-B) — the lead a re-key demotes.
+APPLY_BODY = (
+    "We are hiring a backend engineer to work on Python and PostgreSQL services. "
+    "Bachelor's degree preferred."
+)
+
+
+def _rekey(data_dir: Path) -> None:
+    """Move `profile_hash` the way a real profile edit does, and prove it moved: every stored
+    gate reading is keyed on it, so this strands them all — D-547's shape in miniature."""
+    from boardwatch.eligibility.preflight import current_identity
+    from boardwatch.store.queries import get_profile, save_eligibility
+
+    settings = load_settings(data_dir=data_dir)
+    engine = get_engine(data_dir)
+    with engine.connect() as conn:
+        before = current_identity(conn, settings)
+        row = get_profile(conn)
+    assert row is not None
+    facts = dict(row.eligibility_facts_json or {})
+    facts["total_years_experience"] = int(facts.get("total_years_experience") or 0) + 1
+    with engine.begin() as conn:
+        save_eligibility(
+            conn, facts_json=facts, policy_json=dict(row.eligibility_policy_json or {})
+        )
+    with engine.connect() as conn:
+        after = current_identity(conn, settings)
+    assert before is not None and after is not None
+    assert before[0] != after[0], "the fixture re-key did not move profile_hash"
+
+
+def _standing_lanes(data_dir: Path) -> dict[int, tuple[str, str | None]]:
+    """`posting_id -> (lane, reason)` for the standing queue, through the ONE population and the
+    ONE lane read `sync_queue` files folders by."""
+    from boardwatch.delivery.queue import standing_queue_rows
+    from boardwatch.store.delivery_queries import lane_decision
+
+    with get_engine(data_dir).connect() as conn:
+        return {
+            row.posting_id: (lane_decision(row).lane, lane_decision(row).reason)
+            for row in standing_queue_rows(conn)
+        }
+
+
+def _calls(sentinel: Path) -> int:
+    return len(sentinel.read_text(encoding="utf-8").splitlines()) if sentinel.exists() else 0
+
+
+def _deliver_then_rekey(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch,
+    bodies: list[str],
+) -> list[int]:
+    """Run 1 delivers one lead per body with a judge `eligible`; then the re-key strands every
+    reading. Leaves the sentinel cleared, so a caller counts only run 2's calls."""
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-refresh-{n}", body=body) for n, body in enumerate(bodies)]
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    first = _depth_pipeline(env, tmp_path / "apps1", top_n=len(ids))
+    assert first.fatal is None, first.fatal
+    assert set(_standing_lanes(env)) == set(ids), "run 1 must deliver every lead"
+    _rekey(env)
+    fake_claude.unlink(missing_ok=True)
+    return ids
+
+
+@_needs_an_executable_fake
+def test_the_refresh_restores_a_promotion_the_rekey_demoted(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ticket's done-when. Run 1's judge `eligible` releases the lead's
+    `no_requirements_found` hold; the re-key kills that reading; run 2 re-judges the standing lead
+    on its own and the promotion comes back. The control below is the same two runs with the
+    budget at 0, where the lead stays held — so this cannot pass on the slate re-judging it."""
+    [held] = _deliver_then_rekey(env, tmp_path, fake_claude, monkeypatch, [BODY])
+    _arm_gate(env, refresh_budget=13)
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert _calls(fake_claude) == 1
+    assert _standing_lanes(env)[held] == ("", None)
+    assert (summary.gate_refresh_candidates, summary.gate_refresh_sent) == (1, 1)
+    assert summary.gate_refresh_pending_after == 0
+    gate = _funnel_gate(summary)
+    assert gate["refresh_budget"] == 13
+    assert (gate["refresh_candidates"], gate["refresh_sent"], gate["refresh_pending_after"]) == (
+        1, 1, 0,
+    )
+
+
+def test_a_zero_budget_sends_nothing_and_the_demotion_stands(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Budget 0 is the shipped default (multi-tenancy): no call, the lead stays demoted — which
+    is D-547's damage, and the control that makes the test above mean something — and the funnel
+    says the refresh was not ARMED rather than that it found nothing."""
+    [held] = _deliver_then_rekey(env, tmp_path, fake_claude, monkeypatch, [BODY])
+    _arm_gate(env, refresh_budget=0)
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert not fake_claude.exists(), "a zero budget must never reach a request"
+    assert _standing_lanes(env)[held] == ("_review", "no_requirements_found")
+    gate = _funnel_gate(summary)
+    assert gate["refresh_budget"] == 0
+    assert gate["refresh_candidates"] is None
+    assert gate["refresh_sent"] is None
+    assert gate["refresh_pending_after"] is None
+
+
+@_needs_an_executable_fake
+def test_the_refresh_never_sends_more_than_its_budget(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Three stale leads, a budget of two, one lead per call: two calls, and the third is still
+    stale after — counted by re-reading the store, not by trusting what was sent."""
+    _deliver_then_rekey(env, tmp_path, fake_claude, monkeypatch, [BODY, BODY, BODY])
+    _arm_gate(env, batch_size=1, refresh_budget=2)
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=3)
+
+    assert summary.fatal is None, summary.fatal
+    assert _calls(fake_claude) == 2
+    assert summary.gate_refresh_candidates == 3
+    assert summary.gate_refresh_sent == 2
+    assert summary.gate_refresh_pending_after == 1
+    lanes = _standing_lanes(env)
+    assert sorted(lanes.values()) == [
+        ("", None), ("", None), ("_review", "no_requirements_found"),
+    ], lanes
+
+
+@_needs_an_executable_fake
+def test_the_refresh_heals_a_promotable_hold_before_an_apply_lane_lead(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Order. The held lead is seeded FIRST, so its id is the lower one: newest-first alone would
+    spend the one-lead budget on the apply-lane lead, whose lane no reading changes. Only the lane
+    ordering sends the held lead."""
+    held, apply = _deliver_then_rekey(
+        env, tmp_path, fake_claude, monkeypatch, [BODY, APPLY_BODY]
+    )
+    _arm_gate(env, batch_size=1, refresh_budget=1)
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=2)
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_refresh_sent == 1
+    assert _current_gate_verdict(env, held) == "eligible"
+    assert _current_gate_verdict(env, apply) is None
+    # Both in the apply lane: the held lead by the refresh, the other with no reading at all —
+    # which is the fixture's own precondition, checked once run 2 has evaluated it.
+    assert _standing_lanes(env) == {held: ("", None), apply: ("", None)}
+
+
+@_needs_an_executable_fake
+def test_a_failed_refresh_batch_leaves_its_lead_pending_and_never_drops_it(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail-open (D-074): the judge errors, the lead keeps its folder and its hold, it is still
+    counted pending for the next run, and the failure is reported under the refresh's own name."""
+    [held] = _deliver_then_rekey(env, tmp_path, fake_claude, monkeypatch, [BODY])
+    _arm_gate(env, refresh_budget=13)
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert _calls(fake_claude) == 1
+    assert summary.gate_refresh_sent == 1
+    assert summary.gate_refresh_pending_after == 1
+    assert _standing_lanes(env)[held] == ("_review", "no_requirements_found")
+    assert any(error.startswith("gate refresh batch 1:") for error in summary.errors), (
+        summary.errors
+    )
+
+
+@_needs_an_executable_fake
+def test_a_refresh_that_raises_costs_the_refresh_and_never_the_days_slate(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refresh runs BEFORE the tailor loop, so anything it raised would reach
+    `run_pipeline`'s outer handler and make the day fatal. A fresh posting seeded after run 1 is
+    the day's slate: it must still be judged and tailored, and the fault is reported by name."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    _deliver_then_rekey(env, tmp_path, fake_claude, monkeypatch, [BODY])
+    fresh = _seed(env, slug="acme-refresh-fresh", body=APPLY_BODY)
+    _arm_gate(env, refresh_budget=13)
+
+    def boom(conn: object) -> list[object]:
+        raise RuntimeError("simulated standing-queue read failure")
+
+    monkeypatch.setattr(runner_mod, "standing_queue_rows", boom)
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert [lead.posting_id for lead in summary.tailored] == [fresh]
+    # UNMEASURED, never zero: a 0 would tell the funnel the backlog was empty.
+    assert summary.gate_refresh_candidates is None
+    assert summary.gate_refresh_pending_after is None
+    gate = _funnel_gate(summary)
+    assert gate["refresh_budget"] == 13
+    assert gate["refresh_candidates"] is None
+    assert any(
+        error.startswith("gate refresh: not run:") and "simulated" in error
+        for error in summary.errors
+    ), summary.errors
+
+
+@_needs_an_executable_fake
+def test_the_refresh_spends_its_budget_on_leads_it_can_send(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A body the send boundary withholds (D-406) must not eat the budget. Slicing the budget off
+    the front of the stale list gave the jobright page the only slot every run, sent nothing,
+    and left the clean lead behind it stale forever."""
+    from types import SimpleNamespace
+
+    from boardwatch.llm.gate_judge import run_gate_refresh
+    from tests.unit.test_lane_body_precondition import JOBRIGHT_PAGE
+
+    _ready(env)
+    foreign = _seed(env, slug="acme-refresh-foreign", body=JOBRIGHT_PAGE)
+    clean = _seed(env, slug="acme-refresh-clean", body=BODY)
+    _arm_gate(env, batch_size=1, refresh_budget=1)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    result = run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=foreign), SimpleNamespace(posting_id=clean)], run_id=None,
+    )
+
+    assert result.sent == 1
+    assert _calls(fake_claude) == 1
+    assert _current_gate_verdict(env, clean) == "eligible"
+    assert _current_gate_verdict(env, foreign) is None
+    assert (result.candidates, result.pending_after) == (2, 1), "the withheld body stays pending"
+
+
+@_needs_an_executable_fake
+def test_the_refresh_commits_one_batch_per_stage_call(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run_gate_stage` commits once, at its end, so the refresh must call it once PER BATCH or a
+    kill in the last batch discards every verdict before it. Counted at the call, which the
+    claude-call count cannot see: one stage call over two batches also makes two claude calls."""
+    from types import SimpleNamespace
+
+    from boardwatch.llm import gate_judge
+
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-refresh-batch-{n}", body=BODY) for n in range(5)]
+    _arm_gate(env, batch_size=2, refresh_budget=5)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    real = gate_judge.run_gate_stage
+    sizes: list[int] = []
+
+    def spy(engine: object, settings: object, leads: list[object], **kw: object) -> object:
+        sizes.append(len(leads))
+        return real(engine, settings, leads, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gate_judge, "run_gate_stage", spy)
+
+    result = gate_judge.run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in ids], run_id=None,
+    )
+
+    assert sizes == [2, 2, 1]
+    assert (result.sent, result.pending_after) == (5, 0)
+
+
+def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_never_closed(
+) -> None:
+    """The whole order, on rows whose ids would sort them differently: `promotable` holds the
+    lowest ids, `rest` the highest, and one closed row sits in the middle."""
+    from dataclasses import replace
+
+    from boardwatch.core.clock import utcnow
+    from boardwatch.eligibility.read import RequirementFlags
+    from boardwatch.pipeline.runner import _refresh_order
+    from boardwatch.store.delivery_queries import QueueRow, lane_decision
+
+    def row(posting_id: int, **kw: object) -> QueueRow:
+        base = QueueRow(
+            posting_id=posting_id, job_id=posting_id, title="Backend Engineer", company="Acme",
+            provider="greenhouse", location=None, locations=("Remote",), remote_policy=None,
+            posted_days=None, first_seen=utcnow(), status="open", verdict="eligible",
+            apply_url=None, delivered_run_id=1, tex_uri="file:///t.tex", pdf_uri=None,
+            target_flag=None,
+        )
+        return replace(base, **kw)  # type: ignore[arg-type]
+
+    no_rows = RequirementFlags(
+        experience_unconfirmed=False, eligibility_unconfirmed=False, no_requirement_rows=True
+    )
+    promotable_old = row(1, verdict="uncertain", requirement_flags=no_rows)
+    promotable_new = row(2, verdict="uncertain", requirement_flags=no_rows)
+    apply_lead = row(3)
+    closed = row(4, status="closed")
+    rest = row(5, title="Janitor")
+    # The fixture's own premise, asserted: each row sits in the lane its name says.
+    assert lane_decision(promotable_old).reason == "no_requirements_found"
+    assert lane_decision(apply_lead).lane == ""
+    assert lane_decision(rest).lane != "" and lane_decision(
+        replace(rest, judge_verdict="eligible")
+    ).lane != ""
+
+    ordered = _refresh_order([rest, closed, apply_lead, promotable_old, promotable_new])
+
+    assert [r.posting_id for r in ordered] == [2, 1, 3, 5]

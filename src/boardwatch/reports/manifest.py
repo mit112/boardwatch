@@ -187,6 +187,10 @@ _GATE_IRRELEVANT: frozenset[str] = frozenset(
         # persisted the same way. Restamping `policy_version` for it would invalidate every
         # stored disposition for a scheduling knob.
         "depth",
+        # T113. `depth`'s reasoning, applied to the standing queue: it decides how many already
+        # delivered leads are RE-judged this run, under the same judge and identity, and creates
+        # no lead and changes no verdict that is reached.
+        "refresh_budget",
         # Changes which LANE a delivered lead lands in, never whether it is a lead. The rule
         # above is "can change which postings become leads"; a held lead is still delivered,
         # still carries a disposition, and still reaches the owner — it lands in `_review`
@@ -304,6 +308,9 @@ _ROUTING_RELEVANT: frozenset[str] = frozenset(
         "gate.batch_size",
         "gate.call_timeout_s",
         "gate.depth",
+        # T113. The same question for the STANDING queue: how many delivered leads carry a current
+        # gate verdict when `sync_queue` files them, and 0-B's promotion reads exactly that.
+        "gate.refresh_budget",
         # T91. Decides which leads have a form to be hard-stopped BY. An unfetched form cannot
         # hold anything, so the budget is the difference between a lead in the apply lane and the
         # same lead in `_review` — and it creates and destroys no lead, so `config_hash` excludes
