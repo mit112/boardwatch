@@ -535,6 +535,24 @@ families:
           # tenure. A requirement addresses the CANDIDATE ("you have", "we require"), never
           # "we bring", so the three verbs are safe to claim for the company side.
           - &company_side_years "(?:our|the)\\s+(?:\\w+\\s+){0,2}(?:team|teams|engineers|founders|leadership|staff|architect|architects|folks|mentors)\\s+(?:has|have|brings?|is|are|was|were|average[sd]?|each)|founded\\s+by|average\\s+of|each\\s+(?:bring|brings|have|has)|we\\s+(?:bring|have|offer)|you\\s+will\\s+(?:work\\s+with|receive|gain|get)|combined\\s+experience|collectively|between\\s+us"
+        # COMPANY TENURE AFTER THE BAR (T157, D-544 Half B). `company_side_years` only reaches a
+        # subject that PRECEDES the span, so "With over 25 years of experience serving the
+        # sector, our team is committed to ..." and "25 years of experience is what our team
+        # brings" were read as 25-year requirements and rejected the candidate on the
+        # employer's own age. This is NOT `company_side_years` searched after the span: after a
+        # bar that anchor is mostly wrong -- measured on the 46 unmet spans it matched there,
+        # `combined experience` (24), `between us` (inside "between user acceptance") and `you
+        # will gain` are genuine requirements. Two shapes only, each tied to the bar itself:
+        #   * a sentence that OPENS "With [over|nearly|...] N years ..." and whose own subject,
+        #     after a comma, is `our <team|firm|...>` or `we <built|offer|...>` -- `you` and
+        #     `the candidate` stay requirements, as do `we are looking|seeking|hiring`;
+        #   * `experience is what our team|we bring(s)`, the lookbehind pinning it to the span.
+        # SENTENCE-scoped (these patterns' unit is the sentence), so company prose in the next
+        # sentence cannot reach a real bar (the document-scope incident at the top of this list). Known
+        # cost: a second bar inside the SAME "With N years ..., we ..." sentence also stands
+        # down; none was seen in the measured sample.
+        suppressed_by_sentence:
+          - &company_tenure_after_bar "^\\W*with\\s+(?:over\\s+|more\\s+than\\s+|nearly\\s+|almost\\s+|about\\s+|close\\s+to\\s+|some\\s+)?(?=\\d{1,2}\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)[^;:]{0,160}?,\\s*(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)\\s+(?:is|are|has|have|brings?)(?!\\s+(?:looking|seeking|hiring|searching)\\b)|we\\s+(?:have\\s+built|(?:have\\s+)?(?:earned|established|grown|delivered|served|helped|developed)|['’]ve\\s+built|offer|bring|deliver|provide|pride)\\b))|(?<=\\bexperience)\\s+is\\s+what\\s+(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)|we)\\s+(?:brings?|offers?|delivers?|provides?)\\b"
         # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
         # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
         # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."
@@ -598,6 +616,7 @@ families:
         requirement_text: "At least {months} months of total experience"
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
         abstain_by_adjacent: [*degree_alternative_to_years]
       - id: scoped_months_minimum
@@ -608,6 +627,7 @@ families:
         requirement_text: "Months of experience scoped to a specific skill or domain"
         pattern: '(?<![-–—\d])\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges, *months_conversion]
         abstain_by_sentence: [*degree_alternative_to_years]
       - id: range_years_minimum
@@ -618,6 +638,7 @@ families:
         requirement_text: "At least {years} years of total experience"
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # Same either-path disjunction guard as total_years_minimum: "3-5 years ... or a
         # Master's degree" clears on either arm and must abstain, not resolve `unmet`.
@@ -649,6 +670,7 @@ families:
         implies: scoped_years_minimum
         scope: sentence
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # THE DEGREE DISJUNCTION REACHES THIS ARM, BOUNDED TO ONE SENTENCE. D-449 is the
         # entry that left this OPEN and named the mechanism; the ruling below closed it.
@@ -713,6 +735,7 @@ families:
         implies: activity_years_minimum
         scope: sentence
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -743,6 +766,7 @@ families:
         implies: scoped_years_minimum
         scope: sentence
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -753,6 +777,7 @@ families:
         implies: activity_years_minimum
         scope: sentence
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -790,6 +815,7 @@ families:
         implies: activity_years_minimum
         scope: sentence
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -842,6 +868,7 @@ families:
         implies: activity_years_minimum
         scope: sentence
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -880,6 +907,7 @@ families:
         requirement_text: "At least {years} years of total experience"
         pattern: '\bexperience(?:\s+(?:required|requirements?|needed|level|range))?\s*[:\-–—]+\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of|min\.?)\s+)?(?P<years>\d{1,2})\s*(?:(?:[-–—]|\s+to\s+)\s*\d{1,2})?\s*\+?\s*(?:years?|yrs?)(?!\w)\.?'
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         abstain_by_adjacent: [*degree_alternative_to_years]
 
@@ -895,6 +923,7 @@ families:
         requirement_text: "{years} years of total experience is preferred"
         pattern: '(?:(?<![-–—\d])(?<!to\s)\b(?P<years>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?(?<![-–—\d])\b(?P<years_alt>\d{1,2})\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
       - id: range_years_preferred
         requiredness: preferred
         implies: range_years_preferred
@@ -903,6 +932,7 @@ families:
         requirement_text: "{years} years of total experience is preferred"
         pattern: '(?:\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)[^.]{0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?\b(?P<years_alt>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
+        suppressed_by_sentence: [*company_tenure_after_bar]
 
   - id: clearance
     label: Security clearance
