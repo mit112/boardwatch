@@ -5,6 +5,13 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+SIX rows were ADDED 2026-09-22 (m1077-m1082) for T156, season-named graduation windows, and
+NOTHING was re-baselined: all 1,076 pre-existing rows' verdicts and rows are byte identical. m1077
+is the headline (a 2025 graduate outside "Fall 2026 and Summer 2027" now reads `unmet` where it
+abstained), m1078 the in-window `met`, and m1079-m1082 the controls -- a backwards season window
+still reads inverted, an unknown token and `Winter` still abstain, and a month-name window is
+unchanged.
+
 FOURTEEN rows were re-baselined when `clearance:clearance_preferred` stopped abstaining
 unconditionally: every corpus case that fires it declares `security_clearance` state `none`, so the
 row is now `unmet` where it was `unknown`. **Every one of the fourteen VERDICTS is unchanged** --
@@ -1200,6 +1207,12 @@ CASES: list[tuple] = [
     ('m1074:T154 an escape landing on the PERMISSIVE half of a two-threshold cluster does NOT collapse the stage-1b straddle, because the MET row keeps its MET', "A Master's degree is required. Experience is a substitute for the required degree.", {'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:any_degree_required', 'required', 'unknown'], ['degree:master_required', 'required', 'unknown']]),
     ('m1075:T154 a waiver CANNOT make a SATISFIED bar undecidable -- the row keeps its MET and the posting stays eligible', "A Bachelor's degree is required, or an equivalent combination of education and experience.", {'highest_degree': 'master'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_required', 'required', 'met']]),
     ('m1076:T154 CONTROL the same waiver still abstains a bar the profile does NOT clear', "A Doctorate is required, or an equivalent combination of education and experience.", {'highest_degree': 'master'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:doctorate_required', 'required', 'unknown']]),
+    ('m1077:T156 a SEASON-named window is read, and a 2025 graduate falls outside Fall 2026 - Summer 2027', 'Applicants must be graduating between Fall 2026 and Summer 2027.', {'education_timing': {'currently_enrolled': False, 'graduation_yyyymm': 202508}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker', 'student_status': 'blocker'}, 'ineligible', [['student_status:graduation_window_required', 'required', 'unmet']]),
+    ('m1078:T156 a candidate inside the season window is met', 'Applicants must be graduating between Fall 2026 and Summer 2027.', {'education_timing': {'currently_enrolled': False, 'graduation_yyyymm': 202705}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker', 'student_status': 'blocker'}, 'eligible', [['student_status:graduation_window_required', 'required', 'met']]),
+    ('m1079:T156 CONTROL a season window stated backwards still reads inverted', 'Applicants must be graduating between Summer 2027 and Fall 2026.', {'education_timing': {'currently_enrolled': False, 'graduation_yyyymm': 202508}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker', 'student_status': 'blocker'}, 'uncertain', [['student_status:graduation_window_required', 'required', 'unknown']]),
+    ('m1080:T156 CONTROL a token that is neither a month nor a season still abstains', 'Applicants must be graduating between Fructidor 2026 and Summer 2027.', {'education_timing': {'currently_enrolled': False, 'graduation_yyyymm': 202508}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker', 'student_status': 'blocker'}, 'uncertain', [['student_status:graduation_window_required', 'required', 'unknown']]),
+    ('m1081:T156 CONTROL Winter spans a year boundary and stays unreadable', 'Applicants must be graduating between Winter 2026 and Summer 2027.', {'education_timing': {'currently_enrolled': False, 'graduation_yyyymm': 202508}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker', 'student_status': 'blocker'}, 'uncertain', [['student_status:graduation_window_required', 'required', 'unknown']]),
+    ('m1082:T156 CONTROL a month-name window is unchanged', 'Applicants must have a graduation date between December 2026 and May 2027.', {'education_timing': {'currently_enrolled': False, 'graduation_yyyymm': 202508}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker', 'student_status': 'blocker'}, 'ineligible', [['student_status:graduation_window_required', 'required', 'unmet']]),
 ]
 
 
@@ -1219,4 +1232,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1076
+    assert len(CASES) == 1082
