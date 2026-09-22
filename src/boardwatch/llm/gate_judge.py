@@ -30,7 +30,11 @@ from sqlalchemy import Connection, Engine
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import Facts, ProfileRowInvalid, parse_facts, parse_policy
-from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
+from boardwatch.eligibility.final_gate import (
+    gate_effort_key,
+    gate_engine_version,
+    gate_facts_key,
+)
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import (
     _CONFIDENCE,
@@ -419,7 +423,7 @@ def _current_gate_rows(
     return current_gate_verdicts(
         conn, [v.posting_version_id for v in versions.values()], *identity,
         engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
-        model=settings.gate.model,
+        model=settings.gate.model, effort=gate_effort_key(settings.gate.effort),
     )
 
 
@@ -483,6 +487,11 @@ def run_gate_stage(
     # reached counted as current forever and the switch reached only leads nobody had judged yet.
     # A row written before this shipped names no model, so it misses and is re-judged once.
     #
+    # `effort` is the fourth (T155), for the same reason one level down: `settings.gate.effort`
+    # reaches the call and `config_hash`, but nothing here moved with it, so a change of level
+    # reached only leads nobody had judged yet. A row that recorded no level misses under every
+    # level, including the unset one, and is re-judged once.
+    #
     # `engine_version` is EXACT here, not the prefix the display readers use (D-512). "Current"
     # has to mean current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that
     # was judged under the old one — which is what stranded 434 of 505 apply-lane leads on
@@ -542,6 +551,7 @@ def run_gate_stage(
             write_conn, verdicts, versions=versions, facts=facts, policy=policy,
             catalog=catalog, run_id=run_id, shortlist_ranks=shortlist_ranks,
             provider=GATE_PROVIDER, model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort),
         )
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)

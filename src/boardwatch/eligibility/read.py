@@ -262,6 +262,10 @@ def current_gate_seniority(
       — which names no judge — holds nothing here.
     - `engine_version` is EXACT, not the display prefix: a `p5-oracle-1` row predates the
       seniority question entirely.
+    - `effort` is deliberately NOT in it, and neither is it in `delivered_unapplied`'s gate read.
+      A level is a calibration of the same judge, not a different one: the owner's ruling
+      (T155) is that a level change RE-JUDGES the standing queue through the T113 refresh, not
+      that the old level's readings go blind meanwhile. Only the freshness read keys on it.
 
     A row written before `years` was recorded counts only if its `facts_key` equals the current
     `gate_facts_key(facts)` (and model and exact engine_version match). `facts_key` digests the
@@ -330,7 +334,7 @@ def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int],
     profile_hash: str | None, rules_hash: str | None,
     *, engine_version: str | None = None, facts_key: str | None = None,
-    model: str | None = None,
+    model: str | None = None, effort: str | None = None,
 ) -> dict[int, str | None]:
     """posting_id -> the LATEST final-gate verdict for its current version under this identity.
 
@@ -372,6 +376,15 @@ def current_gate_verdicts(
     therefore never matches a given model, so — exactly as for `facts_key` — the first run after
     this ships re-judges the standing slate ONCE and comes back attributable.
 
+    **`effort` is the fourth, freshness-only again (T155)**, and it is `final_gate.
+    gate_effort_key(settings.gate.effort)` — never the raw setting, whose `None` is a real level
+    (the calibrated argv) rather than "no narrowing". A row counts only if its recorded
+    `$.effort` equals it; a row that recorded none — every row before T155, and every row the
+    `eligibility gate apply` CLI writes — matches no level, so a level change re-judges the
+    standing queue through the T113 refresh. It is deliberately NOT a narrowing on the LANE reads
+    — this function's lane callers, and `current_gate_seniority`, which DOES narrow on `model`.
+    A different model is a different judge (D-537's 11.2% floor); a level is a calibration of the
+    same judge, so its old readings stay visible until the refresh replaces them.
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
@@ -397,6 +410,10 @@ def current_gate_verdicts(
         )
     if model is not None:
         scope.append(eligibility_evaluations.c.model == model)
+    if effort is not None:
+        scope.append(
+            func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort
+        )
     for chunk in id_chunks(posting_version_ids):
         latest = (
             select(eligibility_inputs.c.posting_version_id,

@@ -536,3 +536,64 @@ def test_a_seniority_reading_under_an_older_gate_policy_is_not_found(
                      model="sonnet")
 
     assert _seniority(engine, [pv_id], facts) == {}
+
+
+# ---------------------------------------------------------------------------
+# T155 — the gate freshness key must fold in the EFFORT a row was judged at
+# ---------------------------------------------------------------------------
+#
+# T108's shape for a second input: `settings.gate.effort` reaches the headless call and
+# `config_hash`, but no gate row recorded it, so a change of level never read as stale.
+
+
+def _judged_at(engine: Engine, catalog, facts: Facts, slug: str, effort: str | None) -> int:
+    pv_id = _seed_posting_version(engine, JD_5YR, slug=slug)
+    _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet",
+                 effort=effort)
+    return pv_id
+
+
+def test_a_gate_row_judged_at_another_effort_is_not_fresh(engine: Engine, tmp_path: Path) -> None:
+    """A `medium` reading is not current under `high`; under `medium` it is (the control)."""
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _judged_at(engine, catalog, facts, "gate-effort-medium", "medium")
+
+    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="high") == {}
+    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="medium") == {
+        _posting_of(engine, pv_id): "eligible"
+    }
+
+
+def test_a_gate_row_that_recorded_no_effort_is_fresh_under_no_level(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Every row before T155 (and every `eligibility gate apply` row) recorded no level, so the
+    level it was judged at is unknown — not fresh under `medium`, NOR under the unset level."""
+    from boardwatch.eligibility.final_gate import gate_effort_key
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _judged_at(engine, catalog, facts, "gate-effort-legacy", None)
+
+    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="medium") == {}
+    assert _freshness_read(
+        engine, catalog, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
+    ) == {}
+
+
+def test_a_gate_row_judged_at_the_unset_level_is_fresh_only_under_the_unset_level(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """`gate.effort = None` is a real level (the calibrated argv), recorded distinctly from
+    "never recorded": fresh under `None`, not under `medium`."""
+    from boardwatch.eligibility.final_gate import gate_effort_key
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _judged_at(engine, catalog, facts, "gate-effort-unset", gate_effort_key(None))
+
+    assert _freshness_read(
+        engine, catalog, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
+    ) == {_posting_of(engine, pv_id): "eligible"}
+    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="medium") == {}

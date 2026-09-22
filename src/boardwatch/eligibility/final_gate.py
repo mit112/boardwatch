@@ -51,10 +51,23 @@ def gate_facts_key(facts: Facts) -> str:
     return digest(facts_payload(facts))
 
 
+#: What a gate row records for `gate.effort = None` — the calibrated argv, no `--effort` flag.
+#: A string outside the setting's closed five-level vocabulary, NOT a JSON null: `json_extract`
+#: reads a null and an absent key alike, and an absent key has to keep meaning "never recorded".
+CLI_DEFAULT_EFFORT = "cli-default"
+
+
+def gate_effort_key(effort: str | None) -> str:
+    """The `$.effort` value a gate row judged at `settings.gate.effort` records, and the value the
+    freshness read (`read.current_gate_verdicts(effort=...)`) matches on (T155)."""
+    return CLI_DEFAULT_EFFORT if effort is None else effort
+
+
 def record_gate_verdict(
     conn: Connection, *, posting_version_id: int, jd_text: str, facts: Facts,
     policy: Policy, catalog: RulesCatalog, verdict: OracleVerdict, run_id: int | None = None,
     shortlist_rank: int | None = None, provider: str | None = None, model: str | None = None,
+    effort: str | None = None,
 ) -> int:
     """Persist one judge verdict. `shortlist_rank` is the lead's 1-based position in the
     ranker's DEPTH slate, recorded so conversion can be read BY RANK BAND afterwards.
@@ -79,6 +92,11 @@ def record_gate_verdict(
     `model IS NULL` never matches a given model, so the daily stage re-judges it ONCE (bounded
     by `--top`, D-477 pt 1) and it comes back keyed; the ledger is append-only, so there is no
     backfill and this is the only way those rows become attributable.
+
+    `effort` is `gate_effort_key(settings.gate.effort)` from the daily stage and the T113
+    refresh, and `None` — written as an ABSENT key — from a caller that cannot name the level,
+    for the same reason as `model`. Unlike the judge's name it has no column, so it goes into
+    `raw_output`; the eligibility tables are append-only, so this is forward-only (T155).
 
     `years` is the candidate's `total_years_experience` — the one fact the seniority question is
     asked relative to — and is what `read.current_gate_seniority` keys a reading on in place of
@@ -112,6 +130,8 @@ def record_gate_verdict(
     }
     if shortlist_rank is not None:
         raw_output["shortlist_rank"] = shortlist_rank
+    if effort is not None:
+        raw_output["effort"] = effort
     return record_evaluation(
         conn, posting_version_id=posting_version_id,
         profile_hash=identity.profile_hash, profile_snapshot=identity.profile_snapshot,
