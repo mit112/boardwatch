@@ -1373,3 +1373,107 @@ def test_a_clean_batch_raises_neither_alert_and_leaves_the_existing_gate_numbers
     assert gate["seniority_unreadable"] == 0
     assert gate["missing_items"] == 0
     assert gate["refused_items"] == 0
+
+
+# ---------------------------------------------------------------------------
+# (l) T151 — the gate reading going BLIND is now reported
+# ---------------------------------------------------------------------------
+#
+# D-537's finding had no instrument. A stored gate row is scoped on `profile_hash` AND
+# `rules_hash` and the read FAILS OPEN, so a re-key does not merely fail to add a hold -- it
+# RELEASES every hold those rows carried, silently. 117 leads were measured moving out of
+# `_review` into the apply lane that way and no run reported it. `gate.readings_absent` is the
+# count, taken at the lane split beside the read it describes.
+
+
+@_needs_an_executable_fake
+def test_a_run_whose_gate_readings_are_all_absent_reports_and_alarms(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE NON-ZERO ARM. A lead reaching the apply lane with no readable gate reading.
+
+    The judge is made unavailable, so the gate stage writes no row and the lane split's read
+    finds nothing — the same observable state a catalog re-key produces, which is the state
+    D-537 measured and which nothing reported.
+    """
+    _ready(env)
+    posting_id = _seed(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
+    escalated = _escalated(monkeypatch)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert posting_id in [lead.posting_id for lead in summary.tailored]
+    # The COUNT, and it is the whole claim.
+    assert summary.gate_readings_absent == 1
+    alarm = [error for error in summary.errors if "no readable gate reading" in error]
+    assert len(alarm) == 1, summary.errors
+    assert escalated and alarm[0] in escalated[-1]
+
+
+@_needs_an_executable_fake
+def test_a_healthy_run_reports_zero_absent_gate_readings_and_stays_silent(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE ZERO ARM, and it is not optional: a counter only ever seen non-zero is untested.
+
+    The gate judges the lead, so the lane split -- which runs AFTER the gate stage -- finds a
+    readable row under the live identity. This is also the proof that the healthy path is silent:
+    the alert must not fire on every run, or it is noise rather than a signal.
+    """
+    _ready(env)
+    _seed(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 1
+    assert summary.gate_readings_absent == 0
+    assert not [e for e in summary.errors if "no readable gate reading" in e], summary.errors
+
+
+@_needs_an_executable_fake
+def test_the_gate_staleness_alarm_reaches_the_MORNING_DIGEST(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE POSITION PIN. Asserting on `summary.errors` cannot discriminate.
+
+    Every soft alert in the finalize block must sit ABOVE `_emit_morning` (D-477 point 7):
+    below it the alert still fires and is still recorded in `summary.errors`, but is invisible
+    in the one artifact an unattended owner actually reads. Only the RENDERED digest can tell
+    the two apart, which is why this reads the file.
+    """
+    _ready(env)
+    _seed(env)
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.morning is not None
+    digest = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "no readable gate reading" in digest
+
+
+@_needs_an_executable_fake
+def test_the_staleness_alarm_is_silent_when_the_gate_is_not_armed(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL. With `gate.enabled` false NOTHING writes gate rows, so absence is the expected
+    state rather than a fault and must not alarm — the same shape as the seniority control.
+
+    The COUNT is still taken: the measurement is unconditional and only the alert is gated, so a
+    disarmed run still records how many leads carry no reading.
+    """
+    _ready(env)
+    _seed(env)
+    # deliberately NOT armed
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.gate_readings_absent >= 1
+    assert not [e for e in summary.errors if "no readable gate reading" in e], summary.errors

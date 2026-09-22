@@ -217,6 +217,14 @@ _TOP_MISSING = 10
 # the new value is folded into none of the five beside it — that is the point of it. A funnel
 # written before this lacks the key, which reads as `null` and means "this run recorded no
 # routing fingerprint", not "this run routed by default".
+#
+# **T151's `gate.readings_absent` does NOT bump it either**, on that same `scan.fetch_cost` /
+# `routing_hash` precedent: an additive key inside the `gate` block, which has carried counters
+# since it was introduced, and it changes no existing key's meaning. `seniority_unreadable`
+# beside it keeps counting what it always counted — answers the JUDGE returned that could not be
+# read — while this counts stored rows the READ could not find, which is a different failure with
+# a different cause. A funnel written before this lacks the key, which reads as `null` and means
+# "this run did not measure gate-reading staleness", not "this run found none".
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -781,6 +789,7 @@ class GateCounters:
     seniority_answered: int = 0
     seniority_unclear: int = 0
     seniority_unreadable: int = 0
+    readings_absent: int = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -803,6 +812,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "seniority_answered": None,
             "seniority_unclear": None,
             "seniority_unreadable": None,
+            "readings_absent": None,
         }
     return {
         "instrumented": True,
@@ -820,6 +830,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "seniority_answered": gate.seniority_answered,
         "seniority_unclear": gate.seniority_unclear,
         "seniority_unreadable": gate.seniority_unreadable,
+        "readings_absent": gate.readings_absent,
     }
 
 
@@ -852,6 +863,14 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         f"`seniority_fit`: {gate.seniority_answered} answered yes/no · "
         f"{gate.seniority_unclear} explicit `unclear` · "
         f"{gate.seniority_unreadable} absent or out-of-catalog",
+        "",
+        # T151. Stated in words rather than as a bare number, because the number that matters is
+        # ZERO and a reader has to be told that a non-zero one means holds were RELEASED, not
+        # merely not added.
+        f"{gate.readings_absent} delivered lead(s) had NO readable gate reading under the live "
+        "identity — every gate-derived hold on them has silently released"
+        if gate.readings_absent
+        else "every delivered lead carried a readable gate reading under the live identity",
     )
 
 
