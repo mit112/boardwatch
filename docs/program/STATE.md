@@ -52,6 +52,19 @@ freshness key, so a later change of level re-judges nothing already judged.
 `PROGRAM.md` §1). Read its `gate` block: the first daily gate on Sonnet, and the first whose
 standing queue is fully current.
 
+**NEXT WORK, IN ORDER — `TICKETS-2026-09-22c.md` holds all of it, with every pointer and cost
+(D-549):**
+1. **T159**: a blind audit of the Sonnet-era apply lane. B8's precision half; no code. Judges must
+   exclude the production model.
+2. **T113 re-scoped**: an automatic, bounded standing-queue gate refresh.
+3. **One eligibility batch**: T152 + T156 + T157 + T105. AFTER T113, or it costs another hand-run
+   re-judge.
+4. **Cleanups**: T127 (live, 12 leads), T155, T158.
+5. **PARKED, not forgotten**: T123, T124, T125, T133, T135, T137, T138, T139, T144, plus the owner
+   calls. Listed in the same file's §#5.
+
+**Its §0 lists what is already measured. Read it before any probe.**
+
 ### 2026-09-22b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22c.** T149 + T154 shipped (**read D-541 before touching `abstain_by_adjacent`**: the degree escape was abstaining bars the profile already met, 5,579 rows), T150 live, T92 and T151 shipped, T101 refused on measurement (D-544), T153 corrected (D-545) and now EXECUTED (D-548), T152/T105 designed (D-546). **Held in D-540 … D-546 — do not re-derive.**
 
 ### 2026-09-22 (earlier) — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22b.** §5 refuted and already held by T109 (D-536); a catalog re-key RELEASES 117 held leads (D-537); the degree-waiver gap enumerated at 6,712 and ruled in (D-538); four tickets ruled and specced (D-539). **All four rulings are now discharged — see the block above.**

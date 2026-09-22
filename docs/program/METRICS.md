@@ -15841,3 +15841,12 @@ measured here.**
 `gate-effort` code commit: `make check` exit read from a sentinel file (see the PR). Mutation
 checks: removing the `effort=settings.gate.effort` wiring fails the argv test; dropping the `""`
 after `--tools` fails both argv cases.
+
+### Addendum at close (2026-09-22c)
+
+- **Seat, whole session: 5% → 50%.** This covers the 833-lead re-judge PLUS the working session and
+  one reviewer subagent on the same enterprise seat, so the re-judge alone is < 45%.
+- **T127, live:** 12 of 833 standing leads read `apply` in the detail pane (`queue_detail`, no
+  `requirement_flags`) while the list holds them as `_review:no_requirements_found`. The null
+  control (same flags) gives 0 mismatches.
+
