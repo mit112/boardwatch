@@ -13,9 +13,10 @@
 > away** — fifteen passes so far, most recently **2026-09-21**, which moved TWO sets: the
 > 2026-09-20g / 2026-09-20f / 2026-09-19 session blocks, and the four settled owner-gated items.
 > **Nothing has been deleted on any pass.** That session also ADDED a lot, so the file closed at
-> **303 lines and is over the bar.** **The next thing to move is the 2026-09-21 block itself,
-> once PR #404 is confirmed merged and run 470 has been read against its recorded prediction** —
-> both are conditions inside it, so it is not movable before then. Do not narrate a
+> **over the bar again after the 2026-09-22 block.** **PR #404's condition is now DISCHARGED
+> (it merged as `a5cd9741`), so the 2026-09-21 block becomes movable the moment run 470 has been
+> read against its recorded prediction** — that is the only condition left inside it, and moving
+> it whole is the next pass. Do not narrate a
 > decision here that
 > `DECISIONS.md` already holds — cite its number instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
@@ -23,6 +24,49 @@
 ---
 
 ## Current standing
+
+### 2026-09-22 — **§5 IS REFUTED AND WAS ALREADY FIXED (D-536). A CATALOG RE-KEY SILENTLY RELEASES 117 HELD LEADS INTO THE APPLY LANE (D-537). THE DEGREE-WAIVER GAP IS ENUMERATED AT 6,712 AND THE WIDENING IS RULED IN (D-538). FOUR TICKETS ARE RULED AND SPECCED (D-539).**
+
+**Read `TICKETS-2026-09-22.md` before starting any of the four.** It holds implementation-ready
+specs — verified paths, red-first cases reproducing on `main`, the measured regex verbatim, and
+per-ticket "which hash does this re-key". The reusable catalog procedure moved to
+`STANDING-FACTS.md` under **"Changing `rules.yaml`"**; three of the four need it. **Nothing was
+built this session** — it was measurement and rulings only, and the tree is docs-only.
+
+**§5 (comp band) is struck from the next-action list (D-536).** It was called "the cheapest real
+fix in the file" on a premise that fails twice: the columns are populated on **0.83%** of open
+postings and on **4 of 1,083** delivered leads with **ZERO above any ceiling**, and it is blind to
+its own motivating posting (#170878 is NULL on all four comp columns; the figure is body text).
+Re-specified over the body it has 92x the reach but is a **company pay-tier proxy** — 8.3% explicit
+FPs at $200k including a *Graduate Software Engineer (2027 Start)* at a flat $200,000, and at
+$250k **88% of what it fires on is at companies with zero entry-titled comp observations**.
+**The class is ALREADY HELD:** the judge sees the whole JD and reads `seniority_fit = no` on
+**25 of 29 (86%)** high-comp leads against **36%** in the control, routed to `_review` since
+2026-09-14 — three days before the pre-flight that raised §5.
+
+**THE LIVE ONE, AND IT IS NOT A BUG BUT A MEASURED COST OF A RULED FAIL-OPEN (D-537).** The
+batch's `rules.yaml` change moved `rules_hash`, so **all 2,131 stored judge rows are dead** — their
+hash is stable 09-06..09-21 and does not match the live identity. Dead readings do not merely fail
+to ADD a hold; **they RELEASE leads the standing queue was already holding**, because both
+gate-derived holds sit ABOVE the `eligible` short-circuit and the queue re-derives every lane on
+every read. **NET 117 leads moved from `_review` into the apply lane** (floor; ceiling 350 — the
+233 deterministic-`uncertain` ones were not computed). ~35 are Member of Technical Staff, the exact
+class T109 exists for. **It does not self-heal** — a `built` disposition governs permanently, so
+these never re-rank or re-judge. **Mit ruled: do NOT restore the holds, do NOT spend the
+re-judge**, because the hold's own error floor is **38 of 339 (11.2%) explicit entry-level titles**
+— Haiku false negatives against the target population. Triaged at zero cost into 16 look / 38 skip
+/ 63 review. **Consequence: the Sonnet judge move is now JUSTIFIED, not merely owed** (D-477's bar
+is "Sonnet unless Haiku holds >= 90%"; this is an 11.2% floor miss). **Spend the re-judge ONCE,
+after it.**
+
+**The degree-waiver gap is 6,712, not 3,762 (D-538), and all ten arms are RULED IN.** Enumerated
+over 260,581 open postings with controls run before every counting pass — two fired and changed
+the work — and cross-checked two ways. Ruled in **despite buying ~0 slate slots**, on the ground
+that **D-532's unit rule governs how to SIZE new reach and does not license continuing to emit a
+verdict already known to be wrong.** The HS/GED arm ships although inert for this profile, on
+multi-tenancy; `or foreign equivalent` stays excluded; direction-blindness is pre-existing and not
+widened.
+
 
 ### 2026-09-21 — **THE ENGINE BATCH IS MERGED. RUN 469 SETTLES THE EXPANSION QUESTION AND IT INVERTS THE PROGRAM'S PRIORITY: THE BINDING CONSTRAINT IS THE SLATE CAP, NOT DISCOVERY (D-532). THE DRAIN IS MEASURED AND REFUSED (D-533). B8'S 9-OF-14 RECORD IS SUPERSEDED, NOT BLOCKING (D-534). THE NIGHTLY'S NEW WINDOWS RED IS A REAL PRODUCT GAP AND IS FIXED (D-535).**
 
@@ -59,35 +103,19 @@ lock-free reader saw **neither** revision — the third outcome §6 clause 1 say
 The reader now waits it out, bounded at 1s, `PermissionError` only. **Only a Windows dispatch can
 confirm the race is gone and ONE green run is not enough.**
 
-**SESSION CLOSE — ONE THING IS IN FLIGHT AND MUST BE CHECKED FIRST.** **PR #404**
-(`windows-pointer-swap`, the D-535 fix) was left **OPEN with auto-merge armed** at 12:41 CDT.
-Its PR CI was 11 of 22 jobs done with **none failing** and, decisively, **`web-bundle`
-completed `success`** — that is the same vitest suite the local gate kept failing, green on a
-clean runner. A Windows `workflow_dispatch` (**35631812260**) had all three `windows-latest`
-jobs in progress. **Confirm it merged — do not assume it.** If it did not, the branch and the
-reasoning are intact; nothing else in this session depends on it.
+**PR #404 MERGED** (`a5cd9741`), and a Windows `workflow_dispatch` came back green on all three
+`windows-latest` jobs. **That is ONE green run and D-535 says one is not enough** — read several
+scheduled nightlies with `gh run list --branch main --json event,conclusion` filtered to
+`event=="schedule"`; `--limit 1` shows the newest run of EITHER kind, which is how a red nightly
+reads as green.
 
-**THE LOCAL GATE WAS NEVER MADE GREEN ON THAT BRANCH, AND THIS IS THE HONEST RECORD OF WHY.**
-Dota 2 held the machine at **415% CPU, load 15–20**, for the whole session. `generalization`,
-`index-check`, `ruff` and `mypy --strict` passed. `web-test` failed with **2, then 11, then 13**
-vitest failures across three separate runs — **all `Test timed out in 5000ms`, no assertions**,
-and the varying count is the tell. `pytest` came back 1 failed / 10,627 passed, the failure a
-wall-clock assertion missing by **0.14s on a 3.0s margin** (`3.14 < 6.0/2`) in
-`test_lane_stage.py`, which never imports `profile_bundle` and passes in isolation.
-**CI's `web-bundle` job runs the same `npm test` on a clean runner and is the uncontended
-reading** — that is by design, and `ci.yml` says so in a comment. A Python-only change in
-`profile_bundle` cannot reach the React suite.
+**STANDING, and it cost two sessions: a CONTENDED gate is a FALSE NEGATIVE.** Check `uptime` and
+`ps -Ao pcpu,comm -r | head -3` BEFORE launching `make check`; above ~load 8 the vitest 5s
+timeouts fail and **the count varies run to run, which is the tell**. The 09-21 session never got
+a green local gate for this reason (2/11/13 vitest failures across three runs, all
+`Test timed out in 5000ms`) while CI's `web-bundle` job — the uncontended reading, by design —
+passed. This session's gate ran at load 2.7.
 
-**STANDING: a contended gate is a FALSE NEGATIVE and this is the second session it has cost.**
-Check `uptime` and `ps -Ao pcpu,comm -r | head -3` BEFORE launching `make check`; if load is
-above ~8, the vitest 5s timeouts will fail and the count will vary run to run. Two runaway
-recursive-glob processes were also found and killed at session start, one of them **16 hours
-old** from a prior session, each burning a core.
-
-**AFTER #404 MERGES, ONE GREEN WINDOWS RUN IS NOT CONFIRMATION (D-535).** The race fired roughly
-one nightly in five. **Read the next several scheduled builds** before calling it closed, with
-`gh run list --branch main --json event,conclusion` filtered to `event=="schedule"` — `--limit 1`
-shows the newest run of EITHER kind, which is how a red nightly reads as green.
 
 **PREDICTION FOR RUN 470, RECORDED SO IT CAN BE CHECKED.** The batch re-keys `rules_hash`, so
 the next preflight re-judges the whole stored corpus rather than the day's new postings. D-460
@@ -140,33 +168,46 @@ both of those recorded values too. Three more ticks and the condition is satisfi
 
 **Next action.**
 
-0. **ASTRA IS DONE and its engine batch is MERGED.** 37 of 51 tickets shipped (T100, T102, T103,
-   T104 landed today as `ea95c42c`). Still open from the reviews: **T101, T105, T92,
-   `education_timing`, the Sonnet judge move**, plus T113, T123, T124, T125, T127, T133, T135,
-   T137, T139's stage extraction, T144 and T138's two remaining halves. Mit's standing answer on
-   the seat: fan out **2–3 executors at once, never more**; ask for the usage reading again
-   before a fan-out on a later day.
+0. **FOUR TICKETS ARE RULED AND SPECCED — START FROM `TICKETS-2026-09-22.md`, NOT FROM THE
+   ASTRA TICKET TEXT, WHICH IS STALE ON THREE OF THEM (D-539).** Every ticket there is standalone
+   and ends in a **"Done when"** acceptance contract. Order: **T149** the degree escape, all ten
+   arms, `rules.yaml` only, follow `STANDING-FACTS.md` "Changing `rules.yaml`"; **T150**
+   `education_timing`, **ZERO lines**, two `facts set` commands, `profile_hash` only, and **not
+   before run 470 is read**; **T92** re-scoped to a T91-style **review-lane hold** (~40-60 lines,
+   moves NEITHER hash), not the engine change D-519 §3.5 already ruled against; **T101**'s closed
+   `requires_cue` field (~45 lines, both hashes) — the cheap 2-line suppressor was probed green and
+   REFUSED on fail-safety, kept as the fallback; then **T151** (staleness visible) and **T153** (the
+   Sonnet judge move, now justified). **T152 and T105 are DESIGN-OWED — no code before the
+   document.** T149 and T101 both touch `rules.yaml`: if both land in one session they share ONE
+   re-key, one gate and one corpus pass. Still open and untouched: T113, T123, T124, T125,
+   T127, T133, T135, T137, T139's stage extraction, T144, T138's two halves. Seat discipline:
+   fan out **2-3 executors at once, never more**, and ask for the usage reading first.
 1. **READ THE UNIT BEFORE SIZING ANY DISCOVERY WORK (D-532).** This replaces the old
    "read the next tick" item, which is discharged — 28 → 25 → 5 across runs 467/468/469 settles
    it. The live question is no longer whether boards yield; it is that **`capped_by_top_n` is
    10,533 against a 40-slot slate**, so eligible-posting counts do not convert. Anything proposed
    in "eligible added" must be restated in slate slots or refused.
-2. **THE HIGHEST-VALUE OPEN WORK IS B8's PRECISION HALF, NOT RECALL.** With the slate cap
-   binding, every unapplyable lead removed is replaced from a 10,533-deep queue — so a precision
-   fix converts one-for-one into an applyable lead. The 2026-09-17 autoapply pre-flight file
-   (now tracked, re-measured 2026-09-21) is the ranked list. **Cheapest real fix: §5, comp band
-   as an input to the seniority gate** — `salary_min`/`salary_max` are already columns and the
-   gate already exists. **Do NOT re-ticket §8** (dead postings): it is closure LATENCY, already
-   instrumented by T117/T126, and all five of its named postings have since closed.
+2. **B8's PRECISION HALF IS STILL THE HIGHEST-VALUE AREA, BUT §5 IS NO LONGER THE ROUTE INTO IT
+   (D-536).** §5 is struck: worth 0 slate slots as specified, blind to its own case, and the class
+   is already held by T109 since 2026-09-14. **Do NOT re-ticket §5, and do not re-ticket §8** —
+   both now carry the same disposition (already instrumented / already held). What the precision
+   half actually needs is **the Sonnet judge move**, which D-537 moved from owed to justified by
+   measuring an **11.2% floor error rate** on the live `haiku` gate against the new-grad
+   population. The remaining unexamined classes in the pre-flight file are §1, §2 (the largest
+   build — a scoring dimension), §3, §4, §6 and §7. **§10 is a permanent limitation; state it,
+   do not chase it.**
 3. **`--top` IS THE UNMEASURED LEVER AND IS NOT RULED.** Raising it converts buried postings into
    leads at unknown precision cost; B8's precision half is the instrument and it has never been
    read above n = 40/day. **Do not raise it without measuring leads 41–80 first.** Owner's call.
-4. **Still owed in the engine line:** T101, T105 (bullet-ladder inheritance — T104's known
-   residual, posting `261677`), T92, `education_timing` (D-521 §8.5 — **the family ALREADY
-   EXISTS** in `rules.yaml` as `currently_enrolled`/`graduation_yyyymm`; re-read D-521 §8.5
-   against the catalog before building), and **the Sonnet judge move** (D-477, D-514), whose
-   prerequisite T108 is shipped and whose one-time re-judge fired clean on run 468. Each re-keys
-   `engine_version`, so batch them on one branch again.
+4. **THE D-537 RESIDUALS, DEFERRED BY MIT TO THE SESSION AFTER NEXT.** (a) **Stop keying a
+   body-seniority reading on `rules_hash`** — a reading of a BODY is arguably not a function of the
+   rules catalog, and the over-keying is what releases 117 held leads on every catalog change.
+   **This is NOT D-380's fail-open direction, which STANDS**: D-380 governs what happens when a
+   reading is absent, this governs what makes one absent. (b) **Make the staleness visible** —
+   nothing counts standing leads whose stored reading went stale; `runner.py:3204` alerts on a
+   different condition (absent from a judge RESPONSE). Any new soft alert sits **ABOVE
+   `_emit_morning`** and must not go on `summary.errors` without re-reading D-529. (c) The
+   standing-queue re-judge is **refused for now** and is spent ONCE, after the Sonnet move.
 5. **Rule on Indeed** — deferred by Mit on 2026-09-21 to a later session. Second consecutive
    silent refusal; evasion refused (D-368). If accepted, size it as a dead lane rather than
    fixing it. Note run 467 met B8 with Indeed already dead.
@@ -183,21 +224,16 @@ both of those recorded values too. Three more ticks and the condition is satisfi
 
 ### Owed, and specifically NOT done
 
-- **NEW, found while pressure-testing T104 and NOT in T104's scope: the equivalence escape's
-  VOCABULARY has a recall gap that deletes jobs.** `degree_equivalence` is
-  `or\s+equivalent|equivalent\s+(?:experience|work)|in\s+lieu\s+of|may\s+be\s+substituted`, so
-  **"An equivalent combination of education and experience is acceptable."** — a very common JD
-  phrasing — matches NOTHING. `A PhD is required. An equivalent combination of education and
-  experience is acceptable.` reads **`ineligible`** against a bachelor's, and it read that way on
-  `main` BEFORE T104 as well: verified against the unmodified catalog, so this is a pre-existing
-  vocabulary gap, not a reach bug and not a T104 regression. Five other waiver phrasings were
-  checked and all hold. **NOW SIZED: 3,762 open postings** state an out-of-vocabulary waiver AND
-  carry no in-vocabulary escape either, out of **141,756** that mention a degree (2.65%); a
-  further 3,365 have both, so the catalog already sees those. **That 3,762 is a LOWER BOUND** —
-  the probe searched phrasings chosen by hand (`equivalent combination`, `combination of education
-  and experience`, `comparable experience`, `equivalent qualification/education/training/skills`,
-  `experience in place of`), not an enumeration, so an unlisted phrasing is uncounted. Widening
-  the escape moves verdicts toward `uncertain`, which is its own trade and needs its own ruling.
+- **THE DEGREE-WAIVER VOCABULARY GAP IS NOW ENUMERATED AND RULED IN — see D-538 and
+  `TICKETS-2026-09-22.md` §1. The old 3,762 figure here was a hand-picked LOWER BOUND and is
+  SUPERSEDED by 6,712** (3.83% of the 175,406 degree-mentioning postings; +11.1% on the escape's
+  current reach of 60,708). All ten arms ship, the measured regex is in the ticket file verbatim,
+  and the **35%-at-the-wrong-bar qualifier must be quoted with the headline, never the headline
+  alone**. Two things stay refused inside it: `or foreign equivalent` (829 postings — a
+  foreign-equivalent degree is still a degree) and the **pre-existing** direction-blindness, where
+  the shipped `in lieu of` / substitution arms already fire on a degree substituting for an
+  EXPERIENCE bar. The escape is a **YAML anchor aliased by SEVEN patterns**, so one edit moves all
+  seven.
 - **T51 SHIPPED (D-484) before the freeze.** Its residual: a hedged bar carrying a domain noun has no
   `*_preferred` sibling to land in and writes no row; a recall change for M3's window.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
