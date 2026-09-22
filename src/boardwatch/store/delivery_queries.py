@@ -1134,9 +1134,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # alternative, each call site checking the flag itself, is exactly the second opinion
     # `_review` exists to prevent (D-332). It also skips the query entirely when off.
     seniority = (
-            current_gate_seniority(
-                conn, version_ids, current_facts(conn), model=settings.gate.model
-            )
+        current_gate_seniority(conn, version_ids, current_facts(conn), model=settings.gate.model)
         if settings.gate.seniority_hold
         else {}
     )
@@ -1585,9 +1583,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # inert `"unclear"` default is what keeps them agreeing (D-332). `settings` is already bound
     # above, so this needs no second `load_settings()`.
     seniority = (
-            current_gate_seniority(
-                conn, version_ids, current_facts(conn), model=settings.gate.model
-            )
+        current_gate_seniority(conn, version_ids, current_facts(conn), model=settings.gate.model)
         if settings.gate.seniority_hold
         else {}
     )
