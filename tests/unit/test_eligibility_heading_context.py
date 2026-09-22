@@ -64,11 +64,18 @@ HEADING_CASES: list[tuple] = [
     ("h07:CONTROL a heading never turns an abstaining row unmet", "Requirements:\n- A bachelor's degree or 5 years of experience.", P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
     ('h08:list twin of m0163', 'Nice to have:\n- 10 years of experience.', _corpus('m0163')[2], _corpus('m0163')[3], 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h09:list twin of m0669', 'Nice to have:\n- 8-10 years of experience.', _corpus('m0669')[2], _corpus('m0669')[3], 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('h10:BOUND a blank line after the bullets ends the heading, so the paragraph bar rejects', 'Nice to have:\n- Go experience\n\nWe require 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h11:BOUND an unmarked line after bulleted ones ends the heading, so its bar rejects', 'Nice to have:\n- Go experience\nWe require 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h12:a blank line straight after the heading still governs its bullets', 'Nice to have:\n\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h13:BOUND a blank line after a list of plain lines ends the heading, so the paragraph bar rejects', 'Nice to have:\nGo experience\n\nWe require 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h14:a loose list keeps its heading across the blank line between its bullets', 'Nice to have:\n- Go experience\n\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ("h15:an unmarked OR line under a heading joins its bullets rather than ending the list", "Requirements:\n- A master's degree.\nOR\n- 5 years of experience.", P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
 INLINE_TWINS: list[tuple[str, str]] = [
     ("h02", "A master's degree or 5 years of experience."),
+    ("h15", "A master's degree or 5 years of experience."),
     ("h03", "HS Diploma (or equivalent) AND 4+ years of experience or Associate's degree AND 2+ years of experience or Bachelor's degree"),
     ("h08", _corpus("m0163")[1]),
     ("h09", _corpus("m0669")[1]),
@@ -76,7 +83,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "75333aa1fa4dbb3fc29c700bc7fdf19c100a34898367c55bd47a882a4e6ef83a"
+SPLIT_UNITS_DIGEST = "8f125ea9ed368d4757cd260315a6ccb2b92df331db820b691eb0af50aa7a42b9"
 
 
 @pytest.fixture(scope="module")
@@ -143,4 +150,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 9
+    assert len(HEADING_CASES) == 15
