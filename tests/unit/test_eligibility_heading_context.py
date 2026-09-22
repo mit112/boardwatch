@@ -49,6 +49,14 @@ LADDER_261677 = (
     "- OR Associate's degree AND 2+ years of experience\n"
     "- OR Bachelor's degree"
 )
+# Posting 261677's own line: the whole ladder is ONE line of inline bullets, not the multi-line
+# list the design paraphrased, so the OR link has to open at an inline bullet as well as a line.
+LADDER_261677_INLINE = (
+    "Required Knowledge and Experience: • High School Diploma (or equivalent) AND 4+ years "
+    "experience* • OR Associate’s Degree AND 2+ years experience* • OR Bachelor’s Degree "
+    "*Relevant sales, clinical, or related experience in medical devices, medtech, healthcare, "
+    "or life sciences."
+)
 BOUND_CONTROL = (
     "Nice to have:\n- 5 years of experience.\nRequirements:\n- 8 years of experience."
 )
@@ -70,12 +78,15 @@ HEADING_CASES: list[tuple] = [
     ('h13:BOUND a blank line after a list of plain lines ends the heading, so the paragraph bar rejects', 'Nice to have:\nGo experience\n\nWe require 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h14:a loose list keeps its heading across the blank line between its bullets', 'Nice to have:\n- Go experience\n\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ("h15:an unmarked OR line under a heading joins its bullets rather than ending the list", "Requirements:\n- A master's degree.\nOR\n- 5 years of experience.", P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
+    ('h16:261677 as posted, one line of inline bullets, abstains on every rung and never rejects', LADDER_261677_INLINE, P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown'], ['experience_years:total_years_minimum', 'required', 'unknown']]),
+    ("h17:CONTROL inline bullets with no OR are separate bars, so the years bar rejects", "Requirements: • 5+ years of experience • A bachelor's degree", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
 INLINE_TWINS: list[tuple[str, str]] = [
     ("h02", "A master's degree or 5 years of experience."),
     ("h15", "A master's degree or 5 years of experience."),
+    ("h16", "High School Diploma (or equivalent) AND 4+ years experience* or Associate’s Degree AND 2+ years experience* or Bachelor’s Degree *Relevant sales, clinical, or related experience in medical devices, medtech, healthcare, or life sciences."),
     ("h03", "HS Diploma (or equivalent) AND 4+ years of experience or Associate's degree AND 2+ years of experience or Bachelor's degree"),
     ("h08", _corpus("m0163")[1]),
     ("h09", _corpus("m0669")[1]),
@@ -83,7 +94,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "8f125ea9ed368d4757cd260315a6ccb2b92df331db820b691eb0af50aa7a42b9"
+SPLIT_UNITS_DIGEST = "0dacddb9412976d18180f929f96b1277683463e2ddc338ea80ffd9989135438d"
 
 
 @pytest.fixture(scope="module")
@@ -150,4 +161,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 15
+    assert len(HEADING_CASES) == 17

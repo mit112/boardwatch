@@ -280,20 +280,36 @@ def _arm(unit: str) -> str:
     return _ARM_TAIL.sub("", _ARM_LEAD.sub("", unit, count=1), count=1)
 
 
+# The bullet `_SENTENCE_SPLIT` consumes before an inline item, so the item's own text no longer
+# shows it. Same marker class as the splitter's bullet branch.
+_INLINE_BULLET_BEFORE = re.compile(r"[•‣●\-\*]\s+$")
+
+
+def _opens_item(text: str, offset: int) -> bool:
+    """Whether the unit at `offset` starts a list item: a line, or an inline bullet."""
+    return (
+        offset == 0
+        or text[offset - 1] == "\n"
+        or _INLINE_BULLET_BEFORE.search(text[max(0, offset - 8):offset]) is not None
+    )
+
+
 def alternative_groups(
     text: str, units: list[tuple[int, str]], governing: list[int | None]
 ) -> list[str | None]:
     """For each unit joined to its neighbours by an explicit OR between lines, the group
     written as its inline twin (`arm or arm or arm`), else None.
 
-    The link is a line that is only `OR`, or a line that opens with it. It joins the units
+    The link is a list item that is only `OR`, or one that opens with it. An item opens a line,
+    or follows an inline bullet the splitter cut on (`… • OR Associate's Degree …`, one line
+    holding the whole list, which is how posting 261677 states its ladder). It joins the units
     either side, never a heading, and never across one. The group is then read by each
     pattern's OWN alternative escapes, exactly as the one-line sentence would be: `or` stays
     out of `_CLAUSE_BOUNDARY`, and a list form waives nothing its inline twin would not.
     """
     groups: list[list[int] | None] = [None] * len(units)
     for index, (offset, unit) in enumerate(units):
-        if not (offset == 0 or text[offset - 1] == "\n") or not _OR_LEAD.match(unit):
+        if not _opens_item(text, offset) or not _OR_LEAD.match(unit):
             continue
         before, after = index - 1, index + 1 if _or_only(unit) else index
         if before < 0 or after >= len(units) or _or_only(units[before][1]):
