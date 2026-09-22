@@ -21,6 +21,41 @@
 
 ## Current standing
 
+### 2026-09-22d — **T159 READ: THE SONNET-ERA APPLY LANE IS 5.4% UNAPPLYABLE, SO B8's PRECISION HALF IS MET ON IT (D-550). T113 SHIPS AS A BOUNDED STANDING-QUEUE REFRESH, OFF UNTIL THE OWNER ARMS IT (D-551). T127 AND T158 SHIP. RUN 471 HAD NOT HAPPENED — IT IS STILL THE NEXT READING.**
+
+**The session ran on the afternoon of 2026-09-22, BEFORE the 04:00 CDT tick.** Run 471, D-529's
+n ≥ 5 revisit and B8's day 1 are all still owed, exactly as the 2026-09-22c block below states
+them.
+
+**T159 (D-550).** Two blind opus passes (the owner's ruling) over 134 items, with 95.5% agreement
+on a 44-item overlap. The apply lane (529) reads **3/56 = 5.4% unapplyable (CI 2–15%)** against
+the ≤ 16% bar; the haiku-era control on 09-13 was 21.4%. Sonnet's extra clears (the 150 leads
+haiku would have held) read 7.8%. **Sonnet's seniority hold parks ~53% applyable leads** (the held
+arm reads 46.7% unapplyable, ~109 of 204). It still pays for itself, because releasing all 204
+would take the lane to ~16.9%. **Whether to refine it is the owner's call; nothing is built.**
+The misses name two small tickets:
+- **T160.** `classify_location` fails open on ISO-3 suffixes (`Dublin, IRL`): 777 open postings.
+- **T105.** The one eligibility miss is an extraction gap under a "Desired Qualifications"
+  heading, which is T105's shape.
+
+**T113 (D-551).** `[gate] refresh_budget` re-judges up to that many stale standing-queue leads
+per run, through `run_gate_stage` itself, one batch per commit, promotable holds first. The
+funnel's `gate` block reports `refresh_*`. **Default 0, and the live config is NOT armed:**
+arming spends seat every run, so it is the owner's call. The recommendation is 130/run: ~5–7% of
+the seat per run while a backlog exists, a full re-key drained in ~7 runs, ~0 in steady state.
+**Until it is armed, the eligibility batch still strands the queue.** The original T113 half is
+split out as **T113b**: 66 stale negatives that `top_cmd` hides, which the batch's `rules_hash`
+move frees anyway.
+
+**NEXT WORK, IN ORDER** (`TICKETS-2026-09-22c.md`, with its 2026-09-22d status section):
+0. **Read run 471** as the 2026-09-22c block below specifies, then **raise D-529 (n ≥ 5).**
+1. **Owner: arm `gate.refresh_budget`** in the live `config.toml` (back it up first). Verify it by
+   reading `Settings` back, never the file, and on the next run by the funnel's `refresh_*`.
+2. **The eligibility batch** (T152 + T156 + T157 + T105), only once #1 is armed.
+3. **T155** (owner question first), **T160**, and T113b only if a model/effort/facts change
+   recreates the backlog.
+4. **Parked, unchanged:** `TICKETS-2026-09-22c.md` §#5.
+
 ### 2026-09-22c — **RUN 470 READ: THE RE-KEY FIRED AS PREDICTED AND B8's VOLUME SITS ON THE BAR AT 20 (D-547). A RE-KEY ALSO DEMOTES — 237 LEADS 0-B HAD PROMOTED FELL OUT OF THE APPLY LANE, WHICH D-537 NEVER MEASURED. T153 EXECUTED ON THE OWNER'S RULING: THE JUDGE IS `sonnet`, THE STANDING QUEUE WAS RE-JUDGED ONCE (833 of 833) AND ITS APPLY LANE READS 529 (D-548). `gate.effort` SHIPS.**
 
 **Run 470 (D-547).** 85m34s against 75–85. The re-key is verified in the store, not inferred from
@@ -52,18 +87,9 @@ freshness key, so a later change of level re-judges nothing already judged.
 `PROGRAM.md` §1). Read its `gate` block: the first daily gate on Sonnet, and the first whose
 standing queue is fully current.
 
-**NEXT WORK, IN ORDER — `TICKETS-2026-09-22c.md` holds all of it, with every pointer and cost
-(D-549):**
-1. **T159**: a blind audit of the Sonnet-era apply lane. B8's precision half; no code. Judges must
-   exclude the production model.
-2. **T113 re-scoped**: an automatic, bounded standing-queue gate refresh.
-3. **One eligibility batch**: T152 + T156 + T157 + T105. AFTER T113, or it costs another hand-run
-   re-judge.
-4. **Cleanups**: T127 (live, 12 leads), T155, T158.
-5. **PARKED, not forgotten**: T123, T124, T125, T133, T135, T137, T138, T139, T144, plus the owner
-   calls. Listed in the same file's §#5.
-
-**Its §0 lists what is already measured. Read it before any probe.**
+**NEXT WORK: superseded by the 2026-09-22d block above.** #1 (T159), #2 (T113) and the T127/T158
+cleanups are done. `TICKETS-2026-09-22c.md` §0 still lists what is already measured: read it
+before any probe.
 
 ### 2026-09-22b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22c.** T149 + T154 shipped (**read D-541 before touching `abstain_by_adjacent`**: the degree escape was abstaining bars the profile already met, 5,579 rows), T150 live, T92 and T151 shipped, T101 refused on measurement (D-544), T153 corrected (D-545) and now EXECUTED (D-548), T152/T105 designed (D-546). **Held in D-540 … D-546 — do not re-derive.**
 
