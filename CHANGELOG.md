@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run now reports when its gate readings have gone blind (2026-09-22, T151).** A stored gate
+  reading is scoped on both `profile_hash` and `rules_hash`, and the read fails open. So a catalog
+  or profile re-key does not merely fail to *add* a hold — it **releases** every hold those rows
+  were carrying, with no error and no warning. 117 leads were measured moving out of `_review` into
+  the apply lane that way, and nothing in the run said so. `gate.readings_absent` counts, at the
+  lane split and beside the read it describes, how many delivered leads had no readable reading
+  under the live identity; a strict majority raises a soft alert into the morning digest.
+
+  Counted on the gate **verdict** read rather than the seniority one, because the seniority dict is
+  empty by construction whenever `gate.seniority_hold` is off — counting there would report every
+  lead blind on a run where nothing is wrong. Counted by **membership**, never by a `None` test:
+  the read returns `dict[int, str | None]` and a present-but-`None` value is a real row. On a
+  healthy run the number is zero, because the count is taken immediately after the gate stage has
+  judged at `gate.depth`, which is what keeps the alert a signal instead of daily noise.
+
+  The alert sits above the morning digest's emission like every other soft alert here: below it, an
+  alert still fires and is still recorded but is invisible in the one artifact an unattended owner
+  reads. A test reads the rendered digest file rather than `summary.errors`, because only the file
+  can tell the two positions apart. `ARTIFACT_VERSION` stays at 8 — an additive key inside a block
+  that has carried counters since it was introduced, changing no existing key's meaning, on the
+  same precedent as `scan.fetch_cost` and `routing_hash`.
+
 - **A provider's own `employmentType` holds a lead for review (2026-09-22, T92).** The Ashby job
   board publishes a structured `employmentType` per posting, and ten open leads were reaching the
   blind-apply queue marked `Contract`, `Intern` or `PartTime` by the employer itself while their

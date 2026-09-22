@@ -581,6 +581,7 @@ class PipelineSummary:
     gate_seniority_answered: int = 0
     gate_seniority_unclear: int = 0
     gate_seniority_unreadable: int = 0
+    gate_readings_absent: int = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -1413,8 +1414,9 @@ def _retract_projected(outcomes: Counter[ProjectionLeadOutcome]) -> None:
 
 def _lead_lanes(
     engine: Engine, settings: Settings, leads: Sequence[RankedPosting]
-) -> dict[int, tuple[str, int | None]]:
-    """posting_id -> (`review_gate.lane`'s verdict, its current `posting_version_id`), computed
+) -> tuple[dict[int, tuple[str, int | None]], int]:
+    """(posting_id -> (`review_gate.lane`'s verdict, its current `posting_version_id`), count of
+    leads with NO readable gate reading), computed
     BEFORE the tailor loop (T43) so the expensive render is spent on apply-lane leads only.
 
     The ONE lane definition `delivery/queue.py` already calls at sync time, fed the same shape of
@@ -1435,7 +1437,8 @@ def _lead_lanes(
     side, where four readers took the default (T109).
     """
     if not leads:
-        return {}
+        # No leads is not a staleness reading: nothing was looked up, so the honest count is 0.
+        return {}, 0
     posting_ids = [p.posting_id for p in leads]
     with engine.connect() as conn:
         identity = current_identity(conn, settings)
@@ -1447,6 +1450,23 @@ def _lead_lanes(
         # version list as the verdict and the requirement summary beside it, so the lane this
         # run tailors for can never disagree with the one `sync_queue` files the folder under.
         gate_verdicts = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+        # T151. HOW MANY leads the gate read found NOTHING for, counted beside the read itself
+        # rather than re-derived later, so the number and the lane decision cannot disagree.
+        #
+        # This is the instrument D-537 was missing. A stored gate row is scoped on `profile_hash`
+        # AND `rules_hash` (`read.py:266-273`) and the read FAILS OPEN, so a catalog re-key does
+        # not merely fail to ADD a hold -- it RELEASES every hold the stored rows were carrying,
+        # silently, with no error and no warning. 117 leads were measured moving out of `_review`
+        # into the apply lane that way, and nothing in the run reported it.
+        #
+        # Counted on `gate_verdicts`, NOT on `gate_seniority`: the seniority dict is `{}` by
+        # construction whenever `gate.seniority_hold` is off (just below), which would report every
+        # lead absent on a run where nothing is wrong. And membership, never `.get(...) is None`
+        # -- the return is `dict[int, str | None]` and a present-but-None value is a REAL row.
+        #
+        # Keyed on `posting_id`: both reads take `version_ids` but remap through
+        # `_posting_by_version` before returning (`read.py:392-394`), so the dict is posting-keyed.
+        readings_absent = sum(1 for p in leads if p.posting_id not in gate_verdicts)
         # The runner's twin of `delivery_queries`' gate point: same flag, same inert default, so
         # the lane this run tailors for cannot disagree with the one `sync_queue` files under.
         gate_seniority = (
@@ -1536,7 +1556,7 @@ def _lead_lanes(
             ),
             posting_version_id,
         )
-    return result
+    return result, readings_absent
 
 
 def _abandon_unattempted(summary: PipelineSummary, remaining: Sequence[RankedPosting]) -> None:
@@ -2374,7 +2394,7 @@ def run_pipeline(
         # apply-lane leads only. Computed once over the whole slate rather than per-lead inside
         # the loop, for the same reason `dead_job_ids` above is: one query beats N. Runs on the
         # POST-gate `leads`: a lead the gate just excluded must not be lane-classified at all.
-        lane_of = _lead_lanes(engine, settings, leads)
+        lane_of, summary.gate_readings_absent = _lead_lanes(engine, settings, leads)
 
         # Names the résumé source in the log, so a projected run is distinguishable from an
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
@@ -3221,6 +3241,47 @@ def run_pipeline(
                 append_run_error(engine, run_id, seniority_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! gate seniority alert not recorded: {exc}", markup=False)
+        # T151. THE GATE READING WENT BLIND, and this is the alert D-537 had no instrument for.
+        #
+        # ABOVE `_emit_morning` like every soft alert here (D-477 point 7): below it the alert
+        # still fires and is still recorded, but is invisible in the one artifact an unattended
+        # owner reads.
+        #
+        # It is a FAULT, not a reading, which is why it goes on `summary.errors` and escalates
+        # where D-529 deliberately kept B8's volume number off it. The count is taken over the
+        # run's OWN delivered slate immediately after the gate stage judged at `gate.depth`, so on
+        # a healthy run it is 0 and this is silent. A non-zero value means stored gate rows are
+        # unreadable under the live identity — and per D-537 that does not merely fail to ADD a
+        # hold, it RELEASES every hold those rows were carrying, with no error and no warning.
+        #
+        # A STRICT MAJORITY rather than any single miss, copying the seniority block above: a
+        # single newly-created posting that the gate has not reached yet is normal, while the
+        # failure this exists to catch — an identity re-key — hits every lead at once.
+        #
+        # Armed only when the gate is: with `gate.enabled` false nothing writes gate rows at all,
+        # so absence is expected rather than a fault, and the funnel's whole `gate` block is
+        # already `None` for that run.
+        #
+        # Guarded (T129) like every sibling.
+        try:
+            if (
+                settings.gate.enabled
+                and summary.gate_readings_absent * 2 > len(summary.tailored)
+                and summary.gate_readings_absent
+            ):
+                staleness_alert = (
+                    "gate: no readable gate reading under the live identity for "
+                    f"{summary.gate_readings_absent} of {len(summary.tailored)} delivered "
+                    "lead(s) — stored gate rows are scoped on `profile_hash` AND `rules_hash` "
+                    "and the read fails open, so every gate-derived hold on them has RELEASED, "
+                    "not merely failed to apply (D-537). A catalog or profile re-key does this "
+                    "silently; re-judge before trusting the apply lane"
+                )
+                console.print(f"  ! {staleness_alert}", markup=False)
+                summary.errors.append(staleness_alert)
+                append_run_error(engine, run_id, staleness_alert)
+        except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+            console.print(f"  ! gate staleness alert not recorded: {exc}", markup=False)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
@@ -3508,6 +3569,7 @@ def _emit_funnel(
                 seniority_answered=summary.gate_seniority_answered,
                 seniority_unclear=summary.gate_seniority_unclear,
                 seniority_unreadable=summary.gate_seniority_unreadable,
+                readings_absent=summary.gate_readings_absent,
             )
             if settings.gate.enabled
             else None

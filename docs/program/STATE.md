@@ -25,48 +25,46 @@
 
 ## Current standing
 
-### 2026-09-22 — **§5 IS REFUTED AND WAS ALREADY FIXED (D-536). A CATALOG RE-KEY SILENTLY RELEASES 117 HELD LEADS INTO THE APPLY LANE (D-537). THE DEGREE-WAIVER GAP IS ENUMERATED AT 6,712 AND THE WIDENING IS RULED IN (D-538). FOUR TICKETS ARE RULED AND SPECCED (D-539).**
+### 2026-09-22b — **FOUR TICKETS SHIPPED IN ONE NIGHT AND THE HEADLINE IS A DEFECT NOBODY HAD TICKETED: THE DEGREE ESCAPE WAS ABSTAINING BARS THE PROFILE ALREADY MET, 5,579 ROWS OF IT (D-541). T149 ALONE WAS A NET −90 REGRESSION (D-540). T92 AND T151 SHIPPED (D-542, D-543). T101 IS REFUSED ON MEASUREMENT (D-544). T153's TWO RE-KEY CLAIMS ARE BOTH WRONG (D-545). T152/T105 DESIGNED (D-546).**
 
-**Read `TICKETS-2026-09-22.md` before starting any of the four.** It holds implementation-ready
-specs — verified paths, red-first cases reproducing on `main`, the measured regex verbatim, and
-per-ticket "which hash does this re-key". The reusable catalog procedure moved to
-`STANDING-FACTS.md` under **"Changing `rules.yaml`"**; three of the four need it. **Nothing was
-built this session** — it was measurement and rulings only, and the tree is docs-only.
+**Shipped and merged:** #407 (T149 + T154), #408 (T92), #409 (T151). **T150 declared live.**
+Every gate exit 0, read from a sentinel: 10,643 / 10,656 / (T151) passed, coverage 95.26%.
 
-**§5 (comp band) is struck from the next-action list (D-536).** It was called "the cheapest real
-fix in the file" on a premise that fails twice: the columns are populated on **0.83%** of open
-postings and on **4 of 1,083** delivered leads with **ZERO above any ceiling**, and it is blind to
-its own motivating posting (#170878 is NULL on all four comp columns; the figure is body text).
-Re-specified over the body it has 92x the reach but is a **company pay-tier proxy** — 8.3% explicit
-FPs at $200k including a *Graduate Software Engineer (2027 Start)* at a flat $200,000, and at
-$250k **88% of what it fires on is at companies with zero entry-titled comp observations**.
-**The class is ALREADY HELD:** the judge sees the whole JD and reads `seniority_fit = no` on
-**25 of 29 (86%)** high-comp leads against **36%** in the control, routed to `_review` since
-2026-09-14 — three days before the pre-flight that raised §5.
+**Read D-541 before touching `abstain_by_adjacent`.** Widening the degree escape (T149, ruled in by
+D-538) turned out to be a **net −90 apply-lane regression on its own**: measured over the 6,964
+open postings the new escape reaches and the old does not, it demoted **90** postings out of
+`eligible` to rescue **3** from deletion. Cause was pre-existing and nobody had ticketed it —
+`abstain_by_adjacent` applied at DETECT time, before resolution, so a waiver abstained a
+requirement **the profile already satisfied**. A waiver RELAXES a bar; it cannot make a satisfied
+bar undecidable. **5,579 of the 5,697 stored escape-abstained degree rows (97.9%) were discarding a
+decisive `met`.** With the fix the same population reads **10 rescued, 0 demoted, 0 newly
+ineligible** — and the rescues rose 3 → 10 because the bug was suppressing T149's own intended
+rescues. Fixed as **T154** in the same commit, because T149 alone is a regression nobody should
+bisect to. **D-531's owed measurement is also answered: the stage-1b job-deleting mode is 0 of
+6,964**, and T154 removes the mechanism.
 
-**THE LIVE ONE, AND IT IS NOT A BUG BUT A MEASURED COST OF A RULED FAIL-OPEN (D-537).** The
-batch's `rules.yaml` change moved `rules_hash`, so **all 2,131 stored judge rows are dead** — their
-hash is stable 09-06..09-21 and does not match the live identity. Dead readings do not merely fail
-to ADD a hold; **they RELEASE leads the standing queue was already holding**, because both
-gate-derived holds sit ABOVE the `eligible` short-circuit and the queue re-derives every lane on
-every read. **NET 117 leads moved from `_review` into the apply lane** (floor; ceiling 350 — the
-233 deterministic-`uncertain` ones were not computed). ~35 are Member of Technical Staff, the exact
-class T109 exists for. **It does not self-heal** — a `built` disposition governs permanently, so
-these never re-rank or re-judge. **Mit ruled: do NOT restore the holds, do NOT spend the
-re-judge**, because the hold's own error floor is **38 of 339 (11.2%) explicit entry-level titles**
-— Haiku false negatives against the target population. Triaged at zero cost into 16 look / 38 skip
-/ 63 review. **Consequence: the Sonnet judge move is now JUSTIFIED, not merely owed** (D-477's bar
-is "Sonnet unless Haiku holds >= 90%"; this is an 11.2% floor miss). **Spend the re-judge ONCE,
-after it.**
+**T150 is live and its ticket was wrong by one.** `education_timing` declared
+(`profile_hash` verified to move through the production helper, with a null control reproducing the
+live persisted hash). Effect is **6 of the 7 named postings, not 7**: 110519 says *"graduating
+between Fall 2026 and Summer 2027"* and the catalog **cannot read season names**, so it abstains
+rather than guessing — a genuine gap sized at **457 of 260,581** open postings. Corpus-wide reach is
+**7,869 rows**, not 7 leads; the ticket counted standing leads.
 
-**The degree-waiver gap is 6,712, not 3,762 (D-538), and all ten arms are RULED IN.** Enumerated
-over 260,581 open postings with controls run before every counting pass — two fired and changed
-the work — and cross-checked two ways. Ruled in **despite buying ~0 slate slots**, on the ground
-that **D-532's unit rule governs how to SIZE new reach and does not license continuing to emit a
-verdict already known to be wrong.** The HS/GED arm ships although inert for this profile, on
-multi-tenancy; `or foreign equivalent` stays excluded; direction-blindness is pre-existing and not
-widened.
+**T92's reach was 5× stale** (the ticket predated the 652 → 1,807 expansion): **10** leads were
+reaching the blind-apply queue against the employer's own non-FullTime `employmentType`, not 2.
 
+**T101 is REFUSED on measurement, both halves (D-544)** — the closed field would abstain **3,288
+genuine requirements** to catch **~21**. **A JD carries its obligation STRUCTURALLY, not lexically**,
+so Half A is **blocked on T105**. Half B sized at 49 rows and also not built.
+
+**Next action: run 470 has still NOT been read.** The launchd job was booted out at 00:52 on the
+owner's "postpone the run until all work is done" instruction and **restored at session close**, so
+the 04:00 CDT tick fires on the final merged code. **All THREE hashes now move** (`rules_hash` +
+`engine_version` from #407, `profile_hash` from T150), so the corpus re-judge is certain to fire and
+D-532's 75–85 min prediction is readable; a ~56 min duration would mean the re-key did NOT fire, and
+**that** is the finding. B8's volume half still owes its reading (`pdf.entered` vs bar 20).
+
+### 2026-09-22 (earlier) — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22b.** §5 refuted and already held by T109 (D-536); a catalog re-key RELEASES 117 held leads (D-537); the degree-waiver gap enumerated at 6,712 and ruled in (D-538); four tickets ruled and specced (D-539). **All four rulings are now discharged — see the block above.**
 
 ### 2026-09-21 — **THE ENGINE BATCH IS MERGED. RUN 469 SETTLES THE EXPANSION QUESTION AND IT INVERTS THE PROGRAM'S PRIORITY: THE BINDING CONSTRAINT IS THE SLATE CAP, NOT DISCOVERY (D-532). THE DRAIN IS MEASURED AND REFUSED (D-533). B8'S 9-OF-14 RECORD IS SUPERSEDED, NOT BLOCKING (D-534). THE NIGHTLY'S NEW WINDOWS RED IS A REAL PRODUCT GAP AND IS FIXED (D-535).**
 
@@ -145,95 +143,18 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 
 ### Astra reviews 01–05 — **CONSUMED AND CLOSED.** All five slices, 42 findings, nothing refuted. Held WHOLE in **D-523 … D-527** and the five `TICKETS-2026-09-*-ASTRA-0*.md` files; the remediation that followed is **D-528**. **Do not re-derive any of it.** Of T98–T148 (51 tickets), **33 shipped**; **T145/T146/T147 are not build work** (owner DO-NOT-BUILD, future-reading guidance, LinkedIn posture); **T100–T105 are held as ONE engine bump** with next action 4; and **T113, T123, T124, T125, T127, T133, T135, T137, T139's stage extraction, T144 and T138's two remaining halves stay open.**
 
-### 2026-09-19 — **THE EXPANSION IS MEASURED AND IT WORKS (run 467, D-522): 1,155 boards → 59,622 postings → 1,222 eligible → 28 of 40 DELIVERED LEADS, and B8's VOLUME half PASSES at 25. INDEED IS CONFIRMED DEAD. M5's 14th DAY TAKEN: run 447 is ATTENDED on the owner's explicit permission and B1–B7 PASS (D-521 §5). GATE 1's SECOND READING CLEARS ALL FOUR EMPLOYER-BOARD BARS, SO M4's LAST CONDITION IS DISCHARGED. THE DISCOVERY BACKLOG IS SIZED AT THREE DISJOINT GAPS AND STAGE 1 IS IMPORTED — FLEET 652 → 1,807.**
-
-**The expansion half is DISCHARGED and was split out to `STANDING-FACTS.md` on 2026-09-20g** — run 447, M5 day 14, Gate 1's reading of record, the three discovery gaps, run 467's readout and the sizing rule. Held in **D-521** and **D-522**; run **468** is the second reading and supersedes its numbers (2026-09-20g block). **The two paragraphs below stayed because both are still UNRULED.**
-
-**B8's VOLUME half had never been recorded and fails 9 of the 14 confirm days** (7/13/10/12/3/10/9
-then 26/22/26/19/21/19 against ≥ 20). The acceptance-run table in `METRICS.md` reads
-`_(not started)_`, which is why nobody saw it; the instrument was validated against two recorded
-values before this was believed. Its precision half stays MET at 6.9%/5.6% (D-514). **Whether a
-9-of-14 volume record blocks the REPLACEMENT decision is Mit's — `PROGRAM.md` §1's table includes
-B8, M5's exit criterion does not.** **POST-EXPANSION READING 2 OF THE 5 D-529 ASKS FOR, TAKEN
-2026-09-20g: run 468 = 22, MET.** So the post-expansion record is **25, 22 — two for two**, against
-a 9-of-14 record that is entirely pre-expansion. **Verified three ways on run 468** — the funnel's
-`pdf` stage (22), its own Leads table (`PDF: yes` = 22) and **22 `.pdf` files on disk**; and the 44
-PDFs under `2026-09-19/` decompose as **25 (run 467) + 19 (run 447)**, which independently confirms
-both of those recorded values too. Three more ticks and the condition is satisfiable either way.
-
-**INDEED IS CONFIRMED DEAD** — a second consecutive silent refusal (HTTP 200, valid GraphQL,
-`results: []`, identical 68-byte body across three probe shapes including unfaceted-and-unfiltered).
-**Evasion is REFUSED** (D-368 precedent). **Accepting the loss is Mit's**: ~500 postings/day,
-~75 new companies/day, **37.1% of Gate 1 recall**. Note run 467 met B8 *with Indeed dead*.
-
-**Next action.**
-
-0. **FOUR TICKETS ARE RULED AND SPECCED — START FROM `TICKETS-2026-09-22.md`, NOT FROM THE
-   ASTRA TICKET TEXT, WHICH IS STALE ON THREE OF THEM (D-539).** Every ticket there is standalone
-   and ends in a **"Done when"** acceptance contract. Order: **T149** the degree escape, all ten
-   arms, `rules.yaml` only, follow `STANDING-FACTS.md` "Changing `rules.yaml`"; **T150**
-   `education_timing`, **ZERO lines**, two `facts set` commands, `profile_hash` only, and **not
-   before run 470 is read**; **T92** re-scoped to a T91-style **review-lane hold** (~40-60 lines,
-   moves NEITHER hash), not the engine change D-519 §3.5 already ruled against; **T101**'s closed
-   `requires_cue` field (~45 lines, both hashes) — the cheap 2-line suppressor was probed green and
-   REFUSED on fail-safety, kept as the fallback; then **T151** (staleness visible) and **T153** (the
-   Sonnet judge move, now justified). **T152 and T105 are DESIGN-OWED — no code before the
-   document.** T149 and T101 both touch `rules.yaml`: if both land in one session they share ONE
-   re-key, one gate and one corpus pass. Still open and untouched: T113, T123, T124, T125,
-   T127, T133, T135, T137, T139's stage extraction, T144, T138's two halves. Seat discipline:
-   fan out **2-3 executors at once, never more**, and ask for the usage reading first.
-1. **READ THE UNIT BEFORE SIZING ANY DISCOVERY WORK (D-532).** This replaces the old
-   "read the next tick" item, which is discharged — 28 → 25 → 5 across runs 467/468/469 settles
-   it. The live question is no longer whether boards yield; it is that **`capped_by_top_n` is
-   10,533 against a 40-slot slate**, so eligible-posting counts do not convert. Anything proposed
-   in "eligible added" must be restated in slate slots or refused.
-2. **B8's PRECISION HALF IS STILL THE HIGHEST-VALUE AREA, BUT §5 IS NO LONGER THE ROUTE INTO IT
-   (D-536).** §5 is struck: worth 0 slate slots as specified, blind to its own case, and the class
-   is already held by T109 since 2026-09-14. **Do NOT re-ticket §5, and do not re-ticket §8** —
-   both now carry the same disposition (already instrumented / already held). What the precision
-   half actually needs is **the Sonnet judge move**, which D-537 moved from owed to justified by
-   measuring an **11.2% floor error rate** on the live `haiku` gate against the new-grad
-   population. The remaining unexamined classes in the pre-flight file are §1, §2 (the largest
-   build — a scoring dimension), §3, §4, §6 and §7. **§10 is a permanent limitation; state it,
-   do not chase it.**
-3. **`--top` IS THE UNMEASURED LEVER AND IS NOT RULED.** Raising it converts buried postings into
-   leads at unknown precision cost; B8's precision half is the instrument and it has never been
-   read above n = 40/day. **Do not raise it without measuring leads 41–80 first.** Owner's call.
-4. **THE D-537 RESIDUALS, DEFERRED BY MIT TO THE SESSION AFTER NEXT.** (a) **Stop keying a
-   body-seniority reading on `rules_hash`** — a reading of a BODY is arguably not a function of the
-   rules catalog, and the over-keying is what releases 117 held leads on every catalog change.
-   **This is NOT D-380's fail-open direction, which STANDS**: D-380 governs what happens when a
-   reading is absent, this governs what makes one absent. (b) **Make the staleness visible** —
-   nothing counts standing leads whose stored reading went stale; `runner.py:3204` alerts on a
-   different condition (absent from a judge RESPONSE). Any new soft alert sits **ABOVE
-   `_emit_morning`** and must not go on `summary.errors` without re-reading D-529. (c) The
-   standing-queue re-judge is **refused for now** and is spent ONCE, after the Sonnet move.
-5. **Rule on Indeed** — deferred by Mit on 2026-09-21 to a later session. Second consecutive
-   silent refusal; evasion refused (D-368). If accepted, size it as a dead lane rather than
-   fixing it. Note run 467 met B8 with Indeed already dead.
-6. **Stages 2–3 stay REFUSED and D-532 strengthens the refusal** (workday 0.17,
-   smartrecruiters 0.08, oraclehcm **0.00** per 1k open). D-527's one reversal stands: a
-   body-inlined board that hiring.cafe resolved AND read is auto-watched (T143). The **69**
-   unwatched workday/eightfold/oraclehcm/smartrecruiters boards are NOT reversed.
-7. **GAP C IS DONE (2026-09-21).** 449 seeds followed, 37 new boards found, all 37 probed live,
-   **29 imported** and 8 dropped for carrying zero swe-titled openings. Fleet **1,842 → 1,871**.
-   Measured at 1,319 open postings / 432 swe-titled / ~27 eligible — **not** the ~74 the
-   extrapolation priced. The 801 Domino's rows stay (D-527); do not re-raise.
-8. **LinkedIn is the untouched backlog** — ~423 companies refused by its cap every run. Size it
-   in slate slots (D-532) before proposing work, not in companies reached.
+### 2026-09-19 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22b.** The expansion is measured and works (run 467, D-522); Indeed confirmed dead; M5's 14th day taken and B1–B7 pass (D-521 §5); Gate 1's second reading discharges M4's last condition; the discovery backlog sized at three disjoint gaps and stage 1 imported, fleet 652 → 1,807. **Held in D-521 and D-522 — do not re-derive.**
 
 ### Owed, and specifically NOT done
 
-- **THE DEGREE-WAIVER VOCABULARY GAP IS NOW ENUMERATED AND RULED IN — see D-538 and
-  `TICKETS-2026-09-22.md` §1. The old 3,762 figure here was a hand-picked LOWER BOUND and is
-  SUPERSEDED by 6,712** (3.83% of the 175,406 degree-mentioning postings; +11.1% on the escape's
-  current reach of 60,708). All ten arms ship, the measured regex is in the ticket file verbatim,
-  and the **35%-at-the-wrong-bar qualifier must be quoted with the headline, never the headline
-  alone**. Two things stay refused inside it: `or foreign equivalent` (829 postings — a
-  foreign-equivalent degree is still a degree) and the **pre-existing** direction-blindness, where
-  the shipped `in lieu of` / substitution arms already fire on a degree substituting for an
-  EXPERIENCE bar. The escape is a **YAML anchor aliased by SEVEN patterns**, so one edit moves all
-  seven.
+- **THE DEGREE-WAIVER WIDENING SHIPPED 2026-09-22b (D-540), all ten arms.** The enumeration
+  (6,712) was a TEXT-MATCH count, not a verdict-change count: the live two-arm reading over the
+  6,964-posting delta is **10 rescued from `ineligible`, 0 demoted, 0 newly ineligible** once
+  D-541's `met`-abstain fix is included. `or foreign equivalent` stays excluded and is now pinned by
+  a control; the **pre-existing** direction-blindness is unchanged and still not fixed. **What is
+  still owed: the verdict-level effect over the 65,879 postings the OLD escape already matched is
+  UNMEASURED** — the 1,123 persisted-state figure stands in for it and should be re-read after the
+  next preflight re-judge rather than re-derived.
 - **T51 SHIPPED (D-484) before the freeze.** Its residual: a hedged bar carrying a domain noun has no
   `*_preferred` sibling to land in and writes no row; a recall change for M3's window.
 - **D-436's per-family topic net is SIZED and NOT BUILT.** Sizing is in D-461: the all-family form
