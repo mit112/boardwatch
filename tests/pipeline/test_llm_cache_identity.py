@@ -344,3 +344,61 @@ def test_an_older_row_from_the_configured_model_still_hits_under_a_newer_one(
         )
     assert older == {posting_id: "eligible"}
     assert newest == {posting_id: "uncertain"}
+
+
+# ---------------------------------------------------------------------------
+# T152 — what a stored body-seniority reading is keyed on
+# ---------------------------------------------------------------------------
+#
+# `read.current_gate_seniority` feeds the `seniority_judged_above_band` hold. Nothing pinned its
+# scoping at all (design §5): `test_gate_handshake`'s `rules_hash` pin is on
+# `current_gate_verdicts` only.
+
+
+def _senior(label: int) -> object:
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    return OracleVerdict(
+        label=str(label), decision="eligible", reason=None, evidence="", confidence="high",
+        seniority_fit="no",
+    )
+
+
+def _new_version_of(engine: Engine, pv_id: int) -> int:
+    """A second, later body for the SAME posting — what a JD revision mints."""
+    from sqlalchemy import insert
+
+    from boardwatch.core.clock import utcnow
+    from boardwatch.store import tables
+
+    with engine.begin() as conn:
+        return int(conn.execute(insert(tables.posting_versions).values(
+            posting_id=_posting_of(engine, pv_id), content_hash=f"h-rev-{pv_id}",
+            body_text=JD_5YR + "\nRevised.", captured_at=utcnow(), capture_reason="revised",
+        )).inserted_primary_key[0])
+
+
+def test_baseline_the_seniority_read_is_scoped_on_the_full_row_identity(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """BASELINE, committed before T152 changes the read: today a reading is found only under
+    the exact `(posting_version_id, profile_hash, rules_hash)` it was written under."""
+    from boardwatch.eligibility.read import current_gate_seniority
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="senior-baseline")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, posting_id, verdict_override=_senior(posting_id))
+    identity = _gate_identity(catalog, facts, pv_id)
+    revised_pv = _new_version_of(engine, pv_id)
+
+    with engine.connect() as conn:
+        found = current_gate_seniority(conn, [pv_id], identity.profile_hash, identity.rules_hash)
+        other_rules = current_gate_seniority(conn, [pv_id], identity.profile_hash, "other")
+        other_body = current_gate_seniority(
+            conn, [revised_pv], identity.profile_hash, identity.rules_hash
+        )
+    assert found == {posting_id: "no"}
+    assert other_rules == {}
+    assert other_body == {}
