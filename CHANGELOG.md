@@ -278,11 +278,14 @@ All notable changes to this project are documented here. The format follows
   parentheses (`Remote (IND)`). It now also reads a trailing comma component, matched in uppercase
   as written, so `Remote, Can` is never Canada. The code beats a curated US city name, which moves
   four postings that classified `us` and were genuinely foreign: three Costa Rica roles in `San
-  Francisco,CRI` and one in `Kirkland, QC, CAN`. Seven codes a US location also ends in are not
-  read in this shape (`AUS`, `PHL`, `IND`, `ALB`, `BGR` and `COD` are US airport codes, and `EST`
-  is Eastern time), and neither are the US territories (`PRI`, `GUM`, `VIR`, `ASM`, `MNP`, `UMI`);
-  all of them stay fail-open. Measured over all 270,193 open postings, every one of the 745 moves
-  goes to `non_us`. `routing_hash` moves; no eligibility hash does.
+  Francisco,CRI` and one in `Kirkland, QC, CAN`. The trailing form reads a curated INCLUSION list
+  of 30 codes seen as the suffix of a foreign location in the open pool, not every country code:
+  a US location can end in an uppercase airport, site or time-zone code (`Remote, EST`), and some
+  FAA identifier exists for almost every three-letter string. `PHL`, `IND` and `AUS` were seen and
+  are left out by name, as the airport codes of Philadelphia, Indianapolis and Austin; the US
+  territories (`PRI`, `GUM`, `VIR`, `ASM`, `MNP`, `UMI`) are not in it either. All of them stay
+  fail-open. Measured over all 270,193 open postings, every one of the 745 moves goes to
+  `non_us`. `routing_hash` moves; no eligibility hash does.
 
 - **The detail pane no longer shows `apply` for a lead the list holds for review (2026-09-22,
   T127).** `queue_detail` built its row without the requirement summary, so a lead whose JD

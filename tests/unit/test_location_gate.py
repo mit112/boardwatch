@@ -16,6 +16,8 @@ from boardwatch.rank.location_data import (
     AMBIGUOUS_REGIONS,
     NON_US_CITIES,
     NON_US_COUNTRIES,
+    NON_US_ISO3,
+    NON_US_ISO3_SUFFIX,
     NON_US_REGIONS,
     US_CITIES,
     US_MARKERS,
@@ -364,6 +366,31 @@ class TestStructuralCountryCode:
     )
     def test_a_trailing_code_a_us_location_also_ends_in_is_not_read(self, loc: str) -> None:
         assert _c(loc) != "non_us"
+
+    @pytest.mark.parametrize("loc", ["Suva, FJI", "Port Moresby, PNG", "Salmiya, KWT"])
+    def test_the_codes_added_for_the_suffix_read_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        ["San Juan, PRI", "Hagatna, GUM", "Charlotte Amalie, VIR", "Pago Pago, ASM",
+         "Saipan, MNP", "Wake Island, UMI"],
+    )
+    def test_no_us_territory_reads_non_us(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        # Real US airport identifiers that are ALSO alpha-3 country codes, and not observed as a
+        # foreign suffix, so the inclusion list never admitted them.
+        ["Anderson, AND", "Bishop, BIH", "San Antonio, MDA", "Millinocket, MLT",
+         "Hanapepe, PAK", "Savannah, SVN", "Albany, ALB", "Cody, COD"],
+    )
+    def test_an_unobserved_code_is_not_read_as_a_suffix(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    def test_every_suffix_code_is_a_country_code(self) -> None:
+        assert NON_US_ISO3_SUFFIX <= NON_US_ISO3
 
     def test_a_us_state_in_the_same_segment_beats_a_trailing_code(self) -> None:
         # The state check runs first, so a segment that names a US state stays US: fail-open.

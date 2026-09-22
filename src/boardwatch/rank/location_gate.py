@@ -107,8 +107,8 @@ _ISO3_PREFIX_RE = re.compile(r"^([A-Z]{3})(?:[-.]|\d)")
 _ISO3_PAREN_RE = re.compile(r"\(([A-Z]{3})\)\s*$")
 # The LAST comma component, exactly three uppercase letters as written ("Dublin, IRL",
 # "San Francisco,CRI"). Uppercase-only is what keeps the English words "Can", "Per" and "Ind"
-# from ever reading as Canada, Peru and India. Checked against `NON_US_ISO3_SUFFIX`, which drops
-# the codes a US location also ends in ("Austin, AUS", "Remote, EST").
+# from ever reading as Canada, Peru and India. Checked against `NON_US_ISO3_SUFFIX`, a curated
+# inclusion list, because a US location can also end in an uppercase code ("Remote, EST").
 _ISO3_SUFFIX_RE = re.compile(r",\s*([A-Z]{3})\s*$")
 
 

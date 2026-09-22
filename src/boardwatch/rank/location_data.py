@@ -34,8 +34,8 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
-# 6: NON_US_ISO3_SUFFIX added, read as a trailing comma component ("Dublin, IRL"), and fji / png
-# added. 777 open postings whose every segment ended in a non-US alpha-3 code read `unknown` and
+# 6: NON_US_ISO3_SUFFIX added, a curated inclusion list read as a trailing comma component
+# ("Dublin, IRL"), and fji / png added to NON_US_ISO3. 777 open postings whose every segment ended in a non-US alpha-3 code read `unknown` and
 # failed open (CAN 220, IRL 130, KOR 87, JPN 80 ...), three of them in the apply lane. The code
 # beats a US city token, so "San Francisco,CRI" (Costa Rica) and "Kirkland, QC, CAN" now read
 # non-US. The US territories stay out of the set, and so stay fail-open.
@@ -227,12 +227,22 @@ NON_US_ISO3 = frozenset(
 # The codes read as a trailing comma component ("Dublin, IRL"), matched UPPERCASE as written so
 # "Remote, Can" never reads as Canada. It is a WEAKER shape than a site-code prefix or a
 # parenthesised suffix, because a US location can end in an uppercase three-letter token that is
-# not a country. Each exclusion names the US location it would otherwise cost, per the curation
-# rule at the top of this file: "Austin, AUS", "Philadelphia, PHL", "Indianapolis, IND",
-# "Albany, ALB", "Bangor, BGR" and "Cody, COD" are airport codes, and "Remote, EST" is the
-# Eastern time zone. They stay readable as a prefix or in parentheses. Measured cost, 2026-09-22:
-# 10 open postings ending ", PHL" / ", IND" / ", AUS" stay `unknown`, as they were.
-NON_US_ISO3_SUFFIX = NON_US_ISO3 - frozenset({"aus", "phl", "ind", "alb", "bgr", "cod", "est"})
+# not a country: an airport or site code, or a time zone ("Austin, AUS", "Remote, EST"). And an
+# exclusion list cannot close, since some FAA location identifier exists for almost every
+# three-letter string. So this is an INCLUSION list, the D-294 pattern: only codes OBSERVED as the
+# trailing suffix of a foreign location in the open pool (2026-09-22: CAN 220, IRL 130, KOR 87,
+# JPN 80, DEU 43, TWN 38, ITA 27, CHN 23, MYS 20, FRA 18, GBR 10, ROU 9, ... and CRI, KWT), each
+# passing the curation test at the top of this file. PHL, IND and AUS were observed too and are
+# left out BY NAME: they are the airport codes of Philadelphia, Indianapolis and Austin, which
+# employers use as site codes, so 10 open postings ending in them stay `unknown`, as they were.
+# Every member must also be in `NON_US_ISO3`.
+NON_US_ISO3_SUFFIX = frozenset(
+    {
+        "aut", "bel", "bra", "can", "chl", "chn", "cri", "deu", "esp", "fin", "fji", "fra",
+        "gbr", "idn", "irl", "isr", "ita", "jpn", "kor", "kwt", "mex", "mys", "nld", "per",
+        "png", "pol", "rou", "tha", "twn", "vnm",
+    }
+)
 
 # Multi-region tokens that INCLUDE the US: genuinely undecidable for a strict gate, so unknown.
 AMBIGUOUS_REGIONS = frozenset(
