@@ -79,6 +79,10 @@ def record_gate_verdict(
     `model IS NULL` never matches a given model, so the daily stage re-judges it ONCE (bounded
     by `--top`, D-477 pt 1) and it comes back keyed; the ledger is append-only, so there is no
     backfill and this is the only way those rows become attributable.
+
+    `years` is the candidate's `total_years_experience` — the one fact the seniority question is
+    asked relative to — and is what `read.current_gate_seniority` keys a reading on in place of
+    the row identity (T152). Always written, as a JSON null when the profile has none.
     """
     accepted = accept_oracle_verdict(verdict, jd_text, catalog)
     persisted: EligibilityVerdict = accepted.expected_verdict  # type: ignore[assignment]
@@ -104,6 +108,7 @@ def record_gate_verdict(
     )
     raw_output: dict[str, object] = {
         "gate_verdict": verdict.__dict__, "facts_key": gate_facts_key(facts),
+        "years": facts.total_years_experience,
     }
     if shortlist_rank is not None:
         raw_output["shortlist_rank"] = shortlist_rank
