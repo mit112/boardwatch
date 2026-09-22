@@ -174,6 +174,7 @@ _GATE_RELEVANT: frozenset[str] = frozenset(
     {
         "enabled",  # whether the stage runs at all — the whole point of this hash
         "model",  # a different judge can return a different verdict for the same JD
+        "effort",  # the same judge reasoning harder or less can too — `model`'s reason exactly
     }
 )
 _GATE_IRRELEVANT: frozenset[str] = frozenset(

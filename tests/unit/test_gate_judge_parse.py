@@ -442,3 +442,42 @@ def test_a_failed_batch_reports_no_seniority_answers_at_all(
 
     assert verdicts is None and note is not None
     assert seniority == ()
+
+
+@pytest.mark.parametrize(
+    ("effort", "argv_before_prompt"),
+    [
+        pytest.param("medium", ["claude", "-p", "--model", "sonnet", "--effort", "medium",
+                                "--tools", "", "--max-turns", "1", "--output-format", "json"],
+                     id="set: follows the model"),
+        pytest.param(None, ["claude", "-p", "--model", "sonnet", "--tools", "", "--max-turns",
+                            "1", "--output-format", "json"],
+                     id="unset: the calibrated argv, no flag"),
+    ],
+)
+def test_the_gate_effort_reaches_the_claude_argv(
+    effort: str | None,
+    argv_before_prompt: list[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through `_judge_batch` from `Settings`, not by calling `_call_claude` directly, so the
+    wiring between the setting and the argv is what is pinned."""
+    seen: list[list[str]] = []
+
+    def _capture(argv: list[str], **_k: object) -> object:
+        seen.append(argv)
+        raise FileNotFoundError
+
+    monkeypatch.setattr(gate_judge.subprocess, "run", _capture)
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        config_dir=tmp_path / "no-such-cfg-dir",
+        gate=GateTier(enabled=True, effort=effort),
+    )
+
+    _judge_batch(_batch("1"), "policy", settings)
+
+    (argv,) = seen
+    # Everything but the trailing prompt, so a dropped `""` or a moved flag fails here too.
+    assert argv[:-1] == argv_before_prompt

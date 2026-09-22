@@ -203,6 +203,7 @@ def test_gate_tier_defaults_off_and_unconfigured(tmp_path, monkeypatch) -> None:
     assert settings.gate.model == "sonnet"
     assert settings.gate.batch_size == 13
     assert settings.gate.call_timeout_s == 300
+    assert settings.gate.effort is None
 
 
 def test_gate_section_loads_from_config(tmp_path, monkeypatch) -> None:
@@ -211,7 +212,7 @@ def test_gate_section_loads_from_config(tmp_path, monkeypatch) -> None:
     # live value back through `Settings` after a hand-written config.toml is the check.
     (tmp_path / "config.toml").write_text(
         '[gate]\nenabled = true\nclaude_config_dir = "/tmp/claude-boardwatch"\n'
-        'model = "haiku"\nbatch_size = 5\ncall_timeout_s = 60\n',
+        'model = "haiku"\nbatch_size = 5\ncall_timeout_s = 60\neffort = "medium"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path))
@@ -221,6 +222,7 @@ def test_gate_section_loads_from_config(tmp_path, monkeypatch) -> None:
     assert settings.gate.model == "haiku"
     assert settings.gate.batch_size == 5
     assert settings.gate.call_timeout_s == 60
+    assert settings.gate.effort == "medium"
 
 
 def test_gate_tier_is_frozen(tmp_path, monkeypatch) -> None:
@@ -236,3 +238,10 @@ def test_gate_batch_size_and_timeout_floors(tmp_path) -> None:
         Settings(data_dir=tmp_path, config_dir=tmp_path, gate={"batch_size": 0})
     with pytest.raises(ValidationError):
         Settings(data_dir=tmp_path, config_dir=tmp_path, gate={"call_timeout_s": 0})
+
+
+def test_gate_effort_is_closed_to_the_cli_levels(tmp_path) -> None:
+    # A misspelt level must fail at load: passed through, `claude` would reject it on every
+    # batch and the gate would fail open for the whole run.
+    with pytest.raises(ValidationError):
+        Settings(data_dir=tmp_path, config_dir=tmp_path, gate={"effort": "meduim"})

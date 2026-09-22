@@ -141,8 +141,8 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # T42. Off by default (multi-tenancy) — arming the headless final-eligibility-gate judge
     # is the operator's own act, never something a fresh install or a new tenant inherits.
     # `claude_config_dir` is machine-local (None ships inert, same reasoning as
-    # jobapps_discovery_dir); `model`/`batch_size`/`call_timeout_s`/`depth` are cost knobs that
-    # say nothing about roles, seniority, geography or field.
+    # jobapps_discovery_dir); `model`/`effort`/`batch_size`/`call_timeout_s`/`depth` are cost
+    # knobs that say nothing about roles, seniority, geography or field.
     #
     # `seniority_hold` is OFF for the same reason `enabled` is, and it is NEUTRAL despite its
     # name: it does not encode a view about which seniority anyone should target — the target
@@ -157,6 +157,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
         "model": "sonnet",
         "batch_size": 13,
         "call_timeout_s": 300,
+        "effort": None,
         "depth": 0,
         "seniority_hold": False,
     },
@@ -165,6 +166,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "GateTier.model": "sonnet",
     "GateTier.batch_size": 13,
     "GateTier.call_timeout_s": 300,
+    "GateTier.effort": None,
     "GateTier.depth": 0,
     "GateTier.seniority_hold": False,
 }
@@ -224,6 +226,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "GateTier.model": "capability",
     "GateTier.batch_size": "operational",
     "GateTier.call_timeout_s": "operational",
+    "GateTier.effort": "capability",
     "GateTier.depth": "operational",
     "GateTier.seniority_hold": "capability",
 }

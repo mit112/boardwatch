@@ -231,6 +231,19 @@ def test_flipping_the_seniority_hold_moves_the_sixth_value_and_only_the_sixth(
     assert policy_version(**before) == policy_version(**after)  # type: ignore[arg-type]
 
 
+def test_the_gate_effort_moves_config_hash_like_the_model(tmp_path: Path) -> None:
+    """`effort` is classified beside `model`: the same judge reasoning harder or less can
+    return a different verdict for the same JD, so it re-stamps `policy_version` exactly as a
+    model switch does. The model pair is the control that the comparison can discriminate."""
+    unset = config_hash(_settings(tmp_path))
+
+    assert config_hash(_settings(tmp_path, gate=GateTier(effort="medium"))) != unset
+    assert config_hash(_settings(tmp_path, gate=GateTier(effort="low"))) != config_hash(
+        _settings(tmp_path, gate=GateTier(effort="medium"))
+    )
+    assert config_hash(_settings(tmp_path, gate=GateTier(model="haiku"))) != unset
+
+
 def test_the_other_routing_knobs_move_the_sixth_value_too(tmp_path: Path) -> None:
     """`seniority_hold` is the knob F6 was raised on, not the only one it named. Each of these is
     excluded from `config_hash` for a reason that is correct about VERDICTS and silent about
