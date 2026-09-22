@@ -799,11 +799,12 @@ class GateCounters:
     #: T113. The standing-queue refresh, apart from the slate counts above because its leads were
     #: never on the slate. `refresh_budget` is the setting itself, so a budget of 0 — not armed —
     #: can be told from an armed refresh that found nothing stale. `refresh_pending_after` is
-    #: RE-READ from the store after the refresh committed, never derived from what it sent.
+    #: RE-READ from the store after the refresh committed, never derived from what it sent. The
+    #: three counts are `None` when an armed refresh raised — unmeasured, never zero.
     refresh_budget: int = 0
-    refresh_candidates: int = 0
-    refresh_sent: int = 0
-    refresh_pending_after: int = 0
+    refresh_candidates: int | None = 0
+    refresh_sent: int | None = 0
+    refresh_pending_after: int | None = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -897,11 +898,13 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         "",
         # T113. The pending count is the one to watch: staying high run over run means the budget
         # cannot keep up with the re-keys.
-        f"standing-queue refresh: {gate.refresh_candidates} lead(s) had a stale gate reading · "
-        f"{gate.refresh_sent} sent (budget {gate.refresh_budget}) · "
-        f"{gate.refresh_pending_after} still stale after"
-        if gate.refresh_budget
-        else "standing-queue refresh not armed (`gate.refresh_budget = 0`)",
+        "standing-queue refresh not armed (`gate.refresh_budget = 0`)"
+        if not gate.refresh_budget
+        else "standing-queue refresh FAILED and measured nothing — see this run's errors"
+        if gate.refresh_candidates is None
+        else f"standing-queue refresh: {gate.refresh_candidates} lead(s) had a stale gate reading "
+        f"· {gate.refresh_sent} sent (budget {gate.refresh_budget}) · "
+        f"{gate.refresh_pending_after} still stale after",
     )
 
 

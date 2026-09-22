@@ -1662,7 +1662,9 @@ def test_a_failed_refresh_batch_leaves_its_lead_pending_and_never_drops_it(
     assert summary.gate_refresh_sent == 1
     assert summary.gate_refresh_pending_after == 1
     assert _standing_lanes(env)[held] == ("_review", "no_requirements_found")
-    assert any(error.startswith("gate refresh 1/1:") for error in summary.errors), summary.errors
+    assert any(error.startswith("gate refresh batch 1:") for error in summary.errors), (
+        summary.errors
+    )
 
 
 @_needs_an_executable_fake
@@ -1687,8 +1689,117 @@ def test_a_refresh_that_raises_costs_the_refresh_and_never_the_days_slate(
 
     assert summary.fatal is None, summary.fatal
     assert [lead.posting_id for lead in summary.tailored] == [fresh]
-    assert summary.gate_refresh_sent == 0
+    # UNMEASURED, never zero: a 0 would tell the funnel the backlog was empty.
+    assert summary.gate_refresh_candidates is None
+    assert summary.gate_refresh_pending_after is None
+    gate = _funnel_gate(summary)
+    assert gate["refresh_budget"] == 13
+    assert gate["refresh_candidates"] is None
     assert any(
         error.startswith("gate refresh: not run:") and "simulated" in error
         for error in summary.errors
     ), summary.errors
+
+
+@_needs_an_executable_fake
+def test_the_refresh_spends_its_budget_on_leads_it_can_send(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A body the send boundary withholds (D-406) must not eat the budget. Slicing the budget off
+    the front of the stale list gave the jobright page the only slot every run, sent nothing,
+    and left the clean lead behind it stale forever."""
+    from types import SimpleNamespace
+
+    from boardwatch.llm.gate_judge import run_gate_refresh
+    from tests.unit.test_lane_body_precondition import JOBRIGHT_PAGE
+
+    _ready(env)
+    foreign = _seed(env, slug="acme-refresh-foreign", body=JOBRIGHT_PAGE)
+    clean = _seed(env, slug="acme-refresh-clean", body=BODY)
+    _arm_gate(env, batch_size=1, refresh_budget=1)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    result = run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=foreign), SimpleNamespace(posting_id=clean)], run_id=None,
+    )
+
+    assert result.sent == 1
+    assert _calls(fake_claude) == 1
+    assert _current_gate_verdict(env, clean) == "eligible"
+    assert _current_gate_verdict(env, foreign) is None
+    assert (result.candidates, result.pending_after) == (2, 1), "the withheld body stays pending"
+
+
+@_needs_an_executable_fake
+def test_the_refresh_commits_one_batch_per_stage_call(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run_gate_stage` commits once, at its end, so the refresh must call it once PER BATCH or a
+    kill in the last batch discards every verdict before it. Counted at the call, which the
+    claude-call count cannot see: one stage call over two batches also makes two claude calls."""
+    from types import SimpleNamespace
+
+    from boardwatch.llm import gate_judge
+
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-refresh-batch-{n}", body=BODY) for n in range(5)]
+    _arm_gate(env, batch_size=2, refresh_budget=5)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    real = gate_judge.run_gate_stage
+    sizes: list[int] = []
+
+    def spy(engine: object, settings: object, leads: list[object], **kw: object) -> object:
+        sizes.append(len(leads))
+        return real(engine, settings, leads, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gate_judge, "run_gate_stage", spy)
+
+    result = gate_judge.run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in ids], run_id=None,
+    )
+
+    assert sizes == [2, 2, 1]
+    assert (result.sent, result.pending_after) == (5, 0)
+
+
+def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_never_closed(
+) -> None:
+    """The whole order, on rows whose ids would sort them differently: `promotable` holds the
+    lowest ids, `rest` the highest, and one closed row sits in the middle."""
+    from dataclasses import replace
+
+    from boardwatch.core.clock import utcnow
+    from boardwatch.eligibility.read import RequirementFlags
+    from boardwatch.pipeline.runner import _refresh_order
+    from boardwatch.store.delivery_queries import QueueRow, lane_decision
+
+    def row(posting_id: int, **kw: object) -> QueueRow:
+        base = QueueRow(
+            posting_id=posting_id, job_id=posting_id, title="Backend Engineer", company="Acme",
+            provider="greenhouse", location=None, locations=("Remote",), remote_policy=None,
+            posted_days=None, first_seen=utcnow(), status="open", verdict="eligible",
+            apply_url=None, delivered_run_id=1, tex_uri="file:///t.tex", pdf_uri=None,
+            target_flag=None,
+        )
+        return replace(base, **kw)  # type: ignore[arg-type]
+
+    no_rows = RequirementFlags(
+        experience_unconfirmed=False, eligibility_unconfirmed=False, no_requirement_rows=True
+    )
+    promotable_old = row(1, verdict="uncertain", requirement_flags=no_rows)
+    promotable_new = row(2, verdict="uncertain", requirement_flags=no_rows)
+    apply_lead = row(3)
+    closed = row(4, status="closed")
+    rest = row(5, title="Janitor")
+    # The fixture's own premise, asserted: each row sits in the lane its name says.
+    assert lane_decision(promotable_old).reason == "no_requirements_found"
+    assert lane_decision(apply_lead).lane == ""
+    assert lane_decision(rest).lane != "" and lane_decision(
+        replace(rest, judge_verdict="eligible")
+    ).lane != ""
+
+    ordered = _refresh_order([rest, closed, apply_lead, promotable_old, promotable_new])
+
+    assert [r.posting_id for r in ordered] == [2, 1, 3, 5]

@@ -79,7 +79,7 @@ from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
-from boardwatch.llm.gate_judge import GateRefreshResult, run_gate_refresh, run_gate_stage
+from boardwatch.llm.gate_judge import run_gate_refresh, run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
@@ -593,11 +593,12 @@ class PipelineSummary:
     gate_seniority_unreadable: int = 0
     gate_readings_absent: int = 0
     # T113 — the standing-queue refresh. All-zero when `gate.refresh_budget` is 0; the funnel
-    # reads the budget beside them, so "off" and "nothing was stale" do not read alike. See
-    # `llm.gate_judge.GateRefreshResult` for what each one is measured against.
-    gate_refresh_candidates: int = 0
-    gate_refresh_sent: int = 0
-    gate_refresh_pending_after: int = 0
+    # reads the budget beside them, so "off" and "nothing was stale" do not read alike. `None`
+    # when an armed refresh raised: nothing was measured, and a 0 would claim the backlog was
+    # empty. See `llm.gate_judge.GateRefreshResult` for what each one is measured against.
+    gate_refresh_candidates: int | None = 0
+    gate_refresh_sent: int | None = 0
+    gate_refresh_pending_after: int | None = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -1432,9 +1433,10 @@ def _refresh_order(rows: list[QueueRow]) -> list[QueueRow]:
     """T113: the standing queue in the order a stranded gate reading costs most.
 
     First the leads a judge `eligible` would move INTO the apply lane — 0-B's two requirement
-    holds, which a re-key demotes (D-547: 237). Asked of `lane_decision` itself, with the verdict
-    substituted, rather than by naming the two reasons: the release is `review_gate.classify`'s
-    decision and a list restated here would drift from it. Then the apply lane, then the rest.
+    holds, which a re-key demotes (D-547: 237), and a hold on a judge `ineligible` the fresh
+    reading may not repeat. Asked of `lane_decision` itself, with the verdict substituted, rather
+    than by naming the reasons: the release is `review_gate.classify`'s decision and a list
+    restated here would drift from it. Then the apply lane, then the rest.
     Newest first within each. A closed lead lands in `_closed` whatever the judge says, so it is
     never sent.
     """
@@ -2440,16 +2442,22 @@ def run_pipeline(
                 with engine.connect() as refresh_conn:
                     standing = _refresh_order(standing_queue_rows(refresh_conn))
                 refresh = run_gate_refresh(engine, settings, standing, run_id=run_id)
+                summary.gate_refresh_candidates = refresh.candidates
+                summary.gate_refresh_sent = refresh.sent
+                summary.gate_refresh_pending_after = refresh.pending_after
+                refresh_errors = refresh.errors
+                console.print(
+                    f"gate refresh: {refresh.candidates} standing lead(s) stale, "
+                    f"{refresh.sent} sent, {refresh.pending_after} still stale"
+                )
             except Exception as exc:  # noqa: BLE001 - the refresh must never cost the slate
-                refresh = GateRefreshResult(errors=(f"gate refresh: not run: {exc}",))
-            summary.gate_refresh_candidates = refresh.candidates
-            summary.gate_refresh_sent = refresh.sent
-            summary.gate_refresh_pending_after = refresh.pending_after
-            console.print(
-                f"gate refresh: {refresh.candidates} standing lead(s) stale, {refresh.sent} "
-                f"sent, {refresh.pending_after} still stale"
-            )
-            for note in refresh.errors:
+                # UNMEASURED, not zero: batches before the fault may already have committed, and
+                # a 0 here would tell the funnel the backlog was empty.
+                summary.gate_refresh_candidates = None
+                summary.gate_refresh_sent = None
+                summary.gate_refresh_pending_after = None
+                refresh_errors = (f"gate refresh: not run: {exc}",)
+            for note in refresh_errors:
                 console.print(f"  ! {note}", markup=False)
                 stage_errors.append(note)
                 summary.errors.append(note)

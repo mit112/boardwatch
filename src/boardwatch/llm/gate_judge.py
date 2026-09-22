@@ -566,7 +566,10 @@ class GateRefreshResult:
     many still have none, RE-READ from the store after the last chunk committed rather than
     derived from what the chunks reported — a failed batch leaves its leads pending, and the read
     says so without trusting the stage's own tally. `pending_after` staying high run over run is
-    the signal that the budget cannot keep up with the re-keys.
+    the signal that the budget cannot keep up with the re-keys. A lead whose body the send boundary
+    withholds (D-406) is stale and can never be sent, so it stays in both counts as a constant
+    floor rather than being hidden by a restated send predicate; the live queue held none of them
+    on 2026-09-22 (D-548 sent 833 of 833).
     """
 
     candidates: int = 0
@@ -603,10 +606,17 @@ def run_gate_refresh(
     Every lead goes through `run_gate_stage` itself, so the judge, the request, the acceptance
     rules and the write are the daily gate's own. It is called ONE BATCH AT A TIME because that
     stage commits once, at its end: a single call over the whole refresh would lose every verdict
-    it had bought to a timeout or a kill in its last batch. The slate it hands back is discarded —
-    a standing lead is already delivered, and a fresh `ineligible` holds it for review through the
-    lane read (T109) rather than dropping it here. No shortlist rank is recorded: these leads were
-    not ranked this run.
+    it had bought to a timeout or a kill in its last batch.
+
+    The budget is spent on what the stage actually SENDS, and the walk continues past a lead it
+    would not send: `build_gate_request` withholds a foreign body at the send boundary (D-406), and
+    slicing the budget off the front of the stale list would let a prefix of those leads take the
+    same slots every run while judgeable leads behind them stayed stale forever. The stage's own
+    `sent` is the count, so the send predicate is never restated here.
+
+    The slate the stage hands back is discarded — a standing lead is already delivered, and a
+    fresh `ineligible` holds it for review through the lane read (T109) rather than dropping it
+    here. No shortlist rank is recorded: these leads were not ranked this run.
     """
     budget = settings.gate.refresh_budget
     if not settings.gate.enabled or budget == 0 or not leads:
@@ -614,15 +624,18 @@ def run_gate_refresh(
     stale = _stale(engine, settings, leads)
     if stale is None:
         return GateRefreshResult()
-    due = stale[:budget]
     size = max(1, settings.gate.batch_size)
-    chunks = [due[i : i + size] for i in range(0, len(due), size)]
     sent = 0
+    position = 0
+    calls = 0
     errors: list[str] = []
-    for index, chunk in enumerate(chunks):
+    while position < len(stale) and sent < budget:
+        chunk = stale[position : position + min(size, budget - sent)]
+        position += len(chunk)
+        calls += 1
         _, result = run_gate_stage(engine, settings, chunk, run_id=run_id)
         sent += result.sent
-        errors.extend(f"gate refresh {index + 1}/{len(chunks)}: {note}" for note in result.errors)
+        errors.extend(f"gate refresh batch {calls}: {note}" for note in result.errors)
     after = _stale(engine, settings, leads)
     return GateRefreshResult(
         candidates=len(stale),
