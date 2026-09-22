@@ -179,6 +179,13 @@ def current_identity(conn: Connection, settings: Settings) -> tuple[str, str] | 
     return _identity_hashes(facts, policy, catalog, declared_fields())
 
 
+def current_facts(conn: Connection) -> Facts | None:
+    """The live profile's facts, or None when there is no profile — for the reads keyed on facts
+    rather than on the identity, which `current_gate_seniority` is (T152)."""
+    profile_row = get_profile(conn)
+    return None if profile_row is None else parse_facts(profile_row.eligibility_facts_json)
+
+
 # Rebuilt per child process by `_init_worker`, never pickled: a RulesCatalog carries every
 # compiled pattern, and shipping one per posting would cost more than the evaluation it feeds.
 _WORKER_INPUTS: tuple[Facts, Policy, RulesCatalog] | None = None
