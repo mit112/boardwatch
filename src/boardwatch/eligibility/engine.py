@@ -217,14 +217,31 @@ def evaluate(
                 _Staged(detection, UNKNOWN, "missing_profile_field:career_field", ())
             )
         elif detection.abstained is not None:
-            staged.append(
-                _Staged(
-                    detection,
-                    UNKNOWN,
-                    f"the posting may waive this: {detection.abstained}",
-                    (),
-                )
+            # A waiver RELAXES a requirement, so it cannot make a SATISFIED one undecidable: if
+            # the profile already clears the bar, whether the posting would have waived it
+            # changes nothing, and abstaining throws away a decisive MET. That is not a
+            # conservatism feature -- it costs the apply lane a lead it had cleared on the
+            # profile's own declared fact, and it inflates the per-rule abstain rate the
+            # keystone exists to make readable. Measured over the live store before this
+            # changed: 5,579 of the 5,697 escape-abstained degree rows (97.9%) were discarding
+            # a MET, against 118 where the bar was genuinely above the profile. Only an
+            # UNSATISFIED -- or itself-undecidable -- row is waivable.
+            resolution = resolve(
+                detection, facts, catalog.effective_family(detection.family, policy)
             )
+            if resolution.disposition == MET:
+                staged.append(
+                    _Staged(detection, MET, resolution.rationale, resolution.support)
+                )
+            else:
+                staged.append(
+                    _Staged(
+                        detection,
+                        UNKNOWN,
+                        f"the posting may waive this: {detection.abstained}",
+                        (),
+                    )
+                )
         else:
             resolution = resolve(
                 detection, facts, catalog.effective_family(detection.family, policy)
