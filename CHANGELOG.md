@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The final gate's headless call can carry an effort level (2026-09-22, D-548).** `[gate] effort`
+  passes `--effort <level>` to the `claude -p` call, right after the model. The value is closed to
+  the CLI's five levels (`low`, `medium`, `high`, `xhigh`, `max`), so a misspelt level fails when
+  settings load rather than failing every batch of a run open. Unset — the default — no flag is
+  passed and the call is byte-identical to the calibrated one.
+
+  It sits in `config_hash` beside `model`, for `model`'s reason: the same judge reasoning harder or
+  less can return a different verdict for the same JD. Adding the field moves every install's
+  `config_hash` once, including installs that never set it. **A change of level re-judges nothing
+  that already has a gate reading** — a gate row records the model, not the effort — so a new level
+  reaches only leads judged after it (T155).
+
 - **A run now reports when its gate readings have gone blind (2026-09-22, T151).** A stored gate
   reading is scoped on both `profile_hash` and `rules_hash`, and the read fails open. So a catalog
   or profile re-key does not merely fail to *add* a hold — it **releases** every hold those rows

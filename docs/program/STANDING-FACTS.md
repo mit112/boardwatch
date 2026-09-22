@@ -3985,3 +3985,110 @@ both of those recorded values too. Three more ticks and the condition is satisfi
    extrapolation priced. The 801 Domino's rows stay (D-527); do not re-raise.
 8. **LinkedIn is the untouched backlog** — ~423 companies refused by its cap every run. Size it
    in slate slots (D-532) before proposing work, not in companies reached.
+
+## Moved out of STATE on 2026-09-22c — the 2026-09-22b and 2026-09-21 blocks, whole. Run 470 is read
+## against the 2026-09-21 block's prediction (D-547), its last open condition. Kept verbatim.
+
+### 2026-09-22b — **FOUR TICKETS SHIPPED IN ONE NIGHT AND THE HEADLINE IS A DEFECT NOBODY HAD TICKETED: THE DEGREE ESCAPE WAS ABSTAINING BARS THE PROFILE ALREADY MET, 5,579 ROWS OF IT (D-541). T149 ALONE WAS A NET −90 REGRESSION (D-540). T92 AND T151 SHIPPED (D-542, D-543). T101 IS REFUSED ON MEASUREMENT (D-544). T153's TWO RE-KEY CLAIMS ARE BOTH WRONG (D-545). T152/T105 DESIGNED (D-546).**
+
+**Shipped and merged:** #407 (T149 + T154), #408 (T92), #409 (T151). **T150 declared live.**
+Every gate exit 0, read from a sentinel: 10,643 / 10,656 / (T151) passed, coverage 95.26%.
+
+**Read D-541 before touching `abstain_by_adjacent`.** Widening the degree escape (T149, ruled in by
+D-538) turned out to be a **net −90 apply-lane regression on its own**: measured over the 6,964
+open postings the new escape reaches and the old does not, it demoted **90** postings out of
+`eligible` to rescue **3** from deletion. Cause was pre-existing and nobody had ticketed it —
+`abstain_by_adjacent` applied at DETECT time, before resolution, so a waiver abstained a
+requirement **the profile already satisfied**. A waiver RELAXES a bar; it cannot make a satisfied
+bar undecidable. **5,579 of the 5,697 stored escape-abstained degree rows (97.9%) were discarding a
+decisive `met`.** With the fix the same population reads **10 rescued, 0 demoted, 0 newly
+ineligible** — and the rescues rose 3 → 10 because the bug was suppressing T149's own intended
+rescues. Fixed as **T154** in the same commit, because T149 alone is a regression nobody should
+bisect to. **D-531's owed measurement is also answered: the stage-1b job-deleting mode is 0 of
+6,964**, and T154 removes the mechanism.
+
+**T150 is live and its ticket was wrong by one.** `education_timing` declared
+(`profile_hash` verified to move through the production helper, with a null control reproducing the
+live persisted hash). Effect is **6 of the 7 named postings, not 7**: 110519 says *"graduating
+between Fall 2026 and Summer 2027"* and the catalog **cannot read season names**, so it abstains
+rather than guessing — a genuine gap sized at **457 of 260,581** open postings. Corpus-wide reach is
+**7,869 rows**, not 7 leads; the ticket counted standing leads.
+
+**T92's reach was 5× stale** (the ticket predated the 652 → 1,807 expansion): **10** leads were
+reaching the blind-apply queue against the employer's own non-FullTime `employmentType`, not 2.
+
+**T101 is REFUSED on measurement, both halves (D-544)** — the closed field would abstain **3,288
+genuine requirements** to catch **~21**. **A JD carries its obligation STRUCTURALLY, not lexically**,
+so Half A is **blocked on T105**. Half B sized at 49 rows and also not built.
+
+**Next action: run 470 has still NOT been read.** The launchd job was booted out at 00:52 on the
+owner's "postpone the run until all work is done" instruction and **restored at session close**, so
+the 04:00 CDT tick fires on the final merged code. **All THREE hashes now move** (`rules_hash` +
+`engine_version` from #407, `profile_hash` from T150), so the corpus re-judge is certain to fire and
+D-532's 75–85 min prediction is readable; a ~56 min duration would mean the re-key did NOT fire, and
+**that** is the finding. B8's volume half still owes its reading (`pdf.entered` vs bar 20).
+
+### 2026-09-21 — **THE ENGINE BATCH IS MERGED. RUN 469 SETTLES THE EXPANSION QUESTION AND IT INVERTS THE PROGRAM'S PRIORITY: THE BINDING CONSTRAINT IS THE SLATE CAP, NOT DISCOVERY (D-532). THE DRAIN IS MEASURED AND REFUSED (D-533). B8'S 9-OF-14 RECORD IS SUPERSEDED, NOT BLOCKING (D-534). THE NIGHTLY'S NEW WINDOWS RED IS A REAL PRODUCT GAP AND IS FIXED (D-535).**
+
+**Read D-532 before proposing ANY discovery work.** Run 469 is the third tick on 1,807 boards
+and the cohort read (null control passes: 1,155 boards, reproduces run 467's 28 of 40) gives:
+new-board leads **28 → 25 → 5**, while the eligible RATE holds at **2.04%** across all three.
+The mechanism is displacement, not exhaustion — only **75 of the cohort's 1,213 eligible have
+ever been drawn (6.2%)**, and `capped_by_top_n` is **10,533** postings that cleared EVERY filter
+and lost only on rank against a **40**-slot slate. The `--top 40` plist comment already named the
+cause: **the ranker is recency-dominated and rank-cut postings are BURIED, not queued.**
+
+**Consequence, and it is the session's main finding: anything sized in "eligible postings added"
+is sized in the WRONG UNIT.** Stages 2–3 stay refused and are better evidenced than before.
+**Gap C re-priced from "~74 eligible" to ~0.2 leads/day and was IMPORTED anyway** (29 of 37 boards, fleet 1,842 → 1,871; the 8 with zero swe-titled openings dropped) — cheap enough that the correction did not change the call. Precision work on the delivered 40
+now pays better than discovery that adds to a pool already 263× the daily slate. **This is NOT a
+decision to raise `--top`** — that trades against B8's precision half and is unmeasured.
+
+**The batch merged with T100, T102, T103 and T104**, gated exit 0 on the merge commit (10,625
+passed, 95.26%) with the code tree byte-identical to the Windows-green dispatch. **No drain**
+(D-533): a two-arm blast radius over all 1,318 live-disposition postings found **1,316 unchanged,
+1 loosening (on a self-draining `seen` row), 0 that a drain would buy.** The re-key still
+re-judges the corpus at the next preflight — that is where T104's +91 `eligible` are released.
+
+**B8 (D-534): the 9-of-14 record is retired, not weighed.** All 14 days are on the 652-board
+fleet. Post-expansion `pdf.entered` reads **25 / 22 / 26 on runs 467/468/469 — 3 of 3, mean 24.3
+against a bar of 20.** And the batch's `rules_hash` move **restarts the 14-day confirm by
+`PROGRAM.md` §1's own rule**, so a fresh window begins at this merge regardless. **B8's PRECISION
+half is the live risk and is where the work is.**
+
+**The nightly was red on a NEW Windows failure and it was a real product gap (D-535).** Not
+T128's three — those read zero. `promotion` commits by `os.replace`-ing `CURRENT`; that is atomic
+on POSIX but on Windows denies every concurrent open for the instant of the swap, so the
+lock-free reader saw **neither** revision — the third outcome §6 clause 1 says cannot happen.
+The reader now waits it out, bounded at 1s, `PermissionError` only. **Only a Windows dispatch can
+confirm the race is gone and ONE green run is not enough.**
+
+**PR #404 MERGED** (`a5cd9741`), and a Windows `workflow_dispatch` came back green on all three
+`windows-latest` jobs. **That is ONE green run and D-535 says one is not enough** — read several
+scheduled nightlies with `gh run list --branch main --json event,conclusion` filtered to
+`event=="schedule"`; `--limit 1` shows the newest run of EITHER kind, which is how a red nightly
+reads as green.
+
+**STANDING, and it cost two sessions: a CONTENDED gate is a FALSE NEGATIVE.** Check `uptime` and
+`ps -Ao pcpu,comm -r | head -3` BEFORE launching `make check`; above ~load 8 the vitest 5s
+timeouts fail and **the count varies run to run, which is the tell**. The 09-21 session never got
+a green local gate for this reason (2/11/13 vitest failures across three runs, all
+`Test timed out in 5000ms`) while CI's `web-bundle` job — the uncontended reading, by design —
+passed. This session's gate ran at load 2.7.
+
+
+**PREDICTION FOR RUN 470, RECORDED SO IT CAN BE CHECKED.** The batch re-keys `rules_hash`, so
+the next preflight re-judges the whole stored corpus rather than the day's new postings. D-460
+timed a full re-key at 151,626 postings in ~13 min; the corpus is now ~261k, so expect **~20-25
+min added** to a run that took 56 min — call it **75-85 min**, plus the 29 Gap C boards. That is
+well inside the heartbeat's 1-day period plus 2h grace. **If run 470 comes in near 56 min, the
+re-key did NOT fire and that is the thing to investigate**, not the duration. Also expect the
+confirm clock to restart here (D-534) and B8's volume half to be read fresh from this run.
+
+**The 2026-09-17 autoapply pre-flight findings are now tracked and re-measured.** Its "single
+largest fixable category" re-sizes: all five named dead postings have since CLOSED (2–4 days
+later), so §8 is **closure LATENCY, not blindness**, and it is already instrumented by T117/T126
+— do not re-ticket it. Population: 114 of 8,495 open+eligible carry `consecutive_missing ≥ 1`;
+closure latency is mean **8.33 days**. **§5 (comp band as a seniority input) is the cheapest real
+fix in the file** — `salary_min`/`salary_max` are already columns and the band gate already
+exists; it is missing an input, not a subsystem.
