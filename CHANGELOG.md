@@ -270,6 +270,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The detail pane no longer shows `apply` for a lead the list holds for review (2026-09-22,
+  T127).** `queue_detail` built its row without the requirement summary, so a lead whose JD
+  yielded no requirement row read `no_requirements_found` in the list and `apply` in the pane —
+  the surface where the reader decides. 12 of 833 standing leads on 2026-09-22, and the count grows
+  with every re-key. The pane now reads the summary from the same evaluation as its verdict.
+
 - **A degree waiver the escape could not see deleted the job (2026-09-22, T149).** The
   `degree_equivalence` escape recognised four phrasings — `or equivalent`, `equivalent
   experience/work`, `in lieu of`, `may be substituted` — and an article was enough to defeat it, so

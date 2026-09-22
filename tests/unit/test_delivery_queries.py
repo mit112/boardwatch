@@ -1335,6 +1335,35 @@ def test_the_detail_pane_reports_the_revision_hold_the_list_reports(engine: Engi
     )
 
 
+def test_the_detail_pane_reports_the_no_requirements_hold_the_list_reports(
+    engine: Engine,
+) -> None:
+    """T127. The pane built its `QueueRow` with no requirement summary, so `lane_decision` saw
+    `NO_REQUIREMENT_FLAGS` and served `apply` for a lead the LIST held as `no_requirements_found`
+    -- 12 of 833 standing leads on 2026-09-22. Asserted as agreement between the two reads, and
+    the lane is named as well, so it cannot pass by both reads losing the flag together."""
+    catalog = load_rules(load_settings().config_dir)
+    assert len(evaluate(SILENT_JD, Facts(), Policy(), catalog).requirements) == 0
+    with engine.begin() as conn:
+        _save_profile(conn)
+        posting_id, _ = _deliver(conn, "silent", posting_body=SILENT_JD, version_body=SILENT_JD)
+        version_id = int(
+            conn.execute(
+                posting_versions.select().where(posting_versions.c.posting_id == posting_id)
+            ).one().id
+        )
+        _write_evaluation(conn, posting_id, version_id, SILENT_JD)
+    with engine.connect() as conn:
+        (listed,) = delivered_unapplied(conn, skipped=set())
+        detail = queue_detail(conn, posting_id)
+    assert detail is not None
+    assert detail.row.requirement_flags == listed.requirement_flags
+    assert listed.requirement_flags.no_requirement_rows is True
+    assert delivery_queries.lane_decision(detail.row) == delivery_queries.lane_decision(
+        listed
+    ) == LaneDecision(REVIEW_DIR, "no_requirements_found")
+
+
 # --- T92: normalising the provider's `employmentType` -------------------------------------------
 
 

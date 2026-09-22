@@ -1559,6 +1559,12 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     quarantined = version is not None and is_quarantined(conn, version.posting_version_id)
     version_ids = [] if version is None else [version.posting_version_id]
     verdicts = current_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # T127. The requirement summary from the SAME evaluation as the verdict one line up, exactly as
+    # `delivered_unapplied` reads it. Without it the pane fell back to `NO_REQUIREMENT_FLAGS` and
+    # served `apply` for a lead the LIST held as `no_requirements_found` -- 12 of 833 standing leads
+    # on 2026-09-22, and ~345 before that day's re-judge, since a re-key strands every judge
+    # `eligible` that releases the hold.
+    flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
     # The FINAL GATE's verdict, under the same identity and the same version as the rules verdict
     # above, so the pane and the list row for one lead cannot report two different gate readings.
     # `delivered_unapplied` reads it for every row; without it here the detail served `None` for a
@@ -1604,6 +1610,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             row,
             verdict=verdicts.get(posting_id),
             now=utcnow(),
+            requirement_flags=flags.get(posting_id, NO_REQUIREMENT_FLAGS),
             judge_verdict=gate.get(posting_id),
             judge_seniority_fit=seniority.get(posting_id, "unclear"),
             form_question_hit=form_questions.get(posting_id),
