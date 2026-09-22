@@ -37,6 +37,7 @@ from boardwatch.rank.location_data import (
     NON_US_CITIES,
     NON_US_COUNTRIES,
     NON_US_ISO3,
+    NON_US_ISO3_SUFFIX,
     NON_US_REGIONS,
     POLICY_ONLY,
     US_CITIES,
@@ -106,18 +107,20 @@ _ISO3_PREFIX_RE = re.compile(r"^([A-Z]{3})(?:[-.]|\d)")
 _ISO3_PAREN_RE = re.compile(r"\(([A-Z]{3})\)\s*$")
 # The LAST comma component, exactly three uppercase letters as written ("Dublin, IRL",
 # "San Francisco,CRI"). Uppercase-only is what keeps the English words "Can", "Per" and "Ind"
-# from ever reading as Canada, Peru and India.
+# from ever reading as Canada, Peru and India. Checked against `NON_US_ISO3_SUFFIX`, which drops
+# the codes a US location also ends in ("Austin, AUS", "Remote, EST").
 _ISO3_SUFFIX_RE = re.compile(r",\s*([A-Z]{3})\s*$")
 
 
 def _non_us_country_code(segment: str) -> bool:
     """True when a segment carries a structural non-US alpha-3 country code."""
     stripped = segment.strip()
-    for pattern in (_ISO3_PREFIX_RE, _ISO3_PAREN_RE, _ISO3_SUFFIX_RE):
+    for pattern in (_ISO3_PREFIX_RE, _ISO3_PAREN_RE):
         match = pattern.search(stripped)
         if match and match.group(1).casefold() in NON_US_ISO3:
             return True
-    return False
+    match = _ISO3_SUFFIX_RE.search(stripped)
+    return match is not None and match.group(1).casefold() in NON_US_ISO3_SUFFIX
 
 
 def _classify_segment(segment: str) -> LocationClass:

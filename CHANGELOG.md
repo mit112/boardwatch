@@ -271,16 +271,18 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - **A location ending in a country code no longer passes as a US candidate (2026-09-22, T160).**
-  `Dublin, IRL`, `Iasi, ROU` and `San Francisco,CRI` classified `unknown`. That fails open, so 751
-  open postings whose every location named a foreign country by its ISO 3166-1 alpha-3 code
-  reached ranking as possible US roles, and a blind audit found three of them in the apply lane
-  (D-550). The classifier already knew the codes, but read them only as a prefix (`BGR-Varna`) or
-  in parentheses (`Remote (IND)`). It now also reads a trailing comma component, matched in
-  uppercase as written, so `Remote, Can` is never Canada. The code beats a curated US city name,
-  which moves four more postings that were genuinely foreign: three Costa Rica roles in `San
-  Francisco,CRI` and one in `Kirkland, QC, CAN`. The US territories (`PRI`, `GUM`, `VIR`, `ASM`,
-  `MNP`, `UMI`) stay out of the set and stay fail-open. Measured over all 270,193 open postings,
-  every one of the 755 moves goes to `non_us`. `routing_hash` moves; no eligibility hash does.
+  `Dublin, IRL` and `Iasi, ROU` classified `unknown`. That fails open, so 741 open postings whose
+  every location named a foreign country by its ISO 3166-1 alpha-3 code reached ranking as
+  possible US roles, and a blind audit found three of them in the apply lane (D-550). The
+  classifier already knew the codes, but read them only as a prefix (`BGR-Varna`) or in
+  parentheses (`Remote (IND)`). It now also reads a trailing comma component, matched in uppercase
+  as written, so `Remote, Can` is never Canada. The code beats a curated US city name, which moves
+  four postings that classified `us` and were genuinely foreign: three Costa Rica roles in `San
+  Francisco,CRI` and one in `Kirkland, QC, CAN`. Seven codes a US location also ends in are not
+  read in this shape (`AUS`, `PHL`, `IND`, `ALB`, `BGR` and `COD` are US airport codes, and `EST`
+  is Eastern time), and neither are the US territories (`PRI`, `GUM`, `VIR`, `ASM`, `MNP`, `UMI`);
+  all of them stay fail-open. Measured over all 270,193 open postings, every one of the 745 moves
+  goes to `non_us`. `routing_hash` moves; no eligibility hash does.
 
 - **The detail pane no longer shows `apply` for a lead the list holds for review (2026-09-22,
   T127).** `queue_detail` built its row without the requirement summary, so a lead whose JD

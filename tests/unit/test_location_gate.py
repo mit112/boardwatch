@@ -354,6 +354,21 @@ class TestStructuralCountryCode:
     def test_a_us_segment_still_keeps_a_list_with_a_coded_foreign_one(self) -> None:
         assert classify_location(["Dublin, IRL", "Austin, TX"]) == "us"
 
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            # US airport codes that are also alpha-3 country codes, and the Eastern time zone.
+            "Austin, AUS", "Philadelphia, PHL", "Indianapolis, IND", "Albany, ALB",
+            "Bangor, BGR", "Cody, COD", "Remote, EST",
+        ],
+    )
+    def test_a_trailing_code_a_us_location_also_ends_in_is_not_read(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    def test_a_us_state_in_the_same_segment_beats_a_trailing_code(self) -> None:
+        # The state check runs first, so a segment that names a US state stays US: fail-open.
+        assert _c("Something, IN, CAN") == "us"
+
     @pytest.mark.parametrize("loc", ["IN - Indianapolis", "CA - San Francisco", "OR - Portland"])
     def test_a_two_letter_prefix_is_not_read_as_a_country(self, loc: str) -> None:
         # Deliberately unread: "IN"/"CA"/"OR" are Indiana/California/Oregon as often as

@@ -34,7 +34,7 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 from __future__ import annotations
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
-# 6: NON_US_ISO3 is now also read as a trailing comma component ("Dublin, IRL"), and fji / png
+# 6: NON_US_ISO3_SUFFIX added, read as a trailing comma component ("Dublin, IRL"), and fji / png
 # added. 777 open postings whose every segment ended in a non-US alpha-3 code read `unknown` and
 # failed open (CAN 220, IRL 130, KOR 87, JPN 80 ...), three of them in the apply lane. The code
 # beats a US city token, so "San Francisco,CRI" (Costa Rica) and "Kirkland, QC, CAN" now read
@@ -208,8 +208,6 @@ NON_US_REGIONS = frozenset(
 # and with department and compass prefixes ("IT -", "SE -"). "usa" is deliberately absent.
 # So are the US territories "pri", "gum", "vir", "asm", "mnp" and "umi": they stay `unknown`,
 # fail-open, because whether a territory counts as the US is a policy question, not this table's.
-# The classifier also reads the code as a trailing comma component ("Dublin, IRL"), matched
-# UPPERCASE as written, so "Remote, Can" never reads as Canada.
 NON_US_ISO3 = frozenset(
     {
         "afg", "alb", "and", "are", "arg", "arm", "aus", "aut", "aze", "bel", "bgd", "bgr",
@@ -225,6 +223,16 @@ NON_US_ISO3 = frozenset(
         "fji", "png",
     }
 )
+
+# The codes read as a trailing comma component ("Dublin, IRL"), matched UPPERCASE as written so
+# "Remote, Can" never reads as Canada. It is a WEAKER shape than a site-code prefix or a
+# parenthesised suffix, because a US location can end in an uppercase three-letter token that is
+# not a country. Each exclusion names the US location it would otherwise cost, per the curation
+# rule at the top of this file: "Austin, AUS", "Philadelphia, PHL", "Indianapolis, IND",
+# "Albany, ALB", "Bangor, BGR" and "Cody, COD" are airport codes, and "Remote, EST" is the
+# Eastern time zone. They stay readable as a prefix or in parentheses. Measured cost, 2026-09-22:
+# 10 open postings ending ", PHL" / ", IND" / ", AUS" stay `unknown`, as they were.
+NON_US_ISO3_SUFFIX = NON_US_ISO3 - frozenset({"aus", "phl", "ind", "alb", "bgr", "cod", "est"})
 
 # Multi-region tokens that INCLUDE the US: genuinely undecidable for a strict gate, so unknown.
 AMBIGUOUS_REGIONS = frozenset(
