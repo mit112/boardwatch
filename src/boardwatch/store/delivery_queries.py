@@ -57,7 +57,7 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
-from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.preflight import current_facts, current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
@@ -605,13 +605,17 @@ def lane_decision(row: QueueRow) -> LaneDecision:
     )
 
 
-def _identity(conn: Connection) -> tuple[str | None, str | None]:
+def _identity(
+    conn: Connection, settings: Settings, catalog: RulesCatalog | None
+) -> tuple[str | None, str | None]:
     """The live profile's (profile_hash, rules_hash), or (None, None) with no profile.
 
     `current_verdicts` returns `{}` for the None pair, so every verdict reads as absent on a store
-    that has no profile — which is the truth, not a failure.
+    that has no profile — which is the truth, not a failure. `catalog`, when given, is reused
+    rather than loaded again — the caller loads `rules.yaml` once per call and passes the same
+    object here and to the gate read that follows (T171).
     """
-    identity = current_identity(conn, load_settings())
+    identity = current_identity(conn, settings, catalog=catalog)
     return identity if identity is not None else (None, None)
 
 
@@ -1119,7 +1123,14 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # Both reads chunk internally past the bound-parameter cap, and the list handed to them is
     # bounded by the artifact count rather than by the open corpus.
     versions = current_posting_versions(conn, [int(row.posting_id) for row in ordered])
-    profile_hash, rules_hash = _identity(conn)
+    # `facts` is None exactly when there is no profile (`current_facts`' own check), the same
+    # condition under which `current_identity` never touches disk -- so the catalog is loaded
+    # ONCE here, only when there is a profile to evaluate against it, and reused below by both
+    # the identity read and the gate read (T171). With no profile it stays None and neither read
+    # loads `rules.yaml`, so a malformed override cannot fail a list that needs no catalog.
+    facts = current_facts(conn)
+    catalog = load_rules(settings.config_dir) if facts is not None else None
+    profile_hash, rules_hash = _identity(conn, settings, catalog)
     version_ids = [version.posting_version_id for version in versions.values()]
     verdicts = current_verdicts(conn, version_ids, profile_hash, rules_hash)
     # Same identity and same version list as the verdicts above, so each row's summary and its
@@ -1131,9 +1142,10 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # pairing it with a verdict whose inputs are unchanged is as coherent as pairing it with a
     # fresh re-judge of them. The same-VERSION half is what stops a verdict about an old body
     # releasing a new body's flags, and it is kept.
-    facts = current_facts(conn)
-    gate = current_gate_verdicts(
-        conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model
+    gate = (
+        current_gate_verdicts(conn, version_ids, facts, catalog, model=settings.gate.model)
+        if catalog is not None
+        else {}
     )
     # Gated HERE and nowhere else on this side. Every consumer below reads
     # `row.judge_seniority_fit == "no"`, so leaving the column at its inert `"unclear"` when the
@@ -1556,7 +1568,12 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
         return None
 
     settings = load_settings()
-    identity = current_identity(conn, settings)
+    # Loaded ONCE here -- `load_audit` below needs a real catalog for a closed or historical
+    # posting whether or not a profile exists, so unlike `delivered_unapplied` this read cannot
+    # skip the load; it only dedupes it (T171). Reused by the identity read, the gate read and
+    # the audit.
+    catalog = load_rules(settings.config_dir)
+    identity = current_identity(conn, settings, catalog=catalog)
     profile_hash, rules_hash = identity if identity is not None else (None, None)
 
     version = current_posting_versions(conn, [posting_id]).get(posting_id)
@@ -1575,10 +1592,9 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # The FINAL GATE's verdict, through the same read, on the same version, under the same facts,
     # judge and catalog as `delivered_unapplied`'s, so the pane and the list row for one lead
     # cannot report two different gate readings. Without it here the detail served `None` for a
-    # lead the list served `uncertain` — the same field, the same lead, two answers. The catalog
-    # is loaded once and serves this read and the audit below.
+    # lead the list served `uncertain` — the same field, the same lead, two answers. `catalog` is
+    # the one loaded above, above the identity read.
     facts = current_facts(conn)
-    catalog = load_rules(settings.config_dir)
     gate = current_gate_verdicts(conn, version_ids, facts, catalog, model=settings.gate.model)
     # The gate's SENIORITY reading, for the same reason its verdict one line up is read here, and
     # missed when that one was added. Two things went wrong without it, and the second is the

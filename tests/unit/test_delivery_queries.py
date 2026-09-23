@@ -31,11 +31,13 @@ from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery.names import DRAIN_DIRS
 from boardwatch.delivery.review_gate import CLOSED_DIR, REVIEW_DIR, LaneDecision
+from boardwatch.eligibility import final_gate, preflight
 from boardwatch.eligibility.audit import AuditRequirement
-from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.hashing import build_identity
+from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store import delivery_queries
 from boardwatch.store.applications import create_application
@@ -283,6 +285,35 @@ def _save_profile(conn: Connection) -> None:
         conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
         locations=["Boston, MA"], remote_only=False, skills=["python"],
         taxonomy_version="v1", resume_max_pages=1,
+    )
+
+
+#: A JD the "work_auth" family can quote, for the FINAL-GATE verdicts written below.
+GATE_JD = "This position requires an active Top Secret security clearance."
+GATE_EVIDENCE = "requires an active Top Secret security clearance"
+
+
+def _write_gate_verdict(
+    conn: Connection, posting_id: int, version_id: int, *, decision: str
+) -> None:
+    """One FINAL-GATE verdict against `posting_id`'s current version, the same shape the daily
+    stage writes (`final_gate.record_gate_verdict`), under the LIVE identity's facts/policy/model
+    so `current_gate_verdicts`' match on `(posting_version_id, facts_key, model, engine_version)`
+    finds it."""
+    settings = load_settings()
+    catalog = load_rules(settings.config_dir)
+    final_gate.record_gate_verdict(
+        conn,
+        posting_version_id=version_id,
+        jd_text=GATE_JD,
+        facts=Facts(),
+        policy=Policy(),
+        catalog=catalog,
+        verdict=OracleVerdict(
+            label=str(posting_id), decision=decision, reason="work_auth",
+            evidence=GATE_EVIDENCE, confidence="high",
+        ),
+        model=settings.gate.model,
     )
 
 
@@ -704,6 +735,91 @@ def test_the_current_identitys_verdict_is_returned(engine: Engine) -> None:
         by_posting = {row.posting_id: row for row in delivered_unapplied(conn, skipped=set())}
     assert by_posting[judged].verdict == expected
     assert len([row for row in by_posting.values() if row.verdict is None]) == 1
+
+
+# ------------------------------------------------------------------------- T171: one catalog load
+
+
+def test_delivered_unapplied_loads_the_rules_catalog_exactly_once(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T171. `delivered_unapplied` needs the catalog for two reads under a profile: the identity
+    (`current_identity`'s `rules_hash`) and the gate verdicts (`current_gate_verdicts`). Before
+    the fix each loaded it separately -- red today at `calls == 2`, not 1: `current_identity`
+    loaded it via `preflight.load_rules` to hash it, and the gate read loaded it again via
+    `delivery_queries.load_rules` to pass to `current_gate_verdicts`, even though nothing
+    invalidates reusing the first object for the second read.
+    """
+    with engine.begin() as conn:
+        _save_profile(conn)
+        _deliver(conn, "counted")
+
+    calls = 0
+    real_load_rules = load_rules
+
+    def _counting_load_rules(config_dir: Path) -> RulesCatalog:
+        nonlocal calls
+        calls += 1
+        return real_load_rules(config_dir)
+
+    # Patched in BOTH modules' own namespaces: each imported `load_rules` with `from ... import`,
+    # so each holds its own name bound to the original function object -- patching the source
+    # module (`eligibility.catalog`) would miss calls made through either import.
+    monkeypatch.setattr(delivery_queries, "load_rules", _counting_load_rules)
+    monkeypatch.setattr(preflight, "load_rules", _counting_load_rules)
+    with engine.connect() as conn:
+        delivered_unapplied(conn, skipped=set())
+    assert calls == 1
+
+
+def test_delivered_unapplied_survives_a_malformed_rules_override_with_no_profile(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T171's second defect. Before T161 added the gate read, a store with no profile never
+    touched `rules.yaml` at all in this path (`current_verdicts` short-circuits on the None
+    identity). The gate read's unconditional `load_rules(settings.config_dir)` changed that: with
+    no profile there are still no facts, so `current_gate_verdicts` itself returns `{}` without
+    ever consulting the catalog it was handed -- but the load ahead of it happened anyway and a
+    malformed override raised. Red today: `boardwatch.eligibility.catalog.CatalogError:
+    <override path>: 'families' must be a non-empty list`.
+    """
+    from boardwatch.eligibility.catalog import CatalogError  # noqa: PLC0415
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "rules.yaml").write_text("families: not-a-list\n", encoding="utf-8")
+    with pytest.raises(CatalogError):
+        load_rules(config_dir)  # the override really is malformed -- not a fixture-writing bug
+
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, "no_profile")
+    with engine.connect() as conn:
+        rows = delivered_unapplied(conn, skipped=set())
+    assert [row.posting_id for row in rows] == [posting_id]
+    assert rows[0].verdict is None
+    assert rows[0].judge_verdict is None
+
+
+def test_a_profiles_gate_verdict_is_unchanged_by_the_single_load_path(engine: Engine) -> None:
+    """T171 control. Loading the catalog once and reusing it for both the identity read and the
+    gate read must not move the value a WITH-profile call returns -- only the load COUNT (test
+    above) and the no-profile behaviour (test above) may change. Exercises both readers T161
+    keeps agreeing: the list row and the detail pane."""
+    with engine.begin() as conn:
+        _save_profile(conn)
+        judged, _ = _deliver(conn, "judged")
+        version_id = int(
+            conn.execute(
+                posting_versions.select().where(posting_versions.c.posting_id == judged)
+            ).one().id
+        )
+        _write_gate_verdict(conn, judged, version_id, decision="ineligible")
+    with engine.connect() as conn:
+        (row,) = delivered_unapplied(conn, skipped=set())
+        detail = queue_detail(conn, judged)
+    assert row.judge_verdict == "ineligible"
+    assert detail is not None
+    assert detail.row.judge_verdict == "ineligible"
 
 
 # --------------------------------------------------------------------------------- the detail
