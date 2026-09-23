@@ -40,6 +40,11 @@ BLOCKER_ALL = Policy(
     }
 )
 
+#: F9 (2026-09-23 review). The identical policy, plus a declared Southern-Hemisphere seeker.
+BLOCKER_ALL_SOUTHERN = Policy(
+    families=BLOCKER_ALL.families, graduation_hemisphere="southern"
+)
+
 #: Graduated August 2025, no longer enrolled — the profile the audit was run against.
 GRADUATED = Facts(
     education_timing=EducationTimingFact(currently_enrolled=False, graduation_yyyymm=202508)
@@ -81,8 +86,10 @@ def catalog(tmp_path_factory: pytest.TempPathFactory) -> RulesCatalog:
     return load_rules(tmp_path_factory.mktemp("no-override"))
 
 
-def _rows(catalog: RulesCatalog, body: str, facts: Facts) -> list[tuple[str, str]]:
-    result = evaluate(body, facts, BLOCKER_ALL, catalog)
+def _rows(
+    catalog: RulesCatalog, body: str, facts: Facts, *, policy: Policy = BLOCKER_ALL
+) -> list[tuple[str, str]]:
+    result = evaluate(body, facts, policy, catalog)
     return [
         (req.rule_id, req.disposition)
         for req in result.requirements
@@ -186,6 +193,45 @@ class TestGraduationWindow:
             assert _rows(catalog, body, GRADUATED) == [
                 ("student_status:graduation_window_required", "unknown")
             ], body
+
+    def test_a_southern_hemisphere_setting_reads_spring_as_september_to_november(
+        self, catalog: RulesCatalog
+    ) -> None:
+        """F9 (2026-09-23 review). The season table used to be Northern-Hemisphere code: an
+        AU/NZ/ZA "Spring 2027" is September-November, not March-May. RED before the fix --
+        `catalog.effective_family` had no hemisphere to read and every tenant got the Northern
+        table, so an August graduate (202708) read `unmet` against a window that should have
+        cleared him."""
+        body = "Applicants must be graduating between Spring 2027 and Spring 2027."
+        for yyyymm, disposition in (
+            (202708, "unmet"), (202709, "met"), (202711, "met"), (202712, "unmet"),
+        ):
+            facts = Facts(education_timing=EducationTimingFact(graduation_yyyymm=yyyymm))
+            assert _rows(catalog, body, facts, policy=BLOCKER_ALL_SOUTHERN) == [
+                ("student_status:graduation_window_required", disposition)
+            ], yyyymm
+
+    def test_the_northern_default_is_unchanged_by_landing_the_hemisphere_field(
+        self, catalog: RulesCatalog
+    ) -> None:
+        """The control: `BLOCKER_ALL` states no `graduation_hemisphere` at all, and the SAME
+        "Spring 2027" window must resolve to the Northern March-May bound exactly as it did
+        before F9, byte for byte."""
+        body = "Applicants must be graduating between Spring 2027 and Spring 2027."
+        for yyyymm, disposition in ((202702, "unmet"), (202703, "met"), (202705, "met")):
+            facts = Facts(education_timing=EducationTimingFact(graduation_yyyymm=yyyymm))
+            assert _rows(catalog, body, facts) == [
+                ("student_status:graduation_window_required", disposition)
+            ], yyyymm
+
+    def test_a_southern_summer_bound_abstains(self, catalog: RulesCatalog) -> None:
+        """The Southern Hemisphere's summer spans the December-February year boundary, the
+        identical reason `northern`'s `winter` is unreadable -- so it is omitted from the
+        catalog's `southern` table on purpose rather than resolved wrong."""
+        body = "Applicants must be graduating between Fall 2026 and Summer 2027."
+        assert _rows(catalog, body, GRADUATED, policy=BLOCKER_ALL_SOUTHERN) == [
+            ("student_status:graduation_window_required", "unknown")
+        ]
 
     def test_an_inverted_window_abstains(self, catalog: RulesCatalog) -> None:
         body = "Applicants must have a graduation date between May 2027 and December 2026."

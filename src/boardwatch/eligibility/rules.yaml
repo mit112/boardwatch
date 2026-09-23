@@ -1920,6 +1920,31 @@ families:
     implies_vocabulary:
       - current_enrollment_required
       - graduation_window_required
+    # F9 (2026-09-23 review). The season->month mapping as HEMISPHERE-keyed catalog DATA
+    # (CLAUDE.md multi-tenancy: "taxonomy as versioned DATA, not code"), not the
+    # Northern-Hemisphere-only module constant `resolve.py` used to carry. Selected by
+    # `Policy.graduation_hemisphere`; `None` (undeclared) reads `northern`, the declared
+    # default here and the CURRENT (and only, before this) behaviour, byte-identical.
+    #
+    # `southern` is the Southern-Hemisphere academic calendar (AU/NZ/ZA and similar): Spring is
+    # September-November and Autumn/Fall is March-May, the Northern reading's opposite pair.
+    # `summer` IS DELIBERATELY ABSENT from `southern`, for the identical reason `winter` is
+    # absent from `northern` (a posting's actual JD text can never say "winter" here either --
+    # the vocabulary is `implies_vocabulary`-scoped, not season-name-scoped, so this omission
+    # only ever affects a `southern`-declaring tenant): the Southern Hemisphere's summer spans
+    # the December-February YEAR BOUNDARY, so no single month is a defensible bound for it and
+    # the family abstains on it rather than being decided wrong, exactly as a Northern "Winter"
+    # window abstains today.
+    season_months:
+      northern:
+        spring: [3, 5]
+        summer: [6, 8]
+        fall: [9, 11]
+        autumn: [9, 11]
+      southern:
+        spring: [9, 11]
+        fall: [3, 5]
+        autumn: [3, 5]
     # No exclusive_groups and no refinement_groups: the two members answer DIFFERENT questions
     # (enrolment now vs a dated window) and a posting can legitimately state both, so neither
     # a contradiction nor a refinement is the right reading of co-occurrence.

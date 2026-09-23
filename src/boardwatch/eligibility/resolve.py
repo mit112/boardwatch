@@ -547,17 +547,6 @@ _MONTH_NAMES = (
     "july august september october november december"
 )
 
-#: A season as `name:first:last` months, one string for the same R9 reason as `_MONTH_NAMES`.
-#: Read as a window bound, a season takes its FIRST month as the low end and its LAST as the
-#: high end: the generous reading, because an over-tight bound turns a graduate the posting
-#: would take into `unmet` and deletes the job. Matched whole, never by prefix.
-#:
-#: WINTER IS DELIBERATELY ABSENT, so it stays unreadable and the rule abstains. The name spans a
-#: year boundary: "Winter 2026" is written for a January-March 2026 term and for a December 2026
-#: commencement alike, so no single month is defensible for it, and an input this cannot resolve
-#: abstains rather than being decided against.
-_SEASON_MONTHS = "spring:3:5 summer:6:8 fall:9:11 autumn:9:11"
-
 #: The shortest prefix that still names one month. `ju` is ambiguous (june/july), so three is
 #: the floor; `sept` and `sep` both resolve, which is what live postings actually write.
 _MONTH_PREFIX_MIN = 3
@@ -580,24 +569,33 @@ def _month_ordinal(name: str) -> int | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def _season_ordinal(name: str, *, high: bool) -> int | None:
-    """The bound month a season name stands for (`_SEASON_MONTHS`), else None."""
+def _season_ordinal(
+    name: str, season_months: Mapping[str, tuple[int, int]], *, high: bool
+) -> int | None:
+    """The bound month a season name stands for in `season_months`, else None.
+
+    `season_months` is the family's EFFECTIVE, hemisphere-selected table (F9,
+    `catalog.FamilySpec.season_months`/`effective_family`) — never a module constant, so a
+    season this cannot read (an undeclared name, or a wrapping season a hemisphere omits on
+    purpose, e.g. `southern`'s `summer`) abstains exactly as an unrecognised MONTH does.
+    """
     token = name.strip().lower()
-    for entry in _SEASON_MONTHS.split():
-        season, first, last = entry.split(":")
-        if season == token:
-            return int(last if high else first)
-    return None
+    window = season_months.get(token)
+    if window is None:
+        return None
+    return window[1] if high else window[0]
 
 
-def _yyyymm(month: str, year: str, *, high: bool) -> int | None:
+def _yyyymm(
+    month: str, year: str, season_months: Mapping[str, tuple[int, int]], *, high: bool
+) -> int | None:
     """`("December", "2026")` -> 202612, or None when the month cannot be read.
 
     `high` says which end of the window this is, which only a season needs.
     """
     ordinal = _month_ordinal(month)
     if ordinal is None:
-        ordinal = _season_ordinal(month, high=high)
+        ordinal = _season_ordinal(month, season_months, high=high)
     if ordinal is None:
         return None
     return int(year) * 100 + ordinal
@@ -634,8 +632,14 @@ def _resolve_student_status(
     # graduation_window_required
     if timing.graduation_yyyymm is None:
         return Resolution(UNKNOWN, "graduation date not declared")
-    low = _yyyymm(detection.values["from_month"], detection.values["from_year"], high=False)
-    high = _yyyymm(detection.values["to_month"], detection.values["to_year"], high=True)
+    low = _yyyymm(
+        detection.values["from_month"], detection.values["from_year"],
+        family.season_months, high=False,
+    )
+    high = _yyyymm(
+        detection.values["to_month"], detection.values["to_year"],
+        family.season_months, high=True,
+    )
     if low is None or high is None:
         return Resolution(UNKNOWN, "the stated window names a month this catalog cannot read")
     if low > high:
