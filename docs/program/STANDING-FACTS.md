@@ -4092,3 +4092,43 @@ later), so §8 is **closure LATENCY, not blindness**, and it is already instrume
 closure latency is mean **8.33 days**. **§5 (comp band as a seniority input) is the cheapest real
 fix in the file** — `salary_min`/`salary_max` are already columns and the band gate already
 exists; it is missing an input, not a subsystem.
+
+## Moved out of STATE on 2026-09-22e — the 2026-09-22d block, whole. Its one open condition (run
+## 471's `refresh_*` reading) is restated in STATE's 2026-09-22e block. Kept verbatim.
+
+### 2026-09-22d — **T159 READ: THE SONNET-ERA APPLY LANE IS 5.4% UNAPPLYABLE, SO B8's PRECISION HALF IS MET ON IT (D-550). T113 SHIPS AS A BOUNDED STANDING-QUEUE REFRESH, ARMED LIVE AT 130/RUN (D-551, D-552). T127 AND T158 SHIP. RUN 471 HAD NOT HAPPENED — IT IS STILL THE NEXT READING.**
+
+**The session ran on the afternoon of 2026-09-22, BEFORE the 04:00 CDT tick.** Run 471, D-529's
+n ≥ 5 revisit and B8's day 1 are all still owed, exactly as the 2026-09-22c block below states
+them.
+
+**T159 (D-550).** Two blind opus passes (the owner's ruling) over 134 items, with 95.5% agreement
+on a 44-item overlap. The apply lane (529) reads **3/56 = 5.4% unapplyable (CI 2–15%)** against
+the ≤ 16% bar; the haiku-era control on 09-13 was 21.4%. Sonnet's extra clears (the 150 leads
+haiku would have held) read 7.8%. **Sonnet's seniority hold parks ~53% applyable leads** (the held
+arm reads 46.7% unapplyable, ~109 of 204). It still pays for itself, because releasing all 204
+would take the lane to ~16.9%. **Whether to refine it is the owner's call; nothing is built.**
+The misses name two small tickets:
+- **T160.** `classify_location` fails open on ISO-3 suffixes (`Dublin, IRL`): 777 open postings.
+- **T105.** The one eligibility miss is an extraction gap under a "Desired Qualifications"
+  heading, which is T105's shape.
+
+**T113 (D-551).** `[gate] refresh_budget` re-judges up to that many stale standing-queue leads
+per run, through `run_gate_stage` itself, one batch per commit, promotable holds first. The
+funnel's `gate` block reports `refresh_*`. The shipped default is 0 (off). **The live config is
+ARMED at 130/run on the owner's ruling (D-552).** Read back through `Settings`, not from the file.
+That costs ~5–7% of the seat per run while a backlog exists, drains a full re-key in ~7 runs, and
+costs ~0 in steady state. The standing queue was 0 of 833 stale when it was armed, so run 471
+should read `refresh_candidates = 0`. The original T113 half is
+split out as **T113b**: 66 stale negatives that `top_cmd` hides, which the batch's `rules_hash`
+move frees anyway.
+
+**NEXT WORK, IN ORDER** (`TICKETS-2026-09-22c.md`, with its 2026-09-22d status section):
+0. **Read run 471** as the 2026-09-22c block below specifies, then **raise D-529 (n ≥ 5).**
+1. **Check run 471's funnel `gate.refresh_*`**: budget 130, candidates 0 (D-552). A non-zero
+   candidate count on a run with no re-key is a defect to read, not a backlog.
+2. **The eligibility batch** (T152 + T156 + T157 + T105), now unblocked. The refresh heals its
+   re-key over ~7 runs; watch `refresh_pending_after` fall run over run.
+3. **T155** (owner question first), **T160**, and T113b only if a model/effort/facts change
+   recreates the backlog.
+4. **Parked, unchanged:** `TICKETS-2026-09-22c.md` §#5.
