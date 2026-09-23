@@ -300,6 +300,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The job-apps lane counts a dangling `discovery_record.json` symlink as a record it could not
+  read (2026-09-23, T168 follow-up).** T168 made every unreadable record count, but a folder whose
+  record is a broken symlink never became a candidate: `is_file()` resolves the link and reads
+  `False`, so the folder fell out before the count. The candidacy test now admits a symlink as
+  well, and the existing read failure counts it as `not_attemptable` like any other cause. A test
+  pins that the count sums across both harvest roots.
+
 - **Two applied jobs with the same folder name no longer collide in `_applied` (2026-09-23, T172).**
   Two distinct SingleStore jobs, `Software Engineer-Helios-New Grad 2027` and `Software
   Engineer-Engine-New Grad 2027`, both applied, map to one queue folder name. The queue gives

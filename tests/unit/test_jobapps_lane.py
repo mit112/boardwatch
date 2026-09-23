@@ -359,6 +359,35 @@ def test_an_unset_queue_root_is_exactly_the_previous_behaviour(tmp_path):
     assert len(_postings(_collect_two(root, None, tmp_path))) == 1
 
 
+def test_the_rejected_count_sums_across_both_roots(tmp_path):
+    """T168's other follow-up: `_records` adds `_records_under`'s rejected count per root
+    (`rejected += root_rejected`), so a cause in EITHER root must reach the tally, and one in
+    BOTH roots must reach it twice -- not just the last root read. A dangling symlink under
+    `discovery` and an ordinary unreadable (malformed JSON) record under the promoted queue,
+    together, must count as two, and each root's readable record must still be ingested."""
+    discovery = tmp_path / "resumes"
+    promoted = tmp_path / "APPLY_QUEUE"
+    _write(
+        discovery, "Greenhouse", "ok",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/1111111111",
+    )
+    dangling = discovery / "Greenhouse" / "dangling"
+    dangling.mkdir(parents=True)
+    (dangling / "discovery_record.json").symlink_to(dangling / "nonexistent_target.json")
+
+    _write(
+        promoted, "Ashby", "ok", posting_id="pst_promoted",
+        direct_url="https://jobs.ashbyhq.com/openai",
+    )
+    corrupt = promoted / "Ashby" / "corrupt"
+    corrupt.mkdir(parents=True)
+    (corrupt / "discovery_record.json").write_text("{not json", encoding="utf-8")
+
+    result = _collect_two(discovery, promoted, tmp_path)
+    assert len(_postings(result)) == 2
+    assert result.tally.counts["not_attemptable"] == 2
+
+
 def test_an_unknown_acquisition_source_is_skipped_rather_than_trusted(tmp_path):
     """A closed set: a NEW source is counted, not silently assumed direct-apply."""
     root = tmp_path / "queue"
@@ -437,6 +466,22 @@ def test_an_unreadable_record_file_is_skipped_and_counted(tmp_path):
     folder = root / "Greenhouse" / "corrupt"
     folder.mkdir(parents=True)
     (folder / "discovery_record.json").write_text("{not json", encoding="utf-8")
+    result = _collect(root, tmp_path)
+    assert len(_postings(result)) == 1
+    assert result.tally.counts["not_attemptable"] == 1
+
+
+def test_a_dangling_record_symlink_is_skipped_and_counted(tmp_path):
+    """T168's follow-up (checkpointed in the ticket): a candidate folder can hold a
+    `discovery_record.json` that is a SYMLINK to nothing. `Path.is_file()` stats through a
+    symlink and reads False for a dangling one, so before this fix the folder never became a
+    candidate at all -- not `not_attemptable`, not anything, just absent from every tally,
+    which is the exact silent drop T168 closed for every other rejection cause."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok")
+    folder = root / "Greenhouse" / "dangling"
+    folder.mkdir(parents=True)
+    (folder / "discovery_record.json").symlink_to(folder / "nonexistent_target.json")
     result = _collect(root, tmp_path)
     assert len(_postings(result)) == 1
     assert result.tally.counts["not_attemptable"] == 1
