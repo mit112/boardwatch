@@ -555,6 +555,16 @@ def _hedged_by_heading(
     )
 
 
+def _reading(values: dict[str, str]) -> frozenset[tuple[str, str]]:
+    """A detection's captures, each `_alt` group under the name it stands in for.
+
+    One regex cannot name a group twice, so a pattern's second layout captures the same value
+    as `years_alt` (the resolver reads either). A bullet's own view and its heading view can
+    read one bar through the two layouts, and this is what says it is the same bar.
+    """
+    return frozenset((name.removesuffix("_alt"), value) for name, value in values.items())
+
+
 def _shifted(offset: int) -> Callable[[int], int]:
     return lambda p: offset + p
 
@@ -614,6 +624,9 @@ def detect(
                     governing, alternative_groups(body_text, units, governing)
                 )
             governing, alternatives = context_by_scope[pattern.scope]
+            # What each unit's OWN view appended, with its absolute span, so its heading view
+            # adds only a new reading.
+            own: dict[tuple[int, frozenset[tuple[str, str]]], list[tuple[int, int]]] = {}
             for index, unit, at, join in _views(units, governing, pattern):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
@@ -694,16 +707,27 @@ def detect(
                             pattern.abstain_by_sentence + pattern.abstain_by_adjacent,
                             inside_span=True,
                         )
+                    values = {name: value for name, value in match.groupdict().items() if value}
+                    # Checked after every drop, so a suppressed own-view match hides nothing.
+                    # "Preferred Qualifications:\n- 5 years of experience preferred." otherwise
+                    # wrote its one preferred bar twice, once per view (T163).
+                    # The same bar means the same captures AND the same text: the heading
+                    # view's bullet-side part must overlap the own-view row. Equal captures
+                    # alone would stand down a different bar in the same bullet, e.g. "3-5
+                    # years ...; 3-7 years ... preferred." (both capture a lower bound of 3).
+                    reading = (index, _reading(values))
+                    if join is None:
+                        own.setdefault(reading, []).append((at(lo), at(hi)))
+                    elif any(
+                        start < at(hi) and at(join) < end for start, end in own.get(reading, ())
+                    ):
+                        continue
                     found.append(
                         Detection(
                             family=family.id,
                             pattern=pattern,
                             span=(at(lo), at(hi)),
-                            values={
-                                name: value
-                                for name, value in match.groupdict().items()
-                                if value
-                            },
+                            values=values,
                             abstained=abstained,
                         )
                     )

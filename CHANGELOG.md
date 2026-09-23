@@ -300,6 +300,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A hedged bullet under a hedge heading now writes its preferred row once (2026-09-23, T163).**
+  `Preferred Qualifications:` then `- 5 years of experience preferred.` wrote two identical
+  `total_years_preferred` rows: one from the bullet read alone, one from the bullet read with its
+  heading. A preferred row never blocks, so no verdict changed, but the stored requirement rows and
+  the per-rule counts were doubled. The heading reading is now skipped when the bullet's own reading
+  already wrote the same bar: the same captures (`years` and its second-layout twin `years_alt` count
+  as one) over overlapping text. A different bar with the same number in the same bullet keeps its
+  row. No eligibility-corpus row changes. This edits a digested engine module, so `engine_version`
+  moves and every posting is re-evaluated once.
+
 - **A skill-taxonomy change no longer makes the next run report a false identity drift (2026-09-23,
   T164).** When the taxonomy version moves, the ranker's preflight rewrites the profile's derived
   skills. That write landed after the run had read its start identity, so the first run after each
