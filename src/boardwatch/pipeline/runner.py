@@ -56,7 +56,7 @@ from boardwatch.delivery.review_gate import lane as review_lane
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
-from boardwatch.eligibility.preflight import current_identity
+from boardwatch.eligibility.preflight import current_facts, current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     current_gate_seniority,
@@ -1509,7 +1509,9 @@ def _lead_lanes(
         # The runner's twin of `delivery_queries`' gate point: same flag, same inert default, so
         # the lane this run tailors for cannot disagree with the one `sync_queue` files under.
         gate_seniority = (
-            current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
+            current_gate_seniority(
+                conn, version_ids, current_facts(conn), model=settings.gate.model
+            )
             if settings.gate.seniority_hold
             else {}
         )

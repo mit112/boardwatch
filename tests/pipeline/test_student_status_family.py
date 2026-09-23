@@ -154,6 +154,39 @@ class TestGraduationWindow:
         assert rows == [] or ("student_status:graduation_window_required", "unknown") in rows
         assert _verdict(catalog, body, GRADUATED) != "ineligible"
 
+    def test_a_season_window_takes_the_generous_bound_at_each_end(
+        self, catalog: RulesCatalog
+    ) -> None:
+        """Fall as a LOW bound is September and Summer as a HIGH bound is August. A tighter
+        month at either end turns an in-window graduate into `unmet` and deletes the job."""
+        body = "Applicants must be graduating between Fall 2026 and Summer 2027."
+        for yyyymm, disposition in (
+            (202608, "unmet"), (202609, "met"), (202708, "met"), (202709, "unmet"),
+        ):
+            facts = Facts(education_timing=EducationTimingFact(graduation_yyyymm=yyyymm))
+            assert _rows(catalog, body, facts) == [
+                ("student_status:graduation_window_required", disposition)
+            ], yyyymm
+
+    def test_spring_and_autumn_are_read_too(self, catalog: RulesCatalog) -> None:
+        body = "Applicants must be graduating between Autumn 2026 and Spring 2027."
+        for yyyymm, disposition in ((202609, "met"), (202705, "met"), (202706, "unmet")):
+            facts = Facts(education_timing=EducationTimingFact(graduation_yyyymm=yyyymm))
+            assert _rows(catalog, body, facts) == [
+                ("student_status:graduation_window_required", disposition)
+            ], yyyymm
+
+    def test_a_winter_bound_abstains(self, catalog: RulesCatalog) -> None:
+        """Winter names January-March of its year AND the December before or after it, so
+        no single month is defensible and the bound is unreadable by design."""
+        for body in (
+            "Applicants must be graduating between Winter 2026 and Summer 2027.",
+            "Applicants must be graduating between Fall 2026 and Winter 2027.",
+        ):
+            assert _rows(catalog, body, GRADUATED) == [
+                ("student_status:graduation_window_required", "unknown")
+            ], body
+
     def test_an_inverted_window_abstains(self, catalog: RulesCatalog) -> None:
         body = "Applicants must have a graduation date between May 2027 and December 2026."
         assert ("student_status:graduation_window_required", "unknown") in _rows(
