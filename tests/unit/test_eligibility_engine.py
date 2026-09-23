@@ -606,6 +606,79 @@ def test_a_preference_family_can_never_change_the_verdict(catalog) -> None:
     assert [r.disposition for r in result.requirements] == ["unmet"]  # recorded in full
 
 
+def test_a_hedge_first_preferred_years_row_formats_the_captured_number(catalog) -> None:
+    """T169: `total_years_preferred` names its FIRST alternative's capture `years` and its
+    SECOND (the hedge-before-the-number layout) `years_alt`, because one regex cannot name the
+    same group twice. Both alternatives share one `requirement_text` template that only ever
+    names `{years}`, so a second-layout detection's `detection.values` is `{"years_alt": ...}`
+    and `.format(**detection.values)` raises `KeyError`, leaving the literal `"{years} years of
+    total experience is preferred"` in the stored row -- permanently, because the eligibility
+    tables' triggers forbid correcting a row in place.
+    """
+    result = evaluate(
+        "We prefer 5 years of experience.", Facts(total_years_experience=5), BLOCK_ALL, catalog,
+    )
+    assert [r.requirement_text for r in result.requirements] == [
+        "5 years of total experience is preferred",
+    ]
+
+
+def test_a_hedge_first_preferred_range_row_formats_the_captured_number(catalog) -> None:
+    """Same defect, `range_years_preferred`'s second layout."""
+    result = evaluate(
+        "We prefer 3-5 years of experience.", Facts(total_years_experience=5), BLOCK_ALL, catalog,
+    )
+    assert [r.requirement_text for r in result.requirements] == [
+        "3 years of total experience is preferred",
+    ]
+
+
+def test_control_a_first_layout_preferred_years_row_still_formats(catalog) -> None:
+    """CONTROL: the first (marker-last) layout captures `years` directly and must keep
+    formatting exactly as before the fold -- the fold must not disturb the case that already
+    worked.
+    """
+    result = evaluate(
+        "5 years of experience is preferred.", Facts(total_years_experience=5), BLOCK_ALL, catalog,
+    )
+    assert [r.requirement_text for r in result.requirements] == [
+        "5 years of total experience is preferred",
+    ]
+
+
+def test_control_an_override_placeholder_no_capture_provides_keeps_the_raw_template(
+    catalog,
+) -> None:
+    """CONTROL: a catalog override may still name a placeholder its pattern never captures
+    (engine.py guards `.format()` against exactly this). The fold only renames `<name>_alt`
+    keys; it must not manufacture a key the override asks for, so the guard still catches the
+    format error and the raw template survives, with no crash.
+    """
+    import dataclasses
+
+    shadowed = dataclasses.replace(
+        catalog,
+        families=tuple(
+            family
+            if family.id != "experience_years"
+            else dataclasses.replace(
+                family,
+                patterns=tuple(
+                    dataclasses.replace(pattern, requirement_text="{nonexistent} years required")
+                    if pattern.id == "total_years_minimum"
+                    else pattern
+                    for pattern in family.patterns
+                ),
+            )
+            for family in catalog.families
+        ),
+    )
+    result = evaluate(
+        "5 years of experience required.", Facts(total_years_experience=5), BLOCK_ALL, shadowed,
+    )
+    assert [r.requirement_text for r in result.requirements] == ["{nonexistent} years required"]
+
+
 def test_an_ignored_family_produces_no_rows_at_all(catalog) -> None:
     policy = Policy(families={"degree": "ignore"})
     result = evaluate("Bachelor's degree required.", Facts(highest_degree="none"),

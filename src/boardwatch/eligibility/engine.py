@@ -393,8 +393,16 @@ def evaluate(
         # "{years}" is permanently uncorrectable: it can only ever be superseded.
         requirement_text = detection.pattern.requirement_text
         if detection.values:
+            # An alternation's second arm captures `<name>_alt` instead of `<name>` (one regex
+            # cannot name the same group twice, and a hedge can sit on either side of the
+            # number -- see total_years_preferred/range_years_preferred in rules.yaml), but
+            # every requirement_text template names only the first arm's placeholder. Fold
+            # `<name>_alt` down to `<name>` before formatting, the way resolve.py's
+            # `_need_in_years` already reads the same pair. The alternation guarantees at most
+            # one of `<name>`/`<name>_alt` is ever captured, so the fold cannot collide.
+            values = {name.removesuffix("_alt"): value for name, value in detection.values.items()}
             try:
-                requirement_text = requirement_text.format(**detection.values)
+                requirement_text = requirement_text.format(**values)
             except (KeyError, IndexError):
                 pass  # a catalog override may carry a placeholder its pattern never captures
         requirements.append(
