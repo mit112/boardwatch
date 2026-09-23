@@ -141,6 +141,19 @@ _TAIL_NEW_HEAD = re.compile(
 _TAIL_LOST_BREAK = re.compile(r"(?<=[a-z0-9)])\s+(?:Some|The|A|An|Any|All|This|These|Our|Your)\s")
 _TAIL_WITH = re.compile(r"(?<!\w)with(?!\w)", re.IGNORECASE)
 _TAIL_GERUND = re.compile(r"\w+ing\s+\Z", re.IGNORECASE)
+# Even the head's own `with` opens a MODIFIER phrase, not the bar's object, when a quality noun
+# and its preposition follow within three words (`with a focus on`, `with a mix of`, `with
+# demonstrated expertise in`). A determiner alone is not the test: `experience with a national
+# securities exchange` is the bar's object. Searched over the span too, because a scoped span can
+# end in its own `with`.
+_TAIL_WITH_MODIFIER = re.compile(
+    r"(?<!\w)with\s+(?:[\w-]+\s+(?:and\s+)?){0,3}?(?:focus|emphasis|mix|blend|combination|"
+    r"expertise|knowledge|exposure|understanding|background|proficiency|familiarity)\s+"
+    r"(?:in|on|of|to|with)(?!\w)",
+    re.IGNORECASE,
+)
+# A hedge that is the object complement of `as` (`..., and/or Spark as a plus`) hedges that noun.
+_TAIL_AS = re.compile(r"(?<!\w)as\s*\Z", re.IGNORECASE)
 _TAIL_HEAD = re.compile(r"(?<!\w)experiences?(?!\w)", re.IGNORECASE)
 _TAIL_COORDINATOR = re.compile(r"(?<!\w)(?:and|or|&)(?!\w)", re.IGNORECASE)
 _TAIL_OXFORD = re.compile(r"\s*(?:and/or|and|or|&)(?!\w)", re.IGNORECASE)
@@ -208,6 +221,8 @@ def _hedged_tail(
         before = complement[: word.start()]
         if before.strip() and not _TAIL_GERUND.search(bar + before):
             return None
+    if _TAIL_WITH_MODIFIER.search(bar + complement) or _TAIL_AS.search(complement):
+        return None
     if "," in complement:
         last = complement[complement.rfind(",") + 1 :]
         closed = _TAIL_OXFORD.match(last) is not None or (

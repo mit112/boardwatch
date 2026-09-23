@@ -95,6 +95,29 @@ DROPPED = [
         "4+ years of experience building and developing software would be preferred.",
         id="bar-stops-short-of-its-head-then-a-coordinator",
     ),
+    # A `with` that is the head's own preposition, or a gerund's, still continues the bar when
+    # what follows is its object rather than a modifier phrase (T170b controls).
+    pytest.param(
+        "3+ years’ experience with innovative products in the Geosynthetics and Stormwater "
+        "Management space, preferred",
+        id="span-ends-in-with-then-its-object",  # pv 236742
+    ),
+    pytest.param(
+        "5+ years of experience with software configuration, business process analysis, and/or "
+        "end-user training is preferred.",
+        id="the-heads-own-with-then-a-closed-list",  # pv 117957
+    ),
+    pytest.param(
+        "3+ years of experience on a manufacturing floor working with technical issues and "
+        "material flow preferred",
+        id="a-gerunds-with-then-its-object",  # pv 208039
+    ),
+    pytest.param(
+        "3-5 years legal and/or compliance/regulatory experience with a national securities "
+        "exchange or self-regulatory organization, registered broker-dealer, registered investment "
+        "adviser, proprietary trading firm, or other financial institution is preferred.",
+        id="the-heads-own-with-then-a-determiner-and-its-object",  # pv 305901
+    ),
 ]
 
 # WILL NOT: the hedge belongs to a sub-clause, a second noun, a second bar, or nothing at all.
@@ -215,6 +238,22 @@ KEPT = [
     pytest.param(
         "8 years of relevant experience and a BA/BS degree preferred.",
         "total_years_minimum", id="bar-at-its-head-then-and-a-new-noun",
+    ),
+    # T170b: the three wrong movers of the first measurement. A `with` that opens a modifier
+    # phrase, and a hedge that is the object complement of `as`, qualify a sub-phrase.
+    pytest.param(
+        "8+ years of industry experience with a focus on digital communication systems, "
+        "high-speed SerDes, or HBM protocols is highly preferred.",
+        "scoped_years_minimum", id="span-ends-in-with-then-a-determiner",  # pv 5874
+    ),
+    pytest.param(
+        "Minimum 5 years of underwriting experience with demonstrated expertise in E&S and "
+        "specialty lines underwriting preferred",
+        "scoped_years_minimum", id="with-a-quality-noun-modifier",  # pv 245709
+    ),
+    pytest.param(
+        "4+ years SQL experience with either Python, and/or Spark as a plus",
+        "scoped_years_minimum", id="as-a-plus-on-the-nearest-noun",  # pv 200836
     ),
 ]
 
