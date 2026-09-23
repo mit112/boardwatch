@@ -26,6 +26,9 @@ The scopes, all applied per match:
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
                           abstain waived: an abstaining bar keeps its UNKNOWN row.
+                          A pattern declaring this but no `suppressed_by_unit` takes a hedge
+                          heading's hedge by the introducer allowance ALONE: its clause is
+                          never searched, so "(MBA preferred)" beside the bar cannot drop it.
   bounded_above_by        A cue TOUCHING the span (whitespace only between them), before it or
                           after it: the bar's number is a CEILING (`_bounded_above`). Carries
                           the bar as the `bounded_above_as` pattern, `abstained` intact.
@@ -813,13 +816,20 @@ def _suppressed(
 
 
 def _hedged_by_heading(
-    heading: str, unit: str, lo: int, hi: int, hedges: tuple[re.Pattern[str], ...]
+    heading: str,
+    unit: str,
+    lo: int,
+    hi: int,
+    hedges: tuple[re.Pattern[str], ...],
+    introducer_only: bool = False,
 ) -> str | None:
     """The hedge introducer allowance, read over the inline twin `heading + " " + unit`.
 
     "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would. The
     caller passes `_heading_text`, so `Preferred Qualifications:` reads as `Preferred:`, and a
     field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
+    `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
+    caller's list was never run over that clause, so a match there is not the heading's.
     """
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
     start = _item_start(unit)
@@ -828,9 +838,10 @@ def _hedged_by_heading(
     intro = f"{heading} {unit[:lead]}{unit[start:]}"
     shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
+    clo, chi = _clause_bounds(intro, lo, hi)
     return _suppressed(
         intro, lo, hi, hedges,
-        bounds=_clause_bounds(intro, lo, hi), introducer=True, aside_owned=True,
+        bounds=(clo, clo if introducer_only else chi), introducer=True, aside_owned=True,
     )
 
 
@@ -994,7 +1005,8 @@ def detect(
                     heading = governing[index]
                     if not waived and join is None and heading is not None and _hedged_by_heading(
                         _heading_text(units[heading][1]), unit, lo, hi,
-                        pattern.suppressed_by_unit,
+                        pattern.suppressed_by_unit or pattern.hedged_by_tail,
+                        introducer_only=not pattern.suppressed_by_unit,
                     ):
                         continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row

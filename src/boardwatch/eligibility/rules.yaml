@@ -297,14 +297,16 @@ families:
         # marker verb, so it is the one a hedge heading or a hedge predicate can govern:
         # "Preferred Qualifications:\n- U.S. citizenship with the ability to obtain ..." (pv
         # 129842) was a required `unmet`. The vocabulary is the one `experience_years` uses,
-        # anchored here because this is its first use. No preferred twin exists in this family,
-        # so a hedged bar DROPS; a posting left with no row abstains (`uncertain`). The marker
-        # patterns above carry no hedge on purpose: "Must be a US citizen" under a hedge heading
-        # contradicts itself, and it is how a heading's over-long reach meets sponsorship and
-        # export-control boilerplate (review F5), so it stays required.
-        suppressed_by_unit:
+        # anchored here because this is its first use. Only the structural tail is declared, not
+        # `suppressed_by_unit`: a clause-wide hedge would let "(dual citizens preferred)" drop the
+        # bar, and with no unit list a hedge heading lends its hedge by introducer alone
+        # (`detect._hedged_by_heading`). No preferred twin exists in this family, so a hedged bar
+        # DROPS; a posting left with no row abstains (`uncertain`). The marker patterns above
+        # carry no hedge on purpose: "Must be a US citizen" under a hedge heading contradicts
+        # itself, and it is how a heading's over-long reach meets sponsorship and export-control
+        # boilerplate (review F5), so it stays required.
+        hedged_by_tail:
           - &bar_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|an\\s+advantage|would\\s+be\\s+nice|if\\s+possible|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
-        hedged_by_tail: [*bar_hedges]
         # `(` joins the terminator set: "US Citizens only (no dual citizenship)." is a LIVE
         # posting that produced ZERO work_auth rows because the clause ends in a parenthetical
         # rather than a full stop. The terminator is what stops this pattern swallowing a
@@ -1240,10 +1242,9 @@ families:
         scope: clause
         requirement_text: "Must be able to obtain a security clearance"
         # T181. "Ability to obtain a Secret clearance" is a bare noun phrase in a list, so a hedge
-        # heading, a clause hedge or a hedge predicate governs it the way it governs a years bar.
-        # Carried as `clearance_preferred`, the row its one-line form "... clearance preferred."
-        # already writes.
-        suppressed_by_unit: [*bar_hedges]
+        # heading or a hedge predicate governs it the way it governs a years bar. Carried as
+        # `clearance_preferred`, the row its one-line form "... clearance preferred." already
+        # writes. No clause-wide hedge: "(TS/SCI preferred)" hedges the higher level, not the bar.
         hedged_by_tail: [*bar_hedges]
         hedged_as: clearance_preferred
         # The OBJECT list is what makes the [active_clearance_required, clearable_required]
@@ -2065,10 +2066,11 @@ families:
           # a suppressor whose match is not outside the span cannot fire. Measured: that one
           # posting was a false `unmet` until the lookahead was added.
           - '\bor\s+(?:recently\s+)?(?:completed|graduated|finished|hold|holding|have\s+(?:completed|graduated|obtained))|\b(?:graduate|graduated|degree|alumni)\s+or\b|\bor\s+(?:are\s+)?(?=(?:actively\s+|currently\s+)?(?:pursuing|enrolled)\b)|\bor\s+(?:a\s+)?recent\s+grad'
-        # T181. Enrolment stated as a preference ("Currently enrolled in a Master's program
+        # T181. Enrolment stated as a preference ("Currently enrolled in a Master's program,
         # preferred.", or under `Nice to have:`) is not a restriction. No preferred twin exists,
-        # so a hedged bar DROPS, as the years family's scoped bars do.
-        suppressed_by_unit: [*bar_hedges]
+        # so a hedged bar DROPS, as the years family's scoped bars do. Tail only, no clause-wide
+        # hedge: "Currently enrolled in a Master's program (MBA preferred)." (pv 124909) hedges
+        # the MBA, and "a Master's degree (preferred) or Bachelor's degree" (pv 17357) the arm.
         hedged_by_tail: [*bar_hedges]
         pattern: '\b(?:actively\s+|currently\s+)?(?:enrolled\s+(?:in|at)|pursuing)\s+(?:an?\s+|the\s+|your\s+)?(?:accredited\s+|full[-\s]?time\s+)?(?:university|college|degree\s+program|academic\s+program|(?:bachelor|master|graduate|undergraduate|doctoral|b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.?|ph\.?\s?d)[\w.''’]*(?:\s+degree)?)'
       - id: graduation_window_required
@@ -2084,6 +2086,5 @@ families:
         # candidate they are open to. The `between ... and ...` frame is what makes the
         # exclusion two-sided and therefore decidable against a stored graduation date.
         # T181: a window stated as a preference drops, as `current_enrollment_required` does.
-        suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         pattern: '\bgraduat\w*\s+(?:date\s+)?between\s+(?P<from_month>[A-Za-z]+)\s+(?P<from_year>20\d\d)\s+(?:and|to|through|-|–)\s+(?P<to_month>[A-Za-z]+)\s+(?P<to_year>20\d\d)'

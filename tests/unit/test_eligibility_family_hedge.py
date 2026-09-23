@@ -7,6 +7,10 @@ as a `preferred` twin instead of dropping it). Only `experience_years` declared 
 "Preferred Qualifications:\\n- U.S. citizenship with the ability to obtain ... clearances" (pv 129842)
 was a required `unmet` and the posting's only reason for `ineligible`.
 
+The new families declare only the structural tail, not the clause-wide `suppressed_by_unit`:
+the store is full of "(MBA preferred)" / "(TS/SCI preferred)" asides that hedge another noun, and
+with no unit list a hedge heading lends its hedge by the introducer allowance alone.
+
 A bar that states its own requirement marker ("Must be a US citizen") is deliberately NOT hedged:
 under a hedge heading it contradicts itself, and it is the boilerplate an over-long heading reach
 meets. The controls below pin that, and pin that the same bars unhedged stay required.
@@ -52,9 +56,6 @@ HEDGED = [
     ),
     pytest.param(
         "Nice to have:\n- US citizenship", "uncertain", [], id="work_auth-nice-to-have-heading",
-    ),
-    pytest.param(
-        "US citizenship (preferred).", "uncertain", [], id="work_auth-bare-aside-hedge",
     ),
     pytest.param(
         "Nice to have:\n- Ability to obtain a Secret clearance", "uncertain", [],
@@ -124,6 +125,12 @@ KEPT = [
         [["work_auth:us_citizen_standalone_required", "required", "unmet"]],
         id="CONTROL-work_auth-bare",
     ),
+    # pv 161334: the aside hedges another noun, so the citizenship bar stays.
+    pytest.param(
+        "U.S. Citizen (Current clearance holder a plus)", "ineligible",
+        [["work_auth:us_citizen_standalone_required", "required", "unmet"]],
+        id="CONTROL-work_auth-aside-hedging-another-noun",
+    ),
     pytest.param(
         "Preferred Qualifications:\n- Must be a US citizen", "ineligible",
         [["work_auth:us_citizen_required", "required", "unmet"]],
@@ -144,6 +151,29 @@ KEPT = [
             ["clearance:clearable_required", "required", "unmet"],
         ],
         id="CONTROL-clearance-hedge-on-a-sub-clause",
+    ),
+    pytest.param(
+        "Ability to obtain a Secret clearance (TS/SCI preferred).", "ineligible",
+        [["clearance:clearable_required", "required", "unmet"]],
+        id="CONTROL-clearance-aside-hedging-a-higher-level",
+    ),
+    # pv 124909 and pv 17357: the hedge is the MBA's, or one arm's, never the enrolment's.
+    pytest.param(
+        "Currently enrolled in a full-time Master’s degree program (MBA preferred).", "ineligible",
+        [["student_status:current_enrollment_required", "required", "unmet"]],
+        id="CONTROL-student_status-aside-hedging-another-noun",
+    ),
+    # A heading lends only its own hedge: the aside inside the item is not the heading's.
+    pytest.param(
+        "Requirements:\n- Currently enrolled in a full-time Master’s degree program (MBA preferred).",
+        "ineligible", [["student_status:current_enrollment_required", "required", "unmet"]],
+        id="CONTROL-student_status-aside-under-a-requirements-heading",
+    ),
+    pytest.param(
+        "Currently pursuing a Master’s degree (preferred) or Bachelor’s degree in Business "
+        "Administration, Economics, Finance, Data Science, Pharmacoeconomics or a related field.",
+        "ineligible", [["student_status:current_enrollment_required", "required", "unmet"]],
+        id="CONTROL-student_status-hedge-on-one-arm",
     ),
     pytest.param(
         "Nice to have:\n- Active Secret clearance required", "ineligible",
