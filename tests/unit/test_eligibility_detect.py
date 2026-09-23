@@ -811,21 +811,54 @@ def test_a_bare_bullet_under_a_hedge_heading_still_gets_its_preferred_row(
     assert _readings(dets) == readings
 
 
-def test_a_suppressed_own_view_match_does_not_hide_the_heading_view_row(catalog) -> None:
+REACHES_ACROSS_A_COMMA = r"""
+version: 1
+negation_cues: ["not"]
+families:
+  - id: degree
+    label: Degree
+    tier: profile
+    fact: highest_degree
+    answer_type: choice
+    default_policy: preference
+    question: "Highest degree?"
+    fields:
+      - name: highest_degree
+        type: choice
+        choices: [none, bachelor]
+        ranks: {none: 0, bachelor: 3}
+    implies_vocabulary: [degree_preferred]
+    exclusive_groups: []
+    patterns:
+      - id: bachelor_preferred
+        requiredness: preferred
+        implies: degree_preferred
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree is preferred"
+        pattern: 'bachelor degree[^.]{0,30}?preferred|preferred:\s*-?\s*bachelor degree'
+"""
+
+
+def test_a_suppressed_own_view_match_does_not_hide_the_heading_view_row(tmp_path: Path) -> None:
     """CONTROL: the comparison is against what the own view APPENDED, not what it matched.
 
     The bullet's own layout matches from the number through `preferred` and holds the `not`
-    inside its span, so `_cue_inside` drops it. The heading view's span stops at `experience`,
+    inside its span, so `_cue_inside` drops it. The heading view's span stops at `degree`,
     and the `not` sits in the next clause, so its row stands exactly as it did before T163.
+
+    A catalog of its own since T174: the shipped twins no longer reach a hedge across a comma,
+    so no shipped pattern can put the `not` inside its own-view span and outside its heading
+    view's clause.
     """
-    body = "Preferred Qualifications:\n- 5+ years of experience, not required but preferred."
+    (tmp_path / "rules.yaml").write_text(REACHES_ACROSS_A_COMMA, encoding="utf-8")
+    catalog = load_rules(tmp_path)
+    body = "Preferred Qualifications:\n- Bachelor degree, not required but preferred."
     bullet = body.split("\n")[1]
-    pattern = next(
-        p for f in catalog.families for p in f.patterns if p.id == "total_years_preferred"
-    )
+    (pattern,) = catalog.family("degree").patterns
     assert pattern.regex.search(bullet) is not None, "fixture broke: the own view must match"
     dets = detect(body, catalog, enabled_families=ALL)
-    assert _readings(dets) == [("total_years_preferred", (0, 50), {"years_alt": "5"})]
+    assert _readings(dets) == [("bachelor_preferred", (0, 43), {})]
 
 
 def test_a_required_bar_under_a_hedge_heading_is_unchanged(catalog) -> None:

@@ -342,10 +342,57 @@ def test_a_hedge_on_a_sub_clause_keeps_the_bar(catalog, body: str, rule: str) ->
 
 
 def test_a_twin_already_in_reach_is_not_written_twice(catalog) -> None:  # type: ignore[no-untyped-def]
-    """`total_years_preferred` reaches a hedge 25 characters on, so here it fired beside the
-    required row and the posting was rejected anyway. The demoted row must not duplicate it."""
+    """Before T174 `total_years_preferred` reached across the comma, so here it fired beside the
+    required row and the demoted row must not duplicate it. The twin now stops at the comma, and
+    the one row is the demoted one."""
     result = evaluate("5+ years of experience, preferred.", FACTS, POLICY, catalog)
     assert _rows(result) == [["experience_years:total_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+
+
+# T174: a preferred twin reaches its hedge only inside the bar's own clause, the bound the required
+# row's hedge uses (`detect._CLAUSE_BOUNDARY`). Across it the hedge belongs to another noun, and a
+# `preferred` row there claims a bar the posting requires is preferred: false evidence beside the
+# required row that still blocks.
+CROSS_CLAUSE = [
+    pytest.param(
+        "3 years of experience, banking experience preferred.",
+        "total_years_minimum", id="total-comma-then-another-noun",  # pv 243714
+    ),
+    pytest.param(
+        "3-5 years of experience, banking experience preferred.",
+        "range_years_minimum", id="range-comma-then-another-noun",
+    ),
+    pytest.param(
+        "3 years of experience and a degree preferred.",
+        "total_years_minimum", id="total-and-then-another-noun",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "rule"), CROSS_CLAUSE)
+def test_a_twin_does_not_reach_a_hedge_in_another_clause(catalog, body: str, rule: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    experience = [r for r in _rows(result) if r[0].startswith("experience_years:")]
+    assert experience == [[f"experience_years:{rule}", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+
+
+@pytest.mark.parametrize(
+    ("body", "twin"),
+    [
+        pytest.param("5+ years of experience preferred.", "total_years_preferred", id="total"),
+        pytest.param("3-5 years of experience preferred.", "range_years_preferred", id="range"),
+        pytest.param(
+            "5 years of professional, relevant experience preferred.", "total_years_preferred",
+            id="comma-inside-the-bar",
+        ),
+    ],
+)
+def test_a_twin_in_the_bars_own_clause_still_fires(catalog, body: str, twin: str) -> None:  # type: ignore[no-untyped-def]
+    """CONTROL: the one-line hedge still writes its twin row."""
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [[f"experience_years:{twin}", "preferred", "unmet"]]
     assert result.verdict == "eligible"
 
 
