@@ -196,3 +196,52 @@ def test_a_legacy_gate_row_with_no_facts_key_is_never_read_nor_fresh(
         ).scalar_one()
     assert read == {keyed_posting: "eligible"}, "a row with no facts_key must not be read"
     assert fresh == {}, "a row with no facts_key can never prove it was judged on these facts"
+
+
+# ---------------------------------------------------------------------------
+# T179/F4 — gate_facts_key must not hash the whole Facts SCHEMA (only the set values)
+# ---------------------------------------------------------------------------
+
+
+def test_facts_key_is_stable_when_an_optional_field_is_added_unset() -> None:
+    """T179/F4. `gate_facts_key` used to digest the raw `facts_payload` (`Facts.model_dump`),
+    which writes an explicit null for every field the schema declares — so adding ANY new
+    optional `Facts` field, unset for every tenant, changed every stored verdict's key at once
+    (review REVIEW-2026-09-23.md §F4; repro `review-probes/p4_facts_key.py`).
+
+    The schema can't be edited from inside a test, so this simulates a schema addition exactly
+    as the review probe did: subclass `Facts` with one more unset optional field and confirm
+    the key does not move. RED on unfixed code (`digest(facts_payload(facts))`): the two keys
+    differed — `0d885eb52b3f515b...` (today's schema) vs `5324ae180081cdf8...` (+1 unset
+    field) — because the extra `"languages_spoken": null` key entered the hashed payload.
+    """
+    from pydantic import ConfigDict
+
+    live = Facts(highest_degree="bachelor", total_years_experience=5)
+
+    class FactsPlusOne(Facts):
+        model_config = ConfigDict(frozen=True, extra="forbid")
+        languages_spoken: str | None = None
+
+    grown = FactsPlusOne.model_validate(live.model_dump(mode="json"))
+
+    assert final_gate.gate_facts_key(live) == final_gate.gate_facts_key(grown)
+
+
+def test_facts_key_still_differs_when_a_set_field_differs() -> None:
+    """Control for the fix above: it must not collapse every key to one constant — a real,
+    SET fact change still re-keys. Green both before and after the fix (the defect was never
+    about set fields, only about the schema's null-filled ones)."""
+    a = Facts(highest_degree="bachelor")
+    b = Facts(highest_degree="master")
+    assert final_gate.gate_facts_key(a) != final_gate.gate_facts_key(b)
+
+
+def test_facts_key_is_stable_across_two_calls_for_a_live_shaped_profile() -> None:
+    """Control: a round trip on a fully-populated, live-shaped `Facts` — the same fixture
+    `test_eligibility_hashing.py` hashes for `build_identity` — is not itself flaky (no
+    unstable ordering leaking through `judge_facts_payload`'s recursive prune). Green both
+    before and after the fix."""
+    from tests.unit.test_eligibility_hashing import FACTS
+
+    assert final_gate.gate_facts_key(FACTS) == final_gate.gate_facts_key(FACTS)

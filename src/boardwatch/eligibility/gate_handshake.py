@@ -24,8 +24,8 @@ from sqlalchemy import Connection
 
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.catalog import RulesCatalog
-from boardwatch.eligibility.facts import Facts, Policy, facts_payload
-from boardwatch.eligibility.final_gate import record_gate_verdict
+from boardwatch.eligibility.facts import Facts, Policy
+from boardwatch.eligibility.final_gate import judge_facts_payload, record_gate_verdict
 from boardwatch.eligibility.oracle import (
     OracleVerdict,
     accept_oracle_verdict,
@@ -50,18 +50,22 @@ def build_gate_request(
     request_id: str,
 ) -> dict[str, Any]:
     """One synthetic row per visible posting: `{"label": str(posting_id), "facts":
-    facts_payload(facts), "body_text": <current OPEN version body>, "expected_verdict":
+    judge_facts_payload(facts), "body_text": <current OPEN version body>, "expected_verdict":
     None}`, fed to `build_label_request` (label = posting id, so `apply_gate_verdicts`
     can map a verdict back). `expected_verdict` is always absent/None here — every
     visible posting is unlabeled by construction, independence is `build_label_request`'s
     job (it also drops any `hint`, irrelevant here since these rows never carry one).
+
+    `judge_facts_payload`, not `facts_payload`: the same None-pruned payload `gate_facts_key`
+    digests (T179/F4), so the bytes the judge reads and the bytes the freshness read matches
+    on can never drift apart.
 
     A visible posting with no entry in `versions` is skipped rather than raised: it
     cannot happen when `versions` comes from `current_posting_versions(conn, None)`
     (every open posting), but a caller-supplied narrower map should not crash the
     request build over one stale id.
     """
-    payload = facts_payload(facts)
+    payload = judge_facts_payload(facts)
     rows = [
         {
             "label": str(posting.posting_id),

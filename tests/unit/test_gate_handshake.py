@@ -115,6 +115,51 @@ def test_build_gate_request_skips_a_posting_missing_from_versions(tmp_path: Path
     assert [item["label"] for item in request["items"]] == ["1"]
 
 
+def test_build_gate_request_facts_bytes_for_a_fully_set_profile_are_unchanged_by_t179(
+    tmp_path: Path,
+) -> None:
+    """T179/F4's fix sends the judge `judge_facts_payload(facts)` (None-valued keys pruned,
+    recursively) in place of the raw `facts_payload(facts)`. For a FULLY-populated profile
+    there is nothing to prune, so the item the judge is sent must be byte-identical to the
+    pre-fix payload — the ticket's explicit promise for this case, pinned rather than left to
+    reasoning. (For a partially-set profile the prompt is now shorter: the unset keys this
+    profile happens not to have are simply absent instead of null.)"""
+    from boardwatch.eligibility.facts import (
+        ClearanceFact,
+        EducationTimingFact,
+        WorkAuthFact,
+        facts_payload,
+    )
+
+    catalog = _catalog(tmp_path)
+    facts = Facts(
+        work_authorization=WorkAuthFact(
+            status="citizen", jurisdiction="us", needs_sponsorship=False,
+        ),
+        total_years_experience=8,
+        security_clearance=ClearanceFact(
+            scheme="us_dod", level="secret", state="active", accesses=("sci",),
+            obtainable=False,
+        ),
+        highest_degree="bachelor",
+        field_of_study="computer_science",
+        employment_type_preference="fte",
+        internship_preference="no",
+        education_timing=EducationTimingFact(
+            currently_enrolled=False, graduation_yyyymm=202312,
+        ),
+        career_field="software_engineering",
+    )
+    ranked_visible = [_FakeRankedPosting(posting_id=1)]
+    versions = {
+        1: CurrentVersion(posting_version_id=10, posting_id=1, body_text="JD", captured_at=utcnow()),
+    }
+
+    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-full")
+
+    assert request["items"][0]["facts"] == facts_payload(facts)
+
+
 # ---------------------------------------------------------------------------
 # Step 5: apply_gate_verdicts
 # ---------------------------------------------------------------------------
