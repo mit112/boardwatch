@@ -19,6 +19,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
+from tests.conftest import write_test_resume_template
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
 
 
@@ -33,6 +34,9 @@ def _ready(data_dir: Path) -> None:
     _seed_posting(data_dir)
     assert _cli(data_dir, ["init"], INIT_INPUT).exit_code == 0
     assert _cli(data_dir, ["tailor", "init"]).exit_code == 0
+    # Without a seeded template, `tailor` never reaches `resume_tailored`, so no run ever writes
+    # a PDF to disk. See `tests/pipeline/test_pipeline_run.py::_ready`, whose helper this reuses.
+    write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
 
 
 def _run_once(data_dir: Path, out_root: Path) -> int:
@@ -72,8 +76,7 @@ def test_verify_run_fails_when_a_pdf_is_deleted(env: Path, tmp_path: Path) -> No
         for r in rows
         if r.meta_json.get("pdf_uri") and Path(r.meta_json["pdf_uri"]).exists()
     ]
-    if not pdf_paths:
-        pytest.skip("this run produced no PDF to delete (typst unavailable)")
+    assert pdf_paths, "no PDF landed on disk for this run; résumé rendering is broken"
     pdf_paths[0].unlink()
     result = _cli(env, ["verify", "--run", str(run_id), "--out-root", str(out_root)])
     assert result.exit_code == 1
