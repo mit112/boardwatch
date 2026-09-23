@@ -846,7 +846,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
         """
 
         def work(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
-            return {"moved": reconcile_queue(conn, root=ctx.queue_root).moved}
+            return {
+                "moved": reconcile_queue(
+                    conn, root=ctx.queue_root, owner_name=ctx.owner_name
+                ).moved
+            }
 
         try:
             self._read(work)

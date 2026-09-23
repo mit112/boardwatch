@@ -61,7 +61,7 @@ import shutil
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -71,7 +71,7 @@ from filelock import FileLock, Timeout
 from sqlalchemy import Connection, Engine, select
 
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
-from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
+from boardwatch.delivery import DRAIN_DIRS, LeadNames, NameBudgetError, plan_lead_names
 from boardwatch.delivery.review_gate import (
     CLOSED_DIR,
     REVIEW_DIR,
@@ -332,7 +332,7 @@ def refresh_queue(
     resolved = root.resolve()
     try:
         with _queue_lock(resolved), engine.connect() as conn:
-            drained = _reconcile_locked(conn, root=resolved)
+            drained = _reconcile_locked(conn, root=resolved, owner_name=owner_name)
             synced = _sync_locked(conn, root=resolved, owner_name=owner_name)
     except QueueLockHeldError:
         return ReconcileReport(contended=True), SyncReport(contended=True)
@@ -352,7 +352,7 @@ def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     ]
 
 
-def reconcile_queue(conn: Connection, *, root: Path) -> ReconcileReport:
+def reconcile_queue(conn: Connection, *, root: Path, owner_name: str = "") -> ReconcileReport:
     """Move every folder to the drain the database says it belongs in, in both directions.
 
     Applied wins over skipped when a job is both: an application is a statement that the owner
@@ -361,13 +361,18 @@ def reconcile_queue(conn: Connection, *, root: Path) -> ReconcileReport:
     owner did with the lead, while a report says the eligibility decision was wrong — and above
     `closed` and the derived verdicts. Full precedence and its reasoning: `_wanted_location`.
 
-    Nothing is deleted, ever — not a folder without a `details.json`, not a folder whose
-    destination is already occupied, not a folder for a posting the database has forgotten.
+    Nothing is deleted, ever — not a folder without a `details.json`, not a folder for a posting
+    the database has forgotten. A destination already occupied by the SAME job's own copy is
+    still left exactly as it was, refused by `_relocate`; one occupied by a DIFFERENT job's folder
+    is widened with that job's own identity suffix instead of refused (T172) — `owner_name` is
+    only ever read to price that widened name's byte budget through `plan_lead_names`, the same
+    helper `_plan`'s in-pass disambiguation calls, and defaults to `""` for a caller with no owner
+    to give it; every real destination folder text is `company_title`, which never includes it.
     """
     resolved = root.resolve()
     try:
         with _queue_lock(resolved):
-            return _reconcile_locked(conn, root=resolved)
+            return _reconcile_locked(conn, root=resolved, owner_name=owner_name)
     except QueueLockHeldError:
         return ReconcileReport(contended=True)
 
@@ -1020,7 +1025,7 @@ def _clear_staging(root: Path) -> None:
 # ------------------------------------------------------------------------------------- reconcile
 
 
-def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
+def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> ReconcileReport:
     applied = applied_job_ids(conn)
     skipped = skipped_job_ids(conn)
     reported = reported_job_ids(conn)
@@ -1039,6 +1044,19 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
     # keeper with. Reconcile moves by `entry.job_id` and never renames, so it cannot hit the
     # occupied-destination conflict that consolidation exists to end.
     entries, _, _ = _resolve_job_identity(conn, entries)
+    # `_widen_for_a_different_job`'s ONLY trustworthy answer for "whose job is this occupied
+    # folder": keyed by path exactly as `_index` builds one two lines above (`root / location /
+    # name`, or `root / name` at the queue root, matching `target`'s own construction below), so
+    # an occupied `target` looks itself up here. Never the occupant's OWN `details.json` — that
+    # file's `job_id` is exactly the value identity convergence (D-430's shape) can leave STALE,
+    # and reading it back would misjudge a folder that is the SAME job under an old id as a
+    # different one.
+    #
+    # MUTABLE, and kept that way on purpose: the loop below moves folders, and each successful
+    # move updates this map (search "known_job_ids follows this loop's own moves") so a LATER
+    # entry's occupied-destination check sees where an EARLIER entry actually ended up this pass,
+    # not the snapshot from before the loop started.
+    known_job_ids: dict[Path, int] = {entry.path: entry.job_id for entry in entries.values()}
     counts = {
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
@@ -1073,11 +1091,23 @@ def _reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
         # fixed by widening `_plan`'s input, because that would report naming failures for leads
         # this function deliberately never creates.
         target = (root / wanted / entry.path.name) if wanted else root / entry.path.name
+        # A destination occupied by a DIFFERENT job's folder (T172) is widened with that job's own
+        # identity suffix rather than refused; one occupied by THIS job's own copy, or by anything
+        # `_widen_for_a_different_job` cannot classify, is left for `_relocate` to refuse exactly
+        # as it always has.
+        target = _widen_for_a_different_job(
+            entry, target, root=root, owner_name=owner_name, known_job_ids=known_job_ids
+        )
         try:
             _relocate(entry.path, target)
         except Exception as exc:
             failures.append(FolderFailure(folder=entry.path.name, detail=_detail(exc)))
             continue
+        # `known_job_ids` follows this loop's OWN moves: a later entry's occupied-destination
+        # check must see where this entry actually ended up, not the snapshot from before the
+        # loop started.
+        known_job_ids.pop(entry.path, None)
+        known_job_ids[target] = entry.job_id
         counts[wanted] += 1
     return ReconcileReport(
         to_applied=counts[APPLIED_DIR],
@@ -1199,6 +1229,62 @@ def _consolidate_duplicates(
                 del entries[entry.posting_id]
             retired += 1
     return retired, failures
+
+
+def _widen_for_a_different_job(
+    entry: _Entry, target: Path, *, root: Path, owner_name: str, known_job_ids: Mapping[Path, int]
+) -> Path:
+    """`target`, or the same drain with the moving lead's own 8-hex identity suffix appended.
+
+    T172's measured shape: two DIFFERENT jobs whose company and title slug to the identical
+    folder name, one already drained. `_plan`'s in-pass disambiguation never sees the two
+    together — the one already drained is never in `standing_queue_rows`, by definition — so the
+    second one to be drained finds the name gone and `_relocate` refuses forever, every run.
+
+    **`known_job_ids` decides "whose job is this occupied folder", never the occupant's own
+    `details.json`.** That file's `job_id` is exactly the value identity convergence (D-430's
+    shape) can leave STALE: a posting whose canonical job moved after its folder was written still
+    carries the OLD id on disk. Reading it back would misjudge a folder that is the SAME job under
+    an old id as a different one and widen instead of refusing — leaving two folders for one job,
+    review round 1's blocker. `known_job_ids` is `_reconcile_locked`'s own REFRESHED map, built
+    from the same `_resolve_job_identity` pass that refreshed `entry.job_id`, so both sides of the
+    comparison are current.
+
+    Only a destination occupied by a DIFFERENT job is widened. One occupied by THIS job's own
+    copy (a duplicate `_resolve_job_identity` returns rather than drops, read but not consolidated
+    here) is left alone, and so is one NOT in `known_job_ids` at all — an ambiguous posting `_index`
+    dropped, or anything else this run never classified — both are `_relocate`'s to refuse exactly
+    as it always has; widening either would rename a folder into a conflict reconcile did not
+    cause and cannot attribute.
+
+    The suffix is planned through `plan_lead_names`, the same helper `_plan`'s own in-pass
+    disambiguation calls, rather than hand-truncated here: it alone enforces the destination byte
+    budget, and reconcile has no call of its own to price it twice. A destination still occupied
+    after widening is returned as-is; `_relocate` refuses it exactly as it would the plain name,
+    and nothing here retries a third name.
+    """
+    if not target.exists():
+        return target
+    occupant_job_id = known_job_ids.get(target)
+    if occupant_job_id is None or occupant_job_id == entry.job_id:
+        return target
+    own = _read_details(entry.path)
+    identity_hash = None if own is None else _as_str(own.get("identity_hash"))
+    title = None if own is None else _as_str(own.get("title"))
+    company = None if own is None else _as_str(own.get("company"))
+    if not identity_hash or not title or not company:
+        return target
+    try:
+        widened = plan_lead_names(
+            root=root,
+            owner_name=owner_name,
+            company=company,
+            title=f"{title} {identity_hash[:8]}",
+            identity_hash=identity_hash,
+        )
+    except NameBudgetError:
+        return target
+    return target.parent / widened.folder
 
 
 def _relocate(src: Path, dst: Path) -> None:

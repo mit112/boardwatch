@@ -300,6 +300,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Two applied jobs with the same folder name no longer collide in `_applied` (2026-09-23, T172).**
+  Two distinct SingleStore jobs, `Software Engineer-Helios-New Grad 2027` and `Software
+  Engineer-Engine-New Grad 2027`, both applied, map to one queue folder name. The queue gives
+  same-named STANDING leads an id suffix, but an applied lead is not among them, so every run's
+  drain into `_applied` found the name taken and logged a `QueueConflictError` (runs 470 and 471),
+  and the second folder stayed in the main queue. The drain now gives the moving folder its own
+  8-character id suffix, the queue's existing convention, when the folder already at that name
+  belongs to a DIFFERENT job by the store's current job identity. A same-job occupant, an
+  unidentifiable one, or a suffixed name that is also taken still refuses as before. Nothing else is
+  renamed.
+
 - **The job-apps lane now counts a record it cannot read (2026-09-23, T168).** A discovery record
   that failed to parse, carried an unsupported `schema_version`, or lacked its company, title,
   posting id or apply URL was dropped without being counted anywhere, so it appeared in none of the

@@ -50,7 +50,7 @@ from boardwatch.core import lock_reclaim
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.politeness import FetchFailure
 from boardwatch.core.settings import load_settings
-from boardwatch.delivery import DRAIN_DIRS, queue
+from boardwatch.delivery import DRAIN_DIRS, plan_lead_names, queue
 from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
@@ -252,6 +252,46 @@ def _queue_row(posting_id: int, company: str, title: str) -> QueueRow:
         pdf_uri="file:///lead.pdf",
         target_flag=None,
     )
+
+
+def _plant_folder(
+    root: Path,
+    location: str,
+    name: str,
+    *,
+    posting_id: int,
+    job_id: int,
+    company: str = "Acme Corp",
+    title: str = "Backend Engineer",
+    identity_hash: str = "aaaaaaaa",
+) -> Path:
+    """A queue folder written straight to disk, bypassing `sync_queue`, so its exact on-disk name
+    and job/posting identity can be forced independently of what `plan_lead_names` would itself
+    choose for it. T172's shape is two REAL jobs whose planned names collide, which `_plan`'s
+    in-pass disambiguation prevents whenever both are offered to it together — reaching the
+    collision needs one of the two already parked in a drain, which needs full control over what
+    is on disk rather than what one `sync_queue` pass would produce.
+
+    Written with only the fields `_index` and `_widen_for_a_different_job` read; an ordinary
+    `sync_queue` folder carries more, and nothing here reads any of the rest back.
+    """
+    folder = (root / location / name) if location else root / name
+    folder.mkdir(parents=True)
+    (folder / DETAILS_FILE).write_text(
+        json.dumps(
+            {
+                "posting_id": posting_id,
+                "job_id": job_id,
+                "content_hash": f"hash-{posting_id}",
+                "company": company,
+                "title": title,
+                "identity_hash": identity_hash,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (folder / "marker.txt").write_text(f"lead-{posting_id}\n", encoding="utf-8")
+    return folder
 
 
 def _complete_scan(conn: Connection, company_id: int, run_id: int) -> None:
@@ -2021,6 +2061,345 @@ def test_the_disambiguated_names_are_stable_across_syncs(
         report = sync_queue(conn, root=root, owner_name=OWNER)
     assert (report.unchanged, report.moved, report.created, report.updated) == (2, 0, 0, 0)
     assert _folders(root) == first
+
+
+# --------------------------------------------------------------------- T172: cross-job collision
+
+
+def _drain_two_jobs_with_colliding_names(
+    engine: Engine, apps: Path, root: Path
+) -> tuple[ReconcileReport, str, dict[str, tuple[bytes, int]]]:
+    """Job A is delivered, synced and applied FIRST, so its folder lands in `_applied` while it is
+    the only lead `_plan` ever sees. Job B, same company and title, is delivered and synced SECOND
+    -- job A is no longer in `standing_queue_rows` to disambiguate against, so job B plans the
+    identical PLAIN name at the queue root. Only once job B is ALSO applied does reconcile try to
+    drain it into the name job A's folder already holds -- T172's measured shape, reached through
+    the real pipeline rather than a hand-planted folder.
+
+    Returns the report from the reconcile that meets the collision, job B's own identity hash
+    (read back from its own `details.json`, written before either application, so a caller can
+    compute the widened name it should have moved to), and a byte-and-mtime snapshot of job B's
+    folder taken BEFORE that reconcile -- so a caller can prove the widened folder is the SAME
+    files moved, not a re-created shell (Codex review round 1's follow-up).
+    """
+    with engine.begin() as conn:
+        _, job_a = _deliver(conn, apps, "one", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_a, status="applied", source="test")
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / APPLIED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: job A drained"
+
+    with engine.begin() as conn:
+        _, job_b = _deliver(conn, apps, "two", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        planned = sync_queue(conn, root=root, owner_name=OWNER)
+    assert planned.failed == 0, planned.failures
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "premise: the plain name is free"
+    identity_hash = str(_details(root / "Acme_Corp_Backend_Engineer")["identity_hash"])
+    before_move = _snapshot(root / "Acme_Corp_Backend_Engineer")
+
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_b, status="applied", source="test")
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+    return report, identity_hash, before_move
+
+
+def test_a_different_jobs_applied_folder_widens_instead_of_colliding(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T172. Red on the code before this change: `reconcile_queue` raised `QueueConflictError`
+    naming `Acme_Corp_Backend_Engineer already exists at its destination` and reported one folder
+    failed to move -- on this reconcile and on every one after it, forever, because nothing ever
+    renamed either folder."""
+    report, identity_hash, before_move = _drain_two_jobs_with_colliding_names(engine, apps, root)
+
+    assert report.failed == 0, report.failures
+    assert _folders(root) == []
+    applied_names = _folders(root / APPLIED_DIR)
+    assert len(applied_names) == 2, applied_names
+    assert "Acme_Corp_Backend_Engineer" in applied_names
+    expected_widened = plan_lead_names(
+        root=root.resolve(),
+        owner_name=OWNER,
+        company="Acme Corp",
+        title=f"Backend Engineer {identity_hash[:8]}",
+        identity_hash=identity_hash,
+    ).folder
+    assert expected_widened in applied_names, applied_names
+    assert expected_widened != "Acme_Corp_Backend_Engineer"
+    # Moved, not re-created or truncated to an empty shell: the SAME bytes and the SAME inode's
+    # mtimes travel with job B's folder under the widened name (Codex review round 1's follow-up
+    # -- `(root / APPLIED_DIR / expected_widened / DETAILS_FILE).exists()` alone would pass
+    # against a version that rewrote the folder from the store instead of moving it).
+    assert _snapshot(root / APPLIED_DIR / expected_widened) == before_move
+
+
+def test_a_second_reconcile_after_the_widened_move_changes_nothing(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Idempotence. `_entry_for` locates a folder by the posting inside its `details.json`, never
+    by name, so the widened folder must be found as job B's own next time -- not re-created, and
+    not moved again looking for a plainer name."""
+    report, _identity_hash, _before_move = _drain_two_jobs_with_colliding_names(engine, apps, root)
+    assert report.failed == 0, report.failures
+    before = _snapshot(root)
+
+    with engine.connect() as conn:
+        again_reconcile = reconcile_queue(conn, root=root, owner_name=OWNER)
+    with engine.connect() as conn:
+        again_sync = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (again_reconcile.moved, again_reconcile.failed) == (0, 0), again_reconcile.failures
+    assert (again_sync.moved, again_sync.created, again_sync.updated, again_sync.failed) == (
+        0, 0, 0, 0,
+    ), again_sync.failures
+    assert _snapshot(root) == before
+
+
+def test_a_same_job_occupied_destination_still_refuses_as_before(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Control. TWO folders can share one job -- an identity-convergence duplicate
+    `_resolve_job_identity` reports but does not consolidate (`_consolidate_duplicates` is
+    `sync_queue`'s, not reconcile's) -- and that must still be refused exactly as before. Widening
+    applies only to a DIFFERENT job's folder; dropping that check would let this collision through
+    silently, which is the mutation this test exists to catch."""
+    with engine.begin() as conn:
+        job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        create_application(conn, job_id=job_id, status="applied", source="test")
+    _plant_folder(
+        root, APPLIED_DIR, "Acme_Corp_Backend_Engineer",
+        posting_id=901, job_id=job_id, identity_hash="c0ffee01",
+    )
+    _plant_folder(
+        root, "", "Acme_Corp_Backend_Engineer",
+        posting_id=902, job_id=job_id, identity_hash="c0ffee02",
+    )
+
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failed == 1, report.failures
+    assert "already exists" in report.failures[0].detail, report.failures[0].detail
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "the source folder must be untouched"
+    assert _folders(root / APPLIED_DIR) == ["Acme_Corp_Backend_Engineer"]
+    assert int(str(_details(root / APPLIED_DIR / "Acme_Corp_Backend_Engineer")["posting_id"])) == 901
+
+
+def test_a_converged_occupants_stale_stored_job_id_still_refuses(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Regression for review round 1's blocker. The OCCUPANT's own `details.json` can be STALE
+    after an identity convergence (D-430's shape): its posting's canonical job moved on, but its
+    folder was never rewritten, so it still names the OLD job. Reading that stale value back would
+    make the occupant look like a DIFFERENT job from the mover and widen instead of refusing --
+    leaving two folders for the one job that actually owns both. `_widen_for_a_different_job` must
+    compare the REFRESHED job id `_reconcile_locked` computed (`known_job_ids`), never the
+    occupant's own file.
+
+    Built the way `test_a_lead_whose_canonical_job_MOVED_keeps_the_folder_it_already_has` and
+    `test_TWO_folders_converging_on_one_job_are_consolidated_not_refused_forever` build a
+    convergence: `postings.job_id` is updated directly, after each posting already has its own
+    folder on disk. `reconcile_queue` is called ALONE, never `sync_queue` -- `_consolidate_
+    duplicates` only ever runs inside `sync_queue`, so it never gets a chance to clean this up
+    first, and reconcile's own refusal is what this test pins.
+    """
+    with engine.begin() as conn:
+        occupant_posting, job_old = _deliver(
+            conn, apps, "occ", company="Acme Corp", title="Backend Engineer"
+        )
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_old, status="applied", source="test")
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / APPLIED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: occupant drained"
+
+    with engine.begin() as conn:
+        _, job_canonical = _deliver(
+            conn, apps, "mover", company="Acme Corp", title="Backend Engineer"
+        )
+    with engine.connect() as conn:
+        planned = sync_queue(conn, root=root, owner_name=OWNER)
+    assert planned.failed == 0, planned.failures
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "premise: the mover's plain name is free"
+
+    with engine.begin() as conn:
+        # The convergence itself: the occupant's posting now belongs to the SAME job as the
+        # mover, but its folder's own `details.json` (written back in the first reconcile above)
+        # is never rewritten here -- it still names `job_old`.
+        conn.execute(
+            update(postings).where(postings.c.id == occupant_posting).values(job_id=job_canonical)
+        )
+        create_application(conn, job_id=job_canonical, status="applied", source="test")
+
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failed == 1, report.failures
+    assert "already exists" in report.failures[0].detail, report.failures[0].detail
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "the mover must be left in place"
+    assert _folders(root / APPLIED_DIR) == ["Acme_Corp_Backend_Engineer"], "no second folder"
+    assert (
+        int(str(_details(root / APPLIED_DIR / "Acme_Corp_Backend_Engineer")["posting_id"]))
+        == occupant_posting
+    ), "the occupant's own folder, untouched"
+
+
+def test_a_folder_freed_then_filled_within_one_pass_is_not_read_from_the_stale_map(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Regression for review round 2's defect. `known_job_ids` is built ONCE before
+    `_reconcile_locked`'s loop, but the loop itself MOVES folders -- so a LATER entry's
+    occupied-destination check must see where an EARLIER entry in this SAME pass actually ended
+    up, not the snapshot taken before the loop started.
+
+    One pass, three folders sharing one name, all `Acme_Corp_Backend_Engineer`:
+    - A (lowest posting id, processed first) sits in `_applied/NAME`; its application is
+      WITHDRAWN, so it now wants the queue root -- vacating `_applied/NAME`.
+    - B sits in `_skipped/NAME` and is now ALSO applied, so it wants `_applied/NAME` -- exactly
+      the path A just vacated, and B is processed second (its posting id is between A's and C's).
+    - C, converged onto B's job (the `update(postings)...job_id` trick `test_a_converged_
+      occupants_stale_stored_job_id_still_refuses` uses, but reached WITHIN this one pass rather
+      than before it starts), also wants `_applied/NAME`, and is processed last.
+
+    Without following the loop's own moves, C's check reads the map entry for `_applied/NAME`
+    exactly as it was seeded before the loop ran -- A's OLD job, still sitting there in the
+    snapshot -- sees it differs from C's (converged) job, and widens C into a SECOND folder for
+    B's job. Following the moves, the same path now maps to B's job by the time C is checked,
+    which matches C's, and C is refused instead.
+
+    C's own folder is planted directly (`_plant_folder`) rather than reached through its own
+    `sync_queue`/`reconcile_queue` pass: a real `postings` row (so the `job_id` convergence update
+    and `canonical_job_ids` resolve it) is all C needs, and planting the folder avoids a SEPARATE
+    collision -- synced normally, C's folder would land at the queue ROOT under this same name,
+    exactly where A's withdrawal ALSO wants to go, confounding the one interaction this test
+    isolates.
+    """
+    with engine.begin() as conn:
+        _, job_a = _deliver(conn, apps, "a", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        app_a = create_application(conn, job_id=job_a, status="applied", source="test")
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / APPLIED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: A drained"
+
+    with engine.begin() as conn:
+        _, job_b = _deliver(conn, apps, "b", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        planned = sync_queue(conn, root=root, owner_name=OWNER)
+    assert planned.failed == 0, planned.failures
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "premise: B's plain name is free"
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=job_b, at=NOW)
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / SKIPPED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: B skipped"
+    assert _folders(root) == [], "premise: the root is free again"
+
+    with engine.begin() as conn:
+        posting_c, _job_c = _deliver(
+            conn, apps, "c", company="Acme Corp", title="Backend Engineer"
+        )
+    _plant_folder(
+        root, LANE_COPY_DIR, "Acme_Corp_Backend_Engineer",
+        posting_id=posting_c, job_id=999999, identity_hash="c0ffeec0",
+    )
+
+    with engine.begin() as conn:
+        # The three transitions this ONE pass must resolve together, in posting-id order A, B, C.
+        set_application_status(conn, application_id=app_a, to_status="withdrawn", source="test")
+        create_application(conn, job_id=job_b, status="applied", source="test")
+        conn.execute(update(postings).where(postings.c.id == posting_c).values(job_id=job_b))
+
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.to_queue, report.to_applied) == (1, 1), report  # A out, B in; not C too
+    assert report.failed == 1, report.failures
+    assert "already exists" in report.failures[0].detail, report.failures[0].detail
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "A landed at the root"
+    applied_names = _folders(root / APPLIED_DIR)
+    assert applied_names == ["Acme_Corp_Backend_Engineer"], "exactly one folder for job B"
+    assert (
+        int(str(_details(root / APPLIED_DIR / applied_names[0])["posting_id"])) != posting_c
+    ), "the surviving folder must be B's, not a second one for C"
+
+
+def test_a_non_colliding_applied_lead_still_moves_under_its_plain_name(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Control. With no name collision at all, the plain destination never exists, so widening
+    must never engage -- the ordinary drain still moves a lead under the name it already has."""
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_id, status="applied", source="test")
+
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.to_applied, report.failed) == (1, 0), report.failures
+    assert _folders(root) == []
+    assert _folders(root / APPLIED_DIR) == [folder]
+
+
+def test_both_the_plain_and_widened_names_taken_still_refuses(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Control. The plain destination AND the name it would widen to are both already occupied by
+    OTHER jobs. Reconcile tries exactly one widened name and never loops looking for a further
+    one, so this must raise exactly as an ordinary occupied destination always has."""
+    identity_hash = "deadbeef"
+    widened_name = plan_lead_names(
+        root=root.resolve(),
+        owner_name=OWNER,
+        company="Acme Corp",
+        title=f"Backend Engineer {identity_hash[:8]}",
+        identity_hash=identity_hash,
+    ).folder
+
+    with engine.begin() as conn:
+        job_move = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        job_plain = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        job_widened = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        create_application(conn, job_id=job_move, status="applied", source="test")
+        create_application(conn, job_id=job_plain, status="applied", source="test")
+        create_application(conn, job_id=job_widened, status="applied", source="test")
+    _plant_folder(
+        root, APPLIED_DIR, "Acme_Corp_Backend_Engineer",
+        posting_id=801, job_id=job_plain, identity_hash="c0ffee01",
+    )
+    _plant_folder(
+        root, APPLIED_DIR, widened_name,
+        posting_id=802, job_id=job_widened, identity_hash="c0ffee02",
+    )
+    _plant_folder(
+        root, "", "Acme_Corp_Backend_Engineer",
+        posting_id=803, job_id=job_move, identity_hash=identity_hash,
+    )
+
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failed == 1, report.failures
+    assert "already exists" in report.failures[0].detail, report.failures[0].detail
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "the moving folder is left in place"
+    assert sorted(_folders(root / APPLIED_DIR)) == sorted(
+        ["Acme_Corp_Backend_Engineer", widened_name]
+    )
+    assert int(str(_details(root / APPLIED_DIR / "Acme_Corp_Backend_Engineer")["posting_id"])) == 801
+    assert int(str(_details(root / APPLIED_DIR / widened_name)["posting_id"])) == 802
 
 
 def test_a_retitled_posting_moves_its_folder_instead_of_duplicating_it(
@@ -3944,8 +4323,8 @@ def _between_passes(mp: pytest.MonkeyPatch, hook: Callable[[], None]) -> dict[st
             state["fired"] = True
             hook()
 
-    def reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
-        report = real_reconcile(conn, root=root)
+    def reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> ReconcileReport:
+        report = real_reconcile(conn, root=root, owner_name=owner_name)
         state["reconciled"] = True
         return report
 
