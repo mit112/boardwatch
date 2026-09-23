@@ -255,6 +255,22 @@ KEPT = [
         "4+ years SQL experience with either Python, and/or Spark as a plus",
         "scoped_years_minimum", id="as-a-plus-on-the-nearest-noun",  # pv 200836
     ),
+    # Known misses (DESIGN §2), all in the conservative direction: the bar stays required.
+    pytest.param(
+        "2-4 years Experience with Dynamics 365, Office 365 and Microsoft Power Platform preferred",
+        "scoped_range_years_minimum", id="MISS-one-comma-non-oxford-list",  # pv 298526
+    ),
+    pytest.param(
+        "4 -7 years of relevant leadership experience including directing the work of others, "
+        "preferred",
+        "scoped_range_years_minimum", id="MISS-including-X-then-preferred",  # pv 354344
+    ),
+    # `not required` with no catalog hedge word (`advantage` is not `advantageous`).
+    pytest.param(
+        "8+ years of experience auditing in a financial institution or similar public accounting "
+        "experience in the financial services industry is an advantage but not required.",
+        "total_years_minimum", id="MISS-not-required-without-a-hedge-word",  # pv 217254
+    ),
 ]
 
 
@@ -384,7 +400,7 @@ families:
         requirement_text: "A bachelor's degree is required"
         hedged_by_tail: ["preferred"]
         hedged_as: {target}
-        pattern: "bachelor"
+        pattern: "{source}"
       - id: bachelor_preferred
         requiredness: preferred
         implies: degree_preferred
@@ -395,11 +411,25 @@ families:
 """
 
 
-@pytest.mark.parametrize("target", ["bachelor_required", "no_such_pattern"])
+@pytest.mark.parametrize(
+    ("target", "source"),
+    [
+        pytest.param("bachelor_required", "bachelor", id="target-is-not-preferred"),
+        pytest.param("no_such_pattern", "bachelor", id="target-is-not-in-the-family"),
+        # The carried row reads the source's captures through the target, so a target that
+        # captures less than the source is refused too.
+        pytest.param(
+            "bachelor_preferred", r"(?P<rank>\\d+) bachelor",
+            id="target-does-not-capture-the-sources-groups",
+        ),
+    ],
+)
 def test_hedged_as_must_name_a_preferred_pattern_of_the_family(
-    tmp_path: Path, target: str
+    tmp_path: Path, target: str, source: str
 ) -> None:
-    (tmp_path / "rules.yaml").write_text(HEDGED_AS.format(target=target), encoding="utf-8")
+    (tmp_path / "rules.yaml").write_text(
+        HEDGED_AS.format(target=target, source=source), encoding="utf-8"
+    )
     with pytest.raises(CatalogError, match="hedged_as"):
         load_rules(tmp_path)
 
@@ -407,7 +437,7 @@ def test_hedged_as_must_name_a_preferred_pattern_of_the_family(
 def test_hedged_as_carries_a_valid_target(tmp_path: Path) -> None:
     """POSITIVE CONTROL for the two refusals above: a real preferred target loads."""
     (tmp_path / "rules.yaml").write_text(
-        HEDGED_AS.format(target="bachelor_preferred"), encoding="utf-8"
+        HEDGED_AS.format(target="bachelor_preferred", source="bachelor"), encoding="utf-8"
     )
     pattern = load_rules(tmp_path).family("degree").patterns[0]
     assert pattern.hedged_as == "bachelor_preferred"
