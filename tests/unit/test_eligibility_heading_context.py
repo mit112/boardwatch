@@ -91,6 +91,14 @@ HEADING_CASES: list[tuple] = [
     ('h26:a field label opening a bullet is read through by the hedge', 'Nice to have:\n- Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h27:a field label after an inline bullet is read through by the hedge', 'Nice to have: • Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h28:CONTROL a Required label inside a hedged list keeps its bar', 'Nice to have:\n- Required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h29:BOUND a requirement-section line without a colon ends a plain-line hedge, so its bar rejects', 'Nice to have:\nKubernetes experience\nRequired skills\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h30:BOUND a label-alone line ends a plain-line hedge, so its bar rejects', "Nice to have:\nKubernetes experience\nWhat you'll bring:\n5+ years of experience.", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h31:BOUND Who you are ends a plain-line hedge', 'Nice to have:\nKubernetes experience\nWho you are:\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h32:BOUND Must haves ends a plain-line hedge', 'Preferred Qualifications:\nGo experience\nMust haves\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ("h33:BOUND What we're looking for ends a plain-line hedge", "Bonus:\nGo experience\nWhat we’re looking for\n5+ years of experience.", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h34:CONTROL a hedge heading still hedges its own list of plain lines', 'Nice to have:\nKubernetes experience\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h35:CONTROL a catalogued heading with a colon still bounds a plain-line hedge', 'Nice to have:\nKubernetes experience\nRequirements:\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h36:CONTROL a label-alone line only ends a reach and is never promoted to a heading, so a hedge it holds reaches nothing (the conservative miss)', 'Requirements:\nGo experience\nNice to have skills:\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -106,7 +114,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "7407fc1446acd18ab0ecdf696ab24bf4bc76d5994518ae19296579ba2ebdae24"
+SPLIT_UNITS_DIGEST = "4e4105444756c0288c8a701a7585a0431c7c902970130512b846fed2a84a6800"
 
 
 @pytest.fixture(scope="module")
@@ -173,4 +181,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 28
+    assert len(HEADING_CASES) == 36

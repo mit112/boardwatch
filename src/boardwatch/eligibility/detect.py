@@ -499,6 +499,8 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
     ends it after a bulleted one, or after a BLANK LINE once the heading has governed something
     (a list of plain lines). A bulleted line after a blank one continues it, since a loose list
     separates its items that way, and an OR link line never ends it, since it joins two items.
+    A plain line that reads as a section of its own (`_SECTION_BREAK`) ends it too, without
+    becoming a heading, so it can never govern what follows.
     """
     governing: list[int | None] = []
     current: int | None = None
@@ -513,8 +515,11 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
                 governed = listed = False
         elif current is not None and line != prev_line:
             marked = _LIST_MARK.match(text, line) is not None
+            end = text.find("\n", line)
             if not marked and _OR_LEAD.match(unit) is None and (
-                listed or (governed and _BLANK_LINE.search(text, prev_end, offset))
+                listed
+                or (governed and _BLANK_LINE.search(text, prev_end, offset))
+                or _SECTION_BREAK.fullmatch(text[line : len(text) if end < 0 else end].strip())
             ):
                 current = None
             listed = listed or marked
@@ -525,6 +530,19 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
 
 
 _LIST_MARK = re.compile(r"[ \t]*[•‣●\-\*]")
+# An unmarked line that opens a new section which `_looks_like_header` does not recognise: a
+# label alone (`What you'll bring:`, `Who you are:`), or a requirement-section phrase written
+# without its colon (`Required skills`, `Must haves`, `What we're looking for`). In a list of
+# plain lines nothing else separates two sections, so a hedge heading's reach ran through it
+# and demoted the next section's bars. It only ENDS a reach -- a hedge it holds (`Nice to have
+# but not required:`) reaches nothing -- so a wrong match keeps a bar required, the fail-safe.
+_SECTION_BREAK = re.compile(
+    r"[A-Za-z][A-Za-z /&'’-]{0,58}:"
+    r"|(?:required(?:\s+(?:skills?|qualifications?|experience|knowledge))?|must[\s-]haves?|"
+    r"what\s+(?:you|we)(?:['’]ll|\s+will|['’]re|\s+are)?\s+(?:bring|need|looking\s+for)|"
+    r"who\s+you\s+are)\s*:?",
+    re.IGNORECASE,
+)
 _BLANK_LINE = re.compile(r"\n[ \t]*\n")
 
 
