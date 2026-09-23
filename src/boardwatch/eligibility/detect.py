@@ -309,6 +309,41 @@ def _bounded_above(
     return None
 
 
+def _hedged_tail_end(
+    body_text: str,
+    sentences: list[tuple[int, str]],
+    pattern: PatternSpec,
+    unit: str,
+    lo: int,
+    hi: int,
+    at: Callable[[int], int],
+    join: int | None,
+    units: list[tuple[int, str]],
+    index: int,
+) -> tuple[int, bool] | None:
+    """Where a tail hedge on the bar at [lo, hi) of `unit` ends in `body_text` (an ABSOLUTE
+    offset) and whether it states a preference, or None.
+
+    The predicate is sentence-final, so a CLAUSE-scoped pattern reads it over the sentence that
+    holds its clause: "Ability to obtain a Secret clearance, preferred." splits at the comma and
+    the clause alone never shows the hedge (T181). A sentence-scoped unit is that sentence
+    already; an unjoined one is read across an inline ` - ` cut to the unit after it (T174).
+    `sentences` is filled on first use and shared across patterns.
+    """
+    if pattern.scope == "sentence" or join is not None:
+        text = unit if join is not None else _through_inline_dash(body_text, units, index)
+        hedged = _hedged_tail(text, lo, hi, pattern.hedged_by_tail)
+        return None if hedged is None else (at(hedged[0]), hedged[1])
+    if not sentences:
+        sentences.extend(split_units(body_text, "sentence"))
+    start, stop = at(lo), at(hi)
+    for offset, sentence in sentences:
+        if offset <= start and stop <= offset + len(sentence):
+            hedged = _hedged_tail(sentence, start - offset, stop - offset, pattern.hedged_by_tail)
+            return None if hedged is None else (offset + hedged[0], hedged[1])
+    return None
+
+
 @dataclass(frozen=True)
 class Detection:
     family: str
@@ -861,6 +896,8 @@ def detect(
     units_by_scope: dict[str, list[tuple[int, str]]] = {}
     # Heading context, computed once per scope beside the units and never folded into them.
     context_by_scope: dict[str, tuple[list[int | None], list[str | None]]] = {}
+    # The sentence split a narrower-scoped pattern's tail hedge is read over, split on first use.
+    sentences: list[tuple[int, str]] = []
     for family in catalog.families:
         if family.id not in enabled_families:
             continue
@@ -964,11 +1001,8 @@ def detect(
                     # whatever the tail says, so an abstain is never folded into a carried or
                     # dropped row.
                     if abstained is None and pattern.hedged_by_tail and (
-                        hedged := _hedged_tail(
-                            unit if join is not None else _through_inline_dash(
-                                body_text, units, index
-                            ),
-                            lo, hi, pattern.hedged_by_tail,
+                        hedged := _hedged_tail_end(
+                            body_text, sentences, pattern, unit, lo, hi, at, join, units, index
                         )
                     ) is not None:
                         # A bare negated bar drops it: it is not required, and nothing says it
@@ -979,7 +1013,7 @@ def detect(
                                 Detection(
                                     family=family.id,
                                     pattern=twins[pattern.hedged_as],
-                                    span=(at(lo), at(end)),
+                                    span=(at(lo), end),
                                     values={k: v for k, v in match.groupdict().items() if v},
                                 )
                             )

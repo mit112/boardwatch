@@ -293,6 +293,18 @@ families:
           - "Citizenship\\s+and\\s+Immigration"
           - "citizenship\\s+status"
           - "(?:not|non-?discriminat|regardless\\s+of)"
+        # T181. A bare noun is the one citizenship bar a qualifications LIST states with no
+        # marker verb, so it is the one a hedge heading or a hedge predicate can govern:
+        # "Preferred Qualifications:\n- U.S. citizenship with the ability to obtain ..." (pv
+        # 129842) was a required `unmet`. The vocabulary is the one `experience_years` uses,
+        # anchored here because this is its first use. No preferred twin exists in this family,
+        # so a hedged bar DROPS; a posting left with no row abstains (`uncertain`). The marker
+        # patterns above carry no hedge on purpose: "Must be a US citizen" under a hedge heading
+        # contradicts itself, and it is how a heading's over-long reach meets sponsorship and
+        # export-control boilerplate (review F5), so it stays required.
+        suppressed_by_unit:
+          - &bar_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|an\\s+advantage|would\\s+be\\s+nice|if\\s+possible|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
+        hedged_by_tail: [*bar_hedges]
         # `(` joins the terminator set: "US Citizens only (no dual citizenship)." is a LIVE
         # posting that produced ZERO work_auth rows because the clause ends in a parenthetical
         # rather than a full stop. The terminator is what stops this pattern swallowing a
@@ -573,16 +585,17 @@ families:
         # "The desired candidate has 5 years of experience." states a floor, and without the
         # guard the participle deleted it. The verb is anchored to `we`/`preference for` rather
         # than bare `prefer` so that "candidates who prefer remote work" is not a hedge either.
+        # The literal is anchored at `us_citizen_standalone_required`, its first use in the file.
         # `an advantage`, `would be nice` and `if possible` are phrases, never the bare word, and
         # the preferred twins below read the same three (T180).
         suppressed_by_unit:
-          - &years_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|an\\s+advantage|would\\s+be\\s+nice|if\\s+possible|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
+          - *bar_hedges
         # T170. The same hedge as the sentence-final PREDICATE of this bar, in a later clause the
         # unit scope above cannot reach ("5+ years of experience, not required but preferred.").
         # `detect._hedged_tail` decides structurally whether it hedges the bar or a sub-clause, and
         # the bar is carried as the twin its one-line form already writes. Patterns with no
         # preferred twin carry no `hedged_as`: they DROP, as the unit-scoped hedge drops them.
-        hedged_by_tail: [*years_hedges]
+        hedged_by_tail: [*bar_hedges]
         hedged_as: total_years_preferred
         # T178. An UPPER-BOUND cue touching the number makes it a CEILING, not a floor: "Less
         # than 2 years of experience." was read as a 2-year minimum and rejected a 1-year
@@ -655,8 +668,8 @@ families:
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
+        hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: total_years_maximum
         abstain_by_adjacent: [*degree_alternative_to_years]
@@ -669,8 +682,8 @@ families:
         pattern: '(?<![-–—\d])\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges, *months_conversion]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges, *months_conversion]
+        hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
         abstain_by_sentence: [*degree_alternative_to_years]
@@ -683,8 +696,8 @@ families:
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         hedged_as: range_years_preferred
         # Same either-path disjunction guard as total_years_minimum: "3-5 years ... or a
         # Master's degree" clears on either arm and must abstain, not resolve `unmet`.
@@ -703,7 +716,7 @@ families:
       # the scale it runs at BEFORE it shipped: over all 138,677 open bodies it adds 2,355
       # matches across 1,474 distinct spans in 2,269 bodies, and **every one of those spans
       # begins with a year count** -- no ceilings, no company tenure, no EEO boilerplate. The
-      # existing `(?<!to\s)` guard, `company_side_years` and `years_hedges` are what hold that,
+      # existing `(?<!to\s)` guard, `company_side_years` and `bar_hedges` are what hold that,
       # and they are the reason the window can be widened without a new suppressor.
       #
       # {0,4} is NOT the next step by default. Each word added is a word the run may cross a
@@ -717,8 +730,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
         # THE DEGREE DISJUNCTION REACHES THIS ARM, BOUNDED TO ONE SENTENCE. D-449 is the
@@ -785,8 +798,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
         # The sentence-scoped degree escape, as on scoped_years_minimum.
@@ -811,7 +824,7 @@ families:
       #
       # They carry the SAME suppressors as their twins, which is what keeps company-side prose
       # out: "Our team has 10-15 years of combined experience" is stood down by
-      # `company_side_years`, and a hedged range by `years_hedges` (the hedged range already has
+      # `company_side_years`, and a hedged range by `bar_hedges` (the hedged range already has
       # its own `range_years_preferred`).
       - id: scoped_range_years_minimum
         requiredness: required
@@ -819,8 +832,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
@@ -831,8 +844,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
@@ -870,8 +883,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
         # The sentence-scoped degree escape, as on scoped_years_minimum.
@@ -926,8 +939,8 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
         # The sentence-scoped degree escape, as on scoped_years_minimum.
@@ -968,8 +981,8 @@ families:
         pattern: '\bexperience(?:\s+(?:required|requirements?|needed|level|range))?\s*[:\-–—]+\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of|min\.?)\s+)?(?P<years>\d{1,2})\s*(?:(?:[-–—]|\s+to\s+)\s*\d{1,2})?\s*\+?\s*(?:years?|yrs?)(?!\w)\.?'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
-        suppressed_by_unit: [*years_hedges]
-        hedged_by_tail: [*years_hedges]
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         hedged_as: total_years_preferred
         abstain_by_adjacent: [*degree_alternative_to_years]
 
@@ -1226,6 +1239,13 @@ families:
         implies: clearable_required
         scope: clause
         requirement_text: "Must be able to obtain a security clearance"
+        # T181. "Ability to obtain a Secret clearance" is a bare noun phrase in a list, so a hedge
+        # heading, a clause hedge or a hedge predicate governs it the way it governs a years bar.
+        # Carried as `clearance_preferred`, the row its one-line form "... clearance preferred."
+        # already writes.
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
+        hedged_as: clearance_preferred
         # The OBJECT list is what makes the [active_clearance_required, clearable_required]
         # exclusive group fire, so every object a LEVELED pattern can require has to be
         # reachable here too. It was not, and the asymmetry read an OBTAINABLE clearance as a
@@ -1261,9 +1281,9 @@ families:
         implies: clearable_required
         scope: clause
         requirement_text: "Must be able to obtain a security clearance"
-        # THE HEDGE GUARD IS NEW HERE AND DELIBERATE. The twin carries no hedge suppressor,
-        # which is survivable only because its reach is narrow -- measured across all three
-        # live lanes, zero postings hedge a phrasing it can see. This sibling reaches wider
+        # THE HEDGE GUARD IS NEW HERE AND DELIBERATE. The twin carried no hedge suppressor until
+        # T181, which was survivable only because its reach is narrow -- measured across all three
+        # live lanes, zero postings hedged a phrasing it can see. This sibling reaches wider
         # (`eligible for a ... clearance` is a common optional line), so `Willingness to
         # obtain a clearance is a plus.` would become a wrong `ineligible` without it. That is
         # the direction that silently deletes a real job, so it is guarded at the point the
@@ -1272,6 +1292,9 @@ families:
           - "(?:is\\s+)?(?:a\\s+)?(?:plus|preferred|desirable|desired|bonus|advantageous)"
           - "nice[\\s-]to[\\s-]have"
           - "not\\s+(?:required|necessary|mandatory)"
+        # T181: the hedge predicate after a clause break ("..., preferred."), as on the twin.
+        hedged_by_tail: [*bar_hedges]
+        hedged_as: clearance_preferred
         subject_suppressors: *company_side_clearance
         pattern: '(?:able|ability|eligible|eligibility|willing|willingness)\s+(?:to\s+obtain(?:\s+and\s+maintain)?|for)\s+(?:a\s+|an\s+)?(?:(?:active|current)\s+)?(?:U\.?S\.?\s+)?(?:(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:(?:Top\s+Secret|Secret|Confidential|T\.?S\.?\s*/\s*S\.?C\.?I\.?|(?<!\w)T\.?S\.?(?!\w)|(?<!\w)S\.?C\.?I\.?(?!\w)|NATO|Public\s+Trust|(?:D\.?O\.?E\.?\s+)?(?<!\w)[QL](?!\w))\s+)*(?:security\s+)?clearance'
 
@@ -1502,6 +1525,10 @@ families:
         # its own level stand-down in one list, and a list anchor cannot be extended.
         suppressed_by_unit:
           - &degree_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|strongly\\s+desired|ideally|bonus"
+        # T181. The same hedge as the bar's sentence-final predicate ("..., preferred."), which
+        # the clause scope above cannot reach. This bar and its master twin DROP: neither has a
+        # preferred twin that captures the `coord_rank*` groups they capture.
+        hedged_by_tail: [*degree_hedges]
         pattern: "(?:(?P<coord_rank4_a>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*)?(?:Ph\\.?D\\.?|Doctorate|Doctoral\\s+degree|Doctor\\s+of\\s+(?:Philosophy|Science|Engineering))(?:\\s*(?:,\\s*)?(?:or|/)\\s*(?P<coord_rank4_b>Master['’‘]?s?|(?<![\\w.])M\\.?S\\.?(?!\\w)|(?<![\\w.])M\\.?Sc\\.?(?!\\w)|(?<![\\w.])M\\.?Eng\\.?(?!\\w)|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w))\\s*(?:degree)?)?\\s*(?:degree)?\\s*(?:,\\s*)?(?:or|/)\\s*(?:(?P<equivalent_years>\\d{1,2})\\s*\\+?\\s*years?\\s+of\\s+)?equivalent(?P<equivalent_scope>\\s+(?:professional\\s+|relevant\\s+|industry\\s+|hands-on\\s+|work\\s+|research\\s+)?experience\\s+(?:working\\s+in|related\\s+to|focused\\s+on|specific\\s+to|within|in|with|using|on|building|developing|designing|as|leading|managing|supporting)\\b)?"
       - id: master_or_equivalent_required
         requiredness: required
@@ -1511,6 +1538,7 @@ families:
         capture: equivalent_years
         requirement_text: "A master's degree or equivalent experience is required"
         suppressed_by_unit: [*degree_hedges]
+        hedged_by_tail: [*degree_hedges]
         # The trailing "[^.]{0,30}?(?:required|experience)" this replaces made
         # "Master's degree or equivalent." match NOTHING, losing the whole family on the
         # barest form of the phrase. `Graduate`/`Advanced` now require the word `degree`,
@@ -1532,6 +1560,9 @@ families:
         required_rank: 3
         capture: equivalent_years
         requirement_text: "A bachelor's degree or equivalent experience is required"
+        # T181: a tail-hedged bar is carried as the twin its one-line form already writes.
+        hedged_by_tail: [*degree_hedges]
+        hedged_as: bachelor_or_equivalent_preferred
         suppressed_by_unit:
           - *degree_hedges
           - &degree_levels "master|doctora|ph\\.?d\\.?|(?<![\\w.])M\\.?B\\.?A\\.?(?!\\w)|advanced|graduate"
@@ -2034,6 +2065,11 @@ families:
           # a suppressor whose match is not outside the span cannot fire. Measured: that one
           # posting was a false `unmet` until the lookahead was added.
           - '\bor\s+(?:recently\s+)?(?:completed|graduated|finished|hold|holding|have\s+(?:completed|graduated|obtained))|\b(?:graduate|graduated|degree|alumni)\s+or\b|\bor\s+(?:are\s+)?(?=(?:actively\s+|currently\s+)?(?:pursuing|enrolled)\b)|\bor\s+(?:a\s+)?recent\s+grad'
+        # T181. Enrolment stated as a preference ("Currently enrolled in a Master's program
+        # preferred.", or under `Nice to have:`) is not a restriction. No preferred twin exists,
+        # so a hedged bar DROPS, as the years family's scoped bars do.
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         pattern: '\b(?:actively\s+|currently\s+)?(?:enrolled\s+(?:in|at)|pursuing)\s+(?:an?\s+|the\s+|your\s+)?(?:accredited\s+|full[-\s]?time\s+)?(?:university|college|degree\s+program|academic\s+program|(?:bachelor|master|graduate|undergraduate|doctoral|b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.?|ph\.?\s?d)[\w.''’]*(?:\s+degree)?)'
       - id: graduation_window_required
         requiredness: required
@@ -2047,4 +2083,7 @@ families:
         # already holds the degree, so reading them as a restriction would reject the exact
         # candidate they are open to. The `between ... and ...` frame is what makes the
         # exclusion two-sided and therefore decidable against a stored graduation date.
+        # T181: a window stated as a preference drops, as `current_enrollment_required` does.
+        suppressed_by_unit: [*bar_hedges]
+        hedged_by_tail: [*bar_hedges]
         pattern: '\bgraduat\w*\s+(?:date\s+)?between\s+(?P<from_month>[A-Za-z]+)\s+(?P<from_year>20\d\d)\s+(?:and|to|through|-|–)\s+(?P<to_month>[A-Za-z]+)\s+(?P<to_year>20\d\d)'
