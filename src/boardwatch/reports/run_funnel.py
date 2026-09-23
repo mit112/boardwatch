@@ -1054,10 +1054,11 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         # T151. Stated in words rather than as a bare number, because the number that matters is
         # ZERO and a reader has to be told that a non-zero one means holds were RELEASED, not
         # merely not added.
-        f"{gate.readings_absent} delivered lead(s) had NO readable gate reading under the live "
-        "identity — every gate-derived hold on them has silently released"
+        f"{gate.readings_absent} delivered lead(s) had NO readable gate reading under the judge's "
+        "current inputs — every gate-derived hold on them has silently released"
         if gate.readings_absent
-        else "every delivered lead carried a readable gate reading under the live identity",
+        else "every delivered lead carried a readable gate reading under the judge's current "
+        "inputs",
         "",
         # T113. The pending count is the one to watch: staying high run over run means the budget
         # cannot keep up with the re-keys.

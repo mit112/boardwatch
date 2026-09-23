@@ -3464,12 +3464,13 @@ def _run_pipeline_leased(
         # It is a FAULT, so it goes on `summary.errors` and escalates. The count is taken over the
         # run's OWN delivered slate immediately after the gate stage judged at `gate.depth`, so on
         # a healthy run it is 0 and this is silent. A non-zero value means stored gate rows are
-        # unreadable under the live identity — and per D-537 that does not merely fail to ADD a
-        # hold, it RELEASES every hold those rows were carrying, with no error and no warning.
+        # unreadable under the judge's current inputs — and per D-537 that does not merely fail to
+        # ADD a hold, it RELEASES every hold those rows were carrying, with no error and no warning.
         #
         # A STRICT MAJORITY rather than any single miss, copying the seniority block above: a
         # single newly-created posting that the gate has not reached yet is normal, while the
-        # failure this exists to catch — an identity re-key — hits every lead at once.
+        # failure this exists to catch — a changed fact, judge or gate version (T161) — hits every
+        # lead at once.
         #
         # Armed only when the gate is: with `gate.enabled` false nothing writes gate rows at all,
         # so absence is expected rather than a fault, and the funnel's whole `gate` block is
@@ -3483,12 +3484,13 @@ def _run_pipeline_leased(
                 and summary.gate_readings_absent
             ):
                 staleness_alert = (
-                    "gate: no readable gate reading under the live identity for "
+                    "gate: no readable gate reading under the judge's current inputs for "
                     f"{summary.gate_readings_absent} of {len(summary.tailored)} delivered "
-                    "lead(s) — stored gate rows are scoped on `profile_hash` AND `rules_hash` "
-                    "and the read fails open, so every gate-derived hold on them has RELEASED, "
-                    "not merely failed to apply (D-537). A catalog or profile re-key does this "
-                    "silently; re-judge before trusting the apply lane"
+                    "lead(s) — a stored reading counts only for the same facts, `gate.model` and "
+                    "gate policy/prompt version, and the read fails open, so every gate-derived "
+                    "hold on them has RELEASED, not merely failed to apply (D-537). A changed "
+                    "fact, judge or gate version does this silently; re-judge before trusting the "
+                    "apply lane"
                 )
                 console.print(f"  ! {staleness_alert}", markup=False)
                 summary.errors.append(staleness_alert)
