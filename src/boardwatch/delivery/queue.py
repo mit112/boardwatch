@@ -61,7 +61,7 @@ import shutil
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -1044,6 +1044,14 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     # keeper with. Reconcile moves by `entry.job_id` and never renames, so it cannot hit the
     # occupied-destination conflict that consolidation exists to end.
     entries, _, _ = _resolve_job_identity(conn, entries)
+    # `_widen_for_a_different_job`'s ONLY trustworthy answer for "whose job is this occupied
+    # folder": keyed by path exactly as `_index` builds one two lines above (`root / location /
+    # name`, or `root / name` at the queue root, matching `target`'s own construction below), so
+    # an occupied `target` looks itself up here. Never the occupant's OWN `details.json` — that
+    # file's `job_id` is exactly the value identity convergence (D-430's shape) can leave STALE,
+    # and reading it back would misjudge a folder that is the SAME job under an old id as a
+    # different one.
+    known_job_ids = {entry.path: entry.job_id for entry in entries.values()}
     counts = {
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
@@ -1082,7 +1090,9 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         # identity suffix rather than refused; one occupied by THIS job's own copy, or by anything
         # `_widen_for_a_different_job` cannot classify, is left for `_relocate` to refuse exactly
         # as it always has.
-        target = _widen_for_a_different_job(entry, target, root=root, owner_name=owner_name)
+        target = _widen_for_a_different_job(
+            entry, target, root=root, owner_name=owner_name, known_job_ids=known_job_ids
+        )
         try:
             _relocate(entry.path, target)
         except Exception as exc:
@@ -1212,7 +1222,7 @@ def _consolidate_duplicates(
 
 
 def _widen_for_a_different_job(
-    entry: _Entry, target: Path, *, root: Path, owner_name: str
+    entry: _Entry, target: Path, *, root: Path, owner_name: str, known_job_ids: Mapping[Path, int]
 ) -> Path:
     """`target`, or the same drain with the moving lead's own 8-hex identity suffix appended.
 
@@ -1221,11 +1231,21 @@ def _widen_for_a_different_job(
     together — the one already drained is never in `standing_queue_rows`, by definition — so the
     second one to be drained finds the name gone and `_relocate` refuses forever, every run.
 
+    **`known_job_ids` decides "whose job is this occupied folder", never the occupant's own
+    `details.json`.** That file's `job_id` is exactly the value identity convergence (D-430's
+    shape) can leave STALE: a posting whose canonical job moved after its folder was written still
+    carries the OLD id on disk. Reading it back would misjudge a folder that is the SAME job under
+    an old id as a different one and widen instead of refusing — leaving two folders for one job,
+    review round 1's blocker. `known_job_ids` is `_reconcile_locked`'s own REFRESHED map, built
+    from the same `_resolve_job_identity` pass that refreshed `entry.job_id`, so both sides of the
+    comparison are current.
+
     Only a destination occupied by a DIFFERENT job is widened. One occupied by THIS job's own
     copy (a duplicate `_resolve_job_identity` returns rather than drops, read but not consolidated
-    here) is left alone, and so is one `_read_details` cannot classify — both are `_relocate`'s
-    to refuse exactly as it always has; widening either would rename a folder into a conflict
-    reconcile did not cause and cannot attribute.
+    here) is left alone, and so is one NOT in `known_job_ids` at all — an ambiguous posting `_index`
+    dropped, or anything else this run never classified — both are `_relocate`'s to refuse exactly
+    as it always has; widening either would rename a folder into a conflict reconcile did not
+    cause and cannot attribute.
 
     The suffix is planned through `plan_lead_names`, the same helper `_plan`'s own in-pass
     disambiguation calls, rather than hand-truncated here: it alone enforces the destination byte
@@ -1235,8 +1255,7 @@ def _widen_for_a_different_job(
     """
     if not target.exists():
         return target
-    occupant = _read_details(target)
-    occupant_job_id = None if occupant is None else _as_int(occupant.get("job_id"))
+    occupant_job_id = known_job_ids.get(target)
     if occupant_job_id is None or occupant_job_id == entry.job_id:
         return target
     own = _read_details(entry.path)
