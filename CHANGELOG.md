@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A lead now says when the owner already applied to an identical job description at the same
+  company (2026-09-22, T125).** Of the 970 standing leads, 37 link to an applied job under another job
+  id, and most of them are one company posting the same body in many cities. The row JSON that the
+  queue and the detail pane both read gains an additive `applied_identical_jd` list: every posting at
+  the same company with a byte-identical current body (`content_hash`), on a different job, whose job
+  carries an application in `APPLIED_STATUSES`. Each entry names the posting, its title, its location,
+  and the application date with an explicit UTC offset (null when an application was recorded without
+  a submission date). The list is always present, and `[]` when there are none. It comes from one
+  statement per payload, however many rows are served. The detail pane shows `Applied to an identical
+  JD: <location> · <date>` with `+N` and the full list in a native disclosure, and the row carries one
+  text badge. This is an annotation only: nothing is hidden, re-ranked or grouped, and no ledger,
+  disposition or engine key changes. Withdrawn and interested applications annotate nothing. Astra
+  review 03, F7.
+
 - **A run now says when its identity moved under it, and records what it ran as (2026-09-22, T137).**
   A run reads its profile, rules and config several times: the ranker, the judge, the ledger stamp,
   and last the funnel's manifest. An edit landing mid-run (the owner editing `config.toml`, a peer

@@ -148,6 +148,75 @@ def applied_job_ids(conn: Connection) -> dict[int, str]:
     return {int(row.job_id): str(row.status) for row in rows}
 
 
+@dataclass(frozen=True)
+class AppliedTwin:
+    """A posting on ANOTHER job, already applied to, whose current body is byte-identical."""
+
+    posting_id: int
+    title: str
+    locations: tuple[str, ...]
+    #: The latest submitted attempt's `submitted_at`, naive UTC. `None` where an application was
+    #: recorded straight into a later status and never carried one (an import).
+    applied_at: datetime | None
+
+
+def applied_identical_jds(conn: Connection) -> dict[int, list[AppliedTwin]]:
+    """Every posting mapped to the postings it annotates with: same `company_id`, same current
+    `content_hash`, a DIFFERENT job, and that job carrying an application in `APPLIED_STATUSES`.
+
+    Display evidence only (T125). Nothing reads this to suppress, merge or re-rank: a new-ID
+    repost with an unchanged body can be a new opening, so the owner is told, not overruled.
+
+    ONE statement with no id list, driven from the applied side — the join starts at the few
+    applied jobs and reaches leads through `ix_postings_content_hash` — so the caller filters to
+    the rows it serves and the parameter cap `param_chunks` documents never applies. The
+    applied-job subquery is `applied_job_ids`' own filter; `max(submitted_at)` is its date.
+
+    Each list is ordered most recent application first, then by posting id, so "the first entry"
+    is stable across renders.
+    """
+    applied = (
+        select(
+            applications.c.job_id,
+            func.max(applications.c.submitted_at).label("applied_at"),
+        )
+        .where(applications.c.status.in_(APPLIED_STATUSES))
+        .group_by(applications.c.job_id)
+        .subquery("applied")
+    )
+    twin = postings.alias("twin")
+    lead = postings.alias("lead")
+    rows = conn.execute(
+        select(
+            lead.c.id.label("lead_id"),
+            twin.c.id,
+            twin.c.title,
+            twin.c.locations_json,
+            applied.c.applied_at,
+        )
+        .select_from(
+            applied.join(twin, twin.c.job_id == applied.c.job_id).join(
+                lead,
+                (lead.c.company_id == twin.c.company_id)
+                & (lead.c.content_hash == twin.c.content_hash)
+                & (lead.c.job_id != twin.c.job_id),
+            )
+        )
+        .order_by(lead.c.id, applied.c.applied_at.desc().nulls_last(), twin.c.id)
+    ).all()
+    twins: dict[int, list[AppliedTwin]] = {}
+    for row in rows:
+        twins.setdefault(int(row.lead_id), []).append(
+            AppliedTwin(
+                posting_id=int(row.id),
+                title=str(row.title),
+                locations=tuple(row.locations_json or ()),
+                applied_at=row.applied_at,
+            )
+        )
+    return twins
+
+
 def set_application_status(
     conn: Connection,
     *,

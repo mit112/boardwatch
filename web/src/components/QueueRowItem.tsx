@@ -134,6 +134,14 @@ function Flags({ row }: { row: QueueRow }) {
       {/* The pinned follow-up, and whether it has arrived. The applied history renders the same
           component: one date, one wording, one place it is decided. */}
       <FollowUpBadge followUp={row.follow_up} />
+      {/* T125. A note, like the follow-up beside it: the lead is still listed and ranked as it
+          would be without it. The pane names where and when. `?? []` for an older server. */}
+      {(row.applied_identical_jd ?? []).length > 0 ? (
+        <Badge
+          label="applied: identical JD"
+          reason="You applied to another posting at this company with an identical job description. Open the lead for where and when."
+        />
+      ) : null}
       {row.thin_jd ? (
         <Badge label="thin JD" reason="No coverage fraction could be computed." />
       ) : null}

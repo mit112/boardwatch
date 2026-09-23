@@ -55,6 +55,21 @@ const AUTHORED: QueueRow[] = [
     coverage: 0.72,
     off_target_reason: null,
     review_reason: null,
+    // Two, so the pane's first-plus-`+N` line and its full list are both on screen in dev.
+    applied_identical_jd: [
+      {
+        posting_id: 40112,
+        title: "Software Engineer, EDA Tools",
+        location: "Hillsboro, OR",
+        applied_at: "2026-09-14T15:30:00+00:00",
+      },
+      {
+        posting_id: 39007,
+        title: "Software Engineer, EDA Tools",
+        location: "Folsom, CA",
+        applied_at: "2026-09-02T10:05:00+00:00",
+      },
+    ],
   },
   {
     posting_id: 39820,
@@ -593,6 +608,7 @@ function generate(count: number, seed: number, idBase: number): QueueRow[] {
           : null,
       coverage: thin ? null : Math.round(random() * 100) / 100,
       off_target_reason: spec.offTarget,
+      applied_identical_jd: [],
     });
   }
   return rows;
