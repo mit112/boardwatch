@@ -125,6 +125,9 @@ class PatternSpec:
     # carried as the `bounded_above_as` pattern of this family, a required ceiling (T178).
     bounded_above_by: tuple[re.Pattern[str], ...]
     bounded_above_as: str | None
+    # A `preferred` pattern with no regex of its own: it never matches, and exists only as a
+    # `hedged_as` target for bars with no preferred wording (T173). Its regex is `(?!)`.
+    carrier: bool
 
     @property
     def rule_id(self) -> str:
@@ -535,12 +538,23 @@ def _family(
             target is None
             or target.requiredness != "preferred"
             or not pattern.hedged_by_tail
-            or not set(pattern.regex.groupindex) <= set(target.regex.groupindex)
+            or not (
+                target.carrier
+                or set(pattern.regex.groupindex) <= set(target.regex.groupindex)
+            )
         ):
             raise CatalogError(
                 f"{where}: pattern {pattern.id!r} hedged_as {pattern.hedged_as!r} must name a "
                 "preferred pattern of this family that captures what it captures, beside a "
                 "non-empty hedged_by_tail"
+            )
+        # A carried bar is carried on its ONE-LINE hedge too (`detect`), so every one-line
+        # suppression of it must be a hedge: anything else would be carried as a preference.
+        hedges = {rx.pattern for rx in pattern.hedged_by_tail}
+        if target.carrier and not {rx.pattern for rx in pattern.suppressed_by_unit} <= hedges:
+            raise CatalogError(
+                f"{where}: {pattern.id!r} is hedged_as a carrier pattern, so its "
+                "suppressed_by_unit may hold only its hedged_by_tail hedges"
             )
     for pattern in patterns:
         if pattern.bounded_above_as is None and not pattern.bounded_above_by:
@@ -558,6 +572,13 @@ def _family(
                 f"{where}: pattern {pattern.id!r} bounded_above_as "
                 f"{pattern.bounded_above_as!r} must name a required pattern of this family that "
                 "carries no bounded_above_by itself, beside a non-empty bounded_above_by"
+            )
+    named = {pattern.hedged_as for pattern in patterns}
+    for pattern in patterns:
+        if pattern.carrier and pattern.id not in named:
+            raise CatalogError(
+                f"{where}: {pattern.id!r} is a carrier pattern that no pattern is hedged_as, "
+                "so it could never write a row"
             )
 
     relations: list[dict[str, str]] = []
@@ -790,8 +811,19 @@ def _pattern(
     requirement_text = str(raw.get("requirement_text", "")).strip()
     if not requirement_text:
         raise CatalogError(f"{where}: pattern {pattern_id!r} is missing 'requirement_text'")
+    carrier = raw.get("carrier", False)
+    if not isinstance(carrier, bool):
+        raise CatalogError(f"{where}: pattern {pattern_id!r} 'carrier' must be true or false")
     body = str(raw.get("pattern", ""))
-    if not body:
+    if carrier:
+        # Every value it renders comes from the bar it carries, so its text names none.
+        if body or requiredness != "preferred" or "{" in requirement_text:
+            raise CatalogError(
+                f"{where}: {pattern_id!r} is a carrier pattern, so it must be `preferred`, "
+                "declare no 'pattern', and name no placeholder in its requirement_text"
+            )
+        body = "(?!)"
+    elif not body:
         raise CatalogError(f"{where}: pattern {pattern_id!r} is missing 'pattern'")
     try:
         regex = re.compile(body, re.IGNORECASE)
@@ -838,6 +870,7 @@ def _pattern(
         hedged_as=_optional_str(raw.get("hedged_as")),
         bounded_above_by=_regex_list(raw.get("bounded_above_by"), at, "bounded_above_by"),
         bounded_above_as=_optional_str(raw.get("bounded_above_as")),
+        carrier=carrier,
     )
 
 

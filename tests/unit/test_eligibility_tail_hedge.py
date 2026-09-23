@@ -14,6 +14,7 @@ WILL-NOT case can only stay `ineligible` if the bar's required row survives.
 """
 
 from pathlib import Path
+from string import Template
 
 import pytest
 
@@ -71,9 +72,10 @@ DEMOTED = [
     ),
 ]
 
-# DROP: the bar's pattern has no `preferred` twin, so the hedged bar is dropped -- exactly what
-# the clause-scoped hedge already does to its one-line form. These bodies carry nothing else, so
-# zero rows reads `uncertain` (`_no_evaluable_requirement`), never a clear by silence.
+# DROP: a TOTAL bar whose preferred twin cannot read the posting's wording. Its one-line hedge
+# drops it, as before T173 (only a bar `hedged_as` a carrier is carried on that hedge). This body
+# carries nothing else, so zero rows reads `uncertain` (`_no_evaluable_requirement`), never a
+# clear by silence.
 DROPPED = [
     # T180 F6: `an advantage` is catalog vocabulary now, and here it sits in the bar's own clause,
     # so the unit-scoped hedge drops it as it drops `... is preferred but not required.` (DESIGN
@@ -83,6 +85,13 @@ DROPPED = [
         "experience in the financial services industry is an advantage but not required.",
         id="an-advantage-but-not-required-in-the-bars-own-clause",
     ),
+]
+
+# SCOPED: a scoped, activity or domain bar has no `preferred` wording of its own, so the hedged
+# bar is carried as the `scoped_years_preferred` carrier (T173) -- the row its one-line form now
+# writes too. It resolves only in the direction the total forces, so a 1-year profile is `unmet`
+# on it, and a preferred row never blocks.
+SCOPED = [
     pytest.param(
         "2-4 years of retirement industry experience, preferred",
         id="comma-then-bare-hedge",
@@ -345,6 +354,13 @@ def test_a_hedged_bar_with_a_twin_is_carried_as_the_twin(catalog, body: str, twi
     start, end = row.jd_locator["span"]
     assert body[start:end].startswith(body.split(" ")[0])
     assert body[start:end].rstrip(".").lower().endswith(("preferred", "a plus"))
+
+
+@pytest.mark.parametrize("body", SCOPED)
+def test_a_hedged_scoped_bar_is_carried_as_a_scoped_preference(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
 
 
 @pytest.mark.parametrize("body", DROPPED)
@@ -734,3 +750,161 @@ def test_an_aside_restating_the_hedge_still_hedges_the_bar(catalog, body: str) -
     result = evaluate(body, FACTS, POLICY, catalog)
     assert _rows(result) == _PREFERRED
     assert result.verdict == "eligible"
+
+
+# T173: the one-line and split forms of ONE hedged scoped bar write the same preferred row. The
+# first two are the split form (`_hedged_tail`); the rest are the one-line hedge, in-clause, as an
+# introducer, and as a heading (`suppressed_by_unit`, `_hedged_by_heading`), which dropped the bar.
+SCOPED_FORMS = [
+    pytest.param("3+ years of experience in power electronics, preferred.", id="split-comma"),
+    pytest.param(
+        "3+ years of experience in power electronics, not required but preferred.",
+        id="split-negated-requirement",
+    ),
+    pytest.param("3+ years of experience in power electronics preferred.", id="one-line-trailing"),
+    pytest.param("Nice to have: 3+ years of experience in power electronics.", id="one-line-introducer"),
+    pytest.param(
+        "Preferred Qualifications:\n- 3+ years of experience in power electronics",
+        id="one-line-heading",
+    ),
+]
+
+
+@pytest.mark.parametrize("body", SCOPED_FORMS)
+def test_every_form_of_a_hedged_scoped_bar_writes_the_same_preferred_row(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end].startswith("3+ years of experience in")
+    assert row.rationale == "1 total < 3 scoped to a skill"
+
+
+def test_an_unhedged_scoped_bar_is_unchanged(catalog) -> None:  # type: ignore[no-untyped-def]
+    """CONTROL, must stay green on both sides of the change."""
+    result = evaluate("3+ years of experience in power electronics.", FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_minimum", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+
+
+def test_a_scoped_preference_never_claims_met_on_total_years(catalog) -> None:  # type: ignore[no-untyped-def]
+    """The trap `total_years_preferred` would spring (DESIGN-T170 §3(b)): ten total years say
+    nothing about power electronics, so the carried row abstains instead of resolving `met`."""
+    result = evaluate(
+        "3+ years of experience in power electronics preferred.",
+        Facts(total_years_experience=10), POLICY, catalog,
+    )
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unknown"]]
+    assert result.verdict == "eligible"
+
+
+def test_a_scoped_preference_does_not_straddle_a_required_total(catalog) -> None:  # type: ignore[no-untyped-def]
+    """The carrier has its OWN implies, outside the refinement group: sharing
+    `scoped_years_minimum` would let an unmet preference straddle a met required total and
+    rewrite both to `unknown`, so a met floor would read `uncertain`."""
+    result = evaluate(
+        "3 years of experience required. 5+ years of experience in power electronics preferred.",
+        Facts(total_years_experience=4), POLICY, catalog,
+    )
+    assert _rows(result) == [
+        ["experience_years:scoped_years_preferred", "preferred", "unmet"],
+        ["experience_years:total_years_minimum", "required", "met"],
+    ]
+    assert result.verdict == "eligible"
+
+
+def test_a_one_line_abstaining_scoped_bar_keeps_its_unknown_row(catalog) -> None:  # type: ignore[no-untyped-def]
+    """CONTROL. A degree alternative waives this bar before its one-line hedge is read (T175), so
+    it keeps its `required unknown` row and is never carried as a preference: an abstain is not
+    folded into a carried row."""
+    result = evaluate(
+        "5 years of experience in a related field or a Master degree preferred.",
+        FACTS, POLICY, catalog,
+    )
+    assert [r for r in _rows(result) if r[0].startswith("experience_years:")] == [
+        ["experience_years:scoped_years_minimum", "required", "unknown"]
+    ]
+
+
+CARRIER = Template("""
+version: 1
+negation_cues: ["not"]
+families:
+  - id: degree
+    label: Degree
+    tier: profile
+    fact: highest_degree
+    answer_type: choice
+    default_policy: preference
+    question: "Highest degree?"
+    fields:
+      - name: highest_degree
+        type: choice
+        choices: [none, bachelor]
+        ranks: {none: 0, bachelor: 3}
+    implies_vocabulary: [degree_required, degree_preferred]
+    exclusive_groups: []
+    patterns:
+      - id: bachelor_required
+        requiredness: required
+        implies: degree_required
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree is required"
+        suppressed_by_unit: $unit
+        hedged_by_tail: ["preferred"]
+        $hedged_as
+        pattern: "bachelor"
+      - id: bachelor_preferred
+        requiredness: $requiredness
+        implies: degree_preferred
+        scope: sentence
+        required_rank: 3
+        requirement_text: "$text"
+        carrier: true
+        $extra
+""")
+VALID_CARRIER = {
+    "unit": '["preferred"]', "hedged_as": "hedged_as: bachelor_preferred",
+    "requiredness": "preferred", "text": "A bachelor's degree is preferred", "extra": "",
+}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param({"extra": 'pattern: "bachelor preferred"'}, id="carrier-has-its-own-pattern"),
+        pytest.param({"requiredness": "required"}, id="carrier-is-not-preferred"),
+        pytest.param({"text": "{rank} is preferred"}, id="carrier-text-has-a-placeholder"),
+        pytest.param({"hedged_as": ""}, id="carrier-no-pattern-is-hedged-as"),
+        # Every one-line suppression of a carried bar must be a hedge: a non-hedge suppressor
+        # (`counts toward`) would otherwise be carried as a preference.
+        pytest.param({"unit": '["preferred", "counts toward"]'}, id="source-suppressor-not-a-hedge"),
+    ],
+)
+def test_a_carrier_is_refused_unless_it_is_a_preferred_hedged_as_target(
+    tmp_path: Path, change: dict[str, str]
+) -> None:
+    (tmp_path / "rules.yaml").write_text(
+        CARRIER.substitute({**VALID_CARRIER, **change}), encoding="utf-8"
+    )
+    # Not bare "carrier": the tmp path carries the test's own name.
+    with pytest.raises(CatalogError, match="a carrier pattern"):
+        load_rules(tmp_path)
+
+
+def test_a_valid_carrier_loads_and_never_matches_on_its_own(tmp_path: Path) -> None:
+    """POSITIVE CONTROL for the refusals above."""
+    (tmp_path / "rules.yaml").write_text(CARRIER.substitute(VALID_CARRIER), encoding="utf-8")
+    carrier = load_rules(tmp_path).family("degree").patterns[1]
+    assert carrier.carrier is True
+    assert carrier.regex.search("bachelor preferred") is None
+
+
+def test_a_carried_scoped_bar_is_not_written_over_a_row_another_pattern_wrote(catalog) -> None:  # type: ignore[no-untyped-def]
+    """Corpus m1111. A scoped pattern also reads the total bar here, as `3 years of experience,
+    banking experience`, and the one-line hedge used to drop that second reading silently. Carried,
+    it would claim the same 3-year bar is a scoped preference: the rows must stay the base's."""
+    result = evaluate("3 years of experience, banking experience preferred.", FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:total_years_minimum", "required", "unmet"]]

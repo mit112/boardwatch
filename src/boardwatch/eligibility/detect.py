@@ -27,7 +27,10 @@ The scopes, all applied per match:
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
-                          abstain waived: an abstaining bar keeps its UNKNOWN row.
+                          abstain waived: an abstaining bar keeps its UNKNOWN row. A bar
+                          `hedged_as` a CARRIER is carried on its unit-scoped and heading
+                          hedges too, since no preferred wording of its own writes that row
+                          (T173).
                           A pattern declaring this but no `suppressed_by_unit` takes a hedge
                           heading's hedge by the introducer allowance ALONE: its clause is
                           never searched, so "(MBA preferred)" beside the bar cannot drop it.
@@ -987,6 +990,8 @@ def detect(
             continue
         twins = {pattern.id: pattern for pattern in family.patterns}
         for pattern in family.patterns:
+            # A one-line hedge on a bar hedged_as a carrier carries it rather than dropping it.
+            carries = pattern.hedged_as is not None and twins[pattern.hedged_as].carrier
             if (units := units_by_scope.get(pattern.scope)) is None:
                 units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
                 governing = governing_headings(body_text, units)
@@ -1072,29 +1077,35 @@ def detect(
                     # heading hedges after them too, so "Bachelor degree or 5 years of experience
                     # preferred." keeps the `unknown` row its split form keeps (T175).
                     waived = abstained is not None and bool(pattern.hedged_by_tail)
-                    if not waived and _suppressed(
-                        unit, lo, hi, pattern.suppressed_by_unit,
-                        bounds=bounds, introducer=True, aside_owned=True,
-                    ):
-                        continue
                     heading = governing[index]
-                    if not waived and join is None and heading is not None and _hedged_by_heading(
-                        _heading_text(units[heading][1]), unit, lo, hi,
-                        pattern.suppressed_by_unit or pattern.hedged_by_tail,
-                        introducer_only=not pattern.suppressed_by_unit,
-                    ):
+                    hedged = not waived and bool(
+                        _suppressed(
+                            unit, lo, hi, pattern.suppressed_by_unit,
+                            bounds=bounds, introducer=True, aside_owned=True,
+                        )
+                        or join is None and heading is not None and _hedged_by_heading(
+                            _heading_text(units[heading][1]), unit, lo, hi,
+                            pattern.suppressed_by_unit or pattern.hedged_by_tail,
+                            introducer_only=not pattern.suppressed_by_unit,
+                        )
+                    )
+                    if hedged and not carries:
                         continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row
                     # whatever the tail says, so an abstain is never folded into a carried or
                     # dropped row.
-                    if abstained is None and pattern.hedged_by_tail and (
-                        hedged := _hedged_tail_end(
+                    if hedged:
+                        tail: tuple[int, bool] | None = (at(hi), True)
+                    elif abstained is None and pattern.hedged_by_tail:
+                        tail = _hedged_tail_end(
                             body_text, sentences, pattern, unit, lo, hi, at, join, units, index
                         )
-                    ) is not None:
+                    else:
+                        tail = None
+                    if tail is not None:
                         # A bare negated bar drops it: it is not required, and nothing says it
                         # is preferred.
-                        end, preference = hedged
+                        end, preference = tail
                         if preference and pattern.hedged_as is not None:
                             carried.append(
                                 Detection(
@@ -1148,8 +1159,13 @@ def detect(
                         )
                     )
     for detection in carried:
+        # A carrier has no reading of its own, so a row ANY pattern of its family wrote over the
+        # same span is the same bar read another way, and the carrier would only duplicate it.
         if not any(
-            other.pattern is detection.pattern
+            (
+                other.pattern is detection.pattern
+                or (detection.pattern.carrier and other.family == detection.family)
+            )
             and other.span[0] < detection.span[1]
             and detection.span[0] < other.span[1]
             for other in found

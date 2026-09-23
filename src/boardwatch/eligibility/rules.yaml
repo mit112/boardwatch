@@ -498,6 +498,7 @@ families:
       - range_years_preferred
       - total_years_maximum
       - scoped_years_maximum
+      - scoped_years_preferred
     # These are PARALLEL BARS, not competing claims: a total-years floor beside a Python-years
     # floor declares both requirements. Keep both rows for the roll-up when they agree. Only a
     # profile that clears one member and misses another makes their relationship undecidable,
@@ -628,8 +629,9 @@ families:
         # T170. The same hedge as the sentence-final PREDICATE of this bar, in a later clause the
         # unit scope above cannot reach ("5+ years of experience, not required but preferred.").
         # `detect._hedged_tail` decides structurally whether it hedges the bar or a sub-clause, and
-        # the bar is carried as the twin its one-line form already writes. Patterns with no
-        # preferred twin carry no `hedged_as`: they DROP, as the unit-scoped hedge drops them.
+        # the bar is carried as the twin its one-line form already writes. The scoped, activity
+        # and domain bars are carried as `scoped_years_preferred` in BOTH forms (T173); the two
+        # months patterns carry no `hedged_as` and DROP, as the unit-scoped hedge drops them.
         hedged_by_tail: [*bar_hedges]
         hedged_as: total_years_preferred
         # T178. An UPPER-BOUND cue touching the number makes it a CEILING, not a floor: "Less
@@ -781,6 +783,7 @@ families:
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
+        hedged_as: scoped_years_preferred
         # THE DEGREE DISJUNCTION REACHES THIS ARM, BOUNDED TO ONE SENTENCE. D-449 is the
         # entry that left this OPEN and named the mechanism; the ruling below closed it.
         # `total_years_minimum` has abstained on "a Bachelor's OR N years of experience" since
@@ -850,6 +853,7 @@ families:
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
+        hedged_as: scoped_years_preferred
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
@@ -883,6 +887,7 @@ families:
         suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
+        hedged_as: scoped_years_preferred
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
@@ -896,6 +901,7 @@ families:
         suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
+        hedged_as: scoped_years_preferred
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
@@ -938,6 +944,7 @@ families:
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
+        hedged_as: scoped_years_preferred
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
@@ -1012,6 +1019,7 @@ families:
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
         bounded_above_as: scoped_years_maximum
+        hedged_as: scoped_years_preferred
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
@@ -1104,6 +1112,19 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_predicate: [*credit_predicate]
+      # T173. A hedged scoped, activity or domain bar has no preferred wording of its own: six
+      # retyped regexes would be needed to give it one. `carrier` declares a preferred pattern
+      # that never matches on its own and exists only as a `hedged_as` target, so the hedged bar
+      # writes a preferred row instead of none. Its own `implies`, NOT `total_years_preferred`:
+      # that branch resolves `met` on total years, a false claim for a skill-scoped bar. Kept
+      # out of the refinement group, so a preference cannot straddle a required total into
+      # `unknown`.
+      - id: scoped_years_preferred
+        requiredness: preferred
+        implies: scoped_years_preferred
+        scope: sentence
+        carrier: true
+        requirement_text: "Years of experience scoped to a specific skill or domain is preferred"
 
       # T178. The CEILING readings. Their rows arrive ONLY by carry, from a minimum pattern whose
       # bar an upper-bound cue touches (`bounded_above_by: [*years_ceiling]`), so their own regex
