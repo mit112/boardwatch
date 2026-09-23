@@ -30,9 +30,42 @@ def gate_engine_version() -> str:
     return f"{GATE_VERSION_PREFIX}{POLICY_VERSION}:{PROMPT_VERSION}"
 
 
+def _omit_none(value: object) -> object:
+    """Recursively drop None-valued mapping keys from a JSON-ready payload.
+
+    Applied only to `judge_facts_payload`, below (T179/F4): `facts_payload` itself keeps its
+    explicit-null form for its other callers (facts_json storage, the P5 labeling reference
+    policy), where an absent key must hash identically to an explicit null (D-P2-2). Pruning
+    None keys preserves that: a field that is None is indistinguishable from a field that
+    does not exist in the schema yet either way. What it additionally buys is that a *new*
+    optional `Facts` field, unset for everyone, never appears at all — so it cannot change the
+    digest or the judge's prompt for anyone who hasn't set it.
+    """
+    if isinstance(value, dict):
+        return {k: _omit_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_omit_none(v) for v in value]
+    return value
+
+
+def judge_facts_payload(facts: Facts) -> dict[str, object]:
+    """The exact payload the judge is sent (`gate_handshake.build_gate_request`'s `"facts"`
+    row value) and `gate_facts_key` digests: `facts_payload(facts)` with every None-valued
+    key omitted, recursively into any nested fact object.
+
+    For a fully-populated `Facts` (nothing None) this is byte-identical to `facts_payload` —
+    there is nothing to omit — so the judge's prompt is unchanged for a fully-set profile.
+    For a partially-set profile the prompt is now shorter: the judge is no longer told which
+    facts are absent, only what is present, which is the schema-stability property T179 needs.
+    """
+    pruned = _omit_none(facts_payload(facts))
+    assert isinstance(pruned, dict)
+    return pruned
+
+
 def gate_facts_key(facts: Facts) -> str:
-    """A digest of the EXACT payload the judge is sent — `facts_payload(facts)`, the same
-    object `gate_handshake.build_gate_request` puts in every item.
+    """A digest of the EXACT payload the judge is sent — `judge_facts_payload(facts)`, the
+    same object `gate_handshake.build_gate_request` puts in every item.
 
     The freshness test needs this because the ROW IDENTITY cannot see it. `hashing.
     build_identity` folds a family's declared fields into `profile_hash` only when the live
@@ -47,8 +80,13 @@ def gate_facts_key(facts: Facts) -> str:
     and re-keying the rows under the judge's policy would move every one of them.
     `digest` is `hashing`'s sorted-key compact-JSON sha256 — the canonical form this repo
     already hashes every snapshot with.
+
+    Digests `judge_facts_payload`, not `facts_payload`, so adding an unset optional `Facts`
+    field never re-keys a stored verdict (T179/F4): the earlier form hashed the raw
+    `model_dump`, including every null, so any schema addition changed every tenant's key at
+    once and every stored gate row stopped matching `read._judge_inputs`.
     """
-    return digest(facts_payload(facts))
+    return digest(judge_facts_payload(facts))
 
 
 #: What a gate row records for `gate.effort = None` — the calibrated argv, no `--effort` flag.
