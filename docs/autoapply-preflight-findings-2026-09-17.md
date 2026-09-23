@@ -7,9 +7,8 @@ one or more postings that boardwatch scored `eligible` (cleared the eligibility 
 role/title/zero-signal/seniority filters, and had a résumé built) but that a manual per-JD
 pre-flight read caught as not actually apply-worthy. Posting IDs are stable and queryable via
 `boardwatch show <id>` or `sqlite3 boardwatch.db` for exact JD text. Full disposition + reason for
-every posting named here is also recorded in the funnel itself: `boardwatch track log <app_id>`
-(each posting was `track add --status withdrawn --note "<reason>"`'d during the session, so this
-file is a synthesis of that ledger, not the only copy of the reasons).
+every posting named here is also recorded in the owner's local tracker (`boardwatch track log
+<app_id>`), so this file is a synthesis of that local ledger, not the only copy of the reasons.
 
 ## 1. Not a real job — title-matched a paid research study
 
@@ -78,9 +77,9 @@ file is a synthesis of that ledger, not the only copy of the reasons).
 
 - **Sauna (Wordware) #204390** — "Growth Engineer." States explicitly: *"We require US work
   authorization, but are open to O-1 or J-1 visa sponsorship for exceptional candidates."*
-  O-1 (extraordinary ability) and J-1 (exchange visitor) are not H-1B, and the profile's actual
-  need (H-1B after STEM OPT) is not served by either. A naive "mentions sponsorship" keyword check
-  would false-positive this as sponsor-friendly.
+  O-1 (extraordinary ability) and J-1 (exchange visitor) are specific visa classes; a profile whose
+  declared work-authorization need is a different class is not served by either. A naive "mentions
+  sponsorship" keyword check would false-positive this as sponsor-friendly.
 - **Gap:** if the eligibility gate has any "sponsors visas" keyword signal, it likely doesn't
   distinguish *which* visa class is offered against the profile's specific need. Worth checking
   whether `eligibility/` extracts visa-type specificity or just a boolean "mentions sponsorship."
