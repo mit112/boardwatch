@@ -13,7 +13,9 @@
 > away** — sixteen passes through 2026-09-22b; the seventeenth, **2026-09-22c**, moved the
 > 2026-09-21 and 2026-09-22b blocks WHOLE once run 470 had been read against the 2026-09-21 block's
 > recorded prediction, which was the last condition inside either; the eighteenth, **2026-09-22e**,
-> moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. **Nothing has
+> moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. (2026-09-22f moved
+> nothing: every block above still waits on run 471, which is why the file is ~30 lines over; the 22c
+> and 22e blocks move WHOLE once runs 471 and 472 are read.) **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
@@ -21,6 +23,56 @@
 ---
 
 ## Current standing
+
+### 2026-09-22f — **T135 SHIPS (#418 → `04f9ba6d`, D-559). T144 AND T133 ARE BUILT AND REVIEWED ON A STACK, NOT MERGED; T125 (ANNOTATE) IS BUILT, UNREVIEWED. T123 AND T124 CLOSE ON MEASUREMENT (D-558). RUN 471 HAS NOT FIRED; THE PRIMARY CHECKOUT IS STILL HELD ON `ccb52912`.**
+
+The session ran 21:10–22:25 CDT on 09-22, before the 04:00 tick. The owner checkpointed at 21:58
+("don't fire anything new"), and every in-flight task finished before this was written.
+
+**Next session, in order** (exact commands: `.agent/2026-09-22f-session/CHECKPOINT.md`):
+1. **Read run 471** exactly as the 2026-09-22e block below says.
+2. **Pull ONLY to `de7ae153`** (`git -C boardwatch merge --ff-only de7ae153`), NOT to `main`. `main`
+   now also carries T135, and the owner ruled that shipped fixes reach the live run at **473**, so 472
+   stays a clean read of the batch's re-key (D-557). Pull to `main` only after 472 is read.
+3. **Ship the stack, one gate at a time.** Each branch sits on the one before, and each code delta
+   is patch-id-equal to what was reviewed.
+   - **T144** (`bw-t156`, `exec-t144` @ `e5969050`, stacked on T135's gated tree, which is
+     byte-identical to `04f9ba6d`). The stacked gate was EXIT=0 with 10,835 passed; Codex found no
+     blocker. Rebase onto `origin/main` (a no-op in tree), prove the diff empty, push, open a PR
+     (`pr-t144.md`), arm auto-merge.
+   - **T133** (`bw-t152`, `exec-t133` @ `29aebdae`, stacked on T144). Codex found no blocker, and
+     its one follow-up is fixed and proven red on the old source. **Not yet gated.** It changes one
+     thing an operator will see: a tick that fires while another run is finalizing now exits 2, and
+     the D-260 heartbeat catches it.
+   - **T125 (annotate)** (`bw-t105`, `exec-t125` @ `99640f24`) is **unreviewed**. Before its gate,
+     run `make web` and commit `src/boardwatch/web/static/` and `web/bundle-inputs.sha256`. **The
+     bundle IS tracked**; the handoff wrongly said otherwise (D-561).
+4. **Then one executor at a time:** T137 → T138 (the per-kind half only) → T139 (the stage
+   extraction only, since its doc half was done in D-528). The handoffs are in `.agent/executor/`.
+5. **Owner reads owed:** `DESIGN-T161-gate-verdict-identity.md`, which recommends BOTH halves.
+   **T163 must follow T161**: it edits `detect.py`, a digested module, so it re-keys and would dip
+   the lane again.
+
+**Ruled this session (D-557):**
+- The seat is under 30%, so executors run one at a time. **The planning session IS the enterprise
+  seat**, and it shares that budget with its executors.
+- T161 stays in its slot.
+- T162 is parked until a switch of judge model or effort is planned.
+- T125 is annotate-only.
+- T138's reverse half is refused.
+
+**Closed on measurement (D-558):**
+- **T124:** 409 of 409 multi-posting jobs are justified and 0 have diverged (null-controlled).
+- **T123:** in runs 468–470, 1 of 110 partial board scans was detail-only. The 16,869 postings on
+  boards that never complete are **inventory-truncated** on 4 boards: Lowe's 150-page cap, the
+  Abbott and Genpt 2,000 censor, and Oracle `eeho` at 2,199 of 2,218. That is a coverage question,
+  not T123's.
+
+**T161 measured** (its design note):
+- Of the 970 standing leads, the live identity reads 833 gate verdicts (750 / 44 / 39). The
+  post-batch identity reads **0**. T161's judge-input key reads the same 833.
+- The freshness read is ALSO identity-scoped. A lane-only T161 therefore ends the dip but not the
+  re-judge spend.
 
 ### 2026-09-22e — **THE ELIGIBILITY BATCH SHIPS AS ONE ENGINE BUMP (T105 + T156 + T157 + T152, T155 FOLDED IN; D-555): 2,771 OPEN VERDICTS MOVE, NET −2,199 `ineligible`. T160 SHIPS (D-553). D-529 IS RULED AND SHIPS (D-554). THE PRIMARY CHECKOUT IS HELD ON `ccb52912` FOR RUN 471.**
 
@@ -33,7 +85,8 @@ runs on `ccb52912`, so it is a clean read of the T113 refresh with no re-key, an
 reading comes from the pre-merge code. **Next session, in order:**
 1. **Read run 471 as the 2026-09-22c block below specifies.** Expect `gate.refresh_*` =
    130/0/0/0 (D-552). A non-zero candidate count with no re-key is a DEFECT.
-2. **Then `git -C boardwatch pull`.** Run 472 becomes the batch's re-key run:
+2. **Then pull, but ONLY to `de7ae153` (#417), never to a later `main`** (the 2026-09-22f block,
+   D-557). Run 472 becomes the batch's re-key run:
    - the corpus re-judge costs about +20 min and the gate cache re-send about +8 min, once;
    - B8's 14-day window restarts at 472.
 3. **Watch runs 472–474.** The standing apply lane dips **529 → ~206** (D-556), then heals at
@@ -53,22 +106,8 @@ The owner has now set a budget: **1 review + 1 verification**, and a third round
 genuine, reachable blocker. The model is `gpt-6-sol` (Codex CLI ≥ 0.156.0), with effort
 `low`/`medium`/`high` only. Global CLAUDE.md "Codex reviews" holds the rule.
 
-**NEXT WORK, IN ORDER** (the owner checkpointed; the rest is next session's):
-0. Run 471, then the pull, then watch the dip (above).
-1. **Wave A, in parallel.** Ask the seat % first; reviews are headless Opus on the seat under the
-   round budget.
-   - T144 (hiring.cafe/Indeed partial discovery);
-   - T135 (queue lock before snapshot);
-   - T124 (membership + migration);
-   - T123 (watched-but-unverifiable, built on T122's argument).
-2. **T125:** measurement first, read-only, done by the planning session.
-3. **Wave B, sequential** (they all touch `runner.py`): T133 → T137 → T138.
-4. **T139:** correct `RUN_CONTRACT.md` first, then the stage extraction.
-5. **Filed this session** (`TICKETS-2026-09-22c.md`, 2026-09-22e status):
-   - T161: the lane's verdict read keyed on the judge's inputs. The owner's read comes first.
-   - T162: freshness vs the lane on a judge switch-back. Re-litigates T108.
-   - T163: a duplicate preferred row.
-6. **T113b** only if a model, effort or facts change recreates stale negatives.
+**NEXT WORK: superseded by the 2026-09-22f block above.** Wave A closed as T135 shipped, T144 built,
+T123 and T124 closed on measurement (D-558); T125 was measured and rebuilt as an annotation.
 
 ### 2026-09-22d — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22e.** T159 read (D-550: apply lane 5.4% unapplyable, B8 precision MET); T113 shipped and armed at 130/run (D-551, D-552); T127/T158 shipped. Its run-471 expectation is restated in the block above.
 
@@ -123,7 +162,7 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 
 ### 2026-09-20d/e — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-20g.** The astra remediation wave: thirteen tickets in one gated wave, merged (D-528, PR #398 → `09df0e87`); Windows green and the five-night red over; the composite-title asymmetry REFUTED; T136's `ge=1` deliberately unchanged; next action 4's one-time re-judge FIRED and CLEAN on run 468. **Held in D-528 — do not re-derive.**
 
-### Astra reviews 01–05 — **CONSUMED AND CLOSED.** All five slices, 42 findings, nothing refuted. Held WHOLE in **D-523 … D-527** and the five `TICKETS-2026-09-*-ASTRA-0*.md` files; the remediation that followed is **D-528**. **Do not re-derive any of it.** Of T98–T148 (51 tickets), **33 shipped**; **T145/T146/T147 are not build work** (owner DO-NOT-BUILD, future-reading guidance, LinkedIn posture); **T100–T105 are held as ONE engine bump** with next action 4; and **T113, T123, T124, T125, T127, T133, T135, T137, T139's stage extraction, T144 and T138's two remaining halves stay open.**
+### Astra reviews 01–05 — **CONSUMED AND CLOSED.** All five slices, 42 findings, nothing refuted. Held WHOLE in **D-523 … D-527** and the five `TICKETS-2026-09-*-ASTRA-0*.md` files; the remediation that followed is **D-528**. **Do not re-derive any of it.** Of T98–T148 (51 tickets), **33 shipped**; **T145/T146/T147 are not build work** (owner DO-NOT-BUILD, future-reading guidance, LinkedIn posture); **T100–T105 are held as ONE engine bump** with next action 4; and of what stayed open, **T113 and T127 shipped (22d), T135 shipped (22f), T123 and T124 closed on measurement (D-558), T125 was rebuilt as an annotation, T133 and T144 are built, and T138's reverse half is refused (D-557); T137, T138's per-kind half and T139's stage extraction stay open.**
 
 ### 2026-09-19 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22b.** The expansion is measured and works (run 467, D-522); Indeed confirmed dead; M5's 14th day taken and B1–B7 pass (D-521 §5); Gate 1's second reading discharges M4's last condition; the discovery backlog sized at three disjoint gaps and stage 1 imported, fleet 652 → 1,807. **Held in D-521 and D-522 — do not re-derive.**
 
