@@ -47,9 +47,8 @@ from boardwatch.delivery.api import resolve_owner_name
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     DEFAULT_QUEUE_ROOT,
-    reconcile_queue,
+    refresh_queue,
     standing_queue_rows,
-    sync_queue,
 )
 from boardwatch.delivery.review_gate import REVIEW_DIR
 from boardwatch.delivery.review_gate import lane as review_lane
@@ -3844,11 +3843,11 @@ def _sync_queue(
     root = queue_root if queue_root is not None else DEFAULT_QUEUE_ROOT
     with engine.connect() as conn:
         # The owner's name for the résumé filename, resolved by the one function that already
-        # owns that question (`answers.yaml` first, the authored résumé's header second), on the
-        # connection already open here rather than by reading the résumé a second time.
+        # owns that question (`answers.yaml` first, the authored résumé's header second). On its
+        # OWN connection, closed before the queue pass: a connection that has read holds its
+        # snapshot, and the plan must read one taken after the queue lock is held (T135).
         owner_name = resolve_owner_name(conn, settings.config_dir)
-        drained = reconcile_queue(conn, root=root)
-        synced = sync_queue(conn, root=root, owner_name=owner_name)
+    drained, synced = refresh_queue(engine, root=root, owner_name=owner_name)
     contended = " (contended, nothing changed)" if synced.contended or drained.contended else ""
     console.print(
         f"  queue → {root}: {synced.created} new, {synced.updated} updated, "

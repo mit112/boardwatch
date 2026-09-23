@@ -80,7 +80,7 @@ from boardwatch.delivery.api import (
     reveal,
     runs_payload,
 )
-from boardwatch.delivery.queue import reconcile_queue, sync_queue
+from boardwatch.delivery.queue import reconcile_queue, refresh_queue
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.store.applications import (
     MarkOutcome,
@@ -958,7 +958,9 @@ def prime_queue(ctx: ApiContext) -> None:
 
     Both read the database and write only the queue root, so they run on the read-only engine.
     Reconcile first: a folder sitting in the wrong drain has to be classified before sync decides
-    whether it needs creating, or sync would build a second folder beside the misplaced one.
+    whether it needs creating, or sync would build a second folder beside the misplaced one. Both
+    run under one lock hold on one snapshot (`refresh_queue`), so a web action cannot land between
+    them and be undone by the sync half.
 
     Every failure is swallowed, exactly as the run hook swallows it. The page reads the database,
     not the folders, so a queue that cannot be written is a degraded convenience and never a
@@ -967,9 +969,7 @@ def prime_queue(ctx: ApiContext) -> None:
     engine: Engine | None = None
     try:
         engine = get_readonly_engine(ctx.settings.data_dir, busy_timeout_ms=READ_BUSY_TIMEOUT_MS)
-        with engine.connect() as conn:
-            reconcile_queue(conn, root=ctx.queue_root)
-            sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+        refresh_queue(engine, root=ctx.queue_root, owner_name=ctx.owner_name)
     except Exception:  # noqa: BLE001 - a queue failure must never stop the server from serving
         return
     finally:
