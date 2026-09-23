@@ -161,7 +161,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
 # @pytest.mark.parametrize further down the file, so a digest over the literal alone stays green
 # while a `CASES[0] = (...)` line appended below rewrites the oracle. Byte-stable across
 # platforms because .gitattributes pins eol=lf repo-wide for exactly this reason.
-CORPUS_PIN = "sha256:5489ed52bc4ca7a5b0351227c85829d6951c0e19b27ec67f7e2b49469bdf9bb9"
+CORPUS_PIN = "sha256:cefe38299605947a8152c4f92f1fe4f7802d54cc39ea0c3b5068fac18de5b155"
 
 # A HUMAN-REVIEWED constant, and that is the whole of its value. It is counted by ast rather than
 # by bytes, but that alone would not make it a second path: an earlier version let
@@ -170,7 +170,15 @@ CORPUS_PIN = "sha256:5489ed52bc4ca7a5b0351227c85829d6951c0e19b27ec67f7e2b49469bd
 # it prints the measured count and stops, and a human edits it. The independence is the human,
 # not the ast. The corpus asserts this number itself at its own tail; that assert lives INSIDE
 # the file being tampered with, which is why it is restated out here.
-CORPUS_ROWS = 1076
+CORPUS_ROWS = 1100
+
+# The multi-line eligibility surface (T105). The corpus holds no newline, so heading context is
+# pinned from its own file, in the same two ways and for the same reasons: a whole-file byte pin,
+# and a human-reviewed row count read by ast.
+HEADING_CASES_PATH = "tests/unit/test_eligibility_heading_context.py"
+HEADING_CASES_SYMBOL = "HEADING_CASES"
+HEADING_CASES_PIN = "sha256:439bc53e88b28c1e4bf6209e69617e8c24d0f7ef2edc6be1c69ddf2d2e02efca"
+HEADING_CASES_ROWS = 28
 
 
 def readme_path(provider: str) -> str:
@@ -296,7 +304,7 @@ def check_fixture_coverage(repo: Repo) -> list[Violation]:
     return violations
 
 
-def count_corpus_rows(text: str) -> int | None:
+def count_corpus_rows(text: str, symbol: str = CORPUS_SYMBOL) -> int | None:
     """Rows in the corpus literal, by ast so the module is never imported. None if unreadable.
 
     The ONE implementation. `fixture_refresh` measures through this same function rather than
@@ -307,7 +315,7 @@ def count_corpus_rows(text: str) -> int | None:
     for node in ast.parse(text).body:
         if not isinstance(node, ast.AnnAssign):
             continue
-        if not (isinstance(node.target, ast.Name) and node.target.id == CORPUS_SYMBOL):
+        if not (isinstance(node.target, ast.Name) and node.target.id == symbol):
             continue
         return len(node.value.elts) if isinstance(node.value, ast.List) else None
     return None
@@ -354,6 +362,8 @@ def check_fixture_pins(repo: Repo) -> list[Violation]:
                 )
             )
 
+    violations += _heading_cases_pins(repo)
+
     actual_corpus = _sha256(repo, CORPUS_PATH)
     if actual_corpus is None:
         violations.append(
@@ -399,6 +409,45 @@ def check_fixture_pins(repo: Repo) -> list[Violation]:
                 None,
                 f"{CORPUS_SYMBOL} holds {rows} rows, pinned at {CORPUS_ROWS}. "
                 f"{REFRESH_HINT}",
+            )
+        )
+    return violations
+
+
+def _heading_cases_pins(repo: Repo) -> list[Violation]:
+    entry = repo.by_path(HEADING_CASES_PATH)
+    if entry is None:
+        return [
+            Violation(
+                "R14",
+                HEADING_CASES_PATH,
+                None,
+                "the pinned multi-line eligibility surface is not in the tree. It is the only "
+                "place heading context is tested, since the corpus cannot hold a newline",
+            )
+        ]
+    violations: list[Violation] = []
+    actual = hashlib.sha256(entry.abspath.read_bytes()).hexdigest()
+    expected = HEADING_CASES_PIN.removeprefix("sha256:")
+    if actual != expected:
+        violations.append(
+            Violation(
+                "R14",
+                HEADING_CASES_PATH,
+                None,
+                f"content changed: pin says {expected[:12]}, file is {actual[:12]}. An edited "
+                "expected-verdict turns a red test green, so this change needs review before "
+                "the pin moves. Re-record HEADING_CASES_PIN by hand",
+            )
+        )
+    rows = count_corpus_rows(entry.text, HEADING_CASES_SYMBOL)
+    if rows != HEADING_CASES_ROWS:
+        violations.append(
+            Violation(
+                "R14",
+                HEADING_CASES_PATH,
+                None,
+                f"{HEADING_CASES_SYMBOL} holds {rows} rows, pinned at {HEADING_CASES_ROWS}",
             )
         )
     return violations

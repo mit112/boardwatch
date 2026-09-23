@@ -34,9 +34,7 @@ independently testable without `register.yaml`.
 
 from __future__ import annotations
 
-import re
-
-from boardwatch.eligibility.detect import split_units
+from boardwatch.eligibility.detect import qualifications_span, split_units
 from boardwatch.tailor.overmatch import _ngrams, _tokens
 from boardwatch.tailor.register import qualification_cue_reasons
 from boardwatch.tailor.rewrite.verb_diversity import _opening_verb
@@ -45,76 +43,9 @@ REQUIREMENT_ECHO_VERSION = "p4-requirement-echo-1"
 
 _ECHO_NGRAM = 4
 
-# A line matching one of the qualifications-section header phrasings the spec names.
-# `(?:Basic|Preferred|Minimum)\s+` is optional so "Requirements" and "Basic Qualifications"
-# are both recognized by one pattern.
-_QUAL_HEADER = re.compile(
-    r"^\s*(?:(?:Basic|Preferred|Minimum)\s+)?"
-    r"(?:Requirements|Qualifications|What You'?ll Need|Nice to Have|"
-    r"You(?:'ll Have| Have)|Must Have)\s*:?\s*$",
-    re.IGNORECASE,
-)
-
-# The generic "this line reads as SOME section heading" test used only to find where a
-# qualifications span ENDS -- deliberately looser than _QUAL_HEADER (which names what a
-# qualifications heading specifically says): short, no sentence-ending punctuation.
-# Over-matching here only SHRINKS the span, which is the fail-safe direction (less
-# corroboration material, never more).
-_ANY_HEADER = re.compile(r"^[A-Za-z][A-Za-z /&'-]{0,58}:?$")
-
-# Closed-class "glue" words that make up short, real section headers whose words AFTER
-# the first are NOT capitalized ("What you will get", "About the team") -- fix for a
-# real false-positive hole: the original end-boundary test required EVERY word
-# capitalized, so this common header shape ran the span past it into benefits/perks
-# prose. Deliberately NOT extended to open-class nouns: a genuine qualification line
-# ("Bachelors degree preferred", "Experience with distributed systems") has real
-# content words after the first, none of which are glue, so it is never mistaken for a
-# header by this path.
-_HEADER_GLUE_WORDS: frozenset[str] = frozenset(
-    {"you", "your", "we", "us", "our", "will", "get", "gets", "the", "a", "an", "team"}
-)
-
-
-def _looks_like_header(line: str) -> bool:
-    stripped = line.strip()
-    if not stripped:
-        return False
-    if _QUAL_HEADER.match(stripped):
-        return True
-    if not _ANY_HEADER.match(stripped):
-        return False
-    words = stripped.rstrip(":").split()
-    if not words or len(words) > 6 or not words[0][0].isupper():
-        return False
-    # Path 1: every significant word capitalized (Title-Case/ALL-CAPS headers like
-    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills").
-    if all(w[0].isupper() for w in words if w[0].isalpha()):
-        return True
-    # Path 2: a lowercase-continuation header whose words AFTER the first are all
-    # closed-class glue. A genuine qualification line's later words are real content,
-    # never glue-only, so this path never swallows one.
-    return all(w.lower() in _HEADER_GLUE_WORDS for w in words[1:])
-
-
-def qualifications_span(body_text: str) -> list[str]:
-    """The lines between a qualifications-section header and the next header-like line
-    (or EOF). `[]` if no header matches -- the fail-safe silent-miss case: corroboration
-    below can never fire against an empty span, so a JD with no recognizable header
-    structure simply cannot trigger requirement-echo, never a false positive."""
-    lines = body_text.splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if _QUAL_HEADER.match(line.strip()):
-            start = i + 1
-            break
-    if start is None:
-        return []
-    span: list[str] = []
-    for line in lines[start:]:
-        if _looks_like_header(line):
-            break
-        span.append(line)
-    return span
+# The qualifications-heading vocabulary and `qualifications_span` live in
+# `eligibility/detect.py`, which bounds heading context with them, so ENGINE_VERSION covers
+# any edit to them.
 
 
 def jd_qualification_sentences(body_text: str) -> list[str]:

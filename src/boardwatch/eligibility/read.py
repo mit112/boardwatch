@@ -11,11 +11,16 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, and_, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
 from boardwatch.eligibility.engine import current_evaluations
-from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
+from boardwatch.eligibility.facts import Facts
+from boardwatch.eligibility.final_gate import (
+    GATE_VERSION_PREFIX,
+    gate_engine_version,
+    gate_facts_key,
+)
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import (
     eligibility_evaluations,
@@ -239,40 +244,69 @@ def current_requirement_flags(
 
 
 def current_gate_seniority(
-    conn: Connection, posting_version_ids: list[int],
-    profile_hash: str | None, rules_hash: str | None,
+    conn: Connection, posting_version_ids: list[int], facts: Facts | None, *, model: str,
 ) -> dict[int, str]:
     """posting_id -> the LATEST final-gate `seniority_fit` reading, in {yes, no, unclear}.
 
-    A SIBLING of `current_gate_verdicts` rather than a second return value on it, and the reason
-    is diff size, not design: eight test modules and four call sites read that function's
-    `dict[int, str]`, and re-typing it to carry a second field would rewrite all of them to buy
-    one saved query over at most a few hundred ids, once per run, off the ranking hot path. The
-    two are kept in step by construction — same identity scoping, same `engine_version LIKE`
-    prefix, same max(id)-per-version rule — so a lead cannot get its verdict from one evaluation
-    and its seniority reading from another.
+    **Keyed on what the reading depends on, not on the row identity (T152).** The judge is asked
+    a band-free question — is this body an entry-level role for a candidate with these years —
+    under a fixed all-blocker policy, so its answer is a function of the body, the candidate's
+    `total_years_experience`, the gate prompt/policy and the model. A reading is found for
+    `(posting_version_id, years, model, EXACT gate engine_version)`:
+
+    - `rules_hash` and the rest of `profile_hash` are NOT in it. The prompt names no catalog
+      vocabulary, so a regex edit to `rules.yaml` cannot change whether a body reads senior, and
+      scoping on it released every stored hold on each catalog re-key (D-537).
+    - `model` IS, as the freshness read's narrowing is (T108): a different model is a different
+      judge. `model IS NULL` never matches, so a verdict applied through `eligibility gate apply`
+      — which names no judge — holds nothing here.
+    - `engine_version` is EXACT, not the display prefix: a `p5-oracle-1` row predates the
+      seniority question entirely.
+    - `effort` is deliberately NOT in it, and neither is it in `delivered_unapplied`'s gate read.
+      A level is a calibration of the same judge, not a different one: the owner's ruling
+      (T155) is that a level change RE-JUDGES the standing queue through the T113 refresh, not
+      that the old level's readings go blind meanwhile. Only the freshness read keys on it.
+
+    A row written before `years` was recorded counts only if its `facts_key` equals the current
+    `gate_facts_key(facts)` (and model and exact engine_version match). `facts_key` digests the
+    whole fact payload, years included, so that is strictly NARROWER than the new key — it can
+    only find a row the new key would also accept — and it keeps the standing holds the D-548
+    re-judge wrote without resurrecting any other judge's.
 
     **Absent reads `"unclear"`, never `"no"`.** A verdict recorded before the field existed, a
     gate judged under `p5-oracle-1`, a judge that omitted it, and a malformed value all arrive
     here the same way, and a lead must never be withheld because a reading is MISSING — that is
-    the fail-open direction a body-seniority hold is owed (D-380), and the direction the
-    keystone's abstain rule points in.
+    the fail-open direction a body-seniority hold is owed, and the direction the keystone's
+    abstain rule points in. `facts` is `None` when there is no profile, and nothing is found.
     """
-    if profile_hash is None or rules_hash is None or not posting_version_ids:
+    if facts is None or not posting_version_ids:
         return {}
+    raw = eligibility_evaluations.c.raw_output_json
+    # `json_type` rather than `json_extract`: the latter reads an absent key and a JSON null alike,
+    # and a row that recorded "no years in the profile" (null) must not read as a legacy row.
+    recorded = func.json_type(raw, "$.years").is_not(None)
+    years = facts.total_years_experience
+    same_years = (
+        func.json_type(raw, "$.years") == "null"
+        if years is None
+        else func.json_extract(raw, "$.years") == years
+    )
+    scope: list[ColumnElement[bool]] = [
+        eligibility_evaluations.c.engine_kind == "llm",
+        eligibility_evaluations.c.engine_version == gate_engine_version(),
+        eligibility_evaluations.c.model == model,
+        or_(
+            and_(recorded, same_years),
+            and_(~recorded, func.json_extract(raw, "$.facts_key") == gate_facts_key(facts)),
+        ),
+    ]
     reading_by_version: dict[int, str] = {}
     for chunk in id_chunks(posting_version_ids):
         latest = (
             select(eligibility_inputs.c.posting_version_id,
                    func.max(eligibility_evaluations.c.id).label("eid"))
             .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
-            .where(
-                eligibility_inputs.c.posting_version_id.in_(chunk),
-                eligibility_inputs.c.profile_hash == profile_hash,
-                eligibility_inputs.c.rules_hash == rules_hash,
-                eligibility_evaluations.c.engine_kind == "llm",
-                eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%"),
-            )
+            .where(eligibility_inputs.c.posting_version_id.in_(chunk), *scope)
             .group_by(eligibility_inputs.c.posting_version_id)
             .subquery()
         )
@@ -285,8 +319,8 @@ def current_gate_seniority(
             .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
         ).all()
         for row in rows:
-            raw = row.raw_output_json
-            gate = raw.get("gate_verdict") if isinstance(raw, dict) else None
+            raw_output = row.raw_output_json
+            gate = raw_output.get("gate_verdict") if isinstance(raw_output, dict) else None
             value = gate.get("seniority_fit") if isinstance(gate, dict) else None
             reading_by_version[int(row.posting_version_id)] = (
                 str(value) if value in {"yes", "no", "unclear"} else "unclear"
@@ -300,7 +334,7 @@ def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int],
     profile_hash: str | None, rules_hash: str | None,
     *, engine_version: str | None = None, facts_key: str | None = None,
-    model: str | None = None,
+    model: str | None = None, effort: str | None = None,
 ) -> dict[int, str | None]:
     """posting_id -> the LATEST final-gate verdict for its current version under this identity.
 
@@ -341,6 +375,16 @@ def current_gate_verdicts(
     it; when omitted the query is byte-identical to before. A legacy row has `model IS NULL` and
     therefore never matches a given model, so — exactly as for `facts_key` — the first run after
     this ships re-judges the standing slate ONCE and comes back attributable.
+
+    **`effort` is the fourth, freshness-only again (T155)**, and it is `final_gate.
+    gate_effort_key(settings.gate.effort)` — never the raw setting, whose `None` is a real level
+    (the calibrated argv) rather than "no narrowing". A row counts only if its recorded
+    `$.effort` equals it; a row that recorded none — every row before T155, and every row the
+    `eligibility gate apply` CLI writes — matches no level, so a level change re-judges the
+    standing queue through the T113 refresh. It is deliberately NOT a narrowing on the LANE reads
+    — this function's lane callers, and `current_gate_seniority`, which DOES narrow on `model`.
+    A different model is a different judge (D-537's 11.2% floor); a level is a calibration of the
+    same judge, so its old readings stay visible until the refresh replaces them.
     """
     if profile_hash is None or rules_hash is None or not posting_version_ids:
         return {}
@@ -366,6 +410,10 @@ def current_gate_verdicts(
         )
     if model is not None:
         scope.append(eligibility_evaluations.c.model == model)
+    if effort is not None:
+        scope.append(
+            func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort
+        )
     for chunk in id_chunks(posting_version_ids):
         latest = (
             select(eligibility_inputs.c.posting_version_id,

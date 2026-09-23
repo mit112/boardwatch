@@ -201,13 +201,15 @@ def _arm_gate(
     model: str = "sonnet",
     seniority_hold: bool = False,
     refresh_budget: int = 0,
+    effort: str | None = None,
 ) -> None:
     config_dir = load_settings(data_dir=data_dir).config_dir
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
         f"[gate]\nenabled = true\nmodel = \"{model}\"\nbatch_size = {batch_size}\n"
         f"call_timeout_s = 30\nseniority_hold = {str(seniority_hold).lower()}\n"
-        f"refresh_budget = {refresh_budget}\n",
+        f"refresh_budget = {refresh_budget}\n"
+        + ("" if effort is None else f"effort = \"{effort}\"\n"),
         encoding="utf-8",
     )
 
@@ -507,7 +509,7 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
 ) -> None:
     from boardwatch.eligibility.catalog import load_rules
     from boardwatch.eligibility.facts import parse_facts, parse_policy
-    from boardwatch.eligibility.final_gate import record_gate_verdict
+    from boardwatch.eligibility.final_gate import gate_effort_key, record_gate_verdict
     from boardwatch.eligibility.oracle import OracleVerdict
     from boardwatch.store.queries import current_posting_versions, get_profile
 
@@ -543,6 +545,7 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
             ),
             provider="claude-code-agent",
             model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort),
         )
 
     # If this ran, it would tell the fake to fail the WHOLE batch and the test would still
@@ -943,10 +946,11 @@ def _plant_current_gate_row(
     """One `eligible` gate row at the CURRENT engine_version, under whatever facts+policy
     the store holds right now. `model` names the judge that wrote it; the default `None` is
     the LEGACY shape, which every row written before T108 has and no backfill can change —
-    the ledger is append-only."""
+    the ledger is append-only. A named judge also records the configured effort, as the daily
+    stage does (T155); the legacy shape records none."""
     from boardwatch.eligibility.catalog import load_rules
     from boardwatch.eligibility.facts import parse_facts, parse_policy
-    from boardwatch.eligibility.final_gate import record_gate_verdict
+    from boardwatch.eligibility.final_gate import gate_effort_key, record_gate_verdict
     from boardwatch.eligibility.oracle import OracleVerdict
     from boardwatch.store.queries import current_posting_versions, get_profile
 
@@ -971,6 +975,7 @@ def _plant_current_gate_row(
             ),
             provider=None if model is None else "claude-code-agent",
             model=model,
+            effort=None if model is None else gate_effort_key(settings.gate.effort),
         )
 
 
@@ -1152,6 +1157,43 @@ def test_a_gate_row_records_the_provider_and_model_that_judged_it(
     assert summary.fatal is None, summary.fatal
     assert summary.gate_judged == 1, summary.gate_judged
     assert _persisted_judge(env) == {("claude-code-agent", "haiku")}
+
+
+def _persisted_effort(data_dir: Path) -> set[str | None]:
+    """Every gate row's recorded `$.effort`, read out of `raw_output_json` where T155 puts it."""
+    from sqlalchemy import func, select
+
+    from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX
+
+    with get_engine(data_dir).connect() as conn:
+        rows = conn.execute(
+            select(
+                func.json_extract(tables.eligibility_evaluations.c.raw_output_json, "$.effort")
+            ).where(
+                tables.eligibility_evaluations.c.engine_version.like(f"{GATE_VERSION_PREFIX}%")
+            )
+        ).scalars().all()
+    return set(rows)
+
+
+@_needs_an_executable_fake
+@pytest.mark.parametrize(("effort", "recorded"), [(None, "cli-default"), ("high", "high")])
+def test_a_gate_row_records_the_effort_it_was_judged_at(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch,
+    effort: str | None, recorded: str,
+) -> None:
+    """T155. The daily stage writes the level it ran at onto the row — the unset level too, as a
+    value distinct from "never recorded" — so a later change of level can read as stale."""
+    _ready(env)
+    _seed(env)
+    _arm_gate(env, effort=effort)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_judged == 1, summary.gate_judged
+    assert _persisted_effort(env) == {recorded}
 
 
 # ---------------------------------------------------------------------------
@@ -1577,6 +1619,31 @@ def test_the_refresh_restores_a_promotion_the_rekey_demoted(
     assert (gate["refresh_candidates"], gate["refresh_sent"], gate["refresh_pending_after"]) == (
         1, 1, 0,
     )
+
+
+@_needs_an_executable_fake
+def test_the_refresh_re_judges_a_standing_lead_judged_at_another_effort(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T155, through `run_gate_refresh`: it shares `_current_gate_rows` with the daily stage, so
+    a lead judged at the old level is a refresh CANDIDATE once the level changes — nothing else
+    about it moved, and the delivered lead is never on the slate again to be re-judged there."""
+    _ready(env)
+    [lead] = [_seed(env, slug="acme-effort")]
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    first = _depth_pipeline(env, tmp_path / "apps1", top_n=1)
+    assert first.fatal is None, first.fatal
+    assert set(_standing_lanes(env)) == {lead}, "run 1 must deliver the lead"
+    fake_claude.unlink(missing_ok=True)
+    _arm_gate(env, refresh_budget=13, effort="medium")
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert (summary.gate_refresh_candidates, summary.gate_refresh_sent) == (1, 1)
+    assert summary.gate_refresh_pending_after == 0
+    assert _calls(fake_claude) == 1
 
 
 def test_a_zero_budget_sends_nothing_and_the_demotion_stands(

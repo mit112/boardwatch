@@ -154,7 +154,10 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-05: +1, `labeled_years_minimum`. "Experience Preferred: 5 years" is the
         # labelled block's own hedge, and it must stand the bar down like any other.
         "suppressed_by_unit": 21,
-        "suppressed_by_sentence": 5,
+        # 2026-09-22 (T157): +13 sentence, one per experience pattern carrying
+        # `company_side_years`. That anchor reaches only a subject BEFORE the bar;
+        # `company_tenure_after_bar` is its narrow after-span complement.
+        "suppressed_by_sentence": 18,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
         # an ownership verb before an internship mention says the JD runs the programme. The
