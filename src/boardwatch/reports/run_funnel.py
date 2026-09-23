@@ -48,6 +48,7 @@ from datetime import datetime
 from pathlib import Path
 
 from boardwatch.delivery.form_questions import FormQuestionSweep
+from boardwatch.lanes.base import SearchOutcome
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.location_gate import LocationClass, classify_location
 from boardwatch.reports.abstain import AbstainReport
@@ -1301,6 +1302,10 @@ class LaneReport:
     the table, and inferring it from a total would need the ceiling, the page size and the facet
     count that produced it. Empty for a lane whose search does not paginate.
 
+    `search_outcomes` is how each of those searches ENDED, index for index (T144): a facet the
+    host cut short on page 2 reports the same depth as one that ran out there, and only this
+    separates them. Empty for a lane that makes no search or does not report it.
+
     `fetch_seconds` and `apply_seconds` split the lane's cost at the one boundary that matters
     for what to do about it, and they are two numbers rather than one for that reason. D-343 timed
     the `lanes` STAGE and found it costs 6.5 min while swinging 4x run to run for MORE work
@@ -1334,6 +1339,7 @@ class LaneReport:
     refused: tuple[tuple[str, str], ...]
     persisted_new: tuple[tuple[str, str], ...]
     search_pages: tuple[tuple[str, int], ...] = ()
+    search_outcomes: tuple[SearchOutcome, ...] = ()
     fetch_seconds: float | None = None
     apply_seconds: float | None = None
     stage_elapsed_seconds: float | None = None
@@ -2608,6 +2614,17 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 "search_pages": [
                     {"url": url, "pages": pages} for url, pages in lane.search_pages
                 ],
+                # How each of those searches ENDED, index for index with `search_pages` (T144).
+                # A new key rather than a widened `search_pages`, so no reader of that key moves;
+                # `[]` for a lane that makes no search or does not report it.
+                "search_outcomes": [
+                    {
+                        "end": outcome.end,
+                        "failure": outcome.failure,
+                        "status_code": outcome.status_code,
+                    }
+                    for outcome in lane.search_outcomes
+                ],
                 # The lane's cost, split at the fetch/apply boundary. `null` means NOT
                 # MEASURED, never 0.0 — a lane that raised before it was timed reports
                 # absence rather than a free lane.
@@ -2809,13 +2826,36 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
             # Rendered only when the lane paginates. A facet showing fewer pages than the rest
             # ran out of results; one showing the ceiling on every line is TRUNCATED, and that
             # is the reading a posting count alone cannot support.
-            lines += [
-                "",
-                "| search | pages fetched |",
-                "|---|---:|",
-            ]
-            lines += [f"| {url} | {pages} |" for url, pages in lane.search_pages]
+            if lane.search_outcomes:
+                # How each search ended sits beside its depth: a search cut short on page 2 and
+                # one that ran out there show the same page count, and only this column differs.
+                lines += [
+                    "",
+                    "| search | pages fetched | ended |",
+                    "|---|---:|---|",
+                ]
+                lines += [
+                    f"| {url} | {pages} | {_search_outcome_cell(outcome)} |"
+                    for (url, pages), outcome in zip(
+                        lane.search_pages, lane.search_outcomes, strict=True
+                    )
+                ]
+            else:
+                lines += [
+                    "",
+                    "| search | pages fetched |",
+                    "|---|---:|",
+                ]
+                lines += [f"| {url} | {pages} |" for url, pages in lane.search_pages]
     return lines
+
+
+def _search_outcome_cell(outcome: SearchOutcome) -> str:
+    """`ended`, or the end with its typed cause: `later_page_failed (fetch_failure 403)`."""
+    if outcome.failure is None:
+        return outcome.end
+    status = "" if outcome.status_code is None else f" {outcome.status_code}"
+    return f"{outcome.end} ({outcome.failure}{status})"
 
 
 def _lane_companies(keys: Sequence[tuple[str, str]]) -> str:

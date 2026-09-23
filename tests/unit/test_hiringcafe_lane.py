@@ -41,10 +41,10 @@ from hiringcafe_shape import (
 )
 from sqlalchemy import Engine, insert, select
 
-from boardwatch.core.politeness import Fetcher, identifying_user_agent
+from boardwatch.core.politeness import Fetcher, FetchFailure, identifying_user_agent
 from boardwatch.core.settings import Settings
 from boardwatch.lanes import hiringcafe
-from boardwatch.lanes.base import Lane
+from boardwatch.lanes.base import Lane, SearchOutcome
 from boardwatch.lanes.hiringcafe import (
     LANE_PROVIDER,
     SEARCH_URL,
@@ -1033,7 +1033,7 @@ def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tm
     )
     boards = _mock_any_board()
 
-    with pytest.raises(SearchPageError, match="facet"):
+    with pytest.raises(SearchPageError, match="2 searched, 2 request failures"):
         HiringCafeLane(search_facets=("software engineer", "ios engineer")).collect(
             _fetcher(tmp_path), lambda provider, slug: True
         )
@@ -1160,6 +1160,139 @@ def test_a_later_page_failing_keeps_the_pages_already_paid_for(tmp_path):
 
     assert result.tally.counts["body_inline"] == 4
     assert result.search_pages == ((_search_url("ios engineer"), 1),)
+    assert result.search_outcomes == (SearchOutcome("later_page_failed", "fetch_failure", 503),)
+    # One facet: "every facet" and "one facet" are the same statement, so this is not the
+    # degraded case the runner reports.
+    assert result.degraded_under_paging is False
+
+
+@respx.mock
+def test_every_facet_failing_after_its_first_page_keeps_every_first_page(tmp_path):
+    """T144(a): two usable first pages, two refused second pages -- the first pages are KEPT.
+
+    This raised before, which threw away every first page already paid for and left the lane
+    absent from the funnel. It now returns them, says how each search ended, and flags the lane
+    `degraded_under_paging` so the runner keeps the case as loud as the raise was.
+    """
+    acme = _reachable("acme-inline", range(4))
+    beta = _reachable("beta-inline", range(4, 8))
+    _mock_page("software engineer", 0, acme)
+    respx.get(_page("software engineer", 1)).mock(return_value=httpx.Response(503))
+    _mock_page("ios engineer", 0, beta)
+    respx.get(_page("ios engineer", 1)).mock(return_value=httpx.Response(403))
+    _mock_boards(acme + beta)
+
+    result = HiringCafeLane(
+        search_facets=("software engineer", "ios engineer"), search_pages=3
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert {(c.provider, c.slug) for c in result.snapshots} == {
+        ("greenhouse", "acme-inline"),
+        ("greenhouse", "beta-inline"),
+    }
+    assert result.tally.counts["body_inline"] == 8
+    assert result.search_pages == (
+        (_search_url("software engineer"), 1),
+        (_search_url("ios engineer"), 1),
+    )
+    assert result.search_outcomes == (
+        SearchOutcome("later_page_failed", "fetch_failure", 503),
+        SearchOutcome("later_page_failed", "fetch_failure", 403),
+    )
+    assert result.degraded_under_paging is True
+
+
+@respx.mock
+def test_a_search_that_ran_out_and_one_cut_short_report_different_outcomes(tmp_path):
+    """T144(b): the same depth, two different facts, and they must no longer read alike.
+
+    Both facets fetched ONE page. One stopped because the host said `ssrIsLastPage`; the other
+    because its page 1 was refused. `search_pages` cannot tell them apart; the outcome must. One
+    late failure among healthy facets is NOT the degraded case.
+    """
+    acme = _reachable("acme-inline", range(4))
+    beta = _reachable("beta-inline", range(4, 8))
+    _mock_page("software engineer", 0, acme, is_last_page=True)
+    _mock_page("ios engineer", 0, beta)
+    respx.get(_page("ios engineer", 1)).mock(return_value=httpx.Response(403))
+    _mock_boards(acme + beta)
+
+    result = HiringCafeLane(
+        search_facets=("software engineer", "ios engineer"), search_pages=3
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert [pages for _url, pages in result.search_pages] == [1, 1]
+    ran_out, cut_short = result.search_outcomes
+    assert ran_out != cut_short
+    assert ran_out == SearchOutcome("ended")
+    assert cut_short == SearchOutcome("later_page_failed", "fetch_failure", 403)
+    assert result.degraded_under_paging is False
+
+
+@respx.mock
+def test_first_page_outcomes_are_recorded_beside_their_zero_depth(tmp_path):
+    """An empty first page and a refused first page, each named, aligned with `search_pages`.
+
+    A structural failure on the first page carries `search_page_error`, the lane's own class,
+    with no status: it came from the parser, not from HTTP.
+    """
+    hits = _reachable("acme-inline", range(3))
+    _mock_page("software engineer", 0, hits, is_last_page=True)
+    _mock_page("zzq not a real role", 0, None)
+    respx.get(_page("ios engineer", 0)).mock(return_value=httpx.Response(403))
+    respx.get(_page("data engineer", 0)).mock(
+        return_value=httpx.Response(200, text="<html>no next data</html>")
+    )
+    _mock_boards(hits)
+
+    result = HiringCafeLane(
+        search_facets=("software engineer", "zzq not a real role", "ios engineer", "data engineer"),
+        search_pages=3,
+    ).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+    assert [pages for _url, pages in result.search_pages] == [1, 1, 0, 0]
+    assert result.search_outcomes == (
+        SearchOutcome("ended"),
+        SearchOutcome("first_page_empty"),
+        SearchOutcome("first_page_failed", "fetch_failure", 403),
+        SearchOutcome("first_page_failed", "search_page_error"),
+    )
+
+
+@respx.mock
+def test_the_unfaceted_search_records_a_later_page_failure(tmp_path):
+    """T144: the unfaceted branch dropped its late-failure flag outright. It is now recorded,
+    and a single search losing a later page is still tolerated rather than raised."""
+    hits = _reachable("acme-inline", range(4))
+    _mock_page("", 0, hits)
+    respx.get(_page("", 1)).mock(return_value=httpx.Response(503))
+    _mock_boards(hits)
+
+    result = HiringCafeLane(search_pages=3).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+    assert result.tally.counts["body_inline"] == 4
+    assert result.search_pages == ((_search_url(), 1),)
+    assert result.search_outcomes == (SearchOutcome("later_page_failed", "fetch_failure", 503),)
+
+
+@respx.mock
+def test_the_unfaceted_first_page_failure_still_propagates(tmp_path):
+    """Control: with one search there are no other results for a first-page failure to cost."""
+    respx.get(_page("", 0)).mock(return_value=httpx.Response(403))
+
+    with pytest.raises(FetchFailure):
+        HiringCafeLane(search_pages=3).collect(_fetcher(tmp_path), lambda provider, slug: True)
+
+
+@respx.mock
+def test_the_unfaceted_search_yielding_nothing_still_raises(tmp_path):
+    """Control: an empty HTTP-200 page is the whole search failing, not a quiet day."""
+    _mock_page("", 0, None)
+
+    with pytest.raises(SearchPageError, match="unfaceted"):
+        HiringCafeLane(search_pages=3).collect(_fetcher(tmp_path), lambda provider, slug: True)
 
 
 @respx.mock

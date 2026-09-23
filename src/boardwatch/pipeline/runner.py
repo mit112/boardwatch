@@ -894,6 +894,13 @@ def _apply_lanes(
         refused = _refused_seed_note(name, fetch.fetched.result)
         if refused is not None:
             errors.append(refused)
+        # EVERY search failing after its first page (T144). The lane used to RAISE here, which
+        # was loud but discarded every first page; it now keeps them, and this line keeps the case
+        # exactly as loud. One search losing a later page among healthy ones adds NO line: it says
+        # nothing about the host, and is recorded in the funnel's `search_outcomes` only.
+        degraded = _degraded_search_note(name, fetch.fetched.result)
+        if degraded is not None:
+            errors.append(degraded)
     return reports, errors
 
 
@@ -1206,6 +1213,7 @@ def _apply_lane(
             refused=budget.refused,
             persisted_new=tuple(key for key in budget.admitted if key in landed),
             search_pages=result.search_pages,
+            search_outcomes=result.search_outcomes,
             fetch_seconds=fetched.fetch_seconds,
             apply_seconds=perf_counter() - apply_started,
         ),
@@ -1407,6 +1415,21 @@ def _refused_seed_note(lane_name: str, result: LaneResult) -> str | None:
         f"lane {lane_name}: {len(result.refused_seeds)} discovered seed url(s) were malformed "
         f"(bad scheme/host/port or control chars) and were dropped, first: "
         f"{result.refused_seeds[0]!r}"
+    )
+
+
+def _degraded_search_note(lane_name: str, result: LaneResult) -> str | None:
+    """The one visible line for a lane whose EVERY search failed after its first page, or `None`.
+
+    The host degrading under paging rather than running out of results. Built from the returned
+    `LaneResult`, like the two notes above, so it reaches `summary.errors` and `runs.errors_json`.
+    """
+    if not result.degraded_under_paging:
+        return None
+    return (
+        f"lane {lane_name}: search degraded: every one of {len(result.search_outcomes)} "
+        "search(es) failed after its first page, so the host is degrading under paging rather "
+        "than running out of results; kept their first pages"
     )
 
 
