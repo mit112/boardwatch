@@ -300,6 +300,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`boardwatch doctor` no longer reaps a live run's row (2026-09-23, T166).** `doctor` reaps
+  `running` rows older than `reap_stale_after_hours`, and it did so outside any lock. Since T133 a
+  `boardwatch run` holds the scan lease for its whole run, so a `doctor` during a long run could mark
+  that run's own row `failed: reaped` while it was still working. The reap alone now takes the same
+  lease. While another process holds it, `doctor` skips the reap and prints `a run holds the scan
+  lease; stale-run reap skipped`. Its exit code and the rest of its diagnostics are unchanged, and the
+  lease is released before they run. T133's residual.
+
 - **The filesystem-truth guard now checks a PDF wherever the row says one was built (2026-09-22,
   T138).** It counted a `resume_tailored` row present when its `.tex` was on disk, so a row whose
   meta said a PDF was built, with that PDF gone, passed the guard. The stricter per-file rule

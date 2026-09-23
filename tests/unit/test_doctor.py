@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import pytest
+from filelock import FileLock
 from sqlalchemy import func, insert, select, text, update
 from typer.testing import CliRunner
 
@@ -9,6 +10,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.registry.validate import CompanyEntry
+from boardwatch.scan.coordinator import scan_lease
 from boardwatch.scan.health import probe_health
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
@@ -488,3 +490,118 @@ def test_migration_on_an_empty_board_does_not_flip_the_exit_code(tmp_path) -> No
     report = probe_health(eng, _settings(tmp_path), fetcher=object(), providers=providers)
     assert [(m.new_provider, m.new_slug) for m in report.migrations] == [("lever", "acme")]
     assert report.actionable is False  # informational: an EMPTY board + a suggestion stays exit 0
+
+
+# ---- T166: the stale-run reap takes the scan lease, scoped to just the reap ----
+
+
+def _run_rows(eng):
+    with eng.connect() as conn:
+        return [tuple(row) for row in conn.execute(select(tables.runs)).all()]
+
+
+def _seed_stale_running_row(eng) -> None:
+    with eng.begin() as conn:
+        conn.execute(insert(tables.runs).values(started_at=datetime(2020, 1, 1), finished_at=None))
+
+
+def test_doctor_skips_the_reap_when_another_process_holds_the_scan_lease(tmp_path, monkeypatch) -> None:
+    """A live `run`/pipeline holds `scan.lock` for its whole run (T133); `doctor`'s reap must
+    be refused rather than reaping a row that run might still be updating. Exit code and the
+    rest of `doctor`'s diagnostics stay exactly as an ordinary reap-exception path is today:
+    swallowed, printed, no crash — a held lease is just another kind of reap that cannot run."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    data = tmp_path / "data"
+    eng = _engine(data)
+    _watch(eng, "greenhouse", "acme")
+    _seed_stale_running_row(eng)
+    monkeypatch.setattr(
+        "boardwatch.scan.health.default_providers",
+        lambda: {"greenhouse": FakeProvider({"acme": BoardHealth.OK})},
+    )
+    monkeypatch.setattr("boardwatch.scan.health.Fetcher", lambda settings: object())
+
+    before = _run_rows(eng)
+    holder = FileLock(str(data / "scan.lock"))
+    holder.acquire()
+    try:
+        result = runner.invoke(app, ["--data-dir", str(data), "doctor"])
+    finally:
+        holder.release()
+
+    assert result.exit_code == 0, result.output  # health is OK; a skipped reap must not flip this
+    assert _run_rows(eng) == before, "the runs table changed even though the scan lease was held"
+    assert "stale-run reap skipped" in result.output.lower()
+    assert "reaped" not in result.output.lower()  # the reaped-count line must not have printed
+
+
+def test_doctor_reaps_the_stale_row_when_no_lease_is_held(tmp_path, monkeypatch) -> None:
+    """Control: with nobody holding `scan.lock`, the reap still runs exactly as it does today."""
+    result = _cli(tmp_path, monkeypatch, {"acme": BoardHealth.OK}, extra=_seed_stale_running_row)
+
+    assert result.exit_code == 0, result.output
+    assert "reaped" in result.output.lower()
+    with get_engine(tmp_path / "data").connect() as conn:
+        row = conn.execute(select(tables.runs.c.status, tables.runs.c.finished_at)).one()
+    assert row.status == "failed"
+    assert row.finished_at is not None
+
+
+def test_doctor_releases_the_scan_lease_after_the_reap(tmp_path, monkeypatch) -> None:
+    """The wrap wraps ONLY the reap statement, not the rest of `doctor` — so a `scan_lease`
+    acquired immediately after `doctor` returns must succeed."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    data = tmp_path / "data"
+    eng = _engine(data)
+    _watch(eng, "greenhouse", "acme")
+    monkeypatch.setattr(
+        "boardwatch.scan.health.default_providers",
+        lambda: {"greenhouse": FakeProvider({"acme": BoardHealth.OK})},
+    )
+    monkeypatch.setattr("boardwatch.scan.health.Fetcher", lambda settings: object())
+
+    result = runner.invoke(app, ["--data-dir", str(data), "doctor"])
+    assert result.exit_code == 0, result.output
+
+    settings = _settings(data)
+    with scan_lease(settings):
+        pass  # raises ScanLockHeldError (via a Timeout) if doctor leaked the lease
+
+
+def test_doctor_releases_the_lease_before_the_rest_of_its_diagnostics_run(tmp_path, monkeypatch) -> None:
+    """Narrower than "released after the whole command returns": the lease must already be
+    free by the time `doctor` reaches its post-reap diagnostics (freshness, schema, tectonic,
+    ...), not merely by the time the process exits. Probes mid-invocation via
+    `last_complete_scan_ages`, the first thing `doctor` calls right after the reap block, on
+    every branch (success, skip, failure) — a lease scoped to the whole command instead of
+    just the reap would still be held here."""
+    from boardwatch.store.queries import last_complete_scan_ages as real_last_complete_scan_ages
+
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    data = tmp_path / "data"
+    eng = _engine(data)
+    _watch(eng, "greenhouse", "acme")
+    _seed_stale_running_row(eng)
+    monkeypatch.setattr(
+        "boardwatch.scan.health.default_providers",
+        lambda: {"greenhouse": FakeProvider({"acme": BoardHealth.OK})},
+    )
+    monkeypatch.setattr("boardwatch.scan.health.Fetcher", lambda settings: object())
+
+    probed: list[bool] = []
+
+    def probe(conn):
+        lock = FileLock(str(data / "scan.lock"))
+        lock.acquire(timeout=0)  # Timeout here means doctor's lease is still held mid-run
+        lock.release()
+        probed.append(True)
+        return real_last_complete_scan_ages(conn)
+
+    monkeypatch.setattr("boardwatch.cli.doctor_cmd.last_complete_scan_ages", probe)
+    result = runner.invoke(app, ["--data-dir", str(data), "doctor"])
+
+    assert probed, "the probe point was never reached"
+    assert result.exit_code == 0, result.output

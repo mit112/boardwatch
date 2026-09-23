@@ -19,7 +19,7 @@ from sqlalchemy import Connection, select, text
 
 from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
-from boardwatch.scan.coordinator import default_providers
+from boardwatch.scan.coordinator import ScanLockHeldError, default_providers, scan_lease
 from boardwatch.scan.health import probe_health
 from boardwatch.store import tables
 from boardwatch.store.db import db_revision, schema_revision
@@ -116,10 +116,19 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
     # command to clear. Swallowed and logged, mirroring `runner.py`'s guard on the same call:
     # `doctor` must stay usable (print its diagnostics, compute its exit code) even when the
     # write contends with a concurrent `run` under the busy_timeout and raises.
+    #
+    # T166: the reap alone — not the rest of `doctor` — takes T133's one scan-lease acquisition
+    # point. A pipeline holds that lease for its whole run, so while anyone holds it the "stale"
+    # row can be that live run, older than `reap_stale_after_hours` and still working. A held
+    # lease skips the reap with one plain line; the exit code is unaffected, never a crash.
     try:
-        reaped = reap_stale_runs(
-            app_ctx.engine, older_than=timedelta(hours=app_ctx.settings.reap_stale_after_hours)
-        )
+        with scan_lease(app_ctx.settings):
+            reaped = reap_stale_runs(
+                app_ctx.engine, older_than=timedelta(hours=app_ctx.settings.reap_stale_after_hours)
+            )
+    except ScanLockHeldError:
+        reaped = []
+        console.print("a run holds the scan lease; stale-run reap skipped", markup=False)
     except Exception as exc:  # noqa: BLE001 - never block doctor's own diagnostics
         reaped = []
         console.print(f"  ! stale-run reap failed: {exc}", markup=False)
