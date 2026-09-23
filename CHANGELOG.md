@@ -270,6 +270,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A web skip or apply can no longer be undone on disk by the run's queue pass (2026-09-22, T135).**
+  The runner's queue pass and the web server's start-up `prime_queue` reconcile the folders and
+  then sync them. Each half took and released the queue lock on its own, on one connection whose
+  SQLite read snapshot was pinned at its first SELECT. A skip or apply committed between the halves
+  was drained into `_skipped/` or `_applied/` by the web's own reconcile, then pulled straight back
+  out by the sync half reading its stale snapshot. The database stayed right, and nothing reported
+  the reversal. `refresh_queue` now takes the lock once and only then opens the connection, so both
+  halves read one snapshot taken inside the lock. The single passes are unchanged. An action that
+  commits while the lock is held is still not seen by that pass: its own reconcile now reports
+  `contended` rather than a move, and the next reconcile files the folder. Astra review 04, F3; no
+  live instance had been observed.
+
 - **A heading now reaches the bullets under it, and only those (2026-09-22, T105).** The splitter
   cuts every bullet into its own unit, so a hedge (`Nice to have:`) or an explicit `OR` between
   list items could never reach the bars they govern. `Nice to have:\n- 5 years of experience.`
