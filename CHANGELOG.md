@@ -286,6 +286,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The filesystem-truth guard now checks a PDF wherever the row says one was built (2026-09-22,
+  T138).** It counted a `resume_tailored` row present when its `.tex` was on disk, so a row whose
+  meta said a PDF was built, with that PDF gone, passed the guard. The stricter per-file rule
+  already existed, but only `boardwatch verify` used it. It now lives in `pipeline/freshness.py` as
+  `file_check`, and both the guard and `verify` call it, so the two cannot disagree about what a row
+  requires. A PDF is required only when the row is `resume_tailored` and its meta says one was built;
+  review-lane stubs, which write a `.tex` stub with no PDF, still pass. The guard's return shape and
+  its fatal wording are unchanged. Both checks now use `is_file()`, so `verify` also reports a
+  directory sitting at a claimed path as missing. Over runs 446–470, 132 rows expected a PDF and none
+  was missing, so the stricter guard fails nothing that exists today. The reverse check (a folder with
+  no row) is refused by the owner and not built. Astra review 04, F7.
+
 - **A `boardwatch run` now holds the scan lock for the whole run, taken before it writes anything
   (2026-09-22, T133).** The lock used to cover only the scan stage: `run_scan` released it in its own
   `finally`, so a second run (or a standalone `scan`) could start while the first was still ranking,
