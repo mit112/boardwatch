@@ -145,7 +145,9 @@ _TAIL_NEW_HEAD = re.compile(
 # Coordinator experience, preferred"`, `"...or equivalent healthcare professional experience is
 # preferred"`), never a second requirement. `years`/`months` are not head nouns here: a bare
 # `year` with no number names something else ("Two-year degree"); a numbered duration is C3.
-_TAIL_BARE_HEAD = re.compile(r"(?<!\w)experiences?(?!\w)", re.IGNORECASE)
+# Case-SENSITIVE, like the break guards below: a capitalised `Experience` mid-sentence is a proper
+# noun ("Adobe Experience Cloud", pv 232543), not a head noun.
+_TAIL_BARE_HEAD = re.compile(r"(?<!\w)experiences?(?!\w)")
 # A capitalised determiner mid-sentence is a sentence break lost in extraction. Case-SENSITIVE.
 _TAIL_LOST_BREAK = re.compile(r"(?<=[a-z0-9)])\s+(?:Some|The|A|An|Any|All|This|These|Our|Your)\s")
 _TAIL_WITH = re.compile(r"(?<!\w)with(?!\w)", re.IGNORECASE)

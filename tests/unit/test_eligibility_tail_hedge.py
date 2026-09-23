@@ -66,6 +66,12 @@ DROPPED = [
         "2-4 years of retirement industry experience, preferred",
         id="comma-then-bare-hedge",
     ),
+    # T170d (C6, v3): a capitalised `Experience` after the bar's own `with` is a proper noun, not a
+    # second head -- the bare-head guard is case-sensitive like the break guards. pv 232543.
+    pytest.param(
+        "5+ years of experience with Adobe Experience Cloud and Sitecore preferred",
+        id="C6-capitalised-Experience-in-a-product-name-is-not-a-head",
+    ),
     pytest.param(
         "3+ years of experience in strategic sourcing and supplier development – Highly "
         "preferred",
