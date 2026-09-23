@@ -4132,3 +4132,111 @@ move frees anyway.
 3. **T155** (owner question first), **T160**, and T113b only if a model/effort/facts change
    recreates the backlog.
 4. **Parked, unchanged:** `TICKETS-2026-09-22c.md` §#5.
+
+## Moved out of STATE on 2026-09-23b — the 2026-09-23, 2026-09-22f and 2026-09-22c blocks, whole.
+## Run 471 is read (D-572) and the pull to `de7ae153` is done, which discharges every step in the
+## 22c and 22f blocks; the 2026-09-23 block's run-472 step is restated in STATE's 2026-09-23b block.
+## Kept verbatim.
+
+### 2026-09-23 — **ALL SIX TICKETS SHIP IN ORDER, ONE SQUASH EACH (D-562): T144 #420, T133 #422, T137 #423, T138 #424, T139 #425, T125 #421. EVERY ASTRA-REVIEW TICKET IS NOW CLOSED. RUNS 471 AND 472 HAVE NOT BEEN READ; THE PRIMARY CHECKOUT IS STILL HELD ON `ccb52912`.**
+
+The session ran 23:04–~02:30 CDT, before the 04:00 tick, on the enterprise seat. The owner was
+away, and executors ran as in-session subagents. `make check` on the final combined tree (exactly
+`main` after the six merges): EXIT=0, 10,898 passed, 1 skipped, 4 xfailed, vitest 220 (D-562).
+
+**Next session: the owner decides the direction; nothing buildable is unblocked.** Do first:
+1. **Read run 471** as the 2026-09-22e block says, then `git -C boardwatch merge --ff-only
+   de7ae153` ONLY (D-557). **Read run 472** as the batch's re-key run (lane 529 → ~206, healing at
+   130/run). Only then fast-forward to `origin/main`, so **run 473** is the first to run the six
+   fixes.
+2. **Watch runs 472–474.** B8's volume window restarts at 472 and must hold 14 days on the
+   1,807-board fleet. From run 473, read the funnel's new `identity_drift` (`[]` expected) and
+   `provenance` keys.
+
+**Open tickets** (`TICKETS-2026-09-22c.md`, §2026-09-23):
+- **T161: the owner's read is owed** (`DESIGN-T161-gate-verdict-identity.md`, which recommends BOTH
+  halves). **T163 follows it**: it edits `detect.py`, a digested module, so it re-keys.
+- T162 parked (D-557); T113b only if a stale-`ineligible` backlog recurs.
+- **New, ticketed, not built (D-565):** T164 (T137's drift report fires once, falsely, after a
+  taxonomy bump); T165 (`verify`'s missing-PDF e2e test always skips); T166 (`doctor`'s reap
+  takes no lease).
+
+**Owner calls on the table:** T161; D-550's leftover (about 53% of Sonnet's seniority holds read
+applyable to Opus); switching job-apps off (size it first: 2,877 of its postings resolved on run
+470); the résumé calls; `ServiceNow Developer` ranking; the 17 never-listable boards; the
+projection spec's §12; the optional 0-D repair. **Roadmap:** M1–M3 are done and B8's precision
+half is MET (5.4%, D-550). Its volume half is the live bar. M4's recall work is deprioritized
+(D-532), because the 40-slot slate binds and recall does not. `ROADMAP.md` is not rewritten until a
+milestone closes.
+
+### 2026-09-22f — **T135 SHIPS (#418 → `04f9ba6d`, D-559). T144 AND T133 ARE BUILT AND REVIEWED ON A STACK, NOT MERGED; T125 (ANNOTATE) IS BUILT, UNREVIEWED. T123 AND T124 CLOSE ON MEASUREMENT (D-558). RUN 471 HAS NOT FIRED; THE PRIMARY CHECKOUT IS STILL HELD ON `ccb52912`.**
+
+The session ran 21:10–22:25 CDT on 09-22, before the 04:00 tick. The owner checkpointed at 21:58
+("don't fire anything new"), and every in-flight task finished before this was written.
+
+**Next session, in order** (exact commands: `.agent/2026-09-22f-session/CHECKPOINT.md`):
+1. **Read run 471** exactly as the 2026-09-22e block below says.
+2. **Pull ONLY to `de7ae153`** (`git -C boardwatch merge --ff-only de7ae153`), NOT to `main`. `main`
+   now also carries T135, and the owner ruled that shipped fixes reach the live run at **473**, so 472
+   stays a clean read of the batch's re-key (D-557). Pull to `main` only after 472 is read.
+3. **DONE 2026-09-23 (D-562):** the stack and T125 shipped, and T137 → T138 → T139 were built,
+   reviewed and shipped after them. See the 2026-09-23 block above.
+5. **Owner reads owed:** `DESIGN-T161-gate-verdict-identity.md`, which recommends BOTH halves.
+   **T163 must follow T161**: it edits `detect.py`, a digested module, so it re-keys and would dip
+   the lane again.
+
+**Ruled this session (D-557):**
+- The seat is under 30%, so executors run one at a time. **The planning session IS the enterprise
+  seat**, and it shares that budget with its executors.
+- T161 stays in its slot.
+- T162 is parked until a switch of judge model or effort is planned.
+- T125 is annotate-only.
+- T138's reverse half is refused.
+
+**Closed on measurement (D-558):**
+- **T124:** 409 of 409 multi-posting jobs are justified and 0 have diverged (null-controlled).
+- **T123:** in runs 468–470, 1 of 110 partial board scans was detail-only. The 16,869 postings on
+  boards that never complete are **inventory-truncated** on 4 boards: Lowe's 150-page cap, the
+  Abbott and Genpt 2,000 censor, and Oracle `eeho` at 2,199 of 2,218. That is a coverage question,
+  not T123's.
+
+**T161 measured** (its design note):
+- Of the 970 standing leads, the live identity reads 833 gate verdicts (750 / 44 / 39). The
+  post-batch identity reads **0**. T161's judge-input key reads the same 833.
+- The freshness read is ALSO identity-scoped. A lane-only T161 therefore ends the dip but not the
+  re-judge spend.
+
+### 2026-09-22c — **RUN 470 READ: THE RE-KEY FIRED AS PREDICTED AND B8's VOLUME SITS ON THE BAR AT 20 (D-547). A RE-KEY ALSO DEMOTES — 237 LEADS 0-B HAD PROMOTED FELL OUT OF THE APPLY LANE, WHICH D-537 NEVER MEASURED. T153 EXECUTED ON THE OWNER'S RULING: THE JUDGE IS `sonnet`, THE STANDING QUEUE WAS RE-JUDGED ONCE (833 of 833) AND ITS APPLY LANE READS 529 (D-548). `gate.effort` SHIPS.**
+
+**Run 470 (D-547).** 85m34s against 75–85. The re-key is verified in the store, not inferred from
+the duration: **269,702** evaluations under the new identity (run 469: 1,524); the re-judge cost
++20.2 min, as predicted. The 34 s overshoot is a cost nobody budgeted: **a re-key also empties the
+gate's cache** (0 cached vs 66; +8.0 min). **B8 volume: 20 against a bar of 20** — 25/22/26/20
+post-expansion; D-529 is at n = 4 of 5.
+
+**Read D-547 before predicting what any re-key costs the queue.** Dead gate rows cut BOTH ways:
+D-537 counted the holds they release (101); they also kill every judge `eligible` that 0-B's
+promotion needs, so **237** leads fell back to `no_requirements_found`/`experience_requirement`
+(net **−136**, null-controlled 987 of 987). It started at the engine-batch merge and never
+self-heals, because a `built` lead is never re-judged by the daily gate.
+
+**The repair, ruled by the owner and done (D-548).** Live `config.toml` gate model `haiku` →
+`sonnet`; the 833-lead standing queue re-judged once through the production `run_gate_stage` at
+`--effort medium`, paced in owner-checked batches (seat 5% → 8% over the first 78 leads). **Apply
+lane 283 → 529** (412 had the haiku readings survived); `no_requirements_found` 345 → 12. Sonnet
+clears **25 of the 33** entry-titled leads haiku had called senior. **Sonnet's apply-lane
+PRECISION is unmeasured — 529 is volume** — and Sonnet was the audit's independent arm, so the
+next blind audit needs Opus.
+
+**`gate.effort` ships** (`None` = the calibrated argv, no flag). The live config carries
+`[gate] effort = "medium"`; `Settings` ignored it until the code merged, so it is verified by reading
+it back AFTER the merge, never by the file. Known gap **T155**: effort is not in the gate's
+freshness key, so a later change of level re-judges nothing already judged.
+
+**Next reading: run 471**, day 1 of B8's fresh 14-day window (T153 is a change to eligibility under
+`PROGRAM.md` §1). Read its `gate` block: the first daily gate on Sonnet, and the first whose
+standing queue is fully current.
+
+**NEXT WORK: superseded by the 2026-09-22e block above.** #1 (T159), #2 (T113) and the T127/T158
+cleanups are done. `TICKETS-2026-09-22c.md` §0 still lists what is already measured: read it
+before any probe.
