@@ -78,7 +78,7 @@ from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
-from boardwatch.llm.gate_judge import run_gate_refresh, run_gate_stage
+from boardwatch.llm.gate_judge import GateStageResult, run_gate_refresh, run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
@@ -1802,6 +1802,43 @@ def _zero_output_guard(
     return None
 
 
+def _reduce_gate_stage(
+    summary: PipelineSummary,
+    gate_result: GateStageResult,
+    stage_errors: list[str],
+    console: Console,
+) -> None:
+    """The judge stage's reduction onto the run (F10's first extraction, T139): the ONLY writer of
+    the `summary.gate_*` counters `run_gate_stage` reports and of its notes, which go to the
+    console, to `stage_errors` (the `runs` row) and to `summary.errors` (the funnel).
+
+    Called where the notes loop always sat — after the T63 cut and the stage's console summary
+    line — so each note still prints BELOW that line. The counters land a few statements later
+    than their copies used to, which nothing between the two points reads. Three `gate_*` fields
+    are deliberately not written here: `gate_beyond_slate` belongs to the cut,
+    `gate_readings_absent` to the lane split and `gate_refresh_*` to the T113 refresh, each
+    measured by its own step.
+    """
+    summary.gate_judged = gate_result.judged
+    summary.gate_eligible = gate_result.eligible
+    summary.gate_ineligible = gate_result.ineligible
+    summary.gate_uncertain = gate_result.uncertain
+    summary.gate_failed_open = gate_result.failed_open_batches
+    summary.gate_candidates = gate_result.candidates
+    summary.gate_cached = gate_result.cached
+    summary.gate_sent = gate_result.sent
+    summary.gate_missing_items = gate_result.missing_items
+    summary.gate_refused_items = gate_result.refused_items
+    summary.gate_seniority_answered = gate_result.seniority_answered
+    summary.gate_seniority_unclear = gate_result.seniority_unclear
+    summary.gate_seniority_unreadable = gate_result.seniority_unreadable
+    summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
+    for note in gate_result.errors:
+        console.print(f"  ! {note}", markup=False)
+        stage_errors.append(note)
+        summary.errors.append(note)
+
+
 def _record_shortlist_dispositions(
     engine: Engine,
     settings: Settings,
@@ -2461,20 +2498,6 @@ def _run_pipeline_leased(
         leads, gate_result = run_gate_stage(
             engine, settings, leads, run_id=run_id, shortlist_ranks=shortlist_ranks
         )
-        summary.gate_judged = gate_result.judged
-        summary.gate_eligible = gate_result.eligible
-        summary.gate_ineligible = gate_result.ineligible
-        summary.gate_uncertain = gate_result.uncertain
-        summary.gate_failed_open = gate_result.failed_open_batches
-        summary.gate_candidates = gate_result.candidates
-        summary.gate_cached = gate_result.cached
-        summary.gate_sent = gate_result.sent
-        summary.gate_missing_items = gate_result.missing_items
-        summary.gate_refused_items = gate_result.refused_items
-        summary.gate_seniority_answered = gate_result.seniority_answered
-        summary.gate_seniority_unclear = gate_result.seniority_unclear
-        summary.gate_seniority_unreadable = gate_result.seniority_unreadable
-        summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
         # T63 — THE CUT, and it is the last line at which `leads` is the depth slate. Everything
         # below sees only the delivered slate: the lane split, projection, the tailor loop, the
         # cohort guard and the `seen` write. Taken in RANKER order off the post-gate survivors,
@@ -2520,10 +2543,7 @@ def _run_pipeline_leased(
                 f"{gate_result.ineligible} ineligible, {gate_result.uncertain} uncertain), "
                 f"{gate_result.failed_open_batches} batch(es) failed open{beyond_note}"
             )
-        for note in gate_result.errors:
-            console.print(f"  ! {note}", markup=False)
-            stage_errors.append(note)
-            summary.errors.append(note)
+        _reduce_gate_stage(summary, gate_result, stage_errors, console)
         # T113 — the standing-queue refresh. A built lead is never on the slate again, so the
         # stage above cannot reach it; after a re-key every standing reading is stranded and 0-B's
         # promotions fall back into review until something re-judges them (D-547). HERE, after

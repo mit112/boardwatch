@@ -767,6 +767,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The run's exit contract is now a test, and the judge stage's reduction is one function (2026-09-23,
+  T139).** `RUN_CONTRACT.md` listed the thirteen places a run goes fatal, but nothing checked it. A
+  table-driven test now drives `boardwatch run` through one row per exit cause: a clean run, a
+  per-item error, every one of the thirteen fatal causes through the real run (and a declining case
+  for the two guards that may decline), an exception and a Ctrl-C after the run row exists (the row is
+  closed as failed with its reason; Ctrl-C exits 130), and lock contention (exit 2, no row, no write,
+  no reap). A drift check counts the assignments to `summary.fatal` in `runner.py` through `ast` and
+  fails when that count stops matching the document's table. Then, as the first of F10's stage
+  extractions, the fourteen copies of the judge stage's counters onto the run and the loop that
+  records its notes moved into `_reduce_gate_stage`, their only writer. A snapshot of the gate
+  block, the counters, the run's errors and the console lines, taken on the old code, passes
+  unchanged. One narrow difference: the counters are written after the slate cut instead of before
+  it, so a run that crashes inside the cut publishes zero gate counters. No fatal semantics, key or
+  setting changes. Astra review 04, F10.
+
 - **B8's volume reading now escalates like every other soft alert (2026-09-23, D-529).** A run
   whose apply lane lands under B8's bar of 20 now puts that reading on `summary.errors`, so it
   reaches the morning digest and the escalation channel as well as the run row. It was held off
