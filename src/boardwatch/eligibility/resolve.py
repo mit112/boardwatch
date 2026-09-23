@@ -288,6 +288,7 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
 # values rather than one because `engine.evaluate` collects exclusive-group presence
 # document-wide, so only `scoped_years_minimum` may sit in that group.
 _SCOPED_YEARS = frozenset({"scoped_years_minimum", "activity_years_minimum"})
+_CEILING_YEARS = frozenset({"total_years_maximum", "scoped_years_maximum"})
 
 
 def _is_near_miss(need: float, family: FamilySpec, pattern: PatternSpec) -> bool:
@@ -376,6 +377,23 @@ def _resolve_experience_years(
         return Resolution(UNKNOWN, "total years of experience not declared")
     need = _need_in_years(detection)
     support = _fact_support("total_years_experience", total)
+    if pattern.implies in _CEILING_YEARS:
+        # An UPPER bound (T178). Under it is met for both scopes: a skill's years cannot exceed
+        # the career they sit inside. At or over it abstains and never reads `unmet`. A
+        # whole-year total cannot say which side of "less than 2" (strict) or "at most 2"
+        # (inclusive) a 2 sits on. And a ceiling sentence is often not a bar on THIS posting:
+        # one rung of a level ladder ("Research Associate I: ... fewer than 3 years", the next
+        # rung asking for more), an invitation ("If fewer than 6 years of experience, still
+        # encouraged to apply!"), or a pay table ("new graduate nurses with less than 1 year of
+        # experience ... $36.00/hour"). Read as `unmet`, those reject the senior tenant the
+        # posting also addresses.
+        if total < need:
+            return Resolution(MET, f"{total} < {_bar(need)} ceiling", support)
+        return Resolution(
+            UNKNOWN,
+            f"{total} not under the {_bar(need)} ceiling; a ceiling may be one level of several",
+            support,
+        )
     if pattern.implies in _SCOPED_YEARS:
         # ONE direction is forced without any per-skill data: a duration scoped to a single
         # skill cannot exceed the career it sits inside, so `total < need` is unmet. The

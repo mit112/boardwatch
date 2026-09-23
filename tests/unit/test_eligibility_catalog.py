@@ -119,7 +119,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     # 2026-09-05: 59 -> 60. `labeled_years_minimum`: every pattern above it reads left to right
     # from the NUMBER, so "Experience Required: 3 to 5 years" -- the noun first, nothing after
     # the count -- gave none of them a tail to anchor on and wrote no row at all.
-    assert sum(len(f.patterns) for f in catalog.families) == 60
+    # T178: 60 -> 62. `total_years_maximum` and `scoped_years_maximum`, the ceiling readings an
+    # upper-bound cue carries a minimum bar into.
+    assert sum(len(f.patterns) for f in catalog.families) == 62
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:

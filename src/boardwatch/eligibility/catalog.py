@@ -116,6 +116,11 @@ class PatternSpec:
     # The `preferred` pattern of this family a tail-hedged bar is carried as, so its one-line
     # form and its split form write the same row; None drops it, as the unit-scoped hedge does.
     hedged_as: str | None
+    # An upper-bound cue TOUCHING this bar -- whitespace only between them -- makes its number a
+    # CEILING ("Less than 2 years of experience", "2 years of experience or less"), and the bar is
+    # carried as the `bounded_above_as` pattern of this family, a required ceiling (T178).
+    bounded_above_by: tuple[re.Pattern[str], ...]
+    bounded_above_as: str | None
 
     @property
     def rule_id(self) -> str:
@@ -533,6 +538,23 @@ def _family(
                 "preferred pattern of this family that captures what it captures, beside a "
                 "non-empty hedged_by_tail"
             )
+    for pattern in patterns:
+        if pattern.bounded_above_as is None and not pattern.bounded_above_by:
+            continue
+        target = by_id.get(pattern.bounded_above_as or "")
+        # The carried row takes the target's rule id, implies and resolver branch, so it must be a
+        # real `required` ceiling here, and one that is not itself a bar a ceiling can reach.
+        if (
+            target is None
+            or target.requiredness != "required"
+            or target.bounded_above_by
+            or not pattern.bounded_above_by
+        ):
+            raise CatalogError(
+                f"{where}: pattern {pattern.id!r} bounded_above_as "
+                f"{pattern.bounded_above_as!r} must name a required pattern of this family that "
+                "carries no bounded_above_by itself, beside a non-empty bounded_above_by"
+            )
 
     relations: list[dict[str, str]] = []
     for relation in raw.get("superset_relations") or []:
@@ -807,6 +829,8 @@ def _pattern(
         cue_idioms=idioms,
         hedged_by_tail=_regex_list(raw.get("hedged_by_tail"), at, "hedged_by_tail"),
         hedged_as=_optional_str(raw.get("hedged_as")),
+        bounded_above_by=_regex_list(raw.get("bounded_above_by"), at, "bounded_above_by"),
+        bounded_above_as=_optional_str(raw.get("bounded_above_as")),
     )
 
 

@@ -26,6 +26,9 @@ The scopes, all applied per match:
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
                           abstain waived: an abstaining bar keeps its UNKNOWN row.
+  bounded_above_by        A cue TOUCHING the span (whitespace only between them), before it or
+                          after it: the bar's number is a CEILING (`_bounded_above`). Carries
+                          the bar as the `bounded_above_as` pattern, `abstained` intact.
   subject_suppressors     CLAUSE-scoped grammatical subject that must PRECEDE the span.
   abstain_by              DOCUMENT-scoped, and does NOT drop: it marks the row undecidable
                           so the resolver renders UNKNOWN. Dropping would return `eligible`
@@ -258,6 +261,25 @@ def _hedged_tail(
         if not closed:
             return None
     return end
+
+
+def _bounded_above(
+    unit: str, lo: int, hi: int, cues: tuple[re.Pattern[str], ...]
+) -> tuple[int, int] | None:
+    """The bar at [lo, hi) widened over an upper-bound cue that touches it, or None (T178).
+
+    Touching -- whitespace only between the cue and the span -- is the whole scope: the cue
+    qualifies THIS number, so "Less than 2 years of management experience and 5 years of
+    experience." keeps its 5-year floor. The cue words and which side each may sit on are the
+    catalog's (`years_ceiling`); only the adjacency is decided here.
+    """
+    for rx in cues:
+        for match in rx.finditer(unit):
+            if match.end() <= lo and not unit[match.end():lo].strip():
+                return match.start(), hi
+            if match.start() >= hi and not unit[hi:match.start()].strip():
+                return lo, match.end()
+    return None
 
 
 @dataclass(frozen=True)
@@ -779,8 +801,9 @@ def detect(
     caller passes a pre-sorted list rather than setting ordinals itself.
     """
     found: list[Detection] = []
-    # Tail-hedged bars carried as their family's `preferred` twin, merged after the loop so a
-    # twin that already reached the same hedge is not written twice.
+    # Tail-hedged bars carried as their family's `preferred` twin, and bounded bars carried as its
+    # ceiling, merged after the loop so a row that already reached the same span is not written
+    # twice.
     carried: list[Detection] = []
     # `split_units` is pure in (text, scope) and this loop only READS `offset` and `unit`,
     # never mutating the list or the tuples, so one split per scope is shared across every
@@ -904,6 +927,22 @@ def detect(
                                     values={k: v for k, v in match.groupdict().items() if v},
                                 )
                             )
+                        continue
+                    # A ceiling is not a floor, whether or not an escape waived it: the bar is
+                    # carried as its family's ceiling with `abstained` intact, so a waived bar
+                    # keeps its `unknown` row and only its reading changes.
+                    if pattern.bounded_above_as is not None and (
+                        bounded := _bounded_above(unit, lo, hi, pattern.bounded_above_by)
+                    ) is not None:
+                        carried.append(
+                            Detection(
+                                family=family.id,
+                                pattern=twins[pattern.bounded_above_as],
+                                span=(at(bounded[0]), at(bounded[1])),
+                                values={k: v for k, v in match.groupdict().items() if v},
+                                abstained=abstained,
+                            )
+                        )
                         continue
                     values = {name: value for name, value in match.groupdict().items() if value}
                     # Checked after every drop, so a suppressed own-view match hides nothing.

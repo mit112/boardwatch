@@ -481,6 +481,8 @@ families:
       - activity_years_minimum
       - total_years_preferred
       - range_years_preferred
+      - total_years_maximum
+      - scoped_years_maximum
     # These are PARALLEL BARS, not competing claims: a total-years floor beside a Python-years
     # floor declares both requirements. Keep both rows for the roll-up when they agree. Only a
     # profile that clears one member and misses another makes their relationship undecidable,
@@ -580,6 +582,23 @@ families:
         # preferred twin carry no `hedged_as`: they DROP, as the unit-scoped hedge drops them.
         hedged_by_tail: [*years_hedges]
         hedged_as: total_years_preferred
+        # T178. An UPPER-BOUND cue touching the number makes it a CEILING, not a floor: "Less
+        # than 2 years of experience." was read as a 2-year minimum and rejected a 1-year
+        # profile, the audience the sentence is written for. Every pattern here starts at the
+        # NUMBER, so the word before it was invisible. The cue must TOUCH the bar (whitespace
+        # only, `detect._bounded_above`), so it qualifies this number and no other in the clause;
+        # the bar is then carried as `total_years_maximum` (or `scoped_years_maximum` on the
+        # scoped siblings), with any abstain intact.
+        # CLOSED and versioned, like `years_hedges`. Before the number: `less|fewer than` (NOT
+        # after `no`/`not` -- `no less than` is the comparative FLOOR idiom above), `under`,
+        # `at most`, `max`/`maximum (of)`, `<`, `<=`, `≤`, each with a digit lookahead so it
+        # cannot touch the END of a bar ("5 years of experience under pressure"). After the bar:
+        # `or less` / `or fewer`. Deliberately NOT here: `up to` (already blocked by `(?<!to\s)`,
+        # and also benefits prose) and `no more than` (its `no` drops the bar as a negation
+        # first). Both write no row today, which reads `uncertain`, not a wrong reject.
+        bounded_above_by:
+          - &years_ceiling "(?<![\\w-])(?:(?<!no\\s)(?<!not\\s)(?:less|fewer)\\s+than|under|at\\s+most|max(?:imum)?(?:\\s+of)?\\.?)(?=\\s*\\d)|[<≤]=?(?=\\s*\\d)|(?<![\\w-])or\\s+(?:less|fewer)(?![\\w-])(?!\\s+than)"
+        bounded_above_as: total_years_maximum
         # A DEGREE-GATED DISJUNCTION ("a Bachelor's ... OR N years of experience") is not a
         # floor: the posting clears on EITHER arm, and the degree arm is undecidable because
         # the field of study is not stored. Reading the pure-years arm as a hard bar told a
@@ -636,6 +655,8 @@ families:
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
         hedged_by_tail: [*years_hedges]
+        bounded_above_by: [*years_ceiling]
+        bounded_above_as: total_years_maximum
         abstain_by_adjacent: [*degree_alternative_to_years]
       - id: scoped_months_minimum
         requiredness: required
@@ -648,6 +669,8 @@ families:
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges, *months_conversion]
         hedged_by_tail: [*years_hedges]
+        bounded_above_by: [*years_ceiling]
+        bounded_above_as: scoped_years_maximum
         abstain_by_sentence: [*degree_alternative_to_years]
       - id: range_years_minimum
         requiredness: required
@@ -694,6 +717,8 @@ families:
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         hedged_by_tail: [*years_hedges]
+        bounded_above_by: [*years_ceiling]
+        bounded_above_as: scoped_years_maximum
         # THE DEGREE DISJUNCTION REACHES THIS ARM, BOUNDED TO ONE SENTENCE. D-449 is the
         # entry that left this OPEN and named the mechanism; the ruling below closed it.
         # `total_years_minimum` has abstained on "a Bachelor's OR N years of experience" since
@@ -760,6 +785,8 @@ families:
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         hedged_by_tail: [*years_hedges]
+        bounded_above_by: [*years_ceiling]
+        bounded_above_as: scoped_years_maximum
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
@@ -843,6 +870,8 @@ families:
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         hedged_by_tail: [*years_hedges]
+        bounded_above_by: [*years_ceiling]
+        bounded_above_as: scoped_years_maximum
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
@@ -897,6 +926,8 @@ families:
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
         hedged_by_tail: [*years_hedges]
+        bounded_above_by: [*years_ceiling]
+        bounded_above_as: scoped_years_maximum
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
@@ -966,6 +997,29 @@ families:
         pattern: '(?:\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)(?:(?![,;:]|(?<!\w)(?:and|but|while|whereas)(?!\w))[^.]){0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?\b(?P<years_alt>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+
+      # T178. The CEILING readings. Their rows arrive ONLY by carry, from a minimum pattern whose
+      # bar an upper-bound cue touches (`bounded_above_by: [*years_ceiling]`), so their own regex
+      # never matches: one detector reads each shape of "N years of X experience", and the cue
+      # decides which reading it is. Resolved in `resolve._resolve_experience_years`: under the
+      # ceiling is `met`; at or over it abstains and is never `unmet`, because a ceiling sentence
+      # is often one rung of a level ladder, an invitation or a pay table rather than a bar.
+      # Outside the refinement group on purpose: a floor and a ceiling in one posting are a
+      # RANGE, and each row is read on its own.
+      # The text names no placeholder, because a months bar is carried here as well and a
+      # `{years}` template would store the literal (the tables are append-only).
+      - id: total_years_maximum
+        requiredness: required
+        implies: total_years_maximum
+        scope: sentence
+        requirement_text: "An upper bound on total years of experience"
+        pattern: '(?!)'
+      - id: scoped_years_maximum
+        requiredness: required
+        implies: scoped_years_maximum
+        scope: sentence
+        requirement_text: "An upper bound on years of experience scoped to a skill or domain"
+        pattern: '(?!)'
 
   - id: clearance
     label: Security clearance
