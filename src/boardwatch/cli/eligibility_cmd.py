@@ -812,9 +812,14 @@ def gate_apply_cmd(
     Runs each verdict through the same accept-then-keystone-span gate `record_gate_verdict`
     applies, and writes one `engine_kind='llm'` / `engine_version='final_gate:...'` row per
     posting under the user's STORED facts and policy (never the labeling pass's all-blocker
-    reference policy — that would compute a different identity and the ranker's read would
-    silently no-op). Demoted postings (written `ineligible`) are printed as a warning,
-    mirroring `label apply`'s hard-negative warning.
+    reference policy, which would attribute the row to an identity nothing evaluated under).
+    Demoted postings (written `ineligible`) are printed as a warning, mirroring `label apply`'s
+    hard-negative warning.
+
+    The rows name no judge — the verdicts came from whatever agent session produced the file —
+    so no gate read acts on them: the queue, the run's lane split and `top` all key a verdict on
+    the judge that reached it (T161). They are recorded, and a lead is held or released on them
+    only once a named judge re-judges it.
     """
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
