@@ -196,6 +196,23 @@ KEPT = [
         "and/or quality assurance experience preferred",
         "scoped_years_minimum", id="lost-sentence-break",
     ),
+    # T170d (C6): a BARE second head, no preposition attached, so `_TAIL_NEW_HEAD` (which only
+    # catches `experience in|with|of...`) does not see it. pv 69669: `domain_years_minimum`'s
+    # own span stops at "indirect" (no comma/coordinator follows), so the complement opens a
+    # genuinely new noun phrase closing the `with` adjunct -- not a continuation of the bar's own
+    # list -- and that phrase's own head, "packaging experience", is a second head.
+    pytest.param(
+        "At least 10 years of sales leadership with direct and indirect sales channel food "
+        "industry and/or primary packaging experience is a plus",
+        "domain_years_minimum", id="C6-bare-second-head-no-preposition",  # pv 69669
+    ),
+    # Same shape, one clause over: the bar's own pattern stops at "with" (its own preposition),
+    # and the complement's "and" opens a second coordinated object whose own head is a second
+    # bare `experience`, with no preposition after it for `_TAIL_NEW_HEAD` to catch.
+    pytest.param(
+        "5+ years of experience with strong Python and Django experience preferred",
+        "scoped_years_minimum", id="C6-bare-second-head-after-with",
+    ),
     # Each case below is one that ONE guard alone rejects in the live store, so each guard is
     # pinned by a real sentence rather than only by a case another guard also catches.
     pytest.param(

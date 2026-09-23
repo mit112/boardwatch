@@ -138,6 +138,11 @@ _TAIL_ADJUNCT = re.compile(
 _TAIL_NEW_HEAD = re.compile(
     r"(?<!\w)experiences?\s+(?:in|with|of|on|at|using|as|for|across|within)(?!\w)", re.IGNORECASE
 )
+# C6's other shape: a BARE head noun in the complement, no preposition glued to it, so
+# `_TAIL_NEW_HEAD` above does not see it (`... primary packaging experience is a plus`). The
+# first one is the bar's own only when the bar's span stopped short of it -- the same signal
+# the C1 exception below uses -- and only ever the first: a further one is always a second head.
+_TAIL_BARE_HEAD = re.compile(r"(?<!\w)(?:experiences?|years?|months?)(?!\w)", re.IGNORECASE)
 # A capitalised determiner mid-sentence is a sentence break lost in extraction. Case-SENSITIVE.
 _TAIL_LOST_BREAK = re.compile(r"(?<=[a-z0-9)])\s+(?:Some|The|A|An|Any|All|This|These|Our|Your)\s")
 _TAIL_WITH = re.compile(r"(?<!\w)with(?!\w)", re.IGNORECASE)
@@ -205,9 +210,12 @@ def _hedged_tail(
         else " " * len(aside.group(0)),
         complement,
     )
-    if _TAIL_OPENS.match(complement) and not (
-        _TAIL_CONTINUES.match(complement) and _TAIL_HEAD_END.search(bar) is None
-    ):
+    # The bar's span stopped short of its own head, and the complement continues that same list
+    # up to one -- the C1 exception's signal, reused by C6 below for the same reason.
+    continues_short_bar = (
+        _TAIL_CONTINUES.match(complement) is not None and _TAIL_HEAD_END.search(bar) is None
+    )
+    if _TAIL_OPENS.match(complement) and not continues_short_bar:
         return None
     for guard in (
         _TAIL_BREAK, _TAIL_DURATION, _TAIL_MARKER, _TAIL_INTRODUCER, _TAIL_ADJUNCT,
@@ -215,6 +223,13 @@ def _hedged_tail(
     ):
         if guard.search(complement):
             return None
+    # C6: a bare `experience`/`years`/`months` token in the complement is a second head, unless
+    # it is the bar's own -- the first one, and only when the bar stopped short of it.
+    bare_heads = list(_TAIL_BARE_HEAD.finditer(complement))
+    if continues_short_bar and bare_heads:
+        bare_heads = bare_heads[1:]
+    if bare_heads:
+        return None
     if any(rx.search(complement) for rx in hedges):
         return None
     # `with` is the bar's own preposition only straight after its head or after a gerund.
