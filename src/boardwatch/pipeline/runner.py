@@ -50,8 +50,7 @@ from boardwatch.delivery.queue import (
     refresh_queue,
     standing_queue_rows,
 )
-from boardwatch.delivery.review_gate import REVIEW_DIR
-from boardwatch.delivery.review_gate import lane as review_lane
+from boardwatch.delivery.review_gate import REVIEW_DIR, classify
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
@@ -113,6 +112,11 @@ from boardwatch.projection.run import (
     resolve_projection_run,
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
+from boardwatch.rank.tenant_assumptions import (
+    TenantAssumptionReport,
+    TenantAssumptionTally,
+    ungrounded_reasons,
+)
 from boardwatch.rank.title_band import profile_target_band, title_band_reader
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
 from boardwatch.reports.board_coverage import build_report as build_board_coverage_report
@@ -576,6 +580,10 @@ class PipelineSummary:
     # as the funnel published them. Set by `_emit_funnel`, like `apply_lane`, so the alert and the
     # artifact report one answer; `None` when the funnel was not collected or drift not measured.
     identity_drift: tuple[str, ...] | None = None
+    # T185 (DESIGN-T183 A2). The ranker's and the review gate's tenant-assumption tallies, set
+    # where each gate runs; `None` where it did not, which the funnel reports as unmeasured.
+    tenant_ranker: TenantAssumptionTally | None = None
+    tenant_review: TenantAssumptionTally | None = None
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
@@ -1494,9 +1502,9 @@ def _refresh_order(rows: list[QueueRow]) -> list[QueueRow]:
 
 def _lead_lanes(
     engine: Engine, settings: Settings, leads: Sequence[RankedPosting]
-) -> tuple[dict[int, tuple[str, int | None]], int]:
+) -> tuple[dict[int, tuple[str, int | None]], int, TenantAssumptionTally | None]:
     """(posting_id -> (`review_gate.lane`'s verdict, its current `posting_version_id`), count of
-    leads with NO readable gate reading), computed
+    leads with NO readable gate reading, the review gate's tenant-assumption tally), computed
     BEFORE the tailor loop (T43) so the expensive render is spent on apply-lane leads only.
 
     The ONE lane definition `delivery/queue.py` already calls at sync time, fed the same shape of
@@ -1518,7 +1526,8 @@ def _lead_lanes(
     """
     if not leads:
         # No leads is not a staleness reading: nothing was looked up, so the honest count is 0.
-        return {}, 0
+        # Nor is it a tenant-assumption reading: no gate was applied to anything.
+        return {}, 0, None
     posting_ids = [p.posting_id for p in leads]
     with engine.connect() as conn:
         identity = current_identity(conn, settings)
@@ -1610,7 +1619,18 @@ def _lead_lanes(
     # T44's four inputs, resolved once. `title_band_reader` is the ONE derivation, shared with
     # the standing queue's own read, so the lane this run tailors for and the lane `sync_queue`
     # files the folder under cannot disagree about a band.
-    band_reader = title_band_reader(settings, profile_target_band(profile_row))
+    target_band = profile_target_band(profile_row)
+    band_reader = title_band_reader(settings, target_band)
+    # T185 (DESIGN-T183 A2). Attributed from the reason `classify` returns, never re-derived, so
+    # the report and the lane cannot disagree. A lead held by a reason ranked above a gate's own
+    # is still counted as considered by it, and not as fired.
+    tenant = TenantAssumptionTally(
+        ungrounded_reasons(
+            career_field=None if facts is None else facts.career_field,
+            target_seniority_band=target_band,
+            seniority_hold=settings.gate.seniority_hold,
+        )
+    )
     result: dict[int, tuple[str, int | None]] = {}
     for posting in leads:
         posting_version = versions.get(posting.posting_id)
@@ -1618,32 +1638,38 @@ def _lead_lanes(
             None if posting_version is None else posting_version.posting_version_id
         )
         posting_flags = flags.get(posting.posting_id, NO_REQUIREMENT_FLAGS)
-        result[posting.posting_id] = (
-            review_lane(
-                verdict=posting.verdict,
-                locations=locations_by_posting.get(posting.posting_id, ()),
-                title=posting.title,
-                seniority_above_band=band_reader.above_band(
-                    posting.title, company_of.get(posting.posting_id)
-                ),
-                experience_unconfirmed=posting_flags.experience_unconfirmed,
-                eligibility_unconfirmed=posting_flags.eligibility_unconfirmed,
-                no_requirement_rows=posting_flags.no_requirement_rows,
-                judge_verdict=gate_verdicts.get(posting.posting_id),
-                judge_seniority_above_band=(
-                    gate_seniority.get(posting.posting_id) == "no"
-                ),
-                # A lead delivered for the FIRST time is not yet in the cache and IS tailored;
-                # the sweep in this run's `finally` then finds its hard stop and `sync_queue`
-                # files the folder under `_review`. One render once per lead, never the wrong
-                # lane.
-                form_question_hit=form_questions.get(posting.posting_id),
-                revised_since_build=posting.posting_id in revised,
-                posting_closed=False,
+        decision = classify(
+            verdict=posting.verdict,
+            locations=locations_by_posting.get(posting.posting_id, ()),
+            title=posting.title,
+            seniority_above_band=band_reader.above_band(
+                posting.title, company_of.get(posting.posting_id)
             ),
-            posting_version_id,
+            experience_unconfirmed=posting_flags.experience_unconfirmed,
+            eligibility_unconfirmed=posting_flags.eligibility_unconfirmed,
+            no_requirement_rows=posting_flags.no_requirement_rows,
+            judge_verdict=gate_verdicts.get(posting.posting_id),
+            judge_seniority_above_band=(
+                gate_seniority.get(posting.posting_id) == "no"
+            ),
+            # A lead delivered for the FIRST time is not yet in the cache and IS tailored;
+            # the sweep in this run's `finally` then finds its hard stop and `sync_queue`
+            # files the folder under `_review`. One render once per lead, never the wrong
+            # lane.
+            form_question_hit=form_questions.get(posting.posting_id),
+            revised_since_build=posting.posting_id in revised,
+            posting_closed=False,
         )
-    return result, readings_absent
+        result[posting.posting_id] = (decision.lane, posting_version_id)
+        tenant.observe("location", fired=decision.reason == "non_us_location")
+        tenant.observe("role", fired=decision.reason in ("role_vetoed", "role_unconfirmed"))
+        seniority_fit = gate_seniority.get(posting.posting_id)
+        tenant.observe(
+            "judge_seniority",
+            fired=decision.reason == "seniority_judged_above_band",
+            own_abstain=None if seniority_fit in ("yes", "no") else "seniority_fit_unclear",
+        )
+    return result, readings_absent, tenant
 
 
 def _abandon_unattempted(summary: PipelineSummary, remaining: Sequence[RankedPosting]) -> None:
@@ -2418,6 +2444,7 @@ def _run_pipeline_leased(
             stage_errors.append(f"eligibility: {summary.fatal}")
             summary.errors.append(f"eligibility: {summary.fatal}")
             return summary
+        summary.tenant_ranker = ranked.tenant_assumptions
         summary.shortlist = ShortlistCounts(
             considered=ranked.considered,
             shortlisted=len(ranked.visible),
@@ -2611,7 +2638,9 @@ def _run_pipeline_leased(
         # apply-lane leads only. Computed once over the whole slate rather than per-lead inside
         # the loop, for the same reason `dead_job_ids` above is: one query beats N. Runs on the
         # POST-gate `leads`: a lead the gate just excluded must not be lane-classified at all.
-        lane_of, summary.gate_readings_absent = _lead_lanes(engine, settings, leads)
+        lane_of, summary.gate_readings_absent, summary.tenant_review = _lead_lanes(
+            engine, settings, leads
+        )
 
         # Names the résumé source in the log, so a projected run is distinguishable from an
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
@@ -3890,6 +3919,11 @@ def _emit_funnel(
         coverages=[lead.coverage for lead in summary.tailored],
         start_identity=summary.start_identity,
         execution_provenance=summary.provenance,
+        tenant_assumptions=(
+            None
+            if summary.tenant_ranker is None
+            else TenantAssumptionReport(ranker=summary.tenant_ranker, review=summary.tenant_review)
+        ),
         errors=summary.errors,
         fatal=summary.fatal,
     )
