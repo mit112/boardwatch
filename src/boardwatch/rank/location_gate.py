@@ -37,6 +37,7 @@ from boardwatch.rank.location_data import (
     NON_US_CITIES,
     NON_US_COUNTRIES,
     NON_US_ISO3,
+    NON_US_ISO3_SUFFIX,
     NON_US_REGIONS,
     POLICY_ONLY,
     US_CITIES,
@@ -104,6 +105,11 @@ _STATE_ABBREV_RE = re.compile(r",\s*([A-Z]{2})(?![A-Za-z])")
 # `_STATE_ABBREV_RE` requires it: a lowercase "can-do" must never read as Canada.
 _ISO3_PREFIX_RE = re.compile(r"^([A-Z]{3})(?:[-.]|\d)")
 _ISO3_PAREN_RE = re.compile(r"\(([A-Z]{3})\)\s*$")
+# The LAST comma component, exactly three uppercase letters as written ("Dublin, IRL",
+# "San Francisco,CRI"). Uppercase-only is what keeps the English words "Can", "Per" and "Ind"
+# from ever reading as Canada, Peru and India. Checked against `NON_US_ISO3_SUFFIX`, a curated
+# inclusion list, because a US location can also end in an uppercase code ("Remote, EST").
+_ISO3_SUFFIX_RE = re.compile(r",\s*([A-Z]{3})\s*$")
 
 
 def _non_us_country_code(segment: str) -> bool:
@@ -113,7 +119,8 @@ def _non_us_country_code(segment: str) -> bool:
         match = pattern.search(stripped)
         if match and match.group(1).casefold() in NON_US_ISO3:
             return True
-    return False
+    match = _ISO3_SUFFIX_RE.search(stripped)
+    return match is not None and match.group(1).casefold() in NON_US_ISO3_SUFFIX
 
 
 def _classify_segment(segment: str) -> LocationClass:
@@ -149,7 +156,8 @@ def _classify_segment(segment: str) -> LocationClass:
     if _NON_US_COUNTRY_RE.search(low) or _NON_US_CITY_RE.search(low):
         return "non_us"
     # After every US signal above, so "USA-GA-Remote Location" has already resolved US and a
-    # US state code in the same shape can never reach here.
+    # US state code in the same shape can never reach here. BEFORE the US-city token, so an
+    # explicit country code beats a curated city name: "Kirkland, QC, CAN" is Quebec.
     if _non_us_country_code(segment):
         return "non_us"
     if _NON_US_REGION_RE.search(low):
