@@ -679,6 +679,34 @@ def test_control_an_override_placeholder_no_capture_provides_keeps_the_raw_templ
     assert [r.requirement_text for r in result.requirements] == ["{nonexistent} years required"]
 
 
+def test_an_override_naming_the_alt_placeholder_still_formats(catalog) -> None:
+    """Review round 1 (T169): the fold must ADD the folded names, not replace the originals, so
+    a catalog override whose template names `{years_alt}` formats exactly as it did before."""
+    import dataclasses
+
+    shadowed = dataclasses.replace(
+        catalog,
+        families=tuple(
+            family
+            if family.id != "experience_years"
+            else dataclasses.replace(
+                family,
+                patterns=tuple(
+                    dataclasses.replace(pattern, requirement_text="{years_alt}+ years preferred")
+                    if pattern.id == "total_years_preferred"
+                    else pattern
+                    for pattern in family.patterns
+                ),
+            )
+            for family in catalog.families
+        ),
+    )
+    result = evaluate(
+        "We prefer 5 years of experience.", Facts(total_years_experience=5), BLOCK_ALL, shadowed,
+    )
+    assert [r.requirement_text for r in result.requirements] == ["5+ years preferred"]
+
+
 def test_an_ignored_family_produces_no_rows_at_all(catalog) -> None:
     policy = Policy(families={"degree": "ignore"})
     result = evaluate("Bachelor's degree required.", Facts(highest_degree="none"),

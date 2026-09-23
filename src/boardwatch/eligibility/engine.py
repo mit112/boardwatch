@@ -399,8 +399,12 @@ def evaluate(
             # every requirement_text template names only the first arm's placeholder. Fold
             # `<name>_alt` down to `<name>` before formatting, the way resolve.py's
             # `_need_in_years` already reads the same pair. The alternation guarantees at most
-            # one of `<name>`/`<name>_alt` is ever captured, so the fold cannot collide.
-            values = {name.removesuffix("_alt"): value for name, value in detection.values.items()}
+            # one of `<name>`/`<name>_alt` is ever captured, so the fold cannot collide. The
+            # original names stay too, so a catalog override naming `{years_alt}` still formats.
+            values = {
+                **{name.removesuffix("_alt"): value for name, value in detection.values.items()},
+                **detection.values,
+            }
             try:
                 requirement_text = requirement_text.format(**values)
             except (KeyError, IndexError):
