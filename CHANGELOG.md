@@ -270,6 +270,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A `boardwatch run` now holds the scan lock for the whole run, taken before it writes anything
+  (2026-09-22, T133).** The lock used to cover only the scan stage: `run_scan` released it in its own
+  `finally`, so a second run (or a standalone `scan`) could start while the first was still ranking,
+  judging, tailoring or finalizing. Both runs could then pick the same unhandled jobs and write the
+  same per-day lead folders. `--no-scan` took no lock at all. Worse, the stale-run reap ran BEFORE
+  any lock, so a contender that was about to be refused could still mark a live run's row failed. The
+  lock is now one lease (`scan_lease`), taken first: before the reap, the schema step and any run row.
+  It is held through every stage and the whole finalize block. A contender of any kind exits 2 having
+  written nothing. Standalone `scan` behaves as before. One visible change: a scan or run started while
+  another run is still finalizing is now refused, where before it would have overlapped it. Astra
+  review 04, F1; no live collision had been observed.
+
 - **A lane whose every search fails after page one now keeps the pages it got, and every search
   says how it ended (2026-09-22, T144).** When each hiring.cafe or Indeed search facet returned a
   good first page and then had a later page refused, the lane raised and threw away every first
