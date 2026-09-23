@@ -301,6 +301,55 @@ def test_a_twin_already_in_reach_is_not_written_twice(catalog) -> None:  # type:
     assert result.verdict == "eligible"
 
 
+# An ABSTAINING bar keeps its `unknown` row whatever its tail says: the tail hedge applies only to
+# a bar no escape waived, so an abstain is never folded into a demoted or dropped row (keystone).
+# Each expected row is the base's (`66d9de44`) exactly.
+ABSTAINING = [
+    pytest.param(
+        "Bachelor degree or 5 years of experience, not required but preferred.",
+        [["experience_years:total_years_minimum", "required", "unknown"]],
+        id="demote-candidate-abstains",
+    ),
+    pytest.param(
+        "5 years of experience in a related field or a Master degree, not required but preferred.",
+        [["experience_years:scoped_years_minimum", "required", "unknown"]],
+        id="drop-candidate-abstains",
+    ),
+    pytest.param(
+        "Bachelor degree or 5 years of experience required.",
+        [["experience_years:total_years_minimum", "required", "unknown"]],
+        id="CONTROL-abstaining-bar-without-a-hedge",
+    ),
+    pytest.param(
+        "Preferred: Bachelor degree or 5 years of experience.",
+        [],
+        id="CONTROL-one-line-heading-hedge",
+    ),
+]
+
+
+@pytest.mark.parametrize(("body", "rows"), ABSTAINING)
+def test_an_abstaining_bar_keeps_its_unknown_row_whatever_its_tail(  # type: ignore[no-untyped-def]
+    catalog, body: str, rows: list[list[str]]
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == rows
+    assert result.verdict == "uncertain"
+
+
+def test_a_split_form_abstaining_bar_reads_as_its_one_line_form(catalog) -> None:  # type: ignore[no-untyped-def]
+    """Equivalence, abstain direction: the split-form bar does not clear where its one-line form
+    (the hedge as a heading) leaves the posting undecided."""
+    split = evaluate(
+        "Bachelor degree or 5 years of experience, not required but preferred.",
+        FACTS, POLICY, catalog,
+    )
+    one_line = evaluate(
+        "Preferred: Bachelor degree or 5 years of experience.", FACTS, POLICY, catalog
+    )
+    assert split.verdict == one_line.verdict == "uncertain"
+
+
 def test_a_plain_bar_is_untouched(catalog) -> None:  # type: ignore[no-untyped-def]
     """CONTROL, must stay green on both sides of the change."""
     result = evaluate("5+ years of experience required.", FACTS, POLICY, catalog)

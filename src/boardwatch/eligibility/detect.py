@@ -22,7 +22,8 @@ The scopes, all applied per match:
                           belongs to THAT bar and reaches nothing outside the aside.
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
-                          it as the `hedged_as` preferred pattern.
+                          it as the `hedged_as` preferred pattern. Applied only to a bar no
+                          abstain waived: an abstaining bar keeps its UNKNOWN row.
   subject_suppressors     CLAUSE-scoped grammatical subject that must PRECEDE the span.
   abstain_by              DOCUMENT-scoped, and does NOT drop: it marks the row undecidable
                           so the resolver renders UNKNOWN. Dropping would return `eligible`
@@ -812,19 +813,6 @@ def detect(
                         bounds=bounds, before_only=True,
                     ):
                         continue
-                    if pattern.hedged_by_tail and (
-                        end := _hedged_tail(unit, lo, hi, pattern.hedged_by_tail)
-                    ) is not None:
-                        if pattern.hedged_as is not None:
-                            carried.append(
-                                Detection(
-                                    family=family.id,
-                                    pattern=twins[pattern.hedged_as],
-                                    span=(at(lo), at(end)),
-                                    values={k: v for k, v in match.groupdict().items() if v},
-                                )
-                            )
-                        continue
                     abstained = _suppressed(
                         body_text, at(lo), at(hi), pattern.abstain_by, inside_span=True
                     )
@@ -872,6 +860,22 @@ def detect(
                             pattern.abstain_by_sentence + pattern.abstain_by_adjacent,
                             inside_span=True,
                         )
+                    # After the abstains: an escape that waived the bar keeps its `unknown` row
+                    # whatever the tail says, so an abstain is never folded into a carried or
+                    # dropped row.
+                    if abstained is None and pattern.hedged_by_tail and (
+                        end := _hedged_tail(unit, lo, hi, pattern.hedged_by_tail)
+                    ) is not None:
+                        if pattern.hedged_as is not None:
+                            carried.append(
+                                Detection(
+                                    family=family.id,
+                                    pattern=twins[pattern.hedged_as],
+                                    span=(at(lo), at(end)),
+                                    values={k: v for k, v in match.groupdict().items() if v},
+                                )
+                            )
+                        continue
                     values = {name: value for name, value in match.groupdict().items() if value}
                     # Checked after every drop, so a suppressed own-view match hides nothing.
                     # "Preferred Qualifications:\n- 5 years of experience preferred." otherwise
