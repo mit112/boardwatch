@@ -84,6 +84,13 @@ HEADING_CASES: list[tuple] = [
     ('h19:a hedge heading that opens an inline-bulleted line governs the bullet after it', 'Nice to have: • 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h20:BOUND a heading item later on the SAME inline-bulleted line ends the hedge, so its bar rejects', 'Nice to have: • Go experience • Requirements: • 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h21:BOUND a labelled line after plain lines ends the hedge, so its bar rejects', 'Nice to have:\nGo experience\nRequirements: 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h22:a hedge followed by a section noun is still a hedge heading', 'Preferred Qualifications:\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h23:Desired Qualifications hedges its bullets as Preferred does', 'Desired Qualifications:\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h24:CONTROL a heading that names required AND preferred is not a hedge', 'Required & Preferred Qualifications:\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h25:CONTROL Minimum Qualifications is not a hedge', 'Minimum Qualifications:\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h26:a field label opening a bullet is read through by the hedge', 'Nice to have:\n- Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h27:a field label after an inline bullet is read through by the hedge', 'Nice to have: • Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h28:CONTROL a Required label inside a hedged list keeps its bar', 'Nice to have:\n- Required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -99,7 +106,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "4ac6c67c1e9fc733337057cc719168223a924df0aeb46f0d4ee953b0b6fec881"
+SPLIT_UNITS_DIGEST = "553ae71fbf6cfbea4f37e8b26becef9d59b706c856019e50c7ff32744b3cb60f"
 
 
 @pytest.fixture(scope="module")
@@ -166,4 +173,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 21
+    assert len(HEADING_CASES) == 28

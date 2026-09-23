@@ -232,8 +232,15 @@ def _on_heading_line(text: str, offset: int, unit: str) -> tuple[bool, int, int]
         return True, start, start
     if text[start:offset].strip() and not _opens_item(text, offset):
         return False, start, offset
-    label = _LEADING_LABEL.match(unit)
-    return label is not None and _looks_like_header(label.group(0)), start, offset
+    item = unit[_BULLET_LEAD.match(unit).end() :]  # type: ignore[union-attr]
+    label = _LEADING_LABEL.match(item)
+    if label is None:
+        return False, start, offset
+    # A label ALONE is read by the generic test. A label ahead of content must name a
+    # qualification section: `Experience: 5 years ...` is a field inside the list, and read as
+    # a heading it would reset an earlier `Nice to have:` and restore the bar it hedged.
+    reads = _QUAL_HEADER.match if item[label.end() :].strip() else _looks_like_header
+    return bool(reads(label.group(0))), start, offset
 
 
 # A list item that opens with its own heading label, alone (`Requirements:` before an inline
@@ -241,6 +248,47 @@ def _on_heading_line(text: str, offset: int, unit: str) -> tuple[bool, int, int]
 # earlier heading's reach; with content after it, it cannot hedge what follows, because the hedge
 # test admits delimiters only between a heading and the clause it governs.
 _LEADING_LABEL = re.compile(r"[^:\n]{1,60}:")
+
+# A HEDGE heading whose hedge is followed by a section noun: `Preferred Qualifications:`,
+# `Desired Skills:`. Replayed through the introducer as the full label, the noun is not a
+# delimiter, so the hedge could never reach a bullet, and these are the commonest hedge headings
+# there are. Closed on both words, anchored at both ends, so `Required and Preferred
+# Qualifications:` and `Minimum Qualifications:` are not hedges.
+_HEDGE_HEADING = re.compile(
+    r"^[\s•‣●\-\*]*(?:preferred|desired|desirable|bonus|nice[\s-]to[\s-]have)"
+    r"(?=(?:\s+(?:qualifications?|skills?|requirements?|experience|knowledge|abilities|"
+    r"attributes|competencies))?\s*:?\s*$)",
+    re.IGNORECASE,
+)
+
+
+# A FIELD label opening a list item (`- Experience: 5 years ...`). It names what the bar is
+# about, not how binding it is, so a hedge heading reads through it; kept out of the hedge's
+# introducer, it would break the delimiters-only chain and restore the bar. Closed, so
+# `- Required: 5 years ...` is never read through.
+_FIELD_LABEL = re.compile(
+    r"(?:(?:total|work|professional|relevant|industry)\s+)?"
+    r"(?:experience|education|degree|skills?|background|certifications?|training)\s*:\s*",
+    re.IGNORECASE,
+)
+
+
+def _item_start(unit: str) -> int:
+    """Where a governed item's own text starts: past its bullet and any field label."""
+    lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
+    field = _FIELD_LABEL.match(unit, lead)
+    return lead if field is None else field.end()
+
+
+def _heading_text(head: str) -> str:
+    """The heading as its hedge reads: `Preferred Qualifications:` -> `Preferred:`.
+
+    A PREFIX of the heading, never a rewrite, so an offset into it is an offset into the body's
+    own heading and a span `_views` builds across it stays a slice of the stored body. Every
+    family's own hedge vocabulary then decides, exactly as it does for `Preferred: 5 years`.
+    """
+    match = _HEDGE_HEADING.match(head)
+    return head if match is None else f"{head[: match.end()]}:"
 
 
 def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | None]:
@@ -490,12 +538,16 @@ def _hedged_by_heading(
 ) -> str | None:
     """The hedge introducer allowance, read over the inline twin `heading + " " + unit`.
 
-    "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would, and a
-    heading whose hedge is followed by more than delimiters ("Preferred Qualifications:")
-    reaches nothing, as its one-line form reaches nothing.
+    "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would. The
+    caller passes `_heading_text`, so `Preferred Qualifications:` reads as `Preferred:`, and a
+    field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
     """
-    intro = f"{heading} {unit}"
-    shift = len(heading) + 1
+    lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
+    start = _item_start(unit)
+    if start > lo:
+        start = lead
+    intro = f"{heading} {unit[:lead]}{unit[start:]}"
+    shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
     return _suppressed(
         intro, lo, hi, hedges,
@@ -523,8 +575,8 @@ def _views(
         heading = governing[index]
         if heading is None or pattern.requiredness != "preferred":
             continue
-        head_offset, head = units[heading]
-        lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
+        head_offset, head = units[heading][0], _heading_text(units[heading][1])
+        lead = _item_start(unit)
         join = len(head) + 1
 
         def at(p: int, h: int = head_offset, o: int = offset + lead, j: int = join) -> int:
@@ -586,7 +638,8 @@ def detect(
                         continue
                     heading = governing[index]
                     if join is None and heading is not None and _hedged_by_heading(
-                        units[heading][1], unit, lo, hi, pattern.suppressed_by_unit
+                        _heading_text(units[heading][1]), unit, lo, hi,
+                        pattern.suppressed_by_unit,
                     ):
                         continue
                     if _suppressed(
