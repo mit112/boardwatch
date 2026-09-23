@@ -624,8 +624,9 @@ def detect(
                     governing, alternative_groups(body_text, units, governing)
                 )
             governing, alternatives = context_by_scope[pattern.scope]
-            # What each unit's OWN view appended, so its heading view adds only a new reading.
-            own: set[tuple[int, frozenset[tuple[str, str]]]] = set()
+            # What each unit's OWN view appended, with its absolute span, so its heading view
+            # adds only a new reading.
+            own: dict[tuple[int, frozenset[tuple[str, str]]], list[tuple[int, int]]] = {}
             for index, unit, at, join in _views(units, governing, pattern):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
@@ -710,10 +711,16 @@ def detect(
                     # Checked after every drop, so a suppressed own-view match hides nothing.
                     # "Preferred Qualifications:\n- 5 years of experience preferred." otherwise
                     # wrote its one preferred bar twice, once per view (T163).
+                    # The same bar means the same captures AND the same text: the heading
+                    # view's bullet-side part must overlap the own-view row. Equal captures
+                    # alone would stand down a different bar in the same bullet, e.g. "3-5
+                    # years ...; 3-7 years ... preferred." (both capture a lower bound of 3).
                     reading = (index, _reading(values))
                     if join is None:
-                        own.add(reading)
-                    elif reading in own:
+                        own.setdefault(reading, []).append((at(lo), at(hi)))
+                    elif any(
+                        start < at(hi) and at(join) < end for start, end in own.get(reading, ())
+                    ):
                         continue
                     found.append(
                         Detection(

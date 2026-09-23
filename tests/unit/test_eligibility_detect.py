@@ -841,3 +841,21 @@ def test_a_required_bar_under_a_hedge_heading_is_unchanged(catalog) -> None:
         ("total_years_preferred", (0, 37), {"years_alt": "5"}),
         ("total_years_minimum", (39, 60), {"years": "5"}),
     ]
+
+
+def test_a_different_bar_with_the_same_captures_in_one_bullet_keeps_its_row(catalog) -> None:
+    """Review round 1 (T163): the record must key on the SAME TEXT, not only equal captures.
+
+    Both bars capture a lower bound of 3. The own view reads `3-7 ... preferred`; the heading
+    view reads `Preferred: 3-5 years of experience`, a different bar whose text lies elsewhere in
+    the bullet. It must stand, exactly as it did before T163.
+    """
+    body = (
+        "Preferred:\n- 3-5 years of experience, across many industries; "
+        "3-7 years of experience preferred."
+    )
+    readings = _readings(detect(body, catalog, enabled_families=ALL))
+    assert [(p, values) for p, _, values in readings] == [
+        ("range_years_preferred", {"years_alt": "3"}),
+        ("range_years_preferred", {"years": "3"}),
+    ], readings
