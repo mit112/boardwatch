@@ -300,6 +300,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The queue list loads the rules catalog once per read, and not at all without a profile
+  (2026-09-23, T171).** T161's gate read loaded `rules.yaml` a second time on every list call, after
+  the identity read had already loaded it, and with no profile a malformed rules override now failed
+  the whole list where the gate read used to return nothing. The list loads the catalog once, only when
+  a profile exists, and hands the same object to both reads; with no profile it skips the gate read.
+  The detail pane dedupes the same load but keeps it unconditional, because its audit needs a catalog
+  for a closed posting whether or not a profile exists. Measured before the fix: 1.8–2.8 s per list of
+  1,026 rows, about 0.1 s per load.
+
 - **The job-apps lane counts a dangling `discovery_record.json` symlink as a record it could not
   read (2026-09-23, T168 follow-up).** T168 made every unreadable record count, but a folder whose
   record is a broken symlink never became a candidate: `is_file()` resolves the link and reads

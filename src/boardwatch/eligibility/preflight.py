@@ -163,19 +163,26 @@ def _identity_hashes(
     return identity.profile_hash, identity.rules_hash
 
 
-def current_identity(conn: Connection, settings: Settings) -> tuple[str, str] | None:
+def current_identity(
+    conn: Connection, settings: Settings, *, catalog: RulesCatalog | None = None
+) -> tuple[str, str] | None:
     """The live profile's (profile_hash, rules_hash), or None when there is no profile.
 
     The read paths (top's verdict flags, `eligibility summary`, the `show` audit) call this
     so they select the evaluation the CURRENT profile produced, not merely any evaluation at
     the current engine version. Without it a corrected fact leaves a stale verdict on screen.
+
+    `catalog`, when given, is reused instead of loaded again — a caller that also needs the
+    catalog for a second, identity-independent read (the delivery queue's gate read, T171) loads
+    it once and passes the same object here rather than paying for it twice.
     """
     profile_row = get_profile(conn)
     if profile_row is None:
         return None
     facts = parse_facts(profile_row.eligibility_facts_json)
     policy = parse_policy(profile_row.eligibility_policy_json)
-    catalog = load_rules(settings.config_dir)
+    if catalog is None:
+        catalog = load_rules(settings.config_dir)
     return _identity_hashes(facts, policy, catalog, declared_fields())
 
 
