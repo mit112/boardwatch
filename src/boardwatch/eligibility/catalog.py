@@ -275,10 +275,10 @@ class RulesCatalog:
         value it already has, for EITHER override: `replace` on a frozen dataclass rebuilds every
         field, and this runs once per detection over the whole open-posting set. `season_months`
         stays the catalog's `northern` table (the declared default) unless the policy names a
-        hemisphere AND the family actually declares a table for it -- an unrecognised or
-        undeclared hemisphere is silently the same as not stating one, never an error, matching
-        the F9 rule that an unresolvable input defaults to the CURRENT (northern) behaviour
-        rather than raising.
+        hemisphere AND the family actually declares a table for it -- a family with no table for
+        the stated hemisphere reads as if none were stated, matching the F9 rule that an
+        unresolvable input defaults to the CURRENT (northern) behaviour. The hemisphere itself
+        is a closed choice on `Policy`, so an unrecognised value never reaches here.
         """
         family = self.family(family_id)
         ceiling = policy.near_miss_years_ceilings.get(family_id)
@@ -570,6 +570,12 @@ def _family(
 #: authoring error, not a new bucket -- caught here rather than silently never selected.
 _HEMISPHERES = frozenset({"northern", "southern"})
 
+#: The closed season vocabulary a `season_months` table may declare. `resolve._season_ordinal`
+#: reads a posting's season word straight against the table's keys, so an unknown key would be
+#: a new bucket the catalog invented at load -- and a misspelt one (`sumer`) a season the
+#: resolver could never match, a permanent abstain that raises nothing.
+_SEASONS = frozenset({"spring", "summer", "fall", "autumn", "winter"})
+
 
 def _season_months(raw: object, where: str) -> dict[str, dict[str, tuple[int, int]]]:
     """F9 (T156, 2026-09-23 review): the season->month mapping as hemisphere-keyed catalog data.
@@ -595,9 +601,9 @@ def _season_months(raw: object, where: str) -> dict[str, dict[str, tuple[int, in
             )
         parsed: dict[str, tuple[int, int]] = {}
         for season, window in seasons.items():
-            if not isinstance(season, str) or not season:
+            if not isinstance(season, str) or season not in _SEASONS:
                 raise CatalogError(
-                    f"{where}: 'season_months.{hemisphere}' has a non-string or blank season"
+                    f"{where}: 'season_months.{hemisphere}' has unknown season {season!r}"
                 )
             if (
                 not isinstance(window, list)

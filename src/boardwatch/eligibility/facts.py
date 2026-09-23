@@ -147,11 +147,11 @@ class Policy(BaseModel):
     # window resolves against -- a PER-USER setting, not a property of the catalog, for the
     # identical reason the ceiling above is. `None` means undeclared and reads as `northern`,
     # the catalog's declared default and today's only behaviour, so landing this field re-keys
-    # nobody until they set it (D-P2-2). Not validated against a closed choice set here: an
-    # unrecognised value is read the same as undeclared by `catalog.effective_family` (fails
-    # open to the current behaviour) rather than raising, matching F9's own rule for an
-    # unresolvable hemisphere.
-    graduation_hemisphere: str | None = None
+    # nobody until they set it (D-P2-2). A CLOSED choice: a misspelt hemisphere is a malformed
+    # document and is refused by `parse_policy` like any other, because reading `souhtern` as
+    # undeclared would decide a southern graduate's Spring window against the northern months
+    # and never say so (T182 review).
+    graduation_hemisphere: Literal["northern", "southern"] | None = None
 
 
 class ProfileRowInvalid(ValueError):

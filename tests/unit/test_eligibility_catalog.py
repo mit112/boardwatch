@@ -374,6 +374,19 @@ def test_each_malformed_shape_has_its_own_raise_site(
     assert "rules.yaml" in str(exc.value)  # the message names the offending document
 
 
+def test_a_season_outside_the_closed_vocabulary_is_refused_at_load(tmp_path: Path) -> None:
+    """The resolver reads a posting's season word straight against the table's keys, so a key
+    the catalog did not declare would be a bucket invented at load, and a misspelt one a season
+    no posting could ever match (T182 review)."""
+    body = bundled_rules_text().replace(
+        "        summer: [6, 8]\n", "        summer: [6, 8]\n        monsoon: [6, 8]\n", 1
+    )
+    assert "monsoon" in body
+    _write(tmp_path, body)
+    with pytest.raises(CatalogError, match="unknown season 'monsoon'"):
+        load_rules(tmp_path)
+
+
 def test_a_structured_family_needs_at_least_two_fields(tmp_path: Path) -> None:
     _write(tmp_path, MINIMAL.replace("answer_type: choice", "answer_type: structured"))
     with pytest.raises(CatalogError, match="structured"):

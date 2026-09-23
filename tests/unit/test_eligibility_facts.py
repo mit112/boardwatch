@@ -111,6 +111,16 @@ def test_malformed_stored_policy_is_refused(raw: object) -> None:
     assert caught.value.column == "eligibility_policy_json"
 
 
+def test_a_misspelt_hemisphere_is_refused_not_read_as_northern() -> None:
+    """`graduation_hemisphere` is a closed choice. Read as undeclared, `souhtern` would resolve
+    a southern graduate's Spring window against the northern months and never say so."""
+    with pytest.raises(ProfileRowInvalid) as caught:
+        parse_policy({"graduation_hemisphere": "souhtern"})
+    assert caught.value.column == "eligibility_policy_json"
+    assert "graduation_hemisphere" in str(caught.value)
+    assert parse_policy({"graduation_hemisphere": "southern"}).graduation_hemisphere == "southern"
+
+
 def test_an_unknown_facts_key_names_itself_in_the_refusal() -> None:
     """The operator has to know WHICH key made the row unusable; a bare "invalid" leaves
     them editing JSON blind."""
