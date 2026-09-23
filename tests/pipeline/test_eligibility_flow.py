@@ -21,10 +21,11 @@ from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import get_profile, save_profile
+from tests.conftest import write_bundled_role_taxonomy
 
 runner = CliRunner()
 
-INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 DEGREE_BODY = "We are hiring a backend engineer. A Bachelor's degree is required."
 DEGREE_QUOTE = "Bachelor's degree is required"  # DEGREE_BODY[36:65], the stored span
 PLAIN_BODY = "A backend engineering position on our team."
@@ -35,6 +36,7 @@ REVISED_BODY = "This role was updated and now covers only frontend interface pol
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    write_bundled_role_taxonomy(tmp_path / "cfg")
     return tmp_path / "data"
 
 
@@ -516,7 +518,7 @@ def test_init_reprompts_on_a_bad_eligibility_answer_instead_of_aborting(env: Pat
     # The two trailing blanks skip the career-field and field-of-study prompts, which are
     # single catalog-scalars rather than family fields, so the loop above cannot reach them.
     preamble = ["3", "acme", "Backend engineer.", "", "", "", "n", "y", "", ""]
-    result = _run(env, ["init"], "\n".join(preamble + elig) + "\n")
+    result = _run(env, ["init"], "\n".join(preamble + elig) + "\nsoftware\n")
     assert result.exit_code == 0, result.output
     facts, _ = _profile(env)
     assert facts.work_authorization is not None

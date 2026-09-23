@@ -17,6 +17,7 @@ from boardwatch.cli.guide_cmd import guide as _guide
 from boardwatch.cli.guide_cmd import skill as _skill
 from boardwatch.cli.identities_cmd import identities_app
 from boardwatch.cli.init_cmd import init as _init
+from boardwatch.cli.init_cmd import role_taxonomy as _role_taxonomy
 from boardwatch.cli.ledger_cmd import ledger_app
 from boardwatch.cli.notify_cmd import notify as _notify
 from boardwatch.cli.postings_cmd import postings_app
@@ -62,6 +63,9 @@ app.add_typer(companies_app, name="companies")
 app.command("scan")(_scan)
 app.command("init")(_init)
 app.add_typer(profile_app, name="profile")
+# Registered here rather than in profile_cmd: the gatherer lives in init_cmd (R11 pins its
+# prompts), and init_cmd already imports profile_cmd.
+profile_app.command("role-taxonomy")(_role_taxonomy)
 app.command("top")(_top)
 app.command("show")(_show)
 app.command("guide")(_guide)

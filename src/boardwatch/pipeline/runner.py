@@ -2466,6 +2466,7 @@ def _run_pipeline_leased(
             hidden_non_swe=ranked.hidden_non_swe,
             hidden_zero_signal=ranked.hidden_zero_signal,
             signal_unmeasured=ranked.signal_unmeasured,
+            role_unmeasured=ranked.role_unmeasured,
             hidden_ineligible=ranked.hidden_ineligible,
             hidden_below_cutoff=ranked.hidden_below_cutoff,
             skipped_not_new=ranked.skipped_not_new,

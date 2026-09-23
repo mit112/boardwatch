@@ -24,6 +24,7 @@ from boardwatch.extract.taxonomy import bundled_taxonomy_text, load_taxonomy
 from boardwatch.pipeline import funnel_writer
 from boardwatch.pipeline import runner as runner_mod
 from boardwatch.rank.leveling import load_leveling
+from boardwatch.rank.role_taxonomy import load_role_taxonomy, role_taxonomy_digest
 from boardwatch.reports.manifest import profile_row_hash
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
@@ -430,6 +431,7 @@ def test_a_taxonomy_bump_run_reports_no_drift_and_ranks_the_refreshed_profile(
         target_seniority_band=after.target_seniority_band,
         leveling_digest=load_leveling(settings.config_dir).digest,
         taxonomy_version=bumped_version,
+        role_taxonomy_digest=role_taxonomy_digest(load_role_taxonomy(settings.config_dir)),
     )
     assert payload["manifest"]["profile_row_hash"] == expected_hash, (
         "the manifest must publish the REFRESHED row's hash, not the stale start reading"

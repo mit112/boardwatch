@@ -158,7 +158,9 @@ def test_reported_counters_are_not_drops() -> None:
     """An abstain counts postings that PASSED. As a Drop it would double-subtract and the
     shortlist stage would stop reconciling on every run that had one."""
     source = inspect.getsource(run_funnel)
-    for reported in ("uncertain_band", "band_tokens_seen_while_inert", "signal_unmeasured"):
+    for reported in (
+        "uncertain_band", "band_tokens_seen_while_inert", "signal_unmeasured", "role_unmeasured"
+    ):
         assert hasattr(ShortlistCounts(considered=0, shortlisted=0), reported)
         assert f'reason="{reported}"' not in source, (
             f"{reported} counts postings that passed; it must not be a Drop"

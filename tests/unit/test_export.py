@@ -32,7 +32,7 @@ runner = CliRunner()
 # upserts greenhouse:acme-p5, then the fixture's plain INSERT of greenhouse:acme is a
 # different row, so the two can coexist (the plan's "acme" collided and the seed
 # crashed with an IntegrityError; same fix as test_top_new.py).
-PROFILE_INPUT = "3\nacme-p5\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+PROFILE_INPUT = "3\nacme-p5\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 
 
 @pytest.fixture()

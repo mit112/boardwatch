@@ -87,6 +87,7 @@ from boardwatch.store.tables import (
     runs,
 )
 from boardwatch.tailor.load import scaffold_template
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 
@@ -839,6 +840,7 @@ def test_off_target_carries_the_role_gates_own_matched_text_and_uncertain_is_not
         vetoed, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner")
         unsure, _ = _deliver(conn, "cpa", title="Tax CPA")
         software, _ = _deliver(conn, "swe", title="Software Engineer")
+    write_bundled_role_taxonomy(live.server.deps.ctx.settings.config_dir)
 
     payload = call(live, "/api/queue", bearer=live.token).json()
     rows = {row["posting_id"]: row for row in payload["rows"]}

@@ -39,6 +39,7 @@ from boardwatch.store.identity_queries import load_identity_inputs, write_identi
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = utcnow()
 
@@ -55,6 +56,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # somewhere the engine under test never looks.
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    write_bundled_role_taxonomy(tmp_path / "data")
     return tmp_path / "data"
 
 

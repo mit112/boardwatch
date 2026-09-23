@@ -21,6 +21,7 @@ INIT_INPUT = (
     "New York, Remote\n"  # locations
     "n\n"  # remote only?
     "n\n"  # set up eligibility now?
+    "software\n"  # role taxonomy: the bundled field
 )
 
 
@@ -153,6 +154,7 @@ _ELIG_INIT = (
     "fte_only\nblocker\n"       # contract_not_fte
     "exclude\n\n"               # internship: default policy
     "\n\n\n"                    # student_status: skip both fields, default policy
+    "software\n"                # role taxonomy: the bundled field
 )
 
 
@@ -222,7 +224,8 @@ def test_init_reprompts_on_a_bad_career_field_instead_of_aborting(env: Path) -> 
 
 
 def test_init_skipping_eligibility_leaves_columns_null(env: Path) -> None:
-    skip = "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\nn\n"  # trailing n: skip eligibility
+    # n: skip eligibility; then the role taxonomy
+    skip = "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\nn\nsoftware\n"
     assert _invoke(env, ["init"], skip).exit_code == 0
     with get_engine(env).connect() as conn:
         row = get_profile(conn)

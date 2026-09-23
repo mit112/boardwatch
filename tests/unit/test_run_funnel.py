@@ -140,6 +140,7 @@ def funnel(
     hidden_over_seniority: int = 0,
     hidden_zero_signal: int = 0,
     signal_unmeasured: int = 0,
+    role_unmeasured: int = 0,
     uncertain_band: int = 0,
     band_tokens_seen_while_inert: int = 0,
     judged_this_run: int = 0,
@@ -225,6 +226,7 @@ def funnel(
             hidden_over_seniority=hidden_over_seniority,
             hidden_zero_signal=hidden_zero_signal,
             signal_unmeasured=signal_unmeasured,
+            role_unmeasured=role_unmeasured,
             uncertain_band=uncertain_band,
             band_tokens_seen_while_inert=band_tokens_seen_while_inert,
             judged_this_run=judged_this_run,
@@ -589,6 +591,23 @@ def test_the_unmeasured_signal_abstain_is_reported_and_never_subtracted(tmp_path
     assert "`signal_unmeasured`: 3" in shortlist_json["note"]
     # And it is still not a drop on the machine-readable side either.
     assert "signal_unmeasured" not in {drop["reason"] for drop in shortlist_json["drops"]}
+
+
+def test_the_role_gate_abstain_is_reported_and_never_subtracted(tmp_path: Path) -> None:
+    """P2 item 8: with no role taxonomy the role gate abstains on every posting it sees. Those
+    postings PASSED, so the count is no `Drop` — but it must reach the durable artifact, or an
+    inert role gate reads as one that simply found nothing off target."""
+    report = funnel(considered=10, shortlisted=10, hidden_ineligible=0, hidden_non_swe=0,
+                    role_unmeasured=10, leads=[lead()], tailor_failed=9)
+
+    shortlist = stage(report, "shortlist")
+    assert shortlist.reconciled is True
+    assert not [item for item in shortlist.drops if item.reason == "role_unmeasured"]
+    written = write_run_funnel(report, tmp_path)
+    payload = json.loads(written.json_path.read_text())
+    shortlist_json = next(item for item in payload["stages"] if item["name"] == "shortlist")
+    assert "`role_unmeasured`: 10" in shortlist_json["note"]
+    assert "missing_profile_field:role_taxonomy" in shortlist_json["note"]
 
 
 def test_funnel_carries_run_scoped_attribution() -> None:

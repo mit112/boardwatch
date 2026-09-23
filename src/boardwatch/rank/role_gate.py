@@ -57,7 +57,13 @@ import re
 from collections.abc import Mapping
 from typing import Any, Literal
 
-RoleVerdict = Literal["swe", "not_swe", "uncertain"]
+from boardwatch.rank.role_taxonomy import MISSING_ROLE_TAXONOMY, RoleTaxonomy
+
+# `unmeasured` is the gate declining to fire because the user has no role taxonomy: never `swe`,
+# never `not_swe`, and deliberately not `uncertain` either, because `uncertain` feeds the
+# zero-signal VETO and an abstain must never become a drop (CLAUDE.md's keystone invariant).
+RoleVerdict = Literal["swe", "not_swe", "uncertain", "unmeasured"]
+
 # `unmeasured` is NOT a third outcome of the rule — it is the rule declining to fire because
 # the input it reads is absent. Kept distinct from `pass` so "we looked and found signal" can
 # never be confused with "nothing looked", which is the same reason an eligibility rule
@@ -549,6 +555,29 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
                 return "not_swe", f'not software (matched "{soft.group(0)}")'
         return "uncertain", "no role signal in title"
     return "swe", f'software title (matched "{signal.group(0)}")'
+
+
+def taxonomy_role_verdict(title: str, taxonomy: RoleTaxonomy | None) -> tuple[RoleVerdict, str]:
+    """Classify a TITLE against the user's own role taxonomy (P2 item 8, D-054).
+
+    No taxonomy ⇒ abstain, naming the missing profile field. A bundled field ⇒ the software
+    classifier above, unchanged. A gathered taxonomy ⇒ rescue-first like the software gate
+    (D-294): a family word decides `swe` (on target) before any exclude word is tried, then an
+    exclude word decides `not_swe`, and a title matching neither is `uncertain` and passes.
+    """
+    if taxonomy is None:
+        return "unmeasured", MISSING_ROLE_TAXONOMY
+    if taxonomy.bundled:
+        return role_verdict(title)
+    for family in taxonomy.families:
+        hit = family.pattern.search(title)
+        if hit is not None:
+            return "swe", f'role family {family.id!r} (matched "{hit.group(0)}")'
+    if taxonomy.exclude is not None:
+        excluded = taxonomy.exclude.search(title)
+        if excluded is not None:
+            return "not_swe", f'excluded by your role taxonomy (matched "{excluded.group(0)}")'
+    return "uncertain", "no role signal in title"
 
 
 def zero_signal_verdict(

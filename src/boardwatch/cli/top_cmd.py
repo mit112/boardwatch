@@ -51,9 +51,10 @@ from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.role_gate import (
     RoleVerdict,
     ZeroSignalVerdict,
-    role_verdict,
+    taxonomy_role_verdict,
     zero_signal_verdict,
 )
+from boardwatch.rank.role_taxonomy import load_role_taxonomy
 from boardwatch.rank.seniority_gate import (
     SeniorityVerdict,
     TargetBand,
@@ -246,6 +247,12 @@ class RankedResults:
     # extraction backfill is not running, so the gate is inert", and an inert gate that looks
     # like a clean one is the monitoring failure the keystone invariant forbids.
     signal_unmeasured: int = 0
+    # The role gate's abstain rate: postings it could not classify because the user has no role
+    # taxonomy (`missing_profile_field:role_taxonomy`, P2 item 8). REPORTED, NEVER DROPPED, and
+    # NOT part of the reconciliation identity above — these postings are in `visible` already.
+    # Equal to `considered` on an install that never answered the onboarding question, which is
+    # exactly the inert gate the keystone invariant says must read as a number.
+    role_unmeasured: int = 0
     # Titles carrying SOME seniority signal while the gate was inert
     # (`target_seniority_band == 'any'`). The gate short-circuits on `any` before
     # parsing, so `uncertain_band` and `hidden_over_seniority` are structurally 0
@@ -505,6 +512,9 @@ def rank_open_postings(
     # career field (and abstaining when it is unresolvable, which is what the catalog comment
     # calls for) is future work — there is no profile field to resolve it from yet.
     tier = catalog.fields["software"]
+    # The user's own role taxonomy, loaded once like the leveling catalog. `None` (no file) makes
+    # the role gate abstain on every row; a malformed file raises here, typed, never defaulted.
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
     now = now or utcnow()
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -597,6 +607,7 @@ def rank_open_postings(
     hidden_non_swe = 0
     hidden_zero_signal = 0
     signal_unmeasured = 0
+    role_unmeasured = 0
     hidden_over_seniority = 0
     uncertain_band = 0
     band_tokens_seen_while_inert = 0
@@ -651,12 +662,20 @@ def rank_open_postings(
         # The role gate is categorical, so it runs beside the score rather than inside it:
         # no title fuzz can rescue a "Deal Strategist". It is counted and reportable, never
         # a silent drop — a veto you cannot see is how a real job disappears unnoticed.
-        role, role_reason = role_verdict(row.title)
+        role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
         tenant.observe(
             "role",
             fired=role == "not_swe",
-            own_abstain="role_uncertain" if role == "uncertain" else None,
+            own_abstain=(
+                # No taxonomy file at all: the gate could not read this user's field (T184).
+                "missing_profile_field:role_taxonomy" if role == "unmeasured"
+                else "role_uncertain" if role == "uncertain"
+                else None
+            ),
         )
+        if role == "unmeasured":
+            # Counted, never dropped: the gate had no taxonomy to read (see `role_unmeasured`).
+            role_unmeasured += 1
         if role == "not_swe" and not include_non_swe:
             hidden_non_swe += 1
             continue
@@ -1112,6 +1131,7 @@ def rank_open_postings(
         hidden_non_swe=hidden_non_swe,
         hidden_zero_signal=hidden_zero_signal,
         signal_unmeasured=signal_unmeasured,
+        role_unmeasured=role_unmeasured,
         hidden_over_seniority=hidden_over_seniority,
         uncertain_band=uncertain_band,
         band_tokens_seen_while_inert=band_tokens_seen_while_inert,
@@ -1435,6 +1455,15 @@ def _print_hidden_notices(
             "so the zero-signal rule could not fire and they were passed through unfiltered — "
             "`show <id>` names the cause per row: a missing taxonomy extraction clears on the "
             "next ranking command, an empty JD body means the board is serving stubs.",
+            markup=False,
+        )
+    if results.role_unmeasured:
+        # Printed unconditionally, like `signal_unmeasured`: these rows are already visible. It is
+        # the role gate's abstain rate — with no role taxonomy nothing is classified at all.
+        target.print(
+            f"{results.role_unmeasured} title(s) were not role-classified: you have no role "
+            "taxonomy (missing_profile_field:role_taxonomy). Run `boardwatch profile "
+            "role-taxonomy` to set one.",
             markup=False,
         )
     if results.hidden_over_seniority and not include_over_seniority:

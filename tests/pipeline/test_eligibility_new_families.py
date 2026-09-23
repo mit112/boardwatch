@@ -31,6 +31,7 @@ from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
+from tests.conftest import write_bundled_role_taxonomy
 
 runner = CliRunner()
 
@@ -612,6 +613,7 @@ class TestCatalogChangeReEvaluates:
         monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
         monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
         (tmp_path / "cfg").mkdir(parents=True, exist_ok=True)
+        write_bundled_role_taxonomy(tmp_path / "cfg")
         return tmp_path / "data"
 
     def _run(self, data_dir: Path, args: list[str]):

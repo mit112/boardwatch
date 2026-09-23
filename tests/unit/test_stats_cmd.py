@@ -12,6 +12,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.reports.stats import StatsReport, compute_stats
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.tables import companies, jobs, postings
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = utcnow()
 runner = CliRunner()
@@ -20,6 +21,7 @@ runner = CliRunner()
 @pytest.fixture()
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
+    write_bundled_role_taxonomy(tmp_path / "cfg")
     data = tmp_path / "data"
     eng = get_engine(data)
     ensure_schema(eng)

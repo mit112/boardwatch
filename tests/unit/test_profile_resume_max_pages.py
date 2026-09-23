@@ -68,4 +68,5 @@ def test_resume_max_pages_not_a_profile_row_hash_input() -> None:
         "target_seniority_band",
         "leveling_digest",
         "taxonomy_version",
+        "role_taxonomy_digest",
     }

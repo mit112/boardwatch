@@ -483,13 +483,14 @@ def profile_row_hash(
     target_seniority_band: str = "any",
     leveling_digest: str = "",
     taxonomy_version: str = "",
+    role_taxonomy_digest: str = "",
 ) -> str:
-    """SHA-256 over the six profile columns the ranker reads, plus the two catalog versions.
+    """SHA-256 over the six profile columns the ranker reads, plus the three catalog versions.
 
     A missing list and an empty list are different inputs and hash differently — canonical form
     keeps an explicit null distinct from `[]`, the same guard `hashing.canonical` documents.
 
-    The two catalog arguments default to `""` in the convention this signature already set, so
+    The catalog arguments default to `""` in the convention this signature already set, so
     the guard against a caller forgetting one is NOT the signature: it is
     `test_taxonomy_drift_moves_both_identities`, which drives both production callers over two
     taxonomies and fails if either hash sits still.
@@ -507,6 +508,9 @@ def profile_row_hash(
         # And the skill taxonomy, for the same reason again: since the zero-signal veto,
         # "0 recognised requirement terms" is a taxonomy judgement that DROPS a posting.
         "taxonomy_version": taxonomy_version,
+        # And the user's role taxonomy (P2 item 8): it decides the role gate's `not_swe` drop.
+        # `""` is "no taxonomy", which no real digest can equal.
+        "role_taxonomy_digest": role_taxonomy_digest,
     }
     return digest(payload)
 

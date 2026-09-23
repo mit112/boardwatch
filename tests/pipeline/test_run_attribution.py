@@ -25,7 +25,7 @@ from tests.conftest import write_test_resume_template
 
 runner = CliRunner()
 
-INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
 
 

@@ -28,7 +28,7 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import get_evaluations, get_requirements
 from boardwatch.store.queries import RUN_FAILED, RUN_OK
 
-CLI_INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+CLI_INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 
 JD_5YR = (
     "We need a backend engineer with a minimum of 5 years of experience. "

@@ -23,7 +23,8 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.role_gate import role_verdict, zero_signal_verdict
+from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
+from boardwatch.rank.role_taxonomy import load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
@@ -151,6 +152,7 @@ def compute_stats(
     leveling = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
     tier = leveling.fields["software"]
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
     target_band = cast(TargetBand, profile.target_seniority_band)
     stats: list[PostingStat] = []
     for row in rows:
@@ -160,7 +162,7 @@ def compute_stats(
         # independently, such a posting landed in both buckets and `over_seniority` read higher
         # than the funnel's `hidden_over_seniority` for the same corpus -- two numbers for one
         # gate that could not be reconciled.
-        role = role_verdict(row.title)[0]
+        role = taxonomy_role_verdict(row.title, role_taxonomy)[0]
         non_swe = role == "not_swe"
         # Between the two, exactly where the ranker `continue`s on it: an `uncertain` +
         # zero-skill + above-band posting is `hidden_zero_signal` in the funnel and must not

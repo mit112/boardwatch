@@ -35,7 +35,7 @@ from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from tests.conftest import write_test_resume_template
 
-runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
 
 

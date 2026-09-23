@@ -110,6 +110,10 @@ def _shortlist_line(summary: PipelineSummary) -> str:
     unmeasured = (
         f" · {counts.signal_unmeasured} body signal unmeasured" if counts.signal_unmeasured else ""
     )
+    # The role gate's abstain rate, same treatment: non-zero means there is no role taxonomy.
+    role_unmeasured = (
+        f" · {counts.role_unmeasured} role unmeasured" if counts.role_unmeasured else ""
+    )
     # Named separately because the two halves end on different events (D-439): one on the next
     # run, one only when the owner actions the lead they already hold. Suppressed at 0 so the
     # line does not grow for the case where the distinction does not arise.
@@ -128,7 +132,7 @@ def _shortlist_line(summary: PipelineSummary) -> str:
         f"{counts.hidden_lane_copy} lane-copy, "
         f"{counts.hidden_applied} already applied, "
         f"{counts.hidden_handled} already handled, "
-        f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}{unmeasured}"
+        f"{counts.hidden_below_cutoff} below cutoff{dead}){uncertain}{unmeasured}{role_unmeasured}"
     )
 
 

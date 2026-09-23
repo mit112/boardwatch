@@ -35,6 +35,7 @@ from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.leveling import load_leveling
+from boardwatch.rank.role_taxonomy import load_role_taxonomy, role_taxonomy_digest
 from boardwatch.rank.tenant_assumptions import TenantAssumptionReport
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash, routing_hash
@@ -135,6 +136,9 @@ def manifest_identity(
                 target_seniority_band=profile_row.target_seniority_band,
                 leveling_digest=load_leveling(settings.config_dir).digest,
                 taxonomy_version=load_taxonomy(settings.config_dir).version,
+                role_taxonomy_digest=role_taxonomy_digest(
+                    load_role_taxonomy(settings.config_dir)
+                ),
             )
             if profile_row is not None
             else None

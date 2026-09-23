@@ -32,6 +32,7 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
 from boardwatch.store.queries import get_profile, insert_run, save_eligibility, save_profile
 from boardwatch.store.tables import companies, jobs, posting_events, posting_versions, postings
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = datetime(2026, 7, 30, 12, 0, 0)
 
@@ -54,6 +55,7 @@ ZERO_SKILL_BODY = (
 
 
 def _settings(tmp_path: Path) -> Settings:
+    write_bundled_role_taxonomy(tmp_path / "cfg")
     return Settings(data_dir=tmp_path / "data", config_dir=tmp_path / "cfg")
 
 

@@ -43,7 +43,7 @@ HEALTHY_BODY = b'{"jobs": []}'
 
 runner = CliRunner()
 
-INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 
 # T43 appended the trailing clause: it trips the (non-blocking, default `preference`)
 # `degree` family's `degree_preferred` pattern, which is enough on its own — one row, no

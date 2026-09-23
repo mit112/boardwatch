@@ -179,6 +179,52 @@ def test_taxonomy_drift_moves_both_identities(tmp_path: Path) -> None:
     assert first_stamp != second_stamp, "a permanent disposition would carry the wrong policy"
 
 
+def test_role_taxonomy_drift_moves_both_identities(tmp_path: Path) -> None:
+    """The user's role taxonomy decides the role gate's drop, over the same two callers.
+
+    No file, then a bundled one, then a gathered one: each is a different ranker policy, so the
+    manifest hash and the permanent-disposition stamp must move at every step.
+    """
+    from boardwatch.pipeline.funnel_writer import collect_run_funnel
+    from boardwatch.pipeline.policy import run_policy_version
+    from boardwatch.rank.role_taxonomy import write_role_taxonomy
+    from boardwatch.reports.run_funnel import ScanContext
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run, save_profile
+
+    settings = _settings(tmp_path)
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    engine = get_engine(settings.data_dir)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        save_profile(
+            conn, text="A profile.", target_titles=[], exclude_titles=[], locations=[],
+            remote_only=False, skills=[], taxonomy_version="pinned", resume_max_pages=1,
+        )
+    run_id = insert_run(engine)
+
+    def _identities() -> tuple[str | None, str]:
+        funnel = collect_run_funnel(
+            engine, settings, run_id=run_id, scan=ScanContext(ran=False), shortlist=None,
+            tailored=[], tailor_failed=0, projection_ran=False, rewrite_rows=[],
+            lanes=[], stage_durations=None, errors=[], fatal=None,
+        )
+        with engine.connect() as conn:
+            return funnel.manifest.profile_row_hash, run_policy_version(conn, settings)
+
+    absent = _identities()
+    write_role_taxonomy(settings.config_dir, {"version": 1, "field": "software", "bundled": True})
+    bundled = _identities()
+    write_role_taxonomy(
+        settings.config_dir,
+        {"version": 1, "field": "widgetry",
+         "role_families": [{"id": "inspection", "title_words": ["widget inspector"]}]},
+    )
+    gathered = _identities()
+    for index in (0, 1):
+        assert len({absent[index], bundled[index], gathered[index]}) == 3, index
+
+
 # ------------------------------------------------------- T111: the sixth value, and its closure
 
 #: The five values `routing_hash` must not move. Named as a list so each assertion below is
