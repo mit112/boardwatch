@@ -117,10 +117,10 @@ def doctor(ctx: typer.Context, offline: bool = typer.Option(False, "--offline"))
     # `doctor` must stay usable (print its diagnostics, compute its exit code) even when the
     # write contends with a concurrent `run` under the busy_timeout and raises.
     #
-    # T166: the reap alone — not the rest of `doctor` — now takes T133's one scan-lease
-    # acquisition point, so it can never race a `run`/pipeline's own in-lease reap of the same
-    # row. A held lease is reported the same way any other skipped reap already is: one plain
-    # line, exit code unaffected, never a crash.
+    # T166: the reap alone — not the rest of `doctor` — takes T133's one scan-lease acquisition
+    # point. A pipeline holds that lease for its whole run, so while anyone holds it the "stale"
+    # row can be that live run, older than `reap_stale_after_hours` and still working. A held
+    # lease skips the reap with one plain line; the exit code is unaffected, never a crash.
     try:
         with scan_lease(app_ctx.settings):
             reaped = reap_stale_runs(
