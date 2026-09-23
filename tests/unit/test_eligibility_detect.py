@@ -753,3 +753,91 @@ def test_abstain_by_sentence_does_NOT_reach_the_next_unit(tmp_path: Path) -> Non
     """The other neighbour, pinned for the same reason: `abstain_by_adjacent` is a SIXTH
     scope only if it differs from the fifth. Same body as the adjacent test that passes."""
     assert not _reach(tmp_path, "abstain_by_sentence", _NEXT)
+
+
+# ------------------------------------- the heading view adds only a NEW reading (T163)
+
+def _readings(dets: list[Detection]) -> list[tuple[str, tuple[int, int], dict[str, str]]]:
+    return [(d.pattern.id, d.span, d.values) for d in dets]
+
+
+@pytest.mark.parametrize("body,pattern_id,span,values", [
+    (
+        "Preferred Qualifications:\n- 5 years of experience preferred.",
+        "total_years_preferred", (28, 59), {"years": "5"},
+    ),
+    (
+        "Preferred:\n- 3-5 years of experience preferred.",
+        "range_years_preferred", (13, 46), {"years": "3"},
+    ),
+])
+def test_a_hedged_bullet_under_a_hedge_heading_writes_its_preferred_row_once(
+    catalog, body, pattern_id, span, values
+) -> None:
+    """The bullet states its own hedge, so its own view already reads the bar as preferred.
+    The heading view then read the SAME bar a second time, through the pattern's other layout
+    (`years_alt`), and the posting persisted two rows for one requirement.
+
+    The own view's row is the one that stands: the heading view exists to add a reading the
+    bullet alone does not produce, and here it adds none.
+    """
+    dets = detect(body, catalog, enabled_families=ALL)
+    assert _readings(dets) == [(pattern_id, span, values)]
+
+
+@pytest.mark.parametrize("body,readings", [
+    (
+        "Nice to have:\n- 5 years of experience.",
+        [("total_years_preferred", (0, 37), {"years_alt": "5"})],
+    ),
+    (
+        "Nice to have:\n- 5 years of experience preferred.\n- 5 years of experience.",
+        [
+            ("total_years_preferred", (0, 72), {"years_alt": "5"}),
+            ("total_years_preferred", (16, 47), {"years": "5"}),
+        ],
+    ),
+])
+def test_a_bare_bullet_under_a_hedge_heading_still_gets_its_preferred_row(
+    catalog, body, readings
+) -> None:
+    """CONTROL: the heading view's reason to exist. A bullet that states no hedge gets no
+    preferred row from its own view, so its one row comes from the heading view.
+
+    The record is per UNIT: the second body's first bullet reads the same bar on its own, and
+    that does not stand down the heading view's row for the bare bullet after it.
+    """
+    dets = detect(body, catalog, enabled_families=ALL)
+    assert _readings(dets) == readings
+
+
+def test_a_suppressed_own_view_match_does_not_hide_the_heading_view_row(catalog) -> None:
+    """CONTROL: the comparison is against what the own view APPENDED, not what it matched.
+
+    The bullet's own layout matches from the number through `preferred` and holds the `not`
+    inside its span, so `_cue_inside` drops it. The heading view's span stops at `experience`,
+    and the `not` sits in the next clause, so its row stands exactly as it did before T163.
+    """
+    body = "Preferred Qualifications:\n- 5+ years of experience, not required but preferred."
+    bullet = body.split("\n")[1]
+    pattern = next(
+        p for f in catalog.families for p in f.patterns if p.id == "total_years_preferred"
+    )
+    assert pattern.regex.search(bullet) is not None, "fixture broke: the own view must match"
+    dets = detect(body, catalog, enabled_families=ALL)
+    assert _readings(dets) == [("total_years_preferred", (0, 50), {"years_alt": "5"})]
+
+
+def test_a_required_bar_under_a_hedge_heading_is_unchanged(catalog) -> None:
+    """CONTROL: a required pattern never gets the heading view, so nothing here touches it.
+
+    The bullet states the SAME number twice, hedged and then required, so the required row and
+    the heading view's preferred row share their captures. The record is per pattern: the
+    required row does not stand the preferred one down, and neither is duplicated.
+    """
+    body = "Nice to have:\n- 5 years of experience; 5 years of experience is required."
+    dets = detect(body, catalog, enabled_families=ALL)
+    assert _readings(dets) == [
+        ("total_years_preferred", (0, 37), {"years_alt": "5"}),
+        ("total_years_minimum", (39, 60), {"years": "5"}),
+    ]
