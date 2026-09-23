@@ -573,7 +573,15 @@ class JobAppsLane:
             except OSError:
                 continue
             for folder in folders:
-                if not (folder / _RECORD_NAME).is_file():
+                record_path = folder / _RECORD_NAME
+                # `is_file()` alone stats through a symlink and reads False for one that is
+                # dangling, so a folder present in the listing with nothing but a broken link
+                # at `_RECORD_NAME` fell out here before it ever became a candidate -- the one
+                # rejection `_read_record`'s OSError catch cannot cover, because it is never
+                # called. `is_symlink()` (an lstat, never resolved) admits it as a candidate so
+                # `_read_record`'s existing OSError handling counts it like any other unreadable
+                # record.
+                if not (record_path.is_file() or record_path.is_symlink()):
                     continue
                 candidates += 1
                 record = _read_record(folder)
