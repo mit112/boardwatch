@@ -405,22 +405,68 @@ def test_no_snapshot_ever_holds_two_postings_with_one_provider_posting_id(tmp_pa
         assert len(ids) == len(set(ids))
 
 
-def test_a_record_at_an_unsupported_schema_version_is_skipped(tmp_path):
+def test_a_record_at_an_unsupported_schema_version_is_skipped_and_counted(tmp_path):
+    """`_read_record` rejects this folder, and a silent drop is indistinguishable from a record
+    the lane never saw -- so it must land in the tally, exactly like the lane's other drops
+    (`collect`'s own `not_attemptable` comment states the rule this pins)."""
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "ok")
     _write(root, "Greenhouse", "future", schema_version=99, posting_id="pst_future")
-    assert len(_postings(_collect(root, tmp_path))) == 1
+    result = _collect(root, tmp_path)
+    assert len(_postings(result)) == 1
+    assert result.tally.counts["not_attemptable"] == 1
 
 
 @pytest.mark.parametrize("missing", ["company", "title", "direct_url"])
-def test_a_record_missing_a_required_canonical_field_is_skipped(tmp_path, missing):
+def test_a_record_missing_a_required_canonical_field_is_skipped_and_counted(tmp_path, missing):
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "ok")
     folder = _write(root, "Greenhouse", "bad", posting_id="pst_bad")
     payload = json.loads((folder / "discovery_record.json").read_text())
     payload["canonical"][missing] = ""
     (folder / "discovery_record.json").write_text(json.dumps(payload), encoding="utf-8")
-    assert len(_postings(_collect(root, tmp_path))) == 1
+    result = _collect(root, tmp_path)
+    assert len(_postings(result)) == 1
+    assert result.tally.counts["not_attemptable"] == 1
+
+
+def test_an_unreadable_record_file_is_skipped_and_counted(tmp_path):
+    """Not just a bad field -- invalid JSON on disk, the other way `_read_record` returns None."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok")
+    folder = root / "Greenhouse" / "corrupt"
+    folder.mkdir(parents=True)
+    (folder / "discovery_record.json").write_text("{not json", encoding="utf-8")
+    result = _collect(root, tmp_path)
+    assert len(_postings(result)) == 1
+    assert result.tally.counts["not_attemptable"] == 1
+
+
+def test_a_tree_where_every_candidate_fails_to_parse_still_raises_and_counts_nothing(tmp_path):
+    """The control the ticket asks for: mixing two different `_read_record` rejection causes in
+    one tree, with NO parseable record anywhere, must still raise `JobAppsSourceError` with its
+    existing message -- not quietly count the candidates and return a clean, misleadingly benign
+    zero."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a", schema_version=99, posting_id="pst_a")
+    folder = _write(root, "Greenhouse", "b", posting_id="pst_b")
+    payload = json.loads((folder / "discovery_record.json").read_text())
+    payload["canonical"]["company"] = ""
+    (folder / "discovery_record.json").write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(JobAppsSourceError, match="record format has probably moved"):
+        _collect(root, tmp_path)
+
+
+def test_a_tree_of_only_valid_records_reports_the_same_counts_as_before(tmp_path):
+    """Control: nothing rejected, so the tally must show exactly what it showed before this
+    change -- no phantom `not_attemptable` entries from a tree with nothing wrong in it."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a")
+    _write(root, "Ashby", "b", direct_url="https://jobs.ashbyhq.com/openai", posting_id="pst_b")
+    result = _collect(root, tmp_path)
+    assert len(_postings(result)) == 2
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.attempted == 2
 
 
 # ---------------------------------------------------------------------------------------

@@ -432,8 +432,14 @@ class JobAppsLane:
         `search_pages` is empty, which is honest -- there is no search and nothing paginated.
         """
         del fetcher  # on disk; see the docstring
-        records = self._records()
+        records, rejected = self._records()
         tally = AcquisitionTally()
+        for _ in range(rejected):
+            # Seen (a candidate folder existed) and never attempted: `_read_record` could not
+            # parse it -- unreadable JSON, an unsupported `schema_version`, or a missing required
+            # `canonical` field. Same bucket and same reason as every other drop in this method:
+            # a silent drop is indistinguishable from a record the lane never saw.
+            tally.record("not_attemptable")
 
         grouped: dict[tuple[str, str], list[tuple[_Identity, _Record]]] = {}
         names: dict[tuple[str, str], str] = {}
@@ -506,8 +512,8 @@ class JobAppsLane:
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
 
-    def _records(self) -> list[_Record]:
-        """Every readable record in the tree.
+    def _records(self) -> tuple[list[_Record], int]:
+        """Every readable record in the tree, and how many candidates `_read_record` rejected.
 
         Two levels deep and never recursive: `<queue>/<ATS>/<posting folder>/`. Recursing would
         reach `_skipped/<reason>/`, whose directory names are job-apps' verdicts.
@@ -515,7 +521,8 @@ class JobAppsLane:
         Raises `JobAppsSourceError` only for a STRUCTURAL break -- the source is absent,
         unreadable, holds no group folder at all, or holds candidate records none of which
         parse. A tree that exists and holds group folders but currently has zero records in
-        them is the owner having caught up, not a break, and returns an empty list.
+        them is the owner having caught up, not a break, and returns an empty list with a zero
+        rejected count.
         """
         if not self._roots:
             raise JobAppsSourceError(
@@ -523,12 +530,16 @@ class JobAppsLane:
                 f"{LANE_NAME!r} out of `lanes_enabled`"
             )
         records: list[_Record] = []
+        rejected = 0
         for root in self._roots:
-            records.extend(self._records_under(root))
-        return records
+            root_records, root_rejected = self._records_under(root)
+            records.extend(root_records)
+            rejected += root_rejected
+        return records, rejected
 
-    def _records_under(self, root: Path) -> list[_Record]:
-        """One root's readable records, with that root's own structural check.
+    def _records_under(self, root: Path) -> tuple[list[_Record], int]:
+        """One root's readable records plus its rejected-candidate count, with that root's own
+        structural check.
 
         Per root rather than across them: a break in EITHER tree has to be visible. Folding them
         would let a moved discovery tree hide behind a healthy queue tree, which is the exact
@@ -576,8 +587,10 @@ class JobAppsLane:
             )
         # Zero records with zero candidates and at least one group folder present: the owner has
         # processed every posting out of the tree. Benign, and reported as a clean zero rather
-        # than raised -- see the module docstring.
-        return records
+        # than raised -- see the module docstring. Whatever the cause, every candidate this root
+        # held that did not become a record is one `_read_record` rejected, and the caller counts
+        # it rather than dropping it silently.
+        return records, candidates - len(records)
 
     def _body(self, record: _Record) -> str | None:
         try:
