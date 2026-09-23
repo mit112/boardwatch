@@ -13,10 +13,12 @@ in the artifact instead of being resolved silently in favour of whichever ran la
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, Row, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.form_questions import FormQuestionSweep
@@ -27,6 +29,7 @@ from boardwatch.eligibility.engine import (
     not_applicable_field_families,
 )
 from boardwatch.eligibility.facts import parse_facts
+from boardwatch.eligibility.final_gate import gate_engine_version
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.extract.taxonomy import load_taxonomy
@@ -37,22 +40,31 @@ from boardwatch.reports.manifest import config_hash, profile_row_hash, routing_h
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
     BoardCoverageReport,
+    CodeProvenance,
     DeathProbeReport,
+    ExecutionProvenance,
     GateCounters,
     LaneReport,
     Lead,
     LivenessCheck,
     RunFunnel,
+    RunIdentity,
     RunManifest,
     ScanContext,
     ShortlistCounts,
     StageDuration,
     build_projection_counters,
     build_run_funnel,
+    identity_drift,
 )
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.delivery_queries import apply_lane_cohort
-from boardwatch.store.queries import current_posting_versions, get_profile, record_corpus_counts
+from boardwatch.store.queries import (
+    current_posting_versions,
+    get_profile,
+    get_watched_companies,
+    record_corpus_counts,
+)
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
@@ -91,6 +103,121 @@ def _corpus_without_profile(open_postings: int) -> CorpusCounts:
         judged_this_run=0,
         cache_hit_prior_run=0,
         cache_hit_unattributed=0,
+    )
+
+
+def manifest_identity(
+    settings: Settings,
+    *,
+    identity: tuple[str, str] | None,
+    profile_row: Row[Any] | None,
+) -> RunIdentity:
+    """The manifest's six values, from `current_identity` and the profile row (T137).
+
+    The ONE computation of them. `collect_run_funnel` builds the manifest from it and
+    `run_pipeline` reads the run's start identity through it (`read_run_identity`), so a
+    difference between the two readings is an input that moved. A second copy of this would be a
+    second opinion able to drift from the first — the defect class T137 exists to report.
+    """
+    return RunIdentity(
+        code_fingerprint=engine_version(),
+        config_hash=config_hash(settings),
+        profile_facts_hash=identity[0] if identity is not None else None,
+        rules_hash=identity[1] if identity is not None else None,
+        profile_row_hash=(
+            profile_row_hash(
+                skills=profile_row.skills_json,
+                target_titles=profile_row.target_titles_json,
+                exclude_titles=profile_row.exclude_titles_json,
+                locations=profile_row.locations_json,
+                remote_only=profile_row.remote_only,
+                target_seniority_band=profile_row.target_seniority_band,
+                leveling_digest=load_leveling(settings.config_dir).digest,
+                taxonomy_version=load_taxonomy(settings.config_dir).version,
+            )
+            if profile_row is not None
+            else None
+        ),
+        # T111. The SIXTH value. It reads the same `settings` object and adds nothing to any hash
+        # above it — a run that flips a routing knob moves this and only this.
+        routing_hash=routing_hash(settings),
+    )
+
+
+def read_run_identity(conn: Connection, settings: Settings) -> RunIdentity:
+    """`manifest_identity` over the same two reads `collect_run_funnel` makes."""
+    return manifest_identity(
+        settings, identity=current_identity(conn, settings), profile_row=get_profile(conn)
+    )
+
+
+#: The `boardwatch` package directory — where the running code was imported from, which on the
+#: daily driver is an EDITABLE checkout parked on whatever branch that tree is on.
+_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+#: Per git call. Provenance is reporting, and a hung git must cost the field, never the run.
+_GIT_TIMEOUT_SECONDS = 5.0
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        check=True,
+        timeout=_GIT_TIMEOUT_SECONDS,
+    ).stdout
+
+
+def code_provenance(root: Path) -> CodeProvenance | None:
+    """The commit `root` is checked out at and whether its tree is dirty, or `None`.
+
+    `None` — never a guess — when `root` is not a git checkout (a wheel install), when git is
+    missing, fails or times out. FAIL-OPEN: nothing here may fail a run.
+
+    `ls-files --error-unmatch` first, because a wheel installed into a virtualenv INSIDE a
+    checkout sits in a git work tree without being part of it: `rev-parse HEAD` would answer
+    with the enclosing checkout's commit, which names code that did not run. The package's own
+    `__init__.py` being TRACKED is what makes `root` the source the process imported.
+
+    `--no-optional-locks` on the status call: a plain `git status` refreshes and rewrites the
+    index under `index.lock`, and this runs unattended against the owner's own checkout — a
+    concurrent commit there must not meet a lock this took, and a run killed mid-call must not
+    leave one behind.
+    """
+    try:
+        _git(root, "ls-files", "--error-unmatch", "--", "__init__.py")
+        commit = _git(root, "rev-parse", "HEAD").strip()
+        dirty = bool(_git(root, "--no-optional-locks", "status", "--porcelain").strip())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return CodeProvenance(commit=commit, dirty=dirty)
+
+
+def read_execution_provenance(
+    conn: Connection,
+    settings: Settings,
+    *,
+    boards_attempted: int,
+    skip_scan: bool,
+    project: bool,
+    liveness_prober: bool,
+    top_n: int,
+) -> ExecutionProvenance:
+    """T137's execution provenance, from `settings`, the store and the command's own flags."""
+    return ExecutionProvenance(
+        code=code_provenance(_PACKAGE_ROOT),
+        gate_engine_version=gate_engine_version(),
+        gate_model=settings.gate.model,
+        gate_effort=settings.gate.effort,
+        lanes=settings.lanes_enabled,
+        watched_companies=len(get_watched_companies(conn)),
+        boards_attempted=boards_attempted,
+        skip_scan=skip_scan,
+        project=project,
+        liveness_prober=liveness_prober,
+        top_n=top_n,
     )
 
 
@@ -148,6 +275,12 @@ def collect_run_funnel(
     # store. `None` means the run was not timed at all — the honest reading for a stored
     # artifact written before this shipped — which is not the same as an empty sequence.
     stage_durations: Sequence[StageDuration] | None,
+    # T137. The identity `run_pipeline` read before ranking, through `read_run_identity`. `None`
+    # means NOT MEASURED — every caller outside `run_pipeline`, and a start reading that failed —
+    # and the artifact says so rather than reporting a stable run.
+    start_identity: RunIdentity | None = None,
+    # T137. `None` means not recorded, and the section says so.
+    execution_provenance: ExecutionProvenance | None = None,
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -264,25 +397,15 @@ def collect_run_funnel(
         candidates=corpus.by_verdict.get("eligible", 0) + corpus.by_verdict.get("uncertain", 0),
     )
 
+    # T137. The END reading, through the function the start reading used — see
+    # `manifest_identity`.
+    end_identity = manifest_identity(settings, identity=identity, profile_row=profile_row)
     manifest = RunManifest(
-        code_fingerprint=engine_version(),
-        config_hash=config_hash(settings),
-        profile_facts_hash=identity[0] if identity is not None else None,
-        rules_hash=identity[1] if identity is not None else None,
-        profile_row_hash=(
-            profile_row_hash(
-                skills=profile_row.skills_json,
-                target_titles=profile_row.target_titles_json,
-                exclude_titles=profile_row.exclude_titles_json,
-                locations=profile_row.locations_json,
-                remote_only=profile_row.remote_only,
-                target_seniority_band=profile_row.target_seniority_band,
-                leveling_digest=load_leveling(settings.config_dir).digest,
-                taxonomy_version=load_taxonomy(settings.config_dir).version,
-            )
-            if profile_row is not None
-            else None
-        ),
+        code_fingerprint=end_identity.code_fingerprint,
+        config_hash=end_identity.config_hash,
+        profile_facts_hash=end_identity.profile_facts_hash,
+        rules_hash=end_identity.rules_hash,
+        profile_row_hash=end_identity.profile_row_hash,
         # `runs.status` is `running` until finish_run stamps it; a funnel written from the
         # pipeline's finally block reads the terminal value finish_run just wrote (D-029).
         status=row.status if row is not None else "running",
@@ -290,10 +413,7 @@ def collect_run_funnel(
         # tell a reader whether the hard US gate was armed, and without that each lead's
         # `location_class` is a verdict with no claim attached to it.
         location_filter_mode=settings.location_filter_mode,
-        # T111. The SIXTH value, computed here beside the other two this module builds. It reads
-        # the same `settings` object and adds nothing to any hash above it — a run that flips a
-        # routing knob moves this and only this.
-        routing_hash=routing_hash(settings),
+        routing_hash=end_identity.routing_hash,
     )
 
     leads = [
@@ -353,6 +473,10 @@ def collect_run_funnel(
         board_coverage=board_coverage,
         lanes=lanes,
         stage_durations=stage_durations,
+        identity_drift=(
+            None if start_identity is None else identity_drift(start_identity, end_identity)
+        ),
+        provenance=execution_provenance,
         errors=errors,
         fatal=fatal,
     )

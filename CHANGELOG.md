@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A run now says when its identity moved under it, and records what it ran as (2026-09-22, T137).**
+  A run reads its profile, rules and config several times: the ranker, the judge, the ledger stamp,
+  and last the funnel's manifest. An edit landing mid-run (the owner editing `config.toml`, a peer
+  session running `boardwatch profile …`) made those describe different versions while the manifest
+  claimed one identity. The run now reads the manifest's six values once before ranking, through the
+  one function the manifest is built with, and the funnel compares its end reading field by field. The
+  funnel JSON gains an additive `identity_drift` key: `[]` when stable, `null` when not measured, and
+  otherwise the names of the fields that moved. When it is not empty, the markdown says so and one
+  `run identity drifted mid-run: <fields>` line reaches the run's errors and the morning digest. The
+  manifest publishes exactly what it did before. Separately, a `provenance` key and markdown section
+  record how the run executed: the checkout's commit and whether it was dirty, the gate's engine
+  version, model and effort, the armed lanes, the watched-company count and boards attempted, and the
+  command's flags. None of it is folded into any hash, so it can never reopen a disposition, and it
+  fails open: with git missing, failing or slow, or with no checkout, the commit is null and the run
+  carries on. Reporting only; nothing is refused or re-run. Astra review 04, F6.
+
 - **A re-key's damage to the standing queue now heals on its own (2026-09-22, T113).** A gate
   reading is keyed on the live identity, and a built lead is never on the slate again, so every
   re-key stranded every standing reading and nothing ever re-judged them: the holds those readings

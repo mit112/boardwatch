@@ -43,7 +43,7 @@ import json
 import statistics
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime
 from pathlib import Path
 
@@ -232,6 +232,12 @@ _TOP_MISSING = 10
 # counting the SLATE; the refresh is counted apart because its leads were never on it. With the
 # budget at 0 the three counts are `null` — the refresh was not armed, which is not the same fact as
 # a refresh that found nothing stale — and a funnel written before this lacks all four.
+#
+# **T137's `identity_drift` and `provenance` do NOT bump it**, on T110's `apply_lane` precedent:
+# two new top-level keys, neither supplying a denominator an existing block was read without, and
+# neither changing what any existing key MEANS — `manifest` publishes exactly the six values it
+# published before, from the same functions. A funnel written before this lacks both, which reads
+# as `null`: drift NOT MEASURED and provenance NOT RECORDED, never "stable" or "no code".
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -537,6 +543,162 @@ class RunManifest:
     status: str
     location_filter_mode: str
     routing_hash: str | None = None
+
+
+@dataclass(frozen=True)
+class RunIdentity:
+    """T137. The six values `RunManifest` publishes as the run's identity, read at ONE moment.
+
+    The manifest is read as the run FINISHES, while the ranker, the judge and the ledger stamp
+    read the same inputs earlier — so a profile, rules or catalog edit landing mid-run makes them
+    describe different versions under a manifest that claims one. `run_pipeline` reads this once
+    before ranking and the funnel reads it again for the manifest, both through
+    `funnel_writer.manifest_identity`, so the two readings can differ only because an input
+    moved, never because two computations disagree.
+    """
+
+    code_fingerprint: str
+    config_hash: str
+    profile_facts_hash: str | None
+    profile_row_hash: str | None
+    rules_hash: str | None
+    routing_hash: str
+
+
+def identity_drift(start: RunIdentity, end: RunIdentity) -> tuple[str, ...]:
+    """The names of the fields whose value moved between two readings, in field order.
+
+    Per field rather than one boolean: which input moved is the first thing a reader needs, and a
+    profile edit and a rules edit are different questions about the run.
+    """
+    return tuple(
+        item.name
+        for item in fields(RunIdentity)
+        if getattr(start, item.name) != getattr(end, item.name)
+    )
+
+
+@dataclass(frozen=True)
+class CodeProvenance:
+    """The git commit of the checkout the running `boardwatch` package was imported from."""
+
+    commit: str
+    # `git status --porcelain` printed anything, untracked files included: the code that ran
+    # may not be the code at `commit`.
+    dirty: bool
+
+
+@dataclass(frozen=True)
+class ExecutionProvenance:
+    """T137. How the run was EXECUTED, which the manifest's six hashes cannot see.
+
+    Folded into NO hash — not `policy_version`, `config_hash` or `routing_hash` — and that is the
+    point rather than a gap: a permanent disposition must never reopen because a lane was armed,
+    the fleet grew or the checkout moved (D-524 keeps routing separate for the same reason). What
+    it buys is that two runs with byte-identical manifests stop reading as the same execution.
+    """
+
+    # `None` when the package root is not a git checkout (a wheel install) or git failed —
+    # never a guess.
+    code: CodeProvenance | None
+    # `final_gate.gate_engine_version()`: the judge's policy and prompt, which re-key gate rows
+    # and are reachable from no manifest value.
+    gate_engine_version: str
+    # As the run read them from `settings`. `gate_effort` is `None` when no `--effort` is passed.
+    gate_model: str
+    gate_effort: str | None
+    # `settings.lanes_enabled`, in order.
+    lanes: tuple[str, ...]
+    # Watched companies when the run's identity was first read, and the boards the scan
+    # attempted — 0 on a `--no-scan` run, which attempted none.
+    watched_companies: int
+    boards_attempted: int
+    # The command's own flags. `liveness_prober` is whether one was SUPPLIED, not what it found.
+    skip_scan: bool
+    project: bool
+    liveness_prober: bool
+    top_n: int
+
+
+def provenance_to_dict(provenance: ExecutionProvenance | None) -> dict[str, object] | None:
+    """`None` when nothing was recorded — a funnel built outside a pipeline run, or a capture that
+    failed — rather than a block of defaults that would name code and flags nobody read."""
+    if provenance is None:
+        return None
+    code = provenance.code
+    return {
+        "code": None if code is None else {"commit": code.commit, "dirty": code.dirty},
+        "gate": {
+            "engine_version": provenance.gate_engine_version,
+            "model": provenance.gate_model,
+            "effort": provenance.gate_effort,
+        },
+        "lanes": list(provenance.lanes),
+        "fleet": {
+            "watched_companies": provenance.watched_companies,
+            "boards_attempted": provenance.boards_attempted,
+        },
+        "flags": {
+            "skip_scan": provenance.skip_scan,
+            "project": provenance.project,
+            "liveness_prober": provenance.liveness_prober,
+            "top_n": provenance.top_n,
+        },
+    }
+
+
+def _identity_drift_lines(drift: tuple[str, ...] | None) -> list[str]:
+    """Nothing on a stable run, so its manifest section reads exactly as it did before T137."""
+    if drift is None:
+        return [
+            "*Identity drift: NOT MEASURED — the hashes below are one reading, taken as the run "
+            "finished.*",
+            "",
+        ]
+    if not drift:
+        return []
+    moved = ", ".join(f"`{name}`" for name in drift)
+    return [
+        f"**This run's identity DRIFTED mid-run: {moved} moved between the reading taken before "
+        "ranking and the one below. The hashes below are the END reading, so they are NOT the "
+        "identity of the whole run.**",
+        "",
+    ]
+
+
+def _provenance_lines(provenance: ExecutionProvenance | None) -> list[str]:
+    lines = ["## Execution provenance", ""]
+    if provenance is None:
+        return [
+            *lines,
+            "not recorded — a funnel built outside a pipeline run, or the capture failed.",
+            "",
+        ]
+    code = provenance.code
+    return [
+        *lines,
+        "*How this run was EXECUTED. Folded into no hash above, so nothing here can reopen a "
+        "disposition — and two runs whose hashes all agree can still differ here.*",
+        "",
+        "| field | value |",
+        "|---|---|",
+        "| code | "
+        + (
+            "not a git checkout, or git failed"
+            if code is None
+            else f"{code.commit}{' (dirty tree)' if code.dirty else ''}"
+        )
+        + " |",
+        f"| gate engine version | {provenance.gate_engine_version} |",
+        f"| gate model | {provenance.gate_model} |",
+        f"| gate effort | {provenance.gate_effort or 'CLI default'} |",
+        f"| lanes | {', '.join(provenance.lanes) or 'none'} |",
+        f"| watched companies | {provenance.watched_companies} |",
+        f"| boards attempted | {provenance.boards_attempted} |",
+        f"| flags | skip_scan={provenance.skip_scan}, project={provenance.project}, "
+        f"liveness prober={provenance.liveness_prober}, top_n={provenance.top_n} |",
+        "",
+    ]
 
 
 @dataclass(frozen=True)
@@ -1536,6 +1698,12 @@ class RunFunnel:
     # the funnel has at least two rows. The empty tuple exists for a direct `build_run_funnel`
     # caller, and the two states are kept apart so neither has to be inferred from the other.
     stage_durations: tuple[StageDuration, ...] | None = None
+    # T137. The `manifest` fields whose value moved between the identity read before ranking and
+    # the END reading the manifest publishes. `()` is a run whose identity held throughout; `None`
+    # means NOT MEASURED — a funnel built outside `run_pipeline`, or a start reading that failed.
+    identity_drift: tuple[str, ...] | None = None
+    # T137. `None` means not recorded, never "no code" or "no flags".
+    provenance: ExecutionProvenance | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -1720,6 +1888,10 @@ def build_run_funnel(
     # Omitted means the run was NOT timed, and the section says so rather than reporting a
     # stageless run — the same omission direction as `liveness` and `death_probe` above.
     stage_durations: Sequence[StageDuration] | None = None,
+    # T137. Omitted means drift was NOT MEASURED and provenance NOT RECORDED, and both sections
+    # say so — the same omission direction as `stage_durations` above.
+    identity_drift: Sequence[str] | None = None,
+    provenance: ExecutionProvenance | None = None,
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -2271,6 +2443,8 @@ def build_run_funnel(
         gate=gate,
         apply_lane=apply_lane,
         stage_durations=None if stage_durations is None else tuple(stage_durations),
+        identity_drift=None if identity_drift is None else tuple(identity_drift),
+        provenance=provenance,
     )
 
 
@@ -2446,6 +2620,13 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             # funnel was built without one; a run that computed it always publishes it.
             "routing_hash": funnel.manifest.routing_hash,
         },
+        # T137. Beside `manifest`, not inside it: the manifest publishes exactly what it did, and
+        # this says whether that END reading held for the whole run. `[]` held; `null` unmeasured.
+        "identity_drift": (
+            None if funnel.identity_drift is None else list(funnel.identity_drift)
+        ),
+        # T137. Its own section, and folded into no hash in `manifest`.
+        "provenance": provenance_to_dict(funnel.provenance),
         "liveness": {
             # All None when the shortlist was not probed. `instrumented` is emitted so a reader
             # never has to infer "unmeasured" from a null, the same way each stage does.
@@ -2888,6 +3069,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "repeated in plain text because it is what makes each lead's `US gate` verdict "
         "readable: in `soft` the hard US gate never ran.*",
         "",
+        *_identity_drift_lines(funnel.identity_drift),
         "| field | value |",
         "|---|---|",
         f"| status | {m.status} |",
@@ -2912,6 +3094,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "whose routing hash differs are not comparable as apply-lane volume readings. It is "
         "outside `policy_version`, so a routing change reopens no disposition.*",
         "",
+        *_provenance_lines(funnel.provenance),
         "## Scan",
         "",
     ]
@@ -3460,16 +3643,19 @@ __all__ = [
     "ARTIFACT_VERSION",
     "ApplyLaneCohort",
     "BoardCoverageReport",
+    "CodeProvenance",
     "CoverageSummary",
     "CrossCheck",
     "DeathProbeReport",
     "Drop",
+    "ExecutionProvenance",
     "FabricationCounters",
     "GateCounters",
     "Lead",
     "LivenessCheck",
     "ProjectionCounters",
     "RunFunnel",
+    "RunIdentity",
     "RunManifest",
     "ScanContext",
     "ShortlistCounts",
@@ -3487,5 +3673,7 @@ __all__ = [
     "funnel_to_dict",
     "funnel_to_markdown",
     "gate_to_dict",
+    "identity_drift",
+    "provenance_to_dict",
     "write_run_funnel",
 ]
