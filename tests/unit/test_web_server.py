@@ -42,6 +42,7 @@ from sqlalchemy.exc import OperationalError
 from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import DRAIN_DIRS
+from boardwatch.delivery import queue as queue_mod
 from boardwatch.delivery import server as server_mod
 from boardwatch.delivery.answers import (
     WORK_AUTH_JURISDICTION_WORDS,
@@ -1423,6 +1424,43 @@ def test_skip_removes_a_lead_and_unskip_restores_it(live: Live, engine: Engine) 
     back = call(live, "/api/queue", bearer=live.token).json()
     assert [row["posting_id"] for row in back["rows"]] == [posting_id]
     assert back["counts"]["skipped"] == 0
+
+
+def test_the_reconcile_after_a_skip_reads_the_store_only_once_it_holds_the_queue_lock(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """`_reconcile` is a single pass and stays one (T135), which is safe only while its snapshot
+    is taken inside the lock: a SELECT before the lock would pin a snapshot another holder's
+    commit could make stale. Every statement on the read-only engine is recorded against the lock
+    acquisition, and the folder landing in `_skipped/` proves the pass really ran."""
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 1, "no folder, so the move below is unfalsifiable"
+    order: list[str] = []
+    real_engine, real_lock = server_mod.get_readonly_engine, queue_mod._queue_lock
+
+    def recording_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
+        made = real_engine(data_dir, busy_timeout_ms=busy_timeout_ms)
+        event.listen(made, "before_cursor_execute", lambda *_args: order.append("sql"))
+        return made
+
+    @contextmanager
+    def recording_lock(root: Path) -> Iterator[Path]:
+        with real_lock(root) as path:
+            order.append("lock")
+            yield path
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(server_mod, "get_readonly_engine", recording_engine)
+        mp.setattr(queue_mod, "_queue_lock", recording_lock)
+        answered = call(live, f"/api/queue/{posting_id}/skipped", method="POST", bearer=live.token)
+
+    assert answered.json() == {"outcome": "skipped"}
+    assert _queue_folders(ctx.queue_root / SKIPPED_DIR) == standing
+    assert order[0] == "lock" and "sql" in order, order
 
 
 def test_a_batch_skip_is_one_write_that_drains_what_it_can_and_names_what_it_could_not(

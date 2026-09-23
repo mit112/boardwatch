@@ -68,7 +68,7 @@ from pathlib import Path
 from secrets import token_hex
 
 from filelock import FileLock, Timeout
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, Engine, select
 
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.delivery import DRAIN_DIRS, LeadNames, plan_lead_names
@@ -296,8 +296,10 @@ def sync_queue(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
     A lead whose folder currently sits in a drain is pulled back out, because the database has
     just said it is none of applied, skipped or reported, and creating a second folder for it
     would be the one outcome worse than a stale one. `reconcile_queue` applies the same rule from
-    the other side; both hold the same lock, so they cannot disagree mid-flight, and neither
-    depends on the other having run first.
+    the other side, and neither depends on the other having run first. Called one after the other,
+    though, they are two lock holds, and a connection that has already read keeps its snapshot
+    across both — so an action committed between them is invisible to this half, which can pull
+    back out a folder the other just drained. A caller running both uses `refresh_queue`.
 
     `root` is resolved first. `plan_lead_names` prices its byte budget against the path it is
     given, so a relative root would price a shorter destination than the one actually written and
@@ -309,6 +311,32 @@ def sync_queue(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
             return _sync_locked(conn, root=resolved, owner_name=owner_name)
     except QueueLockHeldError:
         return SyncReport(contended=True)
+
+
+def refresh_queue(
+    engine: Engine, *, root: Path, owner_name: str
+) -> tuple[ReconcileReport, SyncReport]:
+    """Reconcile and then sync under ONE lock hold, on ONE snapshot taken after the lock is held.
+
+    An engine rather than a connection, so the snapshot is opened here, inside the lock: a
+    connection handed in could already have read, and SQLite pins a read transaction's snapshot at
+    its first SELECT. That is what let a web action committed between the two passes be drained by
+    the web and then undone by the sync half on its stale snapshot (T135).
+
+    What this does not close: an action that commits while the lock is held, after the snapshot.
+    Its own reconcile reports `contended` and moves nothing, and the next reconcile from any path
+    files the folder.
+
+    On contention both reports say `contended=True` and nothing is read or written.
+    """
+    resolved = root.resolve()
+    try:
+        with _queue_lock(resolved), engine.connect() as conn:
+            drained = _reconcile_locked(conn, root=resolved)
+            synced = _sync_locked(conn, root=resolved, owner_name=owner_name)
+    except QueueLockHeldError:
+        return ReconcileReport(contended=True), SyncReport(contended=True)
+    return drained, synced
 
 
 def standing_queue_rows(conn: Connection) -> list[QueueRow]:
@@ -1367,5 +1395,6 @@ __all__ = [
     "ReconcileReport",
     "SyncReport",
     "reconcile_queue",
+    "refresh_queue",
     "sync_queue",
 ]

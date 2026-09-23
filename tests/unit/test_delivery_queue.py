@@ -29,9 +29,12 @@ an INTERNALERROR that aborts the whole run, which can mask a vacuous test elsewh
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import plistlib
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -40,13 +43,15 @@ from typing import get_args
 
 import pytest
 from filelock import FileLock
-from sqlalchemy import Connection, Engine, insert, select, update
+from rich.console import Console
+from sqlalchemy import Connection, Engine, event, insert, select, update
 
 from boardwatch.core import lock_reclaim
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.politeness import FetchFailure
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import DRAIN_DIRS, queue
+from boardwatch.delivery.api import ApiContext
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     APPLIED_DIR,
@@ -62,19 +67,27 @@ from boardwatch.delivery.queue import (
     SKIPPED_DIR,
     URL_FILE,
     WEBLOC_FILE,
+    ReconcileReport,
     _identity_hash,
     _plan,
     reconcile_queue,
     sync_queue,
 )
 from boardwatch.delivery.review_gate import LaneDecision, ReviewReason
+from boardwatch.delivery.server import prime_queue
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import evaluate, write_evaluation
 from boardwatch.eligibility.facts import Facts, Policy, WorkAuthFact, facts_payload
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
-from boardwatch.store.applications import create_application, set_application_status
-from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.pipeline import runner as runner_mod
+from boardwatch.store.applications import (
+    applied_job_ids,
+    create_application,
+    mark_job_applied,
+    set_application_status,
+)
+from boardwatch.store.db import ensure_schema, get_engine, get_readonly_engine
 from boardwatch.store.delivery_queries import (
     QueueDetail,
     QueueRow,
@@ -92,6 +105,7 @@ from boardwatch.store.queries import (
 from boardwatch.store.queue_state import (
     mark_job_reported,
     mark_job_skipped,
+    skipped_job_ids,
     unmark_job_reported,
     unmark_job_skipped,
 )
@@ -3659,3 +3673,275 @@ def test_a_closed_lead_reports_no_review_reason_in_the_detail_pane(
     assert detail is not None
     assert detail["row"]["status"] == "closed"
     assert detail["row"]["review_reason"] is None
+
+
+# ------------------------------------------------------ one lock hold, one snapshot (T135, F3)
+#
+# The runner's queue pass and `prime_queue` reconcile and then sync. Before T135 each half took and
+# released the lock on its own, on ONE connection whose read snapshot was pinned at its first
+# SELECT, so a web action committed in between was invisible to the sync half — which then pulled
+# the folder the web had just drained straight back out. Every test below drives the real entry
+# point; the only thing patched is a barrier, and each barrier asserts it fired.
+
+
+def _web_action(data_dir: Path, action: str, *, posting_id: int, job_id: int) -> None:
+    """What `server._write` commits for each route, on its own read-write engine."""
+    eng = get_engine(data_dir)
+    try:
+        with eng.begin() as conn:
+            if action == "skip":
+                mark_job_skipped(conn, job_id=job_id, at=NOW)
+            elif action == "unskip":
+                unmark_job_skipped(conn, job_id=job_id)
+            else:
+                mark_job_applied(conn, posting_id=posting_id, source="test")
+    finally:
+        eng.dispose()
+
+
+def _web_reconcile(data_dir: Path, root: Path) -> ReconcileReport:
+    """`server._reconcile`: one `reconcile_queue` on a fresh read-only connection."""
+    eng = get_readonly_engine(data_dir)
+    try:
+        with eng.connect() as conn:
+            return reconcile_queue(conn, root=root)
+    finally:
+        eng.dispose()
+
+
+#: Where each web action says the folder belongs once it has committed.
+_LANE_AFTER = {"skip": SKIPPED_DIR, "unskip": "", "applied": APPLIED_DIR}
+
+
+def _persisted(engine: Engine, action: str, job_id: int) -> bool:
+    with engine.connect() as conn:
+        if action == "applied":
+            return job_id in set(applied_job_ids(conn))
+        return (job_id in set(skipped_job_ids(conn))) == (action == "skip")
+
+
+def _drive(driver: str, engine: Engine, root: Path, apps: Path) -> None:
+    if driver == "runner":
+        runner_mod._sync_queue(
+            engine, load_settings(), Console(file=io.StringIO()), queue_root=root
+        )
+    else:
+        prime_queue(
+            ApiContext(
+                settings=load_settings(), out_root=apps.resolve(), queue_root=root.resolve(),
+                owner_name=OWNER, platform="darwin",
+            )
+        )
+
+
+def _between_passes(mp: pytest.MonkeyPatch, hook: Callable[[], None]) -> dict[str, bool]:
+    """Run `hook` once, after the reconcile pass and before the sync pass does anything.
+
+    "Before sync" is whichever comes first: sync asking for the lock (the two-hold shape) or
+    `_sync_locked` being entered (a single hold). The barrier does not presume which shape the
+    code has, so the same test reads both.
+    """
+    state = {"reconciled": False, "fired": False}
+    real_reconcile, real_sync, real_lock = (
+        queue._reconcile_locked, queue._sync_locked, queue._queue_lock,
+    )
+
+    def fire() -> None:
+        if state["reconciled"] and not state["fired"]:
+            state["fired"] = True
+            hook()
+
+    def reconcile_locked(conn: Connection, *, root: Path) -> ReconcileReport:
+        report = real_reconcile(conn, root=root)
+        state["reconciled"] = True
+        return report
+
+    @contextmanager
+    def lock(root: Path) -> Iterator[Path]:
+        fire()
+        with real_lock(root) as path:
+            yield path
+
+    def sync_locked(conn: Connection, *, root: Path, owner_name: str) -> queue.SyncReport:
+        fire()
+        return real_sync(conn, root=root, owner_name=owner_name)
+
+    mp.setattr(queue, "_reconcile_locked", reconcile_locked)
+    mp.setattr(queue, "_queue_lock", lock)
+    mp.setattr(queue, "_sync_locked", sync_locked)
+    return state
+
+
+@pytest.mark.parametrize("action", ["skip", "applied"])
+@pytest.mark.parametrize("driver", ["runner", "prime_queue"])
+def test_a_web_action_between_the_two_passes_is_never_silently_reversed(
+    engine: Engine, root: Path, apps: Path, tmp_path: Path, driver: str, action: str
+) -> None:
+    """F3's three steps. The web commits and reconciles between the runner's two passes.
+
+    Whatever the web reconcile reports is allowed, EXCEPT a move that the runner then undoes: that
+    is the owner's completed action reverting on disk while every report reads healthy. Unskip is
+    not here because the sync half never moves a folder for a withheld job, so this shape cannot
+    reverse it; the snapshot test below is the one that exposes unskip.
+    """
+    data_dir = tmp_path / "data"
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+    lane = _LANE_AFTER[action]
+    web: list[ReconcileReport] = []
+
+    def hook() -> None:
+        _web_action(data_dir, action, posting_id=posting_id, job_id=job_id)
+        web.append(_web_reconcile(data_dir, root))
+
+    with pytest.MonkeyPatch.context() as mp:
+        state = _between_passes(mp, hook)
+        _drive(driver, engine, root, apps)
+
+    assert state["fired"] and len(web) == 1, "the barrier never ran, so nothing was tested"
+    assert _persisted(engine, action, job_id)
+    if web[0].moved:
+        assert _folders(root / lane) == [folder], (
+            f"the web reported the folder moved into {lane!r} and the {driver} pulled it back out"
+        )
+    assert web[0].contended, "the web pass ran between the two halves of one plan"
+
+    followup = _web_reconcile(data_dir, root)
+    assert (followup.moved, followup.failed) == (1, 0)
+    assert _folders(root / lane) == [folder]
+    assert _folders(root) == []
+    assert _persisted(engine, action, job_id)
+
+
+@pytest.mark.parametrize("action", ["skip", "unskip", "applied"])
+def test_an_action_committed_before_the_lock_is_filed_by_the_same_pass(
+    engine: Engine, root: Path, apps: Path, tmp_path: Path, action: str
+) -> None:
+    """The snapshot must be taken AFTER the lock. A commit that lands after the runner's first
+    read (`resolve_owner_name`) but before it holds the lock is visible to this pass."""
+    data_dir = tmp_path / "data"
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+    if action == "unskip":
+        _web_action(data_dir, "skip", posting_id=posting_id, job_id=job_id)
+        _web_reconcile(data_dir, root)
+        assert _folders(root / SKIPPED_DIR) == [folder]
+    lane = _LANE_AFTER[action]
+    real = runner_mod.resolve_owner_name
+    fired: list[bool] = []
+
+    def owner_then_commit(conn: Connection | None, config_dir: Path) -> str:
+        name = real(conn, config_dir)
+        _web_action(data_dir, action, posting_id=posting_id, job_id=job_id)
+        fired.append(True)
+        return name
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(runner_mod, "resolve_owner_name", owner_then_commit)
+        _drive("runner", engine, root, apps)
+
+    assert fired, "the commit never landed, so nothing was tested"
+    assert _persisted(engine, action, job_id)
+    assert _folders(root / lane) == [folder], (
+        f"a {action} committed before the lock was taken was not filed by this pass"
+    )
+
+
+def test_a_commit_while_the_runner_holds_the_lock_is_contended_and_repaired_next_time(
+    engine: Engine, root: Path, apps: Path, tmp_path: Path
+) -> None:
+    """CONTROL, green before and after T135: the residual T135 does not close.
+
+    A web action that commits while the runner holds the lock, after its snapshot, cannot be seen
+    by that plan, and its own reconcile is refused. It is not lost: the next reconcile from any
+    path files it. A durable queue generation would close this; it is out of scope.
+    """
+    data_dir = tmp_path / "data"
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+    web: list[ReconcileReport] = []
+    real_index = queue._index
+
+    def index_then_commit(base: Path) -> tuple[dict[int, queue._Entry], tuple[str, ...]]:
+        # `_index` runs inside the lock, after the reconcile pass has read the store.
+        if not web:
+            _web_action(data_dir, "skip", posting_id=posting_id, job_id=job_id)
+            web.append(_web_reconcile(data_dir, root))
+        return real_index(base)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(queue, "_index", index_then_commit)
+        _drive("runner", engine, root, apps)
+
+    assert len(web) == 1, "the commit never landed, so nothing was tested"
+    assert (web[0].contended, web[0].moved) == (True, 0)
+    assert _persisted(engine, "skip", job_id)
+    assert _folders(root) == [folder], "the plan read a snapshot from before the commit"
+
+    repair = _web_reconcile(data_dir, root)
+    assert (repair.to_skipped, repair.failed) == (1, 0)
+    assert _folders(root / SKIPPED_DIR) == [folder]
+
+
+def test_a_contended_refresh_reports_both_halves_and_changes_nothing(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Contention is a normal outcome: both reports say so, nothing moves, nothing raises. A
+    pending drain is set up so a pass that ran anyway would show."""
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+    before = _snapshot(root)
+    holder = FileLock(str(root / LOCK_FILE))
+    holder.acquire()
+    try:
+        drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    finally:
+        holder.release()
+
+    assert drained == ReconcileReport(contended=True)
+    assert synced == queue.SyncReport(contended=True)
+    assert _snapshot(root) == before
+
+
+def test_refresh_reads_the_store_only_after_the_lock_is_held(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The invariant, pinned structurally: no statement reaches the store before the lock."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    order: list[str] = []
+    real_lock = queue._queue_lock
+
+    @contextmanager
+    def lock(base: Path) -> Iterator[Path]:
+        with real_lock(base) as path:
+            order.append("lock")
+            yield path
+
+    def statement(*args: object) -> None:
+        order.append("sql")
+
+    event.listen(engine, "before_cursor_execute", statement)
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(queue, "_queue_lock", lock)
+            queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    finally:
+        event.remove(engine, "before_cursor_execute", statement)
+
+    assert order.count("lock") == 1, "reconcile and sync must share ONE lock hold"
+    assert order[0] == "lock" and "sql" in order
+    assert _folders(root) != []

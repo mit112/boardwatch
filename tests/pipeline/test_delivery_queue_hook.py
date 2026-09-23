@@ -36,7 +36,7 @@ from pathlib import Path
 import pytest
 from filelock import FileLock
 from rich.console import Console
-from sqlalchemy import Connection, insert, select
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
@@ -318,7 +318,7 @@ def test_a_raising_sync_never_fails_the_run(env: Path, tmp_path: Path, queue_roo
         raise RuntimeError("queue root is on fire")
 
     with pytest.MonkeyPatch.context() as patched:
-        patched.setattr(runner_module, "sync_queue", boom)
+        patched.setattr(runner_module, "refresh_queue", boom)
         summary, output = _run(env, tmp_path / "apps")
 
     assert summary.fatal is None, summary.fatal
@@ -417,14 +417,16 @@ def test_the_owner_name_comes_from_the_profile(
     """
     _ready(env, 1)
     seen: list[str] = []
-    real = queue_module.sync_queue
+    real = queue_module.refresh_queue
 
-    def spy(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
+    def spy(
+        engine: Engine, *, root: Path, owner_name: str
+    ) -> tuple[ReconcileReport, SyncReport]:
         seen.append(owner_name)
-        return real(conn, root=root, owner_name=owner_name)
+        return real(engine, root=root, owner_name=owner_name)
 
     with pytest.MonkeyPatch.context() as patched:
-        patched.setattr(runner_module, "sync_queue", spy)
+        patched.setattr(runner_module, "refresh_queue", spy)
         _run(env, tmp_path / "apps")
 
     expected = resolve_owner_name(None, load_settings(data_dir=env).config_dir)
@@ -462,16 +464,18 @@ def test_a_drain_failure_is_escalated_too(env: Path, tmp_path: Path, queue_root:
     arithmetic over a report, not the queue's own per-folder isolation.
     """
     _ready(env, 1)
-    real = runner_module.reconcile_queue
+    real = runner_module.refresh_queue
 
-    def with_a_drain_failure(conn: Connection, *, root: Path) -> ReconcileReport:
-        report = real(conn, root=root)
+    def with_a_drain_failure(
+        engine: Engine, *, root: Path, owner_name: str
+    ) -> tuple[ReconcileReport, SyncReport]:
+        report, synced = real(engine, root=root, owner_name=owner_name)
         return replace(
             report, failures=(*report.failures, FolderFailure("acme0-backend", "drain broke"))
-        )
+        ), synced
 
     with pytest.MonkeyPatch.context() as patched:
-        patched.setattr(runner_module, "reconcile_queue", with_a_drain_failure)
+        patched.setattr(runner_module, "refresh_queue", with_a_drain_failure)
         summary, output = _run(env, tmp_path / "apps")
 
     assert summary.fatal is None, summary.fatal
