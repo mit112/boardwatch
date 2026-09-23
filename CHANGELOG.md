@@ -861,6 +861,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The judge's facts fingerprint covers only the facts that are set (2026-09-23, T179).** The key
+  every gate verdict is stored and read under digested the whole facts schema, empty fields included,
+  so adding any optional fact field would have changed every stored key at once: every judge hold
+  released and the standing lane re-judged at 130 a run for a week, unplanned. The digest and the
+  payload the judge is sent now omit unset fields, so a schema addition with no value is byte-stable.
+  This changes the key once now, on the owner's ruling: 1,242 stored gate rows re-judge through the
+  refresh. Review 2026-09-23, F4.
+
 - **A years bar its own sentence calls preferred is read as a preference, not a floor (2026-09-23,
   T170).** `5+ years of experience, not required but preferred.` was a hard bar: the clause-scoped hedge
   reads only the bar's own clause, and the comma closed it before `preferred`. Eleven required years
