@@ -48,6 +48,14 @@ DEMOTED = [
         "contractors, builders, remodelers, or other residential trade customers preferred",
         "range_years_preferred", id="range-bar-closed-oxford-list",
     ),
+    # T170d CONTROL (coordinator correction): a bare second `experience` with no `with` before it
+    # is the bar's OWN coordinated list closing out, not a second requirement -- the v1 C6 fix
+    # (1b64e1b0) wrongly rejected this one; the with-gated v2 fix must still demote it. pv 236615.
+    pytest.param(
+        "2+ years experience prior Construction Project Management or Project Coordinator "
+        "experience, preferred",
+        "total_years_preferred", id="T170d-bare-second-head-no-with-still-demotes",  # pv 236615
+    ),
 ]
 
 # DROP: the bar's pattern has no `preferred` twin, so the hedged bar is dropped -- exactly what
@@ -196,19 +204,20 @@ KEPT = [
         "and/or quality assurance experience preferred",
         "scoped_years_minimum", id="lost-sentence-break",
     ),
-    # T170d (C6): a BARE second head, no preposition attached, so `_TAIL_NEW_HEAD` (which only
-    # catches `experience in|with|of...`) does not see it. pv 69669: `domain_years_minimum`'s
-    # own span stops at "indirect" (no comma/coordinator follows), so the complement opens a
-    # genuinely new noun phrase closing the `with` adjunct -- not a continuation of the bar's own
-    # list -- and that phrase's own head, "packaging experience", is a second head.
+    # T170d (C6, v2): a BARE second head is a second requirement only when it is the object of a
+    # WITH-adjunct -- `_TAIL_NEW_HEAD` alone only catches `experience in|with|of...` glued to the
+    # noun itself. pv 69669: `domain_years_minimum`'s own `{0,4}` grab swallows "with direct and
+    # indirect" INTO its span (no comma/coordinator follows "indirect", so it is not a
+    # continuation of the bar's own list either); the `with`-search covers the bar too, so this
+    # still counts, and "packaging experience" closing out the `with` adjunct is a second head.
     pytest.param(
         "At least 10 years of sales leadership with direct and indirect sales channel food "
         "industry and/or primary packaging experience is a plus",
         "domain_years_minimum", id="C6-bare-second-head-no-preposition",  # pv 69669
     ),
-    # Same shape, one clause over: the bar's own pattern stops at "with" (its own preposition),
-    # and the complement's "and" opens a second coordinated object whose own head is a second
-    # bare `experience`, with no preposition after it for `_TAIL_NEW_HEAD` to catch.
+    # Same shape, one clause over: the bar's own pattern stops at "with" (its own preposition, in
+    # the SPAN this time, not swallowed past it), and the complement's "and" opens a second
+    # coordinated object whose own head is a second bare `experience` after that same `with`.
     pytest.param(
         "5+ years of experience with strong Python and Django experience preferred",
         "scoped_years_minimum", id="C6-bare-second-head-after-with",
