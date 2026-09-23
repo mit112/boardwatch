@@ -2137,9 +2137,17 @@ def _run_pipeline_leased(
         # through, means the start identity below reads the profile the ranker will also read —
         # never the stale row it is about to overwrite — so a taxonomy bump alone can no longer
         # manufacture a `profile_row_hash` drift between this reading and the funnel's end one.
-        profile_taxonomy_refreshed = refresh_profile_taxonomy(
-            engine, load_taxonomy(settings.config_dir)
-        )
+        #
+        # Fails OPEN to `None`, which hands the refresh back to the ranker's preflight exactly as
+        # before T164: an unreadable taxonomy or a contended UPDATE then fails (or succeeds) THERE,
+        # so it costs no stage that ran before it and still leaves T137's capture first.
+        profile_taxonomy_refreshed: bool | None
+        try:
+            profile_taxonomy_refreshed = refresh_profile_taxonomy(
+                engine, load_taxonomy(settings.config_dir)
+            )
+        except Exception:  # noqa: BLE001 - the ranker's own preflight re-runs it and owns the failure
+            profile_taxonomy_refreshed = None
         # T137. FIRST, so a run that goes fatal below still publishes what it ran as and on.
         _capture_run_start(
             engine,

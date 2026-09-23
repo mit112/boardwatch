@@ -457,3 +457,28 @@ def test_a_taxonomy_bump_run_still_prints_the_taxonomy_changed_line(
     )
 
     assert "taxonomy changed — re-extracting" in console.export_text()
+
+
+def test_an_early_refresh_failure_hands_the_refresh_back_to_the_ranker(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T164's failure constraint: the early refresh may not move where a refresh failure lands.
+    When it raises, the run carries on, T137's start capture still runs, and the ranker's own
+    preflight performs the refresh, exactly as before T164 (at the price of the one false drift
+    line T164 removes on the normal path)."""
+    _ready(env)
+    bumped_version = _bump_taxonomy(env)
+
+    def boom(*_: object, **__: object) -> bool:
+        raise RuntimeError("early refresh unavailable")
+
+    monkeypatch.setattr(runner_mod, "refresh_profile_taxonomy", boom)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, summary.errors
+    assert summary.provenance is not None, "T137's capture must still run after a failed refresh"
+    with get_engine(env).connect() as conn:
+        after = get_profile(conn)
+    assert after is not None and after.taxonomy_version == bumped_version, (
+        "the ranker's preflight must have performed the refresh the early call could not"
+    )
