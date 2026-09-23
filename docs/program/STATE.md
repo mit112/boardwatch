@@ -12,8 +12,9 @@
 > owner calls. **Settled subsystem history is moved WHOLE into `STANDING-FACTS.md`, never summarised
 > away** — sixteen passes through 2026-09-22b; the seventeenth, **2026-09-22c**, moved the
 > 2026-09-21 and 2026-09-22b blocks WHOLE once run 470 had been read against the 2026-09-21 block's
-> recorded prediction, which was the last condition inside either. **Nothing has been deleted on
-> any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
+> recorded prediction, which was the last condition inside either; the eighteenth, **2026-09-22e**,
+> moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. **Nothing has
+> been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
 
@@ -21,42 +22,55 @@
 
 ## Current standing
 
-### 2026-09-22d — **T159 READ: THE SONNET-ERA APPLY LANE IS 5.4% UNAPPLYABLE, SO B8's PRECISION HALF IS MET ON IT (D-550). T113 SHIPS AS A BOUNDED STANDING-QUEUE REFRESH, ARMED LIVE AT 130/RUN (D-551, D-552). T127 AND T158 SHIP. RUN 471 HAD NOT HAPPENED — IT IS STILL THE NEXT READING.**
+### 2026-09-22e — **THE ELIGIBILITY BATCH SHIPS AS ONE ENGINE BUMP (T105 + T156 + T157 + T152, T155 FOLDED IN; D-555): 2,771 OPEN VERDICTS MOVE, NET −2,199 `ineligible`. T160 SHIPS (D-553). D-529 IS RULED AND SHIPS (D-554). THE PRIMARY CHECKOUT IS HELD ON `ccb52912` FOR RUN 471.**
 
-**The session ran on the afternoon of 2026-09-22, BEFORE the 04:00 CDT tick.** Run 471, D-529's
-n ≥ 5 revisit and B8's day 1 are all still owed, exactly as the 2026-09-22c block below states
-them.
+**Merged:** #414 (T160) → `609c099a`, #415 (the batch) → `8b46706f`, #416 (D-529) → `MERGED529`. Every
+gate EXIT=0 was read from a sentinel: T160 10,712 passed; the batch 10,807 passed at 95.27%; D-529 on the
+batch 10,807 passed.
 
-**T159 (D-550).** Two blind opus passes (the owner's ruling) over 134 items, with 95.5% agreement
-on a 44-item overlap. The apply lane (529) reads **3/56 = 5.4% unapplyable (CI 2–15%)** against
-the ≤ 16% bar; the haiku-era control on 09-13 was 21.4%. Sonnet's extra clears (the 150 leads
-haiku would have held) read 7.8%. **Sonnet's seniority hold parks ~53% applyable leads** (the held
-arm reads 46.7% unapplyable, ~109 of 204). It still pays for itself, because releasing all 204
-would take the lane to ~16.9%. **Whether to refine it is the owner's call; nothing is built.**
-The misses name two small tickets:
-- **T160.** `classify_location` fails open on ISO-3 suffixes (`Dublin, IRL`): 777 open postings.
-- **T105.** The one eligibility miss is an extraction gap under a "Desired Qualifications"
-  heading, which is T105's shape.
+**The primary checkout was deliberately NOT pulled** (owner's ruling). Run 471 (04:00 CDT 09-23)
+runs on `ccb52912`, so it is a clean read of the T113 refresh with no re-key, and D-529's fifth
+reading comes from the pre-merge code. **Next session, in order:**
+1. **Read run 471 as the 2026-09-22c block below specifies.** Expect `gate.refresh_*` =
+   130/0/0/0 (D-552). A non-zero candidate count with no re-key is a DEFECT.
+2. **Then `git -C boardwatch pull`.** Run 472 becomes the batch's re-key run:
+   - the corpus re-judge costs about +20 min and the gate cache re-send about +8 min, once;
+   - B8's 14-day window restarts at 472.
+3. **Watch runs 472–474.** The standing apply lane dips **529 → ~206** (D-556), then heals at
+   130/run, promotable leads first. `refresh_pending_after` should fall run over run.
 
-**T113 (D-551).** `[gate] refresh_budget` re-judges up to that many stale standing-queue leads
-per run, through `run_gate_stage` itself, one batch per commit, promotable holds first. The
-funnel's `gate` block reports `refresh_*`. The shipped default is 0 (off). **The live config is
-ARMED at 130/run on the owner's ruling (D-552).** Read back through `Settings`, not from the file.
-That costs ~5–7% of the seat per run while a backlog exists, drains a full re-key in ~7 runs, and
-costs ~0 in steady state. The standing queue was 0 of 833 stale when it was armed, so run 471
-should read `refresh_candidates = 0`. The original T113 half is
-split out as **T113b**: 66 stale negatives that `top_cmd` hides, which the batch's `rules_hash`
-move frees anyway.
+**What moved (D-555, measured).**
+- 2,127 `ineligible` → `uncertain` and 240 → `eligible`. The big term is a years bar under a
+  hedge heading; `Preferred Qualifications:` alone accounts for 1,047.
+- 168 `uncertain` → `ineligible`, **correct**: a preferred-section straddle had masked a genuine
+  basic bar.
+- 111 `eligible` → `uncertain`: a met row under a hedge heading no longer counts.
+- T152 keeps all 833 standing seniority readings through the re-key. **The drain is refused** a
+  seventh time.
 
-**NEXT WORK, IN ORDER** (`TICKETS-2026-09-22c.md`, with its 2026-09-22d status section):
-0. **Read run 471** as the 2026-09-22c block below specifies, then **raise D-529 (n ≥ 5).**
-1. **Check run 471's funnel `gate.refresh_*`**: budget 130, candidates 0 (D-552). A non-zero
-   candidate count on a run with no re-key is a defect to read, not a backlog.
-2. **The eligibility batch** (T152 + T156 + T157 + T105), now unblocked. The refresh heals its
-   re-key over ~7 runs; watch `refresh_pending_after` fall run over run.
-3. **T155** (owner question first), **T160**, and T113b only if a model/effort/facts change
-   recreates the backlog.
-4. **Parked, unchanged:** `TICKETS-2026-09-22c.md` §#5.
+**Review discipline changed (owner, 2026-09-22e).** Codex ran 3 rounds on T160 and 5 on the batch.
+The owner has now set a budget: **1 review + 1 verification**, and a third round only for a
+genuine, reachable blocker. The model is `gpt-6-sol` (Codex CLI ≥ 0.156.0), with effort
+`low`/`medium`/`high` only. Global CLAUDE.md "Codex reviews" holds the rule.
+
+**NEXT WORK, IN ORDER** (the owner checkpointed; the rest is next session's):
+0. Run 471, then the pull, then watch the dip (above).
+1. **Wave A, in parallel.** Ask the seat % first; reviews are headless Opus on the seat under the
+   round budget.
+   - T144 (hiring.cafe/Indeed partial discovery);
+   - T135 (queue lock before snapshot);
+   - T124 (membership + migration);
+   - T123 (watched-but-unverifiable, built on T122's argument).
+2. **T125:** measurement first, read-only, done by the planning session.
+3. **Wave B, sequential** (they all touch `runner.py`): T133 → T137 → T138.
+4. **T139:** correct `RUN_CONTRACT.md` first, then the stage extraction.
+5. **Filed this session** (`TICKETS-2026-09-22c.md`, 2026-09-22e status):
+   - T161: the lane's verdict read keyed on the judge's inputs. The owner's read comes first.
+   - T162: freshness vs the lane on a judge switch-back. Re-litigates T108.
+   - T163: a duplicate preferred row.
+6. **T113b** only if a model, effort or facts change recreates stale negatives.
+
+### 2026-09-22d — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-22e.** T159 read (D-550: apply lane 5.4% unapplyable, B8 precision MET); T113 shipped and armed at 130/run (D-551, D-552); T127/T158 shipped. Its run-471 expectation is restated in the block above.
 
 ### 2026-09-22c — **RUN 470 READ: THE RE-KEY FIRED AS PREDICTED AND B8's VOLUME SITS ON THE BAR AT 20 (D-547). A RE-KEY ALSO DEMOTES — 237 LEADS 0-B HAD PROMOTED FELL OUT OF THE APPLY LANE, WHICH D-537 NEVER MEASURED. T153 EXECUTED ON THE OWNER'S RULING: THE JUDGE IS `sonnet`, THE STANDING QUEUE WAS RE-JUDGED ONCE (833 of 833) AND ITS APPLY LANE READS 529 (D-548). `gate.effort` SHIPS.**
 
@@ -89,7 +103,7 @@ freshness key, so a later change of level re-judges nothing already judged.
 `PROGRAM.md` §1). Read its `gate` block: the first daily gate on Sonnet, and the first whose
 standing queue is fully current.
 
-**NEXT WORK: superseded by the 2026-09-22d block above.** #1 (T159), #2 (T113) and the T127/T158
+**NEXT WORK: superseded by the 2026-09-22e block above.** #1 (T159), #2 (T113) and the T127/T158
 cleanups are done. `TICKETS-2026-09-22c.md` §0 still lists what is already measured: read it
 before any probe.
 
@@ -163,13 +177,10 @@ volume half holding 14 days on the 1,807-board fleet, counted from run 471** —
 restarted the window at run 470 and the T153 judge switch restarts it again (D-548). This is a
 DIFFERENT question from item 0 below, which is about the alert CHANNEL.
 
-0. **B8's volume reading on the escalation channel — RULED 2026-09-20e, held WHOLE in D-529.**
-   Keep it OFF `summary.errors`; **no code change**, and `pipeline/runner.py:3083` plus its pinning
-   test stand as T110 shipped them. **This is a deferral with a CONDITION, not a closed question:**
-   the "near-daily noise" argument rests on 9 of 14 confirm days under the bar and **all 14 are
-   pre-expansion**; post-expansion readings are now **25 / 22 / 26 / 20 (n = 4)** — none under the
-   bar, run 470 exactly on it. **Revisit at n ≥ 5, i.e. after run 471.** Do not re-derive the
-   argument — read D-529.
+0. **B8's volume reading on the escalation channel — CLOSED 2026-09-22e (D-554).** D-529's
+   condition is met (post-expansion 25/22/26/20, and 1 of 5 at worst after run 471, against 9 of
+   14 pre-expansion). The owner ruled: onto the channel. It is shipped; `summary.errors` now carries
+   it.
 
 1. **The projection spec's six open questions** (§12).
 2. **The Snap `Level 3`/`Level 5` leak stays open by design** — with no bindings file every level
