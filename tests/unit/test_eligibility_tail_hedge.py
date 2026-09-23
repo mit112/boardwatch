@@ -415,10 +415,34 @@ ABSTAINING = [
         [["experience_years:total_years_minimum", "required", "unknown"]],
         id="CONTROL-abstaining-bar-without-a-hedge",
     ),
+    # T175: the clause-scoped hedge, inline or as a heading, reads the bar after its abstains too,
+    # so the one-line forms keep the same `unknown` row the split form keeps. The trailing form
+    # also writes its twin: `5 years of experience preferred` is a preference the sentence states.
     pytest.param(
         "Preferred: Bachelor degree or 5 years of experience.",
-        [],
-        id="CONTROL-one-line-heading-hedge",
+        [["experience_years:total_years_minimum", "required", "unknown"]],
+        id="one-line-heading-hedge",
+    ),
+    pytest.param(
+        "Preferred:\n- Bachelor degree or 5 years of experience.",
+        [["experience_years:total_years_minimum", "required", "unknown"]],
+        id="heading-line-hedge",
+    ),
+    pytest.param(
+        "Bachelor degree or 5 years of experience preferred.",
+        [
+            ["experience_years:total_years_minimum", "required", "unknown"],
+            ["experience_years:total_years_preferred", "preferred", "unmet"],
+        ],
+        id="trailing-one-line-hedge",
+    ),
+    pytest.param(
+        "5 years of experience in a related field or a Master degree preferred.",
+        [
+            ["degree:degree_preferred", "preferred", "unknown"],
+            ["experience_years:scoped_years_minimum", "required", "unknown"],
+        ],
+        id="trailing-one-line-hedge-scoped",
     ),
 ]
 

@@ -20,6 +20,8 @@ The scopes, all applied per match:
                           separated from its clause by delimiters only ("Nice to have: ...").
                           A hedge inside a parenthetical that states its own duration bar
                           belongs to THAT bar and reaches nothing outside the aside.
+                          On a pattern with a tail hedge, applied (inline and as a heading)
+                          only to a bar no abstain waived, as the tail hedge is.
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
@@ -821,17 +823,6 @@ def detect(
                         continue
                     bounds = _clause_bounds(unit, lo, hi)
                     if _suppressed(
-                        unit, lo, hi, pattern.suppressed_by_unit,
-                        bounds=bounds, introducer=True, aside_owned=True,
-                    ):
-                        continue
-                    heading = governing[index]
-                    if join is None and heading is not None and _hedged_by_heading(
-                        _heading_text(units[heading][1]), unit, lo, hi,
-                        pattern.suppressed_by_unit,
-                    ):
-                        continue
-                    if _suppressed(
                         unit, lo, hi, pattern.subject_suppressors,
                         bounds=bounds, before_only=True,
                     ):
@@ -883,6 +874,21 @@ def detect(
                             pattern.abstain_by_sentence + pattern.abstain_by_adjacent,
                             inside_span=True,
                         )
+                    # A bar that reads its tail hedge after its abstains reads its clause and
+                    # heading hedges after them too, so "Bachelor degree or 5 years of experience
+                    # preferred." keeps the `unknown` row its split form keeps (T175).
+                    waived = abstained is not None and bool(pattern.hedged_by_tail)
+                    if not waived and _suppressed(
+                        unit, lo, hi, pattern.suppressed_by_unit,
+                        bounds=bounds, introducer=True, aside_owned=True,
+                    ):
+                        continue
+                    heading = governing[index]
+                    if not waived and join is None and heading is not None and _hedged_by_heading(
+                        _heading_text(units[heading][1]), unit, lo, hi,
+                        pattern.suppressed_by_unit,
+                    ):
+                        continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row
                     # whatever the tail says, so an abstain is never folded into a carried or
                     # dropped row.
