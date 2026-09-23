@@ -90,7 +90,11 @@ from boardwatch.notify.liveness_blind import check_liveness_blind
 from boardwatch.notify.scan_health import degraded_scan_alert, scan_outage_alert
 from boardwatch.pipeline.death_probe import ListingProber, sweep_unwatched_deaths
 from boardwatch.pipeline.freshness import folders_reconcile
-from boardwatch.pipeline.funnel_writer import collect_run_funnel
+from boardwatch.pipeline.funnel_writer import (
+    collect_run_funnel,
+    read_execution_provenance,
+    read_run_identity,
+)
 from boardwatch.pipeline.liveness import LivenessProber, check_leads
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.profile_bundle.paths import resolve_bundle_root
@@ -114,10 +118,12 @@ from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingE
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
     DeathProbeReport,
+    ExecutionProvenance,
     GateCounters,
     LaneReport,
     LivenessCheck,
     ProviderFetchCost,
+    RunIdentity,
     ScanContext,
     ShortlistCounts,
     StageDuration,
@@ -558,6 +564,15 @@ class PipelineSummary:
     # raised and the caller stayed fail-open, D-287), which is silence about the lane rather
     # than a reading of zero.
     apply_lane: ApplyLaneCohort | None = None
+    # T137. The run's identity read ONCE before ranking, and how the run was executed — both by
+    # `_capture_run_start`, both `None` when that read failed: reporting only, so a failure costs
+    # the section and never the run.
+    start_identity: RunIdentity | None = None
+    provenance: ExecutionProvenance | None = None
+    # T137. The manifest fields that moved between `start_identity` and the funnel's END reading,
+    # as the funnel published them. Set by `_emit_funnel`, like `apply_lane`, so the alert and the
+    # artifact report one answer; `None` when the funnel was not collected or drift not measured.
+    identity_drift: tuple[str, ...] | None = None
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
@@ -2077,6 +2092,18 @@ def _run_pipeline_leased(
     # Ctrl-C during the multi-minute tailor loop is the likeliest way to hit this.
     stage_errors: list[str] = []
     try:
+        # T137. FIRST, so a run that goes fatal below still publishes what it ran as and on.
+        _capture_run_start(
+            engine,
+            settings,
+            console,
+            summary,
+            boards_attempted=scan_summary.companies if scan_summary is not None else 0,
+            skip_scan=skip_scan,
+            project=project,
+            liveness_prober=liveness_prober is not None,
+            top_n=top_n,
+        )
         if scan_summary is not None:
             summary.scan_postings_seen = scan_summary.postings_seen
             summary.scan_open_postings = scan_summary.open_postings
@@ -3423,6 +3450,24 @@ def _run_pipeline_leased(
                 append_run_error(engine, run_id, staleness_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! gate staleness alert not recorded: {exc}", markup=False)
+        # T137. THE RUN'S IDENTITY MOVED UNDER IT. The funnel compared the identity read before
+        # ranking with the END reading its manifest publishes, and they differ — so the ranking,
+        # the judge's inputs, the ledger stamp and the manifest may each describe a different
+        # version while the manifest names one. Reporting only: nothing is refused or re-run.
+        #
+        # ABOVE `_emit_morning` like every soft alert here (D-477 point 7): below it the alert
+        # still fires and is still recorded, but is invisible in the one artifact an unattended
+        # owner reads. Guarded (T129) like every sibling.
+        try:
+            if summary.identity_drift:
+                drift_alert = (
+                    f"run identity drifted mid-run: {', '.join(summary.identity_drift)}"
+                )
+                console.print(f"  ! {drift_alert}", markup=False)
+                summary.errors.append(drift_alert)
+                append_run_error(engine, run_id, drift_alert)
+        except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+            console.print(f"  ! identity drift alert not recorded: {exc}", markup=False)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
@@ -3617,6 +3662,54 @@ def _load_board_coverage(
         return None
 
 
+def _capture_run_start(
+    engine: Engine,
+    settings: Settings,
+    console: Console,
+    summary: PipelineSummary,
+    *,
+    boards_attempted: int,
+    skip_scan: bool,
+    project: bool,
+    liveness_prober: bool,
+    top_n: int,
+) -> None:
+    """T137. The run's identity and execution provenance, read before ranking.
+
+    HERE because it is the first point at which every run has a `runs` row and a schema — the
+    scan minted the row, or `ensure_run` did — and it is before the lane apply, the ranker, the
+    judge and the ledger stamp, each of which reads the inputs again. The scan itself reads none
+    of the six, so an edit landing during it is one every later stage sees alike.
+
+    The identity goes through `read_run_identity`, the function the manifest is built with, so
+    `collect_run_funnel` can compare its END reading against this one field by field.
+
+    Both halves are REPORTING and fail open, separately so one cannot cost the other. A failure
+    is printed and leaves the field `None`, which the funnel publishes as NOT MEASURED / not
+    recorded. It is not appended to `summary.errors`: this sits upstream of the stage that owns
+    the read — a profile nobody can parse fails here and then fails the ranker, which names it
+    as the run's fatal — and a reporting read must never add a line to a run it did not fail.
+    """
+    try:
+        with engine.connect() as conn:
+            summary.provenance = read_execution_provenance(
+                conn,
+                settings,
+                boards_attempted=boards_attempted,
+                skip_scan=skip_scan,
+                project=project,
+                liveness_prober=liveness_prober,
+                top_n=top_n,
+            )
+    except Exception as exc:  # noqa: BLE001 - provenance must never fail a run
+        console.print(f"  ! execution provenance not recorded: {exc}", markup=False)
+    try:
+        with engine.connect() as conn:
+            summary.start_identity = read_run_identity(conn, settings)
+    except Exception as exc:  # noqa: BLE001 - reporting only; the ranker owns this read's failure
+        console.print(f"  ! run identity not read at start, drift unmeasured: {exc}", markup=False)
+
+
 def _emit_funnel(
     engine: Engine,
     settings: Settings,
@@ -3746,6 +3839,8 @@ def _emit_funnel(
         # P4 item 6: one coverage report per lead, same order as `tailored`, for the funnel's
         # coverage summary. Mirrors how `rewrite_rows` is passed separately, not via the Lead.
         coverages=[lead.coverage for lead in summary.tailored],
+        start_identity=summary.start_identity,
+        execution_provenance=summary.provenance,
         errors=summary.errors,
         fatal=summary.fatal,
     )
@@ -3753,6 +3848,8 @@ def _emit_funnel(
     # number — the funnel is the only place this cohort is built, and losing both to one
     # rendering fault would take out B8's instrument as well as its record.
     summary.apply_lane = funnel.apply_lane
+    # T137. Same placement, same reason: the drift alert reads the answer the funnel computed.
+    summary.identity_drift = funnel.identity_drift
     return write_run_funnel(funnel, day_dir)
 
 
