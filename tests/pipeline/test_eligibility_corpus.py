@@ -5,6 +5,16 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+NINETEEN rows were ADDED 2026-09-23 (m1101-m1119) for T170, a years bar whose own sentence ends by
+calling it preferred, and NOTHING was re-baselined: all 1,100 pre-existing rows pass unchanged.
+m1101-m1107 are the shapes read as a hedge on the bar (m1101 DEMOTED to the preferred twin, the rest
+DROPPED), m1108-m1117 the shapes that keep the bar required, and m1118-m1119 pin that an ABSTAINING
+bar keeps its `unknown` row whatever its tail. Every body is a real store sentence (pv id in the
+comment above it) except m1101, the T163 report, and m1118-m1119, the planner's reproduction: no
+store sentence has those shapes. The default near-miss band holds a 2- or 3-year bar at `unknown`
+against this one-year profile, so several keep-rows pin `required unknown` rather than `unmet`; the
+row, not the verdict, is what shows the bar survived.
+
 TWENTY-FOUR rows were ADDED 2026-09-22 (m1077-m1100) and NOTHING was re-baselined: all 1,076
 pre-existing rows' verdicts and rows are byte identical under both changes. m1077-m1082 are T156,
 season-named graduation windows: m1077 is the headline (a 2025 graduate outside "Fall 2026 and
@@ -1243,6 +1253,44 @@ CASES: list[tuple] = [
     ('m1098:T157 CONTROL a boast and an `is mandatory` bar in ONE sentence keep the bar', 'With over 25 years of experience serving the sector, our team has built deep expertise, and 5 years of experience is mandatory.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('m1099:T157 CONTROL a boast and a MONTHS bar in ONE sentence keep the bar', 'With over 25 years of experience serving the sector, our team has built deep expertise, and candidates must have 48 months of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_months_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('m1100:T157 CONTROL the `is what our team brings` shape keeps a later bar in its sentence', '25 years of experience is what our team brings, and candidates must have 5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
+    # T163 report
+    ('m1101:T170 WILL negated requirement then hedge, DEMOTED to the preferred twin', '5+ years of experience, not required but preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    # pv 313543
+    ('m1102:T170 WILL comma then bare hedge, DROPPED', '2-4 years of retirement industry experience, preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # pv 255715
+    ('m1103:T170 WILL open complement with no delimiter, DROPPED', 'At least 4 years of experience in fire and life safety system inspection or design preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # pv 326910
+    ('m1104:T170 WILL closed Oxford list then `a plus`, DROPPED', '2+ years of experience in consulting, investment banking, or private equity a plus', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # pv 279793
+    ('m1105:T170 WILL copula and intensifier, DROPPED', '15+ years of experience in marketing, marketing operations, demand generation operations, or revenue operations within a matrixed or global enterprise environment is highly preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # pv 21301
+    ('m1106:T170 WILL bare `(preferred)` after the complement, DROPPED', '5+ years of professional experience in accounting and/or finance (preferred)', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # pv 191197
+    ('m1107:T170 WILL bar stopped short of its head, DROPPED', '2+ years of shipping, receiving, or manufacturing experience preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # pv 264199
+    ('m1108:T170 WILL NOT `preferably in X` keeps the bar', '3+ years of retail management experience, preferably in a specialty or culinary retail environment.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    # pv 218877
+    ('m1109:T170 WILL NOT parenthetical `(X preferred)` keeps the bar', '8-10 years of progressive experience in supply chain operations, procurement, or manufacturing within the high-tech industry (IT hardware, electronics manufacturing preferred).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_range_years_minimum', 'required', 'unmet']]),
+    # pv 175490
+    ('m1110:T170 WILL NOT `with a focus on X preferred` keeps the bar', '2 years of experience in Identity and Access Management, with a focus on RBAC preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    # pv 243714
+    ('m1111:T170 WILL NOT a different noun preferred keeps the bar', '3 years of experience, banking experience preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown'], ['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    # pv 1183
+    ('m1112:T170 WILL NOT `N required, M preferred` keeps the N bar', '5+ years industry experience in financial services or a related field, 10+ years preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    # pv 336231
+    ('m1113:T170 WILL NOT `is a plus` on another noun keeps the bar', '2 years of management experience; fitness/personal training management is a plus!', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    # pv 327599
+    ('m1114:T170 WILL NOT a one-comma new noun phrase keeps the bar', '5+ years of contracting experience in the enterprise software/SaaS space, state and local governments strongly preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    # pv 152433
+    ('m1115:T170 WILL NOT the hedge glued to the last item keeps the bar', '8+ years of experience with Java Microservices, Rest API, Mongo DB, Oracle, Distributed computing using OpenShift, Kafka integration and Pega(Preferred).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    # pv 130413
+    ('m1116:T170 WILL NOT comma then a prepositional adjunct keeps the bar', '4-6 years of experience within Financial Services, in a Risk Management, Audit or Compliance role preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:range_years_minimum', 'required', 'unmet']]),
+    # pv 260655
+    ('m1117:T170 WILL NOT a second experience head keeps the bar', '3+ years of leadership and people management experience at managing senior manager level above persons, and experience of 2nd line management preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:domain_list_years_minimum', 'required', 'unknown'], ['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    # planner repro, synthetic
+    ('m1118:T170 an ABSTAINING total bar keeps its unknown row whatever its tail', 'Bachelor degree or 5 years of experience, not required but preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
+    # planner repro, synthetic
+    ('m1119:T170 an ABSTAINING scoped bar keeps its unknown row whatever its tail', '5 years of experience in a related field or a Master degree, not required but preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
 ]
 
 
@@ -1262,4 +1310,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1100
+    assert len(CASES) == 1119
