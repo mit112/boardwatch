@@ -6,17 +6,17 @@ seeding pattern and test_final_gate_persistence.py's record_gate_verdict usage. 
 `Policy(families={})` are what a profile saved via `save_profile` alone (no
 `eligibility facts set` / `eligibility policy set`) parses to — eligibility_facts_json and
 eligibility_policy_json are NULL columns, and parse_facts(None)/parse_policy(None) both fail
-closed to their bare defaults — so record_gate_verdict's identity here lands on the SAME
-(profile_hash, rules_hash) that rank_open_postings' own run_eligibility computes for the
-seeded profile. Neither hash depends on posting_version_id (hashing.py:76-108), so a gate
-row can be written against any posting_version_id under that identity and still be read back
-by current_gate_verdicts for the postings actually ranked.
+closed to their bare defaults — so record_gate_verdict's `facts_key` here is the SAME one
+rank_open_postings reads off the seeded profile, and the row names the configured judge
+(`settings.gate.model`). That pair plus the exact gate version and the posting version is what
+current_gate_verdicts keys on (T161); the identity is not part of it.
 """
 from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import Engine, insert
 
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
@@ -41,8 +41,8 @@ SAFE_BODY = "We are hiring a backend engineer to work on our platform."
 # SAFE_BODY): resolves provenance and yields a span, so accept_oracle_verdict persists
 # `ineligible` rather than downgrading to `uncertain` (test_final_gate_persistence.py's
 # pattern). record_gate_verdict's jd_text is only the keystone-span source; it need not
-# equal the posting's stored body_text for current_gate_verdicts' read-back, which keys
-# purely on posting_version_id/profile_hash/rules_hash.
+# equal the posting's stored body_text for current_gate_verdicts' read-back, which keys on
+# posting_version_id and the judge's inputs (facts_key, model, exact gate version).
 CLEARANCE_JD = "This position requires an active Top Secret security clearance."
 CLEARANCE_EVIDENCE = "requires an active Top Secret security clearance"
 
@@ -102,6 +102,7 @@ def _write_gate_verdict(
         final_gate.record_gate_verdict(
             conn, posting_version_id=posting_version_id, jd_text=CLEARANCE_JD,
             facts=Facts(), policy=Policy(families={}), catalog=catalog, verdict=verdict,
+            model=_settings(tmp_path).gate.model,
         )
 
 
@@ -173,3 +174,76 @@ def test_gate_ineligible_hides_a_posting_the_deterministic_engine_did_not(tmp_pa
         engine, settings, limit=10, now=NOW, include_ineligible=True, include_handled=True
     )
     assert hidden_posting_id in {p.posting_id for p in revealed.visible}
+
+
+# ---------------------------------------------------------------------------
+# T161 — the ranker's hide is keyed on the judge's inputs, not on the identity
+# ---------------------------------------------------------------------------
+
+
+def _ineligible(posting_id: int) -> OracleVerdict:
+    return OracleVerdict(
+        label=str(posting_id), decision="ineligible", reason="clearance",
+        evidence=CLEARANCE_EVIDENCE, confidence="high",
+    )
+
+
+@pytest.mark.parametrize("kind", ["rules_hash", "engine_version"])
+def test_a_gate_ineligible_hide_survives_a_rekey(tmp_path: Path, kind: str) -> None:
+    """T161 test 2, the caller the design note missed. Once the freshness read stops re-judging
+    unchanged inputs, no gate row is ever written under a new identity — so an identity-scoped
+    hide would release EVERY judge hide from ranking on the first rules-only re-key, for good.
+    `rank_open_postings` re-evaluates the corpus under the new identity itself (its preflight),
+    so the deterministic lane is current on both sides of the re-key."""
+    from boardwatch.eligibility.preflight import current_identity
+    from tests.pipeline.test_llm_cache_identity import rekeyed
+
+    engine = _seed(tmp_path, ["Backend Engineer", "Platform Engineer"])
+    settings = _settings(tmp_path)
+    before = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
+    hidden_posting_id, other_posting_id = (p.posting_id for p in before.visible)
+    _write_gate_verdict(engine, tmp_path, posting_version_id=_pv_id(engine, hidden_posting_id),
+                        verdict=_ineligible(hidden_posting_id))
+    held = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
+    assert [p.posting_id for p in held.visible] == [other_posting_id]
+    with engine.connect() as conn:
+        identity = current_identity(conn, settings)
+
+    with rekeyed(settings.config_dir, kind):
+        with engine.connect() as conn:
+            moved = current_identity(conn, settings)
+        assert identity is not None and moved is not None
+        assert (moved[1] != identity[1]) == (kind == "rules_hash")
+        after = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
+
+    assert [p.posting_id for p in after.visible] == [other_posting_id]
+    assert after.hidden_ineligible == 1
+
+
+@pytest.mark.parametrize("changed", ["facts", "model", "gate_version"])
+def test_a_gate_ineligible_reached_on_other_inputs_hides_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    """T161 test 4 at the ranker. A verdict another judge reached, on other facts, or under
+    another gate prompt/policy is not this judge's answer to this lead, so it hides nothing —
+    the ranker falls back to the deterministic lane alone, as it does for an unjudged lead.
+    `test_gate_ineligible_hides_a_posting_the_deterministic_engine_did_not` is the control."""
+    engine = _seed(tmp_path, ["Backend Engineer", "Platform Engineer"])
+    settings = _settings(tmp_path)
+    before = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
+    posting_id = before.visible[0].posting_id
+    with monkeypatch.context() as patch:
+        if changed == "gate_version":
+            patch.setattr(final_gate, "POLICY_VERSION", "p5-oracle-1")
+        with engine.begin() as conn:
+            final_gate.record_gate_verdict(
+                conn, posting_version_id=_pv_id(engine, posting_id), jd_text=CLEARANCE_JD,
+                facts=Facts(highest_degree="bachelor") if changed == "facts" else Facts(),
+                policy=Policy(families={}), catalog=_catalog(tmp_path),
+                verdict=_ineligible(posting_id),
+                model="haiku" if changed == "model" else settings.gate.model,
+            )
+
+    after = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)
+    assert after.hidden_ineligible == 0
+    assert posting_id in {p.posting_id for p in after.visible}

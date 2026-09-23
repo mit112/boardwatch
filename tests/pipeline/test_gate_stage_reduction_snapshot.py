@@ -229,7 +229,7 @@ EXPECTED: dict[str, Any] = {
         "apply lane: 2 lead(s) reached the blind-apply queue, under B8's bar of 20 — 8 placeable, 6 held for review (no_requirements_found 6)",
         "gate: 1 batch(es) failed open this run (4 judged clean) — the judge did not run for those leads; they were left unchanged, never dropped",
         "gate: 5 of 10 judged items came back with no verdict and 1 were answered then refused — those leads were left unchanged, never dropped, and carry no gate row at all",
-        "gate: no readable gate reading under the live identity for 5 of 8 delivered lead(s) — stored gate rows are scoped on `profile_hash` AND `rules_hash` and the read fails open, so every gate-derived hold on them has RELEASED, not merely failed to apply (D-537). A catalog or profile re-key does this silently; re-judge before trusting the apply lane"
+        "gate: no readable gate reading under the judge's current inputs for 5 of 8 delivered lead(s) — a stored reading counts only for the same facts, `gate.model` and gate policy/prompt version, and the read fails open, so every gate-derived hold on them has RELEASED, not merely failed to apply (D-537). A changed fact, judge or gate version does this silently; re-judge before trusting the apply lane"
     ],
     "errors_json": [
         "gate: batch 2/3 failed open: claude exited 1: simulated outage",
@@ -238,7 +238,7 @@ EXPECTED: dict[str, Any] = {
         "apply lane: 2 lead(s) reached the blind-apply queue, under B8's bar of 20 — 8 placeable, 6 held for review (no_requirements_found 6)",
         "gate: 1 batch(es) failed open this run (4 judged clean) — the judge did not run for those leads; they were left unchanged, never dropped",
         "gate: 5 of 10 judged items came back with no verdict and 1 were answered then refused — those leads were left unchanged, never dropped, and carry no gate row at all",
-        "gate: no readable gate reading under the live identity for 5 of 8 delivered lead(s) — stored gate rows are scoped on `profile_hash` AND `rules_hash` and the read fails open, so every gate-derived hold on them has RELEASED, not merely failed to apply (D-537). A catalog or profile re-key does this silently; re-judge before trusting the apply lane"
+        "gate: no readable gate reading under the judge's current inputs for 5 of 8 delivered lead(s) — a stored reading counts only for the same facts, `gate.model` and gate policy/prompt version, and the read fails open, so every gate-derived hold on them has RELEASED, not merely failed to apply (D-537). A changed fact, judge or gate version does this silently; re-judge before trusting the apply lane"
     ],
     "console_gate": [
         "gate",

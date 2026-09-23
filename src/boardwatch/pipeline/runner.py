@@ -1525,18 +1525,24 @@ def _lead_lanes(
         versions = current_posting_versions(conn, posting_ids)
         version_ids = [v.posting_version_id for v in versions.values()]
         flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
-        # 0-B (D-489): the FINAL GATE's verdict, read under the SAME identity and the SAME
-        # version list as the verdict and the requirement summary beside it, so the lane this
-        # run tailors for can never disagree with the one `sync_queue` files the folder under.
-        gate_verdicts = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+        # 0-B (D-489): the FINAL GATE's verdict, through the SAME read `delivered_unapplied`
+        # makes -- same version list, same facts, judge and catalog -- so the lane this run
+        # tailors for can never disagree with the one `sync_queue` files the folder under. Keyed
+        # on the judge's inputs rather than the identity (T161): moving only the queue's read
+        # would split the two lanes on every lead after a rules-only re-key.
+        facts = current_facts(conn)
+        gate_verdicts = current_gate_verdicts(
+            conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model
+        )
         # T151. HOW MANY leads the gate read found NOTHING for, counted beside the read itself
         # rather than re-derived later, so the number and the lane decision cannot disagree.
         #
-        # This is the instrument D-537 was missing. A stored gate row is scoped on `profile_hash`
-        # AND `rules_hash` (`read.py:266-273`) and the read FAILS OPEN, so a catalog re-key does
+        # This is the instrument D-537 was missing. The read FAILS OPEN, so a lost reading does
         # not merely fail to ADD a hold -- it RELEASES every hold the stored rows were carrying,
-        # silently, with no error and no warning. 117 leads were measured moving out of `_review`
-        # into the apply lane that way, and nothing in the run reported it.
+        # silently. 117 leads were measured moving out of `_review` into the apply lane that way
+        # when the read was still identity-scoped and a catalog re-key hid every row. Since T161
+        # a catalog or policy re-key hides nothing; what still does is a changed fact, a new
+        # `gate.model`, a gate policy or prompt bump, or a lead the judge never reached.
         #
         # Counted on `gate_verdicts`, NOT on `gate_seniority`: the seniority dict is `{}` by
         # construction whenever `gate.seniority_hold` is off (just below), which would report every
@@ -1544,22 +1550,20 @@ def _lead_lanes(
         # -- the return is `dict[int, str | None]` and a present-but-None value is a REAL row.
         #
         # Keyed on `posting_id`: both reads take `version_ids` but remap through
-        # `_posting_by_version` before returning (`read.py:392-394`), so the dict is posting-keyed.
+        # `_posting_by_version` before returning, so the dict is posting-keyed.
         readings_absent = sum(1 for p in leads if p.posting_id not in gate_verdicts)
         # The runner's twin of `delivery_queries`' gate point: same flag, same inert default, so
         # the lane this run tailors for cannot disagree with the one `sync_queue` files under.
         gate_seniority = (
-            current_gate_seniority(
-                conn, version_ids, current_facts(conn), model=settings.gate.model
-            )
+            current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
             if settings.gate.seniority_hold
             else {}
         )
         # T91. Read from the CACHE, not fetched: the network pass runs on the `_sync_queue` path
         # in this run's `finally`. The SAME function `delivered_unapplied` calls, so the lane this
         # run tailors for cannot disagree with the one `sync_queue` files the folder under. Not
-        # identity-scoped like the three reads above it -- the application form is a fact about
-        # the requisition, not about this user's profile or the rules catalog.
+        # keyed on the profile at all, unlike the three reads above it -- the application form is
+        # a fact about the requisition, not about this user's profile or the rules catalog.
         form_questions = form_question_hits(conn, versions)
         # T119. The SAME function `delivered_unapplied` calls, so the lane this run tailors for
         # cannot disagree with the one `sync_queue` files the folder under. It is near-always
@@ -3460,12 +3464,13 @@ def _run_pipeline_leased(
         # It is a FAULT, so it goes on `summary.errors` and escalates. The count is taken over the
         # run's OWN delivered slate immediately after the gate stage judged at `gate.depth`, so on
         # a healthy run it is 0 and this is silent. A non-zero value means stored gate rows are
-        # unreadable under the live identity — and per D-537 that does not merely fail to ADD a
-        # hold, it RELEASES every hold those rows were carrying, with no error and no warning.
+        # unreadable under the judge's current inputs — and per D-537 that does not merely fail to
+        # ADD a hold, it RELEASES every hold those rows were carrying, with no error and no warning.
         #
         # A STRICT MAJORITY rather than any single miss, copying the seniority block above: a
         # single newly-created posting that the gate has not reached yet is normal, while the
-        # failure this exists to catch — an identity re-key — hits every lead at once.
+        # failure this exists to catch — a changed fact, judge or gate version (T161) — hits every
+        # lead at once.
         #
         # Armed only when the gate is: with `gate.enabled` false nothing writes gate rows at all,
         # so absence is expected rather than a fault, and the funnel's whole `gate` block is
@@ -3479,12 +3484,13 @@ def _run_pipeline_leased(
                 and summary.gate_readings_absent
             ):
                 staleness_alert = (
-                    "gate: no readable gate reading under the live identity for "
+                    "gate: no readable gate reading under the judge's current inputs for "
                     f"{summary.gate_readings_absent} of {len(summary.tailored)} delivered "
-                    "lead(s) — stored gate rows are scoped on `profile_hash` AND `rules_hash` "
-                    "and the read fails open, so every gate-derived hold on them has RELEASED, "
-                    "not merely failed to apply (D-537). A catalog or profile re-key does this "
-                    "silently; re-judge before trusting the apply lane"
+                    "lead(s) — a stored reading counts only for the same facts, `gate.model` and "
+                    "gate policy/prompt version, and the read fails open, so every gate-derived "
+                    "hold on them has RELEASED, not merely failed to apply (D-537). A changed "
+                    "fact, judge or gate version does this silently; re-judge before trusting the "
+                    "apply lane"
                 )
                 console.print(f"  ! {staleness_alert}", markup=False)
                 summary.errors.append(staleness_alert)

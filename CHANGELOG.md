@@ -799,6 +799,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A rules-only re-key no longer darkens the judge's verdicts or makes it re-judge them (2026-09-23,
+  T161).** The final gate's judge is sent the posting body and the profile's facts under a fixed
+  policy. It never sees the rules catalog or the policy severities, yet every read of its verdicts was
+  scoped on the evaluation identity (`profile_hash`, `rules_hash`). So each rules-only re-key hid every
+  standing verdict: the apply lane lost its judge-cleared leads, every judge hold released, and the
+  standing-queue refresh and the daily gate re-sent byte-identical inputs. The eligibility batch's
+  re-key measured 833 of 970 standing leads readable before and 0 after. Every verdict read is now
+  keyed on what the judge was actually asked: the posting version, the facts it was sent
+  (`facts_key`), the configured judge model and the exact gate policy and prompt version. The queue
+  list and detail pane, the run's pre-tailor lane split and the ranker's tiering and hide all use that
+  one read, so they cannot disagree about a lead. The never-re-judge check uses the same key plus the
+  effort level. Judge holds are kept through a re-key, on the owner's ruling. A stored `ineligible`
+  whose reason is no longer a family of the current catalog reads `uncertain`. Still re-judged, as
+  before: a changed fact, a new judge model, a new effort level, and a gate policy or prompt bump.
+  Unlike before, a policy or prompt bump now also hides the old verdicts from the queue until the lead
+  is re-judged. A verdict applied with `eligibility gate apply` names no judge, so no read acts on it.
+  No migration, no engine key moves.
+
 - **The run's exit contract is now a test, and the judge stage's reduction is one function (2026-09-23,
   T139).** `RUN_CONTRACT.md` listed the thirteen places a run goes fatal, but nothing checked it. A
   table-driven test now drives `boardwatch run` through one row per exit cause: a clean run, a

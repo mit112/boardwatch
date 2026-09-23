@@ -257,15 +257,11 @@ def test_current_gate_verdicts_reads_more_ids_than_the_bound_parameter_cap(
     with db.begin() as conn:
         final_gate.record_gate_verdict(
             conn, posting_version_id=version_id, jd_text=jd, facts=Facts(),
-            policy=Policy(families={}), catalog=catalog, verdict=verdict,
+            policy=Policy(families={}), catalog=catalog, verdict=verdict, model="sonnet",
         )
-    ident = build_identity(
-        posting_version_id=0, facts=Facts(), policy=Policy(families={}), catalog=catalog,
-        declared_fields=declared_fields(),
-    )
     with db.connect() as conn:
         got = current_gate_verdicts(
-            conn, _oversized(version_id), ident.profile_hash, ident.rules_hash
+            conn, _oversized(version_id), Facts(), catalog, model="sonnet"
         )
     assert got == {posting_id: "ineligible"}
 

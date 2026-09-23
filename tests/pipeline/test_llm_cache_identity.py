@@ -16,10 +16,12 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine
 
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.extract_llm import extract_and_record
@@ -173,26 +175,21 @@ def _gate_identity(catalog, facts: Facts, pv_id: int, policy: Policy = POLICY):
 
 def _record_gate(engine: Engine, catalog, facts: Facts, pv_id: int, label: int,
                  verdict_override=None, **kwargs) -> None:
-    from boardwatch.eligibility.final_gate import record_gate_verdict
+    """One gate row in the daily stage's write shape, which always records an effort (T155):
+    `gate_effort_key(None)` unless the caller names a level, or passes `effort=None` for a row
+    that recorded none."""
+    from boardwatch.eligibility.final_gate import gate_effort_key, record_gate_verdict
     from boardwatch.eligibility.oracle import OracleVerdict
 
     verdict = verdict_override or OracleVerdict(
         label=str(label), decision="eligible", reason=None, evidence="", confidence="high",
     )
+    kwargs.setdefault("effort", gate_effort_key(None))
     with engine.begin() as conn:
         record_gate_verdict(
             conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=facts, policy=POLICY,
             catalog=catalog, verdict=verdict, **kwargs,
         )
-
-
-def _collect(sink: list[str]):
-    """A `before_cursor_execute` listener that records every statement the read emits."""
-
-    def listener(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
-        sink.append(statement)
-
-    return listener
 
 
 def _posting_of(engine: Engine, pv_id: int) -> int:
@@ -208,16 +205,27 @@ def _posting_of(engine: Engine, pv_id: int) -> int:
         ).scalar_one())
 
 
-def _freshness_read(engine: Engine, catalog, facts: Facts, pv_id: int, **kwargs):
-    from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
+def _freshness_read(engine: Engine, facts: Facts, pv_id: int, *, model: str,
+                    effort: str | None = None):
+    """The never-re-judge filter's read. `effort` defaults to the unset level, which is what
+    `_record_gate` records unless told otherwise."""
+    from boardwatch.eligibility.final_gate import gate_effort_key
+    from boardwatch.eligibility.read import fresh_gate_verdicts
+
+    with engine.connect() as conn:
+        return fresh_gate_verdicts(
+            conn, [pv_id], facts, model=model,
+            effort=gate_effort_key(None) if effort is None else effort,
+        )
+
+
+def _value_read(engine: Engine, catalog, facts: Facts | None, pv_ids: list[int], *,
+                model: str = "sonnet"):
+    """The one VALUE read every lane, pane and ranker caller makes (T161)."""
     from boardwatch.eligibility.read import current_gate_verdicts
 
-    identity = _gate_identity(catalog, facts, pv_id)
     with engine.connect() as conn:
-        return current_gate_verdicts(
-            conn, [pv_id], identity.profile_hash, identity.rules_hash,
-            engine_version=gate_engine_version(), facts_key=gate_facts_key(facts), **kwargs,
-        )
+        return current_gate_verdicts(conn, pv_ids, facts, catalog, model=model)
 
 
 def test_a_gate_row_judged_by_another_model_is_not_fresh(
@@ -230,7 +238,7 @@ def test_a_gate_row_judged_by_another_model_is_not_fresh(
     pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-model-a")
     _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet")
 
-    assert _freshness_read(engine, catalog, facts, pv_id, model="haiku") == {}, (
+    assert _freshness_read(engine, facts, pv_id, model="haiku") == {}, (
         "a verdict reached by a different model is not a current verdict"
     )
 
@@ -243,65 +251,31 @@ def test_a_gate_row_from_the_same_model_is_still_fresh(engine: Engine, tmp_path:
     pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-model-b")
     _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet")
 
-    hit = _freshness_read(engine, catalog, facts, pv_id, model="sonnet")
+    hit = _freshness_read(engine, facts, pv_id, model="sonnet")
     assert hit == {_posting_of(engine, pv_id): "eligible"}
 
 
-def test_a_legacy_gate_row_misses_a_model_but_still_reads_for_display(
+def test_a_legacy_gate_row_naming_no_model_is_neither_fresh_nor_read(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """A row written before this shipped has `model IS NULL`, so it never matches a given
-    model and its lead is re-judged ONCE. The DISPLAY read passes no model and must still
-    serve that verdict — a superseded row is still the best thing known about the lead."""
-    from boardwatch.eligibility.read import current_gate_verdicts
-
+    """A row written before T108 has `model IS NULL`, so it never matches a given model: its lead
+    is re-judged ONCE. Since T161 the VALUE read keys on the model too, so it serves nothing
+    either — a verdict that names no judge holds and releases nothing (the T152 rule). CONTROL: a
+    model-stamped row on a second posting IS read, so the empty result is the model narrowing
+    and not a read that finds nothing at all."""
     catalog = load_rules(tmp_path / "no-cfg")
     facts = Facts(total_years_experience=5)
     pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-model-legacy")
-    _record_gate(engine, catalog, facts, pv_id, 1)  # legacy shape: no provider, no model
-    posting_id = _posting_of(engine, pv_id)
-
-    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet") == {}
-    identity = _gate_identity(catalog, facts, pv_id)
-    with engine.connect() as conn:
-        display = current_gate_verdicts(
-            conn, [pv_id], identity.profile_hash, identity.rules_hash
-        )
-    assert display == {posting_id: "eligible"}
-
-
-def test_the_display_read_is_unchanged_when_no_model_is_given(
-    engine: Engine, tmp_path: Path
-) -> None:
-    """CONTROL for the four callers that pass no model (`runner`, `top_cmd`, and both
-    `delivery_queries` reads): they must get exactly the rows they got before, over a store
-    holding BOTH a legacy row and a model-stamped one, and the SQL must not mention the
-    column at all."""
-    from boardwatch.eligibility.read import current_gate_verdicts
-
-    catalog = load_rules(tmp_path / "no-cfg")
-    facts = Facts(total_years_experience=5)
-    legacy_pv = _seed_posting_version(engine, JD_5YR, slug="gate-display-legacy")
-    stamped_pv = _seed_posting_version(engine, JD_5YR, slug="gate-display-stamped")
-    _record_gate(engine, catalog, facts, legacy_pv, 1)
+    stamped_pv = _seed_posting_version(engine, JD_5YR, slug="gate-model-stamped")
+    # legacy shape: no provider, no model, no effort
+    _record_gate(engine, catalog, facts, pv_id, 1, effort=None)
     _record_gate(engine, catalog, facts, stamped_pv, 2, provider="claude-code-agent",
                  model="sonnet")
 
-    identity = _gate_identity(catalog, facts, legacy_pv)
-    statements: list[str] = []
-    with engine.connect() as conn:
-        event.listen(conn, "before_cursor_execute", _collect(statements))
-        rows = current_gate_verdicts(
-            conn, [legacy_pv, stamped_pv], identity.profile_hash, identity.rules_hash
-        )
-    assert rows == {
-        _posting_of(engine, legacy_pv): "eligible",
-        _posting_of(engine, stamped_pv): "eligible",
+    assert _freshness_read(engine, facts, pv_id, model="sonnet") == {}
+    assert _value_read(engine, catalog, facts, [pv_id, stamped_pv]) == {
+        _posting_of(engine, stamped_pv): "eligible"
     }
-    assert statements, "the read emitted no SQL at all, so it asserted nothing"
-    assert not any("model" in sql for sql in statements), (
-        f"the display read must not narrow on the model column: {statements}"
-    )
 
 
 def test_an_older_row_from_the_configured_model_still_hits_under_a_newer_one(
@@ -313,9 +287,7 @@ def test_an_older_row_from_the_configured_model_still_hits_under_a_newer_one(
     the other model's row and the filter would then drop it — re-judging a lead this judge has
     already answered, which is the whole cost the never-re-judge filter exists to avoid.
     """
-    from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
     from boardwatch.eligibility.oracle import OracleVerdict
-    from boardwatch.eligibility.read import current_gate_verdicts
 
     catalog = load_rules(tmp_path / "no-cfg")
     facts = Facts(total_years_experience=5)
@@ -330,18 +302,8 @@ def test_an_older_row_from_the_configured_model_still_hits_under_a_newer_one(
         ),
     )
 
-    identity = _gate_identity(catalog, facts, pv_id)
-    with engine.connect() as conn:
-        older = current_gate_verdicts(
-            conn, [pv_id], identity.profile_hash, identity.rules_hash,
-            engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
-            model="sonnet",
-        )
-        newest = current_gate_verdicts(
-            conn, [pv_id], identity.profile_hash, identity.rules_hash,
-            engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
-            model="haiku",
-        )
+    older = _freshness_read(engine, facts, pv_id, model="sonnet")
+    newest = _freshness_read(engine, facts, pv_id, model="haiku")
     assert older == {posting_id: "eligible"}
     assert newest == {posting_id: "uncertain"}
 
@@ -559,8 +521,8 @@ def test_a_gate_row_judged_at_another_effort_is_not_fresh(engine: Engine, tmp_pa
     facts = Facts(total_years_experience=5)
     pv_id = _judged_at(engine, catalog, facts, "gate-effort-medium", "medium")
 
-    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="high") == {}
-    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="medium") == {
+    assert _freshness_read(engine, facts, pv_id, model="sonnet", effort="high") == {}
+    assert _freshness_read(engine, facts, pv_id, model="sonnet", effort="medium") == {
         _posting_of(engine, pv_id): "eligible"
     }
 
@@ -576,9 +538,9 @@ def test_a_gate_row_that_recorded_no_effort_is_fresh_under_no_level(
     facts = Facts(total_years_experience=5)
     pv_id = _judged_at(engine, catalog, facts, "gate-effort-legacy", None)
 
-    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="medium") == {}
+    assert _freshness_read(engine, facts, pv_id, model="sonnet", effort="medium") == {}
     assert _freshness_read(
-        engine, catalog, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
+        engine, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
     ) == {}
 
 
@@ -594,6 +556,219 @@ def test_a_gate_row_judged_at_the_unset_level_is_fresh_only_under_the_unset_leve
     pv_id = _judged_at(engine, catalog, facts, "gate-effort-unset", gate_effort_key(None))
 
     assert _freshness_read(
-        engine, catalog, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
+        engine, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
     ) == {_posting_of(engine, pv_id): "eligible"}
-    assert _freshness_read(engine, catalog, facts, pv_id, model="sonnet", effort="medium") == {}
+    assert _freshness_read(engine, facts, pv_id, model="sonnet", effort="medium") == {}
+
+
+# ---------------------------------------------------------------------------
+# T161 — what a stored gate VERDICT is keyed on, for the value reads and for freshness
+# ---------------------------------------------------------------------------
+#
+# The verdict-side twin of the T152 section above. `read.current_gate_verdicts` feeds the queue,
+# the pane, the run's lane split and the ranker; `read.fresh_gate_verdicts` is the never-re-judge
+# filter. Both used to scope on `(profile_hash, rules_hash)`, which the judge never sees. The
+# caller-level tests are in `test_delivery_queue.py` (the lanes), `test_rank_gate_filter.py` (the
+# ranker) and `test_gate_stage.py` (the spend); these pin the key at the read itself.
+
+#: An `internship` hard stop the judge can quote: `INTERN_EVIDENCE` is a raw substring of the body,
+#: so `accept_oracle_verdict` accepts it and the row persists `ineligible` with a span.
+INTERN_JD = "This is a twelve week summer internship program for current university students."
+INTERN_EVIDENCE = "twelve week summer internship program for current university students"
+
+
+@contextmanager
+def rekeyed(config_dir: Path, kind: str) -> Iterator[None]:
+    """A REAL re-key that leaves the judge's inputs alone, held for the body of the `with`.
+
+    `rules_hash` is a RULES-ONLY re-key, the D-555 shape minus the batch: a `rules.yaml` override
+    that differs from the bundled catalog in its top-level `version` key and nothing else.
+    `catalog.version` digests the parsed document, so `rules_hash` moves while every pattern —
+    hence every deterministic verdict and the family set — is byte-identical.
+
+    `engine_version` moves the deterministic engine's digest, as a `detect.py` edit (T163) does.
+    Restored by hand on exit rather than by monkeypatch: `engine_version` is lru_cached, so its
+    cache has to be cleared AFTER the restore, and monkeypatch restores at teardown — after every
+    assertion, leaving the bumped version cached for later tests (the reason
+    `test_the_derived_version_is_cached_and_the_cache_is_clearable` does the same).
+    """
+    from boardwatch.eligibility import engine as engine_mod
+    from boardwatch.eligibility.catalog import bundled_rules_text
+
+    if kind == "rules_hash":
+        text = bundled_rules_text()
+        assert text.startswith("version: 1\n"), "the bundled catalog's first line moved"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "rules.yaml").write_text(text.replace("version: 1", "version: 2", 1),
+                                               encoding="utf-8")
+        yield
+        return
+    assert kind == "engine_version", kind
+    before = engine_mod.engine_version()
+    original = engine_mod.ENGINE_SEMANTIC
+    engine_mod.ENGINE_SEMANTIC = f"{original}-t161"
+    engine_mod.engine_version.cache_clear()
+    try:
+        assert engine_mod.engine_version() != before
+        yield
+    finally:
+        engine_mod.ENGINE_SEMANTIC = original
+        engine_mod.engine_version.cache_clear()
+
+
+def _record_intern(engine: Engine, catalog, facts: Facts, pv_id: int, label: int) -> None:
+    from boardwatch.eligibility.final_gate import gate_effort_key, record_gate_verdict
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    with engine.begin() as conn:
+        record_gate_verdict(
+            conn, posting_version_id=pv_id, jd_text=INTERN_JD, facts=facts, policy=POLICY,
+            catalog=catalog, provider="claude-code-agent", model="sonnet",
+            effort=gate_effort_key(None),
+            verdict=OracleVerdict(
+                label=str(label), decision="ineligible", reason="internship",
+                evidence=INTERN_EVIDENCE, confidence="high",
+            ),
+        )
+
+
+def test_a_rules_only_rekey_no_longer_hides_a_gate_verdict(engine: Engine, tmp_path: Path) -> None:
+    """Test 1 at the read (design §2). A row written under another catalog is read, and is fresh,
+    under this one: the judge never saw either. INVERSE arm: a new `posting_version_id` is a new
+    body, and its verdict is genuinely absent from both reads."""
+    catalog = load_rules(tmp_path / "no-cfg")
+    rekeyed = dataclasses.replace(catalog, version="a-different-catalog-version")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="t161-rules")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, rekeyed, facts, pv_id, posting_id, provider="claude-code-agent",
+                 model="sonnet")
+    assert (_gate_identity(rekeyed, facts, pv_id).rules_hash
+            != _gate_identity(catalog, facts, pv_id).rules_hash)
+    revised_pv = _new_version_of(engine, pv_id)
+
+    assert _value_read(engine, catalog, facts, [pv_id]) == {posting_id: "eligible"}
+    assert _freshness_read(engine, facts, pv_id, model="sonnet") == {posting_id: "eligible"}
+    assert _value_read(engine, catalog, facts, [revised_pv]) == {}
+    assert _freshness_read(engine, facts, revised_pv, model="sonnet") == {}
+
+
+@pytest.mark.parametrize("changed", ["unchanged", "facts", "model", "gate_version"])
+def test_a_verdict_reached_on_other_inputs_is_not_read(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    """Test 4 at the read. Each of the three judge inputs, changed alone, hides the verdict: a
+    changed fact changes what the judge was asked, another model is another judge, and another
+    EXACT gate version is another prompt or policy. `unchanged` is the control."""
+    from boardwatch.eligibility import final_gate
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug=f"t161-{changed}")
+    posting_id = _posting_of(engine, pv_id)
+    verdict = OracleVerdict(label=str(posting_id), decision="eligible", reason=None, evidence="",
+                            confidence="high")
+    with monkeypatch.context() as patch:
+        if changed == "gate_version":
+            patch.setattr(final_gate, "POLICY_VERSION", "p5-oracle-1")
+        _record_gate(
+            engine, catalog, Facts(total_years_experience=6) if changed == "facts" else facts,
+            pv_id, posting_id, verdict_override=verdict, provider="claude-code-agent",
+            model="haiku" if changed == "model" else "sonnet",
+        )
+
+    expected = {posting_id: "eligible"} if changed == "unchanged" else {}
+    assert _value_read(engine, catalog, facts, [pv_id]) == expected
+
+
+def test_an_effort_change_leaves_the_verdict_read_and_makes_it_stale(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Test 5, both sides of the owner's T155 ruling at once: a level is a calibration of the SAME
+    judge, so the value read keeps serving a `medium` reading under the unset level, while the
+    freshness read counts it stale and the refresh re-judges it."""
+    from boardwatch.eligibility.final_gate import gate_effort_key
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _judged_at(engine, catalog, facts, "t161-effort", "medium")
+    posting_id = _posting_of(engine, pv_id)
+
+    assert _value_read(engine, catalog, facts, [pv_id]) == {posting_id: "eligible"}
+    assert _freshness_read(
+        engine, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
+    ) == {}
+    assert _freshness_read(engine, facts, pv_id, model="sonnet", effort="medium") == {
+        posting_id: "eligible"
+    }
+
+
+def test_a_stored_ineligible_whose_family_left_the_catalog_reads_uncertain(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Test 6 (design §3). The verdict's one catalog dependence: the reason an `ineligible` cites
+    must be a family of the CURRENT catalog, or it reads `uncertain` — the downgrade
+    `accept_oracle_verdict` would make today. CONTROL: the same row under a catalog that still has
+    the family reads `ineligible`. The freshness read serves the stored value, undowngraded: it
+    answers "already judged?", and the lead was."""
+    catalog = load_rules(tmp_path / "no-cfg")
+    assert "internship" in {family.id for family in catalog.families}
+    without = dataclasses.replace(
+        catalog, families=tuple(f for f in catalog.families if f.id != "internship")
+    )
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, INTERN_JD, slug="t161-family")
+    posting_id = _posting_of(engine, pv_id)
+    _record_intern(engine, catalog, facts, pv_id, posting_id)
+
+    assert _value_read(engine, catalog, facts, [pv_id]) == {posting_id: "ineligible"}
+    assert _value_read(engine, without, facts, [pv_id]) == {posting_id: "uncertain"}
+    assert _freshness_read(engine, facts, pv_id, model="sonnet") == {posting_id: "ineligible"}
+
+
+@pytest.mark.parametrize("newer_differs_in", ["model", "effort", "facts", "gate_version"])
+def test_every_freshness_narrowing_filters_before_max_id(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newer_differs_in: str
+) -> None:
+    """Test 8. T108's placement, for all four narrowings the freshness read keeps: each sits INSIDE
+    the `max(id)` subquery, so a NEWER row reached on other inputs never hides the older row this
+    judge reached on these. Outside it, max(id) would pick the newer row and the filter would then
+    drop it — re-judging a lead that was already answered."""
+    from boardwatch.eligibility import final_gate
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug=f"t161-older-{newer_differs_in}")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, posting_id, provider="claude-code-agent",
+                 model="sonnet")
+    newer = OracleVerdict(label=str(posting_id), decision="uncertain", reason=None, evidence="",
+                          confidence="low")
+    with monkeypatch.context() as patch:
+        if newer_differs_in == "gate_version":
+            patch.setattr(final_gate, "POLICY_VERSION", "p5-oracle-9")
+        _record_gate(
+            engine, catalog,
+            Facts(total_years_experience=6) if newer_differs_in == "facts" else facts,
+            pv_id, posting_id, verdict_override=newer, provider="claude-code-agent",
+            model="haiku" if newer_differs_in == "model" else "sonnet",
+            **({"effort": "high"} if newer_differs_in == "effort" else {}),
+        )
+
+    assert _freshness_read(engine, facts, pv_id, model="sonnet") == {posting_id: "eligible"}
+
+
+def test_no_profile_reads_no_gate_verdict(engine: Engine, tmp_path: Path) -> None:
+    """Test 9 at the read: `facts is None` is a store with no profile, and nothing is found — the
+    fail-open direction, as `current_gate_seniority`. CONTROL: the same row is found under the
+    facts it was judged on."""
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, INTERN_JD, slug="t161-no-profile")
+    posting_id = _posting_of(engine, pv_id)
+    _record_intern(engine, catalog, facts, pv_id, posting_id)
+
+    assert _value_read(engine, catalog, facts, [pv_id]) == {posting_id: "ineligible"}
+    assert _value_read(engine, catalog, None, [pv_id]) == {}

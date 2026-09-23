@@ -50,6 +50,12 @@ from boardwatch.lanes.quality import is_employer_body
 # days, and no nightly run would ever have reached them. The freshness test is now keyed on the
 # EXACT `gate_engine_version()`; the display readers keep the prefix. So a bump here DOES now
 # invalidate for re-judging purposes — bump it only when the new policy should re-open every lead.
+#
+# CORRECTED AGAIN (T161). No reader keeps the prefix any more: every VALUE read
+# (`read.current_gate_verdicts` — the queue, the pane, the run's lane split, the ranker) matches
+# the EXACT version too, so a bump here also makes every stored verdict UNREADABLE until the lead
+# is re-judged. Between the bump and the re-judge each lead's lane falls back as for an unjudged
+# lead, and every judge hold on it releases.
 POLICY_VERSION = "p5-oracle-2"
 PROMPT_VERSION = "p5-oracle-1"
 

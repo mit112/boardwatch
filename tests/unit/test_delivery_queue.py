@@ -3437,8 +3437,8 @@ def test_a_form_response_that_lands_stays_committed_when_the_next_one_raises(
 #: A body the judge's `ineligible` is quoted from. It is NOT the posting body the deterministic
 #: engine reads (`JD`), and it does not need to be: `record_gate_verdict` uses `jd_text` only as
 #: the keystone span source, while `current_gate_verdicts` keys purely on the frozen version and
-#: the identity. Keeping them apart is what lets the fixture hold a DETERMINISTIC `eligible` and a
-#: JUDGE `ineligible` on one lead, which is the whole population this ticket is about.
+#: the judge's inputs. Keeping them apart is what lets the fixture hold a DETERMINISTIC `eligible`
+#: and a JUDGE `ineligible` on one lead, which is the whole population this ticket is about.
 JUDGE_JD = "This position requires an active Top Secret security clearance."
 JUDGE_EVIDENCE = "requires an active Top Secret security clearance"
 
@@ -3526,8 +3526,17 @@ def _narrow_the_target_band(engine: Engine) -> None:
         conn.execute(update(profile).values(target_seniority_band="entry"))
 
 
-def _judge(engine: Engine, posting_id: int, *, decision: str) -> None:
-    """Persist one FINAL-GATE verdict against this lead's current version, under the live identity."""
+def _judge(
+    engine: Engine,
+    posting_id: int,
+    *,
+    decision: str,
+    reason: str = "work_auth",
+    jd: str = JUDGE_JD,
+    evidence: str = JUDGE_EVIDENCE,
+) -> None:
+    """Persist one FINAL-GATE verdict against this lead's current version, as the daily stage
+    writes it: the stored facts, the configured judge, the live identity."""
     from boardwatch.eligibility import final_gate  # noqa: PLC0415
     from boardwatch.eligibility.oracle import OracleVerdict  # noqa: PLC0415
 
@@ -3536,14 +3545,15 @@ def _judge(engine: Engine, posting_id: int, *, decision: str) -> None:
         final_gate.record_gate_verdict(
             conn,
             posting_version_id=version.posting_version_id,
-            jd_text=JUDGE_JD,
+            jd_text=jd,
             facts=FACTS,
             policy=POLICY,
             catalog=load_rules(load_settings().config_dir),
             verdict=OracleVerdict(
-                label=str(posting_id), decision=decision, reason="work_auth",
-                evidence=JUDGE_EVIDENCE, confidence="high",
+                label=str(posting_id), decision=decision, reason=reason,
+                evidence=evidence, confidence="high",
             ),
+            model=load_settings().gate.model,
         )
 
 
@@ -3673,6 +3683,189 @@ def test_a_closed_lead_reports_no_review_reason_in_the_detail_pane(
     assert detail is not None
     assert detail["row"]["status"] == "closed"
     assert detail["row"]["review_reason"] is None
+
+
+# ---------------------------------------- T161: a gate verdict is keyed on the judge's inputs
+#
+# The judge is sent the body and the facts, never the catalog or the policy severities, so a
+# re-key that moves neither must not darken a verdict — in ANY of the readers that must agree about
+# one lead: the folder `sync_queue` files, the web list, the detail pane, `review_job_ids`,
+# `apply_lane_placements`, and the RUN's own pre-tailor split. Each re-key is real (the identity
+# or the engine digest is asserted to move) and each re-evaluates the deterministic lane under it,
+# as the next run's preflight would, so the requirement flags are the CURRENT reading.
+
+#: A body no catalog family reads anything in: the engine's zero-row branch returns `uncertain` and
+#: the lane holds the lead `no_requirements_found`, unless a judge `eligible` releases it (0-B).
+#: That release is exactly what a rules-only re-key used to strand.
+SILENT_JD = "We are hiring a software engineer to build Python services for our platform team."
+
+#: An `internship` hard stop a judge can quote: the evidence is a raw substring of the body.
+INTERN_JD = "This is a twelve week summer internship program for current university students."
+INTERN_EVIDENCE = "twelve week summer internship program for current university students"
+
+
+@contextmanager
+def _rekeyed(engine: Engine, kind: str) -> Iterator[None]:
+    """`rekeyed`, proven to have moved what it claims, with every delivered lead re-evaluated
+    under it as the next run's preflight would — so the requirement flags are the CURRENT reading.
+
+    `engine_version` is not part of a gate row's identity at all, so that arm was never dark: it
+    is the control, and the claim it pins is T163's (a detector edit must not darken a verdict).
+    """
+    from boardwatch.eligibility.preflight import current_identity  # noqa: PLC0415
+    from tests.pipeline.test_llm_cache_identity import rekeyed  # noqa: PLC0415
+
+    settings = load_settings()
+    with engine.connect() as conn:
+        before = current_identity(conn, settings)
+    with rekeyed(settings.config_dir, kind):
+        with engine.connect() as conn:
+            after = current_identity(conn, settings)
+        assert before is not None and after is not None
+        assert after[0] == before[0]
+        assert (after[1] != before[1]) == (kind == "rules_hash")
+        with engine.begin() as conn:
+            for version in current_posting_versions(conn, None).values():
+                _judge_version(conn, version.posting_version_id, version.body_text)
+        yield
+
+
+def _row_of(engine: Engine, posting_id: int) -> QueueRow:
+    with engine.connect() as conn:
+        return next(
+            row for row in delivered_unapplied(conn, skipped=set()) if row.posting_id == posting_id
+        )
+
+
+def _run_lane(engine: Engine, row: QueueRow) -> tuple[str, int]:
+    """(the lane the RUN's pre-tailor split gives this lead, its count of leads with NO readable
+    gate reading — the funnel's `gate.readings_absent`), from `runner._lead_lanes` fed the
+    deterministic verdict the ranker would carry for the lead, which is the row's own."""
+    lanes, absent = runner_mod._lead_lanes(
+        engine, load_settings(),
+        [SimpleNamespace(posting_id=row.posting_id, verdict=row.verdict, title=row.title)],  # type: ignore[list-item]
+    )
+    return lanes[row.posting_id][0], absent
+
+
+@pytest.mark.parametrize("kind", ["rules_hash", "engine_version"])
+def test_a_judge_eligible_keeps_its_lead_in_the_apply_lane_through_a_rekey(
+    engine: Engine, root: Path, apps: Path, kind: str
+) -> None:
+    """T161 tests 1 and 3. A judge `eligible` releases a `no_requirements_found` hold (0-B); a
+    re-key that leaves the judge's inputs alone must leave the lead released in every reader —
+    and the run's own split must put it in the same lane as the queue, or the run would tailor
+    (or skip) a lead `sync_queue` then files the other way (the T127 property, third caller).
+    The split also counts the reading PRESENT, so the funnel's `gate.readings_absent` reads 0
+    dark verdicts after the re-key rather than one per standing lead.
+    """
+    with engine.begin() as conn:
+        lead, lead_job = _deliver(conn, apps, "silent", body=SILENT_JD)
+    held = _read_standing(engine, root, apps, lead, lead_job)
+    assert held.review_reason == "no_requirements_found", "the judge must be what releases it"
+    _judge(engine, lead, decision="eligible")
+    released = _read_standing(engine, root, apps, lead, lead_job)
+    assert released == _Standing(
+        band_bit=False, folder="", review_reason=None, detail_reason=None,
+        in_review_ids=False, in_apply_lane=True,
+    )
+
+    with _rekeyed(engine, kind):
+        assert _read_standing(engine, root, apps, lead, lead_job) == released
+        row = _row_of(engine, lead)
+        assert (row.verdict, row.judge_verdict) == ("uncertain", "eligible")
+        assert _run_lane(engine, row) == (lane_decision(row).lane, 0) == ("", 0)
+
+
+@pytest.mark.parametrize("kind", ["rules_hash", "engine_version"])
+def test_a_judge_ineligible_keeps_holding_its_lead_through_a_rekey(
+    engine: Engine, root: Path, apps: Path, kind: str
+) -> None:
+    """T161 tests 2 and 3, and the owner's ruling (2026-09-23): the judge's holds are KEPT through
+    a re-key, not released as D-537 measured them releasing. The lead carries a DETERMINISTIC
+    `eligible`, so if the judge's reading went dark it would ride the short-circuit straight
+    into the blind-apply queue in every reader."""
+    with engine.begin() as conn:
+        judged, judged_job = _deliver(conn, apps, "judged")
+    _judge(engine, judged, decision="ineligible")
+    holding = _Standing(
+        band_bit=False, folder=REVIEW_DIR, review_reason="judged_ineligible_verdict",
+        detail_reason="judged_ineligible_verdict", in_review_ids=True, in_apply_lane=False,
+    )
+    assert _read_standing(engine, root, apps, judged, judged_job) == holding
+
+    with _rekeyed(engine, kind):
+        assert _read_standing(engine, root, apps, judged, judged_job) == holding
+        row = _row_of(engine, judged)
+        assert (row.verdict, row.judge_verdict) == ("eligible", "ineligible")
+        assert _run_lane(engine, row) == (lane_decision(row).lane, 0) == (REVIEW_DIR, 0)
+
+
+def test_a_judge_ineligible_whose_family_left_the_catalog_releases_its_hold(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T161 test 6 through the lane (design §3). The catalog drops `internship`, so an `ineligible`
+    citing it is a verdict no current family supports: every reader sees `uncertain`, which holds
+    nothing, and the lead's deterministic `eligible` puts it in the apply lane. CONTROL, in the
+    same store under the same catalog: an `ineligible` citing `work_auth` still holds."""
+    import yaml  # noqa: PLC0415
+
+    from boardwatch.eligibility.catalog import bundled_rules_text  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        intern, intern_job = _deliver(conn, apps, "intern")
+        control, control_job = _deliver(conn, apps, "control")
+    _judge(engine, intern, decision="ineligible", reason="internship", jd=INTERN_JD,
+           evidence=INTERN_EVIDENCE)
+    _judge(engine, control, decision="ineligible")
+    assert _row_of(engine, intern).judge_verdict == "ineligible"
+
+    document = yaml.safe_load(bundled_rules_text())
+    document["families"] = [f for f in document["families"] if f["id"] != "internship"]
+    config_dir = load_settings().config_dir
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "rules.yaml").write_text(yaml.safe_dump(document), encoding="utf-8")
+    assert "internship" not in {f.id for f in load_rules(config_dir).families}
+    with engine.begin() as conn:
+        for version in current_posting_versions(conn, None).values():
+            _judge_version(conn, version.posting_version_id, version.body_text)
+
+    assert _row_of(engine, intern).judge_verdict == "uncertain"
+    assert _read_standing(engine, root, apps, intern, intern_job) == _Standing(
+        band_bit=False, folder="", review_reason=None, detail_reason=None,
+        in_review_ids=False, in_apply_lane=True,
+    )
+    assert _row_of(engine, control).judge_verdict == "ineligible"
+    assert _read_standing(engine, root, apps, control, control_job).review_reason == (
+        "judged_ineligible_verdict"
+    )
+
+
+def test_with_no_profile_no_reader_finds_a_gate_verdict(engine: Engine, apps: Path) -> None:
+    """T161 test 9, and a CONTROL on both sides of the change (the identity-scoped read returned
+    `{}` for a missing profile too): with no profile there are no facts, so no reader finds the
+    verdict — the list, the pane and the run's split alike — and the split counts it absent."""
+    from boardwatch.store.delivery_queries import queue_detail  # noqa: PLC0415
+    from boardwatch.store.tables import profile  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        judged, _ = _deliver(conn, apps, "judged")
+    _judge(engine, judged, decision="ineligible")
+    assert _row_of(engine, judged).judge_verdict == "ineligible"
+
+    with engine.begin() as conn:
+        conn.execute(profile.delete())
+    row = _row_of(engine, judged)
+    with engine.connect() as conn:
+        detail = queue_detail(conn, judged)
+    assert detail is not None
+    assert (row.judge_verdict, detail.row.judge_verdict) == (None, None)
+    lanes, absent = runner_mod._lead_lanes(
+        engine, load_settings(),
+        [SimpleNamespace(posting_id=judged, verdict=None, title=row.title)],  # type: ignore[list-item]
+    )
+    assert absent == 1
+    assert lanes[judged][0] == REVIEW_DIR
 
 
 # ------------------------------------------------------ one lock hold, one snapshot (T135, F3)

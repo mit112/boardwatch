@@ -29,6 +29,7 @@ from boardwatch.store.queries import CurrentVersion, ensure_run, get_profile
 from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
+    eligibility_inputs,
     jobs,
     posting_versions,
     postings,
@@ -196,13 +197,13 @@ def test_apply_gate_verdicts_skips_a_verdict_for_a_posting_not_in_versions(tmp_p
 
 
 def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path: Path) -> None:
-    """Pins the load-bearing join (design §5.3), not just that a row exists: a gate write
-    under the caller's STORED facts+policy must be readable via `current_gate_verdicts`
-    under that SAME identity — the one a deterministic `run_eligibility` computes — and
-    must NOT be readable under a DIFFERENT policy's identity (e.g. the labeling pass's own
-    all-blocker reference policy). A regression that swapped in the wrong policy would
-    compute a different profile_hash/rules_hash and the ranker's read would silently
-    no-op; a bare "a row with verdict=ineligible exists" assertion could not catch that."""
+    """Pins the load-bearing write (design §5.3), not just that a row exists: a gate write under
+    the caller's STORED facts+policy lands under that SAME identity — the one a deterministic
+    `run_eligibility` computes — and NOT under a different policy's (e.g. the labeling pass's own
+    all-blocker reference policy). Read straight off the ledger, because since T161 no reader
+    joins a gate row on its identity: `current_gate_verdicts` keys on the FACTS the judge was
+    sent, so what makes a wrong-facts write silently unreadable is `facts_key`, pinned in the
+    last two assertions. A bare "a row with verdict=ineligible exists" could catch neither."""
     engine: Engine = create_engine(f"sqlite:///{tmp_path / 't.db'}")
     ensure_schema(engine)
     catalog = _catalog(tmp_path)
@@ -228,7 +229,7 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
     with engine.begin() as conn:
         result = apply_gate_verdicts(
             conn, [verdict], versions=versions, facts=stored_facts,
-            policy=stored_policy, catalog=catalog,
+            policy=stored_policy, catalog=catalog, model="sonnet",
         )
     assert result.judged == 1
     assert result.ineligible == 1
@@ -244,14 +245,21 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
     assert stored_identity.rules_hash != wrong_identity.rules_hash
 
     with engine.connect() as conn:
-        under_stored = current_gate_verdicts(
-            conn, [pv_id], stored_identity.profile_hash, stored_identity.rules_hash,
+        written = conn.execute(
+            select(eligibility_inputs.c.profile_hash, eligibility_inputs.c.rules_hash)
+            .join(eligibility_evaluations,
+                  eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+            .where(eligibility_evaluations.c.engine_kind == "llm")
+        ).all()
+        under_stored = current_gate_verdicts(conn, [pv_id], stored_facts, catalog, model="sonnet")
+        under_other_facts = current_gate_verdicts(
+            conn, [pv_id], Facts(highest_degree="master"), catalog, model="sonnet"
         )
-        under_wrong = current_gate_verdicts(
-            conn, [pv_id], wrong_identity.profile_hash, wrong_identity.rules_hash,
-        )
+    assert [tuple(row) for row in written] == [
+        (stored_identity.profile_hash, stored_identity.rules_hash)
+    ]
     assert under_stored.get(posting_id) == "ineligible"
-    assert under_wrong == {}
+    assert under_other_facts == {}
 
 
 def test_apply_gate_verdicts_threads_run_id_into_persisted_rows(tmp_path: Path) -> None:
