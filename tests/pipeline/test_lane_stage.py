@@ -2050,7 +2050,7 @@ def test_the_lane_stage_overlaps_the_board_scan_instead_of_serializing_after_it(
     # breaks, and `barrier.broken` records it. Nothing here is a wall-clock comparison.
     LANE_DELAY = 0.2
     barrier = Barrier(2, timeout=LANE_RENDEZVOUS_TIMEOUT)
-    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_rendezvous(barrier))
+    monkeypatch.setattr(runner_mod, "scan_under_lease", _fake_run_scan_that_rendezvous(barrier))
     monkeypatch.setattr(
         runner_mod,
         "LANE_FACTORIES",
@@ -2173,7 +2173,7 @@ def test_a_fatally_refusing_run_fetches_in_the_background_but_lands_no_lane_rows
         # A systemic outage: one board attempted, none completed or unchanged (D-037).
         return ScanSummary(run_id=run_id, companies=1, complete=0, unchanged=0)
 
-    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_outage)
+    monkeypatch.setattr(runner_mod, "scan_under_lease", _fake_run_scan_outage)
     settings = load_settings(data_dir=env).model_copy(update={"lanes_enabled": ("stub",)})
 
     def _run(out_name: str) -> tuple[PipelineSummary, float]:
@@ -2246,7 +2246,7 @@ def test_a_fatally_refusing_run_fetches_in_the_background_but_lands_no_lane_rows
 
     # SECOND CONTROL: the identical stub lane, on a run that is NOT refused, lands its row. An
     # absence proves nothing until the same apparatus has been shown to produce a presence.
-    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(0.0))
+    monkeypatch.setattr(runner_mod, "scan_under_lease", _fake_run_scan_that_sleeps(0.0))
     monkeypatch.setattr(
         runner_mod,
         "LANE_FACTORIES",
@@ -2289,7 +2289,7 @@ def test_the_lane_stage_applies_on_the_joining_thread_and_never_on_the_backgroun
     monkeypatch.setattr(runner_mod, "apply_board", spy)
     # A scan slow enough that a lane applying on its own thread lands WHILE the scan is still
     # running -- the production overlap, not a sequence that happens to be safe.
-    monkeypatch.setattr(runner_mod, "run_scan", _fake_run_scan_that_sleeps(1.0))
+    monkeypatch.setattr(runner_mod, "scan_under_lease", _fake_run_scan_that_sleeps(1.0))
     monkeypatch.setattr(
         runner_mod,
         "LANE_FACTORIES",

@@ -14,8 +14,9 @@ import os
 import socket
 import time
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -274,21 +275,13 @@ def default_providers() -> dict[str, Provider]:
     return build_providers()
 
 
-def run_scan(
-    engine: Engine,
-    settings: Settings,
-    *,
-    fetcher: Fetcher | None = None,
-    providers: dict[str, Provider] | None = None,
-    company: str | None = None,
-    provider: str | None = None,
-    finish: bool = True,
-    on_run_started: Callable[[int], None] | None = None,
-) -> ScanSummary:
-    """`on_run_started`, if given, fires with the run id right after it is minted (SP2) --
-    INSIDE this lock, before any board is fetched. It exists so a caller can start work that
-    should overlap the scan (the pipeline's lane stage) as early as the id it needs is real,
-    without that work ever taking this lock itself or seeing a row that does not exist yet.
+@contextmanager
+def scan_lease(settings: Settings) -> Iterator[None]:
+    """Hold `scan.lock` for the body of the `with` — the ONE place it is acquired (T133).
+
+    Two owners: standalone `run_scan`, and `run_pipeline`, which holds it for its whole run and
+    calls `scan_under_lease` inside it. Never nested in one process: on POSIX `flock` is per open
+    file description, so a second `FileLock` on this path contends with the first.
     """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     lock_path = settings.data_dir / "scan.lock"
@@ -313,19 +306,63 @@ def run_scan(
         break
     _write_lock_meta(meta_path)  # message-only; never governs the lock itself
     try:
-        return _run_scan_locked(
-            engine,
-            settings,
-            fetcher or Fetcher(settings),
-            providers or default_providers(),
-            company,
-            provider,
-            finish,
-            on_run_started,
-        )
+        yield
     finally:
         _remove_lock_meta(meta_path)
         lock.release()
+
+
+def run_scan(
+    engine: Engine,
+    settings: Settings,
+    *,
+    fetcher: Fetcher | None = None,
+    providers: dict[str, Provider] | None = None,
+    company: str | None = None,
+    provider: str | None = None,
+    finish: bool = True,
+    on_run_started: Callable[[int], None] | None = None,
+) -> ScanSummary:
+    """`on_run_started`, if given, fires with the run id right after it is minted (SP2) --
+    INSIDE this lock, before any board is fetched. It exists so a caller can start work that
+    should overlap the scan (the pipeline's lane stage) as early as the id it needs is real,
+    without that work ever taking this lock itself or seeing a row that does not exist yet.
+    """
+    with scan_lease(settings):
+        return scan_under_lease(
+            engine,
+            settings,
+            fetcher=fetcher,
+            providers=providers,
+            company=company,
+            provider=provider,
+            finish=finish,
+            on_run_started=on_run_started,
+        )
+
+
+def scan_under_lease(
+    engine: Engine,
+    settings: Settings,
+    *,
+    fetcher: Fetcher | None = None,
+    providers: dict[str, Provider] | None = None,
+    company: str | None = None,
+    provider: str | None = None,
+    finish: bool = True,
+    on_run_started: Callable[[int], None] | None = None,
+) -> ScanSummary:
+    """`run_scan` without the acquisition, for a caller already inside `scan_lease`."""
+    return _run_scan_locked(
+        engine,
+        settings,
+        fetcher or Fetcher(settings),
+        providers or default_providers(),
+        company,
+        provider,
+        finish,
+        on_run_started,
+    )
 
 
 def _run_scan_locked(

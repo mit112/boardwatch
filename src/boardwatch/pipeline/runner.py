@@ -129,7 +129,8 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.scan.coordinator import (
     ScanSummary,
     is_systemic_scan_outage,
-    run_scan,
+    scan_lease,
+    scan_under_lease,
     systemic_scan_outage_reason,
 )
 from boardwatch.store.artifacts import record_artifact
@@ -1913,14 +1914,57 @@ def run_pipeline(
     form_fetcher: Fetcher | None = None,
     queue_root: Path | None = None,
 ) -> PipelineSummary:
+    """Run `_run_pipeline_leased` holding the scan lease for the WHOLE run (T133).
+
+    Taken first — before the stale-run reap, the schema step and any run row — and released only
+    after its `finally` (funnel, queue sync, morning, heartbeat) has run, so a contender, whether
+    a second pipeline, `--no-scan` or a standalone `scan`, raises `ScanLockHeldError` having
+    written nothing, and two runs never rank the same unhandled jobs into the same lead folders.
+    """
+    # The lease is released when this `with` exits, even if the lane daemon thread is still
+    # fetching (an early return never joins it). Deliberate: since T37 that thread fetches only
+    # and writes nothing to the store, so nothing it does needs the lease, and joining it or
+    # extending the lease for it would spend the wall clock SP2 bought back.
+    with scan_lease(settings):
+        return _run_pipeline_leased(
+            engine,
+            settings,
+            console=console,
+            top_n=top_n,
+            out_root=out_root,
+            resume_path=resume_path,
+            skip_scan=skip_scan,
+            project=project,
+            liveness_prober=liveness_prober,
+            listing_prober=listing_prober,
+            form_fetcher=form_fetcher,
+            queue_root=queue_root,
+        )
+
+
+def _run_pipeline_leased(
+    engine: Engine,
+    settings: Settings,
+    *,
+    console: Console | None = None,
+    top_n: int = DEFAULT_TOP_N,
+    out_root: Path,
+    resume_path: Path,
+    skip_scan: bool = False,
+    project: bool = False,
+    liveness_prober: LivenessProber | None = None,
+    listing_prober: ListingProber | None = None,
+    form_fetcher: Fetcher | None = None,
+    queue_root: Path | None = None,
+) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
 
     `queue_root=None` (the default) leaves `_sync_queue` reading `DEFAULT_QUEUE_ROOT` from this
     module's namespace at call time, exactly as before T5 (`run_cmd --queue-root` threads a value
     here; nothing else needs to).
 
-    Raises ScanLockHeldError if another scan holds the lock. Nothing is written in that case,
-    because the row is created by the scan stage inside the lock it failed to acquire.
+    Raises ScanLockHeldError if another scan or run holds the lock. Nothing is written in that
+    case, because `run_pipeline` takes the lease before anything here runs.
 
     `listing_prober=None` leaves T89's ATS list-API half of the death sweep unasked, reported as
     `companies_refused` rather than as a clean corpus. It is separate from `liveness_prober`
@@ -2013,9 +2057,11 @@ def run_pipeline(
             )
             lane_thread.start()
 
-        # Not wrapped: a contended scan must leave the DB untouched, and it does — the run
-        # insert and ensure_schema both live inside the lock it never acquired.
-        scan_summary = run_scan(engine, settings, finish=False, on_run_started=_start_lane_stage)
+        # Not wrapped, and under the lease `run_pipeline` already holds: a second acquisition of
+        # `scan.lock` from this process would contend with that one (T133).
+        scan_summary = scan_under_lease(
+            engine, settings, finish=False, on_run_started=_start_lane_stage
+        )
         run_id = scan_summary.run_id
     else:
         ensure_schema(engine)
