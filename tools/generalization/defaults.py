@@ -27,6 +27,13 @@ SCOPED_MODULES: tuple[str, ...] = (
     # Scoped for the same reason role_gate is: it holds TITLE data. The word and band data
     # live in leveling.yaml; the patterns here use tuple(...) constructor calls.
     "src/boardwatch/rank/seniority_gate.py",
+    # Scoped because they hold LOCATION data and gate on it: which countries count is a
+    # tenant's preference, so a US-only default here is the same leak as one in settings.
+    # Their fixed tables use dict(...)/tuple(...)/frozenset(...) constructor calls.
+    "src/boardwatch/rank/location_gate.py",
+    "src/boardwatch/rank/location_data.py",
+    "src/boardwatch/rank/foreign_ad_gate.py",
+    "src/boardwatch/delivery/review_gate.py",
     "src/boardwatch/eligibility/facts.py",
     "src/boardwatch/eligibility/hashing.py",
     "src/boardwatch/eligibility/catalog.py",
