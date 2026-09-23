@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
@@ -164,6 +164,37 @@ def test_only_apply_lane_leads_are_tailored_review_lane_leads_are_pending(
     assert len(pending_ids) == 2
     # A pending lead is never both: pdf_built and pending_tailor are mutually exclusive.
     assert rendered_ids.isdisjoint(pending_ids)
+
+
+def test_a_review_lane_run_writes_pdf_less_rows_and_is_not_filesystem_truth_fatal(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T138 control. A review-lane stub DOES write a `resume_tailored` row — a `.tex` stub,
+    `typst_pdf_built` false, no `pdf_uri` — so it enters the filesystem-truth guard's query; it
+    is not outside it. The guard requires a PDF only where the row says one was built, so a run
+    delivering nothing but stubs must count every one present and must not go fatal."""
+    _ready(env)
+    review_ids = [_seed_review_posting(env, slug=f"review{i}") for i in range(2)]
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_ok)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert {lead.posting_id for lead in summary.tailored if lead.pending_tailor} == set(
+        review_ids
+    ), "the fixture delivered no review-lane stub, so this proves nothing"
+    with get_engine(env).connect() as conn:
+        rows = conn.execute(
+            select(tables.artifacts.c.uri, tables.artifacts.c.meta_json).where(
+                tables.artifacts.c.run_id == summary.run_id,
+                tables.artifacts.c.kind == "resume_tailored",
+            )
+        ).all()
+    assert len(rows) == len(review_ids)
+    for row in rows:
+        assert row.meta_json["typst_pdf_built"] is False
+        assert Path(row.uri).is_file()
+        assert not list(Path(row.uri).parent.glob("*.pdf"))
+    assert summary.fatal is None, summary.fatal
 
 
 def test_review_lane_lead_reaches_the_delivery_queue_with_no_pdf(
