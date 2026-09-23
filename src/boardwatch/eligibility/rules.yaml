@@ -573,6 +573,13 @@ families:
         # than bare `prefer` so that "candidates who prefer remote work" is not a hedge either.
         suppressed_by_unit:
           - &years_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
+        # T170. The same hedge as the sentence-final PREDICATE of this bar, in a later clause the
+        # unit scope above cannot reach ("5+ years of experience, not required but preferred.").
+        # `detect._hedged_tail` decides structurally whether it hedges the bar or a sub-clause, and
+        # the bar is carried as the twin its one-line form already writes. Patterns with no
+        # preferred twin carry no `hedged_as`: they DROP, as the unit-scoped hedge drops them.
+        hedged_by_tail: [*years_hedges]
+        hedged_as: total_years_preferred
         # A DEGREE-GATED DISJUNCTION ("a Bachelor's ... OR N years of experience") is not a
         # floor: the posting clears on EITHER arm, and the degree arm is undecidable because
         # the field of study is not stored. Reading the pure-years arm as a hard bar told a
@@ -628,6 +635,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
+        hedged_by_tail: [*years_hedges]
         abstain_by_adjacent: [*degree_alternative_to_years]
       - id: scoped_months_minimum
         requiredness: required
@@ -639,6 +647,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges, *months_conversion]
+        hedged_by_tail: [*years_hedges]
         abstain_by_sentence: [*degree_alternative_to_years]
       - id: range_years_minimum
         requiredness: required
@@ -650,6 +659,8 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
+        hedged_as: range_years_preferred
         # Same either-path disjunction guard as total_years_minimum: "3-5 years ... or a
         # Master's degree" clears on either arm and must abstain, not resolve `unmet`.
         abstain_by_adjacent: [*degree_alternative_to_years]
@@ -682,6 +693,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
         # THE DEGREE DISJUNCTION REACHES THIS ARM, BOUNDED TO ONE SENTENCE. D-449 is the
         # entry that left this OPEN and named the mechanism; the ruling below closed it.
         # `total_years_minimum` has abstained on "a Bachelor's OR N years of experience" since
@@ -747,6 +759,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
@@ -778,6 +791,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
@@ -789,6 +803,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific activity"
@@ -827,6 +842,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
@@ -880,6 +896,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
@@ -919,6 +936,8 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_unit: [*years_hedges]
+        hedged_by_tail: [*years_hedges]
+        hedged_as: total_years_preferred
         abstain_by_adjacent: [*degree_alternative_to_years]
 
       # Hedged variants. Without them every hedge was a hard blocker: "5+ years of experience
