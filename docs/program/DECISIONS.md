@@ -31651,7 +31651,7 @@ stay fail-open.
 - Even a sub-bar run 471 makes it 1 of 5, so the condition holds whatever 471 reads.
 
 **Choice (owner, 2026-09-22e, "rest — your recc").** One line: `summary.errors.append`. The
-pinning test is flipped, and red against the old runner. PR #416 → `MERGED529`.
+pinning test is flipped, and red against the old runner. PR #416 → `6146a41c`.
 - It merged before run 471. That is safe because the primary checkout stayed on the pre-merge
   commit until 471 finished.
 

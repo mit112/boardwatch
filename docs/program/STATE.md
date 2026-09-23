@@ -24,7 +24,7 @@
 
 ### 2026-09-22e — **THE ELIGIBILITY BATCH SHIPS AS ONE ENGINE BUMP (T105 + T156 + T157 + T152, T155 FOLDED IN; D-555): 2,771 OPEN VERDICTS MOVE, NET −2,199 `ineligible`. T160 SHIPS (D-553). D-529 IS RULED AND SHIPS (D-554). THE PRIMARY CHECKOUT IS HELD ON `ccb52912` FOR RUN 471.**
 
-**Merged:** #414 (T160) → `609c099a`, #415 (the batch) → `8b46706f`, #416 (D-529) → `MERGED529`. Every
+**Merged:** #414 (T160) → `609c099a`, #415 (the batch) → `8b46706f`, #416 (D-529) → `6146a41c`. Every
 gate EXIT=0 was read from a sentinel: T160 10,712 passed; the batch 10,807 passed at 95.27%; D-529 on the
 batch 10,807 passed.
 
