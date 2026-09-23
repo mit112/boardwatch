@@ -26,8 +26,11 @@ That one field drives both the persisted status and the process exit code:
 
 **Enumerated from the code, not summarised from it.** `runner.py` holds **13** `summary.fatal`
 assignments; this table has one row per assignment, in source order. It read *five* until
-2026-09-20 and had been wrong for long enough that the count itself is the warning: re-derive it
-with `grep -nE "summary\.fatal\s*=" src/boardwatch/pipeline/runner.py` before trusting any row.
+2026-09-20 and had been wrong for long enough that the count itself is the warning. **The count is
+now a gate (T139):** `tests/pipeline/test_run_exit_contract.py` counts the STORES to `summary.fatal`
+in `runner.py` through `ast` and fails `make check` when it stops matching this table's rows, and the
+same module drives the real `boardwatch run` through each row below. Do not re-derive the count with
+a text grep: `summary\.fatal\s*=` also matches a comparison (`summary.fatal == …`).
 
 Two of the thirteen assign `str | None` and may decline — `_zero_output_guard` and `_cohort_guard`
 are guards that fire only on a failed check, so reaching them is not the same as failing. The other
@@ -66,10 +69,12 @@ making the daily driver exit 1 every day for them would destroy the exit code as
 
 ## The lock-held case
 
-If another scan already holds the file lock, `ScanLockHeldError` propagates out of `run_pipeline`
-before any row is written — the INSERT lives inside the lock it failed to acquire (`run_scan`'s
-`lock.acquire` precedes `_run_scan_locked`, `src/boardwatch/scan/coordinator.py`). `run_cmd.py`
-catches it and exits **2**, printing `SCAN_LOCK_MESSAGE`, with **no run row created**
+If another process holds the scan lease, `ScanLockHeldError` propagates out of `run_pipeline`
+before anything is written. **Since T133 the lease covers the WHOLE run**, so the holder may be a
+standalone `scan` or another `run` in any stage, including its finalize: `run_pipeline` takes
+`scan_lease` (`src/boardwatch/scan/coordinator.py`, the one acquisition site) before the stale-run
+reap, the schema step and the run row, with `--no-scan` too. `run_cmd.py` catches it and exits
+**2**, printing `SCAN_LOCK_MESSAGE`, with **no run row created and no row reaped**
 (`src/boardwatch/cli/run_cmd.py`). This is the one outcome that leaves nothing in `runs` at all —
 every other path above produces exactly one row.
 
@@ -78,8 +83,11 @@ every other path above produces exactly one row.
 | Exit code | Meaning | Run row written? |
 |---|---|---|
 | 0 | Clean run, or a run with only non-fatal errors | yes, `status = ok` |
-| 1 | Any of the twelve fatal conditions above, or the crash path | yes, `status = failed` |
-| 2 | Scan lock already held by another process | no |
+| 1 | Any of the twelve fatal conditions above, or the crash path on an exception | yes, `status = failed` |
+| 2 | Scan lease already held by another process (a scan, or a run in any stage) | no |
+| 130 | Ctrl-C (`KeyboardInterrupt`) during the run: the crash path closes the row with its reason and the raise propagates; the CLI framework maps it to 130 | yes, `status = failed` |
+
+Every row of this table is driven through the real CLI by `tests/pipeline/test_run_exit_contract.py`.
 
 ## Known gap: `running` + NULL `finished_at` is ambiguous
 

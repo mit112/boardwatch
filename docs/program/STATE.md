@@ -13,9 +13,9 @@
 > away** — sixteen passes through 2026-09-22b; the seventeenth, **2026-09-22c**, moved the
 > 2026-09-21 and 2026-09-22b blocks WHOLE once run 470 had been read against the 2026-09-21 block's
 > recorded prediction, which was the last condition inside either; the eighteenth, **2026-09-22e**,
-> moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. (2026-09-22f moved
-> nothing: every block above still waits on run 471, which is why the file is ~30 lines over; the 22c
-> and 22e blocks move WHOLE once runs 471 and 472 are read.) **Nothing has
+> moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. (2026-09-22f and 2026-09-23 moved
+> nothing: every block above still waits on run 471, which is why the file is ~50 lines over; the
+> 22c, 22e and 22f blocks move WHOLE once runs 471 and 472 are read.) **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
 > fix is to move settled blocks out, not to summarise them away.**
@@ -23,6 +23,37 @@
 ---
 
 ## Current standing
+
+### 2026-09-23 — **ALL SIX TICKETS SHIP IN ORDER, ONE SQUASH EACH (D-562): T144 #420, T133 #422, T137 #423, T138 #424, T139 #425, T125 #421. EVERY ASTRA-REVIEW TICKET IS NOW CLOSED. RUNS 471 AND 472 HAVE NOT BEEN READ; THE PRIMARY CHECKOUT IS STILL HELD ON `ccb52912`.**
+
+The session ran 23:04–~02:30 CDT, before the 04:00 tick, on the enterprise seat. The owner was
+away, and executors ran as in-session subagents. `make check` on the final combined tree (exactly
+`main` after the six merges): EXIT=0, 10,898 passed, 1 skipped, 4 xfailed, vitest 220 (D-562).
+
+**Next session: the owner decides the direction; nothing buildable is unblocked.** Do first:
+1. **Read run 471** as the 2026-09-22e block says, then `git -C boardwatch merge --ff-only
+   de7ae153` ONLY (D-557). **Read run 472** as the batch's re-key run (lane 529 → ~206, healing at
+   130/run). Only then fast-forward to `origin/main`, so **run 473** is the first to run the six
+   fixes.
+2. **Watch runs 472–474.** B8's volume window restarts at 472 and must hold 14 days on the
+   1,807-board fleet. From run 473, read the funnel's new `identity_drift` (`[]` expected) and
+   `provenance` keys.
+
+**Open tickets** (`TICKETS-2026-09-22c.md`, §2026-09-23):
+- **T161: the owner's read is owed** (`DESIGN-T161-gate-verdict-identity.md`, which recommends BOTH
+  halves). **T163 follows it**: it edits `detect.py`, a digested module, so it re-keys.
+- T162 parked (D-557); T113b only if a stale-`ineligible` backlog recurs.
+- **New, ticketed, not built (D-565):** T164 (T137's drift report fires once, falsely, after a
+  taxonomy bump); T165 (`verify`'s missing-PDF e2e test always skips); T166 (`doctor`'s reap
+  takes no lease).
+
+**Owner calls on the table:** T161; D-550's leftover (about 53% of Sonnet's seniority holds read
+applyable to Opus); switching job-apps off (size it first: 2,877 of its postings resolved on run
+470); the résumé calls; `ServiceNow Developer` ranking; the 17 never-listable boards; the
+projection spec's §12; the optional 0-D repair. **Roadmap:** M1–M3 are done and B8's precision
+half is MET (5.4%, D-550). Its volume half is the live bar. M4's recall work is deprioritized
+(D-532), because the 40-slot slate binds and recall does not. `ROADMAP.md` is not rewritten until a
+milestone closes.
 
 ### 2026-09-22f — **T135 SHIPS (#418 → `04f9ba6d`, D-559). T144 AND T133 ARE BUILT AND REVIEWED ON A STACK, NOT MERGED; T125 (ANNOTATE) IS BUILT, UNREVIEWED. T123 AND T124 CLOSE ON MEASUREMENT (D-558). RUN 471 HAS NOT FIRED; THE PRIMARY CHECKOUT IS STILL HELD ON `ccb52912`.**
 
@@ -34,21 +65,8 @@ The session ran 21:10–22:25 CDT on 09-22, before the 04:00 tick. The owner che
 2. **Pull ONLY to `de7ae153`** (`git -C boardwatch merge --ff-only de7ae153`), NOT to `main`. `main`
    now also carries T135, and the owner ruled that shipped fixes reach the live run at **473**, so 472
    stays a clean read of the batch's re-key (D-557). Pull to `main` only after 472 is read.
-3. **Ship the stack, one gate at a time.** Each branch sits on the one before, and each code delta
-   is patch-id-equal to what was reviewed.
-   - **T144** (`bw-t156`, `exec-t144` @ `e5969050`, stacked on T135's gated tree, which is
-     byte-identical to `04f9ba6d`). The stacked gate was EXIT=0 with 10,835 passed; Codex found no
-     blocker. Rebase onto `origin/main` (a no-op in tree), prove the diff empty, push, open a PR
-     (`pr-t144.md`), arm auto-merge.
-   - **T133** (`bw-t152`, `exec-t133` @ `29aebdae`, stacked on T144). Codex found no blocker, and
-     its one follow-up is fixed and proven red on the old source. **Not yet gated.** It changes one
-     thing an operator will see: a tick that fires while another run is finalizing now exits 2, and
-     the D-260 heartbeat catches it.
-   - **T125 (annotate)** (`bw-t105`, `exec-t125` @ `99640f24`) is **unreviewed**. Before its gate,
-     run `make web` and commit `src/boardwatch/web/static/` and `web/bundle-inputs.sha256`. **The
-     bundle IS tracked**; the handoff wrongly said otherwise (D-561).
-4. **Then one executor at a time:** T137 → T138 (the per-kind half only) → T139 (the stage
-   extraction only, since its doc half was done in D-528). The handoffs are in `.agent/executor/`.
+3. **DONE 2026-09-23 (D-562):** the stack and T125 shipped, and T137 → T138 → T139 were built,
+   reviewed and shipped after them. See the 2026-09-23 block above.
 5. **Owner reads owed:** `DESIGN-T161-gate-verdict-identity.md`, which recommends BOTH halves.
    **T163 must follow T161**: it edits `detect.py`, a digested module, so it re-keys and would dip
    the lane again.
