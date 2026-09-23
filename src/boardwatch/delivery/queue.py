@@ -1051,7 +1051,12 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     # file's `job_id` is exactly the value identity convergence (D-430's shape) can leave STALE,
     # and reading it back would misjudge a folder that is the SAME job under an old id as a
     # different one.
-    known_job_ids = {entry.path: entry.job_id for entry in entries.values()}
+    #
+    # MUTABLE, and kept that way on purpose: the loop below moves folders, and each successful
+    # move updates this map (search "known_job_ids follows this loop's own moves") so a LATER
+    # entry's occupied-destination check sees where an EARLIER entry actually ended up this pass,
+    # not the snapshot from before the loop started.
+    known_job_ids: dict[Path, int] = {entry.path: entry.job_id for entry in entries.values()}
     counts = {
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
@@ -1098,6 +1103,11 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         except Exception as exc:
             failures.append(FolderFailure(folder=entry.path.name, detail=_detail(exc)))
             continue
+        # `known_job_ids` follows this loop's OWN moves: a later entry's occupied-destination
+        # check must see where this entry actually ended up, not the snapshot from before the
+        # loop started.
+        known_job_ids.pop(entry.path, None)
+        known_job_ids[target] = entry.job_id
         counts[wanted] += 1
     return ReconcileReport(
         to_applied=counts[APPLIED_DIR],

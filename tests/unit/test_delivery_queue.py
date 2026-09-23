@@ -2251,6 +2251,88 @@ def test_a_converged_occupants_stale_stored_job_id_still_refuses(
     ), "the occupant's own folder, untouched"
 
 
+def test_a_folder_freed_then_filled_within_one_pass_is_not_read_from_the_stale_map(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Regression for review round 2's defect. `known_job_ids` is built ONCE before
+    `_reconcile_locked`'s loop, but the loop itself MOVES folders -- so a LATER entry's
+    occupied-destination check must see where an EARLIER entry in this SAME pass actually ended
+    up, not the snapshot taken before the loop started.
+
+    One pass, three folders sharing one name, all `Acme_Corp_Backend_Engineer`:
+    - A (lowest posting id, processed first) sits in `_applied/NAME`; its application is
+      WITHDRAWN, so it now wants the queue root -- vacating `_applied/NAME`.
+    - B sits in `_skipped/NAME` and is now ALSO applied, so it wants `_applied/NAME` -- exactly
+      the path A just vacated, and B is processed second (its posting id is between A's and C's).
+    - C, converged onto B's job (the `update(postings)...job_id` trick `test_a_converged_
+      occupants_stale_stored_job_id_still_refuses` uses, but reached WITHIN this one pass rather
+      than before it starts), also wants `_applied/NAME`, and is processed last.
+
+    Without following the loop's own moves, C's check reads the map entry for `_applied/NAME`
+    exactly as it was seeded before the loop ran -- A's OLD job, still sitting there in the
+    snapshot -- sees it differs from C's (converged) job, and widens C into a SECOND folder for
+    B's job. Following the moves, the same path now maps to B's job by the time C is checked,
+    which matches C's, and C is refused instead.
+
+    C's own folder is planted directly (`_plant_folder`) rather than reached through its own
+    `sync_queue`/`reconcile_queue` pass: a real `postings` row (so the `job_id` convergence update
+    and `canonical_job_ids` resolve it) is all C needs, and planting the folder avoids a SEPARATE
+    collision -- synced normally, C's folder would land at the queue ROOT under this same name,
+    exactly where A's withdrawal ALSO wants to go, confounding the one interaction this test
+    isolates.
+    """
+    with engine.begin() as conn:
+        _, job_a = _deliver(conn, apps, "a", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        app_a = create_application(conn, job_id=job_a, status="applied", source="test")
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / APPLIED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: A drained"
+
+    with engine.begin() as conn:
+        _, job_b = _deliver(conn, apps, "b", company="Acme Corp", title="Backend Engineer")
+    with engine.connect() as conn:
+        planned = sync_queue(conn, root=root, owner_name=OWNER)
+    assert planned.failed == 0, planned.failures
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "premise: B's plain name is free"
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=job_b, at=NOW)
+    with engine.connect() as conn:
+        reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root / SKIPPED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: B skipped"
+    assert _folders(root) == [], "premise: the root is free again"
+
+    with engine.begin() as conn:
+        posting_c, _job_c = _deliver(
+            conn, apps, "c", company="Acme Corp", title="Backend Engineer"
+        )
+    _plant_folder(
+        root, LANE_COPY_DIR, "Acme_Corp_Backend_Engineer",
+        posting_id=posting_c, job_id=999999, identity_hash="c0ffeec0",
+    )
+
+    with engine.begin() as conn:
+        # The three transitions this ONE pass must resolve together, in posting-id order A, B, C.
+        set_application_status(conn, application_id=app_a, to_status="withdrawn", source="test")
+        create_application(conn, job_id=job_b, status="applied", source="test")
+        conn.execute(update(postings).where(postings.c.id == posting_c).values(job_id=job_b))
+
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.to_queue, report.to_applied) == (1, 1), report  # A out, B in; not C too
+    assert report.failed == 1, report.failures
+    assert "already exists" in report.failures[0].detail, report.failures[0].detail
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "A landed at the root"
+    applied_names = _folders(root / APPLIED_DIR)
+    assert applied_names == ["Acme_Corp_Backend_Engineer"], "exactly one folder for job B"
+    assert (
+        int(str(_details(root / APPLIED_DIR / applied_names[0])["posting_id"])) != posting_c
+    ), "the surviving folder must be B's, not a second one for C"
+
+
 def test_a_non_colliding_applied_lead_still_moves_under_its_plain_name(
     engine: Engine, root: Path, apps: Path
 ) -> None:
