@@ -261,7 +261,8 @@ def test_current_gate_verdicts_reads_more_ids_than_the_bound_parameter_cap(
         )
     with db.connect() as conn:
         got = current_gate_verdicts(
-            conn, _oversized(version_id), Facts(), catalog, model="sonnet"
+            conn, _oversized(version_id), Facts(), catalog, model="sonnet",
+            effort=final_gate.gate_effort_key(None),
         )
     assert got == {posting_id: "ineligible"}
 

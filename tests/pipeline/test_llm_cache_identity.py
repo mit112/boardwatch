@@ -220,12 +220,18 @@ def _freshness_read(engine: Engine, facts: Facts, pv_id: int, *, model: str,
 
 
 def _value_read(engine: Engine, catalog, facts: Facts | None, pv_ids: list[int], *,
-                model: str = "sonnet"):
-    """The one VALUE read every lane, pane and ranker caller makes (T161)."""
+                model: str = "sonnet", effort: str | None = None):
+    """The one VALUE read every lane, pane and ranker caller makes (T161; effort since T162).
+    `effort` defaults to the unset level, matching what `_record_gate` records unless told
+    otherwise."""
+    from boardwatch.eligibility.final_gate import gate_effort_key
     from boardwatch.eligibility.read import current_gate_verdicts
 
     with engine.connect() as conn:
-        return current_gate_verdicts(conn, pv_ids, facts, catalog, model=model)
+        return current_gate_verdicts(
+            conn, pv_ids, facts, catalog, model=model,
+            effort=gate_effort_key(None) if effort is None else effort,
+        )
 
 
 def test_a_gate_row_judged_by_another_model_is_not_fresh(
@@ -306,6 +312,95 @@ def test_an_older_row_from_the_configured_model_still_hits_under_a_newer_one(
     newest = _freshness_read(engine, facts, pv_id, model="haiku")
     assert older == {posting_id: "eligible"}
     assert newest == {posting_id: "uncertain"}
+
+
+def test_a_model_switch_away_and_back_agrees_with_the_lane(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T162 (CONTROL — model side is REFUTED). Codex's report named a switch-back leak for both
+    `model` and `effort`: freshness finds an older row that matches the configured judge while a
+    newer, contrary row sits on top, and the LANE (`current_gate_verdicts`) keeps serving that
+    newer row forever. Since T161 the lane also narrows on `model`, so a switch sonnet -> haiku ->
+    sonnet is no longer a divergence: both reads see only sonnet's row, which is the older,
+    `eligible` one — the haiku row is invisible to both. This pins that agreement; the `effort`
+    side of the same leak is fixed below by the same mechanism (T162)."""
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-model-switchback")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet")
+    _record_gate(
+        engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="haiku",
+        verdict_override=OracleVerdict(
+            label=str(posting_id), decision="ineligible", reason="experience_years",
+            evidence=EXPERIENCE_QUOTE, confidence="high",
+        ),
+    )
+
+    fresh = _freshness_read(engine, facts, pv_id, model="sonnet")
+    lane = _value_read(engine, catalog, facts, [pv_id], model="sonnet")
+    assert fresh == {posting_id: "eligible"}
+    assert lane == {posting_id: "eligible"}
+
+
+def test_an_effort_switch_away_and_back_agrees_with_the_lane(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T162 fix. The owner's ruling: do not touch freshness or T108/T161's pinned
+    filter-before-`max(id)` tests; instead make `current_gate_verdicts` narrow on `effort` too,
+    the way it already narrows on `model` (T161) — INSIDE `max(id)`, so a lead whose absolute-
+    newest row is at another level still hits an OLDER row at the configured one.
+
+    RED on the code before this fix: `medium/eligible` then `high/ineligible`, switch back to
+    `medium`. Freshness finds the older `medium` row and reports "already judged"; the lane, which
+    did not narrow on effort at all, served the absolute-newest row — `ineligible` — forever. Now
+    both reads agree on the `medium` row."""
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-effort-switchback")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet",
+                 effort="medium")
+    _record_gate(
+        engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet",
+        effort="high",
+        verdict_override=OracleVerdict(
+            label=str(posting_id), decision="ineligible", reason="experience_years",
+            evidence=EXPERIENCE_QUOTE, confidence="high",
+        ),
+    )
+
+    fresh = _freshness_read(engine, facts, pv_id, model="sonnet", effort="medium")
+    lane = _value_read(engine, catalog, facts, [pv_id], model="sonnet", effort="medium")
+    assert fresh == {posting_id: "eligible"}, "freshness must still find the medium row"
+    assert lane == {posting_id: "eligible"}, (
+        "the lane must serve the medium row too, not the newer high/ineligible one"
+    )
+
+
+def test_a_legacy_gate_row_with_no_effort_is_served_under_any_level(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """CONTROL for the T162 fix's one exception: a row written before T155 (or by `eligibility
+    gate apply`, which never names a level) recorded no `$.effort` at all. It must stay visible to
+    the lane under ANY configured level — exactly as before this fix — so the standing apply lane
+    does not darken the moment `gate.effort` first gets a value, ahead of the T113 refresh ever
+    reaching it."""
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-effort-legacy-lane")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet",
+                 effort=None)
+
+    for level in ("medium", "high", "low"):
+        assert _value_read(engine, catalog, facts, [pv_id], model="sonnet", effort=level) == {
+            posting_id: "eligible"
+        }, f"a legacy row (no recorded effort) must be served under {level!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -682,12 +777,18 @@ def test_a_verdict_reached_on_other_inputs_is_not_read(
     assert _value_read(engine, catalog, facts, [pv_id]) == expected
 
 
-def test_an_effort_change_leaves_the_verdict_read_and_makes_it_stale(
+def test_an_effort_change_leaves_both_reads_stale_since_t162(
     engine: Engine, tmp_path: Path
 ) -> None:
-    """Test 5, both sides of the owner's T155 ruling at once: a level is a calibration of the SAME
-    judge, so the value read keeps serving a `medium` reading under the unset level, while the
-    freshness read counts it stale and the refresh re-judges it."""
+    """Test 5, UPDATED by the owner's T162 ruling. Originally pinned the T155 asymmetry: the
+    value read ignored `effort` entirely, so it kept serving a `medium` reading under the unset
+    level while the freshness read (which always keyed on `effort`, T155) counted it stale and
+    the refresh re-judged it. That asymmetry was the switch-back leak's root cause (T162): freshness
+    could find an unrelated OLDER row at the configured level while the value read kept serving
+    whatever was absolute-newest regardless of level. Since T162, `current_gate_verdicts` narrows
+    on `effort` too (the way it already narrows on `model`, T161), so a level change now makes
+    BOTH reads agree that a `medium` row is stale under the unset level — and both agree it is
+    current again once the level is switched back to `medium`."""
     from boardwatch.eligibility.final_gate import gate_effort_key
 
     catalog = load_rules(tmp_path / "no-cfg")
@@ -695,10 +796,15 @@ def test_an_effort_change_leaves_the_verdict_read_and_makes_it_stale(
     pv_id = _judged_at(engine, catalog, facts, "t161-effort", "medium")
     posting_id = _posting_of(engine, pv_id)
 
-    assert _value_read(engine, catalog, facts, [pv_id]) == {posting_id: "eligible"}
+    assert _value_read(
+        engine, catalog, facts, [pv_id], effort=gate_effort_key(None)
+    ) == {}
     assert _freshness_read(
         engine, facts, pv_id, model="sonnet", effort=gate_effort_key(None)
     ) == {}
+    assert _value_read(engine, catalog, facts, [pv_id], effort="medium") == {
+        posting_id: "eligible"
+    }
     assert _freshness_read(engine, facts, pv_id, model="sonnet", effort="medium") == {
         posting_id: "eligible"
     }

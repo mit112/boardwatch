@@ -228,6 +228,7 @@ def _pipeline(data_dir: Path, out_root: Path):
 
 def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
     from boardwatch.eligibility.catalog import load_rules
+    from boardwatch.eligibility.final_gate import gate_effort_key
     from boardwatch.eligibility.preflight import current_facts
     from boardwatch.eligibility.read import current_gate_verdicts
     from boardwatch.store.queries import current_posting_versions
@@ -241,6 +242,7 @@ def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
         verdicts = current_gate_verdicts(
             conn, [v.posting_version_id for v in versions.values()], facts,
             load_rules(settings.config_dir), model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort),
         )
     return verdicts.get(posting_id)
 

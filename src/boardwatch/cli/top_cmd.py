@@ -31,6 +31,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts
+from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
@@ -556,6 +557,7 @@ def rank_open_postings(
             parse_facts(profile_row.eligibility_facts_json),
             load_rules(settings.config_dir),
             model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort),
         )
         new_ids = _new_posting_ids(conn) if only_new else None
         # The leads ALREADY in front of the owner, keyed the way the slate cap keys a run

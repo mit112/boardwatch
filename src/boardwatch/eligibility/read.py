@@ -260,10 +260,14 @@ def current_gate_seniority(
       — which names no judge — holds nothing here.
     - `engine_version` is EXACT, not the display prefix: a `p5-oracle-1` row predates the
       seniority question entirely.
-    - `effort` is deliberately NOT in it, and neither is it in `delivered_unapplied`'s gate read.
-      A level is a calibration of the same judge, not a different one: the owner's ruling
-      (T155) is that a level change RE-JUDGES the standing queue through the T113 refresh, not
-      that the old level's readings go blind meanwhile. Only the freshness read keys on it.
+    - `effort` is deliberately NOT in it. A level is a calibration of the same judge, not a
+      different one: the owner's ruling (T155) is that a level change RE-JUDGES the standing
+      queue through the T113 refresh, not that the old level's readings go blind meanwhile.
+      Unlike this read, `current_gate_verdicts` — `delivered_unapplied`'s gate read — DOES key
+      on `effort` since T162 (with a legacy exception for a row that recorded none): that lane
+      VALUE has to serve the same row freshness thinks is current, or a level switch-back can
+      leave it serving a newer, contrary verdict forever. A seniority READING has no such
+      freshness counterpart to agree with, so it keeps the T155 shape.
 
     A row written before `years` was recorded counts only if its `facts_key` equals the current
     `gate_facts_key(facts)` (and model and exact engine_version match). `facts_key` digests the
@@ -391,7 +395,7 @@ def _latest_gate_rows(
 
 def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int], facts: Facts | None,
-    catalog: RulesCatalog, *, model: str,
+    catalog: RulesCatalog, *, model: str, effort: str,
 ) -> dict[int, str | None]:
     """posting_id -> the final gate's verdict on its current version, keyed on the JUDGE'S INPUTS.
 
@@ -424,10 +428,18 @@ def current_gate_verdicts(
       what the judge was asked, and a bump to either is by design a question every lead has to be
       asked again (`oracle.POLICY_VERSION`'s note). Until the T113 refresh re-judges a lead, a bump
       leaves it with no verdict — its lane falls back as for an unjudged lead.
-    - `effort` is deliberately NOT in it. A level is a calibration of the same judge, not a
-      different one: the owner's ruling (T155) is that a level change RE-JUDGES the standing queue
-      through the refresh, not that the old level's readings go blind meanwhile. Only the
-      freshness read, `fresh_gate_verdicts`, keys on it.
+    - `effort` **IS, since T162, with one exception.** A row whose recorded `$.effort` names a
+      level narrows the same way `model` does — INSIDE `max(id)`, so a lead whose absolute-newest
+      row was judged at another level still hits an OLDER row this level reached. A row that
+      recorded NO level (every row before T155, and every `eligibility gate apply` row) matches
+      ANY configured level, exactly as before T162: it would otherwise darken the standing apply
+      lane the moment `gate.effort` gained a value, ahead of the T113 refresh ever reaching those
+      947 rows. Before T162 this read ignored `effort` outright, which is the switch-back leak: a
+      level flip left an OLDER, matching-level row "already judged" under `fresh_gate_verdicts`
+      while THIS read kept serving whatever row was absolute-newest regardless of its level — a
+      stale contrary verdict served forever once a level was flipped and flipped back. Narrowing
+      here, the same way `model` already does, is what makes this read and the freshness read
+      agree again on a switch-back.
 
     **The verdict's one catalog dependence is applied HERE, at read time.** A stored `ineligible`
     whose recorded reason (`raw_output_json.$.gate_verdict.reason`) is not a family of the CURRENT
@@ -441,10 +453,15 @@ def current_gate_verdicts(
     """
     if facts is None or not posting_version_ids:
         return {}
+    scope = [
+        *_judge_inputs(facts, model),
+        or_(
+            func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort,
+            func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort").is_(None),
+        ),
+    ]
     out: dict[int, str | None] = {}
-    for posting_id, (verdict, raw) in _latest_gate_rows(
-        conn, posting_version_ids, _judge_inputs(facts, model)
-    ).items():
+    for posting_id, (verdict, raw) in _latest_gate_rows(conn, posting_version_ids, scope).items():
         gate = raw.get("gate_verdict") if isinstance(raw, dict) else None
         reason = gate.get("reason") if isinstance(gate, dict) else None
         if verdict == "ineligible" and not (

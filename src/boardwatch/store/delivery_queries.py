@@ -58,6 +58,7 @@ from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
+from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.preflight import current_facts, current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
@@ -1143,7 +1144,10 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # fresh re-judge of them. The same-VERSION half is what stops a verdict about an old body
     # releasing a new body's flags, and it is kept.
     gate = (
-        current_gate_verdicts(conn, version_ids, facts, catalog, model=settings.gate.model)
+        current_gate_verdicts(
+            conn, version_ids, facts, catalog, model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort),
+        )
         if catalog is not None
         else {}
     )
@@ -1595,7 +1599,10 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # lead the list served `uncertain` — the same field, the same lead, two answers. `catalog` is
     # the one loaded above, above the identity read.
     facts = current_facts(conn)
-    gate = current_gate_verdicts(conn, version_ids, facts, catalog, model=settings.gate.model)
+    gate = current_gate_verdicts(
+        conn, version_ids, facts, catalog, model=settings.gate.model,
+        effort=gate_effort_key(settings.gate.effort),
+    )
     # The gate's SENIORITY reading, for the same reason its verdict one line up is read here, and
     # missed when that one was added. Two things went wrong without it, and the second is the
     # worse one. `delivery/api.py` keys the above-band badge on `row.judge_seniority_fit == "no"`,

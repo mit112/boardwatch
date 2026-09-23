@@ -55,6 +55,7 @@ from boardwatch.delivery.review_gate import lane as review_lane
 from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
+from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.preflight import current_facts, current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
@@ -1532,7 +1533,8 @@ def _lead_lanes(
         # would split the two lanes on every lead after a rules-only re-key.
         facts = current_facts(conn)
         gate_verdicts = current_gate_verdicts(
-            conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model
+            conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort),
         )
         # T151. HOW MANY leads the gate read found NOTHING for, counted beside the read itself
         # rather than re-derived later, so the number and the lane decision cannot disagree.

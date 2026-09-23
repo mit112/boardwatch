@@ -300,6 +300,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The lane's judge-verdict read narrows on the effort level, as it already did on the model
+  (2026-09-23, T162).** After an effort switch-back (`medium` → `high` → `medium`), the freshness
+  read found the older matching row and called the lead judged, while the lane served the newer
+  `high` row's verdict forever. The lane read now narrows on the configured effort inside the same
+  newest-row rule, and a row written before the effort was recorded stays visible, so the standing
+  lane does not darken. Measured: 0 of 871 delivered leads carry a recorded effort today.
+
 - **The queue list loads the rules catalog once per read, and not at all without a profile
   (2026-09-23, T171).** T161's gate read loaded `rules.yaml` a second time on every list call, after
   the identity read had already loaded it, and with no profile a malformed rules override now failed
