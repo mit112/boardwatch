@@ -93,7 +93,10 @@ def test_high_confidence_provenanced_ineligible_is_written_with_span(tmp_path: P
     # Read it back via current_gate_verdicts under the SAME facts and judge the write was given
     # — proving the read-back lands (deepseek BLOCKER-1; keyed on the judge's inputs, T161).
     with engine.connect() as conn:
-        got = current_gate_verdicts(conn, [pv_id], Facts(), catalog, model="sonnet")
+        got = current_gate_verdicts(
+            conn, [pv_id], Facts(), catalog, model="sonnet",
+            effort=final_gate.gate_effort_key(None),
+        )
     # got maps posting_id -> verdict; resolve pv_id -> posting_id in the helper or assert by value
     assert "ineligible" in got.values()
 
@@ -181,7 +184,9 @@ def test_a_legacy_gate_row_with_no_facts_key_is_never_read_nor_fresh(
     legacy_pv, keyed_pv = pv_ids
 
     with engine.connect() as conn:
-        read = current_gate_verdicts(conn, pv_ids, facts, catalog, model="sonnet")
+        read = current_gate_verdicts(
+            conn, pv_ids, facts, catalog, model="sonnet", effort=final_gate.gate_effort_key(None),
+        )
         fresh = fresh_gate_verdicts(
             conn, [legacy_pv], facts, model="sonnet",
             effort=final_gate.gate_effort_key(None),

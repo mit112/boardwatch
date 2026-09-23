@@ -15,6 +15,7 @@ from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import Facts, Policy
+from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.gate_handshake import (
     ApplyGateResult,
     apply_gate_verdicts,
@@ -251,9 +252,13 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
                   eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
             .where(eligibility_evaluations.c.engine_kind == "llm")
         ).all()
-        under_stored = current_gate_verdicts(conn, [pv_id], stored_facts, catalog, model="sonnet")
+        under_stored = current_gate_verdicts(
+            conn, [pv_id], stored_facts, catalog, model="sonnet",
+            effort=gate_effort_key(None),
+        )
         under_other_facts = current_gate_verdicts(
-            conn, [pv_id], Facts(highest_degree="master"), catalog, model="sonnet"
+            conn, [pv_id], Facts(highest_degree="master"), catalog, model="sonnet",
+            effort=gate_effort_key(None),
         )
     assert [tuple(row) for row in written] == [
         (stored_identity.profile_hash, stored_identity.rules_hash)
