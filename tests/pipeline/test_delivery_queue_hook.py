@@ -354,7 +354,12 @@ def test_contention_is_not_a_failure(env: Path, tmp_path: Path, queue_root: Path
 
     assert summary.fatal is None, summary.fatal
     assert _status(env, summary.run_id) == "ok"
-    assert [note for note in summary.errors if "queue" in note] == []
+    # B8's volume reading names "the blind-apply queue" and escalates on a thin run (D-529); it is
+    # a program-gate reading pinned by its own test, not a queue failure.
+    assert [
+        note for note in summary.errors
+        if "queue" in note and not note.startswith("apply lane:")
+    ] == []
     assert "contended" in _queue_line(output)
     assert "0 failed" in _queue_line(output)
     assert _folders(queue_root) == [], "a contended sync wrote anyway"

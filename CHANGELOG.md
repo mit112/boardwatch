@@ -701,6 +701,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **B8's volume reading now escalates like every other soft alert (2026-09-23, D-529).** A run
+  whose apply lane lands under B8's bar of 20 now puts that reading on `summary.errors`, so it
+  reaches the morning digest and the escalation channel as well as the run row. It was held off
+  the channel because a near-daily "19 against 20" would train its reader to ignore it, an
+  argument that rested on 9 of 14 confirm days under the bar, all of them on the pre-expansion
+  fleet. On the 1,807-board fleet the first readings were 25, 22, 26 and 20, none of them under
+  the bar.
+
 - **A stored seniority reading survives a rules-only re-key (2026-09-22, T152).** The seniority
   read was keyed on `(profile_hash, rules_hash)`, so every catalog edit released every seniority
   hold (D-537). The judge never sees the catalog. A reading is now valid for the posting version,
