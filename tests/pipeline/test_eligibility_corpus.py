@@ -5,7 +5,7 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
-TWENTY-TWO rows were ADDED 2026-09-22 (m1077-m1098) and NOTHING was re-baselined: all 1,076
+TWENTY-FOUR rows were ADDED 2026-09-22 (m1077-m1100) and NOTHING was re-baselined: all 1,076
 pre-existing rows' verdicts and rows are byte identical under both changes. m1077-m1082 are T156,
 season-named graduation windows: m1077 is the headline (a 2025 graduate outside "Fall 2026 and
 Summer 2027" now reads `unmet` where it abstained), m1078 the in-window `met`, and m1079-m1082 the
@@ -20,7 +20,9 @@ m1094 pins the scope: company prose in the NEXT sentence leaves the real bar bef
 that a `With N years ..., you will` sentence still addresses the candidate. m1096 pins that a
 company boast and a candidate requirement in ONE sentence keep the requirement: the anchor stands
 down when its sentence holds a second years duration, so both rows are written and the verdict is
-right; m1097 (`requires`) and m1098 (`is mandatory`) pin that the guard is structural, not a word list.
+right; m1097 (`requires`) and m1098 (`is mandatory`) pin that the guard is structural, not a word list,
+m1099 that a second duration in MONTHS counts, and m1100 that the `is what our team brings` shape stands
+down too.
 
 FOURTEEN rows were re-baselined when `clearance:clearance_preferred` stopped abstaining
 unconditionally: every corpus case that fires it declares `security_clearance` state `none`, so the
@@ -1239,6 +1241,8 @@ CASES: list[tuple] = [
     ('m1096:T157 CONTROL a boast and a candidate requirement in ONE sentence keep the requirement', 'With over 25 years of experience serving the sector, our team has built deep expertise, and candidates must have 5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('m1097:T157 CONTROL a boast and a `requires` bar in ONE sentence keep the bar', 'With over 25 years of experience serving the sector, our team has built deep expertise, and the role requires 5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('m1098:T157 CONTROL a boast and an `is mandatory` bar in ONE sentence keep the bar', 'With over 25 years of experience serving the sector, our team has built deep expertise, and 5 years of experience is mandatory.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1099:T157 CONTROL a boast and a MONTHS bar in ONE sentence keep the bar', 'With over 25 years of experience serving the sector, our team has built deep expertise, and candidates must have 48 months of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_months_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1100:T157 CONTROL the `is what our team brings` shape keeps a later bar in its sentence', '25 years of experience is what our team brings, and candidates must have 5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 
@@ -1258,4 +1262,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1098
+    assert len(CASES) == 1100

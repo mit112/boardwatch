@@ -82,6 +82,8 @@ HEADING_CASES: list[tuple] = [
     ("h17:CONTROL inline bullets with no OR are separate bars, so the years bar rejects", "Requirements: • 5+ years of experience • A bachelor's degree", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h18:BOUND a heading that opens an inline-bulleted line ends the earlier heading, so its bar rejects', 'Nice to have:\nRequirements: • 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h19:a hedge heading that opens an inline-bulleted line governs the bullet after it', 'Nice to have: • 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h20:BOUND a heading item later on the SAME inline-bulleted line ends the hedge, so its bar rejects', 'Nice to have: • Go experience • Requirements: • 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h21:BOUND a labelled line after plain lines ends the hedge, so its bar rejects', 'Nice to have:\nGo experience\nRequirements: 8 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -97,7 +99,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "1c7077e023ea11e350f74f30b5ce69a42ee75a6d8a8b5583ca9cbc0075ae1221"
+SPLIT_UNITS_DIGEST = "4ac6c67c1e9fc733337057cc719168223a924df0aeb46f0d4ee953b0b6fec881"
 
 
 @pytest.fixture(scope="module")
@@ -164,4 +166,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 19
+    assert len(HEADING_CASES) == 21

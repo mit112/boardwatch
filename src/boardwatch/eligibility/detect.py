@@ -211,29 +211,36 @@ def qualifications_span(body_text: str) -> list[str]:
     return span
 
 
-def _on_heading_line(text: str, offset: int, unit: str) -> tuple[bool, int]:
-    """Whether the unit at `offset` is a heading, and where its line starts.
+def _on_heading_line(text: str, offset: int, unit: str) -> tuple[bool, int, int]:
+    """Whether the unit at `offset` is a heading, where its line starts, and which heading it
+    is: a heading LINE may hold several units and the first governs, so it is keyed on the line;
+    a heading ITEM is its own unit, so two on one line are two headings.
 
     A line that is only `OR` passes `_looks_like_header` as one capitalised word, and read as
     a heading it would govern the arm after it and split the alternative in two.
 
-    A unit that OPENS its line and reads as a heading on its own is one too when an inline
-    bullet follows it (`Requirements: • 8 years of experience.`). The whole line does not read
-    as a heading, but `_SENTENCE_SPLIT` has already cut the list off it, and missing it would
-    leave an earlier `Nice to have:` governing a genuine bar.
+    A list item (a line, or a unit after an inline bullet) that opens with a heading label is
+    one too: `Requirements: • 8 years of experience.` and `• Requirements: • 8 years ...` on
+    one line, or `Requirements: 8 years of experience.` after plain lines. The whole line does
+    not read as a heading, and missing it would leave an earlier `Nice to have:` governing a
+    genuine bar.
     """
     start = text.rfind("\n", 0, offset) + 1
     end = text.find("\n", offset)
     line = text[start : len(text) if end < 0 else end]
     if _looks_like_header(line) and not _or_only(line):
-        return True, start
-    opens = not text[start:offset].strip() and bool(
-        _INLINE_BULLET_AFTER.match(text, offset + len(unit))
-    )
-    return opens and _looks_like_header(unit) and not _or_only(unit), start
+        return True, start, start
+    if text[start:offset].strip() and not _opens_item(text, offset):
+        return False, start, offset
+    label = _LEADING_LABEL.match(unit)
+    return label is not None and _looks_like_header(label.group(0)), start, offset
 
 
-_INLINE_BULLET_AFTER = re.compile(r"[ \t]*[•‣●\-\*]\s")
+# A list item that opens with its own heading label, alone (`Requirements:` before an inline
+# bullet) or ahead of its content (`Requirements: 8 years of experience.`). Either way it ends an
+# earlier heading's reach; with content after it, it cannot hedge what follows, because the hedge
+# test admits delimiters only between a heading and the clause it governs.
+_LEADING_LABEL = re.compile(r"[^:\n]{1,60}:")
 
 
 def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | None]:
@@ -251,14 +258,14 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
     """
     governing: list[int | None] = []
     current: int | None = None
-    current_line = prev_line = -1
+    current_key = prev_line = -1
     governed = listed = False
     prev_end = 0
     for index, (offset, unit) in enumerate(units):
-        heading, line = _on_heading_line(text, offset, unit)
+        heading, line, key = _on_heading_line(text, offset, unit)
         if heading:
-            if line != current_line:
-                current, current_line = index, line
+            if key != current_key:
+                current, current_key = index, key
                 governed = listed = False
         elif current is not None and line != prev_line:
             marked = _LIST_MARK.match(text, line) is not None

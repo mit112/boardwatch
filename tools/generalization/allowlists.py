@@ -64,7 +64,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "vocabularies and ranks. Describes how postings word requirements, not one "
         "user's situation. A wrong pattern is a wrong verdict, so it is pinned rather "
         "than exempted (D-P2-7). Overridable per user via {config_dir}/rules.yaml",
-        pin="sha256:642d0e8d32df073a522fe36c692f6588c2474187c5c02c2f3ba29c4ff7c09f0e",
+        pin="sha256:b5fdef98f9153a73fbec8698cb8fd7c2add40b055d7262e6a56f0f7643bc021a",
     ),
     "src/boardwatch/tailor/equivalences.yaml": DataEntry(
         kind="taxonomy",
