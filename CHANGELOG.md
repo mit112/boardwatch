@@ -300,6 +300,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A preferred-years requirement no longer reads `{years} years of total experience is preferred`
+  (2026-09-23, T169).** The two preferred-years patterns have a second layout, for a hedge written
+  before the number ("We prefer 5 years of experience."), whose capture is named `years_alt`. The
+  requirement template names `{years}`, so formatting failed and the literal placeholder was stored,
+  in a row that can never be corrected. The engine now formats with each `_alt` capture also under
+  the name it stands for, as the resolver already reads it; a catalog override that names
+  `{years_alt}` still formats. Requirement text is display only, so no verdict moves. This edits a
+  digested engine module, so `engine_version` moves, and that re-evaluation supersedes every stored
+  row carrying the placeholder.
+
 - **A hedged bullet under a hedge heading now writes its preferred row once (2026-09-23, T163).**
   `Preferred Qualifications:` then `- 5 years of experience preferred.` wrote two identical
   `total_years_preferred` rows: one from the bullet read alone, one from the bullet read with its
