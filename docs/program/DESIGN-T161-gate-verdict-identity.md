@@ -1,6 +1,6 @@
 # T161 — What a stored gate VERDICT legitimately depends on, for the lane read
 
-**Status: DESIGN, no code. Needs the owner's read before it is built** (D-556; T161's ticket: "Moves
+**Status: SHIPPED 2026-09-23 as #430 (D-569), both halves, judge holds kept (the owner's ruling, D-566). The build also moved two callers this note missed: the run's lane split (`runner._lead_lanes`) and the ranker's hide (`top_cmd`).** Original status: DESIGN, no code. Needed the owner's read before it was built (D-556; T161's ticket: "Moves
 D-537/D-547 territory, so it needs a design note and the owner's read before it's built"). Written
 2026-09-22 (session 22f). It is the verdict-side sibling of `DESIGN-T152-seniority-reading-identity.md`:
 same question, same test, applied to `current_gate_verdicts`' LANE callers instead of
