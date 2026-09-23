@@ -270,6 +270,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lane whose every search fails after page one now keeps the pages it got, and every search
+  says how it ended (2026-09-22, T144).** When each hiring.cafe or Indeed search facet returned a
+  good first page and then had a later page refused, the lane raised and threw away every first
+  page it had already paid for: none of those companies reached body resolution, and the lane was
+  missing from the funnel. It now returns those entries. The case stays exactly as loud as before,
+  as one `lane <name>: search degraded: …` line in the run's errors, and the lane now appears in
+  the funnel. Each search also records how it ended: it ran out, its first page was empty, its
+  first page failed, or a later page failed. A failure carries its typed cause (a fetch failure
+  with its HTTP status, or an unusable page). Before, a search the host cut short read the same as
+  one whose results genuinely ended. That record is a new additive `search_outcomes` key in the
+  funnel JSON, plus a column in the markdown's search table. One search failing late among healthy
+  ones is recorded there and adds no error line. The all-empty and all-first-page-failed outage
+  guards are unchanged. Astra review 05, F3; the all-late case had never fired in 468 runs.
+
 - **A web skip or apply can no longer be undone on disk by the run's queue pass (2026-09-22, T135).**
   The runner's queue pass and the web server's start-up `prime_queue` reconcile the folders and
   then sync them. Each half took and released the queue lock on its own, on one connection whose
