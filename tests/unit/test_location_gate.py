@@ -16,6 +16,8 @@ from boardwatch.rank.location_data import (
     AMBIGUOUS_REGIONS,
     NON_US_CITIES,
     NON_US_COUNTRIES,
+    NON_US_ISO3,
+    NON_US_ISO3_SUFFIX,
     NON_US_REGIONS,
     US_CITIES,
     US_MARKERS,
@@ -325,6 +327,74 @@ class TestStructuralCountryCode:
     )
     def test_the_us_alpha_3_in_the_same_shape_is_us(self, loc: str) -> None:
         assert _c(loc) == "us"
+
+    @pytest.mark.parametrize(
+        "loc", ["Dublin, IRL", "Iasi, ROU", "San Francisco,CRI", "Kirkland, QC, CAN"]
+    )
+    def test_a_trailing_comma_country_code_is_non_us(self, loc: str) -> None:
+        # The code beats a US city token: "San Francisco" and "Kirkland" are both curated US
+        # cities, and these are Costa Rica and Quebec.
+        assert _c(loc) == "non_us"
+
+    @pytest.mark.parametrize(
+        ("loc", "expected"),
+        [
+            ("Dublin, OH", "us"),
+            ("Dublin, CA", "us"),
+            ("Austin, TX, USA", "us"),
+            # A US territory is a policy question, not this code table's: it stays fail-open.
+            ("San Juan, PRI", "unknown"),
+            # Uppercase as written, or the English words "Can"/"Per"/"Ind" would read as codes.
+            ("Remote, Can", "unknown"),
+            ("Remote, can", "unknown"),
+            ("Dublin", "unknown"),
+        ],
+    )
+    def test_the_trailing_code_leaves_its_neighbours_alone(self, loc: str, expected: str) -> None:
+        assert _c(loc) == expected
+
+    def test_a_us_segment_still_keeps_a_list_with_a_coded_foreign_one(self) -> None:
+        assert classify_location(["Dublin, IRL", "Austin, TX"]) == "us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        [
+            # US airport codes that are also alpha-3 country codes, and the Eastern time zone.
+            "Austin, AUS", "Philadelphia, PHL", "Indianapolis, IND", "Albany, ALB",
+            "Bangor, BGR", "Cody, COD", "Remote, EST",
+        ],
+    )
+    def test_a_trailing_code_a_us_location_also_ends_in_is_not_read(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    @pytest.mark.parametrize("loc", ["Suva, FJI", "Port Moresby, PNG", "Salmiya, KWT"])
+    def test_the_codes_added_for_the_suffix_read_non_us(self, loc: str) -> None:
+        assert _c(loc) == "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        ["San Juan, PRI", "Hagatna, GUM", "Charlotte Amalie, VIR", "Pago Pago, ASM",
+         "Saipan, MNP", "Wake Island, UMI"],
+    )
+    def test_no_us_territory_reads_non_us(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    @pytest.mark.parametrize(
+        "loc",
+        # Real US airport identifiers that are ALSO alpha-3 country codes, and not observed as a
+        # foreign suffix, so the inclusion list never admitted them.
+        ["Anderson, AND", "Bishop, BIH", "San Antonio, MDA", "Millinocket, MLT",
+         "Hanapepe, PAK", "Savannah, SVN", "Albany, ALB", "Cody, COD"],
+    )
+    def test_an_unobserved_code_is_not_read_as_a_suffix(self, loc: str) -> None:
+        assert _c(loc) != "non_us"
+
+    def test_every_suffix_code_is_a_country_code(self) -> None:
+        assert NON_US_ISO3_SUFFIX <= NON_US_ISO3
+
+    def test_a_us_state_in_the_same_segment_beats_a_trailing_code(self) -> None:
+        # The state check runs first, so a segment that names a US state stays US: fail-open.
+        assert _c("Something, IN, CAN") == "us"
 
     @pytest.mark.parametrize("loc", ["IN - Indianapolis", "CA - San Francisco", "OR - Portland"])
     def test_a_two_letter_prefix_is_not_read_as_a_country(self, loc: str) -> None:
