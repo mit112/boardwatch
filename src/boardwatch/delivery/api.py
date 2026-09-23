@@ -93,6 +93,8 @@ from boardwatch.rank.role_gate import role_verdict
 from boardwatch.store.applications import (
     APPLIED_STATUSES,
     ApplicationStatus,
+    AppliedTwin,
+    applied_identical_jds,
     applied_job_ids,
 )
 from boardwatch.store.delivery_queries import (
@@ -253,6 +255,8 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # follow-up is a note ON a lead, so it filters nothing. Read ONCE for the whole page, like
     # every other `app_state` prefix scan on this path.
     follow_ups = followup_job_dates(conn)
+    # One statement for the whole page, whatever its size (T125). A note, like the follow-up.
+    twins = applied_identical_jds(conn)
     every = delivered_unapplied(conn, skipped=excluded)
     # An ineligible lead is not work: it is drained to `_ineligible` on disk, so the page must
     # not list it either, or the folder tree and the page disagree about the same lead. It is
@@ -286,7 +290,13 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     review_rows = sorted((r for r in kept if lanes[r.posting_id] != ""), key=rank_key)
     return {
         "rows": [
-            _row_json(row, facts[row.posting_id], ctx, follow_ups.get(row.job_id))
+            _row_json(
+                row,
+                facts[row.posting_id],
+                ctx,
+                follow_ups.get(row.job_id),
+                twins.get(row.posting_id, []),
+            )
             for row in apply_rows
         ],
         # Its own list, NOT an exclusion. These leads are real work — they are held for a look
@@ -295,7 +305,13 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         # this: it is `not_swe` ONLY, never `uncertain` (see this module's docstring), so most
         # review leads carry no flag at all and were previously indistinguishable on the page.
         "review": [
-            _row_json(row, facts[row.posting_id], ctx, follow_ups.get(row.job_id))
+            _row_json(
+                row,
+                facts[row.posting_id],
+                ctx,
+                follow_ups.get(row.job_id),
+                twins.get(row.posting_id, []),
+            )
             for row in review_rows
         ],
         "counts": _counts(
@@ -329,7 +345,13 @@ def detail_payload(conn: Connection, ctx: ApiContext, posting_id: int) -> dict[s
     # show the follow-up on a lead that has left the list.
     follow_up = followup_job_dates(conn).get(detail.row.job_id)
     return {
-        "row": _row_json(detail.row, facts, ctx, follow_up),
+        "row": _row_json(
+            detail.row,
+            facts,
+            ctx,
+            follow_up,
+            applied_identical_jds(conn).get(detail.row.posting_id, []),
+        ),
         "jd_body": detail.jd_body,
         "requirements": _requirements_json(detail, facts),
         "board_target": detail.board_target,
@@ -363,7 +385,11 @@ def _unique_locations(locations: Sequence[str]) -> list[str]:
 
 
 def _row_json(
-    row: QueueRow, facts: LiveFacts, ctx: ApiContext, follow_up: str | None
+    row: QueueRow,
+    facts: LiveFacts,
+    ctx: ApiContext,
+    follow_up: str | None,
+    twins: Sequence[AppliedTwin],
 ) -> dict[str, Any]:
     """One `QueueRow` as the frontend's `QueueRow` interface.
 
@@ -455,6 +481,18 @@ def _row_json(
         # follow-up survives its posting being revised, closed or regrouped. `None` is "no
         # follow-up pinned" and is never a date the client has to interpret.
         "follow_up": follow_up,
+        # T125. Postings at the SAME company with a byte-identical current body, on ANOTHER job
+        # the owner already applied to. `[]` when there are none, never absent. Annotation only:
+        # a repost under a new id can be a new opening, so nothing here hides or re-ranks it.
+        "applied_identical_jd": [
+            {
+                "posting_id": twin.posting_id,
+                "title": twin.title,
+                "location": next(iter(_unique_locations(twin.locations)), None),
+                "applied_at": _iso_utc(twin.applied_at),
+            }
+            for twin in twins
+        ],
     }
 
 

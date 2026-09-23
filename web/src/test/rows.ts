@@ -59,6 +59,7 @@ export function queueRow(overrides: Partial<QueueRow> = {}): QueueRow {
     // A test that wants one says so, and `withoutFields` is how a server that never sent the key
     // is modelled.
     follow_up: null,
+    applied_identical_jd: [],
     ...overrides,
   };
 }

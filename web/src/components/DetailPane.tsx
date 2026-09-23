@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { openPdf, revealFolder } from "../api/client";
-import type { Answers, QueueDetail, RequirementView } from "../api/types";
+import type { AppliedIdenticalJd, Answers, QueueDetail, RequirementView } from "../api/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import {
   EM_DASH,
   followUpWindow,
   formatAge,
+  formatDateWithYear,
   formatFraction,
   formatScore,
   formatTimestamp,
@@ -184,6 +185,34 @@ function Evidence({ requirements }: { requirements: RequirementView[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Where, and when when it is known: an imported application may carry no submission date. */
+function twinWhere(twin: AppliedIdenticalJd): string {
+  const where = twin.location ?? EM_DASH;
+  return twin.applied_at == null ? where : `${where} · ${formatDateWithYear(twin.applied_at)}`;
+}
+
+/*
+ * T125. Other postings at this company with a byte-identical job description, already applied to.
+ * The first names where and when; `+N` says there are more, and a native disclosure holds every
+ * one of them, so nothing is truncated without a way to read it. Static text, present on load.
+ */
+function AppliedIdenticalJdLine({ twins }: { twins: AppliedIdenticalJd[] }) {
+  const [first] = twins;
+  if (first === undefined) return null;
+  const line = `Applied to an identical JD: ${twinWhere(first)}`;
+  if (twins.length === 1) return <p className="mt-3 text-sm text-fg-2">{line}</p>;
+  return (
+    <details className="mt-3 text-sm text-fg-2">
+      <summary className="cursor-pointer">{`${line} +${String(twins.length - 1)}`}</summary>
+      <ul className="mt-1 flex flex-col gap-0.5 pl-4 text-xs">
+        {twins.map((twin) => (
+          <li key={twin.posting_id}>{`${twinWhere(twin)} · ${twin.title}`}</li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -436,6 +465,11 @@ export function DetailPane({
               ) : null}
               {row.target_flag === true ? <Badge label="target company" /> : null}
             </div>
+
+            {/* T125. Directly under the chips, above the review reason: it is a fact about this
+                lead's history, not a hold. Plain text rather than a chip because the location and
+                the date ARE the information. `?? []` because an older server omits the field. */}
+            <AppliedIdenticalJdLine twins={row.applied_identical_jd ?? []} />
 
             {/* Reason VISIBLE, like `unverifiable` above: the pane is opened to decide what to do
                 with a held lead, and a bare chip there invites the reader to guess wrong. */}

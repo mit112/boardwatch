@@ -243,6 +243,25 @@ export interface QueueRow {
    * the key and the read is `undefined`. Every guard on it is `== null`.
    */
   follow_up?: string | null;
+  /**
+   * T125. Postings at the SAME company with a byte-identical current body, on ANOTHER job the
+   * owner already applied to — most recent application first. `[]` when there are none.
+   *
+   * Annotation only: a repost under a new id can be a new opening, so the lead stays listed and
+   * ranked exactly as it would be without this. Optional on the wire for the reason `follow_up`
+   * is — an older server omits the key — so every read is `?? []`.
+   */
+  applied_identical_jd?: AppliedIdenticalJd[];
+}
+
+/** One applied posting whose job description is byte-identical to the lead's. */
+export interface AppliedIdenticalJd {
+  posting_id: number;
+  title: string;
+  /** The applied posting's primary location, or `null` when it names none. */
+  location: string | null;
+  /** When the application was submitted, with an explicit UTC offset; `null` when never recorded. */
+  applied_at: string | null;
 }
 
 export interface QueueCounts {

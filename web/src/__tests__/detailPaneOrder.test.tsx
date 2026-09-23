@@ -124,6 +124,23 @@ describe("the decision block", () => {
     within(decisionBlock()).getByText("coverage · as of now");
   });
 
+  it("states an applied identical JD inside the block, after the chips and before the note", () => {
+    // T125. Beside the other facts that decide, never down among the prose.
+    renderPane(
+      detailWith([REQUIREMENT], {
+        applied_identical_jd: [
+          { posting_id: 7, title: "Software Engineer", location: "Alexandria, VA", applied_at: null },
+        ],
+      }),
+    );
+    const block = within(decisionBlock());
+    const line = block.getByText("Applied to an identical JD: Alexandria, VA");
+    const chip = block.getByText("eligible");
+    const note = block.getByText(/Score and coverage are recomputed now/);
+    expect(chip.compareDocumentPosition(line) & 4).toBe(4);
+    expect(line.compareDocumentPosition(note) & 4).toBe(4);
+  });
+
   it("shows the server's score explanation under the number", () => {
     const why = "target company (+0.30), title match (+0.25)";
     renderPane(detailWith([REQUIREMENT], { score: 0.9, why }));
