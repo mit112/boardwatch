@@ -270,6 +270,57 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A heading now reaches the bullets under it, and only those (2026-09-22, T105).** The splitter
+  cuts every bullet into its own unit, so a hedge (`Nice to have:`) or an explicit `OR` between
+  list items could never reach the bars they govern. `Nice to have:\n- 5 years of experience.`
+  rejected a one-year candidate, and posting 261677's ladder (`• High School Diploma AND 4+ years
+  experience • OR Associate's Degree AND 2+ years experience • OR Bachelor's Degree`, one line of
+  inline bullets) read `ineligible` although its bachelor's arm clears.
+  - Heading context is now carried beside the unit list, never inside it, so `split_units` is
+    byte-identical and pinned.
+  - A hedge heading drops a bullet's bar exactly as the one-line `Nice to have: ...` does.
+    `Preferred Qualifications:` and `Desired Skills:` read as their hedge word, so each family's
+    own hedge vocabulary decides. A field label opening the bullet (`- Experience: 5 years`) is
+    read through; `- Required: 5 years` is not.
+  - An `OR` item, on its own line or after an inline bullet, joins its neighbours into the inline
+    twin the alternative escapes already read.
+  - Context may only weaken a row, never create one or turn an abstain into `unmet`.
+  - A heading's reach ends at the next heading (a heading line, or a list item that opens with a
+    heading label, including one mid-line), at an unmarked line after bulleted ones, and at a blank
+    line followed by an unmarked one. That keeps `Nice to have:` off a genuine bar in the paragraph
+    after its list.
+  - The heading vocabulary moved from `tailor/requirement_echo.py` into `detect.py`, so
+    `engine_version` covers it.
+  - A new pinned multi-line surface (`HEADING_CASES`, R14) holds the shapes the one-line corpus
+    cannot.
+  - Not covered: negation and jurisdiction headings; the ONE-LINE `Preferred Qualifications: 5
+    years ...` (a catalog introducer change); and an any-of roll-up that would read `A master's
+    degree OR 5 years` as `eligible` rather than `uncertain`.
+
+  Measured together with T156 and T157 over all 270,193 open postings (fresh arms, live profile;
+  the control arm reproduced all 269,702 stored verdicts): 2,771 verdicts move. 2,127 go from
+  `ineligible` to `uncertain` and 240 from `ineligible` to `eligible`; most are a years bar under a
+  hedge heading that no longer rejects (`Preferred Qualifications:\n- 3+ years with X` alone is
+  1,047). 125 go from `uncertain` to `eligible`. 168 go from `uncertain` to `ineligible`, and they
+  are correct: a preferred-section bar had been straddling a genuine basic-qualification bar into
+  abstention, and the genuine bar now decides with its quoted span. 111 go from `eligible` to
+  `uncertain`, a met row under a hedge heading that no longer counts as a requirement.
+
+- **A season-named graduation window is read (2026-09-22, T156).** `graduating between Fall 2026
+  and Summer 2027` abstained as "a month this catalog cannot read". A season now takes its first
+  month as a window's low end and its last as the high end, the generous reading. `Winter`
+  deliberately stays unreadable and abstains, because it names both a January term and a December
+  commencement. Seven open postings move from `uncertain` to `ineligible` on it, among them two built student-only
+  roles (`Graduation Date: Fall 2026 - Summer 2027`).
+
+- **Company tenure stated after a years bar is no longer a requirement (2026-09-22, T157).**
+  `With over 25 years of experience serving the sector, our team is committed to ...` and `25 years
+  of experience is what our team brings` rejected candidates on the employer's own age. A narrow
+  sentence-scoped suppressor now reads those two shapes. The wholesale company-side anchor was not
+  reused after the span: of the 46 unmet spans it matched there, most were genuine requirements
+  (`combined experience`, `between user ...`). Both shapes stand down when their sentence holds a
+  second duration, so a boast and a real bar in one sentence keep the bar.
+
 - **A location ending in a country code no longer passes as a US candidate (2026-09-22, T160).**
   `Dublin, IRL` and `Iasi, ROU` classified `unknown`. That fails open, so 741 open postings whose
   every location named a foreign country by its ISO 3166-1 alpha-3 code reached ranking as
@@ -649,6 +700,23 @@ All notable changes to this project are documented here. The format follows
   already the employer's and is not touched.
 
 ### Changed
+
+- **A stored seniority reading survives a rules-only re-key (2026-09-22, T152).** The seniority
+  read was keyed on `(profile_hash, rules_hash)`, so every catalog edit released every seniority
+  hold (D-537). The judge never sees the catalog. A reading is now valid for the posting version,
+  the candidate's `total_years_experience`, the judge model and the exact gate policy/prompt
+  version, all written on the gate row. Rows written before this carry no years and count only
+  when their model, exact gate version and facts key all match.
+  - Measured on the live store, all 833 standing leads read identically under the new key: 204
+    seniority holds stay held through this batch's own re-key.
+  - A reading from another model, or another years value, is not used.
+
+- **A change of gate effort re-judges the standing queue (2026-09-22, T155).** A gate row now
+  records the effort it was judged at (`cli-default` when unset), and the one freshness read keys
+  on it. So a new level reaches standing leads through the refresh, bounded at `refresh_budget`
+  per run, rather than only leads judged after it. Rows from before this record no level and read
+  stale once. The lane reads do not key on effort: until a lead is re-judged, its reading at the
+  old level still counts.
 
 - **`reap_stale_runs` is pinned against D-020's "writes nothing at all" (2026-09-20, T136).** The
   function always issues its atomic UPDATE, the staleness predicate living inside the statement, so
