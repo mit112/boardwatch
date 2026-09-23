@@ -28,8 +28,9 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.posting_identity import normalized_locations
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
-from boardwatch.eligibility.facts import ProfileRowInvalid
+from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
@@ -542,14 +543,19 @@ def rank_open_postings(
             stats.profile_hash,
             stats.rules_hash,
         )
-        # The agent-lane final gate (§P5, task 1/2): a separate ledger keyed on the same
-        # identity. Read-only here, fail-open by construction — a missing/uncertain/eligible
-        # gate row never changes anything, only a persisted `ineligible` does (below).
+        # The agent-lane final gate (§P5, task 1/2): a separate ledger, read through the SAME
+        # judge-input key as the delivery queue and the run's lane split (T161). Freshness no
+        # longer re-judges unchanged inputs, so no row is ever written under a new identity: an
+        # identity-scoped read here would release every judge hide from ranking on the first
+        # rules-only re-key, for good. Read-only, fail-open by construction: it tiers a persisted
+        # `eligible` and hides a persisted `ineligible` (below); a missing or `uncertain` row
+        # changes nothing.
         gate_verdicts = current_gate_verdicts(
             conn,
             [cv.posting_version_id for cv in versions.values()],
-            stats.profile_hash,
-            stats.rules_hash,
+            parse_facts(profile_row.eligibility_facts_json),
+            load_rules(settings.config_dir),
+            model=settings.gate.model,
         )
         new_ids = _new_posting_ids(conn) if only_new else None
         # The leads ALREADY in front of the owner, keyed the way the slate cap keys a run

@@ -59,7 +59,7 @@ CLI_DEFAULT_EFFORT = "cli-default"
 
 def gate_effort_key(effort: str | None) -> str:
     """The `$.effort` value a gate row judged at `settings.gate.effort` records, and the value the
-    freshness read (`read.current_gate_verdicts(effort=...)`) matches on (T155)."""
+    freshness read (`read.fresh_gate_verdicts`) matches on (T155)."""
     return CLI_DEFAULT_EFFORT if effort is None else effort
 
 
@@ -81,9 +81,10 @@ def record_gate_verdict(
     `provider`/`model` name the judge that reached this verdict, and go into the COLUMNS of
     those names rather than into `raw_output_json` — unlike `facts_key`, which is in
     `raw_output` only because re-keying the deterministic identity would have moved eight
-    display readers. They are what `read.current_gate_verdicts`' freshness narrowing matches
-    on, so a configured-model change is a MISS and the lead is re-judged under the new judge
-    rather than coasting on the old one's verdict forever (T108).
+    display readers. `model` is what the freshness read (`read.fresh_gate_verdicts`) and, since
+    T161, every value read (`read.current_gate_verdicts`) match on, so a configured-model change
+    is a MISS and the lead is re-judged under the new judge rather than coasting on the old one's
+    verdict forever (T108).
 
     Both default to `None`, which is the legacy shape and the honest one for a caller that
     cannot name its judge: the `eligibility gate apply` CLI applies a verdicts file produced
@@ -91,7 +92,9 @@ def record_gate_verdict(
     configured model there would put a judge's name on a verdict it never reached. A row with
     `model IS NULL` never matches a given model, so the daily stage re-judges it ONCE (bounded
     by `--top`, D-477 pt 1) and it comes back keyed; the ledger is append-only, so there is no
-    backfill and this is the only way those rows become attributable.
+    backfill and this is the only way those rows become attributable. No value read finds such
+    a row either (T161), so a verdict applied through that CLI holds and releases nothing until
+    the lead is re-judged by a named judge.
 
     `effort` is `gate_effort_key(settings.gate.effort)` from the daily stage and the T113
     refresh, and `None` — written as an ABSENT key — from a caller that cannot name the level,

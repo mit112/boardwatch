@@ -227,18 +227,20 @@ def _pipeline(data_dir: Path, out_root: Path):
 
 
 def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
-    from boardwatch.eligibility.preflight import current_identity
+    from boardwatch.eligibility.catalog import load_rules
+    from boardwatch.eligibility.preflight import current_facts
     from boardwatch.eligibility.read import current_gate_verdicts
     from boardwatch.store.queries import current_posting_versions
 
     settings = load_settings(data_dir=data_dir)
     engine = get_engine(data_dir)
     with engine.connect() as conn:
-        identity = current_identity(conn, settings)
-        assert identity is not None
+        facts = current_facts(conn)
+        assert facts is not None
         versions = current_posting_versions(conn, [posting_id])
         verdicts = current_gate_verdicts(
-            conn, [v.posting_version_id for v in versions.values()], *identity
+            conn, [v.posting_version_id for v in versions.values()], facts,
+            load_rules(settings.config_dir), model=settings.gate.model,
         )
     return verdicts.get(posting_id)
 
@@ -1829,6 +1831,50 @@ def test_the_refresh_commits_one_batch_per_stage_call(
 
     assert sizes == [2, 2, 1]
     assert (result.sent, result.pending_after) == (5, 0)
+
+
+@_needs_an_executable_fake
+@pytest.mark.parametrize("kind", ["rules_hash", "engine_version"])
+def test_a_rekey_that_leaves_the_judges_inputs_alone_sends_the_judge_nothing(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """T161 test 7, the SPEND half of the owner's ruling. The judge is never sent the catalog or
+    the policy severities, so after a rules-only re-key it would be sent byte-identical inputs:
+    the daily stage must count the lead cached and send nothing, and the T113 refresh must count
+    no candidate. Before T161 the freshness read scoped on the identity, so this re-judged the
+    whole standing queue at the refresh budget and re-sent the daily slate (D-547's +8 min).
+    `engine_version` is the control: it was never part of a gate row's identity."""
+    from types import SimpleNamespace
+
+    from boardwatch.eligibility.preflight import current_identity
+    from boardwatch.llm.gate_judge import run_gate_refresh, run_gate_stage
+    from tests.pipeline.test_llm_cache_identity import rekeyed
+
+    _ready(env)
+    lead = _seed(env, slug="acme-t161-spend")
+    _arm_gate(env, refresh_budget=13)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    settings = load_settings(data_dir=env)
+    engine = get_engine(env)
+    leads = [SimpleNamespace(posting_id=lead)]
+    _, first = run_gate_stage(engine, settings, leads, run_id=None)
+    assert (first.sent, first.judged) == (1, 1)
+    assert _calls(fake_claude) == 1
+    fake_claude.unlink()
+    with engine.connect() as conn:
+        identity = current_identity(conn, settings)
+
+    with rekeyed(settings.config_dir, kind):
+        with engine.connect() as conn:
+            moved = current_identity(conn, settings)
+        assert identity is not None and moved is not None
+        assert (moved[1] != identity[1]) == (kind == "rules_hash")
+        _, second = run_gate_stage(engine, settings, leads, run_id=None)
+        refresh = run_gate_refresh(engine, settings, leads, run_id=None)
+
+    assert not fake_claude.exists(), "unchanged judge inputs must never reach a request"
+    assert (second.candidates, second.cached, second.sent) == (1, 1, 0)
+    assert (refresh.candidates, refresh.sent, refresh.pending_after) == (0, 0, 0)
 
 
 def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_never_closed(

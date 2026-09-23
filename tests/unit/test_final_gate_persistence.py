@@ -1,6 +1,7 @@
 """TDD for the final-gate persistence lane: keystone-span downgrade, a clean
-provenanced ineligible write, and the identity-scoped read-back via
-current_gate_verdicts. See .superpowers/sdd/plan-p5-final-gate/task-1-brief.md."""
+provenanced ineligible write, and the read-back via current_gate_verdicts, which keys on the
+judge's inputs rather than the row identity (T161). See
+.superpowers/sdd/plan-p5-final-gate/task-1-brief.md."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -87,13 +88,12 @@ def test_high_confidence_provenanced_ineligible_is_written_with_span(tmp_path: P
     with engine.begin() as conn:
         pv_id = seed_posting_version(conn, body_text=jd)
         final_gate.record_gate_verdict(conn, posting_version_id=pv_id, jd_text=jd,
-            facts=Facts(), policy=Policy(families={}), catalog=catalog, verdict=v)
-    # Read it back via current_gate_verdicts under the SAME (profile_hash, rules_hash) the
-    # deterministic run computes — proving the identity-join lands (deepseek BLOCKER-1).
-    ident = build_identity(posting_version_id=0, facts=Facts(), policy=Policy(families={}),
-                            catalog=catalog, declared_fields=declared_fields())
+            facts=Facts(), policy=Policy(families={}), catalog=catalog, verdict=v,
+            model="sonnet")
+    # Read it back via current_gate_verdicts under the SAME facts and judge the write was given
+    # — proving the read-back lands (deepseek BLOCKER-1; keyed on the judge's inputs, T161).
     with engine.connect() as conn:
-        got = current_gate_verdicts(conn, [pv_id], ident.profile_hash, ident.rules_hash)
+        got = current_gate_verdicts(conn, [pv_id], Facts(), catalog, model="sonnet")
     # got maps posting_id -> verdict; resolve pv_id -> posting_id in the helper or assert by value
     assert "ineligible" in got.values()
 
@@ -131,15 +131,18 @@ def test_a_gate_row_carries_the_facts_key_the_judge_was_sent(tmp_path: Path) -> 
     assert final_gate.gate_facts_key(citizen) != final_gate.gate_facts_key(sponsored)
 
 
-def test_a_legacy_gate_row_with_no_facts_key_is_readable_but_never_fresh(
+def test_a_legacy_gate_row_with_no_facts_key_is_never_read_nor_fresh(
     tmp_path: Path,
 ) -> None:
-    """T99, and the one-time consequence stated as a test. A row written before the key
-    existed carries `raw_output = {"gate_verdict": ...}` and nothing else. It must stay
-    READABLE through the display read — blanking the viewer would trade a write-side bug for
-    a read-side one, the trade D-512 already refused — while never satisfying a freshness
-    read that supplies a key, so every such lead is re-judged ONCE and comes back keyed."""
+    """T99, then T161. A row written before the key existed carries `raw_output =
+    {"gate_verdict": ...}` and nothing else, so it can never prove it was judged on these facts:
+    it never satisfies the freshness read, and every such lead is re-judged ONCE and comes back
+    keyed. Until T161 the identity-scoped display read still served it; the value read now keys on
+    `facts_key` too, so it serves nothing. The row here NAMES a model, so it is the `facts_key`
+    clause that excludes it — a row with neither would be excluded by the model alone. CONTROL:
+    the same row with the key IS read, so the empty result is not a read that finds nothing."""
     from boardwatch.eligibility.oracle import PROMPT_VERSION
+    from boardwatch.eligibility.read import fresh_gate_verdicts
     from boardwatch.store.eligibility import record_evaluation
 
     engine: Engine = create_engine(f"sqlite:///{tmp_path / 't.db'}")
@@ -150,32 +153,41 @@ def test_a_legacy_gate_row_with_no_facts_key_is_readable_but_never_fresh(
     facts = Facts.model_validate({"work_authorization": {"status": "citizen"}})
     ident = build_identity(posting_version_id=0, facts=facts, policy=policy,
                            catalog=catalog, declared_fields=declared_fields())
+    pv_ids: list[int] = []
     with engine.begin() as conn:
-        pv_id = seed_posting_version(conn, body_text=jd)
-        # Written through the store writer rather than by UPDATEing a fresh row: the four
-        # eligibility tables carry BEFORE UPDATE RAISE(ABORT) triggers, and this is the exact
-        # raw_output `record_gate_verdict` produced before T99.
-        record_evaluation(
-            conn, posting_version_id=pv_id,
-            profile_hash=ident.profile_hash, profile_snapshot=ident.profile_snapshot,
-            rules_hash=ident.rules_hash, rules_snapshot=ident.rules_snapshot,
-            input_fingerprint=build_identity(
-                posting_version_id=pv_id, facts=facts, policy=policy, catalog=catalog,
-                declared_fields=declared_fields(),
-            ).input_fingerprint,
-            engine_kind="llm", engine_version=final_gate.gate_engine_version(),
-            verdict="eligible", score=None, requirements=[],
-            provider=None, model=None, prompt_version=PROMPT_VERSION,
-            idempotency_key=None, run_id=None,
-            raw_output={"gate_verdict": {"decision": "eligible"}},
-        )
+        for slug, raw_output in (
+            ("legacy", {"gate_verdict": {"decision": "eligible"}}),
+            ("keyed", {"gate_verdict": {"decision": "eligible"},
+                       "facts_key": final_gate.gate_facts_key(facts)}),
+        ):
+            pv_id = seed_posting_version(conn, body_text=jd, slug=f"acme-{slug}")
+            pv_ids.append(pv_id)
+            # Written through the store writer rather than by UPDATEing a fresh row: the four
+            # eligibility tables carry BEFORE UPDATE RAISE(ABORT) triggers, and the legacy one is
+            # the exact raw_output `record_gate_verdict` produced before T99.
+            record_evaluation(
+                conn, posting_version_id=pv_id,
+                profile_hash=ident.profile_hash, profile_snapshot=ident.profile_snapshot,
+                rules_hash=ident.rules_hash, rules_snapshot=ident.rules_snapshot,
+                input_fingerprint=build_identity(
+                    posting_version_id=pv_id, facts=facts, policy=policy, catalog=catalog,
+                    declared_fields=declared_fields(),
+                ).input_fingerprint,
+                engine_kind="llm", engine_version=final_gate.gate_engine_version(),
+                verdict="eligible", score=None, requirements=[],
+                provider="claude-code-agent", model="sonnet", prompt_version=PROMPT_VERSION,
+                idempotency_key=None, run_id=None, raw_output=raw_output,
+            )
+    legacy_pv, keyed_pv = pv_ids
 
     with engine.connect() as conn:
-        display = current_gate_verdicts(conn, [pv_id], ident.profile_hash, ident.rules_hash)
-        fresh = current_gate_verdicts(
-            conn, [pv_id], ident.profile_hash, ident.rules_hash,
-            engine_version=final_gate.gate_engine_version(),
-            facts_key=final_gate.gate_facts_key(facts),
+        read = current_gate_verdicts(conn, pv_ids, facts, catalog, model="sonnet")
+        fresh = fresh_gate_verdicts(
+            conn, [legacy_pv], facts, model="sonnet",
+            effort=final_gate.gate_effort_key(None),
         )
-    assert "eligible" in display.values(), "the display read must be unchanged by T99"
+        keyed_posting = conn.execute(
+            select(posting_versions.c.posting_id).where(posting_versions.c.id == keyed_pv)
+        ).scalar_one()
+    assert read == {keyed_posting: "eligible"}, "a row with no facts_key must not be read"
     assert fresh == {}, "a row with no facts_key can never prove it was judged on these facts"

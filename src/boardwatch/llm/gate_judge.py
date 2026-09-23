@@ -30,11 +30,7 @@ from sqlalchemy import Connection, Engine
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import Facts, ProfileRowInvalid, parse_facts, parse_policy
-from boardwatch.eligibility.final_gate import (
-    gate_effort_key,
-    gate_engine_version,
-    gate_facts_key,
-)
+from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import (
     _CONFIDENCE,
@@ -43,8 +39,7 @@ from boardwatch.eligibility.oracle import (
     OracleVerdictError,
     accept_oracle_verdict,
 )
-from boardwatch.eligibility.preflight import current_identity
-from boardwatch.eligibility.read import current_gate_verdicts
+from boardwatch.eligibility.read import fresh_gate_verdicts
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 
 #: What this stage writes to the gate row's `provider` column: the `claude` CLI under the
@@ -413,16 +408,14 @@ def _current_gate_rows(
     conn: Connection,
     settings: Settings,
     facts: Facts,
-    identity: tuple[str, str],
     versions: Mapping[int, CurrentVersion],
 ) -> dict[int, str | None]:
     """posting_id -> its CURRENT gate verdict under the freshness key: the one definition of
     "already judged" that `run_gate_stage` skips on and `run_gate_refresh` counts as done, so a
     narrowing added to the key reaches both. Why each argument is there is `run_gate_stage`'s
     comment below."""
-    return current_gate_verdicts(
-        conn, [v.posting_version_id for v in versions.values()], *identity,
-        engine_version=gate_engine_version(), facts_key=gate_facts_key(facts),
+    return fresh_gate_verdicts(
+        conn, [v.posting_version_id for v in versions.values()], facts,
         model=settings.gate.model, effort=gate_effort_key(settings.gate.effort),
     )
 
@@ -468,13 +461,15 @@ def run_gate_stage(
             # would be a race with a profile edit mid-run, and fail-open is still correct.
             return leads, GateStageResult(candidates=candidates)
         catalog = load_rules(settings.config_dir)
-        identity = current_identity(conn, settings)
-        if identity is None:
-            return leads, GateStageResult(candidates=candidates)
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
-        already_gated = _current_gate_rows(conn, settings, facts, identity, versions)
-    # Never re-judge (D-477 point 5): a lead with a current gate row under this identity is
-    # skipped entirely — it never enters a request, let alone a `claude` call.
+        already_gated = _current_gate_rows(conn, settings, facts, versions)
+    # Never re-judge (D-477 point 5): a lead this judge, at this level, already answered on these
+    # exact inputs is skipped entirely — it never enters a request, let alone a `claude` call.
+    #
+    # NOT scoped on the row identity (T161): the judge is never sent the catalog or the policy
+    # severities, so a rules-only re-key would re-send byte-identical inputs, and before T161 it
+    # did — the T113 refresh re-judged the standing queue at its budget per run, and the daily
+    # gate re-sent its slate (D-547).
     #
     # `facts_key` is computed off the SAME `facts` object that goes into `build_gate_request`
     # below, so what the freshness test compares is exactly what the judge would be sent. The
@@ -492,11 +487,11 @@ def run_gate_stage(
     # reached only leads nobody had judged yet. A row that recorded no level misses under every
     # level, including the unset one, and is re-judged once.
     #
-    # `engine_version` is EXACT here, not the prefix the display readers use (D-512). "Current"
-    # has to mean current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that
-    # was judged under the old one — which is what stranded 434 of 505 apply-lane leads on
-    # `p5-oracle-1` after `seniority_fit` shipped. A superseded verdict stays readable everywhere
-    # else; it just no longer counts as "already judged".
+    # `engine_version` is EXACT here, not the `final_gate:` prefix (D-512). "Current" has to mean
+    # current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that was judged
+    # under the old one — which is what stranded 434 of 505 apply-lane leads on `p5-oracle-1`
+    # after `seniority_fit` shipped. Since T161 the value reads match it exactly too, so a
+    # superseded verdict is neither "already judged" nor read by any lane.
     to_judge = [p for p in leads if p.posting_id not in already_gated]
     if not to_judge:
         return leads, GateStageResult(candidates=candidates, cached=len(already_gated))
@@ -590,7 +585,8 @@ class GateRefreshResult:
 
 def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] | None:
     """`leads`, in order, minus every lead with a current gate reading or no current version to
-    judge. `None` when the profile or identity is missing, `run_gate_stage`'s fail-open cases."""
+    judge. `None` when the profile is missing or its facts unreadable, `run_gate_stage`'s
+    fail-open cases."""
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -599,11 +595,8 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
             facts = parse_facts(profile_row.eligibility_facts_json)
         except ProfileRowInvalid:
             return None
-        identity = current_identity(conn, settings)
-        if identity is None:
-            return None
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
-        current = _current_gate_rows(conn, settings, facts, identity, versions)
+        current = _current_gate_rows(conn, settings, facts, versions)
     return [p for p in leads if p.posting_id in versions and p.posting_id not in current]
 
 

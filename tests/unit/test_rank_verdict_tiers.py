@@ -10,8 +10,9 @@ release population), tier 2 is everything else visible. Score still orders WITHI
 
 Seeding mirrors test_rank_gate_filter.py: one company, SAFE_BODY postings (never flagged
 by the deterministic engine), `Facts()`/`Policy(families={})` so `record_gate_verdict`'s
-identity matches the seeded profile's, and `current_posting_versions` to get the
-`posting_version_id` a gate row is written against.
+`facts_key` matches the seeded profile's, the configured judge's `model` on the row (the gate
+read keys on both, T161), and `current_posting_versions` to get the `posting_version_id` a gate
+row is written against.
 """
 from __future__ import annotations
 
@@ -101,6 +102,7 @@ def _mark_gate_eligible(engine: Engine, tmp_path: Path, *, posting_id: int) -> N
                 label=str(posting_id), decision="eligible", reason=None, evidence="",
                 confidence="high",
             ),
+            model=_settings(tmp_path).gate.model,
         )
 
 

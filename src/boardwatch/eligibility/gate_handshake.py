@@ -126,9 +126,10 @@ def apply_gate_verdicts(
 
     Persists under the caller-supplied `facts`/`policy` — the CALLER is responsible
     for passing the user's STORED facts+policy (`parse_facts`/`parse_policy` off the
-    profile row), never the labeling pass's all-blocker reference policy; writing
-    under the wrong policy computes a different identity and the ranker's read
-    silently no-ops.
+    profile row), never the labeling pass's all-blocker reference policy. Writing under
+    the wrong policy attributes the row to an identity nothing evaluated under; writing
+    under the wrong FACTS records a different `facts_key`, and every value read
+    (`read.current_gate_verdicts`, T161) silently no-ops.
 
     `shortlist_ranks` maps posting id to its 1-based rank in the ranker's depth slate, and
     is threaded straight to `record_gate_verdict` so the ledger row records where the lead

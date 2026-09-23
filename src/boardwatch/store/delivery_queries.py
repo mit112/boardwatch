@@ -1125,16 +1125,23 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # Same identity and same version list as the verdicts above, so each row's summary and its
     # verdict come from ONE evaluation. Absent posting -> the all-False default.
     flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
-    # Same identity and same version list again, so a lead's lane can never be decided by a gate
-    # verdict from a different evaluation than the requirement summary it is releasing.
-    gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # The same version list, but NOT the same identity (T161): the judge's verdict is keyed on
+    # what it was reached on (body, facts, judge, prompt), none of which a rules-only re-key moves.
+    # The requirement summary it releases stays identity-scoped and is the CURRENT reading, so
+    # pairing it with a verdict whose inputs are unchanged is as coherent as pairing it with a
+    # fresh re-judge of them. The same-VERSION half is what stops a verdict about an old body
+    # releasing a new body's flags, and it is kept.
+    facts = current_facts(conn)
+    gate = current_gate_verdicts(
+        conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model
+    )
     # Gated HERE and nowhere else on this side. Every consumer below reads
     # `row.judge_seniority_fit == "no"`, so leaving the column at its inert `"unclear"` when the
     # hold is disarmed is what keeps `sync_queue`, the web page and both drains agreeing — the
     # alternative, each call site checking the flag itself, is exactly the second opinion
     # `_review` exists to prevent (D-332). It also skips the query entirely when off.
     seniority = (
-        current_gate_seniority(conn, version_ids, current_facts(conn), model=settings.gate.model)
+        current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
         if settings.gate.seniority_hold
         else {}
     )
@@ -1565,11 +1572,14 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # on 2026-09-22, and ~345 before that day's re-judge, since a re-key strands every judge
     # `eligible` that releases the hold.
     flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
-    # The FINAL GATE's verdict, under the same identity and the same version as the rules verdict
-    # above, so the pane and the list row for one lead cannot report two different gate readings.
-    # `delivered_unapplied` reads it for every row; without it here the detail served `None` for a
-    # lead the list served `uncertain` — the same field, the same lead, two answers.
-    gate = current_gate_verdicts(conn, version_ids, profile_hash, rules_hash)
+    # The FINAL GATE's verdict, through the same read, on the same version, under the same facts,
+    # judge and catalog as `delivered_unapplied`'s, so the pane and the list row for one lead
+    # cannot report two different gate readings. Without it here the detail served `None` for a
+    # lead the list served `uncertain` — the same field, the same lead, two answers. The catalog
+    # is loaded once and serves this read and the audit below.
+    facts = current_facts(conn)
+    catalog = load_rules(settings.config_dir)
+    gate = current_gate_verdicts(conn, version_ids, facts, catalog, model=settings.gate.model)
     # The gate's SENIORITY reading, for the same reason its verdict one line up is read here, and
     # missed when that one was added. Two things went wrong without it, and the second is the
     # worse one. `delivery/api.py` keys the above-band badge on `row.judge_seniority_fit == "no"`,
@@ -1583,14 +1593,14 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # inert `"unclear"` default is what keeps them agreeing (D-332). `settings` is already bound
     # above, so this needs no second `load_settings()`.
     seniority = (
-        current_gate_seniority(conn, version_ids, current_facts(conn), model=settings.gate.model)
+        current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
         if settings.gate.seniority_hold
         else {}
     )
     audit = load_audit(
         conn,
         posting_id,
-        load_rules(settings.config_dir),
+        catalog,
         profile_hash=profile_hash,
         rules_hash=rules_hash,
     )
