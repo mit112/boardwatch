@@ -308,6 +308,37 @@ def test_an_older_row_from_the_configured_model_still_hits_under_a_newer_one(
     assert newest == {posting_id: "uncertain"}
 
 
+def test_a_model_switch_away_and_back_agrees_with_the_lane(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T162 (CONTROL — model side is REFUTED). Codex's report named a switch-back leak for both
+    `model` and `effort`: freshness finds an older row that matches the configured judge while a
+    newer, contrary row sits on top, and the LANE (`current_gate_verdicts`) keeps serving that
+    newer row forever. Since T161 the lane also narrows on `model`, so a switch sonnet -> haiku ->
+    sonnet is no longer a divergence: both reads see only sonnet's row, which is the older,
+    `eligible` one — the haiku row is invisible to both. This pins that agreement; the `effort`
+    side is a live bug (T162, not fixed here — see `docs/program/`)."""
+    from boardwatch.eligibility.oracle import OracleVerdict
+
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="gate-model-switchback")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="sonnet")
+    _record_gate(
+        engine, catalog, facts, pv_id, 1, provider="claude-code-agent", model="haiku",
+        verdict_override=OracleVerdict(
+            label=str(posting_id), decision="ineligible", reason="experience_years",
+            evidence=EXPERIENCE_QUOTE, confidence="high",
+        ),
+    )
+
+    fresh = _freshness_read(engine, facts, pv_id, model="sonnet")
+    lane = _value_read(engine, catalog, facts, [pv_id], model="sonnet")
+    assert fresh == {posting_id: "eligible"}
+    assert lane == {posting_id: "eligible"}
+
+
 # ---------------------------------------------------------------------------
 # T152 — what a stored body-seniority reading is keyed on
 # ---------------------------------------------------------------------------
