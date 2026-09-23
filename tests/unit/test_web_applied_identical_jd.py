@@ -120,6 +120,32 @@ def test_a_lead_lists_the_applied_posting_with_an_identical_body_at_the_same_com
     assert detail["row"]["applied_identical_jd"] == expected
 
 
+
+def test_every_match_is_listed_most_recent_first_and_an_undated_one_last(
+    engine: Engine, ctx: ApiContext
+) -> None:
+    """The pane shows the FIRST entry, so the order is behaviour, not presentation. An application
+    recorded straight into an applied-side status has no `submitted_at`; it serializes as null and
+    sorts after every dated one."""
+    with engine.begin() as conn:
+        latest, latest_job = _deliver(conn, "alexandria", locations=["Alexandria, VA"])
+        create_application(conn, job_id=latest_job, status="applied", occurred_at=APPLIED_ON)
+        earlier, earlier_job = _deliver(conn, "boston", locations=["Boston, MA"])
+        create_application(
+            conn, job_id=earlier_job, status="applied", occurred_at=datetime(2026, 9, 10, 9, 0, 0)
+        )
+        undated, undated_job = _deliver(conn, "denver", locations=["Denver, CO"])
+        create_application(conn, job_id=undated_job, status="rejected", occurred_at=APPLIED_ON)
+        lead, _ = _deliver(conn, "austin", locations=["Austin, TX"])
+        for other in (earlier, undated, lead):
+            _twin(conn, other, latest, company=True, body=True)
+    entries = _queue_row(engine, ctx, lead)["applied_identical_jd"]
+    assert [(e["posting_id"], e["location"], e["applied_at"]) for e in entries] == [
+        (latest, "Alexandria, VA", "2026-09-14T15:30:00+00:00"),
+        (earlier, "Boston, MA", "2026-09-10T09:00:00+00:00"),
+        (undated, "Denver, CO", None),
+    ]
+
 def test_a_different_body_annotates_nothing(engine: Engine, ctx: ApiContext) -> None:
     lead, _ = _seed(engine, body=False)
     assert _queue_row(engine, ctx, lead)["applied_identical_jd"] == []
