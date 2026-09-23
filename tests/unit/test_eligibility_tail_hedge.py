@@ -62,6 +62,14 @@ DEMOTED = [
 # the clause-scoped hedge already does to its one-line form. These bodies carry nothing else, so
 # zero rows reads `uncertain` (`_no_evaluable_requirement`), never a clear by silence.
 DROPPED = [
+    # T180 F6: `an advantage` is catalog vocabulary now, and here it sits in the bar's own clause,
+    # so the unit-scoped hedge drops it as it drops `... is preferred but not required.` (DESIGN
+    # §2 listed it as a known miss). No twin reads past `auditing`, so no preferred row. pv 217254.
+    pytest.param(
+        "8+ years of experience auditing in a financial institution or similar public accounting "
+        "experience in the financial services industry is an advantage but not required.",
+        id="an-advantage-but-not-required-in-the-bars-own-clause",
+    ),
     pytest.param(
         "2-4 years of retirement industry experience, preferred",
         id="comma-then-bare-hedge",
@@ -296,12 +304,6 @@ KEPT = [
         "4 -7 years of relevant leadership experience including directing the work of others, "
         "preferred",
         "scoped_range_years_minimum", id="MISS-including-X-then-preferred",  # pv 354344
-    ),
-    # `not required` with no catalog hedge word (`advantage` is not `advantageous`).
-    pytest.param(
-        "8+ years of experience auditing in a financial institution or similar public accounting "
-        "experience in the financial services industry is an advantage but not required.",
-        "total_years_minimum", id="MISS-not-required-without-a-hedge-word",  # pv 217254
     ),
 ]
 
@@ -545,3 +547,76 @@ def test_hedged_as_carries_a_valid_target(tmp_path: Path) -> None:
     pattern = load_rules(tmp_path).family("degree").patterns[0]
     assert pattern.hedged_as == "bachelor_preferred"
     assert [rx.pattern for rx in pattern.hedged_by_tail] == ["preferred"]
+
+
+# T180 F6: the one-line forms that still read differently from their comma twin after T170, each
+# decided by the same rule (P + C1..C7). A HEDGE shape must write exactly what its reference writes;
+# the review's forms are synthetic, `F6_STORE` below holds the real sentences.
+_PREFERRED = [["experience_years:total_years_preferred", "preferred", "unmet"]]
+F6_HEDGES = [
+    # (P) opens on `;` or `:` as it does on `,`: only the predicate follows the delimiter.
+    pytest.param("5+ years of experience; preferred.", "5+ years of experience, preferred.",
+                 "eligible", _PREFERRED, id="semicolon-then-bare-hedge"),
+    pytest.param("5+ years of experience: preferred.", "5+ years of experience, preferred.",
+                 "eligible", _PREFERRED, id="colon-then-bare-hedge"),
+    # (P) a spaced ASCII dash opens the predicate as `–` does; the splitter cuts it as a bullet, so
+    # the predicate is read across that one inline cut.
+    pytest.param("5+ years of experience - nice to have", "5+ years of experience – nice to have",
+                 "eligible", _PREFERRED, id="spaced-hyphen-then-hedge"),
+    # Catalog vocabulary: three hedges the review found, read by the unit scope and the tail alike.
+    pytest.param("5+ years of experience would be nice.", "5+ years of experience is preferred.",
+                 "eligible", _PREFERRED, id="would-be-nice"),
+    pytest.param("5+ years of experience is an advantage.", "5+ years of experience is preferred.",
+                 "eligible", _PREFERRED, id="is-an-advantage"),
+    pytest.param("5+ years of experience, if possible.", "5+ years of experience, preferred.",
+                 "eligible", _PREFERRED, id="if-possible"),
+    # A bare negated bar says the bar is not required, and states no preference: it drops the bar
+    # without carrying it, exactly as `(not required)` inside the clause already does.
+    pytest.param("5+ years of experience, but not required.", "5+ years of experience (not required).",
+                 "uncertain", [], id="but-not-required"),
+    pytest.param("5+ years of experience, not mandatory.", "5+ years of experience (not required).",
+                 "uncertain", [], id="not-mandatory"),
+]
+
+
+@pytest.mark.parametrize(("body", "reference", "verdict", "rows"), F6_HEDGES)
+def test_a_one_line_hedge_shape_reads_as_its_reference(  # type: ignore[no-untyped-def]
+    catalog, body: str, reference: str, verdict: str, rows: list[list[str]]
+) -> None:
+    result, ref = evaluate(body, FACTS, POLICY, catalog), evaluate(reference, FACTS, POLICY, catalog)
+    assert (result.verdict, _rows(result)) == (verdict, rows)
+    assert (ref.verdict, _rows(ref)) == (verdict, rows)
+
+
+def test_a_negated_bar_aside_between_a_hedge_label_and_its_bar_is_read_through(catalog) -> None:  # type: ignore[no-untyped-def]
+    """`Preferred (not required): 5+ years ...` states the bar is not required. The required row
+    goes; no preferred row is written (the twin cannot read across the aside), so the verdict is
+    `uncertain` where `Preferred: 5+ years ...` is `eligible` -- the conservative residual."""
+    result = evaluate("Preferred (not required): 5+ years of experience.", FACTS, POLICY, catalog)
+    assert (result.verdict, _rows(result)) == ("uncertain", [])
+
+
+@pytest.mark.parametrize(
+    ("body", "rule"),
+    [
+        # CONTROLS for the widened predicate: the delimiter opens it only when nothing but the
+        # hedge follows, and a bare negation after a second noun is that noun's.
+        pytest.param("5+ years of experience; Kubernetes preferred.", "total_years_minimum",
+                     id="semicolon-then-another-noun-hedged"),
+        pytest.param("5+ years of experience; a degree is not required.", "total_years_minimum",
+                     id="semicolon-then-another-bar-negated"),
+        pytest.param("5+ years of experience - Bachelor's degree preferred", "total_years_minimum",
+                     id="hyphen-bullet-then-another-noun-hedged"),
+        # The inline-dash read stays on one line: a bullet on the next line is its own item.
+        pytest.param("5+ years of experience\n - nice to have\n", "total_years_minimum",
+                     id="bar-line-then-a-bullet-on-the-next-line"),
+        pytest.param("5+ years of experience, travel not required.", "total_years_minimum",
+                     id="comma-then-another-noun-negated"),
+    ],
+)
+def test_a_widened_predicate_still_keeps_a_bar_whose_tail_is_another_nouns(  # type: ignore[no-untyped-def]
+    catalog, body: str, rule: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert [f"experience_years:{rule}", "required", "unmet"] in _rows(result)
+    assert result.verdict == "ineligible"

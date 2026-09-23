@@ -66,6 +66,13 @@ _CLAUSE_SPLIT = re.compile(r"[;:,]")
 _CLAUSE_BOUNDARY = re.compile(r"[;:,]|(?<!\w)(?:and|but|while|whereas)(?!\w)", re.IGNORECASE)
 
 _ONLY_DELIMS = re.compile(r"^[\s;:,()\[\]\-–—]*$")
+# The same gap may hold one aside that negates the bar, `Preferred (not required): 5 years ...`:
+# it restates the hedge, it does not interrupt it.
+_NEGATED_ASIDE_GAP = re.compile(
+    r"^[\s;:,()\[\]\-–—]*\(\s*not\s+(?:strictly\s+|necessarily\s+)?"
+    r"(?:required|mandatory|necessary)\s*\)[\s;:,()\[\]\-–—]*$",
+    re.IGNORECASE,
+)
 
 # A parenthetical aside, and the shape that makes one a requirement in its own right.
 # "0-1 years of professional software development experience (1+ years of internship
@@ -179,16 +186,18 @@ _TAIL_OXFORD = re.compile(r"\s*(?:and/or|and|or|&)(?!\w)", re.IGNORECASE)
 def _tail_predicate(hedges: tuple[re.Pattern[str], ...]) -> re.Pattern[str]:
     """The sentence-final predicate over the catalog's hedge words: `, preferred.`,
     ` is highly preferred`, `, not required but preferred.`, ` a plus`, ` (preferred)`,
-    ` – Highly preferred`."""
+    ` – Highly preferred`, `; preferred.`. A bare negated bar (`, but not required.`) is the
+    `negated` group: it says the bar is not required and states no preference."""
     hedge = "(?:" + "|".join(rx.pattern for rx in hedges) + ")"
     return re.compile(
-        r"(?P<pred>\s*[,–—-]?\s*(?:"
+        r"(?P<pred>\s*[,;:–—-]?\s*(?:"
         r"(?:(?:is|are|would\s+be|will\s+be|(?:is\s+|are\s+)?considered)\s+)?"
         rf"{_TAIL_INTENSITY}(?:an?\s+)?{hedge}"
         rf"(?:\s*,?\s*(?:but|though|although)?\s*{_TAIL_NEGATED_BAR})?"
         rf"|{_TAIL_NEGATED_BAR}\s*,?\s*(?:but|though|although)\s+(?:(?:is|are)\s+)?"
         rf"{_TAIL_INTENSITY}(?:an?\s+)?{hedge}"
         rf"|\(\s*{_TAIL_INTENSITY}{hedge}\s*\)"
+        rf"|(?P<negated>(?:(?:but|though|although)\s+)?{_TAIL_NEGATED_BAR})"
         r"))[\s.!?]*\Z",
         re.IGNORECASE,
     )
@@ -196,17 +205,18 @@ def _tail_predicate(hedges: tuple[re.Pattern[str], ...]) -> re.Pattern[str]:
 
 def _hedged_tail(
     unit: str, lo: int, hi: int, hedges: tuple[re.Pattern[str], ...]
-) -> int | None:
-    """Where the hedge that predicates the WHOLE bar at [lo, hi) ends in `unit`, or None."""
+) -> tuple[int, bool] | None:
+    """Where the hedge that predicates the WHOLE bar at [lo, hi) ends in `unit`, and whether it
+    states a preference (False for a bare negated bar), or None."""
     tail = unit[hi:]
     found = _tail_predicate(hedges).search(tail)
     if found is None:
         return None
-    end = hi + found.end("pred")
+    hedged = hi + found.end("pred"), found.group("negated") is None
     bar = unit[lo:hi]
     complement = tail[: found.start()]
     if not complement.strip():
-        return end
+        return hedged
     # A bare aside glued to a word, `Pega(Preferred)`, hedges that word, not the bar.
     if found.group("pred").startswith("(") and complement[-1].isalnum():
         return None
@@ -260,7 +270,24 @@ def _hedged_tail(
         )
         if not closed:
             return None
-    return end
+    return hedged
+
+
+# The splitter cuts a spaced ASCII hyphen as an inline bullet, so `5+ years of experience - nice
+# to have` put its predicate in the NEXT unit, where `– nice to have` keeps it in the bar's own.
+_INLINE_DASH = re.compile(r"[ \t]+-[ \t]+")
+
+
+def _through_inline_dash(text: str, units: list[tuple[int, str]], index: int) -> str:
+    """The unit, extended across an inline ` - ` cut to the unit after it on the same line: a raw
+    slice of `text` from the unit's own offset, so a position in it maps back unchanged. The tail
+    test then reads that unit as it reads anything after `–`: only a bare predicate hedges."""
+    offset, unit = units[index]
+    if index + 1 < len(units):
+        start, following = units[index + 1]
+        if _INLINE_DASH.fullmatch(text, offset + len(unit), start):
+            return text[offset : start + len(following)]
+    return unit
 
 
 def _bounded_above(
@@ -734,7 +761,10 @@ def _suppressed(
             intro = (
                 introducer
                 and match.end() <= clo
-                and _ONLY_DELIMS.match(text[match.end():clo]) is not None
+                and any(
+                    gap.match(text[match.end():clo]) is not None
+                    for gap in (_ONLY_DELIMS, _NEGATED_ASIDE_GAP)
+                )
             )
             if not (inside or intro):
                 continue
@@ -934,9 +964,17 @@ def detect(
                     # whatever the tail says, so an abstain is never folded into a carried or
                     # dropped row.
                     if abstained is None and pattern.hedged_by_tail and (
-                        end := _hedged_tail(unit, lo, hi, pattern.hedged_by_tail)
+                        hedged := _hedged_tail(
+                            unit if join is not None else _through_inline_dash(
+                                body_text, units, index
+                            ),
+                            lo, hi, pattern.hedged_by_tail,
+                        )
                     ) is not None:
-                        if pattern.hedged_as is not None:
+                        # A bare negated bar drops it: it is not required, and nothing says it
+                        # is preferred.
+                        end, preference = hedged
+                        if preference and pattern.hedged_as is not None:
                             carried.append(
                                 Detection(
                                     family=family.id,
