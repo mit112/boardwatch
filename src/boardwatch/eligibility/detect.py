@@ -20,6 +20,10 @@ The scopes, all applied per match:
                           separated from its clause by delimiters only ("Nice to have: ...").
                           A hedge inside a parenthetical that states its own duration bar
                           belongs to THAT bar and reaches nothing outside the aside.
+  hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
+                          of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
+                          it as the `hedged_as` preferred pattern. Applied only to a bar no
+                          abstain waived: an abstaining bar keeps its UNKNOWN row.
   subject_suppressors     CLAUSE-scoped grammatical subject that must PRECEDE the span.
   abstain_by              DOCUMENT-scoped, and does NOT drop: it marks the row undecidable
                           so the resolver renders UNKNOWN. Dropping would return `eligible`
@@ -37,6 +41,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from functools import cache
 
 from boardwatch.eligibility.catalog import PatternSpec, RulesCatalog
 
@@ -84,6 +89,173 @@ def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) ->
             return False
         return _ASIDE_DURATION.search(aside.group(1)) is not None
     return False
+
+
+# ---------------------------------------------------------------- tail hedge (T170)
+#
+# "5+ years of experience, not required but preferred." put its hedge in a LATER clause than
+# the bar, outside `_clause_bounds`, so the bar kept its required row and rejected a 2-year
+# profile. Widening the hedge to the whole sentence is wrong the other way: after a bar, the
+# commonest hedge qualifies a SUB-CLAUSE ("..., preferably in public accounting", "..., with a
+# focus on RBAC preferred", "(financial services preferred)", "..., 10+ years preferred").
+#
+# So the test is structural. The hedge must be the sentence-final PREDICATE, and everything
+# between the bar and it must be the bar's own COMPLEMENT: one phrase, which does not open with a
+# delimiter or a coordinator, holds no clause break, no second duration or requirement marker, no
+# adverbial or exemplifying introducer, no adjunct or `with` modifier phrase, no second
+# `experience` head, and commas only inside a CLOSED list. The hedge words are the catalog's; the
+# words here are closed grammatical classes (delimiters, copulas, coordinators, prepositions).
+
+_TAIL_NEGATED_BAR = r"not\s+(?:strictly\s+|necessarily\s+)?(?:required|mandatory|necessary)"
+_TAIL_INTENSITY = r"(?:(?:also|very|highly|strongly|much|greatly|especially)\s+)?"
+_TAIL_ASIDE = re.compile(r"\(([^()]*)\)")
+_TAIL_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)", re.IGNORECASE)
+# The complement continues the bar, so it cannot open a new constituent -- unless the bar stopped
+# short of its own head (`2+ years of shipping`, `3+ years of experience leading`), where a comma
+# or a coordinator continues the same phrase (`, receiving, or manufacturing experience`).
+_TAIL_OPENS = re.compile(r"\s*(?:[,;:()\[\]–—-]|(?:and|or|but|&)(?!\w))", re.IGNORECASE)
+_TAIL_CONTINUES = re.compile(r"\s*(?:,|(?:and/or|and|or|&)(?!\w))", re.IGNORECASE)
+_TAIL_HEAD_END = re.compile(r"(?<!\w)(?:experiences?|years?|yrs?|months?)\W*\Z", re.IGNORECASE)
+# A clause break, including a full stop the splitter could not see because no space follows it
+# (" .Knowledge on ..."). Case-SENSITIVE, so `.NET`, `Node.js` and `U.S. Government` pass.
+_TAIL_BREAK = re.compile(r"[;:()\[\]–—]|\s-\s|(?:\s|(?<=[a-z]{2}))\.(?=[A-Z][a-z])")
+_TAIL_MARKER = re.compile(
+    r"(?<!\w)(?:required|requirements?|requires?|must|minimum|mandatory|necessary|essential|"
+    r"needed)(?!\w)",
+    re.IGNORECASE,
+)
+_TAIL_INTRODUCER = re.compile(
+    r"(?<!\w)(?:preferably|ideally|including|includes|such\s+as|e\.g\.|i\.e\.|especially|"
+    r"particularly|specifically)(?!\w)",
+    re.IGNORECASE,
+)
+# A comma then a subordinator or a preposition opens an ADJUNCT, and a hedge after it is its own.
+_TAIL_ADJUNCT = re.compile(
+    r",\s*(?:with|plus|along|where|which|who|whose|that|as|while|but|in|within|at|for|on|from|"
+    r"across|to|of|through|under|by)(?!\w)",
+    re.IGNORECASE,
+)
+_TAIL_NEW_HEAD = re.compile(
+    r"(?<!\w)experiences?\s+(?:in|with|of|on|at|using|as|for|across|within)(?!\w)", re.IGNORECASE
+)
+# C6's other shape: a BARE `experience`, no preposition glued to it, so `_TAIL_NEW_HEAD` above
+# does not see it (`... primary packaging experience is a plus`). It is a second head only when
+# it is the object of a WITH-adjunct -- a `with` precedes it -- because a bare `experience` with
+# nothing before it is usually the bar's OWN coordinated list closing out (`"...or Project
+# Coordinator experience, preferred"`, `"...or equivalent healthcare professional experience is
+# preferred"`), never a second requirement. `years`/`months` are not head nouns here: a bare
+# `year` with no number names something else ("Two-year degree"); a numbered duration is C3.
+# Case-SENSITIVE, like the break guards below: a capitalised `Experience` mid-sentence is a proper
+# noun ("Adobe Experience Cloud", pv 232543), not a head noun.
+_TAIL_BARE_HEAD = re.compile(r"(?<!\w)experiences?(?!\w)")
+# A capitalised determiner mid-sentence is a sentence break lost in extraction. Case-SENSITIVE.
+_TAIL_LOST_BREAK = re.compile(r"(?<=[a-z0-9)])\s+(?:Some|The|A|An|Any|All|This|These|Our|Your)\s")
+_TAIL_WITH = re.compile(r"(?<!\w)with(?!\w)", re.IGNORECASE)
+_TAIL_GERUND = re.compile(r"\w+ing\s+\Z", re.IGNORECASE)
+# Even the head's own `with` opens a MODIFIER phrase, not the bar's object, when a quality noun
+# and its preposition follow within three words (`with a focus on`, `with a mix of`, `with
+# demonstrated expertise in`). A determiner alone is not the test: `experience with a national
+# securities exchange` is the bar's object. Searched over the span too, because a scoped span can
+# end in its own `with`.
+_TAIL_WITH_MODIFIER = re.compile(
+    r"(?<!\w)with\s+(?:[\w-]+\s+(?:and\s+)?){0,3}?(?:focus|emphasis|mix|blend|combination|"
+    r"expertise|knowledge|exposure|understanding|background|proficiency|familiarity)\s+"
+    r"(?:in|on|of|to|with)(?!\w)",
+    re.IGNORECASE,
+)
+# A hedge that is the object complement of `as` (`..., and/or Spark as a plus`) hedges that noun.
+_TAIL_AS = re.compile(r"(?<!\w)as\s*\Z", re.IGNORECASE)
+_TAIL_HEAD = re.compile(r"(?<!\w)experiences?(?!\w)", re.IGNORECASE)
+_TAIL_COORDINATOR = re.compile(r"(?<!\w)(?:and|or|&)(?!\w)", re.IGNORECASE)
+_TAIL_OXFORD = re.compile(r"\s*(?:and/or|and|or|&)(?!\w)", re.IGNORECASE)
+
+
+@cache
+def _tail_predicate(hedges: tuple[re.Pattern[str], ...]) -> re.Pattern[str]:
+    """The sentence-final predicate over the catalog's hedge words: `, preferred.`,
+    ` is highly preferred`, `, not required but preferred.`, ` a plus`, ` (preferred)`,
+    ` – Highly preferred`."""
+    hedge = "(?:" + "|".join(rx.pattern for rx in hedges) + ")"
+    return re.compile(
+        r"(?P<pred>\s*[,–—-]?\s*(?:"
+        r"(?:(?:is|are|would\s+be|will\s+be|(?:is\s+|are\s+)?considered)\s+)?"
+        rf"{_TAIL_INTENSITY}(?:an?\s+)?{hedge}"
+        rf"(?:\s*,?\s*(?:but|though|although)?\s*{_TAIL_NEGATED_BAR})?"
+        rf"|{_TAIL_NEGATED_BAR}\s*,?\s*(?:but|though|although)\s+(?:(?:is|are)\s+)?"
+        rf"{_TAIL_INTENSITY}(?:an?\s+)?{hedge}"
+        rf"|\(\s*{_TAIL_INTENSITY}{hedge}\s*\)"
+        r"))[\s.!?]*\Z",
+        re.IGNORECASE,
+    )
+
+
+def _hedged_tail(
+    unit: str, lo: int, hi: int, hedges: tuple[re.Pattern[str], ...]
+) -> int | None:
+    """Where the hedge that predicates the WHOLE bar at [lo, hi) ends in `unit`, or None."""
+    tail = unit[hi:]
+    found = _tail_predicate(hedges).search(tail)
+    if found is None:
+        return None
+    end = hi + found.end("pred")
+    bar = unit[lo:hi]
+    complement = tail[: found.start()]
+    if not complement.strip():
+        return end
+    # A bare aside glued to a word, `Pega(Preferred)`, hedges that word, not the bar.
+    if found.group("pred").startswith("(") and complement[-1].isalnum():
+        return None
+    # The span already crossed into a second noun phrase with its own head.
+    if len(_TAIL_HEAD.findall(bar)) > 1:
+        return None
+    # An aside that is neither a hedge nor a bar is part of the phrase: `Kubernetes (K8s) ...`.
+    complement = _TAIL_ASIDE.sub(
+        lambda aside: aside.group(0)
+        if _TAIL_DURATION.search(aside.group(1)) or any(rx.search(aside.group(1)) for rx in hedges)
+        else " " * len(aside.group(0)),
+        complement,
+    )
+    # The bar's span stopped short of its own head, and the complement continues that same list
+    # up to one -- the C1 exception's signal, reused by C6 below for the same reason.
+    continues_short_bar = (
+        _TAIL_CONTINUES.match(complement) is not None and _TAIL_HEAD_END.search(bar) is None
+    )
+    if _TAIL_OPENS.match(complement) and not continues_short_bar:
+        return None
+    for guard in (
+        _TAIL_BREAK, _TAIL_DURATION, _TAIL_MARKER, _TAIL_INTRODUCER, _TAIL_ADJUNCT,
+        _TAIL_NEW_HEAD, _TAIL_LOST_BREAK,
+    ):
+        if guard.search(complement):
+            return None
+    # C6: a bare `experience` in the complement is a second head only when it is the object of a
+    # WITH-adjunct -- a `with` precedes it, searched over the bar too, so the domain pattern's own
+    # `{0,4}` grab swallowing a `with` into ITS span (pv 69669) still counts. The stopped-short
+    # exception is unconditional on the FIRST bare `experience` (it is the bar's own whether or
+    # not a `with` precedes it); only a FURTHER one, and only after a `with`, is a second head.
+    bare_heads = list(_TAIL_BARE_HEAD.finditer(complement))
+    if continues_short_bar and bare_heads:
+        bare_heads = bare_heads[1:]
+    if any(_TAIL_WITH.search(bar + complement[: match.start()]) for match in bare_heads):
+        return None
+    if any(rx.search(complement) for rx in hedges):
+        return None
+    # `with` is the bar's own preposition only straight after its head or after a gerund.
+    for word in _TAIL_WITH.finditer(complement):
+        before = complement[: word.start()]
+        if before.strip() and not _TAIL_GERUND.search(bar + before):
+            return None
+    if _TAIL_WITH_MODIFIER.search(bar + complement) or _TAIL_AS.search(complement):
+        return None
+    if "," in complement:
+        last = complement[complement.rfind(",") + 1 :]
+        closed = _TAIL_OXFORD.match(last) is not None or (
+            complement.count(",") + bar.count(",") >= 2
+            and _TAIL_COORDINATOR.search(last) is not None
+        )
+        if not closed:
+            return None
+    return end
 
 
 @dataclass(frozen=True)
@@ -605,6 +777,9 @@ def detect(
     caller passes a pre-sorted list rather than setting ordinals itself.
     """
     found: list[Detection] = []
+    # Tail-hedged bars carried as their family's `preferred` twin, merged after the loop so a
+    # twin that already reached the same hedge is not written twice.
+    carried: list[Detection] = []
     # `split_units` is pure in (text, scope) and this loop only READS `offset` and `unit`,
     # never mutating the list or the tuples, so one split per scope is shared across every
     # pattern instead of being recomputed once per pattern (~55 times per posting).
@@ -616,6 +791,7 @@ def detect(
     for family in catalog.families:
         if family.id not in enabled_families:
             continue
+        twins = {pattern.id: pattern for pattern in family.patterns}
         for pattern in family.patterns:
             if (units := units_by_scope.get(pattern.scope)) is None:
                 units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
@@ -707,6 +883,22 @@ def detect(
                             pattern.abstain_by_sentence + pattern.abstain_by_adjacent,
                             inside_span=True,
                         )
+                    # After the abstains: an escape that waived the bar keeps its `unknown` row
+                    # whatever the tail says, so an abstain is never folded into a carried or
+                    # dropped row.
+                    if abstained is None and pattern.hedged_by_tail and (
+                        end := _hedged_tail(unit, lo, hi, pattern.hedged_by_tail)
+                    ) is not None:
+                        if pattern.hedged_as is not None:
+                            carried.append(
+                                Detection(
+                                    family=family.id,
+                                    pattern=twins[pattern.hedged_as],
+                                    span=(at(lo), at(end)),
+                                    values={k: v for k, v in match.groupdict().items() if v},
+                                )
+                            )
+                        continue
                     values = {name: value for name, value in match.groupdict().items() if value}
                     # Checked after every drop, so a suppressed own-view match hides nothing.
                     # "Preferred Qualifications:\n- 5 years of experience preferred." otherwise
@@ -731,6 +923,14 @@ def detect(
                             abstained=abstained,
                         )
                     )
+    for detection in carried:
+        if not any(
+            other.pattern is detection.pattern
+            and other.span[0] < detection.span[1]
+            and detection.span[0] < other.span[1]
+            for other in found
+        ):
+            found.append(detection)
     order_of = {family.id: index for index, family in enumerate(catalog.families)}
     found.sort(key=lambda d: (order_of[d.family], d.span[0]))
     return found

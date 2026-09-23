@@ -107,6 +107,14 @@ class PatternSpec:
     # Doc-level idioms in which a cue carries no polarity, stamped identically onto every
     # pattern by the loader. Catalog vocabulary, not a code constant.
     cue_idioms: tuple[re.Pattern[str], ...]
+    # A hedge that is the sentence-final PREDICATE of this bar's own phrase, across a clause
+    # boundary the unit-scoped hedge cannot see ("5+ years of experience, not required but
+    # preferred."). Whether it owns the bar or only a sub-clause is decided structurally by
+    # `detect._hedged_tail`, never by these words alone (T170).
+    hedged_by_tail: tuple[re.Pattern[str], ...]
+    # The `preferred` pattern of this family a tail-hedged bar is carried as, so its one-line
+    # form and its split form write the same row; None drops it, as the unit-scoped hedge does.
+    hedged_as: str | None
 
     @property
     def rule_id(self) -> str:
@@ -477,6 +485,24 @@ def _family(
             raise CatalogError(f"{where}: duplicate pattern id {pattern.id!r}")
         seen_patterns.add(pattern.id)
         patterns.append(pattern)
+    by_id = {pattern.id: pattern for pattern in patterns}
+    for pattern in patterns:
+        if pattern.hedged_as is None:
+            continue
+        target = by_id.get(pattern.hedged_as)
+        # The carried row takes the target's rule id, implies, text and resolver branch, so it
+        # must be a real `preferred` pattern here and read every value the source captures.
+        if (
+            target is None
+            or target.requiredness != "preferred"
+            or not pattern.hedged_by_tail
+            or not set(pattern.regex.groupindex) <= set(target.regex.groupindex)
+        ):
+            raise CatalogError(
+                f"{where}: pattern {pattern.id!r} hedged_as {pattern.hedged_as!r} must name a "
+                "preferred pattern of this family that captures what it captures, beside a "
+                "non-empty hedged_by_tail"
+            )
 
     relations: list[dict[str, str]] = []
     for relation in raw.get("superset_relations") or []:
@@ -690,6 +716,8 @@ def _pattern(
         },
         consumes_cues=_consumed_cues(raw.get("consumes_cues"), at, cues),
         cue_idioms=idioms,
+        hedged_by_tail=_regex_list(raw.get("hedged_by_tail"), at, "hedged_by_tail"),
+        hedged_as=_optional_str(raw.get("hedged_as")),
     )
 
 

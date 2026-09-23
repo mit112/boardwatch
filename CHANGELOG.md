@@ -854,6 +854,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A years bar its own sentence calls preferred is read as a preference, not a floor (2026-09-23,
+  T170).** `5+ years of experience, not required but preferred.` was a hard bar: the clause-scoped hedge
+  reads only the bar's own clause, and the comma closed it before `preferred`. Eleven required years
+  patterns now carry `hedged_by_tail`, a structural test that accepts a hedge only when it is the
+  sentence-final predicate and everything between the bar and the hedge continues the bar's own
+  phrase (no new clause, no second bar or `required`, no `preferably`/`including`, no comma adjunct
+  or `with <modifier>` phrase, no `as <hedge>` complement, no second `experience`, commas only inside
+  a closed list). A hedged bar with a `preferred` twin is carried as that twin's row, exactly as its
+  one-line form already is; the rest are dropped, as their one-line forms already are. A bar an
+  abstain waives keeps its `unknown` row and verdict whatever its tail says. Measured two-arm over
+  126,854 pinned open postings: 258 verdicts leave `ineligible` (187 to `uncertain`, 71 to `eligible`),
+  none in any other direction, null control 0, only `experience_years` rows change. Moves
+  `engine_version` and `rules_hash`; the corpus gains rows for every accepted and refused shape.
+
 - **A rules-only re-key no longer darkens the judge's verdicts or makes it re-judge them (2026-09-23,
   T161).** The final gate's judge is sent the posting body and the profile's facts under a fixed
   policy. It never sees the rules catalog or the policy severities, yet every read of its verdicts was
