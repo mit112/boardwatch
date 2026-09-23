@@ -58,7 +58,7 @@ from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
 from boardwatch.eligibility.catalog import load_rules
-from boardwatch.eligibility.preflight import current_identity
+from boardwatch.eligibility.preflight import current_facts, current_identity
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     RequirementFlags,
@@ -1134,7 +1134,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # alternative, each call site checking the flag itself, is exactly the second opinion
     # `_review` exists to prevent (D-332). It also skips the query entirely when off.
     seniority = (
-        current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
+        current_gate_seniority(conn, version_ids, current_facts(conn), model=settings.gate.model)
         if settings.gate.seniority_hold
         else {}
     )
@@ -1583,7 +1583,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # inert `"unclear"` default is what keeps them agreeing (D-332). `settings` is already bound
     # above, so this needs no second `load_settings()`.
     seniority = (
-        current_gate_seniority(conn, version_ids, profile_hash, rules_hash)
+        current_gate_seniority(conn, version_ids, current_facts(conn), model=settings.gate.model)
         if settings.gate.seniority_hold
         else {}
     )

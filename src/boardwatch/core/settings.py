@@ -87,9 +87,10 @@ class GateTier(BaseModel):
     #: the behaviour before this field existed. Closed to the CLI's five levels, so a misspelt
     #: value fails at load rather than failing open on every batch of the run.
     #:
-    #: Changing it re-judges NOTHING already judged: a gate row records `model` but not `effort`,
-    #: so the freshness test `run_gate_stage` applies cannot see the change, and a new level
-    #: reaches only leads judged after it (T155).
+    #: A gate row records the level it was judged at, and the freshness test `run_gate_stage` and
+    #: the T113 refresh apply keys on it, so changing it re-judges the standing queue within
+    #: `refresh_budget` per run (T155). The lane reads do not key on it: until a lead is
+    #: re-judged, its reading at the old level still counts.
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     depth: int = Field(default=0, ge=0)
     #: T113. How many STANDING-QUEUE leads a run may send to the judge because their gate reading

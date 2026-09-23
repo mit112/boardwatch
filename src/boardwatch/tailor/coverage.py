@@ -25,9 +25,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from boardwatch.eligibility.detect import qualifications_span
 from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.tailor.model import Resume
-from boardwatch.tailor.requirement_echo import qualifications_span
 
 
 @dataclass(frozen=True)

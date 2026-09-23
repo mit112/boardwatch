@@ -19,6 +19,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.eligibility.audit import load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.preflight import current_identity
+from boardwatch.pipeline import runner
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.store.db import get_engine
 from tests.conftest import write_test_resume_template
@@ -236,7 +237,12 @@ def test_a_per_lead_queue_failure_reaches_the_digest_WITH_ITS_CAUSE(
     assert "posting 135423" in rendered
 
 
-def test_a_clean_run_says_no_alerts_in_the_digest(env: Path, tmp_path: Path) -> None:
+def test_a_clean_run_says_no_alerts_in_the_digest(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A one-lead fixture run is under B8's bar, and that reading now escalates (D-529). It is
+    # pinned by its own test; this one is about how a run with no alerts renders.
+    monkeypatch.setattr(runner, "check_apply_lane_volume", lambda _cohort: None)
     _ready(env)
     out_root = tmp_path / "apps"
 

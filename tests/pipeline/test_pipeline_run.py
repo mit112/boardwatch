@@ -1754,6 +1754,9 @@ def test_a_clean_run_escalates_nothing(env: Path, tmp_path: Path, monkeypatch: p
         return None
 
     monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+    # A one-lead fixture run is under B8's bar, and that reading now escalates (D-529). It is
+    # pinned by its own test; "clean" here means no FAULT.
+    monkeypatch.setattr(runner_mod, "check_apply_lane_volume", lambda _cohort: None)
 
     _pipeline(env, tmp_path / "apps")
 
