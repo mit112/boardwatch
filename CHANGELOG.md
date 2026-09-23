@@ -300,6 +300,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A skill-taxonomy change no longer makes the next run report a false identity drift (2026-09-23,
+  T164).** When the taxonomy version moves, the ranker's preflight rewrites the profile's derived
+  skills. That write landed after the run had read its start identity, so the first run after each
+  taxonomy change reported `run identity drifted mid-run: profile_row_hash`, although the run itself
+  made the change. The pipeline now does that profile refresh first, before the start reading, and
+  tells the ranker's preflight it is done. So the UPDATE runs once and the `taxonomy changed —
+  re-extracting` line still prints. If that early refresh fails, the ranker's preflight does it
+  exactly as before, so a refresh failure lands where it always did. A real mid-run profile edit is
+  still reported.
+
 - **`boardwatch doctor` no longer reaps a live run's row (2026-09-23, T166).** `doctor` reaps
   `running` rows older than `reap_stale_after_hours`, and it did so outside any lock. Since T133 a
   `boardwatch run` holds the scan lease for its whole run, so a `doctor` during a long run could mark

@@ -62,6 +62,8 @@ from boardwatch.eligibility.read import (
     current_gate_verdicts,
     current_requirement_flags,
 )
+from boardwatch.extract.preflight import refresh_profile_taxonomy
+from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneContext, LaneResult
 from boardwatch.lanes.facets import (
@@ -2129,6 +2131,22 @@ def _run_pipeline_leased(
     # Ctrl-C during the multi-minute tailor loop is the likeliest way to hit this.
     stage_errors: list[str] = []
     try:
+        # T164. Ahead of even T137's capture: a stale `profile.taxonomy_version` refreshes
+        # `skills_json` inside the ranker's own preflight (`extract/preflight.py:run_preflight`),
+        # further down this same try. Doing that refresh HERE first, and passing its result
+        # through, means the start identity below reads the profile the ranker will also read —
+        # never the stale row it is about to overwrite — so a taxonomy bump alone can no longer
+        # manufacture a `profile_row_hash` drift between this reading and the funnel's end one.
+        #
+        # Fails OPEN to False. The ranker's preflight re-checks the refresh on every run, so an
+        # unreadable taxonomy or a contended UPDATE then fails (or succeeds) THERE, exactly as
+        # before T164: it costs no stage that ran before it and still leaves T137's capture first.
+        try:
+            profile_taxonomy_refreshed = refresh_profile_taxonomy(
+                engine, load_taxonomy(settings.config_dir)
+            )
+        except Exception:  # noqa: BLE001 - the ranker's own preflight re-runs it and owns the failure
+            profile_taxonomy_refreshed = False
         # T137. FIRST, so a run that goes fatal below still publishes what it ran as and on.
         _capture_run_start(
             engine,
@@ -2369,6 +2387,9 @@ def _run_pipeline_leased(
                 # suppressed for the TTL with nothing built, and the retry re-ranked into an empty
                 # shortlist. Deciding after the loop is what makes the comment below true.
                 record_surfaced=False,
+                # T164: the refresh above may already have fired; this keeps `run_preflight`'s
+                # "taxonomy changed" line truthful, and `run_preflight` still re-checks it.
+                profile_already_refreshed=profile_taxonomy_refreshed,
             )
         except NoProfileError:
             # Not a crash: a fresh install has no profile yet. The run is real and produced
