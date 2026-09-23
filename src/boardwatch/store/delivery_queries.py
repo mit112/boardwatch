@@ -233,6 +233,17 @@ class QueueRow:
     #: A profile edit must re-route standing leads, so it is read live, never persisted per row.
     #: `()` is undeclared, which holds nothing on location (Q2).
     target_countries: tuple[str, ...] = ()
+    #: F8 (2026-09-23 review). The SEEKER's own declared employment-type / internship
+    #: preferences (`eligibility.facts.Facts.employment_type_preference` /
+    #: `.internship_preference`), read from the live profile ONCE per read pass exactly as
+    #: `_title_band` is, and carried here so `review_gate.classify` can decide whether
+    #: `provider_employment_type` (T92) actually CONFLICTS with what this tenant asked for,
+    #: rather than assuming every tenant seeks full-time employment. `None` on either means
+    #: undeclared -- a fixture built before this field existed, or a profile that never
+    #: answered the question -- and undeclared abstains from the hold (the keystone: a rule
+    #: that cannot fire abstains) rather than silently defaulting to `fte_only`.
+    employment_type_preference: str | None = None
+    internship_preference: str | None = None
 
     @property
     def closed(self) -> bool:
@@ -533,6 +544,8 @@ def _queue_row(
     band: TitleBandReader | None = None,
     revised_since_build: bool = False,
     target_countries: tuple[str, ...] = (),
+    employment_type_preference: str | None = None,
+    internship_preference: str | None = None,
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -572,6 +585,8 @@ def _queue_row(
         ),
         revised_since_build=revised_since_build,
         target_countries=target_countries,
+        employment_type_preference=employment_type_preference,
+        internship_preference=internship_preference,
     )
 
 
@@ -627,6 +642,8 @@ def lane_decision(row: QueueRow) -> LaneDecision:
         target_countries=row.target_countries,
         form_question_hit=row.form_question_hit,
         provider_employment_type=row.provider_employment_type,
+        employment_type_preference=row.employment_type_preference,
+        internship_preference=row.internship_preference,
     )
 
 
@@ -1211,6 +1228,10 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     revised = revised_since_build_ids(
         conn, {int(row.posting_id): int(row.job_id) for row in ordered}, now=now
     )
+    # F8. `facts` (bound above, above the catalog load) is None exactly when there is no
+    # profile -- the same condition every other identity-scoped read here already guards.
+    employment_type_preference = None if facts is None else facts.employment_type_preference
+    internship_preference = None if facts is None else facts.internship_preference
     return [
         _queue_row(
             row,
@@ -1224,6 +1245,8 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             band=band,
             revised_since_build=int(row.posting_id) in revised,
             target_countries=target_countries,
+            employment_type_preference=employment_type_preference,
+            internship_preference=internship_preference,
         )
         for row in ordered
     ]
@@ -1688,6 +1711,12 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             role_taxonomy=load_role_taxonomy(settings.config_dir),
             revised_since_build=posting_id in revised,
             target_countries=_target_countries(conn),
+            # F8, the same read `delivered_unapplied` does: `facts` is bound above, above the
+            # gate verdict read, and is None exactly when there is no profile.
+            employment_type_preference=(
+                None if facts is None else facts.employment_type_preference
+            ),
+            internship_preference=None if facts is None else facts.internship_preference,
         ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(
