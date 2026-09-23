@@ -788,13 +788,13 @@ def test_a_hedged_bullet_under_a_hedge_heading_writes_its_preferred_row_once(
 @pytest.mark.parametrize("body,readings", [
     (
         "Nice to have:\n- 5 years of experience.",
-        [("total_years_preferred", (0, 37), {"years_alt": "5"})],
+        [("total_years_preferred", (16, 37), {"years_alt": "5"})],
     ),
     (
         "Nice to have:\n- 5 years of experience preferred.\n- 5 years of experience.",
         [
-            ("total_years_preferred", (0, 72), {"years_alt": "5"}),
             ("total_years_preferred", (16, 47), {"years": "5"}),
+            ("total_years_preferred", (51, 72), {"years_alt": "5"}),
         ],
     ),
 ])
@@ -871,7 +871,7 @@ def test_a_required_bar_under_a_hedge_heading_is_unchanged(catalog) -> None:
     body = "Nice to have:\n- 5 years of experience; 5 years of experience is required."
     dets = detect(body, catalog, enabled_families=ALL)
     assert _readings(dets) == [
-        ("total_years_preferred", (0, 37), {"years_alt": "5"}),
+        ("total_years_preferred", (16, 37), {"years_alt": "5"}),
         ("total_years_minimum", (39, 60), {"years": "5"}),
     ]
 

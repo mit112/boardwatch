@@ -177,7 +177,7 @@ CORPUS_ROWS = 1143
 # and a human-reviewed row count read by ast.
 HEADING_CASES_PATH = "tests/unit/test_eligibility_heading_context.py"
 HEADING_CASES_SYMBOL = "HEADING_CASES"
-HEADING_CASES_PIN = "sha256:daac4aca267e4f0c89b041e1b0526c52904a491435c3dd132d132405dc2df7ee"
+HEADING_CASES_PIN = "sha256:0dd00e833ec6747574b0512e111d115c408d3bde28e69678bd36e0f7509a4848"
 HEADING_CASES_ROWS = 36
 
 

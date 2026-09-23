@@ -182,3 +182,21 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 def test_the_surface_is_complete() -> None:
     assert len(HEADING_CASES) == 36
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Preferred Qualifications:\nGo experience\nKubernetes experience\n5+ years of experience.",
+        "Preferred Qualifications:\n- Go experience\n- Kubernetes experience\n- 5+ years of experience.",
+    ],
+    ids=["plain", "bulleted"],
+)
+def test_a_heading_view_row_quotes_the_bar_not_the_heading(catalog, body) -> None:
+    """The evidence span is a raw slice of the frozen body that starts at the bar. Spanning from
+    the heading quoted every line between them, which is not the requirement."""
+    result = evaluate(body, Facts.model_validate(P_FACTS), _policy(catalog, ALL_BLOCKERS), catalog)
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert row.requiredness == "preferred"
+    assert body[start:end] == "5+ years of experience"

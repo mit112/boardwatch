@@ -981,7 +981,9 @@ def detect(
                         Detection(
                             family=family.id,
                             pattern=pattern,
-                            span=(at(lo), at(hi)),
+                            # A heading-view row quotes its bar from the bullet on: the heading
+                            # and every line between them are not the requirement.
+                            span=(at(lo if join is None else join), at(hi)),
                             values=values,
                             abstained=abstained,
                         )
