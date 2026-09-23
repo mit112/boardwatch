@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from filelock import FileLock
+from filelock import FileLock, Timeout
 from rich.console import Console
 from sqlalchemy import Engine, select, update
 
@@ -190,8 +190,13 @@ def test_the_lease_is_released_when_the_pipeline_raises(
     settings = load_settings(data_dir=env)
     engine = get_engine(env)
     reached: list[bool] = []
+    lock_path = settings.data_dir / "scan.lock"
 
     def boom(*_args: object, **_kw: object) -> None:
+        # The lease must be HELD at the raising stage, or "released afterwards" is vacuous: a
+        # `--no-scan` run held no lock at all before T133, and the probe below would pass on it.
+        with pytest.raises(Timeout):
+            FileLock(str(lock_path)).acquire(blocking=False)
         reached.append(True)
         raise error
 
@@ -200,7 +205,6 @@ def test_the_lease_is_released_when_the_pipeline_raises(
         _pipeline(engine, settings, tmp_path / "apps", skip_scan=True)
     assert reached, "the pipeline never reached the raising stage, so this test proves nothing"
 
-    lock_path = settings.data_dir / "scan.lock"
     probe = FileLock(str(lock_path))
     probe.acquire(blocking=False)  # raises Timeout if the lease leaked
     probe.release()
