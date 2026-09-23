@@ -128,7 +128,14 @@ from selectolax.parser import HTMLParser
 from boardwatch.core.board_urls import UnknownBoardURL
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure, identifying_user_agent
-from boardwatch.lanes.base import CompanyAdmission, LaneCompanySnapshot, LaneResult, lane_snapshot
+from boardwatch.lanes.base import (
+    CompanyAdmission,
+    LaneCompanySnapshot,
+    LaneResult,
+    SearchOutcome,
+    failed_search,
+    lane_snapshot,
+)
 from boardwatch.lanes.dereference import UnresolvablePostingURL, parse_posting_target
 from boardwatch.lanes.outcomes import AcquisitionOutcome, AcquisitionTally
 from boardwatch.providers.registry import build_providers
@@ -454,7 +461,7 @@ class HiringCafeLane:
         The cap rations requests, and no request is reachable for such a company; charging it
         would let unreachable companies starve reachable ones out of the same budget.
         """
-        entries, search_pages = self._search(fetcher)
+        entries, search_pages, search_outcomes = self._search(fetcher)
 
         board_providers = _body_inlined_providers()
         tally = AcquisitionTally()
@@ -537,9 +544,16 @@ class HiringCafeLane:
                         watch=True,
                     )
                 )
-        return LaneResult(snapshots=tuple(snapshots), tally=tally, search_pages=search_pages)
+        return LaneResult(
+            snapshots=tuple(snapshots),
+            tally=tally,
+            search_pages=search_pages,
+            search_outcomes=search_outcomes,
+        )
 
-    def _search(self, fetcher: Fetcher) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...]]:
+    def _search(
+        self, fetcher: Fetcher
+    ) -> tuple[list[_SearchEntry], tuple[tuple[str, int], ...], tuple[SearchOutcome, ...]]:
         """Every configured search page, its hits paired with the URL they came from.
 
         The result is INTERLEAVED across facets, round-robin, and that is load-bearing rather
@@ -552,14 +566,16 @@ class HiringCafeLane:
         The second return value is how many pages were actually fetched per facet, which is
         REPORTED rather than inferred: a facet that stopped at page 2 of a 5-page ceiling ran
         out of results, and a facet that filled every page is truncated. Those are different
-        facts about the same posting count and only the first is benign.
+        facts about the same posting count and only the first is benign. The third says how each
+        of those searches ENDED, index for index, because a facet the host cut short reports the
+        same depth as one that ran out.
         """
         urls = search_urls(self._search_facets)
         if not self._search_facets:
             # The unfaceted fallback keeps the single-search contract it shipped with: a
             # transport or structural failure on its FIRST page propagates, because with one
             # search there are no other results for it to cost.
-            entries, pages, _late = self._facet_pages(fetcher, urls[0])
+            entries, pages, outcome = self._facet_pages(fetcher, urls[0])
             if not entries:
                 # The same all-empty check the faceted branch runs, and for the same reason.
                 # Returning here instead let an empty HTTP-200 SSR page read as a quiet day:
@@ -569,16 +585,16 @@ class HiringCafeLane:
                     "the unfaceted search yielded nothing: the search route has moved, or the "
                     "host is refusing us"
                 )
-            return entries, ((urls[0], pages),)
+            return entries, ((urls[0], pages),), (outcome,)
 
         per_facet: list[list[_SearchEntry]] = []
         page_counts: list[tuple[str, int]] = []
+        outcomes: list[SearchOutcome] = []
         failed = 0
-        late_failures = 0
         for url in urls:
             try:
-                entries, pages, late_failure = self._facet_pages(fetcher, url)
-            except (FetchFailure, SearchPageError):
+                entries, pages, outcome = self._facet_pages(fetcher, url)
+            except (FetchFailure, SearchPageError) as exc:
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure.
                 # Fourteen requests means the seventh must not discard the six before it, and
                 # the fetcher has already retried with backoff by the time it raises, so this
@@ -587,24 +603,16 @@ class HiringCafeLane:
                 failed += 1
                 per_facet.append([])
                 page_counts.append((url, 0))
+                outcomes.append(failed_search("first_page_failed", exc))
                 continue
             per_facet.append(entries)
             page_counts.append((url, pages))
-            late_failures += int(late_failure)
+            outcomes.append(outcome)
 
-        if len(page_counts) > 1 and late_failures == len(page_counts):
-            # Isolation must not become suppression. One facet losing page 4 keeps the three
-            # pages it paid for and says nothing about the host; EVERY facet losing a later
-            # page is the host degrading under exactly the paging this change introduced, and
-            # it would otherwise be invisible -- each facet reports the depth it reached, and a
-            # truncated depth looks identical to a short result set. Requires MORE THAN ONE
-            # facet: with a single facet "every facet" and "one facet" are the same statement,
-            # and one facet losing a later page is the isolated case that must stay tolerated.
-            raise SearchPageError(
-                f"every one of {late_failures} facet(s) failed after its first page: the host "
-                "is degrading under paging rather than running out of results"
-            )
-
+        # EVERY facet failing after its first page is NOT raised here (T144). It is the host
+        # degrading under paging, but raising threw away every first page already paid for. The
+        # pages are kept, each outcome says how its search ended, and the runner turns
+        # `LaneResult.degraded_under_paging` into the one error line the raise used to produce.
         if not any(per_facet):
             # Not a quiet day. A bogus facet answers 200 with an empty list, so if the search
             # route moves, every facet empties, nothing raises, and no counter moves -- the
@@ -617,10 +625,13 @@ class HiringCafeLane:
         interleaved = [
             entry for row in zip_longest(*per_facet) for entry in row if entry is not None
         ]
-        return interleaved, tuple(page_counts)
+        return interleaved, tuple(page_counts), tuple(outcomes)
 
-    def _facet_pages(self, fetcher: Fetcher, url: str) -> tuple[list[_SearchEntry], int, bool]:
-        """One facet's hits over at most `self._search_pages` pages, and the pages fetched.
+    def _facet_pages(
+        self, fetcher: Fetcher, url: str
+    ) -> tuple[list[_SearchEntry], int, SearchOutcome]:
+        """One facet's hits over at most `self._search_pages` pages, the pages fetched, and how
+        the facet ended.
 
         **A PAGE WITH NO HITS MEANS TWO DIFFERENT THINGS AND THIS IS WHERE THEY SEPARATE.** On
         the FIRST page it is the outage case a bogus facet also produces -- 200 with an empty
@@ -648,19 +659,19 @@ class HiringCafeLane:
         entries: list[_SearchEntry] = []
         seen: set[str] = set()
         pages = 0
-        late_failure = False
+        outcome = SearchOutcome("ended")
         for page_index in range(self._search_pages):
             page = page_url(url, page_index)
             try:
                 result = fetcher.get(page, headers=_SEARCH_HEADERS)
                 search_page = parse_search_page(result.content.decode("utf-8", "replace"))
-            except (FetchFailure, SearchPageError):
+            except (FetchFailure, SearchPageError) as exc:
                 if page_index == 0:
                     raise
                 # Keep the pages already paid for, but SAY SO. Breaking silently made a facet
                 # that fails on every page after the first indistinguishable from one whose
                 # results genuinely ended there -- both report the same depth and no error.
-                late_failure = True
+                outcome = failed_search("later_page_failed", exc)
                 break
             pages += 1
             fresh: list[_SearchEntry] = []
@@ -676,7 +687,9 @@ class HiringCafeLane:
             seen |= new_ids
             if search_page.is_last_page or not new_ids:
                 break
-        return entries, pages, late_failure
+        if not entries:
+            outcome = SearchOutcome("first_page_empty")
+        return entries, pages, outcome
 
     def _board_postings(
         self,

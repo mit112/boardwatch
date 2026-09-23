@@ -53,10 +53,10 @@ from sqlalchemy import select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
-from boardwatch.core.politeness import Fetcher
+from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes import indeed
-from boardwatch.lanes.base import Lane, LaneContext
+from boardwatch.lanes.base import Lane, LaneContext, SearchOutcome
 from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.indeed import (
     LANE_PROVIDER,
@@ -1420,12 +1420,108 @@ def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tm
 
 
 @respx.mock
-def test_every_facet_failing_after_its_first_page_raises(tmp_path):
-    """One facet losing page 4 keeps the three it paid for and says nothing about the host; EVERY
-    facet losing a later page is the host degrading under exactly the paging this lane does, and
-    each facet on its own reports only a shorter depth.
+def test_every_facet_failing_after_its_first_page_keeps_every_first_page(tmp_path):
+    """T144(a), CHANGED ON PURPOSE: this used to assert the raise, which discarded every first
+    page already paid for and left the lane absent from the funnel. The first pages are now kept,
+    each outcome says its search was cut short and why, and `degraded_under_paging` is what the
+    runner turns into the one error line the raise used to produce.
     """
-    hits = search_hits(2, companies=2)
+    hits = search_hits(4, companies=4)
+    first = {"software engineer": hits[:2], "data engineer": hits[2:]}
+    refusal = {"software engineer": 503, "data engineer": 403}
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        term = _term_of(request)
+        if _cursor_of(request) is None:
+            return httpx.Response(200, text=search_response(first[term], next_cursor="cursor-2"))
+        return httpx.Response(refusal[term], text="")
+
+    respx.post(SEARCH_URL).mock(side_effect=_respond)
+
+    result = _collect(
+        IndeedLane(search_facets=("software engineer", "data engineer"), search_pages=3),
+        tmp_path,
+    )
+
+    assert result.tally.counts["body_inline"] == 4
+    assert len(result.snapshots) == 4
+    assert result.search_pages == ((SEARCH_URL, 1), (SEARCH_URL, 1))
+    assert result.search_outcomes == (
+        SearchOutcome("later_page_failed", "fetch_failure", 503),
+        SearchOutcome("later_page_failed", "fetch_failure", 403),
+    )
+    assert result.degraded_under_paging is True
+
+
+@respx.mock
+def test_a_search_that_ran_out_and_one_cut_short_report_different_outcomes(tmp_path):
+    """T144(b): both facets read ONE page. One ran out (no `nextCursor`); the other's page 2 was
+    refused. `search_pages` cannot separate them -- both entries are `(SEARCH_URL, 1)` -- and the
+    positional outcomes must. One late failure among healthy facets is not the degraded case.
+    """
+    hits = search_hits(4, companies=4)
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        term = _term_of(request)
+        if term == "software engineer":
+            return httpx.Response(200, text=search_response(hits[:2]))
+        if _cursor_of(request) is None:
+            return httpx.Response(200, text=search_response(hits[2:], next_cursor="cursor-2"))
+        return httpx.Response(403, text="")
+
+    respx.post(SEARCH_URL).mock(side_effect=_respond)
+
+    result = _collect(
+        IndeedLane(search_facets=("software engineer", "data engineer"), search_pages=3),
+        tmp_path,
+    )
+
+    assert result.search_pages == ((SEARCH_URL, 1), (SEARCH_URL, 1))
+    ran_out, cut_short = result.search_outcomes
+    assert ran_out != cut_short
+    assert ran_out == SearchOutcome("ended")
+    assert cut_short == SearchOutcome("later_page_failed", "fetch_failure", 403)
+    assert result.degraded_under_paging is False
+
+
+@respx.mock
+def test_first_page_outcomes_are_recorded_beside_their_zero_depth(tmp_path):
+    """Positional, like `search_pages`: an empty first page and a refused one, each named."""
+    hits = search_hits(2)
+
+    def _respond(request: httpx.Request) -> httpx.Response:
+        term = _term_of(request)
+        if term == "software engineer":
+            return httpx.Response(200, text=search_response(hits))
+        if term == "zzq not a real role":
+            return httpx.Response(200, text=search_response([]))
+        if term == "data engineer":
+            return httpx.Response(200, text=error_response())
+        return httpx.Response(403, text="")
+
+    respx.post(SEARCH_URL).mock(side_effect=_respond)
+
+    result = _collect(
+        IndeedLane(
+            search_facets=("software engineer", "zzq not a real role", "ios engineer", "data engineer"),
+            search_pages=3,
+        ),
+        tmp_path,
+    )
+
+    assert result.search_pages == ((SEARCH_URL, 1), (SEARCH_URL, 1), (SEARCH_URL, 0), (SEARCH_URL, 0))
+    assert result.search_outcomes == (
+        SearchOutcome("ended"),
+        SearchOutcome("first_page_empty"),
+        SearchOutcome("first_page_failed", "fetch_failure", 403),
+        SearchOutcome("first_page_failed", "search_page_error"),
+    )
+
+
+@respx.mock
+def test_the_unfaceted_search_records_a_later_page_failure(tmp_path):
+    """T144: the unfaceted branch dropped its late-failure flag outright; it is now recorded."""
+    hits = search_hits(2)
 
     def _respond(request: httpx.Request) -> httpx.Response:
         if _cursor_of(request) is None:
@@ -1434,11 +1530,20 @@ def test_every_facet_failing_after_its_first_page_raises(tmp_path):
 
     respx.post(SEARCH_URL).mock(side_effect=_respond)
 
-    with pytest.raises(SearchPageError, match="failed after its first page"):
-        _collect(
-            IndeedLane(search_facets=("software engineer", "data engineer"), search_pages=3),
-            tmp_path,
-        )
+    result = _collect(IndeedLane(search_pages=3), tmp_path)
+
+    assert result.tally.counts["body_inline"] == 2
+    assert result.search_pages == ((SEARCH_URL, 1),)
+    assert result.search_outcomes == (SearchOutcome("later_page_failed", "fetch_failure", 503),)
+
+
+@respx.mock
+def test_the_unfaceted_first_page_failure_still_propagates(tmp_path):
+    """Control: with one search there are no other results for a first-page failure to cost."""
+    respx.post(SEARCH_URL).mock(return_value=httpx.Response(403, text=""))
+
+    with pytest.raises(FetchFailure):
+        _collect(IndeedLane(search_pages=3), tmp_path)
 
 
 # ---------------------------------------------------------------------------------------

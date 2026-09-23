@@ -14,10 +14,10 @@ restating them.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Literal, Protocol, get_args
 
 from boardwatch.core.models import BoardSnapshot, RawPosting
-from boardwatch.core.politeness import Fetcher
+from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.outcomes import AcquisitionTally
@@ -102,6 +102,73 @@ class LaneCompanySnapshot:
     watch: bool = False
 
 
+SearchEnd = Literal[
+    # The search ran to its end: a last page, a page adding no new id, or the page ceiling. The
+    # ceiling is not a member of its own -- `LaneResult.search_pages` already says it.
+    "ended",
+    # The first page answered with nothing in it. One facet doing so is a profile-data matter;
+    # every facet doing so is the outage the lanes' all-empty check raises on.
+    "first_page_empty",
+    # The first page failed, so the search produced nothing. Carries its cause.
+    "first_page_failed",
+    # A LATER page failed and the pages before it were kept. Carries its cause. Without this a
+    # search the host cut short reports the same depth as one whose results ran out.
+    "later_page_failed",
+]
+
+SEARCH_ENDS: tuple[str, ...] = get_args(SearchEnd)
+_FAILED_ENDS: frozenset[str] = frozenset({"first_page_failed", "later_page_failed"})
+
+# The exception class that ended a failed search, as data. `search_page_error` is each lane's own
+# `SearchPageError`: the page answered and carried nothing usable.
+SearchFailure = Literal["fetch_failure", "search_page_error"]
+
+SEARCH_FAILURES: tuple[str, ...] = get_args(SearchFailure)
+
+
+class UnknownSearchOutcome(ValueError):
+    """Raised at construction for a `SearchOutcome` outside the closed catalog."""
+
+
+@dataclass(frozen=True)
+class SearchOutcome:
+    """How one search ENDED, which `search_pages`' depth alone cannot say.
+
+    `failure` is set exactly when the search failed, and `status_code` only when that failure was
+    a `FetchFailure` carrying one. Both are taken from the exception at the raise site
+    (`failed_search`), never parsed back out of its message.
+    """
+
+    end: SearchEnd
+    failure: SearchFailure | None = None
+    status_code: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.end not in SEARCH_ENDS:
+            raise UnknownSearchOutcome(f"unknown search end: {self.end!r}")
+        if self.failure is not None and self.failure not in SEARCH_FAILURES:
+            raise UnknownSearchOutcome(f"unknown search failure: {self.failure!r}")
+        if (self.failure is not None) != (self.end in _FAILED_ENDS):
+            raise UnknownSearchOutcome(
+                f"a search ending {self.end!r} cannot carry failure {self.failure!r}"
+            )
+        if self.status_code is not None and self.failure != "fetch_failure":
+            raise UnknownSearchOutcome("only a fetch failure carries a status code")
+
+
+def failed_search(end: SearchEnd, exc: Exception) -> SearchOutcome:
+    """The outcome for a search that `exc` ended, its cause read off the exception's type.
+
+    Callers pass what their `except (FetchFailure, SearchPageError)` caught. Every lane's
+    `SearchPageError` is a `ValueError`; anything else is outside the catalog and raises.
+    """
+    if isinstance(exc, FetchFailure):
+        return SearchOutcome(end, "fetch_failure", exc.status_code)
+    if isinstance(exc, ValueError):
+        return SearchOutcome(end, "search_page_error")
+    raise UnknownSearchOutcome(f"not a search failure: {type(exc).__name__}")
+
+
 @dataclass(frozen=True)
 class LaneResult:
     """What one lane collected, plus how deep it read to collect it.
@@ -117,6 +184,10 @@ class LaneResult:
     snapshots: tuple[LaneCompanySnapshot, ...]
     tally: AcquisitionTally
     search_pages: tuple[tuple[str, int], ...] = ()
+    # How each search in `search_pages` ENDED, index for index -- not keyed by URL, because
+    # Indeed repeats one URL for every facet. Empty -- never absent -- for a lane that makes no
+    # search, or one that does not report it (LinkedIn has no late-failure concept).
+    search_outcomes: tuple[SearchOutcome, ...] = ()
     # Posting URLs this lane FOUND and cannot resolve itself, for `lane_seeds`. RETURNED rather
     # than written, and that is the whole point: `collect` runs in a fetch worker while
     # `apply_board` is the pipeline's single writer, so a lane that wrote its own seeds would be
@@ -161,6 +232,25 @@ class LaneResult:
     # resolves" case is NOT carried here -- only a malformed URL -- so this never turns a quiet
     # no-vendor day into noise. Empty -- never absent -- for a run whose producers emitted none.
     refused_seeds: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.search_outcomes and len(self.search_outcomes) != len(self.search_pages):
+            raise ValueError(
+                f"{len(self.search_outcomes)} search outcomes for {len(self.search_pages)} "
+                "searches: they must align index for index"
+            )
+
+    @property
+    def degraded_under_paging(self) -> bool:
+        """EVERY one of several searches failed after its first page.
+
+        One search losing a later page says nothing about the host; all of them doing so is the
+        host degrading under paging, and the runner reports it. More than one is required: with a
+        single search "every" and "one" are the same statement.
+        """
+        return len(self.search_outcomes) > 1 and all(
+            outcome.end == "later_page_failed" for outcome in self.search_outcomes
+        )
 
 
 def _no_seeds(

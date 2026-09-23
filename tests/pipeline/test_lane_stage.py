@@ -43,6 +43,7 @@ from boardwatch.lanes.base import (
     LaneCompanySnapshot,
     LaneContext,
     LaneResult,
+    SearchOutcome,
     lane_snapshot,
 )
 from boardwatch.lanes.facets import LaneFacets
@@ -100,8 +101,14 @@ class StubLane:
         discovered_seeds: tuple[str, ...] = (),
         refused_seeds: tuple[str, ...] = (),
         bodyless: tuple[tuple[str, str], ...] = (),
+        search_pages: tuple[tuple[str, int], ...] = (),
+        search_outcomes: tuple[SearchOutcome, ...] = (),
     ) -> None:
         self._companies = companies
+        # Carried onto the returned `LaneResult` so the stage can be shown how a lane's searches
+        # ended -- the all-late degraded case among them -- without a real search.
+        self._search_pages = search_pages
+        self._search_outcomes = search_outcomes
         # Admitted, then every body request for it failed. The real lanes emit no snapshot in
         # exactly this case — `hiringcafe.collect` and `linkedin.collect` both guard the append
         # with `if postings:` — and a snapshot is the only thing that ever writes a company row.
@@ -163,6 +170,8 @@ class StubLane:
             seed_attempts=self._seed_attempts,
             discovered_seeds=self._discovered_seeds,
             refused_seeds=self._refused_seeds,
+            search_pages=self._search_pages,
+            search_outcomes=self._search_outcomes,
         )
 
 
@@ -2304,3 +2313,69 @@ def test_the_lane_stage_applies_on_the_joining_thread_and_never_on_the_backgroun
         "a lane applied from the background thread; `apply_board` was reached from "
         f"{len(set(apply_threads))} threads while the scan was writing on {caller}"
     )
+
+
+_LATE = SearchOutcome("later_page_failed", "fetch_failure", 503)
+
+
+def test_every_search_failing_after_its_first_page_is_one_degraded_line_and_a_report(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T144(a): the case stays AS LOUD as the raise it replaced, and now also reaches the funnel.
+
+    A lane that raised was reported `collection failed` and was ABSENT from the reports. It now
+    returns its first pages, so it must be PRESENT with its outcomes -- and still produce exactly
+    one `lane <name>:` line, saying it degraded and kept its first pages.
+    """
+    _register(
+        monkeypatch,
+        alpha=StubLane(
+            [("hiringcafe", "src:a")],
+            search_pages=((LANE_URL, 1), (LANE_URL, 1)),
+            search_outcomes=(_LATE, _LATE),
+        ),
+    )
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha"]), insert_run(engine)
+    )
+
+    assert [r.name for r in reports] == ["alpha"]
+    assert reports[0].search_outcomes == (_LATE, _LATE)
+    lane_lines = [e for e in errors if e.startswith("lane alpha:")]
+    assert len(lane_lines) == 1, errors
+    assert "degraded" in lane_lines[0] and "kept" in lane_lines[0], lane_lines
+    assert "collection failed" not in lane_lines[0]
+
+
+def test_one_search_failing_late_among_healthy_ones_is_recorded_but_adds_no_error(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: one facet losing a later page says nothing about the host. An error line on
+    every such run would train the reader to ignore the channel, so it is in the funnel only."""
+    outcomes = (SearchOutcome("ended"), _LATE)
+    _register(
+        monkeypatch,
+        alpha=StubLane(
+            [("hiringcafe", "src:a")],
+            search_pages=((LANE_URL, 1), (LANE_URL, 1)),
+            search_outcomes=outcomes,
+        ),
+    )
+    reports, errors = _run_lanes(
+        engine, _settings(tmp_path, lanes_enabled=["alpha"]), insert_run(engine)
+    )
+
+    assert errors == []
+    assert [r.name for r in reports] == ["alpha"]
+    assert reports[0].search_outcomes == outcomes
+
+
+def test_search_outcomes_must_align_with_search_pages() -> None:
+    """Positional, not keyed by URL (Indeed repeats one URL), so a misaligned pair is refused."""
+    with pytest.raises(ValueError, match="align"):
+        LaneResult(
+            snapshots=(),
+            tally=AcquisitionTally(),
+            search_pages=((LANE_URL, 1), (LANE_URL, 1)),
+            search_outcomes=(_LATE,),
+        )

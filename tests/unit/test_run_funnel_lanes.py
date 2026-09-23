@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from boardwatch.eligibility.catalog import load_rules
+from boardwatch.lanes.base import SearchOutcome
 from boardwatch.lanes.outcomes import ACQUISITION_OUTCOMES, AcquisitionTally
 from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.reports.run_funnel import (
@@ -48,6 +49,8 @@ def _report(
     persisted_new: tuple[tuple[str, str], ...] = (),
     fetch_seconds: float | None = None,
     apply_seconds: float | None = None,
+    search_pages: tuple[tuple[str, int], ...] = (),
+    search_outcomes: tuple[SearchOutcome, ...] = (),
 ) -> LaneReport:
     tally = _tally(*outcomes)
     return LaneReport(
@@ -63,6 +66,8 @@ def _report(
         # keep exercising the NOT MEASURED path rather than being silently backfilled with 0.0.
         fetch_seconds=fetch_seconds,
         apply_seconds=apply_seconds,
+        search_pages=search_pages,
+        search_outcomes=search_outcomes,
     )
 
 
@@ -262,3 +267,50 @@ def test_a_lane_with_no_measurable_cost_does_not_divide_by_zero() -> None:
         _funnel((_report("stub", "body_inline", fetch_seconds=0.0, apply_seconds=0.0),))
     )
     assert "no measurable cost" in markdown
+
+
+_PAGES = (("https://a.test/s?q=1", 1), ("https://a.test/s?q=2", 1))
+_OUTCOMES = (
+    SearchOutcome("ended"),
+    SearchOutcome("later_page_failed", "fetch_failure", 403),
+)
+
+
+def test_search_outcomes_reach_the_json_beside_search_pages() -> None:
+    """T144: a new key, aligned with `search_pages`, the cause as typed fields. `search_pages`
+    itself does not move."""
+    lane = funnel_to_dict(
+        _funnel((_report("hc", search_pages=_PAGES, search_outcomes=_OUTCOMES),))
+    )["lanes"][0]  # type: ignore[index]
+
+    assert lane["search_pages"] == [{"url": url, "pages": pages} for url, pages in _PAGES]
+    assert lane["search_outcomes"] == [
+        {"end": "ended", "failure": None, "status_code": None},
+        {"end": "later_page_failed", "failure": "fetch_failure", "status_code": 403},
+    ]
+
+
+def test_a_lane_with_no_search_emits_an_empty_outcome_list() -> None:
+    """Empty, never absent -- the `search_pages` convention."""
+    lane = funnel_to_dict(_funnel((_report("jobapps"),)))["lanes"][0]  # type: ignore[index]
+    assert lane["search_outcomes"] == []
+
+
+def test_search_outcomes_render_beside_the_page_counts() -> None:
+    markdown = funnel_to_markdown(
+        _funnel((_report("hc", search_pages=_PAGES, search_outcomes=_OUTCOMES),))
+    )
+
+    assert "| search | pages fetched | ended |" in markdown
+    assert "| https://a.test/s?q=1 | 1 | ended |" in markdown
+    assert "| https://a.test/s?q=2 | 1 | later_page_failed (fetch_failure 403) |" in markdown
+
+
+def test_a_lane_without_outcomes_renders_its_page_table_as_before() -> None:
+    """Control: LinkedIn reports depth and no outcome, and no search at all renders no table."""
+    paged = funnel_to_markdown(_funnel((_report("li", search_pages=_PAGES),)))
+    assert "| search | pages fetched |\n|---|---:|" in paged
+    assert "| https://a.test/s?q=1 | 1 |\n" in paged
+
+    unpaged = funnel_to_markdown(_funnel((_report("jobapps"),)))
+    assert "| search | pages fetched" not in unpaged
