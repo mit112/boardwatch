@@ -300,6 +300,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The job-apps lane now counts a record it cannot read (2026-09-23, T168).** A discovery record
+  that failed to parse, carried an unsupported `schema_version`, or lacked its company, title,
+  posting id or apply URL was dropped without being counted anywhere, so it appeared in none of the
+  lane's tallies. In the last 21 job-apps cohorts, 20 Indeed records with a blank company were lost
+  this way. Every such record is now counted under `not_attemptable`, the bucket the lane already
+  uses for every other record it sees and cannot attempt, so the funnel's `attempted` count covers
+  it. A tree whose every candidate fails to parse still raises, as before.
+
 - **A preferred-years requirement no longer reads `{years} years of total experience is preferred`
   (2026-09-23, T169).** The two preferred-years patterns have a second layout, for a hedge written
   before the number ("We prefer 5 years of experience."), whose capture is named `years_alt`. The
