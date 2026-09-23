@@ -455,7 +455,7 @@ def rank_open_postings(
     output_console: Console = console,
     run_id: int | None = None,
     record_surfaced: bool = True,
-    profile_already_refreshed: bool | None = None,
+    profile_already_refreshed: bool = False,
 ) -> RankedResults:
     """Rank the open corpus. `record_surfaced=False` ranks WITHOUT consuming the queue.
 
@@ -468,7 +468,7 @@ def rank_open_postings(
 
     `profile_already_refreshed` (T164): the pipeline runs `refresh_profile_taxonomy` itself,
     before it reads the run's start identity, and passes the result through here so this call's
-    `run_preflight` neither re-runs the profile UPDATE nor prints the wrong preflight line.
+    `run_preflight` still prints the `taxonomy changed` line for a refresh it did not perform.
     """
     run_preflight(
         engine, settings, output_console, profile_already_refreshed=profile_already_refreshed

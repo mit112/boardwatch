@@ -65,19 +65,18 @@ def run_preflight(
     settings: Settings,
     console: Console | None = None,
     *,
-    profile_already_refreshed: bool | None = None,
+    profile_already_refreshed: bool = False,
 ) -> PreflightStats:
-    """`profile_already_refreshed`, when not `None`, means a caller already ran
-    `refresh_profile_taxonomy` this run (T164): this call performs no second UPDATE and takes
-    the caller's word for whether the profile moved, so the `taxonomy changed — re-extracting`
-    line below stays truthful even though this call did not do the writing."""
+    """`profile_already_refreshed` means a caller already ran `refresh_profile_taxonomy` this
+    run and it fired (T164). It only keeps the `taxonomy changed — re-extracting` line below
+    truthful. The refresh is still re-checked here, never skipped on the caller's word: it is a
+    no-op on a fresh profile, and a taxonomy edited between the two calls must still refresh the
+    profile before these extractions are written against the new version."""
     console = console or Console()
     taxonomy = load_taxonomy(settings.config_dir)
     stats = PreflightStats()
     stats.profile_refreshed = (
-        refresh_profile_taxonomy(engine, taxonomy)
-        if profile_already_refreshed is None
-        else profile_already_refreshed
+        refresh_profile_taxonomy(engine, taxonomy) or profile_already_refreshed
     )
 
     pending = _open_postings_missing_extraction(engine, taxonomy.version)

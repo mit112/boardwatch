@@ -482,3 +482,30 @@ def test_an_early_refresh_failure_hands_the_refresh_back_to_the_ranker(
     assert after is not None and after.taxonomy_version == bumped_version, (
         "the ranker's preflight must have performed the refresh the early call could not"
     )
+
+
+def test_a_taxonomy_edited_after_the_early_refresh_is_still_refreshed_before_ranking(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The early refresh finds the profile fresh, then the taxonomy file changes before ranking
+    (an owner edit mid-run). The ranker's preflight must still refresh the profile against the
+    taxonomy it extracts with, never take the early call's `False` as permission to skip."""
+    _ready(env)
+    real_refresh = runner_mod.refresh_profile_taxonomy
+    bumped: list[str] = []
+
+    def refresh_then_edit(engine: Any, taxonomy: Any) -> bool:
+        fired = real_refresh(engine, taxonomy)
+        bumped.append(_bump_taxonomy(env))
+        return fired
+
+    monkeypatch.setattr(runner_mod, "refresh_profile_taxonomy", refresh_then_edit)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert bumped, "guard: the early refresh must have run"
+    assert summary.fatal is None, summary.errors
+    with get_engine(env).connect() as conn:
+        after = get_profile(conn)
+    assert after is not None and after.taxonomy_version == bumped[0], (
+        "the ranker's preflight skipped the refresh on the early call's word"
+    )

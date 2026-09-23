@@ -2138,16 +2138,15 @@ def _run_pipeline_leased(
         # never the stale row it is about to overwrite — so a taxonomy bump alone can no longer
         # manufacture a `profile_row_hash` drift between this reading and the funnel's end one.
         #
-        # Fails OPEN to `None`, which hands the refresh back to the ranker's preflight exactly as
-        # before T164: an unreadable taxonomy or a contended UPDATE then fails (or succeeds) THERE,
-        # so it costs no stage that ran before it and still leaves T137's capture first.
-        profile_taxonomy_refreshed: bool | None
+        # Fails OPEN to False. The ranker's preflight re-checks the refresh on every run, so an
+        # unreadable taxonomy or a contended UPDATE then fails (or succeeds) THERE, exactly as
+        # before T164: it costs no stage that ran before it and still leaves T137's capture first.
         try:
             profile_taxonomy_refreshed = refresh_profile_taxonomy(
                 engine, load_taxonomy(settings.config_dir)
             )
         except Exception:  # noqa: BLE001 - the ranker's own preflight re-runs it and owns the failure
-            profile_taxonomy_refreshed = None
+            profile_taxonomy_refreshed = False
         # T137. FIRST, so a run that goes fatal below still publishes what it ran as and on.
         _capture_run_start(
             engine,
@@ -2388,8 +2387,8 @@ def _run_pipeline_leased(
                 # suppressed for the TTL with nothing built, and the retry re-ranked into an empty
                 # shortlist. Deciding after the loop is what makes the comment below true.
                 record_surfaced=False,
-                # T164: the refresh above already ran; this stops `run_preflight` from running
-                # it a second time and keeps its "taxonomy changed" line truthful either way.
+                # T164: the refresh above may already have fired; this keeps `run_preflight`'s
+                # "taxonomy changed" line truthful, and `run_preflight` still re-checks it.
                 profile_already_refreshed=profile_taxonomy_refreshed,
             )
         except NoProfileError:
