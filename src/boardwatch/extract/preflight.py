@@ -18,7 +18,7 @@ from rich.console import Console
 from sqlalchemy import Engine, select, update
 
 from boardwatch.core.settings import Settings
-from boardwatch.extract.taxonomy import load_taxonomy, write_extraction
+from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy, write_extraction
 from boardwatch.store.db import write_connection
 from boardwatch.store.tables import extractions, postings, profile
 
@@ -31,13 +31,18 @@ class PreflightStats:
     postings_backfilled: int = 0
 
 
-def run_preflight(
-    engine: Engine, settings: Settings, console: Console | None = None
-) -> PreflightStats:
-    console = console or Console()
-    taxonomy = load_taxonomy(settings.config_dir)
-    stats = PreflightStats()
+def refresh_profile_taxonomy(engine: Engine, taxonomy: Taxonomy) -> bool:
+    """The profile-refresh half of the preflight, alone: re-derive `profile.skills_json` and
+    stamp `profile.taxonomy_version` when the profile row is stale against `taxonomy`. Returns
+    whether it fired.
 
+    Split out (T164) so a caller that must read the profile AFTER this refresh but BEFORE the
+    rest of the preflight runs — the pipeline's run-start identity capture, which otherwise reads
+    a stale row while the funnel's end reading reads the ranker's own refreshed one, reporting a
+    false `profile_row_hash` drift on the first run after every taxonomy bump — can perform this
+    half early, exactly once. The caller passes the result back into `run_preflight` as
+    `profile_already_refreshed` so the UPDATE below never runs twice.
+    """
     # T134: read-then-write, so IMMEDIATE at BEGIN. A DEFERRED transaction takes its WAL
     # snapshot at the SELECT and SQLite cannot upgrade an obsolete one, so any writer
     # committing before the UPDATE fails it with `SQLITE_BUSY_SNAPSHOT`, which
@@ -51,7 +56,29 @@ def run_preflight(
                 .where(profile.c.id == 1)
                 .values(skills_json=skills, taxonomy_version=taxonomy.version)
             )
-            stats.profile_refreshed = True
+            return True
+    return False
+
+
+def run_preflight(
+    engine: Engine,
+    settings: Settings,
+    console: Console | None = None,
+    *,
+    profile_already_refreshed: bool | None = None,
+) -> PreflightStats:
+    """`profile_already_refreshed`, when not `None`, means a caller already ran
+    `refresh_profile_taxonomy` this run (T164): this call performs no second UPDATE and takes
+    the caller's word for whether the profile moved, so the `taxonomy changed — re-extracting`
+    line below stays truthful even though this call did not do the writing."""
+    console = console or Console()
+    taxonomy = load_taxonomy(settings.config_dir)
+    stats = PreflightStats()
+    stats.profile_refreshed = (
+        refresh_profile_taxonomy(engine, taxonomy)
+        if profile_already_refreshed is None
+        else profile_already_refreshed
+    )
 
     pending = _open_postings_missing_extraction(engine, taxonomy.version)
     if pending:

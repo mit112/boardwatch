@@ -14,13 +14,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from rich.console import Console
 from sqlalchemy import func, insert, select
 
 from boardwatch.core.settings import load_settings
 from boardwatch.eligibility import final_gate
 from boardwatch.eligibility.catalog import bundled_rules_text
+from boardwatch.extract.taxonomy import bundled_taxonomy_text, load_taxonomy
 from boardwatch.pipeline import funnel_writer
 from boardwatch.pipeline import runner as runner_mod
+from boardwatch.rank.leveling import load_leveling
+from boardwatch.reports.manifest import profile_row_hash
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
 from boardwatch.store.queries import get_profile, save_profile
@@ -339,3 +343,117 @@ def test_the_drift_line_reaches_the_MORNING_DIGEST(  # noqa: N802
     assert f"{_DRIFT_LINE}: profile_row_hash" in rendered, (
         "the drift alert is missing from the morning digest — it sits BELOW `_emit_morning`"
     )
+
+
+# --- 7: T164 — a taxonomy bump must not manufacture drift -----------------------------------
+
+_TAXONOMY_OVERRIDE_EXTRA = (
+    "  - {name: 'Zig', category: language, pattern: '\\bzig\\b', case_sensitive: false}\n"
+)
+
+
+def _bump_taxonomy(env: Path) -> str:
+    """Write a config-dir taxonomy override whose version differs from the bundled one that
+    `_ready` saved the profile at, so the stored `profile.taxonomy_version` reads stale."""
+    cfg = load_settings(data_dir=env).config_dir
+    cfg.mkdir(parents=True, exist_ok=True)
+    (cfg / "taxonomy.yaml").write_text(
+        bundled_taxonomy_text() + _TAXONOMY_OVERRIDE_EXTRA, encoding="utf-8"
+    )
+    return load_taxonomy(cfg).version
+
+
+def _make_profile_text_match_the_bump(env: Path) -> None:
+    """Add "Zig" to the profile's own text, WITHOUT touching its stored `skills_json` or
+    `taxonomy_version` — those still reflect the bundled taxonomy, which has no `Zig` pattern.
+
+    Without this, the bump above changes only the stored `taxonomy_version` column and never the
+    derived `skills_json`, so `profile_row_hash` cannot move regardless of when it is read and
+    the drift test would pass whether or not T164's ordering bug is present."""
+    with get_engine(env).begin() as conn:
+        row = get_profile(conn)
+        assert row is not None, "guard: `_ready` must have written a profile"
+        save_profile(
+            conn,
+            text=f"{row.text} Zig enthusiast.",
+            target_titles=row.target_titles_json,
+            exclude_titles=row.exclude_titles_json,
+            locations=row.locations_json,
+            remote_only=row.remote_only,
+            skills=row.skills_json,
+            taxonomy_version=row.taxonomy_version,
+            resume_max_pages=row.resume_max_pages,
+            target_seniority_band=row.target_seniority_band,
+        )
+
+
+def test_a_taxonomy_bump_run_reports_no_drift_and_ranks_the_refreshed_profile(
+    env: Path, tmp_path: Path
+) -> None:
+    """`extract/preflight.py:run_preflight` rewrites `profile.skills_json` +
+    `profile.taxonomy_version` mid-ranking when the taxonomy moved. Before T164,
+    `_capture_run_start` read the profile BEFORE that refresh while the funnel's end reading
+    came AFTER it, so the first run after every taxonomy bump reported a false
+    `profile_row_hash` drift though no outside input moved between start and end."""
+    _ready(env)
+    _make_profile_text_match_the_bump(env)
+    bumped_version = _bump_taxonomy(env)
+    engine = get_engine(env)
+    with engine.connect() as conn:
+        before = get_profile(conn)
+    assert before is not None and before.taxonomy_version != bumped_version, (
+        "guard: the profile must start stale against the bumped taxonomy"
+    )
+    assert "Zig" not in before.skills_json, "guard: the stale skill set must not have Zig yet"
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    payload = _payload(summary)
+    assert payload["identity_drift"] == []
+    assert _drift_lines(summary) == [], summary.errors
+    with engine.connect() as conn:
+        after = get_profile(conn)
+    assert after is not None and after.taxonomy_version == bumped_version, (
+        "guard: the run itself must have performed the refresh"
+    )
+    assert "Zig" in after.skills_json, (
+        "guard: the refresh must have actually moved the derived skill set, or this test cannot "
+        "tell a fixed ordering from a still-broken one"
+    )
+    settings = load_settings(data_dir=env)
+    expected_hash = profile_row_hash(
+        skills=after.skills_json,
+        target_titles=after.target_titles_json,
+        exclude_titles=after.exclude_titles_json,
+        locations=after.locations_json,
+        remote_only=after.remote_only,
+        target_seniority_band=after.target_seniority_band,
+        leveling_digest=load_leveling(settings.config_dir).digest,
+        taxonomy_version=bumped_version,
+    )
+    assert payload["manifest"]["profile_row_hash"] == expected_hash, (
+        "the manifest must publish the REFRESHED row's hash, not the stale start reading"
+    )
+
+
+def test_a_taxonomy_bump_run_still_prints_the_taxonomy_changed_line(
+    env: Path, tmp_path: Path
+) -> None:
+    """T164's constraint: splitting the profile refresh out of the ranker's own preflight call
+    must not weaken this line to the generic 'extracting N new posting(s)' one — the pending
+    postings on this run are unextracted because the taxonomy changed, not because they are new."""
+    _ready(env)
+    _bump_taxonomy(env)
+    settings = load_settings(data_dir=env)
+    console = Console(quiet=False, record=True, width=200)
+
+    runner_mod.run_pipeline(
+        get_engine(env),
+        settings,
+        console=console,
+        out_root=tmp_path / "apps",
+        resume_path=settings.config_dir / "resume.yaml",
+        skip_scan=True,
+    )
+
+    assert "taxonomy changed — re-extracting" in console.export_text()

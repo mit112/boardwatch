@@ -455,6 +455,7 @@ def rank_open_postings(
     output_console: Console = console,
     run_id: int | None = None,
     record_surfaced: bool = True,
+    profile_already_refreshed: bool | None = None,
 ) -> RankedResults:
     """Rank the open corpus. `record_surfaced=False` ranks WITHOUT consuming the queue.
 
@@ -464,8 +465,14 @@ def rank_open_postings(
     and hands it back) and the pipeline (which records its own dispositions after the tailor loop,
     so a crash cannot suppress a lead it never built) pass False. `surfaced_job_ids` is populated
     either way, so a caller that opts out can still record the decision once it has one.
+
+    `profile_already_refreshed` (T164): the pipeline runs `refresh_profile_taxonomy` itself,
+    before it reads the run's start identity, and passes the result through here so this call's
+    `run_preflight` neither re-runs the profile UPDATE nor prints the wrong preflight line.
     """
-    run_preflight(engine, settings, output_console)
+    run_preflight(
+        engine, settings, output_console, profile_already_refreshed=profile_already_refreshed
+    )
     stats = run_eligibility(
         engine, settings, output_console, run_id=run_id
     )  # no-op on a null profile; before the check
