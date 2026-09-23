@@ -5,11 +5,18 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
-ONE row was RE-BASELINED 2026-09-23 for T178, an experience UPPER bound read as a minimum: m1093's
-`<2 years pertinent experience` is a ceiling, and a one-year profile is under it, so that row now
-reads `scoped_years_maximum` `met` where it pinned `scoped_years_minimum` `unknown` (the near-miss
-band had held the misread 2-year floor there). Its verdict is unchanged -- the `2+ years combined
-experience` arm still abstains -- and every other row passes unchanged.
+TWENTY-FOUR rows were ADDED and ONE RE-BASELINED 2026-09-23 for T178, an experience UPPER bound read
+as a minimum. m1093's `<2 years pertinent experience` is a ceiling, and a one-year profile is under
+it, so that row now reads `scoped_years_maximum` `met` where it pinned `scoped_years_minimum`
+`unknown` (the near-miss band had held the misread 2-year floor there). Its verdict is unchanged --
+the `2+ years combined experience` arm still abstains -- and every other pre-existing row passes
+unchanged. m1120-m1135 are the ceiling shapes: every one met by the one-year profile, except m1125
+and m1127 (a ladder rung and an invitation a TEN-year profile exceeds: they abstain, never reject)
+and m1130-m1131 (`<1` / `less than 1 year` against a one-year total: whole years cannot place it).
+m1136 pins that a ceiling reaches only the bar it touches, and m1137-m1143 are controls that must
+not move: four floors, `up to` and `no more than` (still no row), and an `or less` on another
+quantity. Real store sentences carry their pv id in the comment above them; the rest are the
+review's probe sentences or the planner's, because the store has no sentence of that shape.
 
 NINETEEN rows were ADDED 2026-09-23 (m1101-m1119) for T170, a years bar whose own sentence ends by
 calling it preferred, and NOTHING was re-baselined: all 1,100 pre-existing rows pass unchanged.
@@ -1297,6 +1304,54 @@ CASES: list[tuple] = [
     ('m1118:T170 an ABSTAINING total bar keeps its unknown row whatever its tail', 'Bachelor degree or 5 years of experience, not required but preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
     # planner repro, synthetic
     ('m1119:T170 an ABSTAINING scoped bar keeps its unknown row whatever its tail', '5 years of experience in a related field or a Master degree, not required but preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    # pv 341729
+    ('m1120:T178 `<N` before the bar is a CEILING, met', '● <2 years of proven experience in designing and developing battery systems,', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_maximum', 'required', 'met']]),
+    # pv 382567
+    ('m1121:T178 `< N` with a space is a CEILING, met', 'Minimum requirements include knowledge and skills developed through < 2 years of work experience in a related job discipline.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_maximum', 'required', 'met']]),
+    # pv 159086
+    ("m1122:T178 `less than N` is a CEILING, met (the review's sole-driver posting)", 'Has less than 3 years of post-MBA experience / Relevant experience and is looking to build a career at the intersection of business, technology, and product management.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_maximum', 'required', 'met']]),
+    # pv 66765
+    ('m1123:T178 `less than N years’` is a CEILING, met', 'Generally less than 2 years’ experience in a related field', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_maximum', 'required', 'met']]),
+    # pv 197815
+    ('m1124:T178 `fewer than N` is a CEILING, met', 'Research Associate I: Bachelor’s degree and fewer than 3 years of relevant, post-baccalaureate professional research experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_maximum', 'required', 'met']]),
+    # pv 197815
+    ("m1125:T178 a ladder rung's CEILING a senior total exceeds ABSTAINS, never rejects", 'Research Associate I: Bachelor’s degree and fewer than 3 years of relevant, post-baccalaureate professional research experience.', {'total_years_experience': 10}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_maximum', 'required', 'unknown']]),
+    # pv 313542
+    ('m1126:T178 `under N` is a CEILING, met', 'Candidates with under 4 years of experience are encouraged to still apply to be considered at the Associate level', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    # pv 376127
+    ("m1127:T178 an invitation's CEILING a senior total exceeds ABSTAINS, never rejects", 'If fewer than 6 years of experience, still encouraged to apply!', {'total_years_experience': 10}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_maximum', 'required', 'unknown']]),
+    # pv 316430
+    ('m1128:T178 `a maximum of N` is a CEILING, met', 'A maximum of 3 years of experience in customer-facing roles (preferably in healthcare or enterprise software)', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_maximum', 'required', 'met']]),
+    # pv 131695
+    ('m1129:T178 `max N` is a CEILING, met', 'Fresh Grad or max 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    # pv 269431
+    ('m1130:T178 a total AT a `<1` CEILING abstains: whole years cannot place it', 'BAE Systems is looking for an entry level Systems Engineer (<1 year experience).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_maximum', 'required', 'unknown']]),
+    # pv 367450
+    ("m1131:T178 a pay table's `less than 1 year` CEILING at the total abstains", "We're excited to share our starting pay rate for new graduate registered nurses with less than 1 year of experience is $36.00/hour.", {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_maximum', 'required', 'unknown']]),
+    # review probe, synthetic
+    ('m1132:T178 `at most N` is a CEILING, met', 'At most 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    # review probe, synthetic
+    ('m1133:T178 a trailing `or less` is a CEILING, met', '2 years of experience or less.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    # review probe, synthetic
+    ('m1134:T178 `fewer than N` total is a CEILING, met', 'Fewer than 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    # review probe, synthetic
+    ('m1135:T178 a candidate sentence with `less than N` is a CEILING, met', 'This role is for candidates with less than 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    # planner repro, synthetic
+    ('m1136:T178 a CEILING reaches only the bar it touches', 'Less than 2 years of management experience and 5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_maximum', 'required', 'met'], ['experience_years:total_years_minimum', 'required', 'unmet']]),
+    # planner repro, synthetic
+    ('m1137:T178 CONTROL `Minimum N` stays a floor', 'Minimum 2 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
+    # planner repro, synthetic
+    ('m1138:T178 CONTROL `N+` stays a floor', '2+ years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
+    # planner repro, synthetic
+    ('m1139:T178 CONTROL `N-M` stays a floor', '2-4 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:range_years_minimum', 'required', 'unknown']]),
+    # planner repro, synthetic
+    ('m1140:T178 CONTROL `at least N` stays a floor', 'At least 2 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_years_minimum', 'required', 'unknown']]),
+    # planner repro, synthetic
+    ('m1141:T178 CONTROL `up to N` still writes no row', 'Up to 2 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # planner repro, synthetic
+    ('m1142:T178 CONTROL `no more than N` still writes no row', 'No more than 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    # planner repro, synthetic
+    ('m1143:T178 CONTROL `or less` on another quantity leaves the floor', '5 years of experience, with travel of 10% or less.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 
@@ -1316,4 +1371,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1119
+    assert len(CASES) == 1143
