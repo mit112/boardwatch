@@ -72,7 +72,16 @@ def _lead_folder(day_dir: Path, name: str) -> Path:
     return folder
 
 
-def _tailored_artifact_row(engine: Engine, run_id: int, day_dir: Path, folder: str) -> None:
+def _tailored_artifact_row(
+    engine: Engine,
+    run_id: int,
+    day_dir: Path,
+    folder: str,
+    *,
+    kind: str = "resume_tailored",
+    tex: str = LEAD_TEX,
+    meta: dict[str, object] | None = None,
+) -> None:
     """One `resume_tailored` artifact row for `run_id`, whose `uri` names the `.tex` path under
     `day_dir/<folder>/` — the store side of the reconciliation. Does NOT create the folder;
     callers that want the row's folder to exist call `_lead_folder` themselves.
@@ -84,8 +93,9 @@ def _tailored_artifact_row(engine: Engine, run_id: int, day_dir: Path, folder: s
         conn.execute(
             insert(artifacts).values(
                 job_id=job_id,
-                kind="resume_tailored",
-                uri=str(day_dir / folder / LEAD_TEX),
+                kind=kind,
+                uri=str(day_dir / folder / tex),
+                meta_json=meta,
                 created_at=SAME_DAY,
                 run_id=run_id,
             )
@@ -281,6 +291,82 @@ def test_folders_reconcile_flags_a_lead_whose_tex_was_deleted_under_it(
 
     assert folder.is_dir(), "the folder must survive, or this proves only the old check"
     assert (folder_count, artifact_rows) == (0, 1)
+
+
+#: The PDF a row's meta names when it says one was built. A sibling of `LEAD_TEX`.
+LEAD_PDF = "resume.pdf"
+
+
+@pytest.mark.parametrize(("pdf_on_disk", "expected"), [(False, (0, 1)), (True, (1, 1))])
+def test_folders_reconcile_requires_the_pdf_a_row_says_was_built(
+    engine: Engine, tmp_path: Path, pdf_on_disk: bool, expected: tuple[int, int]
+) -> None:
+    """T138, artifact-kind half. The row's meta says a PDF was built (`typst_pdf_built`) and
+    names it (`pdf_uri`); the `.tex` is on disk either way. With the PDF missing the row must
+    read as missing — the tex-only predicate counted it present, so the filesystem-truth fatal
+    passed a run that claimed a PDF it did not have. With the PDF there it must read present,
+    so the missing case cannot be satisfied by failing every PDF-bearing row."""
+    run_id = insert_run(engine)
+    day_dir = _day_dir(tmp_path)
+    folder = _lead_folder(day_dir, "acme-1")
+    if pdf_on_disk:
+        (folder / LEAD_PDF).write_bytes(b"%PDF-1.7\n%stub\n")
+    _tailored_artifact_row(
+        engine, run_id, day_dir, "acme-1",
+        meta={"typst_pdf_built": True, "pdf_uri": str(folder / LEAD_PDF)},
+    )
+
+    with engine.connect() as conn:
+        folder_count, artifact_rows = folders_reconcile(conn, run_id)
+
+    assert (folder / LEAD_TEX).is_file(), "the .tex must exist, or this proves only the tex clause"
+    assert (folder / LEAD_PDF).exists() is pdf_on_disk
+    assert (folder_count, artifact_rows) == expected
+
+
+def test_folders_reconcile_needs_no_pdf_for_a_row_that_never_built_one(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Control. The same row with `typst_pdf_built` false and no PDF anywhere is present: the
+    PDF is required only where the row's meta says one was built, which is `boardwatch
+    verify`'s own `pdf_expected` rule. The meta is a review-lane stub's exact shape."""
+    run_id = insert_run(engine)
+    day_dir = _day_dir(tmp_path)
+    folder = _lead_folder(day_dir, "acme-1")
+    _tailored_artifact_row(
+        engine, run_id, day_dir, "acme-1",
+        meta={"typst_pdf_built": False, "pdf_uri": None, "pending_tailor": True},
+    )
+
+    with engine.connect() as conn:
+        folder_count, artifact_rows = folders_reconcile(conn, run_id)
+
+    assert not list(folder.glob("*.pdf"))
+    assert (folder_count, artifact_rows) == (1, 1)
+
+
+def test_a_resume_tailored_llm_row_never_enters_the_guard(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Control. `resume_tailored_llm` rows do not enter the guard on EITHER side: the row count
+    is `count_tailored_artifacts`, which reads `resume_tailored` only, so the present count must
+    read the same kind or an LLM row beside a Tier-A row reads 2 present against 1 row and
+    false-fatals. `boardwatch verify` reads both kinds; the guard filters to one."""
+    run_id = insert_run(engine)
+    day_dir = _day_dir(tmp_path)
+    folder = _lead_folder(day_dir, "acme-1")
+    (folder / "resume.llm.tex").write_text("% tier b\n", encoding="utf-8")
+    _tailored_artifact_row(engine, run_id, day_dir, "acme-1")
+    _tailored_artifact_row(
+        engine, run_id, day_dir, "acme-1",
+        kind="resume_tailored_llm", tex="resume.llm.tex",
+        meta={"typst_pdf_built": False, "pdf_uri": None},
+    )
+
+    with engine.connect() as conn:
+        folder_count, artifact_rows = folders_reconcile(conn, run_id)
+
+    assert (folder_count, artifact_rows) == (1, 1)
 
 
 def test_a_failed_run_is_still_a_valid_terminal_status(engine: Engine, tmp_path: Path) -> None:

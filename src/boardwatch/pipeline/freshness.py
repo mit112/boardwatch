@@ -28,9 +28,11 @@ from pathlib import Path
 
 from sqlalchemy import Connection, Engine, select
 
+from boardwatch.reports.reconcile import FileCheck
 from boardwatch.store.queries import RUN_FAILED, RUN_OK
+from boardwatch.store.reconcile_queries import TailoredFileRow, tailored_file_rows
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, count_tailored_artifacts
-from boardwatch.store.tables import artifacts, runs
+from boardwatch.store.tables import runs
 
 # The two terminal statuses `finish_run` ever writes. `running` (the column's default) is
 # excluded on purpose: `store/queries.py`'s own docstring names that as meaning only "nothing
@@ -94,9 +96,29 @@ class Freshness:
         return tuple(reasons)
 
 
+def file_check(row: TailoredFileRow) -> FileCheck:
+    """Stat one tailored artifact row's claimed files. The ONE per-file rule, shared by
+    `boardwatch verify` (which hands it to `reports/reconcile.py`'s Class B) and the runner's
+    filesystem-truth guard below. It lives here rather than in `cli/verify_cmd.py`, where it
+    started, because `pipeline/` does not import `cli/` (T138).
+
+    `is_file`, not `exists`: a directory at the claimed path is not the claimed file.
+    """
+    pdf_expected = row.kind == "resume_tailored" and row.pdf_built
+    pdf_exists = bool(row.pdf_uri) and Path(row.pdf_uri).is_file()  # type: ignore[arg-type]
+    return FileCheck(
+        kind=row.kind,
+        typ_uri=row.typ_uri,
+        typ_exists=Path(row.typ_uri).is_file(),
+        pdf_expected=pdf_expected,
+        pdf_uri=row.pdf_uri,
+        pdf_exists=pdf_exists,
+    )
+
+
 def _existing_lead_folders(conn: Connection, run_id: int) -> int:
-    """How many of run_id's OWN `resume_tailored` artifact rows resolve to a file that actually
-    exists on disk. `uri` stores the `.tex` path (`run_funnel_queries.py`'s own docstring).
+    """How many of run_id's OWN `resume_tailored` artifact rows have every file they claim on
+    disk. `uri` stores the `.tex` path (`run_funnel_queries.py`'s own docstring).
 
     **The claimed FILE, not merely its parent directory (T138).** Checking the parent proved only
     that the `<slug>/` folder the tailor loop created was still there, so a row whose `.tex` had
@@ -105,18 +127,25 @@ def _existing_lead_folders(conn: Connection, run_id: int) -> int:
     store before the change: all 1,396 `resume_tailored` rows have their `.tex` present, so the
     stricter predicate false-fatals on nothing that exists today.
 
-    Review-lane stubs are not affected: they are delivered with no render and write no
-    `resume_tailored` row at all, so they never enter this query.
+    **And the PDF, wherever the row says one was built (T138).** Read through `file_check`, the
+    same rule `boardwatch verify` reports `missing_pdf_file` by, so the two cannot disagree about
+    what a row requires. Measured before the change over runs 446–470: 220 rows, 132 expecting a
+    PDF, 0 of those missing it.
+
+    Review-lane stubs DO enter this query: `runner._deliver_pending_review_lead` writes a
+    `resume_tailored` row with a `.tex` stub and `typst_pdf_built` false, so they need the `.tex`
+    and no PDF. `resume_tailored_llm` rows are filtered out: `count_tailored_artifacts` does not
+    count them, so counting them here would read more present than rows.
 
     Checked per row, not deduplicated into a folder set first, so a row whose file went missing
     is caught even if another row for the same run happens to share a folder.
     """
-    uris = conn.execute(
-        select(artifacts.c.uri).where(
-            artifacts.c.run_id == run_id, artifacts.c.kind == TAILORED_KIND
-        )
-    ).scalars().all()
-    return sum(1 for uri in uris if Path(str(uri)).is_file())
+    checks = (
+        file_check(row) for row in tailored_file_rows(conn, run_id) if row.kind == TAILORED_KIND
+    )
+    return sum(
+        1 for check in checks if check.typ_exists and (check.pdf_exists or not check.pdf_expected)
+    )
 
 
 def folders_reconcile(conn: Connection, run_id: int) -> tuple[int, int]:
@@ -163,4 +192,10 @@ def check_run_freshness(engine: Engine, run_id: int, day_dir: Path) -> Freshness
     )
 
 
-__all__ = ["TERMINAL_STATUSES", "Freshness", "check_run_freshness", "folders_reconcile"]
+__all__ = [
+    "TERMINAL_STATUSES",
+    "Freshness",
+    "check_run_freshness",
+    "file_check",
+    "folders_reconcile",
+]

@@ -29,6 +29,7 @@ from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import RUN_FAILED
+from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from tests.conftest import write_test_resume_template
 
 # The seeded company is a real watched greenhouse board, so any test that runs the scan stage
@@ -1002,6 +1003,49 @@ def test_a_lead_whose_folder_disappeared_after_tailoring_is_filesystem_truth_fat
     summary = _pipeline(env, tmp_path / "apps")
 
     assert summary.tailored, "nothing was tailored, so this proves nothing"
+    assert summary.fatal is not None
+    assert "filesystem-truth" in summary.fatal
+
+
+def test_a_lead_whose_built_pdf_disappeared_after_tailoring_is_filesystem_truth_fatal(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T138, artifact-kind half. The row says a PDF was built and names it, the `.tex` is still
+    on disk, and only the PDF is gone. The tex-only guard counted this lead present and let the
+    run finish `ok` on a deliverable it did not have. The row is read back from the store so the
+    test proves THIS state — PDF claimed, PDF absent, `.tex` present — and not a weaker one."""
+    _ready(env)
+    import boardwatch.pipeline.runner as runner_mod
+
+    def fake_compile(tex: Path, pdf: Path) -> CompileOutcome:
+        pdf.write_bytes(b"%PDF-1.7\n%stub\n")
+        return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", fake_compile)
+    real_run_tailor = runner_mod.run_tailor
+
+    def sabotage(*args: object, **kwargs: object):
+        result = real_run_tailor(*args, **kwargs)
+        assert result.pdf_path is not None, "no PDF was built, so this proves nothing"
+        result.pdf_path.unlink()
+        return result
+
+    monkeypatch.setattr(runner_mod, "run_tailor", sabotage)
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.tailored, "nothing was tailored, so this proves nothing"
+    with get_engine(env).connect() as conn:
+        rows = conn.execute(
+            select(tables.artifacts.c.uri, tables.artifacts.c.meta_json).where(
+                tables.artifacts.c.run_id == summary.run_id,
+                tables.artifacts.c.kind == "resume_tailored",
+            )
+        ).all()
+    assert rows, "no resume_tailored row was written"
+    for row in rows:
+        assert row.meta_json["typst_pdf_built"] is True
+        assert Path(row.uri).is_file(), "the .tex must survive, or this proves only the tex clause"
+        assert not Path(row.meta_json["pdf_uri"]).exists()
     assert summary.fatal is not None
     assert "filesystem-truth" in summary.fatal
 

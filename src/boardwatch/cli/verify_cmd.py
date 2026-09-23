@@ -26,17 +26,16 @@ from sqlalchemy import Engine
 
 from boardwatch.cli.context import build_context
 from boardwatch.cli.run_cmd import DEFAULT_OUT_ROOT
+from boardwatch.pipeline.freshness import file_check
 from boardwatch.reports.reconcile import (
     ArtifactCounts,
     Discrepancy,
     DiscrepancyKind,
-    FileCheck,
     ReconcileReport,
     reconcile,
     reconcile_to_markdown,
 )
 from boardwatch.store.reconcile_queries import (
-    TailoredFileRow,
     db_counts_for_run,
     tailored_file_rows,
 )
@@ -107,7 +106,7 @@ def _verify_one(engine: Engine, path: Path, run_id: int) -> ReconcileReport:
     with engine.connect() as conn:
         db = db_counts_for_run(conn, run_id)
         file_rows = tailored_file_rows(conn, run_id)
-    files = tuple(_file_check(row) for row in file_rows)
+    files = tuple(file_check(row) for row in file_rows)
     return reconcile(run_id=run_id, artifact=artifact, db=db, files=files)
 
 
@@ -122,17 +121,4 @@ def _artifact_counts(data: dict[str, object]) -> ArtifactCounts:
         tailored_with_pdf=int(checks["leads_with_pdf"]["from_store"]),
         lead_count=len(data["leads"]),  # type: ignore[arg-type]
         status=status if isinstance(status, str) else None,
-    )
-
-
-def _file_check(row: TailoredFileRow) -> FileCheck:
-    pdf_expected = row.kind == "resume_tailored" and row.pdf_built
-    pdf_exists = bool(row.pdf_uri) and Path(row.pdf_uri).exists()  # type: ignore[arg-type]
-    return FileCheck(
-        kind=row.kind,
-        typ_uri=row.typ_uri,
-        typ_exists=Path(row.typ_uri).exists(),
-        pdf_expected=pdf_expected,
-        pdf_uri=row.pdf_uri,
-        pdf_exists=pdf_exists,
     )
