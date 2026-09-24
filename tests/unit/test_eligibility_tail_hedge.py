@@ -1029,3 +1029,27 @@ def test_a_two_word_a_plus_still_hedges_every_list(catalog, body: str, preferred
     result = evaluate(body, FACTS, POLICY, catalog)
     assert [row[:2] for row in _rows(result)] == [[preferred, "preferred"]]
     assert result.verdict == "eligible"
+
+
+# T213: a hedged domain bar lands in `scoped_years_preferred`, the carrier `domain_years_minimum` is
+# already `hedged_as` (T173) -- no sibling of its own. It resolves as a scoped preference: `unmet`
+# under the bar, and never `met` on total years, which say nothing about Kubernetes.
+@pytest.mark.parametrize(("years", "disposition"), [(1, "unmet"), (5, "unknown")])
+def test_a_hedged_domain_bar_is_a_scoped_preference(  # type: ignore[no-untyped-def]
+    catalog, years: int, disposition: str
+) -> None:
+    result = evaluate(
+        "3+ years of Kubernetes preferred.", Facts(total_years_experience=years), POLICY, catalog
+    )
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", disposition]]
+    assert result.verdict == "eligible"
+
+
+def test_a_hedged_domain_bar_never_yields_ineligible(catalog) -> None:  # type: ignore[no-untyped-def]
+    """A `preference` row never blocks, at any profile: only a `required` row can reject."""
+    for years in range(21):
+        result = evaluate(
+            "10+ years of Kubernetes a plus", Facts(total_years_experience=years), POLICY, catalog
+        )
+        assert [row[1] for row in _rows(result)] == ["preferred"]
+        assert result.verdict != "ineligible"
