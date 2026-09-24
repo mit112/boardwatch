@@ -95,7 +95,15 @@ _NEGATED_ASIDE_GAP = re.compile(
 # sentence-final predicate `_tail_predicate` reads, "(preferred)", "(strongly preferred)",
 # "(preferred but not required)" -- is the sentence's hedge.
 _ASIDE = re.compile(r"\(([^()]*)\)")
-_ASIDE_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)\b", re.IGNORECASE)
+# The count every duration guard reads: a digit, or a spelled count from the closed list the years
+# patterns read (T193), with its parenthesised digit. A guard that counted digits only let a spelled
+# duration through where its digit twin was stopped.
+_COUNT_WORDS = (
+    "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+    "sixteen seventeen eighteen nineteen twenty"
+).split()
+_COUNT = rf"(?:\d|\b(?:{'|'.join(_COUNT_WORDS)})(?:\s*\(\s*\d{{1,2}}\s*\))?)"
+_ASIDE_DURATION = re.compile(rf"{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)\b", re.IGNORECASE)
 
 
 def _hedge_owned_by_an_aside(
@@ -135,7 +143,7 @@ def _hedge_owned_by_an_aside(
 _TAIL_NEGATED_BAR = r"not\s+(?:strictly\s+|necessarily\s+)?(?:required|mandatory|necessary)"
 _TAIL_INTENSITY = r"(?:(?:also|very|highly|strongly|much|greatly|especially)\s+)?"
 _TAIL_ASIDE = re.compile(r"\(([^()]*)\)")
-_TAIL_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)", re.IGNORECASE)
+_TAIL_DURATION = re.compile(rf"{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)", re.IGNORECASE)
 # The complement continues the bar, so it cannot open a new constituent -- unless the bar stopped
 # short of its own head (`2+ years of shipping`, `3+ years of experience leading`), where a comma
 # or a coordinator continues the same phrase (`, receiving, or manufacturing experience`).
@@ -858,14 +866,7 @@ def _hedged_by_heading(
 
 # A count the catalog's years patterns read spelled out (T193): "five (5) years", "Five years". The
 # digit is the posting's own number when it gives one; else the word maps through this closed list.
-_SPELLED_COUNTS = {
-    word: str(value)
-    for value, word in enumerate(
-        "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
-        "sixteen seventeen eighteen nineteen twenty".split(),
-        start=1,
-    )
-}
+_SPELLED_COUNTS = {word: str(value) for value, word in enumerate(_COUNT_WORDS, start=1)}
 _SPELLED_COUNT = re.compile(r"([a-z]+)(?:\s*\(\s*(\d{1,2})\s*\))?", re.IGNORECASE)
 
 

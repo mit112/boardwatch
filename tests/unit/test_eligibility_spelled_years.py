@@ -149,3 +149,68 @@ def test_the_digit_form_is_unchanged(catalog) -> None:  # type: ignore[no-untype
         [("experience_years:total_years_minimum", "required", "unmet",
           "At least 5 years of total experience")],
     )
+
+
+# Round 2, finding 1: every guard that reads a digit count reads the spelled count too. The ceiling
+# cue, the company-tenure suppressor's second-duration stand-down and the aside/tail duration each
+# counted digits only, so a spelled number beside them read differently from its digit twin.
+GUARD_TWINS = [
+    pytest.param(
+        "Less than two years of experience.", "Less than 2 years of experience.",
+        id="ceiling-less-than",
+    ),
+    pytest.param(
+        "Maximum of three years of experience in sales.",
+        "Maximum of 3 years of experience in sales.", id="ceiling-maximum-of",
+    ),
+    pytest.param(
+        "With 25 years of experience, our team has built software, and the role requires five "
+        "years of experience.",
+        "With 25 years of experience, our team has built software, and the role requires 5 years "
+        "of experience.",
+        id="tenure-stands-down-on-a-spelled-second-duration",
+    ),
+    pytest.param(
+        "3+ years of experience in accounting (two years preferred)",
+        "3+ years of experience in accounting (2 years preferred)",
+        id="aside-states-its-own-spelled-duration",
+    ),
+    pytest.param(
+        "3+ years of experience in accounting and two years in audit preferred.",
+        "3+ years of experience in accounting and 2 years in audit preferred.",
+        id="tail-holds-a-spelled-second-duration",
+    ),
+    # The credit-policy sentences read as their digit twins do. (On main the digit form of the first
+    # already writes a required bar: the engine has no credit-policy escape. A follow-up.)
+    pytest.param(
+        "The first five years of experience will be credited at the following rate",
+        "The first 5 years of experience will be credited at the following rate",
+        id="credit-rate",
+    ),
+    pytest.param(
+        "One year of experience will be credited", "1 year of experience will be credited",
+        id="credit-one-year",
+    ),
+]
+
+
+def _bar_rows(body: str, catalog) -> list[tuple[str, str, str]]:  # type: ignore[no-untyped-def]
+    # The spelled twin never reaches the digits-only `domain_years_minimum`, so it is not compared.
+    return [row[:3] for row in _read(body, catalog)[1] if "domain_years_minimum" not in row[0]]
+
+
+@pytest.mark.parametrize("spelled,digits", GUARD_TWINS)
+def test_every_guard_reads_the_spelled_count(spelled: str, digits: str, catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _bar_rows(spelled, catalog) == _bar_rows(digits, catalog)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("the first three years of employment", id="employment-prose"),
+        pytest.param("one year equals six months of experience", id="equivalence-rule"),
+    ],
+)
+def test_a_spelled_policy_sentence_writes_no_required_bar(body: str, catalog) -> None:  # type: ignore[no-untyped-def]
+    assert not [row for row in _read(body, catalog)[1] if row[1:3] == ("required", "unmet")]
+

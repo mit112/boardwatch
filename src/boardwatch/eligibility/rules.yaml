@@ -535,9 +535,12 @@ families:
       #    it back, and silently broke "2-12+ years of industry software engineering
       #    experience" -- a span that already matched. Both are corpus rows (m1048, m1049).
       # A SPELLED COUNT (T193) is the same bar: every single-number pattern's number group, and
-      # the escapes that must read the same count (the degree alternative, the company-tenure
-      # lookahead), also take `five (5)` and the bare words one ... twenty, a closed list. The
-      # digit is the capture when present, else the word's value (`detect._captures`). Ranges
+      # every guard that must read the same count -- the degree alternative, the company-tenure
+      # lookahead and its second-duration stand-down, the `years_ceiling` cue, and detect's aside
+      # and tail durations (`detect._COUNT`) -- also take `five (5)` and the bare words one ...
+      # twenty, a closed list. A guard left on digits only lets the spelled bar through where its
+      # digit twin is stopped ("Less than two years" read as a two-year floor). The digit is the
+      # capture when present, else the word's value (`detect._captures`). Ranges
       # are not extended: "three to five years" writes no row, as before. Nor is
       # `domain_years_minimum`, the one pattern with no experience noun to anchor on: measured
       # over the 126,854 pinned postings, its spelled reads were benefits and company prose
@@ -588,7 +591,7 @@ families:
         # cost: a second bar inside the SAME "With N years ..., we ..." sentence also stands
         # down; none was seen in the measured sample.
         suppressed_by_sentence:
-          - &company_tenure_after_bar "^(?![^\\n]*?\\d{1,3}\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w)[^\\n]*?\\d{1,3}\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w))(?:\\W*with\\s+(?:over\\s+|more\\s+than\\s+|nearly\\s+|almost\\s+|about\\s+|close\\s+to\\s+|some\\s+)?(?=(?:\\d{1,2}|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)[^;:]{0,160}?,\\s*(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)\\s+(?:is|are|has|have|brings?)(?!\\s+(?:looking|seeking|hiring|searching)\\b)|we\\s+(?:have\\s+built|(?:have\\s+)?(?:earned|established|grown|delivered|served|helped|developed)|['’]ve\\s+built|offer|bring|deliver|provide|pride)\\b)))|(?<=\\bexperience)\\s+is\\s+what\\s+(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)|we)\\s+(?:brings?|offers?|delivers?|provides?)\\b(?![^\\n]*?\\d{1,3}\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w))"
+          - &company_tenure_after_bar "^(?![^\\n]*?(?:\\d{1,3}|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w)[^\\n]*?(?:\\d{1,3}|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w))(?:\\W*with\\s+(?:over\\s+|more\\s+than\\s+|nearly\\s+|almost\\s+|about\\s+|close\\s+to\\s+|some\\s+)?(?=(?:\\d{1,2}|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)[^;:]{0,160}?,\\s*(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)\\s+(?:is|are|has|have|brings?)(?!\\s+(?:looking|seeking|hiring|searching)\\b)|we\\s+(?:have\\s+built|(?:have\\s+)?(?:earned|established|grown|delivered|served|helped|developed)|['’]ve\\s+built|offer|bring|deliver|provide|pride)\\b)))|(?<=\\bexperience)\\s+is\\s+what\\s+(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)|we)\\s+(?:brings?|offers?|delivers?|provides?)\\b(?![^\\n]*?(?:\\d{1,3}|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w))"
         # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
         # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
         # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."
@@ -618,13 +621,13 @@ families:
         # scoped siblings), with any abstain intact.
         # CLOSED and versioned, like `years_hedges`. Before the number: `less|fewer than` (NOT
         # after `no`/`not` -- `no less than` is the comparative FLOOR idiom above), `under`,
-        # `at most`, `max`/`maximum (of)`, `<`, `<=`, `≤`, each with a digit lookahead so it
+        # `at most`, `max`/`maximum (of)`, `<`, `<=`, `≤`, each with a count lookahead so it
         # cannot touch the END of a bar ("5 years of experience under pressure"). After the bar:
         # `or less` / `or fewer`. Deliberately NOT here: `up to` (already blocked by `(?<!to\s)`,
         # and also benefits prose) and `no more than` (its `no` drops the bar as a negation
         # first). Both write no row today, which reads `uncertain`, not a wrong reject.
         bounded_above_by:
-          - &years_ceiling "(?<![\\w-])(?:(?<!no\\s)(?<!not\\s)(?:less|fewer)\\s+than|under|at\\s+most|max(?:imum)?(?:\\s+of)?\\.?)(?=\\s*\\d)|[<≤]=?(?=\\s*\\d)|(?<![\\w-])or\\s+(?:less|fewer)(?![\\w-])(?!\\s+than)"
+          - &years_ceiling "(?<![\\w-])(?:(?<!no\\s)(?<!not\\s)(?:less|fewer)\\s+than|under|at\\s+most|max(?:imum)?(?:\\s+of)?\\.?)(?=\\s*(?:\\d|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\\b))|[<≤]=?(?=\\s*(?:\\d|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\\b))|(?<![\\w-])or\\s+(?:less|fewer)(?![\\w-])(?!\\s+than)"
         bounded_above_as: total_years_maximum
         # A DEGREE-GATED DISJUNCTION ("a Bachelor's ... OR N years of experience") is not a
         # floor: the posting clears on EITHER arm, and the degree arm is undecidable because
