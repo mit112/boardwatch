@@ -845,6 +845,32 @@ def _hedged_by_heading(
     )
 
 
+# A count the catalog's years patterns read spelled out (T193): "five (5) years", "Five years". The
+# digit is the posting's own number when it gives one; else the word maps through this closed list.
+_SPELLED_COUNTS = {
+    word: str(value)
+    for value, word in enumerate(
+        "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+        "sixteen seventeen eighteen nineteen twenty".split(),
+        start=1,
+    )
+}
+_SPELLED_COUNT = re.compile(r"([a-z]+)(?:\s*\(\s*(\d{1,2})\s*\))?", re.IGNORECASE)
+
+
+def _captures(match: re.Match[str]) -> dict[str, str]:
+    """A match's non-empty captures, a spelled count read as its digits."""
+    values: dict[str, str] = {}
+    for name, value in match.groupdict().items():
+        if not value:
+            continue
+        spelled = _SPELLED_COUNT.fullmatch(value)
+        if spelled is not None and spelled.group(1).lower() in _SPELLED_COUNTS:
+            value = spelled.group(2) or _SPELLED_COUNTS[spelled.group(1).lower()]
+        values[name] = value
+    return values
+
+
 def _reading(values: dict[str, str]) -> frozenset[tuple[str, str]]:
     """A detection's captures, each `_alt` group under the name it stands in for.
 
@@ -1026,7 +1052,7 @@ def detect(
                                     family=family.id,
                                     pattern=twins[pattern.hedged_as],
                                     span=(at(lo), end),
-                                    values={k: v for k, v in match.groupdict().items() if v},
+                                    values=_captures(match),
                                 )
                             )
                         continue
@@ -1041,12 +1067,12 @@ def detect(
                                 family=family.id,
                                 pattern=twins[pattern.bounded_above_as],
                                 span=(at(bounded[0]), at(bounded[1])),
-                                values={k: v for k, v in match.groupdict().items() if v},
+                                values=_captures(match),
                                 abstained=abstained,
                             )
                         )
                         continue
-                    values = {name: value for name, value in match.groupdict().items() if value}
+                    values = _captures(match)
                     # Checked after every drop, so a suppressed own-view match hides nothing.
                     # "Preferred Qualifications:\n- 5 years of experience preferred." otherwise
                     # wrote its one preferred bar twice, once per view (T163).
