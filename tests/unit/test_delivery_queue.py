@@ -3447,6 +3447,60 @@ def test_a_lane_copy_grouped_before_its_first_sync_gets_no_folder_until_the_twin
     assert len(_folders(root / SKIPPED_DIR)) == 1
 
 
+def test_the_page_and_the_apply_lane_cohort_agree_with_the_folders_about_a_lane_copy(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 1. After a refresh the lane copy's folder is in `_lane_copy/`, so neither the web
+    page's two lists nor the apply-lane cohort the drought detector and the funnel read may call it
+    work: the page COUNTS it in its own cell instead, and every reader asks
+    `lane_copy_posting_ids`, never a list of its own."""
+    from boardwatch.delivery.api import ApiContext, queue_payload  # noqa: PLC0415
+    from boardwatch.store.delivery_queries import (  # noqa: PLC0415
+        apply_lane_cohort,
+        apply_lane_placements,
+    )
+
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_lane_copy, synced.failures) == (1, ())
+
+    ctx = ApiContext(
+        settings=load_settings(),
+        out_root=apps.resolve(),
+        queue_root=root.resolve(),
+        owner_name=OWNER,
+        platform="darwin",
+    )
+    with engine.connect() as conn:
+        page = queue_payload(conn, ctx)
+        run_ids = {
+            row.delivered_run_id
+            for row in delivered_unapplied(conn, skipped=set())
+            if row.delivered_run_id is not None
+        }
+        cohort = apply_lane_cohort(conn, run_ids=run_ids)
+        placed = apply_lane_placements(conn, run_ids=run_ids)
+    listed = [int(row["posting_id"]) for row in page["rows"] + page["review"]]
+    assert listed == [board_id]
+    assert page["counts"]["lane_copy"] == 1
+    in_cohort = [placement.posting_id for rows in cohort.values() for placement in rows]
+    assert in_cohort == [board_id]
+    # The folders, counted through a different path: the apply lane holds exactly the board lead.
+    assert len(_folders(root)) == sum(in_apply for _placeable, in_apply in placed.values()) == 1
+    assert _folders(root / LANE_COPY_DIR) != []
+
+    before = _snapshot(root)
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert _snapshot(root) == before
+
+
 def test_a_board_posting_sharing_its_lane_twins_JOB_is_never_hidden_as_a_lane_copy(
     engine: Engine, root: Path, apps: Path
 ) -> None:

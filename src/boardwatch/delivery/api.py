@@ -109,6 +109,7 @@ from boardwatch.store.delivery_queries import (
     QueueRow,
     applied_rows,
     delivered_unapplied,
+    lane_copy_posting_ids,
     lane_decision,
     queue_detail,
 )
@@ -273,8 +274,13 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # module's whole design is arranged against. `row.closed` is `status == "closed"` and never
     # `!= "open"`, so an `unverifiable` posting stays listed as the live work it is.
     closed_rows = [row for row in every if row.closed]
-    kept = [row for row in every if not row.closed and row.verdict != "ineligible"]
-    drained = len(every) - len(kept) - len(closed_rows)
+    # A lane copy is held in `_lane_copy` on disk (T189b), so it is not work on the page either.
+    # Below `ineligible`, as `_wanted_location` ranks it, and asked of the ONE predicate the folder
+    # tree asks, so the two cannot disagree about which leads it names.
+    lane_copy = lane_copy_posting_ids(conn)
+    open_rows = [row for row in every if not row.closed and row.verdict != "ineligible"]
+    kept = [row for row in open_rows if row.posting_id not in lane_copy]
+    drained = len(every) - len(open_rows) - len(closed_rows)
     facts = _live_facts(conn, ctx, kept)
 
     def rank_key(row: QueueRow) -> tuple[bool, float]:
@@ -325,6 +331,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             ineligible=drained,
             review=len(review_rows),
             closed=len(closed_rows),
+            lane_copy=len(open_rows) - len(kept),
             follow_ups=follow_ups,
         ),
         # A capability flag, not a preference: the button is hidden where the platform has no
@@ -563,6 +570,7 @@ def _counts(
     ineligible: int = 0,
     review: int = 0,
     closed: int = 0,
+    lane_copy: int = 0,
     follow_ups: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
@@ -621,6 +629,10 @@ def _counts(
         # unexplained remainder between the apply lane and the delivered set. They are also not
         # `ineligible` — nothing judged them, the employer took the requisition down.
         "closed": closed,
+        # A lead whose employer-board twin is standing (T189b): out of both lists because its
+        # folder is in `_lane_copy`, and counted so the band still reconciles with the delivered
+        # set.
+        "lane_copy": lane_copy,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
         # Its own cell, never folded into `skipped`: a report is a distinct signal ("this looks

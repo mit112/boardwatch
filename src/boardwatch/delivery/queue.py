@@ -345,7 +345,7 @@ def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     refresh re-judges from exactly these, so the population is defined once — why each exclusion
     is there is `_sync_locked`'s comment."""
     withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
-    lane_copy = lane_copy_posting_ids(conn, skipped=withheld)
+    lane_copy = lane_copy_posting_ids(conn)
     return [
         row
         for row in delivered_unapplied(conn, skipped=withheld)
@@ -1055,9 +1055,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
-    # Passed the SAME withheld set the other drains derive from, so a lead the owner already
-    # skipped or reported cannot be re-filed as a lane copy behind their statement.
-    lane_copy = lane_copy_posting_ids(conn, skipped=set(skipped) | set(reported))
+    lane_copy = lane_copy_posting_ids(conn)
     entries, unclassified = _index(root)
     # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
     # would otherwise be filed against the identity it was written under rather than the one it

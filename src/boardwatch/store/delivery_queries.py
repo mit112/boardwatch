@@ -888,7 +888,7 @@ def standing_board_cross_host_keys(
     return {key: tuple(ids) for key, ids in held.items()}
 
 
-def lane_copy_posting_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
+def lane_copy_posting_ids(conn: Connection) -> set[int]:
     """`posting_id` for every delivered LANE copy whose employer-board twin is also standing.
 
     D-498 rule (a)'s missing half. That rule drops a lane's copy of a posting when the employer's
@@ -932,8 +932,14 @@ def lane_copy_posting_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
     the folder's posting is in it. Naming WHICH lead supersedes this one would be better for a
     reader auditing the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is
     versioned, so it is left for whoever wants it rather than carried unused here.
+
+    **The ONE predicate for "is this standing lead a lane copy"** (T189b): the folder tree
+    (`standing_queue_rows`, `_reconcile_locked`), the web page and `apply_lane_cohort` all test
+    `posting_id in` this set, so the page, the drought detector and the folders cannot disagree.
+    It reads the owner's skips itself for the same reason — a caller passing its own withheld set
+    is a second list to keep in step. `reported` is the seed's own exclusion already.
     """
-    held = standing_board_cross_host_keys(conn, skipped=skipped)
+    held = standing_board_cross_host_keys(conn, skipped=set(skipped_job_ids(conn)))
     if not held:
         return set()
     # Joined outward from the delivered rows, binding no id list: this module hit SQLite's
@@ -1068,10 +1074,11 @@ def apply_lane_cohort(
     survives to today rather than what it shipped on the day.
     """
     cohort: dict[int, list[LanePlacement]] = {rid: [] for rid in run_ids}
+    lane_copy = lane_copy_posting_ids(conn)
     for row in delivered_unapplied(conn, skipped=set()):
         if row.delivered_run_id not in run_ids:
             continue
-        if row.verdict == "ineligible" or row.closed:
+        if row.verdict == "ineligible" or row.closed or row.posting_id in lane_copy:
             continue
         decision = lane_decision(row)
         cohort[row.delivered_run_id].append(
@@ -1107,6 +1114,8 @@ def apply_lane_placements(
       (D-383). A run whose every lead has since come down would otherwise read as lane starvation,
       which is a claim about the location/role/requirement gates that the evidence does not
       support.
+    * a LANE COPY is excluded (T189b) because its folder sits in `_lane_copy/`: its employer-board
+      twin is the placeable lead, and counting both would credit one job to the lane twice.
 
     So a run with zero placeable leads reports `(0, 0)` and the detector abstains on it, rather
     than firing on a fault it cannot see. `skipped=set()` matches the two sibling functions above:
