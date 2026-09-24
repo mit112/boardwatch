@@ -169,7 +169,14 @@ def _names_its_own_noun(aside: str, hedges: tuple[re.Pattern[str], ...]) -> bool
 _TAIL_NEGATED_BAR = r"not\s+(?:strictly\s+|necessarily\s+)?(?:required|mandatory|necessary)"
 _TAIL_INTENSITY = r"(?:(?:also|very|highly|strongly|much|greatly|especially)\s+)?"
 _TAIL_ASIDE = re.compile(r"\(([^()]*)\)")
-_TAIL_DURATION = re.compile(rf"{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)", re.IGNORECASE)
+# A degree's LENGTH is not a second duration (T202): "a Two-year degree or certificate from an
+# accredited two (2) year college, university, or technical school preferred" names the college,
+# and the hedge still predicates the bar before it. Singular `year` only, as the adjective is.
+_TAIL_DURATION = re.compile(
+    rf"{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)"
+    r"(?!(?<=year)[\s-]+(?:college|degree|program|university|diploma|certificate|school)s?\b)",
+    re.IGNORECASE,
+)
 # The complement continues the bar, so it cannot open a new constituent -- unless the bar stopped
 # short of its own head (`2+ years of shipping`, `3+ years of experience leading`), where a comma
 # or a coordinator continues the same phrase (`, receiving, or manufacturing experience`).

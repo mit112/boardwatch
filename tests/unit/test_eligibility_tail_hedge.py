@@ -56,6 +56,19 @@ DEMOTED = [
         "experience, preferred",
         "total_years_preferred", id="T170d-bare-second-head-no-with-still-demotes",  # pv 236615
     ),
+    # T202: a degree's LENGTH is not a second duration, spelled or digit, so the hedge still
+    # predicates the bar. `two (2) year college` stopped it and rejected a one-year profile.
+    pytest.param(
+        "2+ years' experience working in a manufacturing setting or a Two-year degree or "
+        "certificate from an accredited two (2) year college, university, or technical school "
+        "preferred",
+        "total_years_preferred", id="T202-spelled-year-college",  # pv 323521
+    ),
+    pytest.param(
+        "2+ years' experience working in a manufacturing setting or a Two-year degree or "
+        "certificate from an accredited 2 year college, university, or technical school preferred",
+        "total_years_preferred", id="T202-digit-year-college",
+    ),
 ]
 
 # DROP: the bar's pattern has no `preferred` twin, so the hedged bar is dropped -- exactly what
@@ -304,6 +317,11 @@ KEPT = [
         "4 -7 years of relevant leadership experience including directing the work of others, "
         "preferred",
         "scoped_range_years_minimum", id="MISS-including-X-then-preferred",  # pv 354344
+    ),
+    # T202 control: a real second duration still stops the tail hedge, as it did before.
+    pytest.param(
+        "5+ years of experience, or 2 years in a senior role, preferred",
+        "total_years_minimum", id="T202-control-a-real-second-duration",
     ),
 ]
 
