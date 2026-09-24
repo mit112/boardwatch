@@ -935,6 +935,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A disagreeing funnel cross-check is soft-alerted, and a lead's location class is the location
+  gate's verdict for the profile's target countries (2026-09-24, T203, T204).** A cross-check whose
+  in-memory and store counts differ now raises one soft alert per run into the morning digest and the
+  heartbeat, above `_emit_morning` like its siblings. The funnel manifest carries `target_countries` and
+  each lead's `location_class` reads `in_target` / `out_of_target` / `unknown` / `abstain` through
+  `location_target(...).classify`, no longer the US-only classifier; `ARTIFACT_VERSION` 8 → 9.
+
 - **Third engine batch: spelled-number years bars, the `a plus` word boundary, and an aside about
   another noun (2026-09-24, T193, T196, T197).** "five (5) years of experience" and the bare words one to
   twenty now read as years bars on the experience patterns and in every duration guard, exactly as their
