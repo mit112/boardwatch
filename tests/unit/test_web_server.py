@@ -465,6 +465,7 @@ def _profile(conn: Connection, *, facts: Facts | None = None, policy: Policy | N
         skills=["python"],
         taxonomy_version="v1",
         resume_max_pages=1,
+        target_countries=["USA"],
     )
     if facts is not None and policy is not None:
         save_eligibility(

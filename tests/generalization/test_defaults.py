@@ -256,6 +256,8 @@ def test_the_heuristic_parameter_default_is_pinned() -> None:
         "score_posting.half_life_days": "14.0",
         "score_posting.zero_skill_prior": "0.50",
         "score_posting.coverage_pseudo_count": "1.0",
+        "hard_filter_verdict.location_packs": "BUNDLED_PACKS",
+        "passes_hard_filters.location_packs": "BUNDLED_PACKS",
     }
 
 

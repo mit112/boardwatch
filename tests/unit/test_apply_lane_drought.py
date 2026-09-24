@@ -136,7 +136,7 @@ def _lead(
     save_profile(
         conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
         locations=["Boston, MA"], remote_only=False, skills=["python"],
-        taxonomy_version="v1", resume_max_pages=1,
+        taxonomy_version="v1", resume_max_pages=1, target_countries=["USA"],
     )
     catalog = load_rules(load_settings().config_dir)
     write_evaluation(
@@ -329,6 +329,7 @@ def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> 
             remote_policy="onsite", posted_days=2, first_seen=NOW, status="open",
             verdict=verdict, apply_url="https://boards.test/apply", delivered_run_id=7,
             tex_uri="/out/t.typ", pdf_uri=None, target_flag=None, role="swe",
+            target_countries=("USA",),
         )
 
     injected = [_row(1, "ineligible", ("Boston, MA",))]

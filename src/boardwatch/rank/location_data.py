@@ -24,7 +24,7 @@ could plausibly name: **Dublin** (OH, CA), **Limerick** (PA, ME), **Birmingham**
 **Uxbridge** (MA), **Abingdon** (VA, MD), **Cambridge** (MA), **Warren** (MI, OH, NJ),
 **Ontario** (CA), **Valencia** (CA), **Moscow** (ID), **Zwolle** (LA), **Best** (an English
 word). Leaving them out costs real foreign postings — 23 Irish `Dublin` roles stay in the pool
-— and that is the accepted price: the gate must never silently delete a US role (Mit's ruling).
+— and that is the accepted price: the gate must never silently delete a US role (D-251).
 Do not add them without a country suffix doing the work instead.
 
 "Plausibly" is the operative word, and it means a US namesake that could realistically appear

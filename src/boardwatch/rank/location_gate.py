@@ -1,14 +1,20 @@
-"""US-only location classifier for the hard location gate (Mit's visa requirement, D-251).
+"""Location resolver for the hard location gates, read against the tenant's target countries.
 
-`classify_location` labels a posting's location strings `us` / `non_us` / `unknown`. It is a
-POSITIVE US allowlist, not a non-US denylist: a hard gate must confirm the US, because a
-denylist lets anything it has not heard of leak through (job-apps' `_radancy_location_is_us`
-lesson). The gate keeps `us` and — fail-open, Mit's ruling — `unknown`, and drops `non_us`.
+`resolve_countries` reads a posting's location strings as the ISO-3 countries they name, and
+`location_target(...).classify` tests that set against the profile's `target_countries`
+(DESIGN-T183). It is a POSITIVE allowlist, not a denylist: a hard gate must confirm a place,
+because a denylist lets anything it has not heard of leak through (job-apps'
+`_radancy_location_is_us` lesson). The gates keep in-target and — fail-open, D-251 — `unknown`,
+and drop only a posting confirmed outside the targets. `classify_location` is the US reading of
+the same resolver (`us` / `non_us` / `unknown`), which the run funnel reports.
 
-The per-segment resolution ORDER is load-bearing:
+The per-segment resolution ORDER is load-bearing. With the one shipped pack, `usa`:
 
   ambiguous-region → US-marker → US-state-abbrev → US-state-name → bare-"US" →
   non-US-country → non-US-city → non-US-ISO3-code → non-US-region → US-ZIP → US-city → unknown
+
+A pack's STRONG signals (the first four US steps) run before the foreign token map and its WEAK
+ones (ZIP, city) after it; with several packs, the tenant's target packs go first.
 
 Bare "US"/"U.S." is checked BEFORE the non-US tokens so an explicit US signal wins within a
 segment that also names a foreign place ("US, Canada") — the posting is offered in the US.
@@ -256,3 +262,55 @@ def classify_location(locations: Sequence[str]) -> LocationClass:
     if "USA" in countries:
         return "us"
     return "non_us" if countries else "unknown"
+
+
+TargetClass = Literal["in_target", "out_of_target", "unknown"]
+
+
+@dataclass(frozen=True)
+class LocationTarget:
+    """The tenant's target countries, and the packs to read a posting against them.
+
+    `abstain` is the reason the gates cannot decide, or `None`. Undeclared targets abstain on the
+    missing profile field (DESIGN-T183 Q2). So does a target with no positive pack: without the
+    target's own pack the target-first order cannot run, and a home posting mis-resolves
+    ("London, ON" reads GBR). The gate never falls back to "not the US, so drop".
+    """
+
+    countries: frozenset[str]
+    packs: tuple[CountryPack, ...]
+    abstain: str | None
+
+    def classify(self, locations: Sequence[str]) -> TargetClass | None:
+        """`None` when abstaining; otherwise whether ANY location is in the target set.
+
+        Any target location keeps the posting, as any US location did: the applicant can take
+        that one. An unresolvable posting is `unknown`, and the gates keep it (fail-open, D-251).
+        """
+        if self.abstain is not None:
+            return None
+        found = resolve_countries(locations, self.packs)
+        if found & self.countries:
+            return "in_target"
+        return "out_of_target" if found else "unknown"
+
+
+@cache
+def _location_target(
+    countries: frozenset[str], packs: tuple[CountryPack, ...]
+) -> LocationTarget:
+    missing = sorted(countries - {pack.iso3 for pack in packs})
+    abstain = (
+        "missing_profile_field:target_countries" if not countries
+        else f"missing_country_pack:{','.join(missing)}" if missing
+        else None
+    )
+    # Stable sort: the target countries' packs first, each group in the caller's order.
+    ordered = tuple(sorted(packs, key=lambda pack: pack.iso3 not in countries))
+    return LocationTarget(countries, ordered, abstain)
+
+
+def location_target(
+    target_countries: Sequence[str], packs: Sequence[CountryPack] = BUNDLED_PACKS
+) -> LocationTarget:
+    return _location_target(frozenset(target_countries), tuple(packs))

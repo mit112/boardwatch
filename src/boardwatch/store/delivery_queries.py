@@ -228,6 +228,11 @@ class QueueRow:
     #:
     #: Defaulted `False` so a fixture built before this field existed routes exactly as it did.
     revised_since_build: bool = False
+    #: DESIGN-T183 L6. The profile's `target_countries`, read ONCE per read beside the title band
+    #: and for the same reason (D-332): `review_gate.classify` holds a lead confirmed outside it.
+    #: A profile edit must re-route standing leads, so it is read live, never persisted per row.
+    #: `()` is undeclared, which holds nothing on location (Q2).
+    target_countries: tuple[str, ...] = ()
 
     @property
     def closed(self) -> bool:
@@ -527,6 +532,7 @@ def _queue_row(
     role_taxonomy: RoleTaxonomy | None,
     band: TitleBandReader | None = None,
     revised_since_build: bool = False,
+    target_countries: tuple[str, ...] = (),
 ) -> QueueRow:
     return QueueRow(
         posting_id=int(row.posting_id),
@@ -565,7 +571,14 @@ def _queue_row(
             else band.above_band(str(row.title), (str(row.provider), str(row.slug)))
         ),
         revised_since_build=revised_since_build,
+        target_countries=target_countries,
     )
+
+
+def _target_countries(conn: Connection) -> tuple[str, ...]:
+    """The profile's target countries for THIS read; `()` without a profile (undeclared)."""
+    profile = get_profile(conn)
+    return () if profile is None else tuple(profile.target_countries_json)
 
 
 def _title_band(conn: Connection, settings: Settings) -> TitleBandReader:
@@ -611,6 +624,7 @@ def lane_decision(row: QueueRow) -> LaneDecision:
         judge_verdict=row.judge_verdict,
         judge_seniority_above_band=row.judge_seniority_fit == "no",
         revised_since_build=row.revised_since_build,
+        target_countries=row.target_countries,
         form_question_hit=row.form_question_hit,
         provider_employment_type=row.provider_employment_type,
     )
@@ -1189,6 +1203,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # software classifier. A malformed file raises `RoleTaxonomyError` here exactly as it does in
     # the ranker — never a silent default.
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    target_countries = _target_countries(conn)
     now = utcnow()
     # T119. Bounded by the same winner list as every read above it, and read here rather than
     # per row: the ledger and the version history are two more tables, and a per-row derivation
@@ -1208,6 +1223,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             role_taxonomy=role_taxonomy,
             band=band,
             revised_since_build=int(row.posting_id) in revised,
+            target_countries=target_countries,
         )
         for row in ordered
     ]
@@ -1671,6 +1687,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             # T184b, for the same reason: the pane and the list must read one role verdict.
             role_taxonomy=load_role_taxonomy(settings.config_dir),
             revised_since_build=posting_id in revised,
+            target_countries=_target_countries(conn),
         ),
         jd_body=None if version is None or quarantined else version.body_text,
         jd_absent_reason=(
