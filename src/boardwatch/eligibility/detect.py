@@ -89,12 +89,26 @@ _NEGATED_ASIDE_GAP = re.compile(
 # verdict this engine can produce. The duration is what says the aside has a bar of its own
 # for the hedge to belong to.
 #
-# So does any word in the aside that is not the hedge's own predicate (T197): "(Abbott Instruments
-# Experience is an advantage)", "(commercial preferred)" and "(AWS preferred)" name the noun their
-# hedge qualifies, and the bar before them stays required. Only a BARE aside -- the whole of it the
-# sentence-final predicate `_tail_predicate` reads, "(preferred)", "(strongly preferred)",
-# "(preferred but not required)" -- is the sentence's hedge.
+# So does an aside that names its OWN head noun (T197): a capitalised product or company word,
+# "(AWS preferred)", "(Abbott Instruments Experience is an advantage)", or `experience|background|
+# knowledge|skills` after a modifier, "(commercial experience preferred)". Its hedge qualifies that
+# noun, and the bar before it stays required. An aside that only restates the hedge -- "(preferred
+# only)", "(Preferred Qualification)", "(strongly preferred)" -- names no noun and still hedges the
+# bar; so does a lone lowercase word, "(commercial preferred)", which the rule cannot tell from one.
 _ASIDE = re.compile(r"\(([^()]*)\)")
+# The words that restate a hedge rather than name what it qualifies. Closed: an intensifier, the
+# negated bar, a copula, the heading nouns, and the head nouns themselves (a head needs a modifier).
+_ASIDE_RESTATES = re.compile(
+    r"a|an|the|only|also|very|highly|strongly|much|greatly|especially|but|though|although|not|"
+    r"strictly|necessarily|required|mandatory|necessary|is|are|would|will|be|considered|"
+    r"qualifications?|requirements?|experience|background|knowledge|skills?",
+    re.IGNORECASE,
+)
+_ASIDE_CAPITALISED = re.compile(r"(?<![\w-])[A-Z][\w/&+.-]*")
+_ASIDE_MODIFIED_HEAD = re.compile(
+    r"(?<![\w-])([a-z][\w/&+.-]*)\s+(?:experience|background|knowledge|skills?)(?!\w)",
+    re.IGNORECASE,
+)
 # The count every duration guard reads: a digit, or a spelled count from the closed list the years
 # patterns read (T193), with its parenthesised digit. A guard that counted digits only let a spelled
 # duration through where its digit twin was stopped.
@@ -118,11 +132,23 @@ def _hedge_owned_by_an_aside(
             continue
         if aside.start() <= lo and hi <= aside.end():
             return False
-        return (
-            _ASIDE_DURATION.search(aside.group(1)) is not None
-            or _tail_predicate(hedges).match(aside.group(1)) is None
+        return _ASIDE_DURATION.search(aside.group(1)) is not None or _names_its_own_noun(
+            aside.group(1), hedges
         )
     return False
+
+
+def _names_its_own_noun(aside: str, hedges: tuple[re.Pattern[str], ...]) -> bool:
+    """Does the aside, its hedge words set aside, name a head noun of its own?"""
+    for rx in hedges:
+        aside = rx.sub(" ", aside)
+    return any(
+        _ASIDE_RESTATES.fullmatch(word.group()) is None
+        for word in _ASIDE_CAPITALISED.finditer(aside)
+    ) or any(
+        _ASIDE_RESTATES.fullmatch(head.group(1)) is None
+        for head in _ASIDE_MODIFIED_HEAD.finditer(aside)
+    )
 
 
 # ---------------------------------------------------------------- tail hedge (T170)

@@ -1426,7 +1426,7 @@ CASES: list[tuple] = [
     # pv 225434
     ('m1166:T197 an aside naming its own product experience does not hedge the bar', '5-10 years of experience in related field (Abbott Instruments Experience is an advantage)', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_range_years_minimum', 'required', 'unmet']]),
     # pv 311120
-    ('m1167:T197 an aside naming its own modifier does not hedge the bar', '3+ years of experience with HVAC maintenance (commercial preferred).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ('m1167:T197 WILL NOT a lone lowercase word names no noun of its own, so the aside hedges the bar', '3+ years of experience with HVAC maintenance (commercial preferred).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1168:T197 CONTROL a bare aside mid-sentence still hedges the bar', '5 years of experience (preferred) in accounting.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
 ]
 
