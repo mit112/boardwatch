@@ -42,6 +42,13 @@ const REASONS: Record<ReviewReason, { label: string; reason: string }> = {
     reason:
       "Held for review: the role gate would not positively call this title software. That is an abstain, not a veto, and not the claim that the role is off target.",
   },
+  role_gate_unmeasured: {
+    label: "role gate unmeasured",
+    // States what is MISSING on our side, never a reading of the title: with no role taxonomy the
+    // gate did not look, so this may not read as a veto or as "not software".
+    reason:
+      "Held for review: there is no role taxonomy, so the role gate could not read this title. That is not a veto. Run `boardwatch profile role-taxonomy` to give it one.",
+  },
   ineligible_verdict: {
     label: "ineligible verdict",
     reason:

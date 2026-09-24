@@ -1888,6 +1888,7 @@ def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_n
     from boardwatch.core.clock import utcnow
     from boardwatch.eligibility.read import RequirementFlags
     from boardwatch.pipeline.runner import _refresh_order
+    from boardwatch.rank.role_gate import role_verdict
     from boardwatch.store.delivery_queries import QueueRow, lane_decision
 
     def row(posting_id: int, **kw: object) -> QueueRow:
@@ -1896,9 +1897,11 @@ def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_n
             provider="greenhouse", location=None, locations=("Remote",), remote_policy=None,
             posted_days=None, first_seen=utcnow(), status="open", verdict="eligible",
             apply_url=None, delivered_run_id=1, tex_uri="file:///t.tex", pdf_uri=None,
-            target_flag=None,
+            target_flag=None, role="swe",
         )
-        return replace(base, **kw)  # type: ignore[arg-type]
+        built = replace(base, **kw)  # type: ignore[arg-type]
+        # The bundled software user's role verdict for the row's title (T184b).
+        return built if "role" in kw else replace(built, role=role_verdict(built.title)[0])
 
     no_rows = RequirementFlags(
         experience_unconfirmed=False, eligibility_unconfirmed=False, no_requirement_rows=True

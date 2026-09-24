@@ -44,6 +44,7 @@ from boardwatch.notify.apply_lane_drought import (
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import RUN_OK, save_profile
 from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 31, 4, 0, 0)
 
@@ -65,6 +66,8 @@ SILENT_JD = "Join our team. We build delightful things and we value curiosity."
 def _scratch_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
+    # A software user (T184b): the lane reads the role gate from the user's taxonomy.
+    write_bundled_role_taxonomy(tmp_path / "config")
 
 
 @pytest.fixture()
@@ -325,7 +328,7 @@ def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> 
             location=", ".join(locations), locations=locations,
             remote_policy="onsite", posted_days=2, first_seen=NOW, status="open",
             verdict=verdict, apply_url="https://boards.test/apply", delivered_run_id=7,
-            tex_uri="/out/t.typ", pdf_uri=None, target_flag=None,
+            tex_uri="/out/t.typ", pdf_uri=None, target_flag=None, role="swe",
         )
 
     injected = [_row(1, "ineligible", ("Boston, MA",))]

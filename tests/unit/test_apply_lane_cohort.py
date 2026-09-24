@@ -44,6 +44,7 @@ from boardwatch.store.delivery_queries import (
     review_job_ids,
 )
 from boardwatch.store.tables import jobs, posting_form_questions, runs
+from tests.conftest import write_bundled_role_taxonomy
 from tests.unit.test_apply_lane_drought import (
     APPLY_LOCATION,
     NOW,
@@ -61,6 +62,8 @@ CITIZENSHIP_QUESTION = "Are you a U.S. citizen?"
 def _scratch_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
+    # A software user (T184b): the lane reads the role gate from the user's taxonomy.
+    write_bundled_role_taxonomy(tmp_path / "config")
 
 
 @pytest.fixture()

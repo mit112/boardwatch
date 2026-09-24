@@ -12,13 +12,14 @@ from typing import Any
 
 import pytest
 import yaml
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
+from boardwatch.pipeline.runner import _lead_lanes
 from boardwatch.rank.role_gate import role_verdict, taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import (
     MISSING_ROLE_TAXONOMY,
@@ -29,8 +30,9 @@ from boardwatch.rank.role_taxonomy import (
     write_role_taxonomy,
 )
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.delivery_queries import delivered_unapplied, lane_decision, queue_detail
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings
 
 NOW = utcnow()
 runner = CliRunner()
@@ -105,13 +107,17 @@ def _seed(data_dir: Path, titles: list[str]) -> Engine:
     return engine
 
 
-def _rank(tmp_path: Path, titles: list[str], taxonomy: dict[str, Any] | None) -> RankedResults:
+def _rank(
+    tmp_path: Path, titles: list[str], taxonomy: dict[str, Any] | None,
+    *, include_non_swe: bool = False,
+) -> RankedResults:
     data_dir = tmp_path / "data"
     if taxonomy is not None:
         write_role_taxonomy(data_dir, taxonomy)
     engine = _seed(data_dir, titles)
     return rank_open_postings(
-        engine, Settings(data_dir=data_dir, config_dir=data_dir), limit=50, record_surfaced=False
+        engine, Settings(data_dir=data_dir, config_dir=data_dir), limit=50, record_surfaced=False,
+        include_non_swe=include_non_swe,
     )
 
 
@@ -180,6 +186,86 @@ def test_a_tech_user_ranks_exactly_as_before(tmp_path: Path) -> None:
     assert results.role_unmeasured == 0
     for posting in results.visible:
         assert (posting.role, posting.role_reason) == role_verdict(posting.title)
+
+
+# ----------------------------------- (T184b) the delivery lane reads the same verdict as the ranker
+
+
+def _lanes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, titles: list[str],
+    taxonomy: dict[str, Any] | None, *, include_non_swe: bool = False,
+) -> dict[str, tuple[str, str, str | None, str | None, str]]:
+    """Per visible title: `(top's role, the list row's role, the list's reason, the pane's reason,
+    the run's pre-tailor lane)` — every lane reader, against the ONE store `top` ranked."""
+    results = _rank(tmp_path, titles, taxonomy, include_non_swe=include_non_swe)
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(data_dir))
+    monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(data_dir))
+    engine = get_engine(data_dir)
+    with engine.begin() as conn:
+        # A tailored artifact on every posting makes each one a standing lead.
+        for version_id in conn.execute(select(posting_versions.c.id)).scalars():
+            conn.execute(insert(artifacts).values(
+                posting_version_id=version_id, kind="resume_tailored",
+                uri=f"/out/{version_id}.typ", generator="boardwatch.tailor",
+                media_type="text/x-tex", meta_json={}, created_at=NOW,
+            ))
+    run_lanes, _ = _lead_lanes(
+        engine, Settings(data_dir=data_dir, config_dir=data_dir), results.visible
+    )
+    top = {p.title: (p.role, run_lanes[p.posting_id][0]) for p in results.visible}
+    out: dict[str, tuple[str, str, str | None, str | None, str]] = {}
+    with engine.connect() as conn:
+        for row in delivered_unapplied(conn, skipped=set()):
+            if row.title not in top:
+                continue
+            detail = queue_detail(conn, row.posting_id)
+            assert detail is not None
+            out[row.title] = (
+                top[row.title][0], row.role, lane_decision(row).reason,
+                lane_decision(detail.row).reason, top[row.title][1],
+            )
+    return out
+
+
+def test_with_no_taxonomy_the_lane_holds_as_unmeasured_never_as_a_veto(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lanes = _lanes(tmp_path, monkeypatch, [DENIED_BY_SOFTWARE_GATE], taxonomy=None)
+    # The bundled software gate would VETO this title; with no taxonomy nothing decided it.
+    top_role, row_role, reason, pane_reason, run_lane = lanes[DENIED_BY_SOFTWARE_GATE]
+    assert (reason, pane_reason) == ("role_gate_unmeasured", "role_gate_unmeasured")
+    assert run_lane == "_review"
+    assert top_role == row_role == "unmeasured"
+
+
+def test_a_gathered_taxonomy_passes_its_own_field_through_the_lane_role_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lanes = _lanes(tmp_path, monkeypatch, [WIDGET_TITLE], taxonomy=WIDGET_FIELD)
+    top_role, row_role, reason, pane_reason, _run_lane = lanes[WIDGET_TITLE]
+    role_reasons = {"role_vetoed", "role_unconfirmed", "role_gate_unmeasured"}
+    assert reason not in role_reasons and pane_reason not in role_reasons
+    # Past the role gate it is held only because the catalog found no requirement in `BODY`.
+    assert (reason, pane_reason) == ("no_requirements_found", "no_requirements_found")
+    assert top_role == row_role == "swe"
+
+
+def test_a_tech_user_lane_still_vetoes_a_not_software_title(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # CONTROL: `bundled: true` routes exactly as the bundled `role_verdict` did.
+    titles = [DENIED_BY_SOFTWARE_GATE, "Water Spider", SOFTWARE_TITLE]
+    lanes = _lanes(
+        tmp_path, monkeypatch, titles, taxonomy=BUNDLED_SOFTWARE, include_non_swe=True
+    )
+    assert set(lanes) == set(titles)
+    for title, (top_role, row_role, reason, pane_reason, _run_lane) in lanes.items():
+        assert top_role == row_role == role_verdict(title)[0]
+        assert reason == pane_reason
+    assert lanes[DENIED_BY_SOFTWARE_GATE][2] == "role_vetoed"
+    assert lanes["Water Spider"][2] == "role_unconfirmed"
+    assert lanes[SOFTWARE_TITLE][2] == "no_requirements_found"
 
 
 # ------------------------------------------------ (4) onboarding writes it; re-reading hashes same

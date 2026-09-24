@@ -122,6 +122,8 @@ SECRET_BYTES = b"%PDF-1.7 SECRET-OUTSIDE-THE-ROOT"
 def _scratch_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
+    # A software user (T184b): the lane reads the role gate from the user's taxonomy.
+    write_bundled_role_taxonomy(tmp_path / "config")
 
 
 @pytest.fixture()
@@ -840,7 +842,6 @@ def test_off_target_carries_the_role_gates_own_matched_text_and_uncertain_is_not
         vetoed, _ = _deliver(conn, "nurse", title="Registered Nurse Practitioner")
         unsure, _ = _deliver(conn, "cpa", title="Tax CPA")
         software, _ = _deliver(conn, "swe", title="Software Engineer")
-    write_bundled_role_taxonomy(live.server.deps.ctx.settings.config_dir)
 
     payload = call(live, "/api/queue", bearer=live.token).json()
     rows = {row["posting_id"]: row for row in payload["rows"]}

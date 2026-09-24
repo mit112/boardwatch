@@ -63,6 +63,7 @@ from boardwatch.store.tables import (
     postings,
     runs,
 )
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 
@@ -82,6 +83,8 @@ REWRITTEN = "this posting body was rewritten in place by a later scan"
 def _scratch_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
+    # A software user (T184b): the lane reads the role gate from the user's taxonomy.
+    write_bundled_role_taxonomy(tmp_path / "config")
 
 
 @pytest.fixture()
