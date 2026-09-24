@@ -629,6 +629,7 @@ class PipelineSummary:
     gate_seniority_answered: int = 0
     gate_seniority_unclear: int = 0
     gate_seniority_unreadable: int = 0
+    gate_seniority_skipped: int = 0
     gate_readings_absent: int = 0
     # T113 — the standing-queue refresh. All-zero when `gate.refresh_budget` is 0; the funnel
     # reads the budget beside them, so "off" and "nothing was stale" do not read alike. `None`
@@ -1913,6 +1914,7 @@ def _reduce_gate_stage(
     summary.gate_seniority_answered = gate_result.seniority_answered
     summary.gate_seniority_unclear = gate_result.seniority_unclear
     summary.gate_seniority_unreadable = gate_result.seniority_unreadable
+    summary.gate_seniority_skipped = gate_result.seniority_skipped
     summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
     for note in gate_result.errors:
         console.print(f"  ! {note}", markup=False)
@@ -3963,6 +3965,7 @@ def _emit_funnel(
                 seniority_answered=summary.gate_seniority_answered,
                 seniority_unclear=summary.gate_seniority_unclear,
                 seniority_unreadable=summary.gate_seniority_unreadable,
+                seniority_skipped=summary.gate_seniority_skipped,
                 readings_absent=summary.gate_readings_absent,
                 refresh_budget=settings.gate.refresh_budget,
                 refresh_candidates=summary.gate_refresh_candidates,

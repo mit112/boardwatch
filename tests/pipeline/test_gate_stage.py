@@ -1328,6 +1328,32 @@ def test_every_lead_already_current_sends_nothing_and_that_is_not_a_coverage_fai
 
 
 @_needs_an_executable_fake
+def test_under_band_any_the_funnel_counts_the_unasked_seniority_and_the_split_sums_to_sent(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T223. `init` leaves the band at `any`, so the judge is never asked `seniority_fit` (T188)
+    and the stage counts every verdict `skipped`. The funnel rendered only answered / unclear /
+    unreadable, so its split read `0 · 0 · 0` beside `3 judged` — the zeros T107 exists to make
+    legible, unexplained. A judge that answers anyway is ignored, so it still counts as not asked."""
+    _ready(env)
+    for n in range(3):
+        _seed(env, slug=f"acme-band-any-{n}")
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_SENIORITY", "no")
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=13)
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_sent == 3 and summary.gate_judged == 3
+    gate = _funnel_gate(summary)
+    assert gate["seniority_skipped"] == 3
+    split = ("seniority_answered", "seniority_unclear", "seniority_unreadable", "seniority_skipped")
+    assert sum(int(gate[key]) for key in split) == gate["sent"] == 3  # type: ignore[call-overload]
+    body = summary.funnel.markdown_path.read_text(encoding="utf-8")
+    assert "3 not asked (band `any`)" in body, body
+
+
+@_needs_an_executable_fake
 def test_a_seniority_field_absent_from_every_answer_raises_a_field_coverage_alarm(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
