@@ -29,7 +29,7 @@ from datetime import timedelta
 from itertools import zip_longest
 from pathlib import Path
 from threading import Thread
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import TYPE_CHECKING
 
 import httpx
@@ -47,6 +47,7 @@ from boardwatch.delivery.api import resolve_owner_name
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     DEFAULT_QUEUE_ROOT,
+    QueueLockHeldError,
     refresh_queue,
     standing_queue_rows,
 )
@@ -4070,6 +4071,16 @@ def _interleave(first: list[str], second: list[str]) -> list[str]:
     return merged
 
 
+#: How many times the run asks for the queue lock before recording the sync as skipped (F5). The web
+#: server holds that lock for every skip, apply and report while it reconciles, and its store reads
+#: alone measured 7.2 s on the live store, so one refusal is routine while the owner triages. Four
+#: asks ten seconds apart wait out a few of those holds — about thirty seconds — and a lock still
+#: held after that is recorded rather than waited on further, since the run is in its `finally`.
+QUEUE_LOCK_ATTEMPTS = 4
+#: Seconds between those asks. Read by name at call time so a test can pin it to zero.
+QUEUE_LOCK_RETRY_SECONDS = 10.0
+
+
 def _sync_queue(
     engine: Engine,
     settings: Settings,
@@ -4088,9 +4099,11 @@ def _sync_queue(
     lead sitting in the queue.
 
     Neither entry point raises on contention: both report `contended=True`, so a scheduled run
-    colliding with a serving web app is a normal outcome that changed nothing, not an error. Both
-    also report per-lead failures inside their report rather than raising; those failures are
-    returned so the caller can record them durably, and they are still never re-raised here.
+    colliding with a serving web app is a normal outcome. This asks again, `QUEUE_LOCK_ATTEMPTS`
+    times, and only a lock held across every ask raises `QueueLockHeldError` — a skipped sync is
+    recorded by the caller, not silent (F5). Both entry points also report per-lead failures
+    inside their report rather than raising; those failures are returned so the caller can record
+    them durably, and they are still never re-raised here.
 
     **ONE STRING PER FAILURE, NOT A COUNT.** `LeadFailure` and `FolderFailure` each already carry
     a `detail`, and this function used to discard both and return `len()`. So the run line and
@@ -4121,13 +4134,26 @@ def _sync_queue(
         # OWN connection, closed before the queue pass: a connection that has read holds its
         # snapshot, and the plan must read one taken after the queue lock is held (T135).
         owner_name = resolve_owner_name(conn, settings.config_dir)
-    drained, synced = refresh_queue(engine, root=root, owner_name=owner_name)
-    contended = " (contended, nothing changed)" if synced.contended or drained.contended else ""
+    # Contention used to change only the console line below, so a run that lost the lock to the
+    # web server delivered leads with no folder and said so nowhere else (F5). Asked a bounded
+    # number of times; still held after that, it RAISES the queue's own typed error, which the
+    # call site's handler records in `summary.errors` and `runs.errors_json` above
+    # `_emit_morning` like every other queue failure — and, like them, never fails the run.
+    for attempt in range(1, QUEUE_LOCK_ATTEMPTS + 1):
+        drained, synced = refresh_queue(engine, root=root, owner_name=owner_name)
+        if not (synced.contended or drained.contended):
+            break
+        if attempt == QUEUE_LOCK_ATTEMPTS:
+            raise QueueLockHeldError(
+                f"the queue lock under {root} was still held after {QUEUE_LOCK_ATTEMPTS} "
+                f"attempts {QUEUE_LOCK_RETRY_SECONDS:g}s apart; no folder was written or drained"
+            )
+        sleep(QUEUE_LOCK_RETRY_SECONDS)
     console.print(
         f"  queue → {root}: {synced.created} new, {synced.updated} updated, "
         f"{synced.unchanged} unchanged, {synced.moved + drained.moved} moved, "
         f"{synced.retired} retired, {synced.repaired} repaired, "
-        f"{synced.failed + drained.failed} failed{contended}",
+        f"{synced.failed + drained.failed} failed",
         markup=False,
     )
     # Both halves of the partition: a lead `sync_queue` could not write, and a folder

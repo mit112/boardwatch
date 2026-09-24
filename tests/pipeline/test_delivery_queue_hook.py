@@ -335,34 +335,89 @@ def test_a_raising_sync_never_fails_the_run(env: Path, tmp_path: Path, queue_roo
     assert [note for note in _errors_json(env, summary.run_id) if "delivery queue not synced" in note]
 
 
-def test_contention_is_not_a_failure(env: Path, tmp_path: Path, queue_root: Path) -> None:
-    """A scheduled run colliding with a serving web app changed nothing and is not an error.
+def test_a_sync_that_stays_contended_is_recorded_and_never_fails_the_run(
+    env: Path, tmp_path: Path, queue_root: Path
+) -> None:
+    """A run whose queue refresh loses the lock on every attempt is a RECORDED outcome (F5).
+
+    It used to be silent: `_sync_queue` changed its console line to `(contended, nothing changed)`
+    and returned no failure, so the run's new leads got no folder until the next run or server
+    start and nothing reached `summary.errors`, `runs.errors_json` or the digest. Still NOT a run
+    failure — the queue holds copies — but it is a counted note, and the run asked more than once.
 
     The lock is really held rather than the report stubbed, and the reclaim window is pinned to
-    zero so this measures the refusal instead of the platform's Windows allowance.
+    zero so this measures the refusal instead of the platform's Windows allowance. The retry wait
+    is pinned to zero so the bounded retry costs no wall time here.
     """
     _ready(env, 1)
     queue_root.mkdir(parents=True, exist_ok=True)
+    calls: list[bool] = []
+    real = runner_module.refresh_queue
+
+    def counting(
+        engine: Engine, *, root: Path, owner_name: str
+    ) -> tuple[ReconcileReport, SyncReport]:
+        drained, synced = real(engine, root=root, owner_name=owner_name)
+        calls.append(synced.contended)
+        return drained, synced
+
     with pytest.MonkeyPatch.context() as patched:
         patched.setattr(queue_module, "RECLAIM_WINDOW_SECONDS", 0.0)
+        patched.setattr(runner_module, "QUEUE_LOCK_RETRY_SECONDS", 0.0)
+        patched.setattr(runner_module, "refresh_queue", counting)
         holder = FileLock(str(queue_root / LOCK_FILE))
         holder.acquire(blocking=False)
         try:
-            summary, output = _run(env, tmp_path / "apps")
+            summary, _output = _run(env, tmp_path / "apps")
         finally:
             holder.release()
 
     assert summary.fatal is None, summary.fatal
     assert _status(env, summary.run_id) == "ok"
-    # B8's volume reading names "the blind-apply queue" and escalates on a thin run (D-529); it is
-    # a program-gate reading pinned by its own test, not a queue failure.
-    assert [
-        note for note in summary.errors
-        if "queue" in note and not note.startswith("apply lane:")
-    ] == []
-    assert "contended" in _queue_line(output)
-    assert "0 failed" in _queue_line(output)
+    assert calls == [True] * runner_module.QUEUE_LOCK_ATTEMPTS, calls
+    assert runner_module.QUEUE_LOCK_ATTEMPTS > 1, "a single ask is not a bounded retry"
+    notes = [note for note in summary.errors if note.startswith("delivery queue not synced")]
+    assert len(notes) == 1 and "held" in notes[0], summary.errors
+    assert notes[0] in _errors_json(env, summary.run_id)
     assert _folders(queue_root) == [], "a contended sync wrote anyway"
+
+
+def test_a_sync_retries_a_contended_lock_and_then_fills_the_queue(
+    env: Path, tmp_path: Path, queue_root: Path
+) -> None:
+    """The bounded retry, from the other side: a lock the web server releases between two asks is
+    waited out, the run's leads get their folders, and nothing is recorded as an error (F5)."""
+    posting_ids = _ready(env, 1)
+    queue_root.mkdir(parents=True, exist_ok=True)
+    holder = FileLock(str(queue_root / LOCK_FILE))
+    calls: list[bool] = []
+    real = runner_module.refresh_queue
+
+    def release_after_first(
+        engine: Engine, *, root: Path, owner_name: str
+    ) -> tuple[ReconcileReport, SyncReport]:
+        drained, synced = real(engine, root=root, owner_name=owner_name)
+        calls.append(synced.contended)
+        if holder.is_locked:
+            holder.release()
+        return drained, synced
+
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(queue_module, "RECLAIM_WINDOW_SECONDS", 0.0)
+        patched.setattr(runner_module, "QUEUE_LOCK_RETRY_SECONDS", 0.0)
+        patched.setattr(runner_module, "refresh_queue", release_after_first)
+        holder.acquire(blocking=False)
+        try:
+            summary, output = _run(env, tmp_path / "apps")
+        finally:
+            if holder.is_locked:
+                holder.release()
+
+    assert summary.fatal is None, summary.fatal
+    assert calls == [True, False], calls
+    assert [note for note in summary.errors if "delivery queue" in note] == [], summary.errors
+    assert "contended" not in _queue_line(output)
+    assert len(_folders(queue_root)) == len(posting_ids)
 
 
 def test_per_lead_queue_failures_are_recorded_and_never_propagate(
