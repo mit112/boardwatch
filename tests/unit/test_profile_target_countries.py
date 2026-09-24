@@ -98,7 +98,7 @@ def test_profile_row_hash_tracks_target_countries() -> None:
     )
 
 
-_INIT = "3\nacme\nBackend engineer: Python.\n\n\n\nn\nn\n"
+_INIT = "3\nacme\nBackend engineer: Python.\n\n\n\nn\nn\nsoftware\n"  # T184: the field prompt is last
 
 
 def _edit(countries: str) -> str:
@@ -143,3 +143,15 @@ def test_profile_edit_reprompts_on_an_unknown_code(env: Path) -> None:
     assert "'CANADA' is not an ISO-3166 alpha-3 country code" in result.output
     with get_engine(env).connect() as conn:
         assert profile_view_from_row(get_profile(conn)).target_countries == ("CAN",)
+
+
+def test_init_on_an_existing_install_keeps_target_countries(env: Path) -> None:
+    """Re-running `init` re-persists the profile from its own prompts, which do not ask for the
+    target countries. Under B3 an undeclared target makes both location gates inert, so a
+    silent reset to `[]` would lift every non-US drop and hold on the next read; the stored
+    value survives instead."""
+    assert _invoke(env, ["init"], _INIT).exit_code == 0
+    assert _invoke(env, ["profile", "edit"], _edit("usa")).exit_code == 0
+    assert _invoke(env, ["init"], _INIT).exit_code == 0
+    with get_engine(env).connect() as conn:
+        assert profile_view_from_row(get_profile(conn)).target_countries == ("USA",)
