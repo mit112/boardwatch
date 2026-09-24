@@ -2022,6 +2022,47 @@ def test_TWO_folders_converging_on_one_job_are_consolidated_not_refused_forever(
     assert _folders(root) == folders
 
 
+def test_consolidating_two_folders_keeps_the_owners_files_from_BOTH(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F2. The consolidation above retires a whole folder, and a queue folder is partly the
+    owner's (T121). The keeper is arbitrary, so the retired one is as likely as not the one the
+    owner worked in: its own files move into the keeper, a name the keeper already holds is kept
+    beside it under a suffix, and boardwatch's own files in it are not carried at all."""
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one")
+        second, second_job = _deliver(conn, apps, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    before = _folders(root)
+    for name in before:
+        (root / name / "cover-letter.tex").write_text(f"mine, in {name}\n", encoding="utf-8")
+        (root / name / f"notes-{name}.txt").write_text("only here\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == first).values(job_id=second_job))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.retired, report.failures) == (1, ())
+    (kept,) = _folders(root)
+    folder = root / kept
+    letters = sorted(
+        path.read_text(encoding="utf-8") for path in folder.glob("cover-letter*.tex")
+    )
+    assert letters == sorted(f"mine, in {name}\n" for name in before)
+    for name in before:
+        assert (folder / f"notes-{name}.txt").read_text(encoding="utf-8") == "only here\n"
+    # Nothing boardwatch wrote in the retired folder came along: one résumé, one details.json.
+    assert len(list(folder.glob("*.pdf"))) == 1
+
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.retired, again.moved, again.updated, again.failures) == (0, 0, 0, ())
+    assert _snapshot(root) == snapshot
+
+
 def test_a_name_still_taken_after_disambiguation_is_REPORTED_not_returned_twice(
     tmp_path: Path,
 ) -> None:

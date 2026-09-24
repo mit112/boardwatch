@@ -955,6 +955,26 @@ def _carry_over_unauthored(superseded: Path, target: Path) -> None:
         os.replace(path, destination)
 
 
+def _merge_unauthored(retired: Path, keeper: Path) -> None:
+    """Move everything in `retired` that boardwatch did not write into `keeper` (T189).
+
+    "Did not write" is `_carry_over_unauthored`'s rule, read from `retired`'s own `details.json`.
+    Unlike that function, a name `keeper` already holds is NOT skipped: there the older copy is
+    ours and the new bytes win, but here both are the owner's, so the incoming one is kept beside
+    it as `<stem>-2<suffix>` (the first free number).
+    """
+    authored = _authored_names(retired)
+    for path in sorted(retired.iterdir()):
+        if path.name in authored:
+            continue
+        destination = keeper / path.name
+        number = 2
+        while os.path.lexists(destination):
+            destination = keeper / f"{path.stem}-{number}{path.suffix}"
+            number += 1
+        os.replace(path, destination)
+
+
 def _authored_names(folder: Path) -> frozenset[str]:
     """The files `_write_lead` put in `folder`, according to that folder's own `details.json`."""
     names = {DETAILS_FILE}
@@ -1210,8 +1230,13 @@ def _consolidate_duplicates(
     There is no oscillation risk to guard against here: after this pass the job has ONE folder,
     so a second run finds no duplicate at all.
 
+    **What is deleted is only what boardwatch wrote.** A queue folder is partly the owner's (T121),
+    and the arbitrary keeper is as likely as not the folder they did NOT work in, so everything
+    else in the retired folder is moved into the keeper first (`_merge_unauthored`, T189).
+
     Deleting is per-folder isolated: one unremovable directory must not cost the other leads, so
-    it becomes a `LeadFailure` like any other and the survivor is still indexed.
+    it becomes a `LeadFailure` like any other and the survivor is still indexed. A merge that
+    fails part-way fails the same way, BEFORE the delete, so nothing unmoved is removed.
     """
     retired = 0
     failures: list[LeadFailure] = []
@@ -1222,6 +1247,7 @@ def _consolidate_duplicates(
             if entry.path == keeper.path:
                 continue
             try:
+                _merge_unauthored(entry.path, keeper.path)
                 shutil.rmtree(entry.path)
             except Exception as exc:  # one undeletable folder must never cost the rest
                 failures.append(LeadFailure(posting_id=entry.posting_id, detail=_detail(exc)))
