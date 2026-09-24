@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, insert
 
+from boardwatch.eligibility.facts import Facts
 from boardwatch.store.db import FAST_SCHEMA_ENV, ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
@@ -72,6 +73,17 @@ def write_bundled_role_taxonomy(config_dir: Path) -> None:
     from boardwatch.rank.role_taxonomy import write_role_taxonomy
 
     write_role_taxonomy(config_dir, {"version": 1, "field": "software", "bundled": True})
+
+
+def as_engine_reads(facts: Facts, config_dir: Path) -> Facts:
+    """`facts` as stored on the profile row, read back the way the engine, the identity and the
+    judge read them (T208): `career_field` is `config_dir`'s role taxonomy field, through the
+    production seam. A fixture that writes an evaluation or a gate row under the stored profile's
+    identity derives its facts here, so it cannot drift from the read it is meant to match."""
+    from boardwatch.eligibility.facts import facts_payload
+    from boardwatch.eligibility.preflight import engine_facts
+
+    return engine_facts(facts_payload(facts), config_dir)
 
 
 # ---------------------------------------------------------------------------------------

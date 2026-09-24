@@ -1555,7 +1555,7 @@ def _lead_lanes(
         # tailors for can never disagree with the one `sync_queue` files the folder under. Keyed
         # on the judge's inputs rather than the identity (T161): moving only the queue's read
         # would split the two lanes on every lead after a rules-only re-key.
-        facts, target_band = current_judge_inputs(conn)
+        facts, target_band = current_judge_inputs(conn, settings)
         gate_verdicts = current_gate_verdicts(
             conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model,
             effort=gate_effort_key(settings.gate.effort), target_band=target_band,

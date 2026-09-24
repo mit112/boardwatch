@@ -87,7 +87,7 @@ from boardwatch.store.tables import (
     runs,
 )
 from boardwatch.tailor.load import scaffold_template
-from tests.conftest import write_bundled_role_taxonomy
+from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 
@@ -385,7 +385,7 @@ def _judge(
             select(posting_versions.c.id).where(posting_versions.c.posting_id == posting_id)
         ).scalar_one()
     )
-    used_facts = Facts() if facts is None else facts
+    used_facts = as_engine_reads(Facts() if facts is None else facts, load_settings().config_dir)
     used_policy = Policy() if policy is None else policy
     result = evaluate(body, used_facts, used_policy, catalog)
     write_evaluation(
@@ -434,7 +434,7 @@ def _gate(
         conn,
         posting_version_id=version_id,
         jd_text=body,
-        facts=Facts() if facts is None else facts,
+        facts=as_engine_reads(Facts() if facts is None else facts, load_settings().config_dir),
         policy=Policy() if policy is None else policy,
         catalog=catalog,
         verdict=OracleVerdict(

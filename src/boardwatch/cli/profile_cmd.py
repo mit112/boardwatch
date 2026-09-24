@@ -18,7 +18,6 @@ from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli._profile_row import facts_of, policy_of
 from boardwatch.cli.context import build_context
 from boardwatch.cli.eligibility_cmd import (
-    set_career_field,
     set_fact,
     set_field_of_study,
     set_policy,
@@ -249,24 +248,13 @@ def edit(ctx: typer.Context) -> None:
         target_countries=target_countries,
     )
 
-    # The same four eligibility prompts as init, so the feature is reachable on an existing
+    # The same three eligibility prompts as init, so the feature is reachable on an existing
     # install. Seeded from the stored facts and policy, so a skipped answer keeps the current
     # value rather than clearing it. persist_profile never touches the eligibility columns.
     catalog = load_rules(app_ctx.settings.config_dir)
     facts = facts_of(row.eligibility_facts_json)
     policy = policy_of(row.eligibility_policy_json)
     if typer.confirm("Update eligibility checks?", default=False):
-        if catalog.career_fields:
-            field_hint = ", ".join(sorted(catalog.career_fields))
-            while True:
-                answer = typer.prompt(f"Your career field [{field_hint}]", default="")
-                if not answer.strip():
-                    break
-                try:
-                    facts = set_career_field(facts, catalog, answer.strip())
-                    break
-                except typer.BadParameter as exc:
-                    console.print(exc.message)
         if catalog.fields_of_study:
             study_hint = ", ".join(sorted(s.id for s in catalog.fields_of_study))
             while True:

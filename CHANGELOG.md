@@ -962,6 +962,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The role taxonomy's field is the one source of the user's career field (2026-09-24, T208).** The
+  engine's `Facts.career_field` is resolved at one seam from the loaded `role-taxonomy.yaml`, never from
+  the stored profile fact; no taxonomy ⇒ the field-tier families abstain with
+  `missing_profile_field:career_field` as before, and a field outside the catalog is carried and abstains
+  rather than clearing or crashing. The `init`/`profile edit` prompts for it are gone and
+  `eligibility facts set career_field` refuses with the taxonomy command; `engine_version` is unchanged.
+
 - **The judge's seniority question is asked against the profile's band; the Indeed country and the
   GitHub lists come from tenant data (2026-09-24, T188).** The judge asked whether a role was
   entry-level for every user; it now asks against the profile's target band, skips the question and

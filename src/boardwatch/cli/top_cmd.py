@@ -30,9 +30,9 @@ from boardwatch.core.posting_identity import normalized_locations
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
-from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts
+from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.final_gate import gate_effort_key
-from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.eligibility.preflight import engine_facts, run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
@@ -579,7 +579,7 @@ def rank_open_postings(
         # rules-only re-key, for good. Read-only, fail-open by construction: it tiers a persisted
         # `eligible` and hides a persisted `ineligible` (below); a missing or `uncertain` row
         # changes nothing.
-        facts = parse_facts(profile_row.eligibility_facts_json)
+        facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
         gate_verdicts = current_gate_verdicts(
             conn,
             [cv.posting_version_id for cv in versions.values()],

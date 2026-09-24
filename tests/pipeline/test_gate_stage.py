@@ -244,7 +244,7 @@ def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
     settings = load_settings(data_dir=data_dir)
     engine = get_engine(data_dir)
     with engine.connect() as conn:
-        facts, target_band = current_judge_inputs(conn)
+        facts, target_band = current_judge_inputs(conn, settings)
         assert facts is not None
         versions = current_posting_versions(conn, [posting_id])
         verdicts = current_gate_verdicts(
@@ -520,9 +520,10 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from boardwatch.eligibility.catalog import load_rules
-    from boardwatch.eligibility.facts import parse_facts, parse_policy
+    from boardwatch.eligibility.facts import parse_policy
     from boardwatch.eligibility.final_gate import gate_effort_key, record_gate_verdict
     from boardwatch.eligibility.oracle import OracleVerdict
+    from boardwatch.eligibility.preflight import engine_facts
     from boardwatch.store.queries import current_posting_versions, get_profile
 
     _ready(env)
@@ -536,7 +537,7 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
         versions = current_posting_versions(conn, [posting_id])
         profile_row = get_profile(conn)
     assert profile_row is not None
-    facts = parse_facts(profile_row.eligibility_facts_json)
+    facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
     policy = parse_policy(profile_row.eligibility_policy_json)
     current = versions[posting_id]
     # Plant a CURRENT gate row for this exact identity, as though a prior run already judged
@@ -876,9 +877,10 @@ def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
     """
     from boardwatch.eligibility import final_gate as final_gate_mod
     from boardwatch.eligibility.catalog import load_rules
-    from boardwatch.eligibility.facts import parse_facts, parse_policy
+    from boardwatch.eligibility.facts import parse_policy
     from boardwatch.eligibility.final_gate import record_gate_verdict
     from boardwatch.eligibility.oracle import OracleVerdict
+    from boardwatch.eligibility.preflight import engine_facts
     from boardwatch.store.queries import current_posting_versions, get_profile
 
     _ready(env)
@@ -892,7 +894,7 @@ def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
         versions = current_posting_versions(conn, [posting_id])
         profile_row = get_profile(conn)
     assert profile_row is not None
-    facts = parse_facts(profile_row.eligibility_facts_json)
+    facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
     policy = parse_policy(profile_row.eligibility_policy_json)
     current = versions[posting_id]
 
@@ -964,9 +966,10 @@ def _plant_current_gate_row(
     the ledger is append-only. A named judge also records the configured effort, as the daily
     stage does (T155); the legacy shape records none."""
     from boardwatch.eligibility.catalog import load_rules
-    from boardwatch.eligibility.facts import parse_facts, parse_policy
+    from boardwatch.eligibility.facts import parse_policy
     from boardwatch.eligibility.final_gate import gate_effort_key, record_gate_verdict
     from boardwatch.eligibility.oracle import OracleVerdict
+    from boardwatch.eligibility.preflight import engine_facts
     from boardwatch.store.queries import current_posting_versions, get_profile
 
     settings = load_settings(data_dir=data_dir)
@@ -981,7 +984,7 @@ def _plant_current_gate_row(
             conn,
             posting_version_id=current.posting_version_id,
             jd_text=current.body_text,
-            facts=parse_facts(profile_row.eligibility_facts_json),
+            facts=engine_facts(profile_row.eligibility_facts_json, settings.config_dir),
             policy=parse_policy(profile_row.eligibility_policy_json),
             catalog=catalog,
             verdict=OracleVerdict(

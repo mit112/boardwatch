@@ -107,8 +107,9 @@ class Facts(BaseModel):
     internship_preference: str | None = None
     # P2 item 4. The profile's career field, gating field-tier families in the engine (never a
     # resolver input, so it is hashed EXPLICITLY in build_identity, not via declared_fields).
-    # Validated against catalog.career_fields at the engine (authoritative) and the CLI
-    # (friendly), never in this type — the vocabulary belongs to the catalog (D-P2-4).
+    # Its SOURCE is the role taxonomy's `field` (`preflight.engine_facts`, D-586/T208), never a
+    # stored value. Validated against catalog.career_fields at the engine, never in this type —
+    # the vocabulary belongs to the catalog (D-P2-4).
     # P10. Student status and graduating cohort. Structured because the two bits are
     # orthogonal; see EducationTimingFact. Absent means "not declared" and the resolver
     # abstains, exactly as every other profile-tier fact does.

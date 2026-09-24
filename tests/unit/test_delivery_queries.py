@@ -63,7 +63,7 @@ from boardwatch.store.tables import (
     postings,
     runs,
 )
-from tests.conftest import write_bundled_role_taxonomy
+from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 
@@ -272,9 +272,10 @@ def _write_evaluation(conn: Connection, posting_id: int, version_id: int, body: 
     hand-wrote the same constant.
     """
     catalog = load_rules(load_settings().config_dir)
-    result = evaluate(body, Facts(), Policy(), catalog)
+    facts = as_engine_reads(Facts(), load_settings().config_dir)
+    result = evaluate(body, facts, Policy(), catalog)
     identity = build_identity(
-        posting_version_id=version_id, facts=Facts(), policy=Policy(), catalog=catalog,
+        posting_version_id=version_id, facts=facts, policy=Policy(), catalog=catalog,
         declared_fields=declared_fields(),
     )
     write_evaluation(
@@ -309,7 +310,7 @@ def _write_gate_verdict(
         conn,
         posting_version_id=version_id,
         jd_text=GATE_JD,
-        facts=Facts(),
+        facts=as_engine_reads(Facts(), settings.config_dir),
         policy=Policy(),
         catalog=catalog,
         verdict=OracleVerdict(

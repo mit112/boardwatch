@@ -29,9 +29,8 @@ from boardwatch.eligibility.engine import (
     engine_version,
     not_applicable_field_families,
 )
-from boardwatch.eligibility.facts import parse_facts
 from boardwatch.eligibility.final_gate import gate_engine_version
-from boardwatch.eligibility.preflight import current_identity
+from boardwatch.eligibility.preflight import current_identity, engine_facts
 from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.run import ProjectionLeadOutcome
@@ -344,7 +343,7 @@ def collect_run_funnel(
             # profile row exists — so the profile is guaranteed here.
             assert profile_row is not None
             na = not_applicable_field_families(
-                parse_facts(profile_row.eligibility_facts_json), catalog
+                engine_facts(profile_row.eligibility_facts_json, settings.config_dir), catalog
             )
             abstain = build_abstain_report(catalog, counts, not_applicable_families=na)
 

@@ -16,12 +16,14 @@ stdout so the human paths that never take `--json` read exactly as before.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import NoReturn
 
 import typer
 from rich.console import Console
 
 from boardwatch.eligibility.facts import Facts, Policy, ProfileRowInvalid, parse_facts, parse_policy
+from boardwatch.eligibility.preflight import engine_facts
 
 console = Console()
 
@@ -39,6 +41,15 @@ def refuse_unusable_profile_row(exc: ProfileRowInvalid, out: Console | None = No
 def facts_of(raw: object) -> Facts:
     try:
         return parse_facts(raw)
+    except ProfileRowInvalid as exc:
+        refuse_unusable_profile_row(exc)
+
+
+def engine_facts_of(raw: object, config_dir: Path) -> Facts:
+    """`facts_of` for a read that feeds the engine or the judge: `career_field` from the role
+    taxonomy (`preflight.engine_facts`). A path that writes the column back uses `facts_of`."""
+    try:
+        return engine_facts(raw, config_dir)
     except ProfileRowInvalid as exc:
         refuse_unusable_profile_row(exc)
 

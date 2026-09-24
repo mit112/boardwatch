@@ -1186,7 +1186,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # ONCE here, only when there is a profile to evaluate against it, and reused below by both
     # the identity read and the gate read (T171). With no profile it stays None and neither read
     # loads `rules.yaml`, so a malformed override cannot fail a list that needs no catalog.
-    facts, target_band = current_judge_inputs(conn)
+    facts, target_band = current_judge_inputs(conn, settings)
     catalog = load_rules(settings.config_dir) if facts is not None else None
     profile_hash, rules_hash = _identity(conn, settings, catalog)
     version_ids = [version.posting_version_id for version in versions.values()]
@@ -1671,7 +1671,7 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # cannot report two different gate readings. Without it here the detail served `None` for a
     # lead the list served `uncertain` — the same field, the same lead, two answers. `catalog` is
     # the one loaded above, above the identity read.
-    facts, target_band = current_judge_inputs(conn)
+    facts, target_band = current_judge_inputs(conn, settings)
     gate = current_gate_verdicts(
         conn, version_ids, facts, catalog, model=settings.gate.model,
         effort=gate_effort_key(settings.gate.effort), target_band=target_band,

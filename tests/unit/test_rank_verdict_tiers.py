@@ -30,7 +30,7 @@ from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import current_posting_versions, save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
-from tests.conftest import write_bundled_role_taxonomy
+from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = utcnow()
 
@@ -99,7 +99,8 @@ def _mark_gate_eligible(engine: Engine, tmp_path: Path, *, posting_id: int) -> N
     with engine.begin() as conn:
         final_gate.record_gate_verdict(
             conn, posting_version_id=pv_id, jd_text=SAFE_BODY,
-            facts=Facts(), policy=Policy(families={}), catalog=catalog,
+            facts=as_engine_reads(Facts(), _settings(tmp_path).config_dir),
+            policy=Policy(families={}), catalog=catalog,
             verdict=OracleVerdict(
                 label=str(posting_id), decision="eligible", reason=None, evidence="",
                 confidence="high",

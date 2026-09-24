@@ -22,7 +22,12 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from boardwatch.cli._profile_row import facts_of, policy_of, refuse_unusable_profile_row
+from boardwatch.cli._profile_row import (
+    engine_facts_of,
+    facts_of,
+    policy_of,
+    refuse_unusable_profile_row,
+)
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
@@ -50,6 +55,7 @@ from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
 from boardwatch.llm.factory import build_client
 from boardwatch.llm.payload import preview_text
 from boardwatch.pipeline.runner import DEFAULT_TOP_N
+from boardwatch.rank.role_taxonomy import ROLE_TAXONOMY_FILE
 from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.queries import (
@@ -175,23 +181,11 @@ def set_fact(facts: Facts, catalog: RulesCatalog, dotted: str, value: str) -> Fa
     return Facts.model_validate(data)
 
 
-def set_career_field(facts: Facts, catalog: RulesCatalog, value: str) -> Facts:
-    """Set the profile's career_field, validated against the catalog's closed vocabulary.
-
-    career_field is a non-family scalar, so set_fact (which resolves a family.fact) cannot
-    reach it. Pure and CLI-free apart from the BadParameter it raises for a friendly message.
-    """
-    if value not in catalog.career_fields:
-        valid = ", ".join(sorted(catalog.career_fields)) or "(none declared)"
-        raise typer.BadParameter(f"unknown career_field {value!r}. Valid: {valid}")
-    return facts.model_copy(update={"career_field": value})
-
-
 def set_field_of_study(facts: Facts, catalog: RulesCatalog, value: str) -> Facts:
     """Set the profile's field_of_study, validated against the catalog's closed vocabulary.
 
-    A non-family scalar for the same reason career_field is one: set_fact resolves a
-    `family.fact`, and the degree family's fact is `highest_degree`. Pure and CLI-free apart
+    A non-family scalar: set_fact resolves a `family.fact`, and the degree family's fact is
+    `highest_degree`. Pure and CLI-free apart
     from the BadParameter it raises for a friendly message.
     """
     declared = sorted(spec.id for spec in catalog.fields_of_study)
@@ -263,7 +257,7 @@ def facts_root(ctx: typer.Context) -> None:
         row = get_profile(conn)
     if row is None:
         _no_profile()
-    facts = facts_of(row.eligibility_facts_json)
+    facts = engine_facts_of(row.eligibility_facts_json, app_ctx.settings.config_dir)
     for family in catalog.families:
         if family.answer_type == "structured":
             sub = getattr(facts, family.fact)
@@ -273,7 +267,9 @@ def facts_root(ctx: typer.Context) -> None:
                 console.print(f"  {field.name}: {_render_value(value)}")
         else:
             console.print(f"{family.label}: {_render_value(getattr(facts, family.fact))}")
-    console.print(f"Career field: {_render_value(facts.career_field)}")
+    console.print(
+        f"Career field: {_render_value(facts.career_field)} (from {ROLE_TAXONOMY_FILE})"
+    )
     console.print(f"Field of study: {_render_value(facts.field_of_study)}")
 
 
@@ -290,7 +286,10 @@ def facts_set(ctx: typer.Context, fact: str, value: str) -> None:
         policy = policy_of(row.eligibility_policy_json)
         try:
             if fact == "career_field":
-                new_facts = set_career_field(facts, catalog, value)
+                raise typer.BadParameter(
+                    f"career_field is the field your {ROLE_TAXONOMY_FILE} declares, not a stored "
+                    "fact; change it with `boardwatch profile role-taxonomy`"
+                )
             elif fact == "field_of_study":
                 new_facts = set_field_of_study(facts, catalog, value)
             else:
@@ -382,7 +381,7 @@ def extract_cmd(
         console.print("no open postings to extract")
         return
 
-    facts = facts_of(profile_row.eligibility_facts_json)
+    facts = engine_facts_of(profile_row.eligibility_facts_json, settings.config_dir)
     policy = policy_of(profile_row.eligibility_policy_json)
     catalog = load_rules(settings.config_dir)
     cache = ResponseCache(settings.data_dir / "llm-cache")
@@ -544,7 +543,10 @@ def abstain_cmd(ctx: typer.Context) -> None:
         counts = count_requirement_dispositions(conn, eval_ids)
         profile_row = get_profile(conn)
     na = (
-        not_applicable_field_families(facts_of(profile_row.eligibility_facts_json), catalog)
+        not_applicable_field_families(
+            engine_facts_of(profile_row.eligibility_facts_json, app_ctx.settings.config_dir),
+            catalog,
+        )
         if profile_row is not None
         else frozenset()
     )
@@ -771,7 +773,7 @@ def gate_request_cmd(
         profile_row = get_profile(conn)
     if profile_row is None:
         _no_profile()
-    facts = facts_of(profile_row.eligibility_facts_json)
+    facts = engine_facts_of(profile_row.eligibility_facts_json, settings.config_dir)
     try:
         # `record_surfaced=False`: the request judges the shortlist and hands it straight back,
         # so it must not advance the queue. Consuming here suppressed every posting the gate had
@@ -833,7 +835,7 @@ def gate_apply_cmd(
         profile_row = get_profile(conn)
     if profile_row is None:
         _no_profile()
-    facts = facts_of(profile_row.eligibility_facts_json)
+    facts = engine_facts_of(profile_row.eligibility_facts_json, settings.config_dir)
     policy = policy_of(profile_row.eligibility_policy_json)
     raw_verdicts: list[dict[str, Any]] = json.loads(verdicts_path.read_text(encoding="utf-8"))
     truncated = len(raw_verdicts) - top

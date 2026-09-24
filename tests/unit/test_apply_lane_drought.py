@@ -44,7 +44,7 @@ from boardwatch.notify.apply_lane_drought import (
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import RUN_OK, save_profile
 from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
-from tests.conftest import write_bundled_role_taxonomy
+from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 31, 4, 0, 0)
 
@@ -139,14 +139,15 @@ def _lead(
         taxonomy_version="v1", resume_max_pages=1, target_countries=["USA"],
     )
     catalog = load_rules(load_settings().config_dir)
+    facts = as_engine_reads(Facts(), load_settings().config_dir)
     write_evaluation(
         conn,
         posting_version_id=version_id,
         identity=build_identity(
-            posting_version_id=version_id, facts=Facts(), policy=Policy(),
+            posting_version_id=version_id, facts=facts, policy=Policy(),
             catalog=catalog, declared_fields=declared_fields(),
         ),
-        result=evaluate(body, Facts(), Policy(), catalog),
+        result=evaluate(body, facts, Policy(), catalog),
     )
     conn.execute(
         insert(artifacts).values(

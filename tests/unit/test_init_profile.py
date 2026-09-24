@@ -146,7 +146,6 @@ def test_help_smoke(env: Path) -> None:
 _ELIG_INIT = (
     "3\nacme\nBackend engineer: Python, Go.\n\n\n\nn\n"  # companies, profile, filters, remote
     "y\n"                          # set up eligibility now?
-    "\n"                           # career field: skip
     "\n"                           # field of study: skip
     "citizen\nus\n\nblocker\n"     # work_auth: skip needs_sponsorship
     "\n\n"                      # experience_years: skip field, default policy
@@ -181,47 +180,8 @@ def test_init_eligibility_path_persists_facts_and_policy(env: Path) -> None:
     assert policy.families["internship"] == "preference"
 
 
-def test_init_career_field_prompt_persists_the_answer(env: Path) -> None:
-    elig_input = _ELIG_INIT.replace(
-        "y\n"          # set up eligibility now?
-        "\n",          # career field: skip
-        "y\n"          # set up eligibility now?
-        "software\n",  # career field: set
-        1,
-    )
-    assert _invoke(env, ["init"], elig_input).exit_code == 0
-    with get_engine(env).connect() as conn:
-        row = get_profile(conn)
-    assert row is not None
-    facts = parse_facts(row.eligibility_facts_json)
-    assert facts.career_field == "software"
 
 
-def test_init_reprompts_on_a_bad_career_field_instead_of_aborting(env: Path) -> None:
-    """An out-of-vocabulary career field must be re-asked, not accepted and not fatal.
-
-    Accepting it would store `nursing` and shift every later answer by one line; aborting
-    would discard the profile answers already entered. Both are visible from here.
-    """
-    elig_input = _ELIG_INIT.replace(
-        "y\n"          # set up eligibility now?
-        "\n",          # career field: skip
-        "y\n"          # set up eligibility now?
-        "nursing\n"    # career field: not in the catalog vocabulary → re-prompt
-        "software\n",  # career field: the retry
-        1,
-    )
-    result = _invoke(env, ["init"], elig_input)
-    assert result.exit_code == 0
-    assert "unknown career_field 'nursing'" in result.output
-    with get_engine(env).connect() as conn:
-        row = get_profile(conn)
-    assert row is not None
-    facts = parse_facts(row.eligibility_facts_json)
-    assert facts.career_field == "software"
-    # The retry consumed the career-field prompt, so the later answers did not slide up.
-    assert facts.work_authorization is not None
-    assert facts.work_authorization.status == "citizen"
 
 
 def test_init_skipping_eligibility_leaves_columns_null(env: Path) -> None:
@@ -243,7 +203,6 @@ _ELIG_EDIT = (
     "\n"                               # keep target seniority band
     "\n"                               # keep target countries
     "y\n"                              # update eligibility checks?
-    "\n"                               # career field: skip (keeps stored value)
     "\n"                               # field of study: skip (keeps stored value)
     "permanent_resident\nus\n\n\n"     # work_auth: change status, skip bit, default policy
     "\n\n"                             # experience_years
@@ -269,48 +228,8 @@ def test_profile_edit_updates_eligibility(env: Path) -> None:
     assert facts.internship_preference == "exclude"  # blank kept the init value
 
 
-def test_profile_edit_sets_the_career_field(env: Path) -> None:
-    """`profile edit` must be able to SET a career field, not merely skip past the prompt —
-    otherwise the only thing an existing install can do with the field is leave it unset."""
-    assert _invoke(env, ["init"], _ELIG_INIT).exit_code == 0
-    edit = _ELIG_EDIT.replace(
-        "y\n"          # update eligibility checks?
-        "\n",          # career field: skip
-        "y\n"          # update eligibility checks?
-        "software\n",  # career field: set
-        1,
-    )
-    assert _invoke(env, ["profile", "edit"], edit).exit_code == 0
-    with get_engine(env).connect() as conn:
-        row = get_profile(conn)
-    assert row is not None
-    facts = parse_facts(row.eligibility_facts_json)
-    assert facts.career_field == "software"
-    # The set answer consumed only the career-field prompt; the rest of the script still lands.
-    assert facts.highest_degree == "master"
 
 
-def test_profile_edit_reprompts_on_a_bad_career_field(env: Path) -> None:
-    """Same re-prompt contract as init: a bogus value is re-asked, never stored, and never
-    aborts the edit — the profile row has already been saved by this point."""
-    assert _invoke(env, ["init"], _ELIG_INIT).exit_code == 0
-    edit = _ELIG_EDIT.replace(
-        "y\n"          # update eligibility checks?
-        "\n",          # career field: skip
-        "y\n"          # update eligibility checks?
-        "nursing\n"    # career field: not in the catalog vocabulary → re-prompt
-        "software\n",  # career field: the retry
-        1,
-    )
-    result = _invoke(env, ["profile", "edit"], edit)
-    assert result.exit_code == 0
-    assert "unknown career_field 'nursing'" in result.output
-    with get_engine(env).connect() as conn:
-        row = get_profile(conn)
-    assert row is not None
-    facts = parse_facts(row.eligibility_facts_json)
-    assert facts.career_field == "software"
-    assert facts.highest_degree == "master"  # later answers did not slide up
 
 
 def test_a_bad_seniority_band_reprompts_instead_of_discarding_the_edit(env: Path) -> None:
