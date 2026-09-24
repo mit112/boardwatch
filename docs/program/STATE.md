@@ -31,22 +31,15 @@ enterprise seat (whose 5-hour window hit twice: 17:24 at 11 executors, 02:22 aft
 lesson is in memory). The owner ruled everything up front (D-577, D-578) and slept from 22:05 (D-58x).
 
 **Next session, in order:**
-1. **Read run 475 (the 04:00 tick on 09-24) as the FIRST run on T184 + T186 + T190 + T191 + the
-   cutover** (`target_countries=[USA]`, the 29 exclude titles, the bundled `software` taxonomy, 1,206
-   decisions reopened by `ledger reopen --stale`): the location gates read the profile (zero diffs
-   measured, so the slate should match 474's shape), the role gate reads the taxonomy (ditto), the
-   funnel carries `tenant_assumptions` (location/foreign_ad grounded on `[USA]`, no missing-field abstain
-   for the owner) and the per-lane cross-check rows (all should agree), `role_unmeasured` 0. Read with
-   `.venv/bin/python .agent/2026-09-23b-session/read_run.py 475`.
-2. **Ship the second engine batch** (`bw-batch2`, branch `engine-batch-2b`, gate EXIT=0 on `19878e51`,
-   Codex batch review clean) once its two-arm reading (`bw-batch2/.agent/batch2_aggregate.txt`) is read:
-   the movers by direction and rule, the null control (must be 0), and the twenty-sample. It re-keys
-   `engine_version` (`1+6ebbf1b4935a` → `1+15ce6f8c4616`) and `rules_hash`; the run after it re-judges
-   its slate and refreshes the standing lane at 130/run.
+1. **Run 475 is READ (D-591): the batch's re-key ran, the tenant report is grounded on the owner's data, the
+   apply lane placed 36.** Two new mechanisms spoke: T192's board cap failed four large Workday boards (T198),
+   and T191's cross-check flagged hiring.cafe at 9 vs 10 (T199). Read run 476 for `refresh_pending_after`
+   falling (767 → ~640) and the four Workday boards.
+2. **The second engine batch SHIPPED (#450, D-587)** and T189 shipped (#452) after its rebase.
 3. **Owner calls** (Owner-gated, below): T188 (D1 re-judges every stored gate verdict), T173 (measure
    on the shipped batch, then rule), the reviews' follow-ups (`TICKETS-2026-09-22c.md` §2026-09-23c).
-4. **T187 shipped (#449) at 03:01. Ship T189** once T189e's rebase (relaunched 03:52 after the seat
-   reset), its gate and its chained ship complete (`ship-t189.out`).
+4. **T187 (#449) and T189 (#452) shipped.** Nothing is left unshipped from the sprint except T188
+   (owner-gated) and T173 (owner call, below).
 5. **The run-474 audit is READ** — see item 6 and D-589.
 6. **The run-474 audit is read (D-589):** B8 reads 17.9% on the standing lane because T179's re-key left
    315 of 434 top-level leads without a live verdict (fail-open until the refresh reaches them); 474's own
@@ -133,9 +126,10 @@ available if Mit wants it. **D-498's rule (b) IS BUILT** (`_suppress_lane_copies
    the 113.
 3. **Mit's résumé calls** — whether to send a document at all; the D-220 prose rewrite of the submitted "sole iOS developer" answer (outside the bundle); the per-lens formatting session.
 4. **P2 item 8 — SHIPPED as T184 (#444, D-581).** 5. **The bundle lock — already shipped 2026-09-04 (`ae64c0ee`); closed.**
-6. **T173 — a hedged SCOPED years bar carried as a `scoped_years_preferred` row** (`bw-t173`,
-   DESIGN-T173): built on T170's head; measure it on the SHIPPED second batch (rebase first), then rule.
-   T170's reading said 186 of its new `uncertain` movers would clear.
+6. **T173 — a hedged SCOPED years bar carried as a `scoped_years_preferred` row: MEASURED (D-590).**
+   Yes ⇒ 1,468 postings move `uncertain` → `eligible` (about five times today's `eligible`), all stated
+   preferences (20/20 sampled), ~13 wrong clears inherited from two main-side defects (T196, T197). No ⇒ they
+   stay `uncertain` with no row. Rebased on the batch in `bw-t173`; gate not yet run.
 7. **T188 — the judge's seniority question against the profile's band, the Indeed country and the
    GitHub lists from tenant data** (`bw-t188`, reviewed twice, gate green): D1 moves `PROMPT_VERSION`,
    so EVERY stored gate verdict re-judges once through the refresh at 130 a run. Ship as is, ship E1+E2
@@ -145,7 +139,9 @@ available if Mit wants it. **D-498's rule (b) IS BUILT** (`_suppress_lane_copies
    (one source), or retire `career_field` from the eligibility facts.
 9. **The reviews' follow-ups** (§2026-09-23c): the `_recovered` reserved-name collision, the funnel's
    `location_class` column still the US reading, cross-check disagreements not soft-alerted, the
-   STANDING-FACTS grounding key, T190's test-only drift, T192's trickled-headers limit.
+   STANDING-FACTS grounding key, T190's test-only drift, T192's trickled-headers limit; from run 475: T198 (the board cap vs slow Workday
+   boards) and T199 (hiring.cafe's 9-vs-10 recount); from T173's measurement: T196 (`a plus` without a word
+   boundary) and T197 (an aside about another noun hedges the bar).
 10. **The T179 refresh backlog (D-589): 315 top-level leads with no live verdict, 14 of them judged
     `ineligible` on 09-22 and standing in the apply lane.** Options: raise `gate.refresh_budget` above 130
     for a few runs; have the refresh rank released holds first (T195); or let it drain at ~6 runs.

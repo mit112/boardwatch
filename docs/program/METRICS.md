@@ -16229,7 +16229,8 @@ sentence-final predicate probe (1,234 candidates at ~15% precision, so 150–250
 |---|---|---|---|---|---|---|---|---|
 | 472 | `de7ae153` 16:17 | 2h12m | 117 (0) | 75 / 30 / 12 | 40 / 29 | 11 seniority | 130 of 861, 731 pending | 3079 / 2268 / 704 / 1372 |
 | 473 | `5fbb5952` 18:59 | killed 21:04 | — | — | — | — | — | scan pinned 55 min on one SmartRecruiters board |
-| 474 | `61774a57` 00:02 | 2h03m | 110 (0) | 69 / 26 / 15 | 40 / 24 | 11 seniority, 2 no_requirements, 2 form, 1 experience | see funnel | 3476 / 2293 / 646 / 503 |
+| 474 | `61774a57` 00:02 | 2h03m | 110 (0) | 69 / 26 / 15 | 40 / 24 | 11 seniority, 2 no_requirements, 2 form, 1 experience | 130 of 897, 767 pending | 3476 / 2293 / 646 / 503 |
+| 475 (04:00 tick) | `4943b59c` (batch + T187 + cutover) | 1h54m | 54 (87) | 53 / 1 / 0 | 40 / 36 | 4 seniority | — | 3482 / 2289 / 398 / 207 |
 
 Both runs: `failed_open_batches` 0, `readings_absent` 0, `identity_drift` `[]`, the three cross-checks agree.
 The judge did not hit the seat's limit in either. Run 472 wrote the SingleStore `QueueConflictError` a last
@@ -16309,3 +16310,7 @@ round was run.
 
 Overlap agreement 10/10. Live-key verdicts 240 of 434 top-level leads after T179's re-key (119 folders live,
 315 off-key); T113b hiding 0, released 297 (14 delivered top-level). `refresh_pending_after` 731 → 767.
+
+### T173 on the batch (`bw-t173/.agent/t173_aggregate.txt`, pinned 126,854)
+
+Movers A→B 1,468, all `uncertain` → `eligible` (A 354 / 124,249 / 2,251 → B 1,822 / 124,249 / 783); null 0; pure carrier-row additions only (`scoped_years_preferred` unmet 1,696 + unknown 24 on movers, 11,065 more on unchanged verdicts); 180 of T170's 189 `uncertain` movers clear; sample 20/20 stated preferences; ≤13 wrong clears bounded (T196, T197).
