@@ -246,6 +246,9 @@ profile = Table(
     # a missing key. Closed vocabulary enforced in Python at the write site (ProfileInput),
     # not by a CHECK — retrofitting one to SQLite costs a full table rebuild.
     Column("target_seniority_band", Text, nullable=False, server_default="any"),
+    # DESIGN-T183 B1. ISO-3166 alpha-3, uppercase; `[]` is undeclared. NOT NULL for the same
+    # one-representation reason as the band; the vocabulary is enforced at ProfileInput.
+    Column("target_countries_json", JSON, nullable=False, server_default="[]"),
     Column("eligibility_facts_json", JSON, nullable=True),
     Column("eligibility_policy_json", JSON, nullable=True),
     Column("updated_at", DateTime, nullable=False),

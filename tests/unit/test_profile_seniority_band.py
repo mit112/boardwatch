@@ -69,6 +69,7 @@ def test_profile_row_hash_parameter_set_is_pinned() -> None:
     assert set(inspect.signature(profile_row_hash).parameters) == {
         "skills", "target_titles", "exclude_titles", "locations", "remote_only",
         "target_seniority_band", "leveling_digest", "taxonomy_version", "role_taxonomy_digest",
+        "target_countries",
     }
 
 

@@ -52,6 +52,8 @@ class ProfileView:
     # D-246. `notify` consumes ProfileView too, which is what makes wiring the second filter
     # chain cheap. Falls back to "any" (inert) so a row predating the migration is safe.
     target_seniority_band: str = "any"
+    # DESIGN-T183 B1. ISO-3166 alpha-3, uppercase; `()` is undeclared. Read by nothing yet.
+    target_countries: tuple[str, ...] = ()
 
 
 def profile_view_from_row(row: object) -> ProfileView:
@@ -62,6 +64,7 @@ def profile_view_from_row(row: object) -> ProfileView:
         locations=tuple(getattr(row, "locations_json", None) or []),
         remote_only=bool(getattr(row, "remote_only", False)),
         target_seniority_band=str(getattr(row, "target_seniority_band", None) or "any"),
+        target_countries=tuple(getattr(row, "target_countries_json", None) or ()),
     )
 
 

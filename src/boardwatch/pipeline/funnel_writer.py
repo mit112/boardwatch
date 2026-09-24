@@ -139,6 +139,7 @@ def manifest_identity(
                 role_taxonomy_digest=role_taxonomy_digest(
                     load_role_taxonomy(settings.config_dir)
                 ),
+                target_countries=profile_row.target_countries_json,
             )
             if profile_row is not None
             else None
