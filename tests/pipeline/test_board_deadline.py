@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from concurrent import futures
+from concurrent.futures import Future
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, insert, select
@@ -19,6 +22,7 @@ from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
+from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
 
@@ -136,3 +140,43 @@ def test_a_worker_freed_by_an_abandoned_board_is_reused(
             ).all()
         )
     assert statuses == {ids["stuck"]: "failed", ids["acme"]: "complete", ids["beta"]: "complete"}
+
+
+def test_a_board_that_finishes_as_its_cap_trips_is_recorded_complete(
+    engine: Engine, tmp_path: Path, provider: _StuckProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T192b. A future can finish between `wait()` timing out and the overdue check. It is then
+    absent from `done` but already finished, and it must be collected, not failed."""
+    ids = {"acme": _add_company(engine, "acme")}
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
+        board_deadline_seconds=0.3,
+    )
+    real_wait = futures.wait
+    raced: list[bool] = []
+
+    def racing_wait(
+        fs: Iterable[Future[BoardSnapshot]], timeout: float | None = None, return_when: Any = None
+    ) -> Any:
+        pending = set(fs)
+        if not raced:
+            # The timeout fired, and in the same instant the board finished past its cap.
+            raced.append(True)
+            real_wait(pending)
+            time.sleep(settings.board_deadline_seconds)
+            return set(), pending
+        return real_wait(pending, timeout=timeout, return_when=return_when)
+
+    monkeypatch.setattr(coordinator, "wait", racing_wait)
+    summary = run_scan(engine, settings, providers={"greenhouse": provider})
+
+    assert raced == [True]
+    assert (summary.complete, summary.failed, summary.errors) == (1, 0, [])
+    with engine.connect() as conn:
+        status = conn.execute(
+            select(tables.board_scans.c.status).where(
+                tables.board_scans.c.company_id == ids["acme"]
+            )
+        ).scalar_one()
+        boards_failed = conn.execute(select(tables.runs.c.boards_failed)).scalar_one()
+    assert (status, boards_failed) == ("complete", 0)

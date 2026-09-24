@@ -519,10 +519,12 @@ def _scan_body(
             now = time.monotonic()
             # A board still running at its deadline is failed HERE and its thread abandoned: the
             # thread cannot be interrupted, so it finishes or dies on the fetch deadline, and its
-            # snapshot — whenever it arrives — is never applied.
+            # snapshot — whenever it arrives — is never applied. `.done()`, not `in done`: a board
+            # that finished after `wait()` returned is not in `done` but is not overdue either;
+            # it stays in `future_map`, and the next `wait()` hands it back at once (T192b).
             overdue = {
                 f for f, (*_, start) in future_map.items()
-                if f not in done and now - start >= cap
+                if not f.done() and now - start >= cap
             }
             for future in [*done, *overdue]:
                 # Not ours any more: an abandoned thread ended, so its worker is free again. Keyed
