@@ -57,6 +57,7 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import shutil
 import sys
 import time
@@ -114,6 +115,8 @@ WEBLOC_FILE = "apply.webloc"
 URL_FILE = "apply.url"
 LINK_FILE = "apply-link.txt"
 STAGING_PREFIX = ".staging-"
+#: `_relocate`'s case-only-rename temporary, `rename-<16 hex>`. Visible on purpose (its docstring).
+RENAME_TEMPORARY = re.compile(r"rename-[0-9a-f]{16}")
 
 #: Bumped when `details.json`'s shape changes. A reader that finds a schema it does not know is
 #: reading a projection, not a source of truth, and the next sync rewrites it.
@@ -1137,10 +1140,12 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
             review=review,
             lane_copy=lane_copy,
         )
-        if wanted == entry.location:
+        name = _settled_name(entry.path)
+        if wanted == entry.location and name == entry.path.name:
             continue
         # `entry.path.name`, not a freshly planned name: reconcile moves a folder, it never
-        # renames one. One consequence is worth knowing rather than rediscovering. `_sync_locked`
+        # renames one, bar undoing a crashed `_relocate`'s temporary (`_settled_name`). One
+        # consequence is worth knowing rather than rediscovering. `_sync_locked`
         # plans names over non-ineligible rows only, so a lead parked in `_ineligible` no longer
         # forces a same-company-same-title sibling to disambiguate. If its verdict later clears,
         # this move can find the plain name taken and raise, and the run line reports `1 failed`.
@@ -1148,7 +1153,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         # leads, disambiguates them, and relocates from `_ineligible` (which `_index` scans). Not
         # fixed by widening `_plan`'s input, because that would report naming failures for leads
         # this function deliberately never creates.
-        target = (root / wanted / entry.path.name) if wanted else root / entry.path.name
+        target = (root / wanted / name) if wanted else root / name
         # A destination occupied by a DIFFERENT job's folder (T172) is widened with that job's own
         # identity suffix rather than refused; one occupied by THIS job's own copy, or by anything
         # `_widen_for_a_different_job` cannot classify, is left for `_relocate` to refuse exactly
@@ -1179,6 +1184,19 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         unclassified=unclassified,
         failures=tuple(failures),
     )
+
+
+def _settled_name(folder: Path) -> str:
+    """The name reconcile files `folder` under: its own, unless it is `_relocate`'s case-rename
+    temporary (T189b). A crash between that function's two steps leaves `rename-<hex>`; the next
+    sync would relocate it, but reconcile runs first and moves by name, so an applied or skipped
+    lead used to be filed as `_applied/rename-<hex>` for good. Its `details.json` records the
+    name it was last written under, which is the name it had before the interrupted rename.
+    """
+    if RENAME_TEMPORARY.fullmatch(folder.name) is None:
+        return folder.name
+    recorded = _as_str((_read_details(folder) or {}).get("folder"))
+    return folder.name if recorded is None else recorded
 
 
 def _wanted_location(

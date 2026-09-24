@@ -2204,6 +2204,41 @@ def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
     assert (again.failures, again.moved, again.updated, again.unchanged) == ((), 0, 0, 1)
 
 
+def test_a_folder_left_under_the_case_rename_temporary_is_filed_under_its_recorded_name(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 4. A crash between `_relocate`'s two `os.replace` calls leaves the folder at
+    `rename-<16hex>`. `refresh_queue` reconciles FIRST, so if the owner applied in between, the
+    folder was filed as `_applied/rename-<hex>` by `entry.path.name` and nothing renamed it again.
+    Reconcile now files a temporary under the name its own `details.json` records."""
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+    contents = _snapshot(root / folder)
+    (root / folder).rename(root / "rename-0123456789abcdef")
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_id, status="applied", source="test")
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_applied, drained.failed, synced.failures) == (1, 0, ())
+    assert _folders(root) == []
+    assert _folders(root / APPLIED_DIR) == [folder]
+    assert _snapshot(root / APPLIED_DIR / folder) == contents
+
+    # A temporary the old code already filed under a drain is settled in place the same way.
+    (root / APPLIED_DIR / folder).rename(root / APPLIED_DIR / "rename-fedcba9876543210")
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_applied, drained.failed) == (1, 0)
+    assert _folders(root / APPLIED_DIR) == [folder]
+
+    before = _snapshot(root)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.moved) == (0, 0)
+    assert _snapshot(root) == before
+
+
 def test_T172_widening_sees_an_occupant_that_differs_only_by_case(
     engine: Engine, root: Path
 ) -> None:
