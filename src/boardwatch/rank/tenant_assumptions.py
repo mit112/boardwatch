@@ -115,6 +115,30 @@ class TenantAssumptionTally:
         return {gate: tally.to_dict() for gate, tally in sorted(self.gates.items())}
 
 
+#: `delivery/review_gate.classify`'s reasons in ITS order, up to and including each tenant gate. A
+#: lead an earlier clause held never reached the later gate, so it is not "considered" there — a
+#: report that counted it would claim a location abstain for a lead the form question stopped
+#: (T185 review). Kept beside the tally rather than inside `classify` so the gate stays
+#: decision-only; the review-gate test pins this list against the classifier's own order.
+_REVIEW_REASONS_BEFORE: dict[str, frozenset[str]] = {
+    "location": frozenset({"form_question_hard_stop", "ineligible_verdict"}),
+    "role": frozenset({"form_question_hard_stop", "ineligible_verdict", "non_us_location"}),
+    "judge_seniority": frozenset({
+        "form_question_hard_stop", "ineligible_verdict", "non_us_location", "role_vetoed",
+        "role_unconfirmed", "seniority_above_band", "judged_ineligible_verdict",
+    }),
+}
+
+
+def review_gate_reached(gate: TenantGate, reason: str | None) -> bool:
+    """Whether `classify` ran `gate` for a lead whose decision carried `reason`.
+
+    `None` (the apply lane, or a hold below every tenant gate) reached all of them; a reason
+    from a clause above the gate means the gate never ran.
+    """
+    return reason not in _REVIEW_REASONS_BEFORE[gate]
+
+
 @dataclass(frozen=True)
 class TenantAssumptionReport:
     ranker: TenantAssumptionTally

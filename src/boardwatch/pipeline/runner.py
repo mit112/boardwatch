@@ -115,6 +115,7 @@ from boardwatch.projection.scoring import DEFAULT_SCORER_ID
 from boardwatch.rank.tenant_assumptions import (
     TenantAssumptionReport,
     TenantAssumptionTally,
+    review_gate_reached,
     ungrounded_reasons,
 )
 from boardwatch.rank.title_band import profile_target_band, title_band_reader
@@ -1661,14 +1662,27 @@ def _lead_lanes(
             posting_closed=False,
         )
         result[posting.posting_id] = (decision.lane, posting_version_id)
-        tenant.observe("location", fired=decision.reason == "non_us_location")
-        tenant.observe("role", fired=decision.reason in ("role_vetoed", "role_unconfirmed"))
-        seniority_fit = gate_seniority.get(posting.posting_id)
-        tenant.observe(
-            "judge_seniority",
-            fired=decision.reason == "seniority_judged_above_band",
-            own_abstain=None if seniority_fit in ("yes", "no") else "seniority_fit_unclear",
-        )
+        # Only the gates this decision REACHED are counted: `classify` returns at the first
+        # hold, so a lead the form question or the verdict stopped was never put to the
+        # location, role or judge gates (T185 review).
+        reason = decision.reason
+        if review_gate_reached("location", reason):
+            tenant.observe("location", fired=reason == "non_us_location")
+        if review_gate_reached("role", reason):
+            tenant.observe("role", fired=reason in ("role_vetoed", "role_unconfirmed"))
+        if review_gate_reached("judge_seniority", reason):
+            seniority_fit = gate_seniority.get(posting.posting_id)
+            tenant.observe(
+                "judge_seniority",
+                fired=reason == "seniority_judged_above_band",
+                own_abstain=(
+                    None if seniority_fit in ("yes", "no")
+                    # No gate row at all is `gate.readings_absent`, not a judge that read
+                    # "unclear"; the two must not share a label.
+                    else "reading_absent" if seniority_fit is None
+                    else "seniority_fit_unclear"
+                ),
+            )
     return result, readings_absent, tenant
 
 

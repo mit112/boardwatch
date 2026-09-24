@@ -47,6 +47,7 @@ from boardwatch.rank.heuristic import (
     score_posting,
 )
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.role_gate import (
     RoleVerdict,
     ZeroSignalVerdict,
@@ -441,6 +442,15 @@ body-less posting is an ordinary member of its company/title/place cluster.
 """
 
 
+
+def _location_class_memo(memo: dict[tuple[str, ...], str], locations: tuple[str, ...]) -> str:
+    """`classify_location` once per distinct location tuple within one ranking pass."""
+    got = memo.get(locations)
+    if got is None:
+        got = classify_location(list(locations))
+        memo[locations] = got
+    return got
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -606,6 +616,7 @@ def rank_open_postings(
             seniority_hold=settings.gate.seniority_hold,
         )
     )
+    location_classes: dict[tuple[str, ...], str] = {}
     for row in rows:
         if new_ids is not None and int(row.id) not in new_ids:
             skipped_not_new += 1
@@ -624,7 +635,15 @@ def rank_open_postings(
             None, "non_us_location", "foreign_ad_marker"
         ):
             tenant.observe("location", fired=clause == "non_us_location")
-            if clause != "non_us_location":
+            # `hard_filter_verdict` puts the ad-marker check only to a posting whose location
+            # is NOT a confirmed US one, so a cleared US posting never reached it and is not
+            # counted as considered there (T185 review). Memoised per location tuple: the
+            # class was already computed once inside the veto, and most rows share a few.
+            if clause == "foreign_ad_marker" or (
+                clause is None and _location_class_memo(
+                    location_classes, tuple(row.locations_json or [])
+                ) != "us"
+            ):
                 tenant.observe("foreign_ad", fired=clause == "foreign_ad_marker")
         if veto is not None and not include_hard_filter:
             hidden_hard_filter += 1

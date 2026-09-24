@@ -19,6 +19,7 @@ from sqlalchemy import insert, update
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
+from boardwatch.delivery.review_gate import REVIEW_DIR, LaneDecision
 from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.rank import tenant_assumptions as tenant_mod
@@ -209,3 +210,54 @@ def test_the_report_changes_no_other_funnel_key(
 
     assert report["ranker"] and suppressed["ranker"] == {}, "guard: suppression must have bitten"
     assert with_report == without_report
+
+
+def test_a_lead_held_above_the_tenant_gates_is_not_counted_as_considered(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T185 review. `classify` returns at the form-question hold, above every tenant gate, so
+    that lead was never put to the location, role or judge gates and must not appear in their
+    `considered` — the old tally reported a `missing_profile_field:target_countries` abstain for
+    a location gate that never ran."""
+    _ready(env)
+    _set_facts(env, {"career_field": "software"})
+    _add_posting(env, "stopped", "Software Engineer, Stopped", ["Remote"])
+    real_classify = runner_mod.classify
+    seen: list[str] = []
+
+    def stopped_first(**kwargs: Any) -> LaneDecision:
+        # The RUN's pre-tailor split (`runner._lead_lanes`) is the call the tally observes;
+        # the queue's own later `lane_decision` is a different call site and is left alone.
+        seen.append(kwargs["title"])
+        if kwargs["title"] == "Software Engineer, Stopped":
+            return LaneDecision(REVIEW_DIR, "form_question_hard_stop")
+        return real_classify(**kwargs)
+
+    monkeypatch.setattr(runner_mod, "classify", stopped_first)
+
+    payload = _run(env, tmp_path / "apps", mode="soft")
+
+    assert seen.count("Software Engineer, Stopped") == 1, seen  # guard: the hold was applied
+    split = len(seen)
+    assert split >= 2, seen
+    review = payload["tenant_assumptions"]["review"]
+    for gate in ("location", "role", "judge_seniority"):
+        assert review[gate]["considered"] == split - 1, (gate, review[gate])
+    assert payload["reconciles"] is True
+
+
+def test_a_confirmed_us_posting_never_reached_the_foreign_ad_gate(env: Path, tmp_path: Path) -> None:
+    """T185 review. In hard mode `hard_filter_verdict` puts the ad-marker check only to a posting
+    whose location is not a confirmed US one, so a cleared "Austin, TX" posting is considered by
+    the location gate and NOT by the foreign-ad gate; a "Remote" posting reaches both."""
+    _ready(env)
+    _set_facts(env, {"career_field": "software"})
+    _add_posting(env, "austin", "Software Engineer", ["Austin, TX"])
+    _add_posting(env, "remote", "Software Engineer", ["Remote"])
+
+    payload = _run(env, tmp_path / "apps", mode="hard")
+
+    ranker = payload["tenant_assumptions"]["ranker"]
+    assert ranker["location"]["considered"] >= 2, ranker["location"]
+    assert ranker["foreign_ad"]["considered"] == ranker["location"]["considered"] - 1, ranker
+    assert payload["reconciles"] is True
