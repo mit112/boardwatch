@@ -917,6 +917,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The ranker's field-dependent gates read the user's field (2026-09-23, T187).** The zero-signal
+  veto, the role verdict tables, the title filler words and the seniority word tier assumed a
+  software user. Each now reads the field the user's role taxonomy declares: a software user gets
+  today's tables verbatim, and a user in a field the bundled catalog does not ship gets an
+  abstain that the per-run report counts (zero-signal `unmeasured`, seniority `uncertain`) rather
+  than a drop. The role verdicts are named `in_field`/`out_of_field`, and `top --json` and `show --json` now
+  carry those names in their `role` value where they carried `swe`/`not_swe`. A user's own taxonomy file is
+  the pack that replaces the shipped one. Zero diffs on the owner's live profile. DESIGN-T183
+  phases C1–C4.
+
 - **The judge's facts fingerprint covers only the facts that are set (2026-09-23, T179).** The key
   every gate verdict is stored and read under digested the whole facts schema, empty fields included,
   so adding any optional fact field would have changed every stored key at once: every judge hold
