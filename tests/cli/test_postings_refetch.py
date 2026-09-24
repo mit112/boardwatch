@@ -10,11 +10,14 @@ reopens or re-dates a posting it merely read, and one that races a running `boar
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
+from filelock import FileLock
 from sqlalchemy import Engine, func, insert, select
 from typer.testing import CliRunner
 
@@ -24,7 +27,9 @@ from boardwatch.core.models import RawPosting
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.posting_identity import IdentityInputs, compute_identities
-from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.core.settings import load_settings
+from boardwatch.scan.coordinator import ScanLockHeldError, scan_lease
+from boardwatch.store.db import db_revision, ensure_schema, get_engine, schema_revision
 from boardwatch.store.identity_queries import write_identities
 from boardwatch.store.tables import (
     board_scans,
@@ -311,29 +316,110 @@ def test_a_provider_without_fetch_posting_is_unsupported(
     assert _everything(engine) == before
 
 
-def test_a_running_run_is_refused_before_any_fetch(
+def _hold_scan_lock(data_dir: Path) -> FileLock:
+    """What a launchd `boardwatch run` holds for its whole run (T133)."""
+    holder = FileLock(str(data_dir / "scan.lock"))
+    holder.acquire()
+    return holder
+
+
+def test_a_held_scan_lease_is_refused_before_any_fetch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The exclusion is the scan lease, not the `runs` row: a run that holds `scan.lock` with no
+    `running` row yet (it takes the lease before its runs insert) still refuses the repair."""
     engine, posting_id, _ = _seed(tmp_path)
-    with engine.begin() as conn:
-        conn.execute(insert(runs).values(started_at=NOW, boards_attempted=0, status="running"))
     board = FakeBoard(_board_posting())
     _use(monkeypatch, board)
     before = _everything(engine)
 
-    result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    holder = _hold_scan_lock(tmp_path)
+    try:
+        result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    finally:
+        holder.release()
     assert result.exit_code == 2, result.output
     assert "refetch refused" in result.output
     assert board.calls == [], "refused, not waited on and not half-run"
     assert _everything(engine) == before
 
 
-def test_refused_is_typed_at_the_raise_site(tmp_path: Path) -> None:
-    engine, _, _ = _seed(tmp_path)
+def test_a_stale_running_row_alone_is_advisory_and_the_refetch_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A killed run leaves its row `running` until a reap (run 473, 24h on 2026-09-23). With
+    nobody holding the lease that row is not a run in progress, so it must not refuse."""
+    engine, posting_id, _ = _seed(tmp_path)
     with engine.begin() as conn:
-        conn.execute(insert(runs).values(started_at=NOW, boards_attempted=0, status="running"))
-    with pytest.raises(postings_cmd.RunInProgressError):
-        postings_cmd._refuse_while_running(engine)
+        run_id = conn.execute(
+            insert(runs).values(started_at=NOW, boards_attempted=0, status="running")
+        ).inserted_primary_key[0]
+    board = FakeBoard(_board_posting())
+    _use(monkeypatch, board)
+
+    result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    assert result.exit_code == 0, result.output
+    assert f"run {run_id} is marked running in the runs table" in result.output
+    assert f"{posting_id}\trevised" in result.output
+    assert board.calls == [("acme", PID)]
+
+
+def test_apply_holds_the_scan_lease_for_the_whole_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run starting mid-loop must be the one refused: from inside the fetch, a concurrent
+    `scan_lease` caller finds the lease held."""
+    _, posting_id, _ = _seed(tmp_path)
+    settings = load_settings(data_dir=tmp_path)
+    seen: list[str] = []
+
+    class ProbingBoard(FakeBoard):
+        def fetch_posting(
+            self, fetcher: Fetcher, slug: str, provider_posting_id: str
+        ) -> RawPosting | None:
+            try:
+                with scan_lease(settings):
+                    seen.append("acquired")
+            except ScanLockHeldError:
+                seen.append("held")
+            return super().fetch_posting(fetcher, slug, provider_posting_id)
+
+    _use(monkeypatch, ProbingBoard(_board_posting()))
+    result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    assert result.exit_code == 0, result.output
+    assert seen == ["held"]
+    with scan_lease(settings):  # released when the command ends
+        pass
+
+
+def test_report_only_takes_no_lease(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without `--apply` nothing is written, so a running pipeline does not refuse the report."""
+    _, posting_id, _ = _seed(tmp_path)
+    _use(monkeypatch, FakeBoard(_board_posting()))
+    holder = _hold_scan_lock(tmp_path)
+    try:
+        result = _invoke(tmp_path, "--ids", str(posting_id))
+    finally:
+        holder.release()
+    assert result.exit_code == 0, result.output
+    assert f"{posting_id}\trevised" in result.output
+
+
+def test_refused_is_classified_by_type(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The refusal maps `ScanLockHeldError` itself, whatever its message says."""
+    _, posting_id, _ = _seed(tmp_path)
+    board = FakeBoard(_board_posting())
+    _use(monkeypatch, board)
+
+    @contextmanager
+    def held(_settings: object) -> Iterator[None]:
+        raise ScanLockHeldError("")
+        yield
+
+    monkeypatch.setattr(postings_cmd, "scan_lease", held)
+    result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    assert result.exit_code == 2, result.output
+    assert board.calls == []
 
 
 def test_ids_file_and_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -371,3 +457,54 @@ def test_without_apply_the_store_is_not_migrated(
     assert result.exit_code == 0, result.output
     assert "revised" in result.output
     assert _everything(engine) == before
+
+
+def _one_migration_behind(engine: Engine) -> str:
+    """Downgrade a migrated store one real step: behind-schema with no hardcoded revision, so a
+    new head moves this fixture with it."""
+    from alembic import command
+
+    from boardwatch.store.db import _alembic_config
+
+    command.downgrade(_alembic_config(engine), "-1")
+    with engine.connect() as conn:
+        behind = db_revision(conn)
+    assert behind is not None and behind != schema_revision()
+    return behind
+
+
+def test_a_refused_apply_does_not_migrate_the_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lease is taken BEFORE the schema ensure, as `scan` and `run` order it: a contended
+    `--apply` is refused against the store exactly as it found it, not after an alembic upgrade
+    that the running pipeline never agreed to (Codex on T222)."""
+    engine, posting_id, _ = _seed(tmp_path)
+    behind = _one_migration_behind(engine)
+    board = FakeBoard(_board_posting())
+    _use(monkeypatch, board)
+
+    holder = _hold_scan_lock(tmp_path)
+    try:
+        result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    finally:
+        holder.release()
+    assert result.exit_code == 2, result.output
+    assert board.calls == []
+    with engine.connect() as conn:
+        assert db_revision(conn) == behind, "a refused refetch migrated the store"
+
+
+def test_an_uncontended_apply_migrates_then_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CONTROL: with nobody holding the lease, `--apply` is a write and takes the migration."""
+    engine, posting_id, _ = _seed(tmp_path)
+    _one_migration_behind(engine)
+    _use(monkeypatch, FakeBoard(_board_posting()))
+
+    result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
+    assert result.exit_code == 0, result.output
+    assert f"{posting_id}\trevised" in result.output
+    with engine.connect() as conn:
+        assert db_revision(conn) == schema_revision()
