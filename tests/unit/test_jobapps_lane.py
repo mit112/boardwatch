@@ -487,6 +487,47 @@ def test_a_dangling_record_symlink_is_skipped_and_counted(tmp_path):
     assert result.tally.counts["not_attemptable"] == 1
 
 
+def test_a_dangling_link_beside_an_incomplete_record_is_counted_once_of_its_own(tmp_path):
+    """T218: one good record, one incomplete record (T168's shape: a required `canonical` field
+    blank) and one `discovery_record.json` linking to nothing. Each rejection is its own count in
+    `not_attemptable` -- the closed tally's member for "seen, never attempted", which both
+    rejections are -- so the two sum to exactly two: the link is neither a candidate that became
+    a posting, nor a crash, nor silence."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    incomplete = _write(root, "Greenhouse", "incomplete", posting_id="pst_incomplete")
+    payload = json.loads((incomplete / "discovery_record.json").read_text())
+    payload["canonical"]["title"] = ""
+    (incomplete / "discovery_record.json").write_text(json.dumps(payload), encoding="utf-8")
+    dangling = root / "Greenhouse" / "dangling"
+    dangling.mkdir()
+    (dangling / "discovery_record.json").symlink_to(tmp_path / "gone" / "discovery_record.json")
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["not_attemptable"] == 2
+    assert result.tally.attempted == 3
+
+
+def test_a_record_symlink_to_an_existing_record_is_read_as_that_record(tmp_path):
+    """Control: a link that resolves is an ordinary record, not a rejection. Linking is a normal
+    shape for a refreshed tree, so admitting links as candidates must not start counting the
+    live ones as unreadable."""
+    root = tmp_path / "queue"
+    target = _write(tmp_path / "elsewhere", "Greenhouse", "real", title="Linked Role")
+    folder = root / "Greenhouse" / "linked"
+    folder.mkdir(parents=True)
+    (folder / "discovery_record.json").symlink_to(target / "discovery_record.json")
+    (folder / "job_description.txt").write_text(f"{_HEADER}{_MARKER}\n\n{_BODY}", encoding="utf-8")
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Linked Role"]
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.counts["body_inline"] == 1
+
+
 def test_a_tree_where_every_candidate_fails_to_parse_still_raises_and_counts_nothing(tmp_path):
     """The control the ticket asks for: mixing two different `_read_record` rejection causes in
     one tree, with NO parseable record anywhere, must still raise `JobAppsSourceError` with its
