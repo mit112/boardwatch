@@ -114,6 +114,15 @@ HEADING_CASES: list[tuple] = [
     ('h32:T215 CONTROL a hedge before the heading\'s coordinator still hedges', 'Preferred Skills & Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ('h33:T215 a heading naming required AND preferred without a colon is not a hedge either', 'Required & Preferred Qualifications\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('h34:T215 CONTROL a hedge ending the heading after its own noun hedges the whole list', 'Qualifications/Education Desired\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h35:T216 an item\'s own must beats its heading\'s hedge', 'PREFERRED:\n- Must have 5 years of experience', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ("h36:T216 an item's own required predicate beats its heading's hedge", "Desired:\n- 20+ years' experience in construction supervision required", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h37:T216 CONTROL the same heading over a bar with no cue still hedges it', 'PREFERRED:\n- 5 years of experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h38:T216 CONTROL required as an adjective is no cue', 'Preferred:\n- 5 years of experience with the required tooling', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h39:T216 CONTROL minimum under a hedge heading states the preference\'s threshold, not a mandate', 'Preferred Qualifications:\n- Minimum 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h40:T216 a mandated item is not read through the heading view either', 'Preferred Qualifications:\n- A minimum of 10 years of experience is required', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h41:T216 CONTROL an item hedged inline stays hedged', 'Preferred:\n- 5 years of experience with Python a plus', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h42:T216 CONTROL a conditional required is no mandate', 'Bonus Points:\n- Ability to obtain security clearance if required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['clearance:clearable_required', 'required', 'unmet'], ['clearance:generic_clearance_required', 'required', 'unmet']]),
+    ('h43:T216 CONTROL to the extent required is no mandate', 'Preferred:\n- 3 years of experience in audit to the extent required by the role', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.

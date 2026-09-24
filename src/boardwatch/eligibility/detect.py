@@ -25,7 +25,7 @@ The scopes, all applied per match:
                           On a pattern with a tail hedge, applied (inline and as a heading)
                           only to a bar no abstain waived, as the tail hedge is.
                           A heading's hedge after its first coordinator reaches nothing
-                          (T215).
+                          (T215), and an item that states its own mandate takes none (T216).
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
@@ -904,6 +904,31 @@ def _suppressed(
     return None
 
 
+# An item's OWN mandatory predicate: the heading's hedge does not reach a bar whose clause carries
+# one (T216), so `Preferred:\n- Must have 5 years ...` and `Desired:\n- 20+ years' experience ...
+# required` read as they would with no heading. Closed. `required`, `mandatory` and `essential`
+# after a determiner or a relative pronoun are attributive, `the required tooling`, `that required
+# fine work`, `the essential duties`, and bind nothing; after a conditional, `if required`, `as
+# required`, `to the extent required` (the clearance patterns' own guard words, plus `extent`),
+# they bind nothing either. `minimum` is deliberately absent: measured under hedge headings it
+# states a preference's threshold (`Preferred Qualifications:\n- Minimum 5 years ...`), not a
+# mandate.
+_MANDATORY_CUE = re.compile(
+    r"(?<!\w)(?:must|(?<!\bthe\s)(?<!\ba\s)(?<!\ban\s)(?<!\ball\s)(?<!\bany\s)(?<!\bof\s)"
+    r"(?<!\bthat\s)(?<!\bwhich\s)(?<!\bwho\s)(?<!\bwith\s)(?<!\bincluding\s)"
+    r"(?<!\bas\s)(?<!\bif\s)(?<!\bwhen\s)(?<!ever\s)(?<!\bwhere\s)(?<!\bunless\s)"
+    r"(?<!\bdeemed\s)(?<!\bonly\s)(?<!\bextent\s)"
+    r"(?:required|mandatory|essential))(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
+    """Whether the bar's clause, from the item's own text at `start` on, carries a mandatory cue."""
+    clo, chi = _clause_bounds(text, lo, hi)
+    return _MANDATORY_CUE.search(text[:chi], max(clo, start)) is not None
+
+
 def _hedged_by_heading(
     heading: str,
     unit: str,
@@ -919,7 +944,8 @@ def _hedged_by_heading(
     field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
     `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
     caller's list was never run over that clause, so a match there is not the heading's.
-    A hedge after the heading's first coordinator is not the heading's (`_muted_heading`).
+    A hedge after the heading's first coordinator is not the heading's (`_muted_heading`), and an
+    item that states its own mandate takes no hedge from its heading (`_item_mandates`).
     """
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
     start = _item_start(unit)
@@ -929,6 +955,8 @@ def _hedged_by_heading(
     shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
     clo, chi = _clause_bounds(intro, lo, hi)
+    if _item_mandates(intro, lo, hi, len(heading) + 1):
+        return None
     return _suppressed(
         intro, lo, hi, hedges,
         bounds=(clo, clo if introducer_only else chi), introducer=True, aside_owned=True,
@@ -1039,7 +1067,9 @@ def detect(
             for index, unit, at, join in _views(units, governing, pattern):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
-                    if join is not None and not lo < join < hi:
+                    if join is not None and (
+                        not lo < join < hi or _item_mandates(unit, lo, hi, join)
+                    ):
                         continue
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):
                         continue
