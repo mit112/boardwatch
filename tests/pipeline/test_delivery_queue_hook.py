@@ -646,7 +646,7 @@ def test_the_form_sweep_counts_reach_the_funnel_on_disk(
     )
     # And the version did NOT move for an additive section (see
     # `tests/unit/test_run_funnel_form_questions.py` for the ruling).
-    assert artifact["artifact_version"] == 8
+    assert artifact["artifact_version"] == 9
 
 
 # --- T5: queue root override on `run` -----------------------------------------------------

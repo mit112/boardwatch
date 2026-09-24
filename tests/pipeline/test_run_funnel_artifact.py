@@ -17,7 +17,7 @@ from sqlalchemy import select
 from boardwatch.core.settings import load_settings
 from boardwatch.pipeline import runner
 from boardwatch.pipeline.runner import run_pipeline
-from boardwatch.rank.location_gate import classify_location
+from boardwatch.rank.location_gate import location_target
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
 from tests.conftest import write_test_resume_template
@@ -241,6 +241,9 @@ def test_the_artifact_names_where_each_lead_is_and_how_the_us_gate_read_it(
     The expected location is READ BACK OUT OF THE STORE rather than transcribed, so the
     assertion cannot go on passing against a stale literal if the seed changes — and the gate's
     verdict is compared against the production classifier, not against a hand-written answer.
+
+    T204: the verdict is the gate's for the PROFILE's target countries, which the manifest
+    carries — read back out of the store too, so the class and its question travel together.
     """
     posting_id = _ready(env)
     seeded = ["Austin, TX", "Remote"]
@@ -250,6 +253,7 @@ def test_the_artifact_names_where_each_lead_is_and_how_the_us_gate_read_it(
             .where(tables.postings.c.id == posting_id)
             .values(locations_json=seeded)
         )
+        conn.execute(tables.profile.update().values(target_countries_json=["USA"]))
     out_root = tmp_path / "apps"
 
     _pipeline(env, out_root)
@@ -260,8 +264,11 @@ def test_the_artifact_names_where_each_lead_is_and_how_the_us_gate_read_it(
         stored = conn.execute(
             select(tables.postings.c.locations_json).where(tables.postings.c.id == posting_id)
         ).scalar_one()
+        targets = conn.execute(select(tables.profile.c.target_countries_json)).scalar_one()
     assert found["locations"] == list(stored)
-    assert found["location_class"] == classify_location(list(stored))
+    assert payload["manifest"]["target_countries"] == list(targets) == ["USA"]
+    assert found["location_class"] == location_target(targets).classify(list(stored))
+    assert found["location_class"] == "in_target", "guard: the comparison must not be vacuous"
     # And the run says whether the gate was armed at all, so the verdicts above are readable.
     assert payload["manifest"]["location_filter_mode"] == load_settings(
         data_dir=env
