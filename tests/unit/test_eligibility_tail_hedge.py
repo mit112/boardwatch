@@ -620,3 +620,99 @@ def test_a_widened_predicate_still_keeps_a_bar_whose_tail_is_another_nouns(  # t
     result = evaluate(body, FACTS, POLICY, catalog)
     assert [f"experience_years:{rule}", "required", "unmet"] in _rows(result)
     assert result.verdict == "ineligible"
+
+
+# T196: `a plus` is a hedge only as two words. `bar_hedges` read it with no leading boundary, so the
+# last letter of "diploma" and the conjunction `plus` read as the hedge, and the clause-scoped hedge
+# dropped the required bar beside it (T173's measurement, D-590). pv 89429.
+def test_the_a_plus_hedge_needs_a_word_boundary(catalog) -> None:  # type: ignore[no-untyped-def]
+    body = (
+        "Minimum requirement is High school diploma plus a minimum of 8 years of sales/clinical "
+        "work experience in cardiac mapping and navigation."
+    )
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert ["experience_years:scoped_years_minimum", "required", "unmet"] in _rows(result)
+    assert result.verdict == "ineligible"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # CONTROLS: the two-word hedge still hedges. (The ticket's "3+ years of Kubernetes a plus"
+        # is NOT hedged on main: domain_years_minimum's span swallows its own hedge. A follow-up.)
+        pytest.param("3+ years of Kubernetes experience a plus", id="bar-then-a-plus"),
+        pytest.param("3+ years of experience with Kubernetes a plus", id="scoped-bar-then-a-plus"),
+    ],
+)
+def test_a_two_word_a_plus_still_hedges_the_bar(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert not any(row[1] == "required" for row in _rows(result))
+    assert result.verdict in ("eligible", "uncertain")
+
+
+# T197: an aside that names its OWN head noun qualifies that noun, not the bar before it, so its hedge
+# does not hedge the bar (T173's measurement). The head noun is a capitalised product or company
+# word, or `experience|background|knowledge|skills` after a modifier. A bare or restated hedge --
+# `(preferred)`, `(preferred only)` -- still hedges the bar.
+@pytest.mark.parametrize(
+    ("body", "rule"),
+    [
+        pytest.param(
+            "5-10 years of experience in related field (Abbott Instruments Experience is an "
+            "advantage)",
+            "scoped_range_years_minimum", id="aside-names-a-product-experience",  # pv 225434
+        ),
+        pytest.param(
+            "3+ years of experience with HVAC maintenance (commercial experience preferred).",
+            "scoped_years_minimum", id="aside-names-a-modified-experience",
+        ),
+        pytest.param(
+            "5+ years of experience in cloud infrastructure (AWS preferred)",
+            "scoped_years_minimum", id="aside-names-a-capitalised-product",  # pv 5016's shape
+        ),
+    ],
+)
+def test_an_aside_about_another_noun_keeps_the_bar(catalog, body: str, rule: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert [f"experience_years:{rule}", "required", "unmet"] in _rows(result)
+    assert result.verdict == "ineligible"
+
+
+# CONTROLS for T197: a BARE aside is the bar's own hedge wherever it sits, so a mid-sentence one --
+# which the sentence-final tail predicate cannot reach -- still demotes the bar in its clause.
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("5 years of experience (preferred) in accounting.", id="bare"),
+        pytest.param(
+            "5+ years of experience (strongly preferred) in public accounting.", id="intensified"
+        ),
+        pytest.param(
+            "3+ years of experience (preferred but not required) with Python and SQL.",
+            id="negated-bar-restated",
+        ),
+    ],
+)
+def test_a_bare_aside_mid_sentence_still_hedges_the_bar(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == _PREFERRED
+    assert result.verdict == "eligible"
+
+
+# T197, round 2: an aside that only RESTATES the hedge names no noun of its own, so it is the bar's
+# hedge exactly as `(preferred)` is. The first round let any non-bare aside own its hedge, and
+# "5+ years of experience (preferred only)" kept a required row that rejected a one-year profile.
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("5+ years of experience (preferred)", id="bare"),
+        pytest.param("5+ years of experience (preferred only)", id="preferred-only"),
+        pytest.param("5+ years of experience (Preferred Qualification)", id="restated-heading"),
+        pytest.param("5+ years of experience (nice to have)", id="nice-to-have"),
+        pytest.param("5+ years of experience (a plus)", id="a-plus"),
+    ],
+)
+def test_an_aside_restating_the_hedge_still_hedges_the_bar(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == _PREFERRED
+    assert result.verdict == "eligible"

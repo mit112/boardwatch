@@ -88,12 +88,42 @@ _NEGATED_ASIDE_GAP = re.compile(
 # keep suppressing, because a stated preference read as a hard floor is the worst wrong
 # verdict this engine can produce. The duration is what says the aside has a bar of its own
 # for the hedge to belong to.
+#
+# So does an aside that names its OWN head noun (T197): a capitalised product or company word,
+# "(AWS preferred)", "(Abbott Instruments Experience is an advantage)", or `experience|background|
+# knowledge|skills` after a modifier, "(commercial experience preferred)". Its hedge qualifies that
+# noun, and the bar before it stays required. An aside that only restates the hedge -- "(preferred
+# only)", "(Preferred Qualification)", "(strongly preferred)" -- names no noun and still hedges the
+# bar; so does a lone lowercase word, "(commercial preferred)", which the rule cannot tell from one.
 _ASIDE = re.compile(r"\(([^()]*)\)")
-_ASIDE_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)\b", re.IGNORECASE)
+# The words that restate a hedge rather than name what it qualifies. Closed: an intensifier, the
+# negated bar, a copula, the heading nouns, and the head nouns themselves (a head needs a modifier).
+_ASIDE_RESTATES = re.compile(
+    r"a|an|the|only|also|very|highly|strongly|much|greatly|especially|but|though|although|not|"
+    r"strictly|necessarily|required|mandatory|necessary|is|are|would|will|be|considered|"
+    r"qualifications?|requirements?|experience|background|knowledge|skills?",
+    re.IGNORECASE,
+)
+_ASIDE_CAPITALISED = re.compile(r"(?<![\w-])[A-Z][\w/&+.-]*")
+_ASIDE_MODIFIED_HEAD = re.compile(
+    r"(?<![\w-])([a-z][\w/&+.-]*)\s+(?:experience|background|knowledge|skills?)(?!\w)",
+    re.IGNORECASE,
+)
+# The count every duration guard reads: a digit, or a spelled count from the closed list the years
+# patterns read (T193), with its parenthesised digit. A guard that counted digits only let a spelled
+# duration through where its digit twin was stopped.
+_COUNT_WORDS = (
+    "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+    "sixteen seventeen eighteen nineteen twenty"
+).split()
+_COUNT = rf"(?:\d|\b(?:{'|'.join(_COUNT_WORDS)})(?:\s*\(\s*\d{{1,2}}\s*\))?)"
+_ASIDE_DURATION = re.compile(rf"{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)\b", re.IGNORECASE)
 
 
-def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) -> bool:
-    """Does the hedge at [mlo, mhi) belong to a parenthetical bar rather than to the span?
+def _hedge_owned_by_an_aside(
+    unit: str, lo: int, hi: int, mlo: int, mhi: int, hedges: tuple[re.Pattern[str], ...]
+) -> bool:
+    """Does the hedge at [mlo, mhi) belong to a parenthetical aside rather than to the span?
 
     False whenever the span sits in the same aside: there the hedge is the span's own.
     """
@@ -102,8 +132,23 @@ def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) ->
             continue
         if aside.start() <= lo and hi <= aside.end():
             return False
-        return _ASIDE_DURATION.search(aside.group(1)) is not None
+        return _ASIDE_DURATION.search(aside.group(1)) is not None or _names_its_own_noun(
+            aside.group(1), hedges
+        )
     return False
+
+
+def _names_its_own_noun(aside: str, hedges: tuple[re.Pattern[str], ...]) -> bool:
+    """Does the aside, its hedge words set aside, name a head noun of its own?"""
+    for rx in hedges:
+        aside = rx.sub(" ", aside)
+    return any(
+        _ASIDE_RESTATES.fullmatch(word.group()) is None
+        for word in _ASIDE_CAPITALISED.finditer(aside)
+    ) or any(
+        _ASIDE_RESTATES.fullmatch(head.group(1)) is None
+        for head in _ASIDE_MODIFIED_HEAD.finditer(aside)
+    )
 
 
 # ---------------------------------------------------------------- tail hedge (T170)
@@ -124,7 +169,7 @@ def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) ->
 _TAIL_NEGATED_BAR = r"not\s+(?:strictly\s+|necessarily\s+)?(?:required|mandatory|necessary)"
 _TAIL_INTENSITY = r"(?:(?:also|very|highly|strongly|much|greatly|especially)\s+)?"
 _TAIL_ASIDE = re.compile(r"\(([^()]*)\)")
-_TAIL_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)", re.IGNORECASE)
+_TAIL_DURATION = re.compile(rf"{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)", re.IGNORECASE)
 # The complement continues the bar, so it cannot open a new constituent -- unless the bar stopped
 # short of its own head (`2+ years of shipping`, `3+ years of experience leading`), where a comma
 # or a coordinator continues the same phrase (`, receiving, or manufacturing experience`).
@@ -785,14 +830,14 @@ def _suppressed(
     `inside_span` is for `abstain_by` alone (finding 45): an abstention is not a
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
-    `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical bar of
+    `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical aside of
     its own has claimed (`_hedge_owned_by_an_aside`).
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
             if aside_owned and _hedge_owned_by_an_aside(
-                text, lo, hi, match.start(), match.end()
+                text, lo, hi, match.start(), match.end(), suppressors
             ):
                 continue
             inside = clo <= match.start() and match.end() <= chi
@@ -843,6 +888,25 @@ def _hedged_by_heading(
         intro, lo, hi, hedges,
         bounds=(clo, clo if introducer_only else chi), introducer=True, aside_owned=True,
     )
+
+
+# A count the catalog's years patterns read spelled out (T193): "five (5) years", "Five years". The
+# digit is the posting's own number when it gives one; else the word maps through this closed list.
+_SPELLED_COUNTS = {word: str(value) for value, word in enumerate(_COUNT_WORDS, start=1)}
+_SPELLED_COUNT = re.compile(r"([a-z]+)(?:\s*\(\s*(\d{1,2})\s*\))?", re.IGNORECASE)
+
+
+def _captures(match: re.Match[str]) -> dict[str, str]:
+    """A match's non-empty captures, a spelled count read as its digits."""
+    values: dict[str, str] = {}
+    for name, value in match.groupdict().items():
+        if not value:
+            continue
+        spelled = _SPELLED_COUNT.fullmatch(value)
+        if spelled is not None and spelled.group(1).lower() in _SPELLED_COUNTS:
+            value = spelled.group(2) or _SPELLED_COUNTS[spelled.group(1).lower()]
+        values[name] = value
+    return values
 
 
 def _reading(values: dict[str, str]) -> frozenset[tuple[str, str]]:
@@ -1026,7 +1090,7 @@ def detect(
                                     family=family.id,
                                     pattern=twins[pattern.hedged_as],
                                     span=(at(lo), end),
-                                    values={k: v for k, v in match.groupdict().items() if v},
+                                    values=_captures(match),
                                 )
                             )
                         continue
@@ -1041,12 +1105,12 @@ def detect(
                                 family=family.id,
                                 pattern=twins[pattern.bounded_above_as],
                                 span=(at(bounded[0]), at(bounded[1])),
-                                values={k: v for k, v in match.groupdict().items() if v},
+                                values=_captures(match),
                                 abstained=abstained,
                             )
                         )
                         continue
-                    values = {name: value for name, value in match.groupdict().items() if value}
+                    values = _captures(match)
                     # Checked after every drop, so a suppressed own-view match hides nothing.
                     # "Preferred Qualifications:\n- 5 years of experience preferred." otherwise
                     # wrote its one preferred bar twice, once per view (T163).

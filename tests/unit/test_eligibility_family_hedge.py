@@ -152,9 +152,14 @@ KEPT = [
         ],
         id="CONTROL-clearance-hedge-on-a-sub-clause",
     ),
+    # T197: the aside names its own noun, so its hedge reaches neither bar -- the leveled row, which
+    # the aside's hedge used to drop, stays as it does in the bare and sub-clause forms above.
     pytest.param(
         "Ability to obtain a Secret clearance (TS/SCI preferred).", "ineligible",
-        [["clearance:clearable_required", "required", "unmet"]],
+        [
+            ["clearance:clearable_leveled_required", "required", "unmet"],
+            ["clearance:clearable_required", "required", "unmet"],
+        ],
         id="CONTROL-clearance-aside-hedging-a-higher-level",
     ),
     # pv 124909 and pv 17357: the hedge is the MBA's, or one arm's, never the enrolment's.
