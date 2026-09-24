@@ -4240,3 +4240,82 @@ standing queue is fully current.
 **NEXT WORK: superseded by the 2026-09-22e block above.** #1 (T159), #2 (T113) and the T127/T158
 cleanups are done. `TICKETS-2026-09-22c.md` §0 still lists what is already measured: read it
 before any probe.
+
+## Sessions 2026-09-22e and 2026-09-23b, moved WHOLE out of `STATE.md` on 2026-09-24
+
+Moved at the 2026-09-23c/24 close because every step in them is done (D-580, D-588). Nothing is deleted; the run-472/473 predictions they carry are answered in D-580 and D-584.
+
+### 2026-09-22e — **THE ELIGIBILITY BATCH SHIPS AS ONE ENGINE BUMP (T105 + T156 + T157 + T152, T155 FOLDED IN; D-555): 2,771 OPEN VERDICTS MOVE, NET −2,199 `ineligible`. T160 SHIPS (D-553). D-529 IS RULED AND SHIPS (D-554). THE PRIMARY CHECKOUT IS HELD ON `ccb52912` FOR RUN 471.**
+
+**Merged:** #414 (T160) → `609c099a`, #415 (the batch) → `8b46706f`, #416 (D-529) → `6146a41c`. Every
+gate EXIT=0 was read from a sentinel: T160 10,712 passed; the batch 10,807 passed at 95.27%; D-529 on the
+batch 10,807 passed.
+
+**The primary checkout was deliberately NOT pulled** (owner's ruling). Run 471 (04:00 CDT 09-23)
+runs on `ccb52912`, so it is a clean read of the T113 refresh with no re-key, and D-529's fifth
+reading comes from the pre-merge code. **Next session, in order:**
+1. **Read run 471 as the 2026-09-22c block below specifies.** Expect `gate.refresh_*` =
+   130/0/0/0 (D-552). A non-zero candidate count with no re-key is a DEFECT.
+2. **Then pull, but ONLY to `de7ae153` (#417), never to a later `main`** (the 2026-09-22f block,
+   D-557). Run 472 becomes the batch's re-key run:
+   - the corpus re-judge costs about +20 min and the gate cache re-send about +8 min, once;
+   - B8's 14-day window restarts at 472.
+3. **Watch runs 472–474.** The standing apply lane dips **529 → ~206** (D-556), then heals at
+   130/run, promotable leads first. `refresh_pending_after` should fall run over run.
+
+**What moved (D-555, measured).**
+- 2,127 `ineligible` → `uncertain` and 240 → `eligible`. The big term is a years bar under a
+  hedge heading; `Preferred Qualifications:` alone accounts for 1,047.
+- 168 `uncertain` → `ineligible`, **correct**: a preferred-section straddle had masked a genuine
+  basic bar.
+- 111 `eligible` → `uncertain`: a met row under a hedge heading no longer counts.
+- T152 keeps all 833 standing seniority readings through the re-key. **The drain is refused** a
+  seventh time.
+
+**Review discipline changed (owner, 2026-09-22e).** Codex ran 3 rounds on T160 and 5 on the batch.
+The owner has now set a budget: **1 review + 1 verification**, and a third round only for a
+genuine, reachable blocker. The model is `gpt-6-sol` (Codex CLI ≥ 0.156.0), with effort
+`low`/`medium`/`high` only. Global CLAUDE.md "Codex reviews" holds the rule.
+
+**NEXT WORK: superseded by the 2026-09-22f block above.** Wave A closed as T135 shipped, T144 built,
+T123 and T124 closed on measurement (D-558); T125 was measured and rebuilt as an annotation.
+
+### 2026-09-23b — **THE STACK FINISHED MERGING (D-568) AND SEVEN MORE TICKETS SHIPPED: T165 #427, T166 #428, T164 #429, T161 #430, T163 #431, T169 #432, T168 #433 (D-569 … D-571). RUN 471 IS READ: B8 VOLUME 20, ON THE BAR (D-572). THE PRIMARY CHECKOUT IS ON `de7ae153`. T170 IS MEASURED AND AWAITS A RULING; T172 IS BUILT AND HELD (D-573).**
+
+The session ran 01:47 to ~07:50 CDT on 09-23, on the enterprise seat; the owner was asleep for most of
+it and ruled up front (D-566).
+
+**Next session, in order:**
+1. **Read run 472 (04:00 on 09-24) as the eligibility batch's re-key run**, exactly as the 2026-09-22e
+   block below predicts: the standing apply lane dips 529 → ~206 and heals at 130/run, and
+   `refresh_pending_after` falls run over run; the corpus re-judge costs ~+20 min and the gate cache
+   re-send ~+8 min. Identify the run by `boards_attempted > 0`; read the store with Python
+   `sqlite3` `?mode=ro` only. **Run no local `make check`, mutation campaign or heavy probe between
+   04:00 and the run's end** (D-572: this session's gates slowed run 471's scan several-fold).
+2. **Only after 472 is read and its process has exited: `git -C boardwatch merge --ff-only
+   origin/main`.** Run 473 is then the first on T161, T163, T164, T166, T168 and T169. It re-keys
+   `engine_version` (T163, T169) and is **T161's live proof**: `readings_absent` 0, and the standing
+   apply lane returns to about its pre-472 level AT ONCE (T161 reads the D-548 verdicts again) with no
+   dip across 473's own re-key. **The refresh keeps re-judging at 130/run anyway, and that is correct:**
+   none of the 947 stored `sonnet` gate rows records an effort (all predate T155's field, measured
+   read-only 2026-09-23), and T155 treats a missing level as a different one. Expect
+   `refresh_pending_after` to fall by ~130 a run, and the daily gate to re-send its slate (low `cached`)
+   until that drains. Also read the funnel's `identity_drift` (`[]` expected) and `provenance` (the
+   checkout's commit), both from T137.
+3. **B8's volume window:** 471 read 20. 472 and 473 each re-key, so the 14-day count restarts; its
+   day 1 is run 473.
+4. **Owner calls** (Owner-gated, below): T170's ruling, which rides 473's re-key only if it merges
+   before step 2; T172's merge; T171 only if the queue list's latency matters.
+
+**Measured this session (D-567, D-572):**
+- **job-apps' daily discovery IS processed daily**: every passing record from 09-02 … 09-21 is in the
+  store, `_eligibility_review` included (D-486/488/509 superseded D-423's one-off harvest).
+- **Run 471's refresh read 130 / 3 / 3 / 0**, not the 130 / 0 / 0 / 0 expected, and legitimately:
+  two bodies revised by the run itself and one legacy lead whose gate rows name no judge.
+
+**Machine change (T167, owner's ruling):** the job-apps link refresher runs once, at 03:45, before the
+04:00 run. The plist backup is `com.boardwatch.jobapps-links.plist.bak-20260923-pre0345`.
+
+**Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23b): T170 (ruling owed), T172 (merge held),
+T171, T162 (parked), T113b (only if a stale-`ineligible` backlog recurs; T161 narrowed it to effort
+changes).
