@@ -496,6 +496,15 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     artifact_ids = _tailored_artifact_ids(conn)
     entries, by_job, duplicates = _resolve_job_identity(conn, _index(root)[0])
     planned, failures = _plan(rows, root=root, owner_name=owner_name)
+    collision = _recovered_collision(root)
+    if collision is not None:  # reported, and its lead is not re-created beside it (T206)
+        failures.append(
+            LeadFailure(
+                posting_id=collision,
+                detail=f"{RECOVERED_DIR} is a lead folder, but that name is reserved for "
+                "recovered owner files: rename it",
+            )
+        )
     failed = {failure.posting_id for failure in failures}
 
     # BEFORE the relocation pass, which is what would otherwise refuse the occupied destination.
@@ -1096,6 +1105,17 @@ def _write_details(built: Path, payload: _Payload) -> None:
     )
 
 
+def _recovered_collision(root: Path) -> int | None:
+    """The posting a LEAD folder named `_recovered` claims, or None when there is no such folder
+    (T206). boardwatch never writes a `details.json` directly under `_recovered` — it only moves
+    whole folders into it — so one there is the owner's lead folder under the reserved name, which
+    `_index` cannot see. Posting 0 when it does not say which, as `_clear_staging` reports."""
+    if not (root / RECOVERED_DIR / DETAILS_FILE).is_file():
+        return None
+    details = _read_details(root / RECOVERED_DIR)
+    return (None if details is None else _as_int(details.get("posting_id"))) or 0
+
+
 def _clear_staging(root: Path) -> list[LeadFailure]:
     """Remove every staging directory, deleting only what boardwatch wrote (T189c).
 
@@ -1127,6 +1147,10 @@ def _clear_staging(root: Path) -> list[LeadFailure]:
                     _merge_unauthored(path, entry.path)
                     continue
                 folder = (None if details is None else _as_str(details.get("folder"))) or path.name
+                if _recovered_collision(root) is not None:  # never into the owner's folder (T206)
+                    raise QueueConflictError(
+                        f"{RECOVERED_DIR} is a lead folder; owner files kept in staging"
+                    )
                 (root / RECOVERED_DIR).mkdir(exist_ok=True)
                 recovered = _free_name(root / RECOVERED_DIR, folder)
                 os.replace(path, recovered)

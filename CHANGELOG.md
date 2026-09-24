@@ -337,6 +337,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A stalled response-header phase ends at the fetch or board deadline; a lead folder named
+  `_recovered` is reported, never recovered into; the tenant tests run on one config (2026-09-24, T205,
+  T206, T207).** Every send carries a timeout clamped to the seconds left on both deadlines, and a
+  timeout past the deadline is the same non-retried failure; a header byte-trickle is measured not
+  boundable by per-operation timeouts and stays a known limit (T209). A top-level `_recovered` directory
+  that is really a lead folder is reported once and left alone, and stranded owner files stay in staging.
+
 - **Tianjin and the other Chinese municipalities and provincial capitals resolve to China in the
   location catalog (2026-09-24, T194).** The run-474 audit found a Tianjin posting passing the location
   filter as `unknown`. Read-only over every stored location string, the only transitions are

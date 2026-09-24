@@ -1,8 +1,10 @@
 import gzip
 import json
+import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -849,3 +851,96 @@ def test_the_default_fetch_deadline_admits_three_honoured_retry_afters(
         Fetcher(settings, client=client).get("https://throttled.example/x")
     assert info.value.status_code == 429
     assert calls == [1, 1, 1]
+
+
+@contextmanager
+def _local_server(respond: Callable[[socket.socket], None]) -> Iterator[str]:
+    """A one-connection HTTP server on a real socket: httpx honours its per-request `timeout`
+    only in the network layer, which an in-memory transport never reaches."""
+    listener = socket.create_server(("127.0.0.1", 0))
+
+    def serve() -> None:
+        conn, _ = listener.accept()
+        with conn:
+            conn.recv(65536)
+            try:
+                respond(conn)
+            except OSError:
+                pass  # the client hung up at its deadline
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{listener.getsockname()[1]}/x"
+    finally:
+        listener.close()
+        thread.join(timeout=10)
+
+
+def _stall_headers(conn: socket.socket) -> None:
+    conn.sendall(b"HTTP/1.1 200 OK\r\n")  # the status line, then silence mid-headers
+    time.sleep(3.0)
+
+
+def test_stalled_headers_end_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T205. The HEADER phase of a streamed send was bounded only by httpx's per-operation
+    timeout (30s here), so a host that went silent mid-headers held the request past the
+    deadline the body read enforces. A 3s stall against a 0.5s deadline."""
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, client=httpx.Client(timeout=30.0, trust_env=False))
+    with _local_server(_stall_headers) as url:
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert elapsed < 2.0, elapsed
+    assert info.value.status_code is None
+    # Raised off the clamped timeout itself, not by the next attempt after a retry backoff.
+    assert isinstance(info.value.__context__, httpx.ReadTimeout)
+
+
+def test_stalled_headers_end_at_the_board_deadline(tmp_path: Path) -> None:
+    """T205. The board's instant bounds the header phase too: `min(request, board)`."""
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 30.0})
+    fetcher = Fetcher(settings, client=httpx.Client(timeout=30.0, trust_env=False))
+    with _local_server(_stall_headers) as url:
+        started = time.monotonic()
+        with fetcher.under_deadline(started + 0.3, 0.3):
+            with pytest.raises(FetchFailure, match=r"board deadline 0\.3s exceeded"):
+                fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert elapsed < 2.0, elapsed
+
+
+def test_a_fast_response_over_a_socket_is_unaffected_by_the_header_bound(tmp_path: Path) -> None:
+    """Control for T205: a response that arrives in time is returned as before."""
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nETag: \"v\"\r\nContent-Length: 2\r\n\r\nok")
+
+    fetcher = Fetcher(_settings(tmp_path), client=httpx.Client(timeout=30.0, trust_env=False))
+    with _local_server(answer) as url:
+        result = fetcher.get(url)
+    assert (result.status_code, result.content, result.observed_validators) == (
+        200, b"ok", ResponseValidators(etag='"v"', last_modified=None)
+    )
+
+
+def test_each_send_carries_a_timeout_no_longer_than_the_deadline(tmp_path: Path) -> None:
+    """T205. The per-request timeout is `min(client per-operation timeout, seconds left)` for
+    every operation; an in-memory transport (a body already consumed) is otherwise unaffected."""
+    seen: list[dict[str, float | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(dict(request.extensions["timeout"]))
+        return httpx.Response(200, content=b"ok")
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 5.0})
+    client = httpx.Client(transport=httpx.MockTransport(handler), timeout=30.0)
+    assert Fetcher(settings, client=client).get("https://mem.example/x").content == b"ok"
+    assert set(seen[0]) == {"connect", "read", "write", "pool"}
+    assert all(v is not None and 0 < v <= 5.0 for v in seen[0].values()), seen
+
+    short = httpx.Client(transport=httpx.MockTransport(handler), timeout=2.0)
+    Fetcher(settings, client=short).get("https://mem.example/x")
+    assert seen[1] == {"connect": 2.0, "read": 2.0, "write": 2.0, "pool": 2.0}
