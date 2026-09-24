@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, Engine, Row, select
 
-from boardwatch.core.settings import Settings
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import (
@@ -371,6 +372,12 @@ def collect_run_funnel(
         apply_lane = ApplyLaneCohort(
             placements=apply_lane_cohort(conn, run_ids={run_id}).get(run_id, ())
         )
+        # F7. The config that read — and the queue sync after this artifact — actually used:
+        # `delivered_unapplied` calls `load_settings()` itself rather than taking the run's
+        # `Settings`, so a `config.toml` edit mid-run moves every lead's final lane while
+        # `settings` here still holds the start. Loaded beside the cohort read, through the same
+        # call, so the drift check below compares what those read sites saw.
+        read_site_settings = load_settings()
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
@@ -480,8 +487,20 @@ def collect_run_funnel(
         board_coverage=board_coverage,
         lanes=lanes,
         stage_durations=stage_durations,
+        # Against the read sites' config, not `end_identity`'s: the manifest keeps naming the
+        # config the run started, ranked and judged under, and the drift names the two config
+        # values when the file the finalize-time reads loaded no longer hashes the same (F7).
         identity_drift=(
-            None if start_identity is None else identity_drift(start_identity, end_identity)
+            None
+            if start_identity is None
+            else identity_drift(
+                start_identity,
+                replace(
+                    end_identity,
+                    config_hash=config_hash(read_site_settings),
+                    routing_hash=routing_hash(read_site_settings),
+                ),
+            )
         ),
         provenance=execution_provenance,
         tenant_assumptions=tenant_assumptions,

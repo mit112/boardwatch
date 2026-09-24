@@ -163,6 +163,33 @@ def test_a_rules_edit_mid_run_names_rules_hash_and_not_the_profile(
     assert _drift_lines(summary) == [f"{_DRIFT_LINE}: rules_hash"], summary.errors
 
 
+def test_a_config_edit_mid_run_is_reported_as_drift(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F7. The queue and the funnel's apply-lane cohort read `config.toml` again at finalize
+    (`delivered_unapplied` calls `load_settings()`), so an edit mid-run changes every lead's final
+    lane — while the manifest's two config values were computed from the run's in-memory
+    `Settings` at both readings and could not move. The end reading now hashes the config those
+    read sites read, so the edit is named and the alert fires.
+
+    Both knobs, one per hash: `gate.model` is `config_hash`-relevant and `gate.seniority_hold` is
+    the routing knob `config_hash` classifies out, so each value is shown to see the file.
+    """
+    _ready(env)
+    config = load_settings(data_dir=env).config_dir / "config.toml"
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    assert "[gate]" not in original, "guard: the edit below appends the only [gate] table"
+    assert load_settings(data_dir=env).gate.model != "opus", "guard: the edit must move the model"
+    edited = original + '\n[gate]\nmodel = "opus"\nseniority_hold = true\n'
+    fired = _edit_mid_run(monkeypatch, lambda: config.write_text(edited, encoding="utf-8"))
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert fired == [1], "guard: the mid-run edit must have happened exactly once"
+    assert _payload(summary)["identity_drift"] == ["config_hash", "routing_hash"]
+    assert _drift_lines(summary) == [f"{_DRIFT_LINE}: config_hash, routing_hash"], summary.errors
+
+
 # --- 4: provenance moves where the manifest cannot see ----------------------------------------
 
 
