@@ -15,6 +15,7 @@ from typing import Any, Literal
 from sqlalchemy import Connection, Row, func, insert, select, update
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.normalize import content_hash
 from boardwatch.store.funnel_queries import job_id_for_posting
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import application_events, applications, postings
@@ -174,6 +175,10 @@ def applied_identical_jds(conn: Connection) -> dict[int, list[AppliedTwin]]:
 
     Each list is ordered most recent application first, then by posting id, so "the first entry"
     is stable across renders.
+
+    The empty body is excluded (F9): two empty bodies at one company are not the same JD, and 770
+    live postings carry that hash. Derived from `content_hash("")`, as `EMPTY_BODY_HASH` is in
+    `delivery_queries` — which imports this module, so it is derived here rather than imported.
     """
     applied = (
         select(
@@ -202,6 +207,7 @@ def applied_identical_jds(conn: Connection) -> dict[int, list[AppliedTwin]]:
                 & (lead.c.job_id != twin.c.job_id),
             )
         )
+        .where(twin.c.content_hash != content_hash(""))
         .order_by(lead.c.id, applied.c.applied_at.desc().nulls_last(), twin.c.id)
     ).all()
     twins: dict[int, list[AppliedTwin]] = {}

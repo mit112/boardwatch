@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, event, select, update
 
+from boardwatch.core.normalize import content_hash
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery.api import ApiContext, detail_payload, queue_payload
 from boardwatch.store.applications import ApplicationStatus, create_application
@@ -155,6 +156,20 @@ def test_the_same_body_at_a_different_company_annotates_nothing(
     engine: Engine, ctx: ApiContext
 ) -> None:
     lead, _ = _seed(engine, company=False)
+    assert _queue_row(engine, ctx, lead)["applied_identical_jd"] == []
+
+
+def test_two_empty_bodies_at_one_company_annotate_nothing(engine: Engine, ctx: ApiContext) -> None:
+    """F9. An empty body is not a JD, so two of them are not "the same JD" — 770 live postings
+    carry the empty-body hash. The positive case with ONLY the shared hash moved to the empty
+    digest, derived from `content_hash("")` as `EMPTY_BODY_HASH` is."""
+    lead, applied = _seed(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id.in_([lead, applied]))
+            .values(content_hash=content_hash(""))
+        )
     assert _queue_row(engine, ctx, lead)["applied_identical_jd"] == []
 
 
