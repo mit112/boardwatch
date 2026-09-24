@@ -1193,7 +1193,7 @@ def _apply_lane(
     applied_cleanly = False
     apply_error: Exception | None = None
     try:
-        _apply_snapshots(engine, result, run_id)
+        _apply_snapshots(engine, result, run_id, lane.name)
         applied_cleanly = True
     except Exception as exc:  # noqa: BLE001 - captured to re-raise as the primary cause below
         apply_error = exc
@@ -1254,7 +1254,7 @@ def _apply_lane(
     )
 
 
-def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int) -> None:
+def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int, lane: str) -> None:
     """Land every company a lane collected. Raises on the first company that cannot be applied."""
     for company in result.snapshots:
         # `upsert_lane_company` is called for EVERY snapshot, including a company the store
@@ -1298,8 +1298,10 @@ def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int) -> None:
         # `board_scans` row every time, and board coverage outer-joins that table on
         # `(company_id, run_id)`. A lane touching an already-watched company would otherwise
         # emit a SECOND row for that pair, so the company appears twice — once measured, once
-        # enumerated-only — inflating `corpus_boards` and every bucket count.
-        apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane")
+        # enumerated-only — inflating `corpus_boards` and every bucket count. `lane` names the
+        # lane on the row, so `count_lane_captures` credits a capture only to the lane that landed
+        # it (T199).
+        apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane", lane=lane)
 
 
 def _persist_seed_work(

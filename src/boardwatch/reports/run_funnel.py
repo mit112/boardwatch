@@ -1858,13 +1858,20 @@ def _lane_cross_checks(
     """T191: each lane's self-report against the store's recount of the same deliverable.
 
     One `persisted_new` row per lane that REPORTED — a lane that did not run has no row, and
-    absent is not zero. The `board_scans` row is ONE across all lanes because the table records
-    no lane name; the lanes' snapshot counts sum exactly to its `scan_kind='lane'` rows, whereas
-    splitting it per lane would double-count a company two lanes both touched. Omitted when any
-    lane's snapshot count was not measured.
+    absent is not zero. The `board_scans` row is ONE across all lanes, as T191 shipped it; the
+    lanes' snapshot counts sum exactly to its `scan_kind='lane'` rows. Omitted when any lane's
+    snapshot count was not measured. A run whose lane rows name no lane (pre-T199) is attributed
+    by admission alone, and each `persisted_new` note says so.
     """
     if captures is None or not lanes:
         return ()
+    attribution = (
+        "a scan_kind='lane' board_scans row for the run naming this lane"
+        if captures.attributed_by_row
+        else "a scan_kind='lane' board_scans row for the run (ATTRIBUTED BY ADMISSION ONLY: this "
+        "run's lane rows name no lane, so a company two lanes admitted and one landed is "
+        "credited to both)"
+    )
     rows = tuple(
         CrossCheck(
             name=f"lane:{lane.name}:persisted_new",
@@ -1872,8 +1879,8 @@ def _lane_cross_checks(
             from_store=captures.first_captures.get(lane.name, 0),
             note=(
                 "the lane's admitted-and-landed companies vs the admitted companies the store "
-                "shows FIRST captured this run: a scan_kind='lane' board_scans row for the run, "
-                "none in an earlier run, and a posting whose `new` event carries this run"
+                f"shows FIRST captured this run: {attribution}, none in an earlier run, and a "
+                "posting whose `new` event carries this run"
             ),
         )
         for lane in lanes
@@ -1889,7 +1896,7 @@ def _lane_cross_checks(
             from_store=captures.scan_rows,
             note=(
                 "snapshots the lanes say they applied vs board_scans rows with scan_kind='lane' "
-                "for this run. Summed over every lane: board_scans records no lane name"
+                "for this run, summed over every lane"
             ),
         ),
     )

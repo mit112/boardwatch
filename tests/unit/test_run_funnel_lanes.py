@@ -340,7 +340,7 @@ def test_a_lane_claiming_more_new_reach_than_the_store_holds_disagrees() -> None
     reconciling through the same property the three older cross-checks feed."""
     funnel = _funnel(
         (_report("stub", admitted=_TWO, persisted_new=_TWO, snapshots=2),),
-        LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=2),
+        LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=2, attributed_by_row=True),
     )
     assert _checks(funnel)["lane:stub:persisted_new"] == (2, 1, False)
     assert [c.name for c in funnel.disagreements] == ["lane:stub:persisted_new"]
@@ -353,15 +353,33 @@ def test_a_lane_whose_self_report_matches_the_store_agrees() -> None:
     """Control for the case above: same shape, the store agrees, nothing is flagged."""
     funnel = _funnel(
         (_report("stub", admitted=_TWO, persisted_new=_TWO, snapshots=2),),
-        LaneCaptureCounts(first_captures={"stub": 2}, scan_rows=2),
+        LaneCaptureCounts(first_captures={"stub": 2}, scan_rows=2, attributed_by_row=True),
     )
     assert _checks(funnel)["lane:stub:persisted_new"] == (2, 2, True)
     assert _checks(funnel)["lanes:board_scans"] == (2, 2, True)
     assert funnel.disagreements == ()
 
 
+def test_the_reach_note_says_when_the_recount_fell_back_to_admission() -> None:
+    """T199. A run whose lane rows name no lane is attributed by admission alone; the note says so
+    rather than passing the number off as row-attributed. The row-attributed run's note does not."""
+
+    def note(attributed_by_row: bool) -> str:
+        funnel = _funnel(
+            (_report("stub", admitted=_TWO, persisted_new=_TWO, snapshots=2),),
+            LaneCaptureCounts(
+                first_captures={"stub": 2}, scan_rows=2, attributed_by_row=attributed_by_row
+            ),
+        )
+        return next(c.note for c in funnel.cross_checks if c.name == "lane:stub:persisted_new")
+
+    assert "ATTRIBUTED BY ADMISSION ONLY" in note(False)
+    assert "ATTRIBUTED BY ADMISSION ONLY" not in note(True)
+    assert "naming this lane" in note(True)
+
+
 def test_lane_scan_rows_the_lanes_did_not_report_disagree() -> None:
-    """`board_scans` carries no lane name, so the row count is checked once, across every lane:
+    """The row count is checked once, across every lane:
     the sum of the snapshots the lanes say they applied against the store's `scan_kind='lane'`
     rows for the run."""
     funnel = _funnel(
@@ -369,14 +387,15 @@ def test_lane_scan_rows_the_lanes_did_not_report_disagree() -> None:
             _report("a", snapshots=2),
             _report("b", snapshots=1),
         ),
-        LaneCaptureCounts(first_captures={"a": 0, "b": 0}, scan_rows=4),
+        LaneCaptureCounts(first_captures={"a": 0, "b": 0}, scan_rows=4, attributed_by_row=True),
     )
     assert _checks(funnel)["lanes:board_scans"] == (3, 4, False)
 
 
 def test_a_lane_that_did_not_run_has_no_row_and_absent_is_not_zero() -> None:
     """No lane ran: no lane rows at all, rather than rows of zeros that claim a check passed."""
-    names = set(_checks(_funnel((), LaneCaptureCounts(first_captures={}, scan_rows=0))))
+    captures = LaneCaptureCounts(first_captures={}, scan_rows=0, attributed_by_row=True)
+    names = set(_checks(_funnel((), captures)))
     assert not any(name.startswith("lane") for name in names)
 
 
@@ -392,7 +411,7 @@ def test_an_unmeasured_snapshot_count_omits_only_the_scan_row_check() -> None:
     checks = _checks(
         _funnel(
             (_report("stub", admitted=_TWO, persisted_new=_TWO),),
-            LaneCaptureCounts(first_captures={"stub": 2}, scan_rows=2),
+            LaneCaptureCounts(first_captures={"stub": 2}, scan_rows=2, attributed_by_row=True),
         )
     )
     assert "lanes:board_scans" not in checks

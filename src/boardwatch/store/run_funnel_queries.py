@@ -421,16 +421,22 @@ class LaneCaptureCounts:
     """The store's own account of what the lanes landed this run (T191).
 
     `first_captures` is, per lane, how many of the companies that lane ADMITTED the store shows
-    as first captured in this run: a `board_scans` row with `scan_kind='lane'` for the run, no
-    `board_scans` row in any earlier run, and at least one posting whose `new` event carries this
-    run. The two exclusions split first captures from overwrites — a company re-applied from an
-    earlier run, and a lane board that landed no posting, added no reach. `scan_rows` is every
-    `scan_kind='lane'` row for the run, across all lanes, because `board_scans` records no lane
-    name and a company two lanes touched legitimately has two rows.
+    as first captured in this run BY THAT LANE: a `board_scans` row with `scan_kind='lane'` for
+    the run naming the lane, no `board_scans` row in any earlier run, and at least one posting
+    whose `new` event carries this run. The two exclusions split first captures from overwrites
+    — a company re-applied from an earlier run, and a lane board that landed no posting, added no
+    reach. `scan_rows` is every `scan_kind='lane'` row for the run, across all lanes: a company
+    two lanes touched legitimately has two rows.
+
+    `attributed_by_row` is False when any of the run's lane rows names no lane (written before
+    T199's column). Such a run is attributed by admission alone, so a company two lanes admitted
+    and one landed is credited to both — the report says so rather than passing it off as the
+    row-attributed count.
     """
 
     first_captures: Mapping[str, int]
     scan_rows: int
+    attributed_by_row: bool
 
 
 def count_lane_captures(
@@ -440,10 +446,10 @@ def count_lane_captures(
 
     Keyed on `admitted` (the companies the cap approved BEFORE any body was fetched), not on
     `persisted_new`: the lane derives `persisted_new` by intersecting admissions with its own
-    snapshots, and this has to reach the store without going through that intersection. The
-    admission list only attributes a captured company to a lane — `board_scans` has no lane
-    column — and does not decide whether it was captured. Slugs compare case-folded, as
-    `stored_slug` resolves a lane's spelling to the stored row.
+    snapshots, and this has to reach the store without going through that intersection. A
+    company counts for a lane only when the lane both admitted it and wrote its captured row —
+    stricter than either alone. Slugs compare case-folded, as `stored_slug` resolves a lane's
+    spelling to the stored row.
     """
     prior = board_scans.alias("prior")
     earlier = (
@@ -461,31 +467,39 @@ def count_lane_captures(
         )
         .exists()
     )
-    captured = {
-        (provider, slug.casefold())
-        for provider, slug in conn.execute(
-            select(companies.c.provider, companies.c.slug)
-            .join(board_scans, board_scans.c.company_id == companies.c.id)
-            .where(
-                board_scans.c.run_id == run_id,
-                board_scans.c.scan_kind == "lane",
-                ~earlier,
-                new_posting,
-            )
-            .distinct()
-        ).all()
-    }
-    scan_rows = conn.execute(
-        select(func.count()).where(
+    captured_rows = conn.execute(
+        select(companies.c.provider, companies.c.slug, board_scans.c.lane)
+        .join(board_scans, board_scans.c.company_id == companies.c.id)
+        .where(
+            board_scans.c.run_id == run_id,
+            board_scans.c.scan_kind == "lane",
+            ~earlier,
+            new_posting,
+        )
+        .distinct()
+    ).all()
+    scan_rows, unnamed_rows = conn.execute(
+        select(func.count(), func.count().filter(board_scans.c.lane.is_(None))).where(
             board_scans.c.run_id == run_id, board_scans.c.scan_kind == "lane"
         )
-    ).scalar_one()
+    ).one()
+    attributed_by_row = unnamed_rows == 0
+    captured: dict[str | None, set[tuple[str, str]]] = {}
+    for provider, slug, lane in captured_rows:
+        # A pre-migration run keys every capture under None, so every lane reads the whole set.
+        captured.setdefault(lane if attributed_by_row else None, set()).add(
+            (provider, slug.casefold())
+        )
     return LaneCaptureCounts(
         first_captures={
-            lane: len({(p, s.casefold()) for p, s in keys} & captured)
+            lane: len(
+                {(p, s.casefold()) for p, s in keys}
+                & captured.get(lane if attributed_by_row else None, set())
+            )
             for lane, keys in admitted.items()
         },
         scan_rows=int(scan_rows),
+        attributed_by_row=attributed_by_row,
     )
 
 

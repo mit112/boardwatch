@@ -49,12 +49,20 @@ def _raw(posting_id: str) -> RawPosting:
     )
 
 
-def _land(engine: Engine, run_id: int, provider: str, slug: str, *posting_ids: str) -> None:
-    """What `runner._apply_snapshots` does for one lane company."""
+def _land(
+    engine: Engine,
+    run_id: int,
+    provider: str,
+    slug: str,
+    *posting_ids: str,
+    lane: str | None = "stub",
+) -> None:
+    """What `runner._apply_snapshots` does for one lane company. `lane=None` writes the row a
+    pre-migration run left: a lane row carrying no lane name."""
     with engine.begin() as conn:
         company_id = upsert_lane_company(conn, provider=provider, slug=slug, name=slug)
     snapshot = lane_snapshot([_raw(pid) for pid in posting_ids], "https://aggregator.test/s")
-    apply_board(engine, snapshot, company_id, run_id, scan_kind="lane")
+    apply_board(engine, snapshot, company_id, run_id, scan_kind="lane", lane=lane)
 
 
 def test_first_captures_are_split_from_a_company_the_store_already_scanned(
@@ -73,7 +81,7 @@ def test_first_captures_are_split_from_a_company_the_store_already_scanned(
             conn, current, {"stub": (("hiringcafe", "old"), ("hiringcafe", "new"))}
         )
 
-    assert counts == LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=2)
+    assert counts == LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=2, attributed_by_row=True)
 
 
 def test_a_company_row_with_no_landed_scan_is_not_counted(engine: Engine) -> None:
@@ -89,7 +97,7 @@ def test_a_company_row_with_no_landed_scan_is_not_counted(engine: Engine) -> Non
             conn, current, {"stub": (("hiringcafe", "a"), ("hiringcafe", "b"))}
         )
 
-    assert counts == LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=1)
+    assert counts == LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=1, attributed_by_row=True)
 
 
 def test_a_snapshot_that_landed_no_posting_is_not_new_reach(engine: Engine) -> None:
@@ -101,7 +109,7 @@ def test_a_snapshot_that_landed_no_posting_is_not_new_reach(engine: Engine) -> N
     with engine.connect() as conn:
         counts = count_lane_captures(conn, current, {"stub": (("hiringcafe", "empty"),)})
 
-    assert counts == LaneCaptureCounts(first_captures={"stub": 0}, scan_rows=1)
+    assert counts == LaneCaptureCounts(first_captures={"stub": 0}, scan_rows=1, attributed_by_row=True)
 
 
 def test_each_lane_is_counted_over_its_own_admissions_and_other_runs_are_ignored(
@@ -110,8 +118,8 @@ def test_each_lane_is_counted_over_its_own_admissions_and_other_runs_are_ignored
     other = _run(engine)
     _land(engine, other, "hiringcafe", "elsewhere", "e-1")
     current = _run(engine)
-    _land(engine, current, "hiringcafe", "Acme", "h-1")
-    _land(engine, current, "linkedin", "beta", "l-1")
+    _land(engine, current, "hiringcafe", "Acme", "h-1", lane="hiringcafe")
+    _land(engine, current, "linkedin", "beta", "l-1", lane="linkedin")
 
     with engine.connect() as conn:
         counts = count_lane_captures(
@@ -125,5 +133,64 @@ def test_each_lane_is_counted_over_its_own_admissions_and_other_runs_are_ignored
         )
 
     assert counts == LaneCaptureCounts(
-        first_captures={"hiringcafe": 1, "linkedin": 1}, scan_rows=2
+        first_captures={"hiringcafe": 1, "linkedin": 1}, scan_rows=2, attributed_by_row=True
+    )
+
+
+def test_a_company_two_lanes_admitted_is_credited_only_to_the_lane_that_landed_it(
+    engine: Engine,
+) -> None:
+    """T199, run 475's `ashby:evenup`: hiring.cafe and Indeed both admitted it and only Indeed's
+    snapshot landed. Attributed by admission alone, both lanes read 1; the row names Indeed."""
+    current = _run(engine)
+    _land(engine, current, "ashby", "evenup", "e-1", lane="indeed")
+
+    with engine.connect() as conn:
+        counts = count_lane_captures(
+            conn,
+            current,
+            {"hiringcafe": (("ashby", "evenup"),), "indeed": (("ashby", "evenup"),)},
+        )
+
+    assert counts.first_captures["hiringcafe"] == 0
+    assert counts.first_captures["indeed"] == 1
+    assert counts.scan_rows == 1
+    assert counts.attributed_by_row
+
+
+def test_a_company_both_lanes_admitted_and_landed_counts_once_for_each(engine: Engine) -> None:
+    """Control: two rows, one per lane, so each lane's own row credits it."""
+    current = _run(engine)
+    _land(engine, current, "ashby", "evenup", "e-1", lane="hiringcafe")
+    _land(engine, current, "ashby", "evenup", "e-1", lane="indeed")
+
+    with engine.connect() as conn:
+        counts = count_lane_captures(
+            conn,
+            current,
+            {"hiringcafe": (("ashby", "evenup"),), "indeed": (("ashby", "evenup"),)},
+        )
+
+    assert counts == LaneCaptureCounts(
+        first_captures={"hiringcafe": 1, "indeed": 1}, scan_rows=2, attributed_by_row=True
+    )
+
+
+def test_a_run_whose_lane_rows_carry_no_lane_name_falls_back_to_admission(
+    engine: Engine,
+) -> None:
+    """Pre-migration rows name no lane. The recount falls back to admission-only attribution —
+    both lanes are credited, as before T199 — and says it did."""
+    current = _run(engine)
+    _land(engine, current, "ashby", "evenup", "e-1", lane=None)
+
+    with engine.connect() as conn:
+        counts = count_lane_captures(
+            conn,
+            current,
+            {"hiringcafe": (("ashby", "evenup"),), "indeed": (("ashby", "evenup"),)},
+        )
+
+    assert counts == LaneCaptureCounts(
+        first_captures={"hiringcafe": 1, "indeed": 1}, scan_rows=1, attributed_by_row=False
     )
