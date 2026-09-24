@@ -98,6 +98,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "filelock" },
+    { name = "httpcore" },
     { name = "httpx" },
     { name = "platformdirs" },
     { name = "pydantic" },
@@ -127,6 +128,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "filelock", specifier = ">=3.13" },
+    { name = "httpcore", specifier = ">=1.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "platformdirs", specifier = ">=4.2" },
     { name = "pydantic", specifier = ">=2.7" },
