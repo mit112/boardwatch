@@ -178,7 +178,7 @@ CORPUS_ROWS = 1199
 HEADING_CASES_PATH = "tests/unit/test_eligibility_heading_context.py"
 HEADING_CASES_SYMBOL = "HEADING_CASES"
 HEADING_CASES_PIN = "sha256:bbf42a685ae2e7ed5104d36104ae6e43ad097562522417a6236852727f57e135"
-HEADING_CASES_ROWS = 30
+HEADING_CASES_ROWS = 43
 
 
 def readme_path(provider: str) -> str:
