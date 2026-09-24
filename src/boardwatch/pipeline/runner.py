@@ -95,6 +95,7 @@ from boardwatch.pipeline.death_probe import ListingProber, sweep_unwatched_death
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import (
     collect_run_funnel,
+    read_code_provenance,
     read_execution_provenance,
     read_run_identity,
 )
@@ -126,6 +127,7 @@ from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
+    CodeProvenance,
     DeathProbeReport,
     ExecutionProvenance,
     GateCounters,
@@ -2111,6 +2113,15 @@ def _run_pipeline_leased(
     # pipeline -> cli -> pipeline a cycle the moment run_cmd imports this.
     from boardwatch.cli.top_cmd import NoProfileError, rank_open_postings
 
+    # T137's code provenance, read FIRST (F11). `_capture_run_start` runs after the scan returns,
+    # about an hour in, and a checkout moved in between would be reported as the code that ran.
+    # Guarded here rather than there: it is reporting, so any failure costs the commit field.
+    try:
+        start_code = read_code_provenance()
+    except Exception as exc:  # noqa: BLE001 - provenance must never fail a run
+        console.print(f"  ! code provenance not recorded: {exc}", markup=False)
+        start_code = None
+
     # P3 slice 2 (D-046): drain any crashed/killed prior run before minting this one's row.
     # Never touches the row this run is about to create (it doesn't exist yet). Swallowed and
     # logged, mirroring `_emit_funnel` below: a drain failure must never block a new run.
@@ -2210,6 +2221,7 @@ def _run_pipeline_leased(
             settings,
             console,
             summary,
+            code=start_code,
             boards_attempted=scan_summary.companies if scan_summary is not None else 0,
             skip_scan=skip_scan,
             project=project,
@@ -3772,13 +3784,15 @@ def _capture_run_start(
     console: Console,
     summary: PipelineSummary,
     *,
+    code: CodeProvenance | None,
     boards_attempted: int,
     skip_scan: bool,
     project: bool,
     liveness_prober: bool,
     top_n: int,
 ) -> None:
-    """T137. The run's identity and execution provenance, read before ranking.
+    """T137. The run's identity and execution provenance, read before ranking. `code` is the
+    commit read when the run started (F11), not here.
 
     HERE because it is the first point at which every run has a `runs` row and a schema — the
     scan minted the row, or `ensure_run` did — and it is before the lane apply, the ranker, the
@@ -3799,6 +3813,7 @@ def _capture_run_start(
             summary.provenance = read_execution_provenance(
                 conn,
                 settings,
+                code=code,
                 boards_attempted=boards_attempted,
                 skip_scan=skip_scan,
                 project=project,

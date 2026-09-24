@@ -201,19 +201,28 @@ def code_provenance(root: Path) -> CodeProvenance | None:
     return CodeProvenance(commit=commit, dirty=dirty)
 
 
+def read_code_provenance() -> CodeProvenance | None:
+    """`code_provenance` of the package this process imported. The runner calls it as the run
+    STARTS and hands the answer to `read_execution_provenance` (F11): read after the scan, it
+    would name whatever the checkout had moved to an hour into the run."""
+    return code_provenance(_PACKAGE_ROOT)
+
+
 def read_execution_provenance(
     conn: Connection,
     settings: Settings,
     *,
+    code: CodeProvenance | None,
     boards_attempted: int,
     skip_scan: bool,
     project: bool,
     liveness_prober: bool,
     top_n: int,
 ) -> ExecutionProvenance:
-    """T137's execution provenance, from `settings`, the store and the command's own flags."""
+    """T137's execution provenance, from `settings`, the store and the command's own flags, and
+    the `code` the run read at its start (`read_code_provenance`)."""
     return ExecutionProvenance(
-        code=code_provenance(_PACKAGE_ROOT),
+        code=code,
         gate_engine_version=gate_engine_version(),
         gate_model=settings.gate.model,
         gate_effort=settings.gate.effort,
