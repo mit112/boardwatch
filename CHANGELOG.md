@@ -337,6 +337,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A host that trickles bytes is bounded by the fetch and board deadlines (2026-09-24, T209).** The
+  `Fetcher`'s client runs on its own `httpx.BaseTransport` over a public `httpcore.ConnectionPool` whose
+  network backend clamps every connect, read, write and TLS step to the seconds left on the request's
+  deadline, so a header or body trickle — and a reused pooled connection — ends at the deadline with the
+  same non-retried failure the deadline checks raise; request bodies are written in bounded slices. The
+  client no longer trusts environment proxies (`trust_env=False`), because an env proxy would mount httpx's
+  own transport underneath the bound. The TLS-handshake trickle stays a known limit.
+
 - **A stalled response-header phase ends at the fetch or board deadline; a lead folder named
   `_recovered` is reported, never recovered into; the tenant tests run on one config (2026-09-24, T205,
   T206, T207).** Every send carries a timeout clamped to the seconds left on both deadlines, and a
