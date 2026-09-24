@@ -449,6 +449,32 @@ class EightfoldProvider:
             throttle_exhausted=ledger.exhausted,
         )
 
+    def fetch_posting(
+        self, fetcher: Fetcher, slug: str, provider_posting_id: str
+    ) -> RawPosting | None:
+        """One position re-read from `position_details` (`postings refetch`), after the same
+        career-page bootstrap `fetch_board` needs for the tenant's `domain` (property 1).
+
+        A detail 404 returns None here, and that is not a reversal of property 6: None is a
+        REPORT line and closes nothing, so an edge blip read as "gone" costs one re-run, not a
+        requisition. The detail payload is passed as both halves of `parse_posting` — it
+        carries every key that function reads off the listed row.
+        """
+        ledger = _ThrottleLedger()
+        host = validated_host(slug)
+        boot = _get(fetcher, self.board_url(slug), ledger)
+        domain = board_domain(boot.content)
+        try:
+            result = _get(fetcher, self._detail_url(host, domain, provider_posting_id), ledger)
+        except FetchFailure as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        detail = _envelope_data(result.content)
+        if not detail:
+            raise ValueError("detail payload carries no data object")
+        return parse_posting(host, detail, detail)
+
     def _page_listing(
         self, fetcher: Fetcher, host: str, domain: str, ledger: _ThrottleLedger
     ) -> tuple[list[dict[str, Any]] | None, int | None, list[str]]:

@@ -567,6 +567,13 @@ current rules, and it can only be delivered again, never un-delivered.""",
         """Re-derives `body_text` from stored raw JSON for `--provider` and records each change as a
 revision. Reports without `--apply`. A body change re-keys that posting's verdict.""",
     ),
+    "postings refetch": Entry(
+        ("writes store",),
+        """Re-reads the postings named by `--ids`/`--ids-file` from their own board and applies each
+through the scan's writer: a changed body is a revision, `raw_json` and provider fields are
+replaced, closed stays closed. Fetches but writes nothing without `--apply`, and only `--apply`
+opens the migrating context. Refuses while a run is in progress.""",
+    ),
     # ---- résumé -----------------------------------------------------------------------------
     "tailor init": Entry(
         ("writes files",),
