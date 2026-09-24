@@ -5,6 +5,14 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+THIRTEEN rows were ADDED 2026-09-24 for engine batch 4, and every pre-existing row passes unchanged.
+m1172-m1177 are T200 (a digit `3 to 5`, `Between 5 and 7` and spaced-dash `5 – 7` range reads its low
+end or no row, never its high end; `5 and 7` without `between`, a single scoped bar and a scoped `5 to
+7` range are the controls), m1178-m1182 T201 (a count that is the subject of `will be credited` or
+`may be substituted` is no bar; a credit rule in the next sentence, or an aside substituting another
+noun, leaves the bar), m1183-m1184 T202 (pv 323521's `two (2) year college` is not a second duration,
+so the tail hedge reaches the bar; a real second duration still stops it).
+
 FIFTEEN rows were ADDED and THREE RE-BASELINED 2026-09-24 for engine batch 3. T193 reads a spelled
 years count (`five (5) years`, `Five years`): m0036 pinned `Five years of experience required.` as a
 known gap and now reads its required floor; m0923's `Mandatory: five years of experience.` now carries
@@ -1433,6 +1441,19 @@ CASES: list[tuple] = [
     ('m1169:T197 WILL NOT an aside restating the hedge still hedges the bar', '5+ years of experience (preferred only)', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('m1170:T193 WILL NOT a spelled range does not read its high end as the floor', 'Three to five years of experience with Python', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1171:T193 a spelled count behind a ceiling cue is a ceiling', 'Less than two years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
+    ('m1172:T200 WILL NOT a digit to-range does not read its high end as a scoped floor', '3 to 5 years of experience with Python', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
+    ('m1173:T200 WILL NOT between N and M writes no floor on its high end', 'Between 5 and 7 years of relevant experience', {'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1174:T200 WILL NOT a spaced-dash range reads its low end only', '5 – 7 years of relevant experience', {'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:range_years_minimum', 'required', 'met']]),
+    ('m1175:T200 and without between keeps its bar', '5 and 7 years of relevant experience', {'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1176:T200 a single scoped bar keeps its row', '5 years of experience with Python', {'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ('m1177:T200 a digit to-range as a scoped range writes its range row', '5 to 7 years of experience with Python', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_range_years_minimum', 'required', 'unmet']]),
+    ('m1178:T201 WILL NOT the first N years credited is not a bar', 'The first 5 years of experience will be credited at the following rate', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1179:T201 WILL NOT one year credited is not a bar', 'One year of acceptable experience will be credited toward the requirement.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1180:T201 WILL NOT years that may be substituted for a degree are not a bar', 'Four (4) years of additional software engineering experience on projects with similar software processes may be substituted for a bachelor’s degree.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1181:T201 a credit rule in the next sentence leaves the bar', '5 years of experience required. Experience will be credited toward seniority.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1182:T201 an aside substituting another noun leaves the bar', 'Bachelor’s degree and 10+ years of relevant experience (additional experience may substitute for degree).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1183:T202 WILL NOT a degree length is not a second duration', "2+ years' experience working in a manufacturing setting or a Two-year degree or certificate from an accredited two (2) year college, university, or technical school preferred", {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('m1184:T202 a real second duration still stops the tail hedge', '5+ years of experience, or 2 years in a senior role, preferred', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 
@@ -1452,4 +1473,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1170
+    assert len(CASES) == 1183
