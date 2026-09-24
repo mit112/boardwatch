@@ -86,12 +86,13 @@ def test_the_three_drift_states_publish_three_different_things() -> None:
 
 
 def test_drift_is_published_beside_the_manifest_not_inside_it() -> None:
-    """The manifest publishes exactly what it did before T137."""
+    """The manifest publishes exactly what it did before T137, plus T204's `target_countries`."""
     payload = funnel_to_dict(replace(funnel(), identity_drift=("rules_hash",)))
 
     assert set(payload["manifest"]) == {  # type: ignore[arg-type]
         "code_fingerprint", "config_hash", "profile_facts_hash", "profile_row_hash",
         "rules_hash", "status", "location_filter_mode", "routing_hash",
+    "target_countries",
     }
 
 
