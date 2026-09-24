@@ -1097,3 +1097,66 @@ def test_a_reused_connection_does_not_keep_the_deadline_of_the_request_that_open
         time.sleep(0.6)  # past the first request's deadline
         assert fetcher.get(url).content == b"ok2"
     assert second_arrived.is_set()
+
+
+def _read_slowly(conn: socket.socket) -> None:
+    # Reads the request 256 KiB every 0.1s for 4s and never answers: every `send()` makes
+    # progress, so a socket timeout re-armed on each partial send never fires. Smaller reads
+    # do not reopen macOS loopback's window often enough, and the send stalls on its own.
+    for _ in range(40):
+        time.sleep(0.1)
+        if not conn.recv(256 * 1024):
+            return
+
+
+# Loopback buffers take a few MiB in one `send()`; 4s of those reads drain about 10 MiB more.
+_LARGE_BODY = {"blob": "x" * 16 * 1024 * 1024}
+
+
+def test_a_slowly_read_request_body_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T209 round 2. httpcore's `write` loops `send()` and re-arms the timeout per partial send,
+    so one clamped `write` call let a slow reader hold the worker past the deadline. The wrapper
+    writes bounded slices, each clamped to what is left."""
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(_read_slowly) as url:
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.post_json(url, _LARGE_BODY)
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    assert info.value.status_code is None
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_small_post_over_the_fetchers_own_transport_is_unchanged(tmp_path: Path) -> None:
+    """Control for the sliced write: a small body, answered at once."""
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    fetcher = Fetcher(_settings(tmp_path), pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        result = fetcher.post_json(url, {"limit": 20})
+    assert (result.status_code, result.content) == (200, b"ok")
+
+
+def test_a_large_post_to_a_fast_reader_arrives_whole(tmp_path: Path) -> None:
+    """Control for the sliced write: the whole body is sent and the answer comes back."""
+    received = bytearray()
+
+    def answer(conn: socket.socket) -> None:
+        # `_local_server` already consumed the first recv; read on to the JSON's closing brace.
+        while not received.endswith(b'"}'):
+            chunk = conn.recv(1024 * 1024)
+            if not chunk:
+                return
+            received.extend(chunk)
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 5.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        result = fetcher.post_json(url, _LARGE_BODY)
+    assert (result.status_code, result.content) == (200, b"ok")
+    assert received.endswith(b"x" * 65536 + b'"}')

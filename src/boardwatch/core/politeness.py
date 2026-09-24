@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import partial
 from importlib.metadata import version as package_version
 from typing import Any, TypeVar
 
@@ -173,6 +174,10 @@ def _bounded(op: Callable[[float | None], _T], timeout: float | None) -> _T:
         raise
 
 
+#: The most `_DeadlineStream.write` hands one bounded `write` call.
+_WRITE_SLICE = 16 * 1024
+
+
 class _DeadlineStream(httpcore.NetworkStream):
     def __init__(self, stream: httpcore.NetworkStream) -> None:
         self._stream = stream
@@ -181,7 +186,10 @@ class _DeadlineStream(httpcore.NetworkStream):
         return _bounded(lambda t: self._stream.read(max_bytes, t), timeout)
 
     def write(self, buffer: bytes, timeout: float | None = None) -> None:
-        _bounded(lambda t: self._stream.write(buffer, t), timeout)
+        # In slices, each bounded on its own: httpcore's `write` loops `send()` and re-arms the
+        # timeout on every partial send, so one bounded call lets a slow reader outlast it.
+        for start in range(0, len(buffer), _WRITE_SLICE):
+            _bounded(partial(self._stream.write, buffer[start:start + _WRITE_SLICE]), timeout)
 
     def close(self) -> None:
         self._stream.close()
