@@ -32,7 +32,7 @@ from boardwatch.rank.role_taxonomy import (
 )
 from boardwatch.registry.loader import load_catalog, starter_entries
 from boardwatch.registry.validate import CompanyEntry
-from boardwatch.store.queries import save_eligibility, upsert_watch
+from boardwatch.store.queries import get_profile, save_eligibility, upsert_watch
 from boardwatch.tailor.render.latex import resolve_template
 
 console = Console()
@@ -183,10 +183,19 @@ def init(ctx: typer.Context) -> None:
     excludes = typer.prompt("Exclude titles (comma separated, blank for none)", default="")
     locations = typer.prompt("Locations (comma separated, blank for none)", default="")
     remote_only = typer.confirm("Remote only?", default=False)
+    # T186. `init` on an EXISTING install must not silently reset the target countries to
+    # undeclared: under B3 an undeclared target makes both location gates inert, which over the
+    # live store lifts every non-US drop and review hold at once. `profile edit` is where the
+    # value changes; `init` keeps what the row already says.
+    with app_ctx.engine.connect() as conn:
+        existing = get_profile(conn)
     persist_profile(
         app_ctx.engine, app_ctx.settings, text=text,
         target_titles=split_csv(targets_t), exclude_titles=split_csv(excludes),
         locations=split_csv(locations), remote_only=remote_only,
+        target_countries=(
+            () if existing is None else tuple(existing.target_countries_json or ())
+        ),
     )
 
     # Eligibility is optional and comes AFTER persist_profile: profile.text is NOT NULL, so

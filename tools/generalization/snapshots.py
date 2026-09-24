@@ -252,6 +252,12 @@ EXPECTED_PARAM_DEFAULTS: dict[str, str] = {
     # for a change that alters no verdict. 1.0 is add-one smoothing — the smallest value that
     # clears the thin-JD false positives out of the delivered slate; 0.0 restores the raw ratio.
     "score_posting.coverage_pseudo_count": "1.0",
+    # The SHIPPED location catalog (DESIGN-T183 B3), which only holds the `usa` positive pack. It
+    # is geography, not a target: which countries count is the profile's `target_countries`, and
+    # undeclared targets make both hard location clauses inert whatever this default holds. A
+    # second country's pack is tenant data (owner ruling Q6) and would be passed, never shipped.
+    "hard_filter_verdict.location_packs": "BUNDLED_PACKS",
+    "passes_hard_filters.location_packs": "BUNDLED_PACKS",
 }
 
 # The init wizard's prompt defaults, in source order. Every profile and filter

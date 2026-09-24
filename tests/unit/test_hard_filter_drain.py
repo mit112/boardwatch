@@ -21,6 +21,8 @@ def _profile(**overrides: object) -> ProfileView:
         "exclude_titles": (),
         "locations": ("New York",),
         "remote_only": False,
+        # The US tenant these fixtures are calibrated for; undeclared targets are inert.
+        "target_countries": ("USA",),
     }
     base.update(overrides)
     return ProfileView(**base)  # type: ignore[arg-type]

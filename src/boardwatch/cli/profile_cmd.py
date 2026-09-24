@@ -6,10 +6,11 @@ by the D21 preflight (Task 12)."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal, get_args
 
 import typer
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from rich.console import Console
 from sqlalchemy import Engine
 
@@ -26,6 +27,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import facts_payload
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.rank.location_data import ISO3166_ALPHA3
 from boardwatch.store.queries import get_profile, save_eligibility, save_profile
 
 console = Console()
@@ -37,6 +39,28 @@ SeniorityBandChoice = Literal["entry", "mid", "senior", "any"]
 # DERIVED from the Literal, never restated: a second hand-written list would drift from
 # the one pydantic actually validates against.
 SENIORITY_BAND_CHOICES: frozenset[str] = frozenset(get_args(SeniorityBandChoice))
+
+
+class UnknownCountryCode(ValueError):
+    """A `target_countries` entry outside ISO-3166 alpha-3 (DESIGN-T183 B1, closed vocabulary)."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"{code!r} is not an ISO-3166 alpha-3 country code")
+        self.code = code
+
+
+def parse_target_countries(raw: str | Sequence[str]) -> tuple[str, ...]:
+    """Normalize to the stored form — uppercase, deduplicated, sorted — or raise.
+
+    Sorted so one set of countries is one fingerprint input, whatever order it was typed in.
+    """
+    items = split_csv(raw) if isinstance(raw, str) else [item.strip() for item in raw]
+    codes = {item.upper() for item in items if item}
+    for code in sorted(codes):
+        if code not in ISO3166_ALPHA3:
+            raise UnknownCountryCode(code)
+    return tuple(sorted(codes))
+
 
 ZERO_SKILL_WARNING = (
     "warning: no recognized skills in your profile — "
@@ -56,6 +80,13 @@ class ProfileInput(BaseModel):
     remote_only: bool
     resume_max_pages: int = 1
     target_seniority_band: SeniorityBandChoice = "any"
+    # Empty means UNDECLARED, which the location gates read as "abstain" (DESIGN-T183 Q2).
+    target_countries: tuple[str, ...] = ()
+
+    @field_validator("target_countries")
+    @classmethod
+    def _closed_vocabulary(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return parse_target_countries(value)
 
 
 def persist_profile(
@@ -69,6 +100,7 @@ def persist_profile(
     remote_only: bool,
     resume_max_pages: int = 1,
     target_seniority_band: str = "any",
+    target_countries: tuple[str, ...] = (),
 ) -> list[str]:
     """Save the singleton profile, re-deriving skills via the taxonomy engine.
 
@@ -83,6 +115,7 @@ def persist_profile(
         remote_only=remote_only,
         resume_max_pages=resume_max_pages,
         target_seniority_band=target_seniority_band,
+        target_countries=target_countries,
     )
     taxonomy = load_taxonomy(settings.config_dir)
     skills = sorted(taxonomy.extract(data.text))
@@ -100,6 +133,7 @@ def persist_profile(
             # Explicit, never defaulted: a caller that forgot it would silently reset the
             # band on every `profile edit`.
             target_seniority_band=data.target_seniority_band,
+            target_countries=list(data.target_countries),
         )
     if not skills:
         console.print(ZERO_SKILL_WARNING)
@@ -136,6 +170,7 @@ def show(
                 "target_titles": list(row.target_titles_json or []),
                 "exclude_titles": list(row.exclude_titles_json or []),
                 "target_seniority_band": row.target_seniority_band,
+                "target_countries": list(row.target_countries_json),
                 "locations": list(row.locations_json or []),
                 "remote_only": bool(row.remote_only),
             }
@@ -148,6 +183,7 @@ def show(
     console.print(f"Target titles: {', '.join(row.target_titles_json or []) or '—'}")
     console.print(f"Exclude titles: {', '.join(row.exclude_titles_json or []) or '—'}")
     console.print(f"Target seniority band: {row.target_seniority_band}")
+    console.print(f"Target countries: {', '.join(row.target_countries_json) or '—'}")
     console.print(
         f"Locations: {', '.join(row.locations_json or []) or '—'} · "
         f"Remote only: {'yes' if row.remote_only else 'no'}"
@@ -191,6 +227,15 @@ def edit(ctx: typer.Context) -> None:
             f"{target_seniority_band!r} is not a seniority band; "
             f"choose one of {', '.join(sorted(SENIORITY_BAND_CHOICES))}"
         )
+    while True:
+        try:
+            target_countries = parse_target_countries(typer.prompt(
+                "Target countries (ISO-3166 alpha-3, comma separated; blank for undeclared)",
+                default=", ".join(row.target_countries_json),
+            ))
+            break
+        except UnknownCountryCode as exc:
+            console.print(str(exc))
     persist_profile(
         app_ctx.engine,
         app_ctx.settings,
@@ -201,6 +246,7 @@ def edit(ctx: typer.Context) -> None:
         remote_only=remote_only,
         resume_max_pages=resume_max_pages,
         target_seniority_band=target_seniority_band,
+        target_countries=target_countries,
     )
 
     # The same four eligibility prompts as init, so the feature is reachable on an existing

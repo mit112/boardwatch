@@ -69,4 +69,5 @@ def test_resume_max_pages_not_a_profile_row_hash_input() -> None:
         "leveling_digest",
         "taxonomy_version",
         "role_taxonomy_digest",
+        "target_countries",
     }

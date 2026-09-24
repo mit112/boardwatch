@@ -44,7 +44,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal, NamedTuple, get_args
 
-from boardwatch.rank.location_gate import classify_location
+from boardwatch.rank.location_data import BUNDLED_PACKS, CountryPack
+from boardwatch.rank.location_gate import location_target
 from boardwatch.rank.role_gate import RoleVerdict
 
 #: The review-lane drain directory. Registered in ``delivery.names.DRAIN_DIRS``.
@@ -196,8 +197,10 @@ def classify(
     judge_verdict: str | None,
     judge_seniority_above_band: bool,
     revised_since_build: bool,
+    target_countries: Sequence[str],
     form_question_hit: str | None = None,
     provider_employment_type: str | None = None,
+    location_packs: Sequence[CountryPack] = BUNDLED_PACKS,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the reasons held the lead.
 
@@ -241,7 +244,8 @@ def classify(
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
     blind-applied. Everything else — ``uncertain`` or an unevaluated ``None`` verdict —
-    is held for review when it is *confirmed* non-US, *confirmed* non-software, or the
+    is held for review when it is *confirmed* outside the target countries, *confirmed*
+    non-software, or the
     requirement summary says no rule cleared anything (the three flags below).
 
     The three flags are read AFTER the ``eligible`` short-circuit, so they cannot move an
@@ -265,11 +269,12 @@ def classify(
     out by family SEVERITY, because a lead with no rows has no rows of any severity (D-380's R2
     gap is untouched by it).
 
-    Location fails OPEN on ``unknown``, exactly as the hard US gate does (the visa ruling:
-    an unclassifiable location is never blind-dropped). Only a confirmed ``non_us`` lead is
-    demoted; a bare ``"Remote"`` or any location the classifier cannot place stays in the
-    apply queue. A genuinely foreign city the classifier does not recognise (e.g. an
-    unlisted "Kaunas Office") reads ``unknown`` and is a classifier-coverage gap to close in
+    Location fails OPEN on ``unknown``, exactly as the hard location gate does (the visa ruling:
+    an unclassifiable location is never blind-dropped). Only a lead confirmed outside
+    ``target_countries`` is demoted, and undeclared targets demote nothing; a bare
+    ``"Remote"`` or any location the classifier cannot place stays in the apply queue. A
+    genuinely foreign city the classifier does not recognise (e.g. an unlisted "Kaunas
+    Office") reads ``unknown`` and is a classifier-coverage gap to close in
     ``rank/location_data`` (the D-294 pattern), not something to fix by demoting every
     remote lead here. Role, by contrast, is demoted on anything not positively ``swe`` — a
     title carrying no software signal is not blindly-appliable.
@@ -316,7 +321,11 @@ def classify(
         return LaneDecision(REVIEW_DIR, "form_question_hard_stop")
     if verdict == "ineligible":
         return LaneDecision(REVIEW_DIR, "ineligible_verdict")
-    if classify_location(list(locations)) == "non_us":
+    # DESIGN-T183 L6. Against the CALLER's target set, so this module still reads no profile.
+    # Undeclared targets (or a target with no positive pack) hold nothing here — owner ruling
+    # Q2: the loud signal is the tenant-assumption report's abstain, not an empty apply lane.
+    # The reason keeps its `non_us_location` name for the same mirror sites the ranker's does.
+    if location_target(target_countries, location_packs).classify(locations) == "out_of_target":
         return LaneDecision(REVIEW_DIR, "non_us_location")
     if role == "not_swe":
         return LaneDecision(REVIEW_DIR, "role_vetoed")
@@ -508,8 +517,10 @@ def lane(
     judge_verdict: str | None,
     judge_seniority_above_band: bool,
     revised_since_build: bool,
+    target_countries: Sequence[str],
     form_question_hit: str | None = None,
     provider_employment_type: str | None = None,
+    location_packs: Sequence[CountryPack] = BUNDLED_PACKS,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -530,6 +541,8 @@ def lane(
         judge_verdict=judge_verdict,
         judge_seniority_above_band=judge_seniority_above_band,
         revised_since_build=revised_since_build,
+        target_countries=target_countries,
         form_question_hit=form_question_hit,
         provider_employment_type=provider_employment_type,
+        location_packs=location_packs,
     ).lane

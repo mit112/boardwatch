@@ -13,8 +13,9 @@ is `runs.status` (D-029). This module supplies the parts that did not exist:
     if a field appears in neither — `CLAUDE.md`: out-of-catalog is a failure, never a new
     bucket. A `Settings` field added later cannot be silently swept into or out of the hash.
 
-  * **`profile_row_hash`** — over the six profile columns the RANKER reads (`skills`,
-    `target_titles`, `exclude_titles`, `locations`, `remote_only`, `target_seniority_band`).
+  * **`profile_row_hash`** — over the seven profile columns the RANKER reads (`skills`,
+    `target_titles`, `exclude_titles`, `locations`, `remote_only`, `target_seniority_band`,
+    `target_countries`).
     `profile_hash` is an eligibility-*facts* hash and covers none of them, yet
     `exclude_titles` alone drives the single largest drop in the funnel. Without this hash the
     manifest would say two runs were identical while the setting responsible for 11,517
@@ -488,8 +489,9 @@ def profile_row_hash(
     leveling_digest: str = "",
     taxonomy_version: str = "",
     role_taxonomy_digest: str = "",
+    target_countries: Sequence[str] = (),
 ) -> str:
-    """SHA-256 over the six profile columns the ranker reads, plus the three catalog versions.
+    """SHA-256 over the seven profile columns the ranker reads, plus the three catalog versions.
 
     A missing list and an empty list are different inputs and hash differently — canonical form
     keeps an explicit null distinct from `[]`, the same guard `hashing.canonical` documents.
@@ -515,6 +517,9 @@ def profile_row_hash(
         # And the user's role taxonomy (P2 item 8): it decides the role gate's `not_swe` drop.
         # `""` is "no taxonomy", which no real digest can equal.
         "role_taxonomy_digest": role_taxonomy_digest,
+        # DESIGN-T183 B1. The target set the location gates are keyed to; always present, so
+        # adding it re-keyed every stamp once, and a later edit re-keys it again.
+        "target_countries": list(target_countries),
     }
     return digest(payload)
 

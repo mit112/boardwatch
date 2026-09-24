@@ -407,7 +407,8 @@ def test_a_secondhand_insert_blanks_a_false_non_us_location_the_hard_gate_would_
 
     row = _posting(engine)
     profile = ProfileView(
-        skills=frozenset(), target_titles=(), exclude_titles=(), locations=(), remote_only=False
+        skills=frozenset(), target_titles=(), exclude_titles=(), locations=(), remote_only=False,
+        target_countries=("USA",),
     )
     # CONTROL: the value the aggregator assigned really is a deletion -- a confirmed `non_us` that
     # the REAL hard gate vetoes. Without the blanking below, this is what would decide the lead.

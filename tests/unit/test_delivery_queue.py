@@ -180,7 +180,7 @@ def _save_identity(conn: Connection) -> None:
     save_profile(
         conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
         locations=["Boston, MA"], remote_only=False, skills=["python"],
-        taxonomy_version="v1", resume_max_pages=1,
+        taxonomy_version="v1", resume_max_pages=1, target_countries=["USA"],
     )
     save_eligibility(
         conn, facts_json=facts_payload(FACTS), policy_json=POLICY.model_dump(mode="json")
@@ -1558,7 +1558,7 @@ def _make_ineligible(conn: Connection, posting_id: int) -> None:
     save_profile(
         conn, text="resume", target_titles=["software engineer"], exclude_titles=[],
         locations=["Boston, MA"], remote_only=False, skills=["python"],
-        taxonomy_version="v1", resume_max_pages=1,
+        taxonomy_version="v1", resume_max_pages=1, target_countries=["USA"],
     )
     save_eligibility(
         conn, facts_json=facts_payload(facts), policy_json=policy.model_dump(mode="json")

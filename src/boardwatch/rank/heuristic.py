@@ -37,8 +37,9 @@ from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
 
 from boardwatch.core.settings import RankWeights
-from boardwatch.rank.foreign_ad_gate import has_non_us_ad_marker
-from boardwatch.rank.location_gate import classify_location
+from boardwatch.rank.foreign_ad_gate import ad_marker_countries
+from boardwatch.rank.location_data import BUNDLED_PACKS, CountryPack
+from boardwatch.rank.location_gate import location_target
 from boardwatch.rank.seniority_gate import mask_non_seniority_phrases
 
 
@@ -52,6 +53,9 @@ class ProfileView:
     # D-246. `notify` consumes ProfileView too, which is what makes wiring the second filter
     # chain cheap. Falls back to "any" (inert) so a row predating the migration is safe.
     target_seniority_band: str = "any"
+    # DESIGN-T183. ISO-3166 alpha-3, uppercase; `()` is undeclared, which makes both hard
+    # location clauses inert (Q2).
+    target_countries: tuple[str, ...] = ()
 
 
 def profile_view_from_row(row: object) -> ProfileView:
@@ -62,6 +66,7 @@ def profile_view_from_row(row: object) -> ProfileView:
         locations=tuple(getattr(row, "locations_json", None) or []),
         remote_only=bool(getattr(row, "remote_only", False)),
         target_seniority_band=str(getattr(row, "target_seniority_band", None) or "any"),
+        target_countries=tuple(getattr(row, "target_countries_json", None) or ()),
     )
 
 
@@ -228,6 +233,7 @@ def hard_filter_verdict(
     remote_policy: str,
     profile: ProfileView,
     location_filter_mode: str,
+    location_packs: Sequence[CountryPack] = BUNDLED_PACKS,
 ) -> HardFilterVeto | None:
     """The veto that fired, or None if the posting cleared every clause.
 
@@ -261,22 +267,30 @@ def hard_filter_verdict(
         # A remote-only profile keeps its non-remote veto (unchanged).
         if profile.remote_only and remote_policy != "remote":
             return HardFilterVeto("remote_only", f"remote_policy={remote_policy!r}")
-        # US-only hard gate (D-251, Mit's visa requirement). `classify_location` is a positive
-        # US allowlist, not a non-US denylist: it drops only a CONFIRMED non-US posting and
-        # keeps both US and anything it cannot resolve — fail-open, so a real US role whose
-        # location string is a bare "Remote" or an office nickname is never silently deleted
-        # (Mit's ruling). `location_fit` above stays the SOFT scorer; this is the hard veto.
-        location = classify_location(posting_locations)
-        if location == "non_us":
+        # The tenant's target-country gate (D-251; DESIGN-T183 L5). A positive allowlist, not a
+        # denylist: it drops only a posting CONFIRMED outside the target set and keeps both
+        # in-target and anything it cannot resolve — fail-open, so a real role whose location
+        # string is a bare "Remote" or an office nickname is never silently deleted. Undeclared
+        # targets, or a target with no positive pack, make both clauses INERT (`None`), and the
+        # tenant-assumption report counts the abstain. The clause keeps its `non_us_location`
+        # name, which the drop-bucket mirror sites carry. `location_fit` above stays the SOFT
+        # scorer; this is the hard veto.
+        target = location_target(profile.target_countries, location_packs)
+        location = target.classify(posting_locations)
+        if location == "out_of_target":
             return HardFilterVeto("non_us_location", "; ".join(posting_locations))
         # Second axis: a place catalog can only drop a city it has already heard of, and three
-        # postings name no place at all (`locations_json == ["Remote"]`). A German or French
-        # job ad is not a US role whatever city it names. Gated on `!= "us"` so a CONFIRMED US
-        # location always wins — the fail-safe direction, even though 0 such postings exist.
-        if location != "us" and has_non_us_ad_marker(posting_title):
-            # `has_non_us_ad_marker` answers yes/no, not which convention, so the title IS
-            # the evidence here. Enough for the drain: the operator reads the title and sees it.
-            return HardFilterVeto("foreign_ad_marker", posting_title)
+        # postings name no place at all (`locations_json == ["Remote"]`). A job ad written to a
+        # country's conventions is not a target role whatever city it names, UNLESS that country
+        # is a target (DESIGN-T183 L4). Only an unresolved location reaches it, so a CONFIRMED
+        # target location always wins — the fail-safe direction, even though 0 such postings
+        # exist for the US.
+        if location == "unknown":
+            markers = ad_marker_countries(posting_title)
+            if markers and not markers & target.countries:
+                # The marker answers which countries, not which convention, so the title IS
+                # the evidence here. Enough for the drain: the operator reads the title.
+                return HardFilterVeto("foreign_ad_marker", posting_title)
     return None
 
 
@@ -286,10 +300,12 @@ def passes_hard_filters(
     remote_policy: str,
     profile: ProfileView,
     location_filter_mode: str,
+    location_packs: Sequence[CountryPack] = BUNDLED_PACKS,
 ) -> bool:
     return (
         hard_filter_verdict(
-            posting_title, posting_locations, remote_policy, profile, location_filter_mode
+            posting_title, posting_locations, remote_policy, profile, location_filter_mode,
+            location_packs,
         )
         is None
     )

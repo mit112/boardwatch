@@ -1,10 +1,16 @@
-"""Versioned token catalog for the US location classifier (`location_gate.classify_location`).
+"""Versioned location catalog: place tokens to ISO-3 countries, plus per-country POSITIVE packs.
 
 DATA, not logic: adding a state, country, city, or region here changes classification without
-touching the classifier. Kept as module frozensets rather than YAML because the classifier is
-pure-Python string work with no per-user override surface yet; if a non-US target country is
-ever needed, this is where its tokens go (the classifier stays US-centric until then — a
-deliberate v1 limitation, since boardwatch's only user requires US-only).
+touching the resolver (`location_gate.resolve_countries`). Two halves (DESIGN-T183 B2):
+
+- the TOKEN MAP — foreign country names, cities, macro-regions and ISO alpha-3 codes, each
+  mapped to the countries it names. Universal: it holds no view on which countries count.
+- the POSITIVE PACKS — one `CountryPack` per country whose own signals (subdivision codes and
+  names, postal codes, cities) must be read BEFORE or AFTER the token map. Only the `usa` pack
+  ships; a pack for any other country is the tenant's data, not ours.
+
+The curation rules below were written from the US point of view, because the `usa` pack was the
+first one: they are that pack's namesake rules, and a pack for another country needs its own.
 
 Curation rule for the city sets: **only unambiguous names.** A city name shared between the US
 and abroad (Paris TX / France, Cambridge MA / UK, Dublin OH / Ireland, San Jose CA / Costa
@@ -18,7 +24,7 @@ could plausibly name: **Dublin** (OH, CA), **Limerick** (PA, ME), **Birmingham**
 **Uxbridge** (MA), **Abingdon** (VA, MD), **Cambridge** (MA), **Warren** (MI, OH, NJ),
 **Ontario** (CA), **Valencia** (CA), **Moscow** (ID), **Zwolle** (LA), **Best** (an English
 word). Leaving them out costs real foreign postings — 23 Irish `Dublin` roles stay in the pool
-— and that is the accepted price: the gate must never silently delete a US role (Mit's ruling).
+— and that is the accepted price: the gate must never silently delete a US role (D-251).
 Do not add them without a country suffix doing the work instead.
 
 "Plausibly" is the operative word, and it means a US namesake that could realistically appear
@@ -33,7 +39,12 @@ a hamlet, so it could be admitted, but nothing in the corpus needs it.)
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 # Bump when any set below changes, so a downstream cache or report can detect drift.
+# 7: restructured into a token -> ISO-3 map and the `usa` positive pack (DESIGN-T183 B2). The
+# flat sets are derived from the per-country maps and are unchanged token for token; every open
+# posting's `us / non_us / unknown` reading was measured byte-identical across the change.
 # 6: NON_US_ISO3_SUFFIX added, a curated inclusion list read as a trailing comma component
 # ("Dublin, IRL"), and fji / png added to NON_US_ISO3. 777 open postings whose every segment
 # ended in a non-US alpha-3 code read `unknown` and failed open (CAN 220, IRL 130, KOR 87,
@@ -55,7 +66,7 @@ from __future__ import annotations
 # 3: US_STATE_NAME_TO_ABBREV added and the two state sets derived from it. The classifier's
 # own tokens are unchanged — the map exists so `core.normalize.canonical_location` can fold
 # "Austin, Texas" and "Austin, TX" to one identity component.
-LOCATION_DATA_VERSION = 6
+LOCATION_DATA_VERSION = 7
 
 # The one source of truth for US states: both sets below are DERIVED from it, so adding a
 # state is one edit, not three that can disagree. Values are USPS abbreviations, which is
@@ -120,87 +131,297 @@ US_CITIES = frozenset(
     }
 )
 
-NON_US_COUNTRIES = frozenset(
-    {
-        "united kingdom", "england", "scotland", "wales", "u.k.", "u.k", "canada", "india",
-        "germany", "france", "ireland", "netherlands", "spain", "italy", "poland", "romania",
-        "israel", "japan", "china", "singapore", "south korea", "korea", "taiwan", "australia",
-        "new zealand", "brazil", "mexico", "argentina", "chile", "colombia", "portugal",
-        "sweden", "norway", "denmark", "finland", "switzerland", "austria", "belgium",
-        "czech", "czechia", "hungary", "greece", "turkey", "ukraine", "russia", "egypt",
-        "south africa", "nigeria", "kenya", "uae", "united arab emirates", "saudi arabia",
-        # Spelled-out forms that the ungrouped alternation used to catch only by accident.
-        "deutschland", "russian federation",
-        "qatar", "pakistan", "bangladesh", "vietnam", "thailand", "malaysia", "indonesia",
-        "philippines", "hong kong", "luxembourg", "estonia", "lithuania", "latvia",
-        "bulgaria", "croatia", "serbia", "slovakia", "slovenia", "iceland", "costa rica",
-        "peru", "uruguay", "rwanda", "morocco", "tunisia", "ghana", "uganda", "armenia",
-        "azerbaijan", "kazakhstan", "sri lanka", "nepal", "cambodia", "myanmar", "jordan",
-        "lebanon", "cyprus", "malta", "north macedonia", "bosnia", "montenegro", "albania",
-        "moldova", "belarus", "mauritius", "panama", "ecuador", "venezuela", "bolivia",
-        "paraguay", "guatemala", "dominican republic", "honduras",
-    }
+# Every foreign token maps to the ISO-3 countries it names. A token naming more than one country
+# (a macro-region) maps to all of them, so a tenant targeting one of them reads it as a possible
+# home posting. NO token here maps to "USA": a US reading comes only from the `usa` POSITIVE pack
+# below, whose strong signals are tried before this map and whose weak ones after it.
+COUNTRY_NAMES_BY_ISO3: dict[str, frozenset[str]] = dict(
+    ALB=frozenset({"albania"}),
+    ARE=frozenset({"uae", "united arab emirates"}),
+    ARG=frozenset({"argentina"}),
+    ARM=frozenset({"armenia"}),
+    AUS=frozenset({"australia"}),
+    AUT=frozenset({"austria"}),
+    AZE=frozenset({"azerbaijan"}),
+    BEL=frozenset({"belgium"}),
+    BGD=frozenset({"bangladesh"}),
+    BGR=frozenset({"bulgaria"}),
+    BIH=frozenset({"bosnia"}),
+    BLR=frozenset({"belarus"}),
+    BOL=frozenset({"bolivia"}),
+    BRA=frozenset({"brazil"}),
+    CAN=frozenset({"canada"}),
+    CHE=frozenset({"switzerland"}),
+    CHL=frozenset({"chile"}),
+    CHN=frozenset({"china"}),
+    COL=frozenset({"colombia"}),
+    CRI=frozenset({"costa rica"}),
+    CYP=frozenset({"cyprus"}),
+    CZE=frozenset({"czech", "czechia"}),
+    DEU=frozenset({"germany", "deutschland"}),
+    DNK=frozenset({"denmark"}),
+    DOM=frozenset({"dominican republic"}),
+    ECU=frozenset({"ecuador"}),
+    EGY=frozenset({"egypt"}),
+    ESP=frozenset({"spain"}),
+    EST=frozenset({"estonia"}),
+    FIN=frozenset({"finland"}),
+    FRA=frozenset({"france"}),
+    GBR=frozenset({"united kingdom", "england", "scotland", "wales", "u.k.", "u.k"}),
+    GHA=frozenset({"ghana"}),
+    GRC=frozenset({"greece"}),
+    GTM=frozenset({"guatemala"}),
+    HKG=frozenset({"hong kong"}),
+    HND=frozenset({"honduras"}),
+    HRV=frozenset({"croatia"}),
+    HUN=frozenset({"hungary"}),
+    IDN=frozenset({"indonesia"}),
+    IND=frozenset({"india"}),
+    IRL=frozenset({"ireland"}),
+    ISL=frozenset({"iceland"}),
+    ISR=frozenset({"israel"}),
+    ITA=frozenset({"italy"}),
+    JOR=frozenset({"jordan"}),
+    JPN=frozenset({"japan"}),
+    KAZ=frozenset({"kazakhstan"}),
+    KEN=frozenset({"kenya"}),
+    KHM=frozenset({"cambodia"}),
+    KOR=frozenset({"south korea", "korea"}),
+    LBN=frozenset({"lebanon"}),
+    LKA=frozenset({"sri lanka"}),
+    LTU=frozenset({"lithuania"}),
+    LUX=frozenset({"luxembourg"}),
+    LVA=frozenset({"latvia"}),
+    MAR=frozenset({"morocco"}),
+    MDA=frozenset({"moldova"}),
+    MEX=frozenset({"mexico"}),
+    MKD=frozenset({"north macedonia"}),
+    MLT=frozenset({"malta"}),
+    MMR=frozenset({"myanmar"}),
+    MNE=frozenset({"montenegro"}),
+    MUS=frozenset({"mauritius"}),
+    MYS=frozenset({"malaysia"}),
+    NGA=frozenset({"nigeria"}),
+    NLD=frozenset({"netherlands"}),
+    NOR=frozenset({"norway"}),
+    NPL=frozenset({"nepal"}),
+    NZL=frozenset({"new zealand"}),
+    PAK=frozenset({"pakistan"}),
+    PAN=frozenset({"panama"}),
+    PER=frozenset({"peru"}),
+    PHL=frozenset({"philippines"}),
+    POL=frozenset({"poland"}),
+    PRT=frozenset({"portugal"}),
+    PRY=frozenset({"paraguay"}),
+    QAT=frozenset({"qatar"}),
+    ROU=frozenset({"romania"}),
+    RUS=frozenset({"russia", "russian federation"}),
+    RWA=frozenset({"rwanda"}),
+    SAU=frozenset({"saudi arabia"}),
+    SGP=frozenset({"singapore"}),
+    SRB=frozenset({"serbia"}),
+    SVK=frozenset({"slovakia"}),
+    SVN=frozenset({"slovenia"}),
+    SWE=frozenset({"sweden"}),
+    THA=frozenset({"thailand"}),
+    TUN=frozenset({"tunisia"}),
+    TUR=frozenset({"turkey"}),
+    TWN=frozenset({"taiwan"}),
+    UGA=frozenset({"uganda"}),
+    UKR=frozenset({"ukraine"}),
+    URY=frozenset({"uruguay"}),
+    VEN=frozenset({"venezuela"}),
+    VNM=frozenset({"vietnam"}),
+    ZAF=frozenset({"south africa"}),
 )
 
-# UNAMBIGUOUS non-US cities only (see the module docstring's curation rule).
-NON_US_CITIES = frozenset(
-    {
-        # 2026-08-30 queue audit. Kaunas (LT), Zhubei (TW, the Hsinchu semiconductor belt),
-        # Wuxi (CN) and Saint-Etienne (FR) each appeared as a bare office name with no country
-        # suffix to do the work. None has a US namesake that could plausibly host an employer.
-        "kaunas", "zhubei", "wuxi", "saint-etienne", "st. etienne", "st etienne",
-        "hengelo",
-        "london", "toronto", "bengaluru", "bangalore", "vancouver", "amsterdam", "tokyo",
-        "taipei", "shanghai", "madrid", "sydney", "tel aviv", "berlin", "montreal",
-        "gurugram", "gurgaon", "hyderabad", "seoul", "singapore", "beijing", "shenzhen",
-        "melbourne", "munich", "barcelona", "milan", "zurich", "zürich", "geneva",
-        "stockholm", "oslo", "copenhagen", "helsinki", "warsaw", "krakow", "kraków", "prague",
-        "budapest", "bucharest", "lisbon", "vienna", "brussels", "manchester", "edinburgh",
-        "pune", "chennai", "mumbai", "delhi", "new delhi", "noida", "kolkata", "ahmedabad",
-        "istanbul", "ankara", "cairo", "lagos", "nairobi", "dubai", "abu dhabi", "riyadh",
-        "doha", "cork", "galway", "ottawa", "calgary", "mississauga", "kitchener",
-        "guadalajara", "mexico city", "bogota", "bogotá", "buenos aires", "santiago", "lima",
-        "haifa", "herzliya", "ramat gan", "reykjavik", "reykjavík", "rome", "frankfurt",
-        "osaka", "belgrade", "kyiv", "kiev", "athens", "bratislava", "ljubljana", "zagreb",
-        "sofia", "tallinn", "riga", "vilnius", "rotterdam", "the hague", "utrecht",
-        "eindhoven", "hamburg", "cologne", "stuttgart", "dusseldorf", "düsseldorf", "leeds",
-        "glasgow", "belfast", "lyon", "bordeaux", "lille", "nantes", "toulouse", "marseille",
-        "seville", "turin", "bologna", "porto", "gothenburg", "aarhus", "bergen", "tampere",
-        "poznan", "wroclaw", "wrocław", "brno", "timisoara", "medellin", "medellín", "rosario",
-        "curitiba", "recife", "brasilia", "monterrey", "queretaro", "tijuana", "cape town",
-        "johannesburg", "durban", "accra", "kampala", "casablanca", "tunis", "amman",
-        "beirut", "nicosia", "kochi", "coimbatore", "jaipur", "indore", "nagpur", "surat",
-        "nagoya", "fukuoka", "yokohama", "kyoto", "busan", "incheon", "kaohsiung", "hsinchu",
-        "guangzhou", "chengdu", "hangzhou", "nanjing", "suzhou", "perth", "brisbane",
-        "adelaide", "auckland", "wellington", "christchurch", "edmonton", "winnipeg",
-        "quebec city", "taoyuan", "sao paulo", "são paulo", "milano",
-        # Added after run 65: every one of these reached a ranked shortlist through the
-        # `unknown` fail-open, and each was checked against the corpus for a US namesake
-        # before being admitted (see the rejected list in the module docstring).
-        "buc", "basel", "penzberg", "kleinmachnow", "suresnes", "kaiseraugst", "grenzach",
-        "böblingen", "boblingen", "mannheim", "lodz", "łódź", "klagenfurt", "danderyd",
-        "uppsala", "petaling jaya", "seongnam", "hino", "taichung", "warszawa", "carnaxide",
-        "sant cugat del vallès", "sant cugat del valles", "sao jose dos campos",
+# UNAMBIGUOUS foreign cities only (see the module docstring's curation rule). Provenance of the
+# later additions: kaunas / zhubei / wuxi / saint-etienne came from the 2026-08-30 queue audit,
+# each a bare office name with no country suffix to do the work; hengelo is version 5 below; and
+# buc / basel / penzberg ... yinchuan were added after run 65, every one having reached a ranked
+# shortlist through the `unknown` fail-open, each checked against the corpus for a US namesake
+# before being admitted (see the rejected list in the module docstring).
+CITIES_BY_ISO3: dict[str, frozenset[str]] = dict(
+    ARE=frozenset({"dubai", "abu dhabi"}),
+    ARG=frozenset({"buenos aires", "rosario"}),
+    AUS=frozenset({"sydney", "melbourne", "perth", "brisbane", "adelaide"}),
+    AUT=frozenset({"vienna", "klagenfurt"}),
+    BEL=frozenset({"brussels", "diegem"}),
+    BGD=frozenset({"dhaka"}),
+    BGR=frozenset({"sofia"}),
+    BRA=frozenset({
+        "curitiba", "recife", "brasilia", "sao paulo", "são paulo", "sao jose dos campos",
         "são josé dos campos", "belo horizonte", "rio de janeiro", "joinville", "barueri",
-        "varginha", "florianópolis", "florianopolis", "ciudad juarez", "ciudad juárez",
-        "huixquilucan de degollado", "alajuela", "san salvador", "drachten", "diegem",
-        "lindesnes", "islamabad", "lahore", "dhaka", "rehovot", "astana", "saskatoon",
-        "abidjan", "douala", "foshan", "zhuzhou", "wuhan", "kunming", "jiaxing", "hefei",
-        "xianyang", "nanchang", "xian", "jining", "yinchuan",
+        "varginha", "florianópolis", "florianopolis",
+    }),
+    CAN=frozenset({
+        "toronto", "vancouver", "montreal", "ottawa", "calgary", "mississauga", "kitchener",
+        "edmonton", "winnipeg", "quebec city", "saskatoon",
+    }),
+    CHE=frozenset({"zurich", "zürich", "geneva", "basel", "kaiseraugst"}),
+    CHL=frozenset({"santiago"}),
+    CHN=frozenset({
+        "wuxi", "shanghai", "beijing", "shenzhen", "guangzhou", "chengdu", "hangzhou", "nanjing",
+        "suzhou", "foshan", "zhuzhou", "wuhan", "kunming", "jiaxing", "hefei", "xianyang",
+        "nanchang", "xian", "jining", "yinchuan",
+    }),
+    CIV=frozenset({"abidjan"}),
+    CMR=frozenset({"douala"}),
+    COL=frozenset({"bogota", "bogotá", "medellin", "medellín"}),
+    CRI=frozenset({"alajuela"}),
+    CYP=frozenset({"nicosia"}),
+    CZE=frozenset({"prague", "brno"}),
+    DEU=frozenset({
+        "berlin", "munich", "frankfurt", "hamburg", "cologne", "stuttgart", "dusseldorf",
+        "düsseldorf", "penzberg", "kleinmachnow", "grenzach", "böblingen", "boblingen", "mannheim",
+    }),
+    DNK=frozenset({"copenhagen", "aarhus"}),
+    EGY=frozenset({"cairo"}),
+    ESP=frozenset({
+        "madrid", "barcelona", "seville", "sant cugat del vallès", "sant cugat del valles",
+    }),
+    EST=frozenset({"tallinn"}),
+    FIN=frozenset({"helsinki", "tampere"}),
+    FRA=frozenset({
+        "saint-etienne", "st. etienne", "st etienne", "lyon", "bordeaux", "lille", "nantes",
+        "toulouse", "marseille", "buc", "suresnes",
+    }),
+    GBR=frozenset({"london", "manchester", "edinburgh", "leeds", "glasgow", "belfast"}),
+    GHA=frozenset({"accra"}),
+    GRC=frozenset({"athens"}),
+    HRV=frozenset({"zagreb"}),
+    HUN=frozenset({"budapest"}),
+    IND=frozenset({
+        "bengaluru", "bangalore", "gurugram", "gurgaon", "hyderabad", "pune", "chennai", "mumbai",
+        "delhi", "new delhi", "noida", "kolkata", "ahmedabad", "kochi", "coimbatore", "jaipur",
+        "indore", "nagpur", "surat",
+    }),
+    IRL=frozenset({"cork", "galway"}),
+    ISL=frozenset({"reykjavik", "reykjavík"}),
+    ISR=frozenset({"tel aviv", "haifa", "herzliya", "ramat gan", "rehovot"}),
+    ITA=frozenset({"milan", "rome", "turin", "bologna", "milano"}),
+    JOR=frozenset({"amman"}),
+    JPN=frozenset({"tokyo", "osaka", "nagoya", "fukuoka", "yokohama", "kyoto", "hino"}),
+    KAZ=frozenset({"astana"}),
+    KEN=frozenset({"nairobi"}),
+    KOR=frozenset({"seoul", "busan", "incheon", "seongnam"}),
+    LBN=frozenset({"beirut"}),
+    LTU=frozenset({"kaunas", "vilnius"}),
+    LVA=frozenset({"riga"}),
+    MAR=frozenset({"casablanca"}),
+    MEX=frozenset({
+        "guadalajara", "mexico city", "monterrey", "queretaro", "tijuana", "ciudad juarez",
+        "ciudad juárez", "huixquilucan de degollado",
+    }),
+    MYS=frozenset({"petaling jaya"}),
+    NGA=frozenset({"lagos"}),
+    NLD=frozenset({
+        "hengelo", "amsterdam", "rotterdam", "the hague", "utrecht", "eindhoven", "drachten",
+    }),
+    NOR=frozenset({"oslo", "bergen", "lindesnes"}),
+    NZL=frozenset({"auckland", "wellington", "christchurch"}),
+    PAK=frozenset({"islamabad", "lahore"}),
+    PER=frozenset({"lima"}),
+    POL=frozenset({
+        "warsaw", "krakow", "kraków", "poznan", "wroclaw", "wrocław", "lodz", "łódź", "warszawa",
+    }),
+    PRT=frozenset({"lisbon", "porto", "carnaxide"}),
+    QAT=frozenset({"doha"}),
+    ROU=frozenset({"bucharest", "timisoara"}),
+    SAU=frozenset({"riyadh"}),
+    SGP=frozenset({"singapore"}),
+    SLV=frozenset({"san salvador"}),
+    SRB=frozenset({"belgrade"}),
+    SVK=frozenset({"bratislava"}),
+    SVN=frozenset({"ljubljana"}),
+    SWE=frozenset({"stockholm", "gothenburg", "danderyd", "uppsala"}),
+    TUN=frozenset({"tunis"}),
+    TUR=frozenset({"istanbul", "ankara"}),
+    TWN=frozenset({"zhubei", "taipei", "kaohsiung", "hsinchu", "taoyuan", "taichung"}),
+    UGA=frozenset({"kampala"}),
+    UKR=frozenset({"kyiv", "kiev"}),
+    ZAF=frozenset({"cape town", "johannesburg", "durban"}),
+)
+
+_EU = frozenset(
+    {
+        "AUT", "BEL", "BGR", "CYP", "CZE", "DEU", "DNK", "ESP", "EST", "FIN", "FRA", "GRC",
+        "HRV", "HUN", "IRL", "ITA", "LTU", "LUX", "LVA", "MLT", "NLD", "POL", "PRT", "ROU",
+        "SVK", "SVN", "SWE",
+    }
+)
+_EUROPE = frozenset(
+    {
+        "ALA", "ALB", "AND", "ARM", "AUT", "AZE", "BEL", "BGR", "BIH", "BLR", "CHE", "CYP",
+        "CZE", "DEU", "DNK", "ESP", "EST", "FIN", "FRA", "FRO", "GBR", "GEO", "GGY", "GIB",
+        "GRC", "HRV", "HUN", "IMN", "IRL", "ISL", "ITA", "JEY", "LIE", "LTU", "LUX", "LVA",
+        "MCO", "MDA", "MKD", "MLT", "MNE", "NLD", "NOR", "POL", "PRT", "ROU", "RUS", "SJM",
+        "SMR", "SRB", "SVK", "SVN", "SWE", "TUR", "UKR", "VAT",
+    }
+)
+_MIDDLE_EAST = frozenset(
+    {
+        "ARE", "BHR", "CYP", "EGY", "IRN", "IRQ", "ISR", "JOR", "KWT", "LBN", "OMN", "PSE",
+        "QAT", "SAU", "SYR", "TUR", "YEM",
+    }
+)
+_AFRICA = frozenset(
+    {
+        "AGO", "BDI", "BEN", "BFA", "BWA", "CAF", "CIV", "CMR", "COD", "COG", "COM", "CPV",
+        "DJI", "DZA", "EGY", "ERI", "ESH", "ETH", "GAB", "GHA", "GIN", "GMB", "GNB", "GNQ",
+        "KEN", "LBR", "LBY", "LSO", "MAR", "MDG", "MLI", "MOZ", "MRT", "MUS", "MWI", "MYT",
+        "NAM", "NER", "NGA", "REU", "RWA", "SDN", "SEN", "SHN", "SLE", "SOM", "SSD", "STP",
+        "SWZ", "SYC", "TCD", "TGO", "TUN", "TZA", "UGA", "ZAF", "ZMB", "ZWE",
+    }
+)
+_ASIA = frozenset(
+    {
+        "AFG", "ARE", "ARM", "AZE", "BGD", "BHR", "BRN", "BTN", "CHN", "CYP", "GEO", "HKG",
+        "IDN", "IND", "IRN", "IRQ", "ISR", "JOR", "JPN", "KAZ", "KGZ", "KHM", "KOR", "KWT",
+        "LAO", "LBN", "LKA", "MAC", "MDV", "MMR", "MNG", "MYS", "NPL", "OMN", "PAK", "PHL",
+        "PRK", "PSE", "QAT", "SAU", "SGP", "SYR", "THA", "TJK", "TKM", "TLS", "TUR", "TWN",
+        "UZB", "VNM", "YEM",
+    }
+)
+_OCEANIA = frozenset(
+    {
+        "AUS", "COK", "FJI", "FSM", "KIR", "MHL", "NCL", "NFK", "NIU", "NRU", "NZL", "PLW",
+        "PNG", "PYF", "SLB", "TKL", "TON", "TUV", "VUT", "WLF", "WSM",
+    }
+)
+_LATAM = frozenset(
+    {
+        "ARG", "BHS", "BLZ", "BOL", "BRA", "BRB", "CHL", "COL", "CRI", "CUB", "DOM", "ECU",
+        "GTM", "GUF", "GUY", "HND", "HTI", "JAM", "MEX", "NIC", "PAN", "PER", "PRY", "SLV",
+        "SUR", "TTO", "URY", "VEN",
     }
 )
 
-# Non-US macro-regions and subnational regions: no US component, so a hard US gate drops them.
-# The subnational names ("Saxony", "Thuringia") arrive as a whole location string where a
-# provider names the state instead of the city.
-NON_US_REGIONS = frozenset(
-    {
-        "emea", "apac", "latam", "europe", "uk", "eu", "asia", "anz", "middle east", "africa",
-        # Chinese provinces arrive as the second segment of a "City, Province" location with no
-        # country ever named ("Wuxi, Jiangsu"), exactly as the German states above do.
-        "saxony", "thuringia", "jiangsu",
-    }
-)
+# Foreign macro-regions and subnational regions. Transcontinental countries sit in every region
+# they touch: a region test only ever widens what a target can KEEP. The subnational names
+# ("Saxony", "Thuringia") arrive as a whole location string where a provider names the state
+# instead of the city; Chinese provinces arrive as the second segment of a "City, Province"
+# location with no country ever named ("Wuxi, Jiangsu"), exactly as the German states do.
+REGIONS_TO_ISO3: dict[str, frozenset[str]] = dict({
+    "emea": _EUROPE | _MIDDLE_EAST | _AFRICA,
+    "apac": _ASIA | _OCEANIA,
+    "latam": _LATAM,
+    "europe": _EUROPE,
+    "uk": frozenset({"GBR"}),
+    "eu": _EU,
+    "asia": _ASIA,
+    "anz": frozenset({"AUS", "NZL"}),
+    "middle east": _MIDDLE_EAST,
+    "africa": _AFRICA,
+    "saxony": frozenset({"DEU"}),
+    "thuringia": frozenset({"DEU"}),
+    "jiangsu": frozenset({"CHN"}),
+})
+
+# The flat token sets, DERIVED so the per-country maps above stay the one source of truth.
+NON_US_COUNTRIES = frozenset().union(*COUNTRY_NAMES_BY_ISO3.values())
+NON_US_CITIES = frozenset().union(*CITIES_BY_ISO3.values())
+NON_US_REGIONS = frozenset(REGIONS_TO_ISO3)
 
 # ISO 3166-1 alpha-3 country codes, for providers that emit a country code where no city token
 # exists: a site code ("VNM06-01-Ho Chi Minh"), a dash prefix ("BGR-Varna"), or a parenthesised
@@ -222,6 +443,35 @@ NON_US_ISO3 = frozenset(
         "tur", "twn", "tza", "uga", "ukr", "ury", "uzb", "ven", "vnm", "zaf",
         # Fiji and Papua New Guinea: seen as a trailing ", FJI" / ", PNG" in the open pool.
         "fji", "png",
+    }
+)
+
+# ISO 3166-1 alpha-3, every officially assigned code (249), UPPERCASE as the standard writes it.
+# The closed vocabulary of a profile's `target_countries`: a code outside it is a typed failure at
+# the write boundary, never a new bucket. Alpha-3 only, for the reason `NON_US_ISO3` gives.
+ISO3166_ALPHA3 = frozenset(
+    {
+        "ABW", "AFG", "AGO", "AIA", "ALA", "ALB", "AND", "ARE", "ARG", "ARM", "ASM", "ATA",
+        "ATF", "ATG", "AUS", "AUT", "AZE", "BDI", "BEL", "BEN", "BES", "BFA", "BGD", "BGR",
+        "BHR", "BHS", "BIH", "BLM", "BLR", "BLZ", "BMU", "BOL", "BRA", "BRB", "BRN", "BTN",
+        "BVT", "BWA", "CAF", "CAN", "CCK", "CHE", "CHL", "CHN", "CIV", "CMR", "COD", "COG",
+        "COK", "COL", "COM", "CPV", "CRI", "CUB", "CUW", "CXR", "CYM", "CYP", "CZE", "DEU",
+        "DJI", "DMA", "DNK", "DOM", "DZA", "ECU", "EGY", "ERI", "ESH", "ESP", "EST", "ETH",
+        "FIN", "FJI", "FLK", "FRA", "FRO", "FSM", "GAB", "GBR", "GEO", "GGY", "GHA", "GIB",
+        "GIN", "GLP", "GMB", "GNB", "GNQ", "GRC", "GRD", "GRL", "GTM", "GUF", "GUM", "GUY",
+        "HKG", "HMD", "HND", "HRV", "HTI", "HUN", "IDN", "IMN", "IND", "IOT", "IRL", "IRN",
+        "IRQ", "ISL", "ISR", "ITA", "JAM", "JEY", "JOR", "JPN", "KAZ", "KEN", "KGZ", "KHM",
+        "KIR", "KNA", "KOR", "KWT", "LAO", "LBN", "LBR", "LBY", "LCA", "LIE", "LKA", "LSO",
+        "LTU", "LUX", "LVA", "MAC", "MAF", "MAR", "MCO", "MDA", "MDG", "MDV", "MEX", "MHL",
+        "MKD", "MLI", "MLT", "MMR", "MNE", "MNG", "MNP", "MOZ", "MRT", "MSR", "MTQ", "MUS",
+        "MWI", "MYS", "MYT", "NAM", "NCL", "NER", "NFK", "NGA", "NIC", "NIU", "NLD", "NOR",
+        "NPL", "NRU", "NZL", "OMN", "PAK", "PAN", "PCN", "PER", "PHL", "PLW", "PNG", "POL",
+        "PRI", "PRK", "PRT", "PRY", "PSE", "PYF", "QAT", "REU", "ROU", "RUS", "RWA", "SAU",
+        "SDN", "SEN", "SGP", "SGS", "SHN", "SJM", "SLB", "SLE", "SLV", "SMR", "SOM", "SPM",
+        "SRB", "SSD", "STP", "SUR", "SVK", "SVN", "SWE", "SWZ", "SXM", "SYC", "SYR", "TCA",
+        "TCD", "TGO", "THA", "TJK", "TKL", "TKM", "TLS", "TON", "TTO", "TUN", "TUR", "TUV",
+        "TWN", "TZA", "UGA", "UKR", "UMI", "URY", "USA", "UZB", "VAT", "VCT", "VEN", "VGB",
+        "VIR", "VNM", "VUT", "WLF", "WSM", "YEM", "ZAF", "ZMB", "ZWE",
     }
 )
 
@@ -263,3 +513,41 @@ POLICY_ONLY = frozenset(
         "various", "other", "unspecified", "tbd", "",
     }
 )
+
+
+@dataclass(frozen=True)
+class CountryPack:
+    """One country's POSITIVE signals, so the resolver can confirm that country, not guess it.
+
+    ``strong`` signals are read BEFORE the foreign token map: an explicit country marker, a
+    bare country token, a subdivision name, or a TWO-letter subdivision code as a "City, XX"
+    suffix, uppercase as written. That order is what keeps "Vienna, VA" and "London, ON" in
+    their pack's country. ``weak`` signals (a postal code, a city) are read AFTER it, so a
+    foreign city sharing a pack city's name ("Manchester, UK") still reads as foreign.
+    """
+
+    iso3: str
+    markers: frozenset[str]
+    bare_tokens: frozenset[str]
+    subdivision_names: frozenset[str]
+    subdivision_codes: frozenset[str]
+    postal_pattern: str | None
+    cities: frozenset[str]
+
+
+USA_PACK = CountryPack(
+    iso3="USA",
+    markers=frozenset(US_MARKERS),
+    # A bare "US"/"U.S." is an explicit US signal and must win within a segment that also names
+    # a foreign place ("US, Canada"). Word-bounded, so it never fires inside "Houston".
+    bare_tokens=frozenset({"us", "u.s.", "u.s"}),
+    subdivision_names=US_STATE_NAMES,
+    subdivision_codes=US_STATE_ABBREVS,
+    # Read after the token map, so a foreign postal code beside its country
+    # ("Berlin, Germany 10115") stays foreign.
+    postal_pattern=r"(?<!\d)\d{5}(?:-\d{4})?(?!\d)",
+    cities=US_CITIES,
+)
+
+# The packs that ship. Any other country's pack comes from the tenant's config (DESIGN-T183 Q6).
+BUNDLED_PACKS = tuple((USA_PACK,))

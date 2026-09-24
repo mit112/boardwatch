@@ -22,10 +22,12 @@ gate and per run, whether each decision was grounded in a profile field the gate
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
 from boardwatch.rank.leveling import DEFAULT_FIELD
+from boardwatch.rank.location_gate import location_target
 
 TenantGate = Literal[
     "location", "foreign_ad", "role", "zero_signal", "seniority_field", "judge_seniority"
@@ -37,7 +39,11 @@ _JUDGE_QUESTION_BAND = "entry"
 
 
 def ungrounded_reasons(
-    *, career_field: str | None, target_seniority_band: str, seniority_hold: bool
+    *,
+    career_field: str | None,
+    target_seniority_band: str,
+    seniority_hold: bool,
+    target_countries: Sequence[str],
 ) -> dict[TenantGate, str | None]:
     """Per gate, why it has no tenant data to decide on, or ``None`` when it does.
 
@@ -62,9 +68,9 @@ def ungrounded_reasons(
         judge = f"question_band:{_JUDGE_QUESTION_BAND}!={target_seniority_band}"
     else:
         judge = None
-    # No profile field names the countries a tenant targets (DESIGN-T183 B1 adds one), so the
-    # US assumption in both location gates is never grounded.
-    location = "missing_profile_field:target_countries"
+    # Both location gates read the profile's `target_countries` (DESIGN-T183 B3) and are INERT
+    # when it is undeclared or a target has no positive pack — the same reason either way.
+    location = location_target(target_countries).abstain
     return {
         "location": location,
         "foreign_ad": location,

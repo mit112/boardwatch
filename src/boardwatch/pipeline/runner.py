@@ -1622,6 +1622,9 @@ def _lead_lanes(
     # files the folder under cannot disagree about a band.
     target_band = profile_target_band(profile_row)
     band_reader = title_band_reader(settings, target_band)
+    target_countries = (
+        () if profile_row is None else tuple(profile_row.target_countries_json)
+    )
     # T185 (DESIGN-T183 A2). Attributed from the reason `classify` returns, never re-derived, so
     # the report and the lane cannot disagree. A lead held by a reason ranked above a gate's own
     # is still counted as considered by it, and not as fired.
@@ -1630,6 +1633,7 @@ def _lead_lanes(
             career_field=None if facts is None else facts.career_field,
             target_seniority_band=target_band,
             seniority_hold=settings.gate.seniority_hold,
+            target_countries=target_countries,
         )
     )
     result: dict[int, tuple[str, int | None]] = {}
@@ -1662,6 +1666,7 @@ def _lead_lanes(
             form_question_hit=form_questions.get(posting.posting_id),
             revised_since_build=posting.posting_id in revised,
             posting_closed=False,
+            target_countries=target_countries,
         )
         result[posting.posting_id] = (decision.lane, posting_version_id)
         # Only the gates this decision REACHED are counted: `classify` returns at the first

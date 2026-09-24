@@ -44,6 +44,10 @@ _INERT: dict[str, object] = {
     "judge_verdict": None,
     "judge_seniority_above_band": False,
     "revised_since_build": False,
+    # NOT an inert value: undeclared targets hold nothing on location (DESIGN-T183 Q2). Every
+    # location fixture in this file is calibrated against the US reading, so the tenant is a US
+    # one; `test_location_target.py` owns the other targets.
+    "target_countries": ("USA",),
 }
 
 

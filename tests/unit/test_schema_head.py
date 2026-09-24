@@ -1,7 +1,7 @@
 from boardwatch.store.db import schema_revision
 
 
-def test_head_is_the_form_questions_revision() -> None:
+def test_head_is_the_target_countries_revision() -> None:
     """Pinned deliberately: a new migration must state its new head here, not inherit it.
 
     Bumping this line is the acknowledgement that the head moved.
@@ -17,4 +17,5 @@ def test_head_is_the_form_questions_revision() -> None:
     record of a successful check, `eligibility/preflight.py::_pending` could never re-reach a
     body it had already evaluated, and the marker catalog would be decorative.
     """
-    assert schema_revision() == "p_form_questions"
+    # T186 B1 added `p_target_countries` (the `target_countries` profile column) on top of it.
+    assert schema_revision() == "p_target_countries"

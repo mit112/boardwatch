@@ -102,6 +102,7 @@ def test_profile_edit_rederives_skills(env: Path) -> None:
         "n\n"  # remote only
         "\n"  # keep resume max pages
         "\n"  # keep target seniority band
+        "\n"  # keep target countries
         "n\n"  # update eligibility checks? no
     )
     result = _invoke(env, ["profile", "edit"], edit_input)
@@ -240,6 +241,7 @@ _ELIG_EDIT = (
     "\n\n\n\n\n"                        # keep profile text and all filters
     "\n"                               # keep resume max pages
     "\n"                               # keep target seniority band
+    "\n"                               # keep target countries
     "y\n"                              # update eligibility checks?
     "\n"                               # career field: skip (keeps stored value)
     "\n"                               # field of study: skip (keeps stored value)
@@ -328,6 +330,7 @@ def test_a_bad_seniority_band_reprompts_instead_of_discarding_the_edit(env: Path
         "\n"  # keep resume max pages
         "Entry\n"  # BAD band — wrong case
         "entry\n"  # corrected
+        "\n"  # keep target countries
         "n\n"  # update eligibility checks? no
     )
     result = _invoke(env, ["profile", "edit"], edit_input)

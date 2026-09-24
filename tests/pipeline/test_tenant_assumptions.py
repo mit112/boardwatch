@@ -27,7 +27,7 @@ from boardwatch.store import tables
 from boardwatch.store.db import get_engine
 from tests.pipeline.test_pipeline_run import _ready
 
-_NO_COUNTRIES = "missing_profile_field:target_countries"
+_NO_CAN_PACK = "missing_country_pack:CAN"
 
 
 @pytest.fixture()
@@ -41,6 +41,11 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def _set_facts(data_dir: Path, facts: dict[str, Any]) -> None:
     with get_engine(data_dir).begin() as conn:
         conn.execute(update(tables.profile).values(eligibility_facts_json=facts))
+
+
+def _set_countries(data_dir: Path, countries: list[str]) -> None:
+    with get_engine(data_dir).begin() as conn:
+        conn.execute(update(tables.profile).values(target_countries_json=countries))
 
 
 def _add_posting(data_dir: Path, slug: str, title: str, locations: list[str]) -> None:
@@ -88,6 +93,8 @@ def _seed_tenant2(data_dir: Path) -> None:
     """DESIGN-T183 §3's second tenant, DATA ONLY: a Canadian nurse whose field is not in the
     bundled catalog, with P1/P2/P3/P5 from the smoke spec beside `_ready`'s software posting."""
     _ready(data_dir)
+    # No CAN positive pack ships (Q6), so both location gates abstain on the missing pack.
+    _set_countries(data_dir, ["CAN"])
     _set_facts(
         data_dir,
         {
@@ -106,10 +113,11 @@ def _seed_tenant2(data_dir: Path) -> None:
 
 def test_the_funnel_reports_each_gate_for_a_software_tenant(env: Path, tmp_path: Path) -> None:
     """Mit-shaped facts: `career_field: software` grounds the role, zero-signal and seniority
-    field gates, so they report what they did, with no missing-field abstain. No profile field
-    names target countries yet, so both location gates abstain on every posting they saw."""
+    field gates, and `target_countries: [USA]` grounds both location gates, so each reports
+    what it did, with no missing-field abstain."""
     _ready(env)
     _set_facts(env, {"career_field": "software"})
+    _set_countries(env, ["USA"])
     _add_posting(env, "nurse", "Registered Nurse", ["Remote"])
     _add_posting(env, "toronto", "Software Engineer", ["Toronto, ON"])
 
@@ -125,13 +133,11 @@ def test_the_funnel_reports_each_gate_for_a_software_tenant(env: Path, tmp_path:
             reason.startswith("missing_profile_field") for reason in ranker[gate]["abstained"]
         ), (gate, ranker[gate])
     location = ranker["location"]
-    assert location["fired"] == 0
-    assert location["abstained"] == {_NO_COUNTRIES: location["considered"]}, location
+    assert location["fired"] == 1, location  # Toronto, dropped as outside the target
+    assert location["abstained"] == {}, location
     assert location["considered"] == 3, location
-    assert location["fired_on_default"] == 1, location  # Toronto, dropped on the US default
-    assert report["review"]["location"]["abstained"] == {
-        _NO_COUNTRIES: report["review"]["location"]["considered"]
-    }
+    assert location["fired_on_default"] == 0, location
+    assert report["review"]["location"]["abstained"] == {}
     assert payload["reconciles"] is True
 
 
@@ -140,8 +146,10 @@ def test_a_second_tenant_sees_the_role_and_location_gates_abstain_not_fire(
     env: Path, tmp_path: Path, mode: str
 ) -> None:
     """The falsifier: a gate that reports `fired` while reading a field tenant 2 lacks. Every
-    decision the role and location gates made for this tenant rests on nothing it declared, so
-    each one is an abstain naming the field, and the drops it still makes are `fired_on_default`.
+    decision the role gate made for this tenant rests on nothing it declared, so each one is an
+    abstain naming the field, and the drops it still makes are `fired_on_default`. The location
+    gates read the declared `[CAN]` and, with no CAN pack, abstain and drop NOTHING (DESIGN-T183
+    §3.1) — Toronto is no longer lost to a US default.
     """
     _seed_tenant2(env)
 
@@ -161,14 +169,15 @@ def test_a_second_tenant_sees_the_role_and_location_gates_abstain_not_fire(
         location = ranker["location"]
         assert location["considered"] == 5, location
         assert location["fired"] == 0, location
-        assert location["abstained"] == {_NO_COUNTRIES: 5}, location
-        assert location["fired_on_default"] >= 1, location  # Toronto reads `non_us`
+        assert location["abstained"] == {_NO_CAN_PACK: 5}, location
+        assert location["fired_on_default"] == 0, location  # inert: nothing dropped
     else:
         assert "location" not in ranker, "soft mode never runs the ranker's location clause"
     for gate in ("location", "role"):
         assert review[gate]["fired"] == 0, (gate, review[gate])
         assert sum(review[gate]["abstained"].values()) == review[gate]["considered"] >= 1
-    assert review["location"]["abstained"] == {_NO_COUNTRIES: review["location"]["considered"]}
+    assert review["location"]["abstained"] == {_NO_CAN_PACK: review["location"]["considered"]}
+    assert review["location"]["fired_on_default"] == 0, review["location"]  # nothing held
     assert payload["reconciles"] is True
 
 
@@ -250,10 +259,12 @@ def test_a_lead_held_above_the_tenant_gates_is_not_counted_as_considered(
 
 def test_a_confirmed_us_posting_never_reached_the_foreign_ad_gate(env: Path, tmp_path: Path) -> None:
     """T185 review. In hard mode `hard_filter_verdict` puts the ad-marker check only to a posting
-    whose location is not a confirmed US one, so a cleared "Austin, TX" posting is considered by
-    the location gate and NOT by the foreign-ad gate; a "Remote" posting reaches both."""
+    whose location is not confirmed in the target set, so for a `[USA]` tenant a cleared
+    "Austin, TX" posting is considered by the location gate and NOT by the foreign-ad gate; a
+    "Remote" posting reaches both."""
     _ready(env)
     _set_facts(env, {"career_field": "software"})
+    _set_countries(env, ["USA"])
     _add_posting(env, "austin", "Software Engineer", ["Austin, TX"])
     _add_posting(env, "remote", "Software Engineer", ["Remote"])
 

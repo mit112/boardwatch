@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Target countries are profile data, and the location gates read them (2026-09-23, T186).** The ranker's
+  hard location veto, the foreign-ad marker drop and the review gate's location hold assumed a US user in
+  code. Each user now declares `target_countries` (ISO-3, a closed vocabulary) on their profile; the location
+  catalog resolves every place to ISO-3 countries behind a bundled `usa` positive pack, with the US reading
+  byte-identical over every stored posting; a `[USA]` profile ranks and routes exactly as before, a `[CAN]`
+  profile keeps Toronto and drops Boston, and an undeclared profile holds nothing on location while the
+  per-run report shows the gates abstaining. Existing installs set the value once with `profile edit`; the
+  profile fingerprint moves, so a ledger reopen follows. DESIGN-T183 phases B1, B2, B3.
+
 - **The role gate reads a per-user role taxonomy gathered at onboarding (2026-09-23, T184).** The
   ranker's "is this a software title" filter was a bundled software vocabulary applied to every user.
   Each user now has a `role-taxonomy.yaml` in their config directory, written by `boardwatch init`
