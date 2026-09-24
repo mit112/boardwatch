@@ -331,11 +331,37 @@ class Fetcher:
                 headers["If-None-Match"] = validators.etag
             if validators.last_modified:
                 headers["If-Modified-Since"] = validators.last_modified
-        # Streamed so the body is read in a loop that can look at the clock. httpx has no total
-        # deadline — its timeout is per OPERATION, and a host trickling a byte every few seconds
-        # never trips it.
-        with self._client.stream(method, url, headers=headers, json=json_body) as response:
-            return self._classify(response, url, deadline)
+        request = self._client.build_request(method, url, headers=headers, json=json_body)
+        return self._classify(self._read_response(request, url, deadline), url)
+
+    def _read_response(self, request: httpx.Request, url: str, deadline: float) -> httpx.Response:
+        """Send `request` and read its body in a loop that can look at the clock.
+
+        httpx has no total deadline — its timeout is per OPERATION, and a host trickling a byte
+        every few seconds never trips it. The clock is checked per RAW network chunk (T192b): a
+        compressed body can trickle for minutes while decoding to nothing, so a check per
+        DECODED chunk is never reached. The raw bytes are then rebuilt into a response whose
+        `.read()` decodes its `Content-Encoding` exactly as the eager read did. `stream=`, not
+        `content=`: `content=` adds a `Content-Length` to a chunked response's headers.
+        """
+        streamed = self._client.send(request, stream=True)
+        try:
+            if streamed.is_stream_consumed:
+                return streamed  # an in-memory transport handed back a body already read
+            raw: list[bytes] = []
+            for chunk in streamed.iter_raw():
+                raw.append(chunk)
+                self._check_deadline(url, deadline)
+        finally:
+            streamed.close()
+        rebuilt = httpx.Response(
+            status_code=streamed.status_code, headers=streamed.headers,
+            stream=httpx.ByteStream(b"".join(raw)), request=streamed.request,
+            extensions=streamed.extensions, history=streamed.history,
+            default_encoding=streamed.default_encoding,
+        )
+        rebuilt.read()
+        return rebuilt
 
     def _check_deadline(self, url: str, deadline: float) -> None:
         # A `FetchFailure`, not an httpx timeout: the retry predicate does not match it, so it is
@@ -347,14 +373,11 @@ class Fetcher:
                 f"fetch deadline {self._deadline:g}s exceeded for {url}", status_code=None
             )
 
-    def _classify(self, response: httpx.Response, url: str, deadline: float) -> FetchResult:
-        # EVERY body is read before the status is looked at, as the eager read did (T192b): a
-        # transport error mid-body is then a transport error — retried, and UNREACHABLE on
-        # exhaustion — whatever the status, rather than a 404 classified DEAD from its headers.
-        chunks: list[bytes] = []
-        for chunk in response.iter_bytes():
-            chunks.append(chunk)
-            self._check_deadline(url, deadline)
+    def _classify(self, response: httpx.Response, url: str) -> FetchResult:
+        # EVERY body has been read before the status is looked at, as the eager read did
+        # (T192b): a transport error mid-body is then a transport error — retried, and
+        # UNREACHABLE on exhaustion — whatever the status, rather than a 404 classified DEAD
+        # from its headers.
         if response.status_code == 304:
             return FetchResult(304, b"", True, None)
         if response.status_code in _RETRYABLE_STATUSES:
@@ -388,7 +411,7 @@ class Fetcher:
             if etag or last_modified
             else None
         )
-        return FetchResult(200, b"".join(chunks), False, observed, str(response.url))
+        return FetchResult(200, response.content, False, observed, str(response.url))
 
 
 def _parse_retry_after(response: httpx.Response) -> float | None:

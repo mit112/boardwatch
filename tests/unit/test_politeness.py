@@ -1,3 +1,4 @@
+import gzip
 import json
 import threading
 import time
@@ -588,6 +589,81 @@ def test_a_chunked_body_that_finishes_in_time_is_returned_unchanged(tmp_path: Pa
         200, b'{"a": 1}', False, ResponseValidators(etag='"v1"', last_modified=None),
         "https://quick.example/x",
     )
+
+
+def _gzip_with_comment(payload: bytes, comment_len: int) -> bytes:
+    """A valid gzip member whose header carries an FCOMMENT field: the decoder has to consume
+    every comment byte before it can emit anything, so those bytes decode to nothing."""
+    member = gzip.compress(payload, mtime=0)
+    return member[:3] + b"\x10" + member[4:10] + b"c" * comment_len + b"\x00" + member[10:]
+
+
+def test_a_compressed_body_trickling_raw_bytes_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T192b. A gzip body can trickle raw bytes for a long time while decoding to nothing, so a
+    clock checked per DECODED chunk is never looked at. It must be checked per raw chunk."""
+    member = _gzip_with_comment(b'{"a": 1}', 40)
+
+    def body() -> Iterator[bytes]:
+        yield member[:10]
+        for i in range(10, 51):  # the comment and its terminator: ~4s decoding to nothing
+            time.sleep(0.1)
+            yield member[i : i + 1]
+        yield member[51:]
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body(), headers={"Content-Encoding": "gzip"})
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    started = time.monotonic()
+    with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded"):
+        fetcher.get("https://gzip-trickle.example/x")
+    assert time.monotonic() - started < 1.5
+
+
+def _equivalence_handler(request: httpx.Request) -> httpx.Response:
+    # Iterator bodies, as a network transport's are: an in-memory `content=b"..."` response
+    # arrives already read, and would never reach the raw read under test.
+    body = b'{"name": "caf\xc3\xa9"}'
+    if request.url.path == "/gzip":
+        return httpx.Response(
+            200, content=iter([gzip.compress(body)]),
+            headers={"Content-Encoding": "gzip", "ETag": '"g"'},
+        )
+    if request.url.path == "/charset":
+        return httpx.Response(
+            200, content=iter(["café".encode("latin-1")]),
+            headers={"Content-Type": "text/plain; charset=latin-1"},
+        )
+    if request.url.path == "/json":
+        return httpx.Response(
+            200, content=iter([body]), headers={"Content-Type": "application/json"}
+        )
+    return httpx.Response(200, content=iter([body]))
+
+
+@pytest.mark.parametrize("path", ["/gzip", "/identity", "/charset", "/json"])
+def test_the_raw_read_decodes_exactly_as_the_eager_read(tmp_path: Path, path: str) -> None:
+    """Control for T192b's raw read: the rebuilt response is the eager one, attribute for
+    attribute — decoded content, text, encoding, headers, URL — and so is the FetchResult."""
+    url = f"https://same.example{path}"
+    client = httpx.Client(transport=httpx.MockTransport(_equivalence_handler))
+    eager = client.request("GET", url)
+    fetcher = Fetcher(_settings(tmp_path), client=client)
+
+    rebuilt = fetcher._read_response(
+        client.build_request("GET", url), url, time.monotonic() + 60
+    )
+    assert (rebuilt.status_code, rebuilt.content, rebuilt.text, rebuilt.encoding) == (
+        eager.status_code, eager.content, eager.text, eager.encoding
+    )
+    assert rebuilt.headers.multi_items() == eager.headers.multi_items()
+    assert rebuilt.url == eager.url
+    if path != "/charset":
+        assert rebuilt.json() == eager.json()
+
+    result = fetcher.get(url)
+    assert (result.content, result.final_url) == (eager.content, str(eager.url))
 
 
 def test_a_non_200_whose_body_read_fails_is_retried_as_a_transport_error(
