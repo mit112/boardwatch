@@ -42,6 +42,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Bump when any set below changes, so a downstream cache or report can detect drift.
+# 8: tianjin and chongqing, the two direct-administered municipalities CITIES_BY_ISO3 lacked
+# (beijing and shanghai were already in), and the 17 provincial capitals it lacked, all CHN. The
+# run-474 audit found "Tianjin, Tianjin" reading `unknown` and passing the location filter; the
+# store held 35 such strings (bare "Tianjin", "Shenyang", "Urumqi" ...), none naming a US place.
+# A municipality is its own province, so its name as a city token also covers "Tianjin, Tianjin":
+# the city step runs before the region step, and a region entry for it could never be reached.
 # 7: restructured into a token -> ISO-3 map and the `usa` positive pack (DESIGN-T183 B2). The
 # flat sets are derived from the per-country maps and are unchanged token for token; every open
 # posting's `us / non_us / unknown` reading was measured byte-identical across the change.
@@ -66,7 +72,7 @@ from dataclasses import dataclass
 # 3: US_STATE_NAME_TO_ABBREV added and the two state sets derived from it. The classifier's
 # own tokens are unchanged — the map exists so `core.normalize.canonical_location` can fold
 # "Austin, Texas" and "Austin, TX" to one identity component.
-LOCATION_DATA_VERSION = 7
+LOCATION_DATA_VERSION = 8
 
 # The one source of truth for US states: both sets below are DERIVED from it, so adding a
 # state is one edit, not three that can disagree. Values are USPS abbreviations, which is
@@ -264,6 +270,10 @@ CITIES_BY_ISO3: dict[str, frozenset[str]] = dict(
         "wuxi", "shanghai", "beijing", "shenzhen", "guangzhou", "chengdu", "hangzhou", "nanjing",
         "suzhou", "foshan", "zhuzhou", "wuhan", "kunming", "jiaxing", "hefei", "xianyang",
         "nanchang", "xian", "jining", "yinchuan",
+        # Version 8: the municipalities and provincial capitals the set lacked.
+        "tianjin", "chongqing", "shijiazhuang", "taiyuan", "hohhot", "shenyang", "changchun",
+        "harbin", "fuzhou", "jinan", "zhengzhou", "changsha", "nanning", "haikou", "guiyang",
+        "lhasa", "lanzhou", "xining", "urumqi",
     }),
     CIV=frozenset({"abidjan"}),
     CMR=frozenset({"douala"}),

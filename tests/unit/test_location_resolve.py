@@ -35,6 +35,39 @@ def test_a_place_resolves_to_its_countries(loc: str, expected: set[str]) -> None
     assert resolve_countries([loc]) == frozenset(expected)
 
 
+# T194: the municipalities and provincial capitals the catalog lacked, each observed in the store
+# as a bare city or "City, City" with no country to do the work, and each read `unknown`, fail-open.
+@pytest.mark.parametrize(
+    "loc",
+    [
+        "Tianjin, Tianjin",
+        "Tianjin",
+        "Chongqing",
+        "Shijiazhuang",
+        "Taiyuan",
+        "Hohhot",
+        "Shenyang",
+        "Changchun",
+        "Harbin",
+        "Fuzhou",
+        "Jinan",
+        "Zhengzhou",
+        "Changsha",
+        "Nanning",
+        "Haikou",
+        "Guiyang",
+        "Lhasa",
+        "Lanzhou",
+        "Xining",
+        "Urumqi",
+        "Ürümqi",
+    ],
+)
+def test_a_chinese_municipality_or_provincial_capital_resolves_to_china(loc: str) -> None:
+    assert resolve_countries([loc]) == frozenset({"CHN"})
+    assert classify_location([loc]) == "non_us"
+
+
 def test_a_multi_country_region_resolves_to_all_of_them_and_never_the_us() -> None:
     emea = resolve_countries(["EMEA"])
     assert {"DEU", "GBR", "ZAF", "ARE"} <= emea
