@@ -9,7 +9,7 @@ runner deliberately schedules AFTER the funnel, so the queue can never sit upstr
 a gate reads. The fix hoists the sweep above the funnel rather than moving the funnel below the
 queue; what this file pins is the section that hoist makes possible.
 
-`artifact_version` is left ALONE (8 since T60). Asserted here as well as at the sites that pin it,
+`artifact_version` is left ALONE (8 since T60, 9 since T204). Asserted here as well as at the sites that pin it,
 so the additive-key ruling is visible from the change that relies on it — the same precedent
 `death_probe` and `lanes` were admitted on: no existing value changes meaning, and a consumer that
 has never heard of `form_questions` reads exactly what it read before.
@@ -187,6 +187,6 @@ def test_the_artifact_version_does_not_move_for_the_form_questions_section() -> 
     constant lying. The literal tracks whatever `main` currently declares; what this test defends
     is that adding `form_questions` leaves it ALONE.
     """
-    assert ARTIFACT_VERSION == 8
-    assert funnel_to_dict(_funnel())["artifact_version"] == 8
-    assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 8
+    assert ARTIFACT_VERSION == 9
+    assert funnel_to_dict(_funnel())["artifact_version"] == 9
+    assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 9

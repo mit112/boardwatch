@@ -174,4 +174,4 @@ def test_the_artifact_version_does_not_move_for_the_fetch_cost_key() -> None:
     """
     from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 
-    assert ARTIFACT_VERSION == 8
+    assert ARTIFACT_VERSION == 9

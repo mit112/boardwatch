@@ -7,7 +7,7 @@ and is nearly worthless as evidence about the corpus. Every other bucket exists 
 which of the many zeros they are looking at — a budget that refused everything, a due set with
 no URLs, a redirect rule swallowing every gone-status, a drain that never fires.
 
-`artifact_version` is left ALONE (8 since T60). Asserted here as well as at the four sites that pin it,
+`artifact_version` is left ALONE (8 since T60, 9 since T204). Asserted here as well as at the four sites that pin it,
 so the additive-key ruling is visible from the change that relies on it.
 
 T89 added the ATS list-API half and holds the version there too, on **D-498's** ruling rather
@@ -198,9 +198,9 @@ def test_the_artifact_version_does_not_move_for_the_death_probe_section() -> Non
     `death_probe` leaves it ALONE. It caught exactly that on rebase: the pin said 6, D-323 had
     moved main to 7, and a textual merge could not see the disagreement.
     """
-    assert ARTIFACT_VERSION == 8
-    assert funnel_to_dict(_funnel())["artifact_version"] == 8
-    assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 8
+    assert ARTIFACT_VERSION == 9
+    assert funnel_to_dict(_funnel())["artifact_version"] == 9
+    assert funnel_to_dict(_funnel(_sample()))["artifact_version"] == 9
 
 
 def test_closed_is_the_sum_of_the_two_halves_by_construction(tmp_path: object) -> None:
