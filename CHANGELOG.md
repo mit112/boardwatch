@@ -935,6 +935,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The standing-queue refresh re-judges released holds first (2026-09-24, T195).** After a gate-key
+  change, a delivered lead whose newest off-key verdict is `ineligible` (a hold the lane released when the
+  key moved) is now re-judged ahead of never-judged leads instead of waiting its turn for several runs; the
+  caller's order holds within each part and the budget's meaning is unchanged. Ordering only, never a lane read.
+
 - **Third engine batch: spelled-number years bars, the `a plus` word boundary, and an aside about
   another noun (2026-09-24, T193, T196, T197).** "five (5) years of experience" and the bare words one to
   twenty now read as years bars on the experience patterns and in every duration guard, exactly as their

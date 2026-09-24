@@ -23,6 +23,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
@@ -1800,6 +1801,88 @@ def test_the_refresh_spends_its_budget_on_leads_it_can_send(
     assert _current_gate_verdict(env, clean) == "eligible"
     assert _current_gate_verdict(env, foreign) is None
     assert (result.candidates, result.pending_after) == (2, 1), "the withheld body stays pending"
+
+
+def _gate_row_order(data_dir: Path) -> list[int]:
+    """posting ids in the order their final-gate rows were written, oldest first."""
+    from sqlalchemy import select
+
+    with get_engine(data_dir).connect() as conn:
+        rows = conn.execute(
+            select(tables.posting_versions.c.posting_id)
+            .join(tables.eligibility_inputs,
+                  tables.eligibility_inputs.c.posting_version_id == tables.posting_versions.c.id)
+            .join(tables.eligibility_evaluations,
+                  tables.eligibility_evaluations.c.input_id == tables.eligibility_inputs.c.id)
+            .where(tables.eligibility_evaluations.c.engine_version.startswith("final_gate:"))
+            .order_by(tables.eligibility_evaluations.c.id)
+        ).all()
+    return [int(row.posting_id) for row in rows]
+
+
+def _stale_abc(env: Path, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """[A never judged, B judged `ineligible`, C judged `eligible`], then a re-key moves B's and
+    C's rows off-key: B is a RELEASED hold, and all three are stale."""
+    from boardwatch.llm.gate_judge import run_gate_stage
+
+    _ready(env)
+    a, b, c = (_seed(env, slug=f"acme-release-{n}") for n in "abc")
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
+    monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(b))
+    monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
+    run_gate_stage(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=b), SimpleNamespace(posting_id=c)], run_id=None,
+    )
+    assert (_current_gate_verdict(env, b), _current_gate_verdict(env, c)) == (
+        "ineligible", "eligible",
+    )
+    _rekey(env)
+    assert [_current_gate_verdict(env, p) for p in (a, b, c)] == [None, None, None]
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    return [a, b, c]
+
+
+@_needs_an_executable_fake
+def test_the_refresh_re_judges_a_released_hold_first(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T195 (D-589). A re-key releases every judge `ineligible` hold at once, and in the caller's
+    order the released hold waits behind a never-judged lead. With one slot, B is the one sent."""
+    from boardwatch.llm.gate_judge import run_gate_refresh
+
+    a, b, c = _stale_abc(env, monkeypatch)
+    _arm_gate(env, batch_size=1, refresh_budget=1)
+
+    result = run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in (a, b, c)], run_id=None,
+    )
+
+    assert (result.candidates, result.sent, result.pending_after) == (3, 1, 2)
+    assert [_current_gate_verdict(env, p) for p in (a, b, c)] == [None, "eligible", None]
+
+
+@_needs_an_executable_fake
+def test_the_refresh_keeps_the_callers_order_behind_the_released_holds(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T195: the released hold first, then the rest — never judged or off-key `eligible` alike —
+    in the caller's order."""
+    from boardwatch.llm.gate_judge import run_gate_refresh
+
+    a, b, c = _stale_abc(env, monkeypatch)
+    _arm_gate(env, batch_size=1, refresh_budget=3)
+    before = len(_gate_row_order(env))
+
+    result = run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in (a, b, c)], run_id=None,
+    )
+
+    assert (result.candidates, result.sent, result.pending_after) == (3, 3, 0)
+    assert _gate_row_order(env)[before:] == [b, a, c]
 
 
 @_needs_an_executable_fake
