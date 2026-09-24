@@ -39,7 +39,7 @@ from boardwatch.eligibility.oracle import (
     OracleVerdictError,
     accept_oracle_verdict,
 )
-from boardwatch.eligibility.read import fresh_gate_verdicts
+from boardwatch.eligibility.read import fresh_gate_verdicts, newest_gate_verdicts
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 
 #: What this stage writes to the gate row's `provider` column: the `claude` CLI under the
@@ -584,9 +584,11 @@ class GateRefreshResult:
 
 
 def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] | None:
-    """`leads`, in order, minus every lead with a current gate reading or no current version to
-    judge. `None` when the profile is missing or its facts unreadable, `run_gate_stage`'s
-    fail-open cases."""
+    """`leads` minus every lead with a current gate reading or no current version to judge,
+    RELEASED holds first (T195): a lead whose newest gate row on its current version, under any
+    key, reads `ineligible` was held until its key moved and is back in the apply lane until it is
+    re-judged. The caller's order holds within each part. `None` when the profile is missing or its
+    facts unreadable, `run_gate_stage`'s fail-open cases."""
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -597,14 +599,18 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
             return None
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
         current = _current_gate_rows(conn, settings, facts, versions)
-    return [p for p in leads if p.posting_id in versions and p.posting_id not in current]
+        newest = newest_gate_verdicts(conn, [v.posting_version_id for v in versions.values()])
+    stale = [p for p in leads if p.posting_id in versions and p.posting_id not in current]
+    released = [p for p in stale if newest.get(p.posting_id) == "ineligible"]
+    return released + [p for p in stale if newest.get(p.posting_id) != "ineligible"]
 
 
 def run_gate_refresh(
     engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None
 ) -> GateRefreshResult:
     """T113: re-judge up to `gate.refresh_budget` of `leads` — the standing queue, in the order
-    the caller wants them healed — whose gate reading is not current.
+    the caller wants them healed, released holds first (`_stale`) — whose gate reading is not
+    current.
 
     Every lead goes through `run_gate_stage` itself, so the judge, the request, the acceptance
     rules and the write are the daily gate's own. It is called ONE BATCH AT A TIME because that

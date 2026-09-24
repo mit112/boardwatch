@@ -17,7 +17,11 @@ from sqlalchemy.sql.elements import ColumnElement
 from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.engine import current_evaluations
 from boardwatch.eligibility.facts import Facts
-from boardwatch.eligibility.final_gate import gate_engine_version, gate_facts_key
+from boardwatch.eligibility.final_gate import (
+    GATE_VERSION_PREFIX,
+    gate_engine_version,
+    gate_facts_key,
+)
 from boardwatch.eligibility.oracle import is_allowed_reason
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import (
@@ -470,6 +474,25 @@ def current_gate_verdicts(
             verdict = "uncertain"
         out[posting_id] = verdict
     return out
+
+
+def newest_gate_verdicts(conn: Connection, posting_version_ids: list[int]) -> dict[int, str]:
+    """posting_id -> the stored verdict of the newest final-gate row on its current version, under
+    ANY key: any facts key, model, level or gate policy version (T195). Not a lane read — no lane
+    may serve a verdict reached on other inputs. Its one caller, `gate_judge._stale`, reads it to
+    put a RELEASED hold (an off-key `ineligible` the lane no longer holds on) at the front of the
+    refresh. The `final_gate:` prefix keeps the deterministic and advisory `llm:` lanes out.
+    """
+    if not posting_version_ids:
+        return {}
+    scope = [
+        eligibility_evaluations.c.engine_kind == "llm",
+        eligibility_evaluations.c.engine_version.startswith(GATE_VERSION_PREFIX, autoescape=True),
+    ]
+    return {
+        posting_id: verdict
+        for posting_id, (verdict, _) in _latest_gate_rows(conn, posting_version_ids, scope).items()
+    }
 
 
 def fresh_gate_verdicts(
