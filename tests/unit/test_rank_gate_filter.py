@@ -102,7 +102,7 @@ def _write_gate_verdict(
         final_gate.record_gate_verdict(
             conn, posting_version_id=posting_version_id, jd_text=CLEARANCE_JD,
             facts=Facts(), policy=Policy(families={}), catalog=catalog, verdict=verdict,
-            model=_settings(tmp_path).gate.model,
+            model=_settings(tmp_path).gate.model, target_band="any",
         )
 
 
@@ -242,6 +242,7 @@ def test_a_gate_ineligible_reached_on_other_inputs_hides_nothing(
                 policy=Policy(families={}), catalog=_catalog(tmp_path),
                 verdict=_ineligible(posting_id),
                 model="haiku" if changed == "model" else settings.gate.model,
+                target_band="any",
             )
 
     after = rank_open_postings(engine, settings, limit=10, now=NOW, include_handled=True)

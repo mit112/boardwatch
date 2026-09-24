@@ -105,7 +105,7 @@ def record_gate_verdict(
     conn: Connection, *, posting_version_id: int, jd_text: str, facts: Facts,
     policy: Policy, catalog: RulesCatalog, verdict: OracleVerdict, run_id: int | None = None,
     shortlist_rank: int | None = None, provider: str | None = None, model: str | None = None,
-    effort: str | None = None,
+    effort: str | None = None, target_band: str | None = None,
 ) -> int:
     """Persist one judge verdict. `shortlist_rank` is the lead's 1-based position in the
     ranker's DEPTH slate, recorded so conversion can be read BY RANK BAND afterwards.
@@ -142,6 +142,15 @@ def record_gate_verdict(
     `years` is the candidate's `total_years_experience` — the one fact the seniority question is
     asked relative to — and is what `read.current_gate_seniority` keys a reading on in place of
     the row identity (T152). Always written, as a JSON null when the profile has none.
+
+    `target_band` is the `target_seniority_band` the judge was asked against (T188b). It is a
+    judge INPUT — it changes the prompt, and under `any` the seniority question is not asked at
+    all — so every gate read requires it to match, and a band edit re-asks the standing queue
+    through the T113 refresh exactly as a level change does. It is not folded into `facts_key`:
+    `current_gate_seniority` keys a recorded row on `years`, not `facts_key` (T152), so folding
+    would never reach the one read the band decides, and `facts_key` is also the advisory LLM
+    lane's cache key, which asks no seniority question. `None` is written as an ABSENT key, for
+    a caller that cannot name it (`eligibility gate apply`), and matches no band.
     """
     accepted = accept_oracle_verdict(verdict, jd_text, catalog)
     persisted: EligibilityVerdict = accepted.expected_verdict  # type: ignore[assignment]
@@ -173,6 +182,8 @@ def record_gate_verdict(
         raw_output["shortlist_rank"] = shortlist_rank
     if effort is not None:
         raw_output["effort"] = effort
+    if target_band is not None:
+        raw_output["target_band"] = target_band
     return record_evaluation(
         conn, posting_version_id=posting_version_id,
         profile_hash=identity.profile_hash, profile_snapshot=identity.profile_snapshot,

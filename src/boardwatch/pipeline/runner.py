@@ -55,7 +55,7 @@ from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.final_gate import gate_effort_key
-from boardwatch.eligibility.preflight import current_facts, current_identity
+from boardwatch.eligibility.preflight import current_identity, current_judge_inputs
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     current_gate_seniority,
@@ -1554,10 +1554,10 @@ def _lead_lanes(
         # tailors for can never disagree with the one `sync_queue` files the folder under. Keyed
         # on the judge's inputs rather than the identity (T161): moving only the queue's read
         # would split the two lanes on every lead after a rules-only re-key.
-        facts = current_facts(conn)
+        facts, target_band = current_judge_inputs(conn)
         gate_verdicts = current_gate_verdicts(
             conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model,
-            effort=gate_effort_key(settings.gate.effort),
+            effort=gate_effort_key(settings.gate.effort), target_band=target_band,
         )
         # T151. HOW MANY leads the gate read found NOTHING for, counted beside the read itself
         # rather than re-derived later, so the number and the lane decision cannot disagree.
@@ -1580,7 +1580,9 @@ def _lead_lanes(
         # The runner's twin of `delivery_queries`' gate point: same flag, same inert default, so
         # the lane this run tailors for cannot disagree with the one `sync_queue` files under.
         gate_seniority = (
-            current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
+            current_gate_seniority(
+                conn, version_ids, facts, model=settings.gate.model, target_band=target_band
+            )
             if settings.gate.seniority_hold
             else {}
         )

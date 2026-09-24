@@ -247,14 +247,15 @@ def current_requirement_flags(
 
 def current_gate_seniority(
     conn: Connection, posting_version_ids: list[int], facts: Facts | None, *, model: str,
+    target_band: str,
 ) -> dict[int, str]:
     """posting_id -> the LATEST final-gate `seniority_fit` reading, in {yes, no, unclear}.
 
     **Keyed on what the reading depends on, not on the row identity (T152).** The judge is asked
-    a band-free question — is this body an entry-level role for a candidate with these years —
-    under a fixed all-blocker policy, so its answer is a function of the body, the candidate's
-    `total_years_experience`, the gate prompt/policy and the model. A reading is found for
-    `(posting_version_id, years, model, EXACT gate engine_version)`:
+    whether this body fits the profile's target band for a candidate with these years, under a
+    fixed all-blocker policy, so its answer is a function of the body, the candidate's
+    `total_years_experience`, the band, the gate prompt/policy and the model. A reading is found
+    for `(posting_version_id, years, target_band, model, EXACT gate engine_version)`:
 
     - `rules_hash` and the rest of `profile_hash` are NOT in it. The prompt names no catalog
       vocabulary, so a regex edit to `rules.yaml` cannot change whether a body reads senior, and
@@ -262,6 +263,9 @@ def current_gate_seniority(
     - `model` IS, as the freshness read's narrowing is (T108): a different model is a different
       judge. `model IS NULL` never matches, so a verdict applied through `eligibility gate apply`
       — which names no judge — holds nothing here.
+    - `target_band` IS (T188b): the question is asked against it, and under `any` it is not
+      asked at all, so a reading taken under another band — or one that recorded none — is not
+      a reading of this question.
     - `engine_version` is EXACT, not the display prefix: a `p5-oracle-1` row predates the
       seniority question entirely.
     - `effort` is deliberately NOT in it. A level is a calibration of the same judge, not a
@@ -301,6 +305,7 @@ def current_gate_seniority(
         eligibility_evaluations.c.engine_kind == "llm",
         eligibility_evaluations.c.engine_version == gate_engine_version(),
         eligibility_evaluations.c.model == model,
+        func.json_extract(raw, "$.target_band") == target_band,
         or_(
             and_(recorded, same_years),
             and_(~recorded, func.json_extract(raw, "$.facts_key") == gate_facts_key(facts)),
@@ -336,7 +341,7 @@ def current_gate_seniority(
             for vid, reading in reading_by_version.items() if vid in v2p}
 
 
-def _judge_inputs(facts: Facts, model: str) -> list[ColumnElement[bool]]:
+def _judge_inputs(facts: Facts, model: str, target_band: str) -> list[ColumnElement[bool]]:
     """The row filter for "a final-gate verdict reached on these inputs" (T161).
 
     The judge is sent the frozen body and `facts_payload(facts)` under a fixed all-blocker policy
@@ -345,13 +350,18 @@ def _judge_inputs(facts: Facts, model: str) -> list[ColumnElement[bool]]:
     the version list is the caller's. `engine_kind == 'llm'` keeps the deterministic lane out and
     the exact version keeps the advisory `llm:` lane out with it. A legacy row matches nothing:
     `model IS NULL` never equals a model, and a row with no `$.facts_key` never equals a key.
+
+    `target_band` is the profile's `target_seniority_band`, which the prompt is asked against
+    (T188b; `final_gate.record_gate_verdict`'s note): a row judged under another band, or one
+    that recorded none, is not a verdict on these inputs.
     """
+    raw = eligibility_evaluations.c.raw_output_json
     return [
         eligibility_evaluations.c.engine_kind == "llm",
         eligibility_evaluations.c.engine_version == gate_engine_version(),
         eligibility_evaluations.c.model == model,
-        func.json_extract(eligibility_evaluations.c.raw_output_json, "$.facts_key")
-        == gate_facts_key(facts),
+        func.json_extract(raw, "$.facts_key") == gate_facts_key(facts),
+        func.json_extract(raw, "$.target_band") == target_band,
     ]
 
 
@@ -399,7 +409,7 @@ def _latest_gate_rows(
 
 def current_gate_verdicts(
     conn: Connection, posting_version_ids: list[int], facts: Facts | None,
-    catalog: RulesCatalog, *, model: str, effort: str,
+    catalog: RulesCatalog, *, model: str, effort: str, target_band: str,
 ) -> dict[int, str | None]:
     """posting_id -> the final gate's verdict on its current version, keyed on the JUDGE'S INPUTS.
 
@@ -458,7 +468,7 @@ def current_gate_verdicts(
     if facts is None or not posting_version_ids:
         return {}
     scope = [
-        *_judge_inputs(facts, model),
+        *_judge_inputs(facts, model, target_band),
         or_(
             func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort,
             func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort").is_(None),
@@ -497,6 +507,7 @@ def newest_gate_verdicts(conn: Connection, posting_version_ids: list[int]) -> di
 
 def fresh_gate_verdicts(
     conn: Connection, posting_version_ids: list[int], facts: Facts, *, model: str, effort: str,
+    target_band: str,
 ) -> dict[int, str | None]:
     """posting_id -> its gate verdict when THIS judge, at THIS level, already answered these
     exact inputs: the never-re-judge filter (D-477 pt 5). `gate_judge._current_gate_rows` is its
@@ -526,7 +537,7 @@ def fresh_gate_verdicts(
     if not posting_version_ids:
         return {}
     scope = [
-        *_judge_inputs(facts, model),
+        *_judge_inputs(facts, model, target_band),
         func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort,
     ]
     return {

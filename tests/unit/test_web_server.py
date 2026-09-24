@@ -448,6 +448,7 @@ def _gate(
         # The configured judge, as the daily stage writes it: the seniority read matches only
         # a reading this model reached (T152), and a row naming no model holds nothing.
         model=load_settings().gate.model,
+        target_band="any",
     )
 
 

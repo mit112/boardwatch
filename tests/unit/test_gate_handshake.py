@@ -281,7 +281,7 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
     with engine.begin() as conn:
         result = apply_gate_verdicts(
             conn, [verdict], versions=versions, facts=stored_facts,
-            policy=stored_policy, catalog=catalog, model="sonnet",
+            policy=stored_policy, catalog=catalog, model="sonnet", target_band="any",
         )
     assert result.judged == 1
     assert result.ineligible == 1
@@ -305,11 +305,11 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
         ).all()
         under_stored = current_gate_verdicts(
             conn, [pv_id], stored_facts, catalog, model="sonnet",
-            effort=gate_effort_key(None),
+            effort=gate_effort_key(None), target_band="any",
         )
         under_other_facts = current_gate_verdicts(
             conn, [pv_id], Facts(highest_degree="master"), catalog, model="sonnet",
-            effort=gate_effort_key(None),
+            effort=gate_effort_key(None), target_band="any",
         )
     assert [tuple(row) for row in written] == [
         (stored_identity.profile_hash, stored_identity.rules_hash)

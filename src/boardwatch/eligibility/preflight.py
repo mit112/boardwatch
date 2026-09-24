@@ -186,11 +186,14 @@ def current_identity(
     return _identity_hashes(facts, policy, catalog, declared_fields())
 
 
-def current_facts(conn: Connection) -> Facts | None:
-    """The live profile's facts, or None when there is no profile — for the reads keyed on facts
-    rather than on the identity, which `current_gate_seniority` is (T152)."""
+def current_judge_inputs(conn: Connection) -> tuple[Facts | None, str]:
+    """The live profile's facts and `target_seniority_band`, or `(None, "any")` when there is no
+    profile — for the gate reads keyed on the judge's inputs rather than on the identity (T152,
+    T161, T188b). With no profile every such read finds nothing, so the band is never consulted."""
     profile_row = get_profile(conn)
-    return None if profile_row is None else parse_facts(profile_row.eligibility_facts_json)
+    if profile_row is None:
+        return None, "any"
+    return parse_facts(profile_row.eligibility_facts_json), profile_row.target_seniority_band
 
 
 # Rebuilt per child process by `_init_worker`, never pickled: a RulesCatalog carries every

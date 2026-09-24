@@ -424,6 +424,7 @@ def _current_gate_rows(
     conn: Connection,
     settings: Settings,
     facts: Facts,
+    target_band: str,
     versions: Mapping[int, CurrentVersion],
 ) -> dict[int, str | None]:
     """posting_id -> its CURRENT gate verdict under the freshness key: the one definition of
@@ -433,6 +434,7 @@ def _current_gate_rows(
     return fresh_gate_verdicts(
         conn, [v.posting_version_id for v in versions.values()], facts,
         model=settings.gate.model, effort=gate_effort_key(settings.gate.effort),
+        target_band=target_band,
     )
 
 
@@ -478,7 +480,9 @@ def run_gate_stage(
             return leads, GateStageResult(candidates=candidates)
         catalog = load_rules(settings.config_dir)
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
-        already_gated = _current_gate_rows(conn, settings, facts, versions)
+        already_gated = _current_gate_rows(
+            conn, settings, facts, profile_row.target_seniority_band, versions
+        )
     # Never re-judge (D-477 point 5): a lead this judge, at this level, already answered on these
     # exact inputs is skipped entirely — it never enters a request, let alone a `claude` call.
     #
@@ -502,6 +506,10 @@ def run_gate_stage(
     # reaches the call and `config_hash`, but nothing here moved with it, so a change of level
     # reached only leads nobody had judged yet. A row that recorded no level misses under every
     # level, including the unset one, and is re-judged once.
+    #
+    # `target_band` is the fifth (T188b): the band changes the prompt, and under `any` the
+    # seniority question is not asked at all, so a lead judged under `any` must be asked again
+    # once the owner declares a band, or its reading stays the skipped `unclear` forever.
     #
     # `engine_version` is EXACT here, not the `final_gate:` prefix (D-512). "Current" has to mean
     # current POLICY, or a bump to `oracle.POLICY_VERSION` can never reach a lead that was judged
@@ -569,7 +577,7 @@ def run_gate_stage(
             write_conn, verdicts, versions=versions, facts=facts, policy=policy,
             catalog=catalog, run_id=run_id, shortlist_ranks=shortlist_ranks,
             provider=GATE_PROVIDER, model=settings.gate.model,
-            effort=gate_effort_key(settings.gate.effort),
+            effort=gate_effort_key(settings.gate.effort), target_band=request["target_band"],
         )
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)
@@ -621,7 +629,9 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
         except ProfileRowInvalid:
             return None
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
-        current = _current_gate_rows(conn, settings, facts, versions)
+        current = _current_gate_rows(
+            conn, settings, facts, profile_row.target_seniority_band, versions
+        )
         newest = newest_gate_verdicts(conn, [v.posting_version_id for v in versions.values()])
     stale = [p for p in leads if p.posting_id in versions and p.posting_id not in current]
     released = [p for p in stale if newest.get(p.posting_id) == "ineligible"]
