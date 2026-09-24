@@ -47,9 +47,12 @@ lesson is in memory). The owner ruled everything up front (D-577, D-578) and sle
    on the shipped batch, then rule), the reviews' follow-ups (`TICKETS-2026-09-22c.md` §2026-09-23c).
 4. **T187 shipped (#449) at 03:01. Ship T189** once T189e's rebase (relaunched 03:52 after the seat
    reset), its gate and its chained ship complete (`ship-t189.out`).
-5. **Read the run-474 audit** (`bw-review/.agent/audit474/REPORT.md`: B8 blind two-judge precision on
-   474's apply lane, T113b's stale-negative backlog, T172's SingleStore folder) — relaunched at 03:52
-   after the seat reset.
+5. **The run-474 audit is READ** — see item 6 and D-589.
+6. **The run-474 audit is read (D-589):** B8 reads 17.9% on the standing lane because T179's re-key left
+   315 of 434 top-level leads without a live verdict (fail-open until the refresh reaches them); 474's own
+   placements read 8.3%. **Re-read B8 once `refresh_pending_after` (767) nears 0**, and rule the two options
+   in Owner-gated (raise the refresh budget; rank released holds first, T195). Tickets T193 (`five (5)
+   years` undetected) and T194 (`Tianjin, Tianjin` unknown) are written in `TICKETS-2026-09-22c.md`.
 
 **Measured this session (D-574, D-580, D-582, D-583, D-586, D-587):** T170 moves 258 of 126,854 pinned
 verdicts out of `ineligible` with a null control of 0; T185, T186 and T187 each read zero diffs over
@@ -143,6 +146,9 @@ available if Mit wants it. **D-498's rule (b) IS BUILT** (`_suppress_lane_copies
 9. **The reviews' follow-ups** (§2026-09-23c): the `_recovered` reserved-name collision, the funnel's
    `location_class` column still the US reading, cross-check disagreements not soft-alerted, the
    STANDING-FACTS grounding key, T190's test-only drift, T192's trickled-headers limit.
+10. **The T179 refresh backlog (D-589): 315 top-level leads with no live verdict, 14 of them judged
+    `ineligible` on 09-22 and standing in the apply lane.** Options: raise `gate.refresh_budget` above 130
+    for a few runs; have the refresh rank released holds first (T195); or let it drain at ~6 runs.
 
 ## Open questions — Mit's, not to be resolved by fiat
 
