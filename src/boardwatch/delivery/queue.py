@@ -957,9 +957,21 @@ def _make_room(target: Path, needed: frozenset[str]) -> int:
     is renamed IN PLACE, before the install moves anything: the generated file takes the name it is
     recorded under (so a second sync is unchanged), and the owner's file keeps its bytes under
     `<stem>-2<suffix>`. The count is reported, as `SyncReport.renamed`.
+
+    A clash is judged by the name the file actually HOLDS on disk (T189d). On a case-folding
+    filesystem a needed name can be taken by a file spelled differently in case, and that file is
+    boardwatch's own old résumé after a case-only retitle; asking about the needed spelling alone
+    mistook it for the owner's.
     """
     authored = _authored_names(target)
-    clashes = sorted(name for name in needed - authored if os.path.lexists(target / name))
+    on_disk = {path.name for path in target.iterdir()}
+    by_fold = {name.casefold(): name for name in on_disk}
+    held = {
+        name if name in on_disk else by_fold.get(name.casefold(), name)
+        for name in needed
+        if os.path.lexists(target / name)
+    }
+    clashes = sorted(held - authored)
     for name in clashes:
         os.replace(target / name, _free_name(target, name, avoid=needed))
     return len(clashes)

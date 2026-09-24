@@ -2206,6 +2206,75 @@ def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
     assert (again.failures, again.moved, again.updated, again.unchanged) == ((), 0, 0, 1)
 
 
+def test_a_case_only_retitle_leaves_ONE_resume_and_renames_no_owner_file(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189d item 1. A case-only retitle changes the résumé's name by case alone. `_make_room`
+    asked `os.path.lexists` whether the new name was taken, and on APFS/NTFS it is -- by
+    boardwatch's OWN old résumé, recorded in `details.json` under the old case. That file was
+    renamed aside as the owner's, counted in `renamed`, and carried into the new folder: two
+    résumés, one stale, forever. Skipped where the filesystem does not fold case."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == pid).values(title="Software ENGINEER"))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.renamed) == ((), 0)
+    (kept,) = _folders(root)
+    folder = root / kept
+    new_pdf = _details(folder)["pdf_filename"]
+    assert "Software_ENGINEER" in new_pdf
+    assert sorted(path.name for path in folder.glob("*.pdf")) == [new_pdf]
+
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failures, again.moved, again.updated, again.renamed) == ((), 0, 0, 0)
+    assert _snapshot(root) == snapshot
+
+
+def test_an_owner_file_differing_from_the_new_resume_only_by_case_is_still_renamed_aside(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Control for the test above: the case-folded comparison spares only boardwatch's own
+    files. An owner file whose name the new résumé would take on a case-folding filesystem is
+    still renamed aside, never deleted."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    new_pdf = plan_lead_names(
+        root=root.resolve(), owner_name=OWNER, company="Acme Corp", title="Senior Software Engineer",
+        identity_hash="0" * 64,
+    ).pdf
+    mine = Path(new_pdf.swapcase())
+    (kept,) = _folders(root)
+    (root / kept / mine).write_text("mine\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == pid)
+            .values(title="Senior Software Engineer", normalized_title="senior software engineer")
+        )
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.renamed) == ((), 1)
+    (kept,) = _folders(root)
+    folder = root / kept
+    assert (folder / new_pdf).read_bytes().startswith(b"%PDF")
+    # Renamed aside under the owner's own spelling.
+    assert (folder / f"{mine.stem}-2{mine.suffix}").read_text(encoding="utf-8") == "mine\n"
+
+
 def test_a_folder_left_under_the_case_rename_temporary_is_filed_under_its_recorded_name(
     engine: Engine, root: Path, apps: Path
 ) -> None:
