@@ -1295,6 +1295,22 @@ def _widen_for_a_different_job(
     if not target.exists():
         return target
     occupant_job_id = known_job_ids.get(target)
+    if occupant_job_id is None:
+        # On a case-folding filesystem `target` exists when the occupant is indexed under a name
+        # differing only by case, which the exact key misses (T189). Folded like `_plan`'s key,
+        # and confirmed with `samefile`, so a case-sensitive filesystem where both spellings are
+        # distinct folders never borrows the other folder's job.
+        folded = str(target).casefold()
+        occupant_job_id = next(
+            (
+                job_id
+                for path, job_id in known_job_ids.items()
+                if str(path).casefold() == folded
+                and path.exists()
+                and os.path.samefile(path, target)
+            ),
+            None,
+        )
     if occupant_job_id is None or occupant_job_id == entry.job_id:
         return target
     own = _read_details(entry.path)

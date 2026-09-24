@@ -2152,6 +2152,32 @@ def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
     assert (again.failures, again.moved, again.updated, again.unchanged) == ((), 0, 0, 1)
 
 
+def test_T172_widening_sees_an_occupant_that_differs_only_by_case(
+    engine: Engine, root: Path
+) -> None:
+    """T189 F4. `_applied/onX_…` is job A; `OnX_…` at the root is job B, and B is applied. On a
+    folding filesystem the plain destination exists, but its occupant is indexed under the other
+    case, so an exact-path lookup missed it, T172's widening never fired, and `_relocate` refused
+    on every run."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        a = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        b = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        create_application(conn, job_id=a, status="applied", source="t")
+        create_application(conn, job_id=b, status="applied", source="t")
+    _plant_folder(root, APPLIED_DIR, "onX_Backend_Engineer", posting_id=901, job_id=a,
+                  company="onX", identity_hash="c0ffee01")
+    _plant_folder(root, "", "OnX_Backend_Engineer", posting_id=902, job_id=b,
+                  company="OnX", identity_hash="c0ffee02")
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.to_applied) == ((), 1)
+    assert _folders(root / APPLIED_DIR) == ["OnX_Backend_Engineer_c0ffee02", "onX_Backend_Engineer"]
+    assert _details(root / APPLIED_DIR / "onX_Backend_Engineer")["job_id"] == a
+    assert _folders(root) == []
+
+
 # --------------------------------------------------------------------- T172: cross-job collision
 
 
