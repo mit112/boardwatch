@@ -10,6 +10,7 @@ coordinator alone persists them, transactionally, on complete applies only
 
 from __future__ import annotations
 
+import socket
 import ssl
 import threading
 import time
@@ -222,10 +223,30 @@ class _DeadlineBackend(httpcore.NetworkBackend):
         local_address: str | None = None,
         socket_options: Iterable[Any] | None = None,
     ) -> httpcore.NetworkStream:
-        return _DeadlineStream(_bounded(
-            lambda t: self._backend.connect_tcp(host, port, t, local_address, socket_options),
-            timeout,
-        ))
+        """`socket.create_connection`'s address loop, run here so each attempt is `_bounded`.
+
+        Handed the time left once, `create_connection` applied it to EACH resolved address in
+        turn, so a host with n black-holed addresses held the call (n-1)×left past its deadline
+        (T226). Each attempt goes to `SyncBackend` by numeric address, which keeps its socket
+        options, `TCP_NODELAY` and exception mapping; as there, an attempt that fails on the
+        caller's own timeout moves on, and all failing raises the last attempt's error.
+        """
+        try:
+            addresses = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+        except OSError as exc:
+            raise httpcore.ConnectError(str(exc)) from exc
+        if not addresses:
+            raise httpcore.ConnectError("getaddrinfo returns an empty list")
+        failure: httpcore.ConnectError | httpcore.ConnectTimeout
+        for *_, sockaddr in addresses:
+            try:
+                return _DeadlineStream(_bounded(partial(
+                    self._backend.connect_tcp, str(sockaddr[0]), port,
+                    local_address=local_address, socket_options=socket_options,
+                ), timeout))
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                failure = exc
+        raise failure
 
     def connect_unix_socket(
         self,

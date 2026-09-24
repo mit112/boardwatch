@@ -6,7 +6,9 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
+import httpcore
 import httpx
 import pytest
 import respx
@@ -1162,3 +1164,107 @@ def test_a_large_post_to_a_fast_reader_arrives_whole(tmp_path: Path) -> None:
         result = fetcher.post_json(url, _LARGE_BODY)
     assert (result.status_code, result.content) == (200, b"ok")
     assert received.endswith(b"x" * 65536 + b'"}')
+
+
+# --- T226: the CONNECT phase is clamped too, once per resolved address ----------------------
+#
+# Never real DNS or a real black hole: the resolver is `socket.getaddrinfo` patched per test, and
+# an "unreachable" address is `socket.socket.connect` patched to hang for exactly the timeout the
+# socket was given — which is what a black-holed SYN does, without depending on the network.
+
+_BLACK_HOLES = ("192.0.2.1", "192.0.2.2", "192.0.2.3")  # TEST-NET-1
+
+
+def _tcp(address: str, port: int) -> tuple[Any, ...]:
+    return (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))
+
+
+@contextmanager
+def _network(
+    patch: pytest.MonkeyPatch, names: dict[str, Callable[[int], list[tuple[Any, ...]]]]
+) -> Iterator[None]:
+    """Resolve each name in `names` through its fake; every connect to a `_BLACK_HOLES` address
+    hangs for the socket's own timeout. Anything else goes to the real resolver (numeric only)."""
+    real_resolve, real_connect = socket.getaddrinfo, socket.socket.connect
+
+    def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+        fake = names.get(host)
+        return fake(int(port)) if fake else real_resolve(host, port, *args, **kwargs)
+
+    def connect(self: socket.socket, address: Any) -> None:
+        if address[0] in _BLACK_HOLES:
+            timeout = self.gettimeout()
+            assert timeout is not None, "a black hole with no timeout would hang the suite"
+            time.sleep(timeout)
+            raise TimeoutError("timed out")
+        real_connect(self, address)
+
+    patch.setattr(socket, "getaddrinfo", resolve)
+    patch.setattr(socket.socket, "connect", connect)
+    yield
+
+
+def _answer_ok(conn: socket.socket) -> None:
+    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+
+def test_three_black_holed_addresses_end_at_the_fetch_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T226. `socket.create_connection` applies ONE timeout to EACH resolved address in turn, so
+    handing it the time left once let n black holes hold the call (n-1)×left past the deadline
+    (review F2 probe: 3.00s against 1.0s). Each attempt now re-reads what is left."""
+    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 1.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    names = {"many.invalid": lambda port: [_tcp(a, port) for a in _BLACK_HOLES]}
+    with _network(monkeypatch, names):
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 1(\.0)?s exceeded") as info:
+            fetcher.get("http://many.invalid/")
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_reachable_address_behind_a_black_hole_still_connects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control for T226: an attempt that times out on the CALLER's own connect timeout (0.3s,
+    well inside a 5s deadline) moves on to the next address, as `create_connection` did."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    names = {"two.invalid": lambda p: [_tcp(_BLACK_HOLES[0], p), _tcp("127.0.0.1", p)]}
+    politeness._REQUEST_DEADLINE.at = time.monotonic() + 5.0
+    try:
+        with _network(monkeypatch, names):
+            started = time.monotonic()
+            stream = politeness._DeadlineBackend().connect_tcp("two.invalid", port, timeout=0.3)
+            elapsed = time.monotonic() - started
+        assert stream.get_extra_info("server_addr") == ("127.0.0.1", port)
+        stream.close()
+    finally:
+        del politeness._REQUEST_DEADLINE.at
+        listener.close()
+    assert 0.3 <= elapsed < 2.0, elapsed
+
+
+def test_a_listener_on_loopback_still_connects_through_the_resolver_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for T226: a name resolving to one reachable address answers as before."""
+    fetcher = Fetcher(_settings(tmp_path), pacing=politeness.HostPacing())
+    with _local_server(_answer_ok) as url:
+        port = int(url.rsplit(":", 1)[1].split("/")[0])
+        with _network(monkeypatch, {"loop.invalid": lambda p: [_tcp("127.0.0.1", p)]}):
+            result = fetcher.get(f"http://loop.invalid:{port}/x")
+    assert (result.status_code, result.content) == (200, b"ok")
+
+
+def test_every_address_refused_raises_the_connect_error_httpcore_raised() -> None:
+    """Control for T226: all-fail is the same `httpcore.ConnectError` `SyncBackend` raised."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    listener.close()  # nothing listens here now: refused
+    with pytest.raises(httpcore.ConnectError) as info:
+        politeness._DeadlineBackend().connect_tcp("127.0.0.1", port, timeout=5.0)
+    assert isinstance(info.value.__cause__, ConnectionRefusedError), repr(info.value.__cause__)
