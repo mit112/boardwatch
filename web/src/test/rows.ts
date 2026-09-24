@@ -77,6 +77,7 @@ export function queueResponse(rows: QueueRow[], review: QueueRow[] = []): QueueR
     ineligible: 0,
     review: review.length,
     closed: 0,
+    lane_copy: 0,
     applied_ever: 0,
     skipped: 0,
     reported: 0,

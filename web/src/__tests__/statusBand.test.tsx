@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queueResponse, queueRow } from "../test/rows";
 
 /*
- * The band's `role="status"` readout and its `closed` cell.
+ * The band's `role="status"` readout and its `closed` and lane-copy cells.
  *
  * The readout counted ONE lane, so the day the apply lane emptied and every delivered lead landed
  * in review the page said "Showing 0 of 0" directly above 149 listed leads — the single most
@@ -100,5 +100,20 @@ describe("the closed cell", () => {
 
     const cell = screen.getByTitle(/took the posting down/i);
     expect(cell.textContent).toBe("12");
+  });
+});
+
+describe("the lane-copy cell", () => {
+  it("reports leads held as lane copies, passed through from the server", async () => {
+    const response = emptyApplyLane();
+    vi.mocked(getQueue).mockResolvedValue({
+      ...response,
+      counts: { ...response.counts, lane_copy: 3 },
+    });
+    render(<App />);
+    await screen.findByText(/Showing 3 of 3/);
+
+    const cell = screen.getByTitle(/employer-board twin/i);
+    expect(cell.textContent).toBe("3");
   });
 });

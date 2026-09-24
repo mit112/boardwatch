@@ -31,7 +31,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import plistlib
+import shutil
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -1770,7 +1772,7 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     verdict = {7: "ineligible"}
     review = {7}
     closed = {7}
-    lane_copy = {7}
+    lane_copy = {1}  # keyed by the folder's POSTING, the other sets by its job (T189b)
     assert queue._wanted_location(
         entry, applied=both, skipped=both, reported=both, closed=closed,
         ineligible=verdict, review=review, lane_copy=lane_copy,
@@ -2022,6 +2024,99 @@ def test_TWO_folders_converging_on_one_job_are_consolidated_not_refused_forever(
     assert _folders(root) == folders
 
 
+def test_consolidating_two_folders_keeps_the_owners_files_from_BOTH(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F2. The consolidation above retires a whole folder, and a queue folder is partly the
+    owner's (T121). The keeper is arbitrary, so the retired one is as likely as not the one the
+    owner worked in: its own files move into the keeper, a name the keeper already holds is kept
+    beside it under a suffix, and boardwatch's own files in it are not carried at all."""
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one")
+        second, second_job = _deliver(conn, apps, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    before = _folders(root)
+    for name in before:
+        (root / name / "cover-letter.tex").write_text(f"mine, in {name}\n", encoding="utf-8")
+        (root / name / f"notes-{name}.txt").write_text("only here\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == first).values(job_id=second_job))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.retired, report.failures) == (1, ())
+    (kept,) = _folders(root)
+    folder = root / kept
+    letters = sorted(
+        path.read_text(encoding="utf-8") for path in folder.glob("cover-letter*.tex")
+    )
+    assert letters == sorted(f"mine, in {name}\n" for name in before)
+    for name in before:
+        assert (folder / f"notes-{name}.txt").read_text(encoding="utf-8") == "only here\n"
+    # Nothing boardwatch wrote in the retired folder came along: one résumé, one details.json.
+    assert len(list(folder.glob("*.pdf"))) == 1
+
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.retired, again.moved, again.updated, again.failures) == (0, 0, 0, ())
+    assert _snapshot(root) == snapshot
+
+
+def test_an_owner_file_named_like_the_NEW_resume_is_renamed_never_deleted(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 3. A consolidation merges the retired folder's owner files into the keeper, and a
+    retitle in the same sync gives the keeper a NEW résumé name. An owner file already holding that
+    name (in either folder) used to be skipped by the carry-over and deleted with the staging
+    directory, while the sync reported success. Now the owner's file is renamed aside BEFORE the
+    install, the rename is counted in `renamed`, and the generated résumé takes its own name."""
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one")
+        second, second_job = _deliver(conn, apps, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    new_pdf = plan_lead_names(
+        root=root.resolve(), owner_name=OWNER, company="Acme Corp", title="Senior Software Engineer",
+        identity_hash="0" * 64,
+    ).pdf
+    before = _folders(root)
+    for name in before:
+        (root / name / new_pdf).write_text(f"mine, in {name}\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == first).values(job_id=second_job))
+        conn.execute(
+            update(postings)
+            .where(postings.c.id.in_([first, second]))
+            .values(title="Senior Software Engineer", normalized_title="senior software engineer")
+        )
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    # One rename per owner file: the merge suffixes the retired folder's, `_make_room` the keeper's.
+    assert (report.retired, report.renamed, report.failures) == (1, 2, ())
+    (kept,) = _folders(root)
+    folder = root / kept
+    assert _details(folder)["pdf_filename"] == new_pdf
+    assert (folder / new_pdf).read_bytes().startswith(b"%PDF")
+    stem = new_pdf.removesuffix(".pdf")
+    mine = sorted(
+        path.read_text(encoding="utf-8") for path in folder.glob(f"{stem}-*.pdf")
+    )
+    assert mine == sorted(f"mine, in {name}\n" for name in before)
+
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.retired, again.moved, again.updated, again.renamed, again.failures) == (
+        0, 0, 0, 0, ()
+    )
+    assert _snapshot(root) == snapshot
+
+
 def test_a_name_still_taken_after_disambiguation_is_REPORTED_not_returned_twice(
     tmp_path: Path,
 ) -> None:
@@ -2065,6 +2160,180 @@ def test_the_disambiguated_names_are_stable_across_syncs(
         report = sync_queue(conn, root=root, owner_name=OWNER)
     assert (report.unchanged, report.moved, report.created, report.updated) == (2, 0, 0, 0)
     assert _folders(root) == first
+
+
+# ---------------------------------------------------------- T189: names that differ only by case
+
+
+def _case_insensitive(base: Path) -> bool:
+    probe = base / "Case-Probe"
+    probe.mkdir(parents=True)
+    try:
+        return (base / "case-probe").exists()
+    finally:
+        probe.rmdir()
+
+
+def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F3. On APFS and NTFS the new name and the old one are ONE path, so `_relocate` saw its
+    destination "occupied" by the very folder it was moving and raised `QueueConflictError` on
+    every sync, which also froze the lead's content. Only reproducible where the filesystem folds
+    case, so it is skipped elsewhere rather than passing vacuously."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (old,) = _folders(root)
+    (root / old / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == pid).values(title="Software ENGINEER"))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.moved) == ((), 1)
+    assert _folders(root) == ["Acme_Corp_Software_ENGINEER"]
+    assert (root / "Acme_Corp_Software_ENGINEER" / "cover-letter.tex").read_text(
+        encoding="utf-8"
+    ) == "mine\n"
+    assert _details(root / "Acme_Corp_Software_ENGINEER")["title"] == "Software ENGINEER"
+
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failures, again.moved, again.updated, again.unchanged) == ((), 0, 0, 1)
+
+
+def test_a_case_only_retitle_leaves_ONE_resume_and_renames_no_owner_file(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189d item 1. A case-only retitle changes the résumé's name by case alone. `_make_room`
+    asked `os.path.lexists` whether the new name was taken, and on APFS/NTFS it is -- by
+    boardwatch's OWN old résumé, recorded in `details.json` under the old case. That file was
+    renamed aside as the owner's, counted in `renamed`, and carried into the new folder: two
+    résumés, one stale, forever. Skipped where the filesystem does not fold case."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == pid).values(title="Software ENGINEER"))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.renamed) == ((), 0)
+    (kept,) = _folders(root)
+    folder = root / kept
+    new_pdf = _details(folder)["pdf_filename"]
+    assert "Software_ENGINEER" in new_pdf
+    assert sorted(path.name for path in folder.glob("*.pdf")) == [new_pdf]
+
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failures, again.moved, again.updated, again.renamed) == ((), 0, 0, 0)
+    assert _snapshot(root) == snapshot
+
+
+def test_an_owner_file_differing_from_the_new_resume_only_by_case_is_still_renamed_aside(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Control for the test above: the case-folded comparison spares only boardwatch's own
+    files. An owner file whose name the new résumé would take on a case-folding filesystem is
+    still renamed aside, never deleted."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    new_pdf = plan_lead_names(
+        root=root.resolve(), owner_name=OWNER, company="Acme Corp", title="Senior Software Engineer",
+        identity_hash="0" * 64,
+    ).pdf
+    mine = Path(new_pdf.swapcase())
+    (kept,) = _folders(root)
+    (root / kept / mine).write_text("mine\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == pid)
+            .values(title="Senior Software Engineer", normalized_title="senior software engineer")
+        )
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.renamed) == ((), 1)
+    (kept,) = _folders(root)
+    folder = root / kept
+    assert (folder / new_pdf).read_bytes().startswith(b"%PDF")
+    # Renamed aside under the owner's own spelling.
+    assert (folder / f"{mine.stem}-2{mine.suffix}").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_a_folder_left_under_the_case_rename_temporary_is_filed_under_its_recorded_name(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 4. A crash between `_relocate`'s two `os.replace` calls leaves the folder at
+    `rename-<16hex>`. `refresh_queue` reconciles FIRST, so if the owner applied in between, the
+    folder was filed as `_applied/rename-<hex>` by `entry.path.name` and nothing renamed it again.
+    Reconcile now files a temporary under the name its own `details.json` records."""
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+    contents = _snapshot(root / folder)
+    (root / folder).rename(root / "rename-0123456789abcdef")
+    with engine.begin() as conn:
+        create_application(conn, job_id=job_id, status="applied", source="test")
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_applied, drained.failed, synced.failures) == (1, 0, ())
+    assert _folders(root) == []
+    assert _folders(root / APPLIED_DIR) == [folder]
+    assert _snapshot(root / APPLIED_DIR / folder) == contents
+
+    # A temporary the old code already filed under a drain is settled in place the same way.
+    (root / APPLIED_DIR / folder).rename(root / APPLIED_DIR / "rename-fedcba9876543210")
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_applied, drained.failed) == (1, 0)
+    assert _folders(root / APPLIED_DIR) == [folder]
+
+    before = _snapshot(root)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.moved) == (0, 0)
+    assert _snapshot(root) == before
+
+
+def test_T172_widening_sees_an_occupant_that_differs_only_by_case(
+    engine: Engine, root: Path
+) -> None:
+    """T189 F4. `_applied/onX_…` is job A; `OnX_…` at the root is job B, and B is applied. On a
+    folding filesystem the plain destination exists, but its occupant is indexed under the other
+    case, so an exact-path lookup missed it, T172's widening never fired, and `_relocate` refused
+    on every run."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        a = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        b = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        create_application(conn, job_id=a, status="applied", source="t")
+        create_application(conn, job_id=b, status="applied", source="t")
+    _plant_folder(root, APPLIED_DIR, "onX_Backend_Engineer", posting_id=901, job_id=a,
+                  company="onX", identity_hash="c0ffee01")
+    _plant_folder(root, "", "OnX_Backend_Engineer", posting_id=902, job_id=b,
+                  company="OnX", identity_hash="c0ffee02")
+    with engine.connect() as conn:
+        report = reconcile_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.to_applied) == ((), 1)
+    assert _folders(root / APPLIED_DIR) == ["OnX_Backend_Engineer_c0ffee02", "onX_Backend_Engineer"]
+    assert _details(root / APPLIED_DIR / "onX_Backend_Engineer")["job_id"] == a
+    assert _folders(root) == []
 
 
 # --------------------------------------------------------------------- T172: cross-job collision
@@ -2576,6 +2845,97 @@ def test_stale_staging_directories_are_cleared_by_the_next_sync(
     assert report.created == 1
     # And it was never mistaken for a lead on the way out.
     assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+
+
+def test_a_crash_before_the_carry_over_leaves_the_owner_file_in_the_live_folder(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189c. `_install` moves the old folder into staging, installs the new one, THEN carries the
+    owner's files back. A crash between the last two left the owner's file only in the superseded
+    copy under `.staging-…`, and the next sync's cleanup deleted the whole directory. Now the
+    cleanup carries it into the lead's live folder first."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    live = root / name
+    superseded = root / ".staging-0123456789abcdef" / "old-0123456789abcdef"
+    shutil.copytree(live, superseded)
+    (superseded / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failures == ()
+    assert (live / "cover-letter.tex").read_text(encoding="utf-8") == "mine\n"
+    assert list(root.glob(".staging-*")) == []
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.updated, again.moved, again.failures) == (0, 0, ())
+    assert _snapshot(root) == snapshot
+
+
+def test_a_crash_between_the_two_renames_puts_the_owner_file_in_the_recreated_folder(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189c. A crash between `_install`'s two renames leaves NO live folder, only the superseded
+    copy in staging. The lead is still offered, so the sync recreates its folder, and the cleanup
+    runs after that, so the owner's file lands there rather than in `_recovered`."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    staging = root / ".staging-0123456789abcdef"
+    staging.mkdir()
+    os.replace(root / name, staging / "old-0123456789abcdef")
+    (staging / "old-0123456789abcdef" / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failures) == (1, ())
+    assert (root / name / "cover-letter.tex").read_text(encoding="utf-8") == "mine\n"
+    assert not (root / "_recovered").exists()
+    assert list(root.glob(".staging-*")) == []
+
+
+def test_a_stranded_owner_file_whose_lead_has_no_folder_is_recovered_and_reported_once(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189c. The same crash for a lead that no longer has a live folder (here: it was applied, so
+    it is not offered and nothing recreates it). The superseded folder goes to
+    `_recovered/<folder>`, one failure names it, and the next sync is silent and byte-identical."""
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    staging = root / ".staging-0123456789abcdef"
+    staging.mkdir()
+    os.replace(root / name, staging / "old-0123456789abcdef")
+    (staging / "old-0123456789abcdef" / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+    with engine.begin() as conn:  # not offered any more, so nothing recreates its folder
+        create_application(conn, job_id=job_id, status="applied", source="test")
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    recovered = root / "_recovered" / name
+    assert (recovered / "cover-letter.tex").read_text(encoding="utf-8") == "mine\n"
+    assert [f.detail for f in report.failures if "recovered" in f.detail] == [
+        f"owner files recovered to _recovered/{name}"
+    ]
+    assert list(root.glob(".staging-*")) == []
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert [f.detail for f in again.failures if "recovered" in f.detail] == []
+    assert _snapshot(root) == snapshot
+    with engine.connect() as conn:
+        assert reconcile_queue(conn, root=root, owner_name=OWNER).unclassified == ()
 
 
 # -------------------------------------------------------------------------------------- reconcile
@@ -3198,10 +3558,13 @@ def test_a_lane_copy_drains_when_the_employer_board_twin_is_standing(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job")
+    # Grouped AFTER the first sync, which is how the standing population got its folders: a lane
+    # copy grouped before it is ever synced gets no folder at all (the test below this one).
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
     assert len(_folders(root)) == 2
 
     with engine.connect() as conn:
@@ -3247,10 +3610,11 @@ def test_the_lane_copy_returns_when_the_board_twin_stops_holding(
     with engine.begin() as conn:
         board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 1
@@ -3265,6 +3629,193 @@ def test_the_lane_copy_returns_when_the_board_twin_stops_holding(
     assert len(_folders(root)) == 1
 
 
+def test_a_lane_copy_stays_drained_across_refresh_queue(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F1, through `refresh_queue` -- the run's and the server start's path -- rather than
+    `reconcile_queue` alone, which is what let the drain ship dead. The sync half used to pull the
+    folder straight back out of `_lane_copy/`: the tell is `moved`, not `created`, and a second
+    refresh must change nothing at all. The re-entry path is pinned through the same entry point.
+    """
+    with engine.begin() as conn:
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+
+    (lane_folder,) = [
+        name for name in _folders(root)
+        if _details(root / name)["posting_id"] == lane_id
+    ]
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_lane_copy, drained.failed, synced.failures) == (1, 0, ())
+    assert _folders(root / LANE_COPY_DIR) == [lane_folder]
+    # The ONE move is the board twin's, and it is `_plan`'s ordinary rule rather than the drain's:
+    # its lane-copy sibling left the plan, so its disambiguating suffix is no longer needed.
+    assert synced.moved == 1
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+
+    before = _snapshot(root)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.moved, synced.created, synced.updated) == (0, 0, 0, 0)
+    assert _snapshot(root) == before
+
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=board_job, at=NOW)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_queue, synced.failures) == (1, ())
+    assert _folders(root / LANE_COPY_DIR) == []
+    assert len(_folders(root)) == 1
+
+
+def test_a_lane_copy_grouped_before_its_first_sync_gets_no_folder_until_the_twin_stops_holding(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F1's other side: `standing_queue_rows` leaves a lane copy out, so `sync_queue` never
+    creates one -- exactly as it never creates an `ineligible` lead's -- and creates it once the
+    board twin stops holding, which is the drain's re-entry path for a lead that never had a
+    folder."""
+    with engine.begin() as conn:
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.created, synced.failures) == (0, 1, ())
+    assert len(_folders(root)) == 1
+    assert _folders(root / LANE_COPY_DIR) == []
+
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=board_job, at=NOW)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (synced.created, synced.failures) == (1, ())
+    assert len(_folders(root)) == 1
+    assert len(_folders(root / SKIPPED_DIR)) == 1
+
+
+def test_the_page_and_the_apply_lane_cohort_agree_with_the_folders_about_a_lane_copy(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 1. After a refresh the lane copy's folder is in `_lane_copy/`, so neither the web
+    page's two lists nor the apply-lane cohort the drought detector and the funnel read may call it
+    work: the page COUNTS it in its own cell instead, and every reader asks
+    `lane_copy_posting_ids`, never a list of its own."""
+    from boardwatch.delivery.api import ApiContext, queue_payload  # noqa: PLC0415
+    from boardwatch.store.delivery_queries import (  # noqa: PLC0415
+        apply_lane_cohort,
+        apply_lane_placements,
+    )
+
+    with engine.begin() as conn:
+        board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_lane_copy, synced.failures) == (1, ())
+
+    ctx = ApiContext(
+        settings=load_settings(),
+        out_root=apps.resolve(),
+        queue_root=root.resolve(),
+        owner_name=OWNER,
+        platform="darwin",
+    )
+    with engine.connect() as conn:
+        page = queue_payload(conn, ctx)
+        run_ids = {
+            row.delivered_run_id
+            for row in delivered_unapplied(conn, skipped=set())
+            if row.delivered_run_id is not None
+        }
+        cohort = apply_lane_cohort(conn, run_ids=run_ids)
+        placed = apply_lane_placements(conn, run_ids=run_ids)
+    listed = [int(row["posting_id"]) for row in page["rows"] + page["review"]]
+    assert listed == [board_id]
+    assert page["counts"]["lane_copy"] == 1
+    in_cohort = [placement.posting_id for rows in cohort.values() for placement in rows]
+    assert in_cohort == [board_id]
+    # The folders, counted through a different path: the apply lane holds exactly the board lead.
+    assert len(_folders(root)) == sum(in_apply for _placeable, in_apply in placed.values()) == 1
+    assert _folders(root / LANE_COPY_DIR) != []
+
+    before = _snapshot(root)
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert _snapshot(root) == before
+
+
+def test_a_board_posting_sharing_its_lane_twins_JOB_is_never_hidden_as_a_lane_copy(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 2. Identity resolution can put the lane posting and its board twin on ONE job.
+    A job-keyed lane-copy set then named that job, whose `delivered_unapplied` winner is the BOARD
+    posting: reconcile filed the board lead's folder under `_lane_copy/` and sync then hid it, a
+    real board lead gone from the queue. Keyed on the posting, and a holder on the lane posting's
+    own job not counting, the one job keeps one folder at the root, and it is the board posting's.
+    """
+    with engine.begin() as conn:
+        lane_id, _ = _deliver(
+            conn, apps, "lane", provider="jobapps", delivered_at=NOW - timedelta(hours=1)
+        )
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 2
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+        conn.execute(update(postings).where(postings.c.id == lane_id).values(job_id=board_job))
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_lane_copy, drained.failed, synced.failures) == (0, 0, ())
+    assert _folders(root / LANE_COPY_DIR) == []
+    (kept,) = _folders(root)
+    assert _details(root / kept)["posting_id"] == board_id
+
+    before = _snapshot(root)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.moved, synced.created, synced.updated) == (0, 0, 0, 0)
+    assert _snapshot(root) == before
+
+
+def test_a_lane_copy_hides_only_its_own_POSTING_never_its_jobs_board_winner(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 2, the half the same-job test above cannot see. A job whose lane posting IS a
+    copy of another job's board lead can still be shown through a board posting of its OWN, which
+    `delivered_unapplied` picks as the winner. Hiding by job hid that board posting too; hiding by
+    posting leaves it standing beside the other job's lead.
+    """
+    with engine.begin() as conn:
+        lane_id, own_job = _deliver(
+            conn, apps, "lane", provider="jobapps", delivered_at=NOW - timedelta(hours=1)
+        )
+        own_board, _ = _deliver(conn, apps, "own", provider="greenhouse", job_id=own_job)
+        other_board, _ = _deliver(conn, apps, "other", provider="workday")
+        _cross_host(conn, lane_id, "other-job")
+        _cross_host(conn, other_board, "other-job")
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.failed, synced.failures) == (0, ())
+    assert sorted(_details(root / name)["posting_id"] for name in _folders(root)) == sorted(
+        [own_board, other_board]
+    )
+
+    before = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failures, again.created, again.updated, again.moved, again.retired) == (
+        (), 0, 0, 0, 0
+    )
+    assert _snapshot(root) == before
+
+
 def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     engine: Engine, root: Path, apps: Path
 ) -> None:
@@ -3275,10 +3826,11 @@ def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps", body=INELIGIBLE_JD)
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
     with engine.begin() as conn:
         _make_ineligible(conn, lane_id)
     with engine.connect() as conn:
@@ -3296,7 +3848,7 @@ def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
 #: UNIQUE key is (posting_id, kind, algorithm_version) — and `identities reap` is manual,
 #: so retired rows stay on disk. Filing a standing lead under `_lane_copy` on a withdrawn key is
 #: a quarantine with no evidence behind it, so the two readers this drain sits on
-#: (`standing_board_cross_host_keys` and `lane_copy_job_ids`) select the current one.
+#: (`standing_board_cross_host_keys` and `lane_copy_posting_ids`) select the current one.
 RETIRED = "p6.1"
 assert RETIRED != IDENTITY_ALGORITHM_VERSION  # the fixtures below must actually be stale
 
@@ -3314,10 +3866,11 @@ def test_a_group_held_only_at_a_RETIRED_generation_drains_nothing(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
-            _cross_host(conn, posting_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
+            _cross_host(conn, posting_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 0
@@ -3334,10 +3887,11 @@ def test_a_board_twin_at_a_RETIRED_generation_holds_nothing(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job", version=RETIRED)
-        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job", version=RETIRED)
+        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 0
@@ -3347,16 +3901,17 @@ def test_a_board_twin_at_a_RETIRED_generation_holds_nothing(
 def test_a_lane_twin_at_a_RETIRED_generation_is_not_matched_to_a_CURRENT_holder(
     engine: Engine, root: Path, apps: Path
 ) -> None:
-    """The mirror image, isolating `lane_copy_job_ids`: the holder set is current and correct, and
+    """The mirror image, isolating `lane_copy_posting_ids`: the holder set is current and correct, and
     it is the LANE row whose only key is retired. The two rows are in no current group together,
     so the lane lead is work rather than a copy."""
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 0
@@ -3373,10 +3928,11 @@ def test_the_control_a_group_held_at_the_CURRENT_generation_still_drains(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
-            _cross_host(conn, posting_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
+            _cross_host(conn, posting_id, "same-job")
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 1

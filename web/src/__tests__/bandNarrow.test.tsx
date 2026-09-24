@@ -78,6 +78,7 @@ describe("the status band below 40rem", () => {
       "not judged",
       "ineligible",
       "closed",
+      "held as lane copies",
       "applied ever",
       "skipped",
       "reported",

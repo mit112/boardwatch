@@ -783,6 +783,9 @@ export function QueuePage({
       // Passed through for the same reason as `ineligible`: a closed posting is drained on disk,
       // so it is never a row and no client-side filter can see one.
       closed: data?.counts.closed ?? 0,
+      // Passed through for the same reason again: a lane copy is drained to `_lane_copy` and is
+      // never a row.
+      lane_copy: data?.counts.lane_copy ?? 0,
       // Recomputed against the active filter, unlike `ineligible`: a review lead IS in the
       // payload, so a client-side filter can see one and the cell must agree with the list the
       // reader is looking at.

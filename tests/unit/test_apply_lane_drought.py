@@ -336,6 +336,8 @@ def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(
         delivery_queries, "delivered_unapplied", lambda conn, *, skipped: injected
     )
+    # The fold's lane-copy read (T189b) is a store read too; none of these rows is one.
+    monkeypatch.setattr(delivery_queries, "lane_copy_posting_ids", lambda conn: set())
     # Both rows would route to `_review` — the ineligible one for its verdict, the foreign one
     # for its location — so a fold that did not exclude ineligible would report them alike.
     assert apply_lane_placements(conn, run_ids={7}) == {7: (0, 0)}

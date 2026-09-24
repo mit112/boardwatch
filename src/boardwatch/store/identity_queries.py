@@ -257,7 +257,7 @@ def count_stale_identities(conn: Connection) -> tuple[StaleIdentityGeneration, .
     `IDENTITY_ALGORITHM_VERSION`, not merely every reader in this module. The narrower claim
     was true and the wider one was not: `cli/top_cmd._suppress_lane_copies`,
     `store/delivery_queries.standing_board_cross_host_keys` and
-    `store/delivery_queries.lane_copy_job_ids` each selected `kind == 'cross_host'` with no
+    `store/delivery_queries.lane_copy_posting_ids` each selected `kind == 'cross_host'` with no
     version predicate, so a retired row was readable by them and reaping it WOULD have changed
     which leads the owner saw. All three now carry the filter, alongside `load_identities`,
     `identities_complete`, `load_surfaced_identities`, `load_surfaced_keys` and

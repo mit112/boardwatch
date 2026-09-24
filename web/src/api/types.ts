@@ -307,6 +307,12 @@ export interface QueueCounts {
    * would assert a decision no rule made.
    */
   closed: number;
+  /**
+   * Delivered leads whose employer-board twin is standing (D-498 rule (a)). They are NOT in `rows`
+   * or `review`: the twin is the one to apply through, and this lead's folder is drained to
+   * `_lane_copy`. Counted so the band still reconciles with the delivered set.
+   */
+  lane_copy: number;
   applied_ever: number;
   skipped: number;
   /**

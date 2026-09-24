@@ -57,6 +57,7 @@ import hashlib
 import json
 import os
 import plistlib
+import re
 import shutil
 import sys
 import time
@@ -86,7 +87,7 @@ from boardwatch.store.delivery_queries import (
     closed_job_ids,
     delivered_unapplied,
     ineligible_job_ids,
-    lane_copy_job_ids,
+    lane_copy_posting_ids,
     lane_decision,
     queue_detail,
     review_job_ids,
@@ -114,6 +115,11 @@ WEBLOC_FILE = "apply.webloc"
 URL_FILE = "apply.url"
 LINK_FILE = "apply-link.txt"
 STAGING_PREFIX = ".staging-"
+#: Where `_clear_staging` puts a superseded folder still holding owner files whose lead has no live
+#: folder to take them (T189c). Not a drain: nothing is ever filed here by classification.
+RECOVERED_DIR = "_recovered"
+#: `_relocate`'s case-only-rename temporary, `rename-<16 hex>`. Visible on purpose (its docstring).
+RENAME_TEMPORARY = re.compile(r"rename-[0-9a-f]{16}")
 
 #: Bumped when `details.json`'s shape changes. A reader that finds a schema it does not know is
 #: reading a projection, not a source of truth, and the next sync rewrites it.
@@ -199,6 +205,10 @@ class SyncReport:
     destination check, since a repair means the disk silently diverged from what the store
     believed it had written. A non-zero value here is the signal that something outside
     boardwatch is editing the queue.
+
+    `renamed` is orthogonal too: OWNER files boardwatch renamed to `<stem>-N<suffix>` rather than
+    lose them (T189b) — one sharing a name with a merged duplicate's, or with a file a rewrite now
+    needs. Reported because it is a change to the owner's own files, however safe.
     """
 
     created: int = 0
@@ -207,6 +217,7 @@ class SyncReport:
     moved: int = 0
     retired: int = 0
     repaired: int = 0
+    renamed: int = 0
     failures: tuple[LeadFailure, ...] = ()
     contended: bool = False
 
@@ -341,14 +352,15 @@ def refresh_queue(
 
 def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     """Every lead the queue holds a folder for: delivered, unapplied, not skipped or reported,
-    and not `ineligible`. `_sync_locked` files exactly these, and T113's gate refresh re-judges
-    from exactly these, so the population is defined once — why each exclusion is there is
-    `_sync_locked`'s comment."""
+    not `ineligible`, and not a lane copy. `_sync_locked` files exactly these, and T113's gate
+    refresh re-judges from exactly these, so the population is defined once — why each exclusion
+    is there is `_sync_locked`'s comment."""
     withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    lane_copy = lane_copy_posting_ids(conn)
     return [
         row
         for row in delivered_unapplied(conn, skipped=withheld)
-        if row.verdict != "ineligible"
+        if row.verdict != "ineligible" and row.posting_id not in lane_copy
     ]
 
 
@@ -454,7 +466,6 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     the two would refuse the second lead a path that was about to be free, and which pass it
     landed in would depend on the query's row order.
     """
-    _clear_staging(root)
     # An ineligible lead is not work, so it gets no folder at all. It is EXCLUDED here rather than
     # deleted: `reconcile_queue` has already moved any existing folder into `_ineligible`, and
     # leaving the row out of `rows` is what stops the move-loop below pulling it straight back out.
@@ -474,6 +485,8 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # the lead the owner reported would be in the apply queue again every run while the reconcile
     # count read a healthy 1. The tell is `moved`, not `created`: nothing is ever created here, so
     # a test asserting `created == 0` passes against the broken version and pins nothing.
+    # A LANE COPY is excluded for the same reason and had the same bug (T189): `refresh_queue`'s
+    # reconcile filed it under `_lane_copy/` and this pass moved it straight back out, every run.
     rows = standing_queue_rows(conn)
     # `lane_decision`, which is `classify` over the WHOLE row: the folder a lead lands in and the
     # reason `details.json` publishes for it are ONE decision here, so neither can be re-derived
@@ -486,7 +499,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     failed = {failure.posting_id for failure in failures}
 
     # BEFORE the relocation pass, which is what would otherwise refuse the occupied destination.
-    retired, retire_failures = _consolidate_duplicates(duplicates, entries, by_job)
+    retired, renamed, retire_failures = _consolidate_duplicates(duplicates, entries, by_job)
     failures.extend(retire_failures)
     failed.update(failure.posting_id for failure in retire_failures)
 
@@ -542,7 +555,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                     repaired += 1
                     updated += 1
                     continue
-                _install(staging, target, payload)
+                renamed += _install(staging, target, payload)
                 if entry is None:
                     created += 1
                 else:
@@ -550,7 +563,10 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             except Exception as exc:  # one lead must never cost the rest
                 failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        # Every staging directory, this one and any a crashed sync left, and only AFTER the create
+        # pass: a lead whose old folder a crash stranded between `_install`'s two renames has its
+        # live folder again by now, so its owner files have somewhere to go.
+        failures.extend(_clear_staging(root))
 
     return SyncReport(
         created=created,
@@ -559,6 +575,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         moved=moved,
         retired=retired,
         repaired=repaired,
+        renamed=renamed,
         failures=tuple(failures),
     )
 
@@ -898,14 +915,15 @@ def _tailored_artifact_ids(conn: Connection) -> dict[str, int]:
 # ------------------------------------------------------------------------------- staged installs
 
 
-def _install(staging: Path, target: Path, payload: _Payload) -> None:
+def _install(staging: Path, target: Path, payload: _Payload) -> int:
     """Build the folder under `staging` and `os.replace` it onto `target`.
 
     An existing `target` is moved aside into `staging` first rather than removed, for two reasons:
     `os.replace` will not rename onto a non-empty directory on POSIX and refuses one at all on
     Windows, and it keeps the window in which the owner could see nothing at all down to a single
     rename. Worst case a crash leaves the superseded copy under `.staging-…`, which the next sync
-    clears — the target itself is only ever the whole old folder or the whole new one.
+    clears, carrying the owner's files out first (`_clear_staging`) — the target itself is only
+    ever the whole old folder or the whole new one.
 
     **Whatever the owner kept in the superseded folder is carried over** (T121). Swapping the
     whole directory is what makes the write atomic, but it also took the owner's own work with it
@@ -913,16 +931,59 @@ def _install(staging: Path, target: Path, payload: _Payload) -> None:
     `_repair` goes file-by-file precisely to protect, and that `_destination_intact` already
     refuses to treat as an integrity failure. Those three had agreed the folder is partly the
     owner's; only this path still behaved as though it were wholly ours.
+
+    Returns how many owner files `_make_room` renamed aside so this write could take its names.
     """
     built = staging / f"build-{token_hex(8)}"
     _write_lead(built, payload)
+    renamed = 0
     superseded: Path | None = None
     if target.exists():
+        renamed = _make_room(target, frozenset(path.name for path in built.iterdir()))
         superseded = staging / f"old-{token_hex(8)}"
         os.replace(target, superseded)
     os.replace(built, target)
     if superseded is not None:
         _carry_over_unauthored(superseded, target)
+    return renamed
+
+
+def _make_room(target: Path, needed: frozenset[str]) -> int:
+    """Rename aside every owner file in `target` holding a name the coming write needs (T189b).
+
+    A retitle gives the résumé a new name, and an owner file may already hold it — their own, or
+    one `_merge_unauthored` just brought in from a retired duplicate. `_carry_over_unauthored`
+    would skip it as a collision and the staging cleanup would then delete it, so the owner's file
+    is renamed IN PLACE, before the install moves anything: the generated file takes the name it is
+    recorded under (so a second sync is unchanged), and the owner's file keeps its bytes under
+    `<stem>-2<suffix>`. The count is reported, as `SyncReport.renamed`.
+
+    A clash is judged by the name the file actually HOLDS on disk (T189d). On a case-folding
+    filesystem a needed name can be taken by a file spelled differently in case, and that file is
+    boardwatch's own old résumé after a case-only retitle; asking about the needed spelling alone
+    mistook it for the owner's.
+    """
+    authored = _authored_names(target)
+    on_disk = {path.name for path in target.iterdir()}
+    by_fold = {name.casefold(): name for name in on_disk}
+    held = {
+        name if name in on_disk else by_fold.get(name.casefold(), name)
+        for name in needed
+        if os.path.lexists(target / name)
+    }
+    clashes = sorted(held - authored)
+    for name in clashes:
+        os.replace(target / name, _free_name(target, name, avoid=needed))
+    return len(clashes)
+
+
+def _free_name(folder: Path, name: str, *, avoid: frozenset[str] = frozenset()) -> Path:
+    """`folder / name`, or the first `<stem>-N<suffix>` from 2 up that nothing holds or needs."""
+    candidate, number = name, 2
+    while candidate in avoid or os.path.lexists(folder / candidate):
+        candidate = f"{Path(name).stem}-{number}{Path(name).suffix}"
+        number += 1
+    return folder / candidate
 
 
 def _carry_over_unauthored(superseded: Path, target: Path) -> None:
@@ -935,7 +996,8 @@ def _carry_over_unauthored(superseded: Path, target: Path) -> None:
     this payload no longer uses, and carrying it over would leave two résumés in the folder. The
     old folder's record is the only thing that knows the old name.
 
-    A name the new folder already holds is skipped, so the new bytes always win.
+    A name the new folder already holds is skipped, so the new bytes always win. No OWNER file can
+    reach that skip: `_make_room` renamed every one holding a name of this write's first.
 
     If `details.json` is unreadable, only `details.json` itself is treated as ours and everything
     else is carried over. That folder is already corrupt by `_destination_intact`'s standard, and
@@ -950,6 +1012,25 @@ def _carry_over_unauthored(superseded: Path, target: Path) -> None:
         if destination.exists():
             continue
         os.replace(path, destination)
+
+
+def _merge_unauthored(retired: Path, keeper: Path) -> int:
+    """Move everything in `retired` that boardwatch did not write into `keeper` (T189).
+
+    "Did not write" is `_carry_over_unauthored`'s rule, read from `retired`'s own `details.json`.
+    Unlike that function, a name `keeper` already holds is NOT skipped: there the older copy is
+    ours and the new bytes win, but here both are the owner's, so the incoming one is kept beside
+    it as `<stem>-2<suffix>` (the first free number). Returns how many were renamed so.
+    """
+    authored = _authored_names(retired)
+    renamed = 0
+    for path in sorted(retired.iterdir()):
+        if path.name in authored:
+            continue
+        destination = _free_name(keeper, path.name)
+        renamed += destination.name != path.name
+        os.replace(path, destination)
+    return renamed
 
 
 def _authored_names(folder: Path) -> frozenset[str]:
@@ -1015,11 +1096,52 @@ def _write_details(built: Path, payload: _Payload) -> None:
     )
 
 
-def _clear_staging(root: Path) -> None:
-    """Remove staging directories a crashed sync left behind. Safe because the lock serialises
-    syncs, so no live sync's staging can be visible here."""
-    for path in root.glob(f"{STAGING_PREFIX}*"):
-        shutil.rmtree(path, ignore_errors=True)
+def _clear_staging(root: Path) -> list[LeadFailure]:
+    """Remove every staging directory, deleting only what boardwatch wrote (T189c).
+
+    Safe because the lock serialises syncs, so no other sync's staging can be visible here. A
+    `build-…` directory is ours by construction (`_write_lead` wrote every file in it). Anything
+    else is a superseded folder `_install` moved aside, and a crash (or a failed rename) before
+    `_carry_over_unauthored` leaves the owner's files in it. Those are judged by the folder's own
+    `details.json`, the `_authored_names` allowlist, and moved into the lead's live folder
+    (`_merge_unauthored`), or, if the lead has none, the whole folder is moved to
+    `<root>/_recovered/<folder>` and reported once as a failure. Only then is the directory removed.
+    """
+    failures: list[LeadFailure] = []
+    live: dict[int, _Entry] | None = None
+    for staging in sorted(root.glob(f"{STAGING_PREFIX}*")):
+        kept = False
+        for path in sorted(staging.iterdir()) if staging.is_dir() else ():
+            if path.name.startswith("build-") or not path.is_dir():
+                continue
+            authored = _authored_names(path)
+            if all(child.name in authored for child in path.iterdir()):
+                continue
+            details = _read_details(path)
+            posting_id = (None if details is None else _as_int(details.get("posting_id"))) or 0
+            if live is None:
+                live = _index(root)[0]
+            entry = live.get(posting_id)
+            try:
+                if entry is not None:
+                    _merge_unauthored(path, entry.path)
+                    continue
+                folder = (None if details is None else _as_str(details.get("folder"))) or path.name
+                (root / RECOVERED_DIR).mkdir(exist_ok=True)
+                recovered = _free_name(root / RECOVERED_DIR, folder)
+                os.replace(path, recovered)
+                failures.append(
+                    LeadFailure(
+                        posting_id=posting_id,
+                        detail=f"owner files recovered to {recovered.relative_to(root)}",
+                    )
+                )
+            except Exception as exc:  # the staging directory is then kept, never removed
+                failures.append(LeadFailure(posting_id=posting_id, detail=_detail(exc)))
+                kept = True
+        if not kept:
+            shutil.rmtree(staging, ignore_errors=True)
+    return failures
 
 
 # ------------------------------------------------------------------------------------- reconcile
@@ -1032,9 +1154,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
-    # Passed the SAME withheld set the other drains derive from, so a lead the owner already
-    # skipped or reported cannot be re-filed as a lane copy behind their statement.
-    lane_copy = lane_copy_job_ids(conn, skipped=set(skipped) | set(reported))
+    lane_copy = lane_copy_posting_ids(conn)
     entries, unclassified = _index(root)
     # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
     # would otherwise be filed against the identity it was written under rather than the one it
@@ -1079,10 +1199,12 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
             review=review,
             lane_copy=lane_copy,
         )
-        if wanted == entry.location:
+        name = _settled_name(entry.path)
+        if wanted == entry.location and name == entry.path.name:
             continue
         # `entry.path.name`, not a freshly planned name: reconcile moves a folder, it never
-        # renames one. One consequence is worth knowing rather than rediscovering. `_sync_locked`
+        # renames one, bar undoing a crashed `_relocate`'s temporary (`_settled_name`). One
+        # consequence is worth knowing rather than rediscovering. `_sync_locked`
         # plans names over non-ineligible rows only, so a lead parked in `_ineligible` no longer
         # forces a same-company-same-title sibling to disambiguate. If its verdict later clears,
         # this move can find the plain name taken and raise, and the run line reports `1 failed`.
@@ -1090,7 +1212,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         # leads, disambiguates them, and relocates from `_ineligible` (which `_index` scans). Not
         # fixed by widening `_plan`'s input, because that would report naming failures for leads
         # this function deliberately never creates.
-        target = (root / wanted / entry.path.name) if wanted else root / entry.path.name
+        target = (root / wanted / name) if wanted else root / name
         # A destination occupied by a DIFFERENT job's folder (T172) is widened with that job's own
         # identity suffix rather than refused; one occupied by THIS job's own copy, or by anything
         # `_widen_for_a_different_job` cannot classify, is left for `_relocate` to refuse exactly
@@ -1121,6 +1243,19 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         unclassified=unclassified,
         failures=tuple(failures),
     )
+
+
+def _settled_name(folder: Path) -> str:
+    """The name reconcile files `folder` under: its own, unless it is `_relocate`'s case-rename
+    temporary (T189b). A crash between that function's two steps leaves `rename-<hex>`; the next
+    sync would relocate it, but reconcile runs first and moves by name, so an applied or skipped
+    lead used to be filed as `_applied/rename-<hex>` for good. Its `details.json` records the
+    name it was last written under, which is the name it had before the interrupted rename.
+    """
+    if RENAME_TEMPORARY.fullmatch(folder.name) is None:
+        return folder.name
+    recorded = _as_str((_read_details(folder) or {}).get("folder"))
+    return folder.name if recorded is None else recorded
 
 
 def _wanted_location(
@@ -1178,7 +1313,9 @@ def _wanted_location(
         return CLOSED_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
-    if entry.job_id in lane_copy:
+    # By the folder's POSTING, as `lane_copy_posting_ids` is keyed: a board posting sharing its
+    # lane twin's job is never a lane copy (T189b).
+    if entry.posting_id in lane_copy:
         return LANE_COPY_DIR
     if entry.job_id in review:
         return REVIEW_DIR
@@ -1189,8 +1326,11 @@ def _consolidate_duplicates(
     duplicates: dict[int, tuple[_Entry, ...]],
     entries: dict[int, _Entry],
     by_job: dict[int, _Entry],
-) -> tuple[int, list[LeadFailure]]:
+) -> tuple[int, int, list[LeadFailure]]:
     """Collapse folders that identity resolution converged onto ONE canonical job.
+
+    Returns `(retired, renamed, failures)`; `renamed` counts owner files `_merge_unauthored` kept
+    under a suffix because the keeper already held the name.
 
     **This is the only place this module deletes a lead folder, and the deletion is safe for a
     reason that does not generalise.** The queue holds COPIES — no `artifacts` row points into
@@ -1207,10 +1347,15 @@ def _consolidate_duplicates(
     There is no oscillation risk to guard against here: after this pass the job has ONE folder,
     so a second run finds no duplicate at all.
 
+    **What is deleted is only what boardwatch wrote.** A queue folder is partly the owner's (T121),
+    and the arbitrary keeper is as likely as not the folder they did NOT work in, so everything
+    else in the retired folder is moved into the keeper first (`_merge_unauthored`, T189).
+
     Deleting is per-folder isolated: one unremovable directory must not cost the other leads, so
-    it becomes a `LeadFailure` like any other and the survivor is still indexed.
+    it becomes a `LeadFailure` like any other and the survivor is still indexed. A merge that
+    fails part-way fails the same way, BEFORE the delete, so nothing unmoved is removed.
     """
-    retired = 0
+    retired = renamed = 0
     failures: list[LeadFailure] = []
     for job_id, group in sorted(duplicates.items()):
         keeper = group[0]
@@ -1219,6 +1364,7 @@ def _consolidate_duplicates(
             if entry.path == keeper.path:
                 continue
             try:
+                renamed += _merge_unauthored(entry.path, keeper.path)
                 shutil.rmtree(entry.path)
             except Exception as exc:  # one undeletable folder must never cost the rest
                 failures.append(LeadFailure(posting_id=entry.posting_id, detail=_detail(exc)))
@@ -1228,7 +1374,7 @@ def _consolidate_duplicates(
             if entries.get(entry.posting_id) is entry:
                 del entries[entry.posting_id]
             retired += 1
-    return retired, failures
+    return retired, renamed, failures
 
 
 def _widen_for_a_different_job(
@@ -1266,6 +1412,22 @@ def _widen_for_a_different_job(
     if not target.exists():
         return target
     occupant_job_id = known_job_ids.get(target)
+    if occupant_job_id is None:
+        # On a case-folding filesystem `target` exists when the occupant is indexed under a name
+        # differing only by case, which the exact key misses (T189). Folded like `_plan`'s key,
+        # and confirmed with `samefile`, so a case-sensitive filesystem where both spellings are
+        # distinct folders never borrows the other folder's job.
+        folded = str(target).casefold()
+        occupant_job_id = next(
+            (
+                job_id
+                for path, job_id in known_job_ids.items()
+                if str(path).casefold() == folded
+                and path.exists()
+                and os.path.samefile(path, target)
+            ),
+            None,
+        )
     if occupant_job_id is None or occupant_job_id == entry.job_id:
         return target
     own = _read_details(entry.path)
@@ -1288,9 +1450,22 @@ def _widen_for_a_different_job(
 
 
 def _relocate(src: Path, dst: Path) -> None:
-    """Move a whole folder, refusing an occupied destination rather than merging into it."""
+    """Move a whole folder, refusing an occupied destination rather than merging into it.
+
+    A destination that "exists" only because it IS `src` under a name differing by letter case
+    (APFS and NTFS fold case) is not occupied: the move is a case-only rename, done in two steps
+    through a temporary name rather than relying on every folding filesystem to apply a direct
+    case-only rename (APFS does) (T189). The temporary name is an ordinary visible folder, NOT
+    `.staging-…`, which `_clear_staging` deletes: a crash between the two steps leaves a folder
+    `_index` still identifies by its `details.json`, and the next sync relocates it.
+    """
     if dst.exists():
-        raise QueueConflictError(f"{dst.name} already exists at its destination")
+        if not os.path.samefile(src, dst):
+            raise QueueConflictError(f"{dst.name} already exists at its destination")
+        temporary = src.parent / f"rename-{token_hex(8)}"
+        os.replace(src, temporary)
+        os.replace(temporary, dst)
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     os.replace(src, dst)
 
@@ -1415,6 +1590,7 @@ def _child_dirs(base: Path) -> list[Path]:
         if path.is_dir()
         and not path.name.startswith(".")
         and path.name not in DRAIN_DIRS
+        and path.name != RECOVERED_DIR
     )
 
 

@@ -714,7 +714,7 @@ def standing_slate_keys(
       front of the owner — its employer-board twin is, and that twin is a delivered lead holding
       the slot itself. Keeping both would let one job hold two slots and suppress a second,
       distinct posting for as long as the pair stood. The release condition is live: the moment
-      the board twin stops holding, `lane_copy_job_ids` stops returning the lane copy and it
+      the board twin stops holding, `lane_copy_posting_ids` stops returning the lane copy and it
       ranks again.
 
     **That list is `delivery.names.DRAIN_DIRS`, and this is the SECOND place the program decides
@@ -888,8 +888,8 @@ def standing_board_cross_host_keys(
     return {key: tuple(ids) for key, ids in held.items()}
 
 
-def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
-    """`job_id` for every delivered LANE copy whose employer-board twin is also standing.
+def lane_copy_posting_ids(conn: Connection) -> set[int]:
+    """`posting_id` for every delivered LANE copy whose employer-board twin is also standing.
 
     D-498 rule (a)'s missing half. That rule drops a lane's copy of a posting when the employer's
     own board copy is on the slate or standing in the queue — but it runs in the RANKER, so it
@@ -921,15 +921,27 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
     lane copy is drawn straight back out of `_lane_copy` on the next pass — the same shape
     `closed_job_ids` has.
 
+    **Keyed on the POSTING, never the job (T189b).** Identity resolution can put the lane
+    posting and its board twin on ONE job, and a job-keyed set then named the job whose
+    `delivered_unapplied` winner is the BOARD posting — so the board lead itself was hidden as a
+    lane copy of itself. For the same reason a holder on the lane posting's OWN job does not make
+    it a lane copy: that job has one lead, and hiding it hides the job. A lane posting is a copy
+    only of a DIFFERENT job's standing board posting.
+
     A bare set, like `closed_job_ids` and `review_job_ids`: `_wanted_location` asks only whether
-    the job is in it. Naming WHICH lead supersedes this one would be better for a reader auditing
-    the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is versioned, so
-    it is left for whoever wants it rather than carried unused here.
+    the folder's posting is in it. Naming WHICH lead supersedes this one would be better for a
+    reader auditing the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is
+    versioned, so it is left for whoever wants it rather than carried unused here.
+
+    **The ONE predicate for "is this standing lead a lane copy"** (T189b): the folder tree
+    (`standing_queue_rows`, `_reconcile_locked`), the web page and `apply_lane_cohort` all test
+    `posting_id in` this set, so the page, the drought detector and the folders cannot disagree.
+    It reads the owner's skips itself for the same reason — a caller passing its own withheld set
+    is a second list to keep in step. `reported` is the seed's own exclusion already.
     """
-    held = standing_board_cross_host_keys(conn, skipped=skipped)
+    held = standing_board_cross_host_keys(conn, skipped=set(skipped_job_ids(conn)))
     if not held:
         return set()
-    holder_of: dict[str, int] = {key: ids[0] for key, ids in held.items() if ids}
     # Joined outward from the delivered rows, binding no id list: this module hit SQLite's
     # 32,766 bound-parameter cap at six call sites on 2026-08-23 and the drain sets have been
     # applied in Python over joined rows ever since.
@@ -944,14 +956,15 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
         )
         .where(postings.c.status == "open", postings.c.job_id.is_not(None))
     ).all()
+    # Every holder is one of these rows: the seed reads this same select, join and filter.
+    job_of = {int(row.posting_id): int(row.job_id) for row in rows}
     out: set[int] = set()
     for row in rows:
         if str(row.provider) in PROVIDER_NAMES:
             continue
-        holder = holder_of.get(str(row.identity_key))
-        if holder is None or holder == int(row.posting_id):
-            continue
-        out.add(int(row.job_id))
+        holders = held.get(str(row.identity_key), ())
+        if any(job_of[holder] != int(row.job_id) for holder in holders):
+            out.add(int(row.posting_id))
     return out
 
 
@@ -1061,10 +1074,11 @@ def apply_lane_cohort(
     survives to today rather than what it shipped on the day.
     """
     cohort: dict[int, list[LanePlacement]] = {rid: [] for rid in run_ids}
+    lane_copy = lane_copy_posting_ids(conn)
     for row in delivered_unapplied(conn, skipped=set()):
         if row.delivered_run_id not in run_ids:
             continue
-        if row.verdict == "ineligible" or row.closed:
+        if row.verdict == "ineligible" or row.closed or row.posting_id in lane_copy:
             continue
         decision = lane_decision(row)
         cohort[row.delivered_run_id].append(
@@ -1100,6 +1114,8 @@ def apply_lane_placements(
       (D-383). A run whose every lead has since come down would otherwise read as lane starvation,
       which is a claim about the location/role/requirement gates that the evidence does not
       support.
+    * a LANE COPY is excluded (T189b) because its folder sits in `_lane_copy/`: its employer-board
+      twin is the placeable lead, and counting both would credit one job to the lane twice.
 
     So a run with zero placeable leads reports `(0, 0)` and the detector abstains on it, rather
     than firing on a fault it cannot see. `skipped=set()` matches the two sibling functions above:
