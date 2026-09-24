@@ -89,13 +89,13 @@ def test_high_confidence_provenanced_ineligible_is_written_with_span(tmp_path: P
         pv_id = seed_posting_version(conn, body_text=jd)
         final_gate.record_gate_verdict(conn, posting_version_id=pv_id, jd_text=jd,
             facts=Facts(), policy=Policy(families={}), catalog=catalog, verdict=v,
-            model="sonnet")
+            model="sonnet", target_band="any")
     # Read it back via current_gate_verdicts under the SAME facts and judge the write was given
     # — proving the read-back lands (deepseek BLOCKER-1; keyed on the judge's inputs, T161).
     with engine.connect() as conn:
         got = current_gate_verdicts(
             conn, [pv_id], Facts(), catalog, model="sonnet",
-            effort=final_gate.gate_effort_key(None),
+            effort=final_gate.gate_effort_key(None), target_band="any",
         )
     # got maps posting_id -> verdict; resolve pv_id -> posting_id in the helper or assert by value
     assert "ineligible" in got.values()
@@ -161,7 +161,7 @@ def test_a_legacy_gate_row_with_no_facts_key_is_never_read_nor_fresh(
         for slug, raw_output in (
             ("legacy", {"gate_verdict": {"decision": "eligible"}}),
             ("keyed", {"gate_verdict": {"decision": "eligible"},
-                       "facts_key": final_gate.gate_facts_key(facts)}),
+                       "facts_key": final_gate.gate_facts_key(facts), "target_band": "any"}),
         ):
             pv_id = seed_posting_version(conn, body_text=jd, slug=f"acme-{slug}")
             pv_ids.append(pv_id)
@@ -186,10 +186,11 @@ def test_a_legacy_gate_row_with_no_facts_key_is_never_read_nor_fresh(
     with engine.connect() as conn:
         read = current_gate_verdicts(
             conn, pv_ids, facts, catalog, model="sonnet", effort=final_gate.gate_effort_key(None),
+            target_band="any",
         )
         fresh = fresh_gate_verdicts(
             conn, [legacy_pv], facts, model="sonnet",
-            effort=final_gate.gate_effort_key(None),
+            effort=final_gate.gate_effort_key(None), target_band="any",
         )
         keyed_posting = conn.execute(
             select(posting_versions.c.posting_id).where(posting_versions.c.id == keyed_pv)

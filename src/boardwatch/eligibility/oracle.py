@@ -57,7 +57,11 @@ from boardwatch.lanes.quality import is_employer_body
 # is re-judged. Between the bump and the re-judge each lead's lane falls back as for an unjudged
 # lead, and every judge hold on it releases.
 POLICY_VERSION = "p5-oracle-2"
-PROMPT_VERSION = "p5-oracle-1"
+# Bumped for T188 (DESIGN-T183 D1): the `seniority_fit` question is asked against the profile's
+# `target_seniority_band` instead of always against entry level, and not asked at all under `any`.
+# Per the T161 note above, this re-opens every lead for re-judging and makes every stored gate
+# verdict unreadable until it is.
+PROMPT_VERSION = "p5-oracle-2"
 
 # Multi-tenant rewrite of job-apps' F-1/OPT-hardcoded prompt (`~/dev/Job apps/eligibility/
 # judge.py:73-101`, reading authorized by D-010). That original prompt hardcodes one
@@ -77,7 +81,9 @@ PROMPT_VERSION = "p5-oracle-1"
 # string-collection constant). The H2 no-force-fit sentence below is spliced in via
 # adjacent string-literal concatenation (no `+`, no embedded newline) purely so it reads
 # as one unbroken sentence while still respecting this file's 100-char line limit — the
-# assignment below is still exactly one `JUDGING_POLICY = """...""" ` expression.
+# assignment below is still exactly one `JUDGING_POLICY = """...""" ` expression. It is a
+# template: `judging_policy(target_band)` fills its two `{seniority_*}` fields, and only that
+# rendering is ever sent.
 JUDGING_POLICY = (
     """You are an eligibility judge. Decide whether the job description (JD) below
 presents a hard stop against the candidate described by `facts`, using ONLY the JD text and
@@ -111,27 +117,63 @@ policy.
 out of scope for this six-family judgment; they belong to `uncertain`, not to the nearest
 available reason.)
 
-SENIORITY IS ASKED SEPARATELY, AND IT NEVER TOUCHES `decision`. Answer `seniority_fit` for every
-item, independently of everything above: is this an entry-level / new-grad / early-career role
-for a candidate with the `facts`' years of experience? Read the BODY, not the title. A title
-reading "Software Engineer" over a body describing ownership of a platform, a team to lead, or
-several years of production practice is `no`. Senior, Staff, Principal, Lead, Manager, Director
-and Architect are `no`. When the body gives you nothing either way, answer `unclear` — that is a
-real answer and must not be rounded to `yes`. A `no` here never makes a posting `ineligible`; it
-is recorded beside the verdict and read by a different gate.
-
-Return one verdict object per item, using ONLY this schema:
+{seniority_question}Return one verdict object per item, using ONLY this schema:
   decision: "eligible" | "ineligible" | "uncertain"
   reason: one of the reason_catalog family ids, or null (null unless decision is "ineligible")
   evidence: the verbatim decisive sentence from the JD (required whenever decision is
     "ineligible"; the exact substring must appear in the JD text, not a paraphrase)
   confidence: "high" | "medium" | "low"
-  seniority_fit: "yes" | "no" | "unclear"
-"""
+{seniority_field}"""
 )
 
 _MIN_TOTAL_TOKENS = 3
 _MIN_CONTENT_TOKENS = 2
+
+
+def judging_policy(target_band: str) -> str:
+    """`JUDGING_POLICY` with the `seniority_fit` question asked against `target_band`, the
+    profile's `target_seniority_band` (DESIGN-T183 J1).
+
+    `any` declares no band, so there is nothing to ask against: the question and its schema line
+    are left out entirely, and the gate stage records every verdict's `seniority_fit` as not asked
+    rather than answered. For `entry` the text is the pre-T188 prompt with only the question
+    sentence changed.
+    """
+    if target_band == "any":
+        return JUDGING_POLICY.format(seniority_question="", seniority_field="")
+    if target_band == "entry":
+        band = "entry-level / new-grad / early-career"
+        examples = """A title
+reading "Software Engineer" over a body describing ownership of a platform, a team to lead, or
+several years of production practice is `no`. Senior, Staff, Principal, Lead, Manager, Director
+and Architect are `no`."""
+    elif target_band == "mid":
+        band = "past early-career, below senior"
+        examples = """A title
+naming no level over a body describing a team to lead or ownership of a function's direction is
+`no`. Senior, Staff, Principal, Manager, Director and Architect are `no`."""
+    elif target_band == "senior":
+        band = "senior, below staff / principal"
+        examples = """A title
+naming no level over a body describing an organisation to lead or a multi-team remit is `no`.
+Staff, Principal, Distinguished, Director and VP are `no`."""
+    else:
+        raise ValueError(f"target_band {target_band!r} is not a seniority band")
+    question = (
+        "SENIORITY IS ASKED SEPARATELY, AND IT NEVER TOUCHES `decision`. Answer `seniority_fit` "
+        "for every\nitem, independently of everything above: "
+        f"is this role at or below the candidate's target seniority band, `{target_band}`\n"
+        f"({band}), for a candidate with the `facts`' years of experience?"
+        f" Read the BODY, not the title. {examples} When the body gives you nothing either way, "
+        "answer `unclear` — that is a\nreal answer and must not be rounded to `yes`. A `no` here "
+        "never makes a posting `ineligible`; it\nis recorded beside the verdict and read by a "
+        "different gate.\n\n"
+    )
+    return JUDGING_POLICY.format(
+        seniority_question=question,
+        seniority_field='  seniority_fit: "yes" | "no" | "unclear"\n',
+    )
+
 
 
 def _norm(s: str) -> str:
@@ -292,11 +334,14 @@ def _bucket(label: str) -> str:
 
 
 def build_label_request(
-    rows: list[dict[str, Any]], catalog: RulesCatalog, *, request_id: str
+    rows: list[dict[str, Any]], catalog: RulesCatalog, *, request_id: str, target_band: str
 ) -> dict[str, Any]:
     """The request JSON payload sent to the judge. Selects only unlabeled rows
     (`expected_verdict is None`) and drops `hint` from every item (independence: the
-    judge must never see a prior guess for the label it is about to produce)."""
+    judge must never see a prior guess for the label it is about to produce).
+
+    `target_band` is the band the `seniority_fit` question is asked against
+    (`judging_policy`), carried beside the policy so the request shows what was asked."""
     fam = [f.id for f in catalog.families]
     items = [
         {
@@ -323,7 +368,8 @@ def build_label_request(
         "prompt_version": PROMPT_VERSION,
         "reason_catalog": fam,
         "policy": {"families": {f: "blocker" for f in fam}},  # M3
-        "judging_policy": JUDGING_POLICY,
+        "target_band": target_band,
+        "judging_policy": judging_policy(target_band),
         "items": items,
     }
 

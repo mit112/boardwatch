@@ -171,6 +171,13 @@ def _ready(data_dir: Path) -> None:
     write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
 
 
+def _entry_band(data_dir: Path) -> None:
+    """`init` leaves `target_seniority_band` at `any`, under which `seniority_fit` is not asked
+    at all (T188); a test of how its answers read needs a declared band."""
+    with get_engine(data_dir).begin() as conn:
+        conn.execute(tables.profile.update().values(target_seniority_band="entry"))
+
+
 def _seed(data_dir: Path, *, slug: str = "acme-gate1", body: str = BODY) -> int:
     engine = get_engine(data_dir)
     ensure_schema(engine)
@@ -230,20 +237,20 @@ def _pipeline(data_dir: Path, out_root: Path):
 def _current_gate_verdict(data_dir: Path, posting_id: int) -> str | None:
     from boardwatch.eligibility.catalog import load_rules
     from boardwatch.eligibility.final_gate import gate_effort_key
-    from boardwatch.eligibility.preflight import current_facts
+    from boardwatch.eligibility.preflight import current_judge_inputs
     from boardwatch.eligibility.read import current_gate_verdicts
     from boardwatch.store.queries import current_posting_versions
 
     settings = load_settings(data_dir=data_dir)
     engine = get_engine(data_dir)
     with engine.connect() as conn:
-        facts = current_facts(conn)
+        facts, target_band = current_judge_inputs(conn)
         assert facts is not None
         versions = current_posting_versions(conn, [posting_id])
         verdicts = current_gate_verdicts(
             conn, [v.posting_version_id for v in versions.values()], facts,
             load_rules(settings.config_dir), model=settings.gate.model,
-            effort=gate_effort_key(settings.gate.effort),
+            effort=gate_effort_key(settings.gate.effort), target_band=target_band,
         )
     return verdicts.get(posting_id)
 
@@ -551,6 +558,7 @@ def test_gate_never_rejudges_a_lead_with_a_current_gate_row(
             provider="claude-code-agent",
             model=settings.gate.model,
             effort=gate_effort_key(settings.gate.effort),
+            target_band=profile_row.target_seniority_band,
         )
 
     # If this ran, it would tell the fake to fail the WHOLE batch and the test would still
@@ -888,7 +896,9 @@ def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
     policy = parse_policy(profile_row.eligibility_policy_json)
     current = versions[posting_id]
 
-    stale_version = f"{final_gate_mod.GATE_VERSION_PREFIX}p5-oracle-0:p5-oracle-1"
+    stale_version = (
+        f"{final_gate_mod.GATE_VERSION_PREFIX}p5-oracle-0:{final_gate_mod.PROMPT_VERSION}"
+    )
     with monkeypatch.context() as patched:
         # Plant the row as a PRIOR POLICY would have written it. Patched on `final_gate` rather
         # than `oracle` because `gate_engine_version` closes over this module's own binding.
@@ -981,6 +991,7 @@ def _plant_current_gate_row(
             provider=None if model is None else "claude-code-agent",
             model=model,
             effort=None if model is None else gate_effort_key(settings.gate.effort),
+            target_band=None if model is None else profile_row.target_seniority_band,
         )
 
 
@@ -1325,6 +1336,7 @@ def test_a_seniority_field_absent_from_every_answer_raises_a_field_coverage_alar
     default, which is exactly the pre-`p5-oracle-2` judge's shape.
     """
     _ready(env)
+    _entry_band(env)
     posting_id = _seed(env)
     _arm_gate(env, seniority_hold=True)
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1355,6 +1367,7 @@ def test_the_seniority_alarm_is_silent_when_the_hold_is_not_armed(
     leaves the column inert — so an unreadable answer costs nothing and must not alarm. The
     counter still records it: the measurement is unconditional, only the alert is gated."""
     _ready(env)
+    _entry_band(env)
     _seed(env)
     _arm_gate(env)  # seniority_hold defaults False
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1376,6 +1389,7 @@ def test_an_explicit_unclear_is_a_real_answer_and_is_never_counted_malformed(
     would fire this alarm on a judge doing exactly what it was asked.
     """
     _ready(env)
+    _entry_band(env)
     _seed(env)
     _arm_gate(env, seniority_hold=True)
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1397,6 +1411,7 @@ def test_a_clean_batch_raises_neither_alert_and_leaves_the_existing_gate_numbers
     coverage alert, no field alarm, and the six gate numbers the funnel already published
     read exactly what they read before this instrumentation existed."""
     _ready(env)
+    _entry_band(env)
     _seed(env)
     _arm_gate(env, seniority_hold=True)
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1649,6 +1664,37 @@ def test_the_refresh_re_judges_a_standing_lead_judged_at_another_effort(
     assert (summary.gate_refresh_candidates, summary.gate_refresh_sent) == (1, 1)
     assert summary.gate_refresh_pending_after == 0
     assert _calls(fake_claude) == 1
+
+
+@_needs_an_executable_fake
+@pytest.mark.parametrize("band_changes", [True, False], ids=["band-edited", "control"])
+def test_the_refresh_re_asks_a_standing_lead_judged_under_another_band(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch,
+    band_changes: bool,
+) -> None:
+    """T188b: the band is a judge input — under `any` the seniority question is not asked at
+    all — so a lead judged under `any` is NOT fresh once the owner declares `entry`, and the
+    refresh re-asks it. Without this `current_gate_seniority` read the skipped `unclear` forever
+    while the tenant report said the hold was armed. CONTROL: no band edit ⇒ still fresh."""
+    _ready(env)
+    [lead] = [_seed(env, slug="acme-band")]
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    first = _depth_pipeline(env, tmp_path / "apps1", top_n=1)
+    assert first.fatal is None, first.fatal
+    assert set(_standing_lanes(env)) == {lead}, "run 1 must deliver the lead"
+    fake_claude.unlink(missing_ok=True)
+    _arm_gate(env, refresh_budget=13)
+    if band_changes:
+        _entry_band(env)
+
+    summary = _depth_pipeline(env, tmp_path / "apps2", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    expected = 1 if band_changes else 0
+    assert (summary.gate_refresh_candidates, summary.gate_refresh_sent) == (expected, expected)
+    assert summary.gate_refresh_pending_after == 0
+    assert _calls(fake_claude) == expected
 
 
 def test_a_zero_budget_sends_nothing_and_the_demotion_stands(

@@ -59,7 +59,7 @@ from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.audit import AuditRequirement, load_audit
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.final_gate import gate_effort_key
-from boardwatch.eligibility.preflight import current_facts, current_identity
+from boardwatch.eligibility.preflight import current_identity, current_judge_inputs
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     RequirementFlags,
@@ -1181,12 +1181,12 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # Both reads chunk internally past the bound-parameter cap, and the list handed to them is
     # bounded by the artifact count rather than by the open corpus.
     versions = current_posting_versions(conn, [int(row.posting_id) for row in ordered])
-    # `facts` is None exactly when there is no profile (`current_facts`' own check), the same
+    # `facts` is None exactly when there is no profile (`current_judge_inputs`' own check), the same
     # condition under which `current_identity` never touches disk -- so the catalog is loaded
     # ONCE here, only when there is a profile to evaluate against it, and reused below by both
     # the identity read and the gate read (T171). With no profile it stays None and neither read
     # loads `rules.yaml`, so a malformed override cannot fail a list that needs no catalog.
-    facts = current_facts(conn)
+    facts, target_band = current_judge_inputs(conn)
     catalog = load_rules(settings.config_dir) if facts is not None else None
     profile_hash, rules_hash = _identity(conn, settings, catalog)
     version_ids = [version.posting_version_id for version in versions.values()]
@@ -1203,7 +1203,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     gate = (
         current_gate_verdicts(
             conn, version_ids, facts, catalog, model=settings.gate.model,
-            effort=gate_effort_key(settings.gate.effort),
+            effort=gate_effort_key(settings.gate.effort), target_band=target_band,
         )
         if catalog is not None
         else {}
@@ -1214,7 +1214,9 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # alternative, each call site checking the flag itself, is exactly the second opinion
     # `_review` exists to prevent (D-332). It also skips the query entirely when off.
     seniority = (
-        current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
+        current_gate_seniority(
+            conn, version_ids, facts, model=settings.gate.model, target_band=target_band
+        )
         if settings.gate.seniority_hold
         else {}
     )
@@ -1669,10 +1671,10 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # cannot report two different gate readings. Without it here the detail served `None` for a
     # lead the list served `uncertain` — the same field, the same lead, two answers. `catalog` is
     # the one loaded above, above the identity read.
-    facts = current_facts(conn)
+    facts, target_band = current_judge_inputs(conn)
     gate = current_gate_verdicts(
         conn, version_ids, facts, catalog, model=settings.gate.model,
-        effort=gate_effort_key(settings.gate.effort),
+        effort=gate_effort_key(settings.gate.effort), target_band=target_band,
     )
     # The gate's SENIORITY reading, for the same reason its verdict one line up is read here, and
     # missed when that one was added. Two things went wrong without it, and the second is the
@@ -1687,7 +1689,9 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
     # inert `"unclear"` default is what keeps them agreeing (D-332). `settings` is already bound
     # above, so this needs no second `load_settings()`.
     seniority = (
-        current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
+        current_gate_seniority(
+            conn, version_ids, facts, model=settings.gate.model, target_band=target_band
+        )
         if settings.gate.seniority_hold
         else {}
     )

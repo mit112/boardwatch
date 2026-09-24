@@ -55,7 +55,7 @@ from boardwatch.eligibility.audit import AuditView, load_audit
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.final_gate import gate_effort_key
-from boardwatch.eligibility.preflight import current_facts, current_identity
+from boardwatch.eligibility.preflight import current_identity, current_judge_inputs
 from boardwatch.eligibility.read import (
     NO_REQUIREMENT_FLAGS,
     current_gate_seniority,
@@ -350,6 +350,7 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
         search_facets=ctx.facets.profile,
         search_pages=ctx.settings.indeed_search_pages,
         results_per_page=ctx.settings.indeed_results_per_page,
+        target_countries=ctx.target_countries,
     ),
     # The JSON-LD resolver is the FIRST lane to read `ctx.pending_seeds`, and it takes no facet
     # at all — it resolves posting URLs other passes discovered rather than composing a search,
@@ -358,7 +359,9 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # one request here buys exactly one body, so the same number would mean a different cost.
     # Its three bounds are module constants sized against a measured per-posting cost, and
     # `lanes/jsonld.py` states what each is sized against.
-    JsonLdLane.name: lambda ctx: JsonLdLane(ctx.pending_seeds),
+    JsonLdLane.name: lambda ctx: JsonLdLane(
+        ctx.pending_seeds, list_repos=ctx.settings.lane_github_lists
+    ),
 }
 
 # The UA the lane fetcher sends by default. Not boardwatch's identifying UA, and NOT app
@@ -769,6 +772,8 @@ def _fetch_lanes(
     # would put the knob in two places.
     with engine.connect() as conn:
         watched_companies = watched_company_names(conn)
+        profile_row = get_profile(conn)
+    target_countries = () if profile_row is None else tuple(profile_row.target_countries_json)
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
@@ -801,6 +806,7 @@ def _fetch_lanes(
         facets=facets,
         rotation_index=_rotation_index(run_id),
         watched_companies=watched_companies,
+        target_countries=target_countries,
         pending_seeds=pending_seeds,
     )
 
@@ -1246,6 +1252,8 @@ def _apply_lane(
             snapshots=len(result.snapshots),
             search_pages=result.search_pages,
             search_outcomes=result.search_outcomes,
+            not_attemptable=result.not_attemptable,
+            not_attempted=tuple(str(note) for note in result.not_attempted),
             fetch_seconds=fetched.fetch_seconds,
             apply_seconds=perf_counter() - apply_started,
         ),
@@ -1547,10 +1555,10 @@ def _lead_lanes(
         # tailors for can never disagree with the one `sync_queue` files the folder under. Keyed
         # on the judge's inputs rather than the identity (T161): moving only the queue's read
         # would split the two lanes on every lead after a rules-only re-key.
-        facts = current_facts(conn)
+        facts, target_band = current_judge_inputs(conn)
         gate_verdicts = current_gate_verdicts(
             conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model,
-            effort=gate_effort_key(settings.gate.effort),
+            effort=gate_effort_key(settings.gate.effort), target_band=target_band,
         )
         # T151. HOW MANY leads the gate read found NOTHING for, counted beside the read itself
         # rather than re-derived later, so the number and the lane decision cannot disagree.
@@ -1573,7 +1581,9 @@ def _lead_lanes(
         # The runner's twin of `delivery_queries`' gate point: same flag, same inert default, so
         # the lane this run tailors for cannot disagree with the one `sync_queue` files under.
         gate_seniority = (
-            current_gate_seniority(conn, version_ids, facts, model=settings.gate.model)
+            current_gate_seniority(
+                conn, version_ids, facts, model=settings.gate.model, target_band=target_band
+            )
             if settings.gate.seniority_hold
             else {}
         )
@@ -3994,7 +4004,13 @@ def _emit_funnel(
         tenant_assumptions=(
             None
             if summary.tenant_ranker is None
-            else TenantAssumptionReport(ranker=summary.tenant_ranker, review=summary.tenant_review)
+            else TenantAssumptionReport(
+                ranker=summary.tenant_ranker, review=summary.tenant_review,
+                lanes={
+                    lane.name: lane.not_attemptable
+                    for lane in summary.lanes if lane.not_attemptable is not None
+                },
+            )
         ),
         errors=summary.errors,
         fatal=summary.fatal,

@@ -40,6 +40,8 @@ from tests.pipeline.test_llm_lane import EXPERIENCE_QUOTE, JD_5YR, _seed_posting
 # under the IGNORED policy below the years a disposition is computed from were invisible to
 # the cache key — see the last test.
 POLICY = Policy(families={"experience_years": "blocker"})
+#: The band every row here is judged, and every read made, under (T188b).
+BAND = "entry"
 # `degree` must be ignored alongside `experience_years`: it DECLARES total_years_experience
 # too (resolve.declared_fields), so leaving it enabled would fold the years back in.
 IGNORED_POLICY = Policy(families={"degree": "ignore", "experience_years": "ignore"})
@@ -185,6 +187,7 @@ def _record_gate(engine: Engine, catalog, facts: Facts, pv_id: int, label: int,
         label=str(label), decision="eligible", reason=None, evidence="", confidence="high",
     )
     kwargs.setdefault("effort", gate_effort_key(None))
+    kwargs.setdefault("target_band", BAND)
     with engine.begin() as conn:
         record_gate_verdict(
             conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=facts, policy=POLICY,
@@ -206,7 +209,7 @@ def _posting_of(engine: Engine, pv_id: int) -> int:
 
 
 def _freshness_read(engine: Engine, facts: Facts, pv_id: int, *, model: str,
-                    effort: str | None = None):
+                    effort: str | None = None, band: str = BAND):
     """The never-re-judge filter's read. `effort` defaults to the unset level, which is what
     `_record_gate` records unless told otherwise."""
     from boardwatch.eligibility.final_gate import gate_effort_key
@@ -215,12 +218,12 @@ def _freshness_read(engine: Engine, facts: Facts, pv_id: int, *, model: str,
     with engine.connect() as conn:
         return fresh_gate_verdicts(
             conn, [pv_id], facts, model=model,
-            effort=gate_effort_key(None) if effort is None else effort,
+            effort=gate_effort_key(None) if effort is None else effort, target_band=band,
         )
 
 
 def _value_read(engine: Engine, catalog, facts: Facts | None, pv_ids: list[int], *,
-                model: str = "sonnet", effort: str | None = None):
+                model: str = "sonnet", effort: str | None = None, band: str = BAND):
     """The one VALUE read every lane, pane and ranker caller makes (T161; effort since T162).
     `effort` defaults to the unset level, matching what `_record_gate` records unless told
     otherwise."""
@@ -230,7 +233,7 @@ def _value_read(engine: Engine, catalog, facts: Facts | None, pv_ids: list[int],
     with engine.connect() as conn:
         return current_gate_verdicts(
             conn, pv_ids, facts, catalog, model=model,
-            effort=gate_effort_key(None) if effort is None else effort,
+            effort=gate_effort_key(None) if effort is None else effort, target_band=band,
         )
 
 
@@ -435,11 +438,12 @@ def _new_version_of(engine: Engine, pv_id: int) -> int:
         )).inserted_primary_key[0])
 
 
-def _seniority(engine: Engine, pv_ids: list[int], facts: Facts, *, model: str = "sonnet"):
+def _seniority(engine: Engine, pv_ids: list[int], facts: Facts, *, model: str = "sonnet",
+               band: str = BAND):
     from boardwatch.eligibility.read import current_gate_seniority
 
     with engine.connect() as conn:
-        return current_gate_seniority(conn, pv_ids, facts, model=model)
+        return current_gate_seniority(conn, pv_ids, facts, model=model, target_band=band)
 
 
 def _record_legacy(engine: Engine, catalog, facts: Facts, pv_id: int, label: int, *,
@@ -461,7 +465,7 @@ def _record_legacy(engine: Engine, catalog, facts: Facts, pv_id: int, label: int
             score=None, requirements=[], provider="claude-code-agent", model=model,
             prompt_version=PROMPT_VERSION, idempotency_key=None,
             raw_output={"gate_verdict": _senior(label).__dict__,
-                        "facts_key": gate_facts_key(facts)},
+                        "facts_key": gate_facts_key(facts), "target_band": BAND},
         )
 
 
@@ -719,7 +723,7 @@ def _record_intern(engine: Engine, catalog, facts: Facts, pv_id: int, label: int
         record_gate_verdict(
             conn, posting_version_id=pv_id, jd_text=INTERN_JD, facts=facts, policy=POLICY,
             catalog=catalog, provider="claude-code-agent", model="sonnet",
-            effort=gate_effort_key(None),
+            effort=gate_effort_key(None), target_band=BAND,
             verdict=OracleVerdict(
                 label=str(label), decision="ineligible", reason="internship",
                 evidence=INTERN_EVIDENCE, confidence="high",
@@ -833,7 +837,7 @@ def test_a_stored_ineligible_whose_family_left_the_catalog_reads_uncertain(
     assert _freshness_read(engine, facts, pv_id, model="sonnet") == {posting_id: "ineligible"}
 
 
-@pytest.mark.parametrize("newer_differs_in", ["model", "effort", "facts", "gate_version"])
+@pytest.mark.parametrize("newer_differs_in", ["model", "effort", "facts", "gate_version", "band"])
 def test_every_freshness_narrowing_filters_before_max_id(
     engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newer_differs_in: str
 ) -> None:
@@ -861,9 +865,39 @@ def test_every_freshness_narrowing_filters_before_max_id(
             pv_id, posting_id, verdict_override=newer, provider="claude-code-agent",
             model="haiku" if newer_differs_in == "model" else "sonnet",
             **({"effort": "high"} if newer_differs_in == "effort" else {}),
+            **({"target_band": "any"} if newer_differs_in == "band" else {}),
         )
 
     assert _freshness_read(engine, facts, pv_id, model="sonnet") == {posting_id: "eligible"}
+
+
+@pytest.mark.parametrize("recorded", ["any", None], ids=["other-band", "no-band"])
+def test_a_row_judged_under_another_band_is_neither_fresh_nor_read(
+    engine: Engine, tmp_path: Path, recorded: str | None
+) -> None:
+    """T188b. The band is a judge input (under `any` the seniority question is not even asked), so
+    a row judged under `any` — or one that recorded no band, as `eligibility gate apply` writes —
+    is not fresh, serves no verdict and holds no seniority reading once the profile says `entry`:
+    otherwise the refresh never re-asks and the reading stays the skipped `unclear` forever.
+    CONTROL: the same row read under the band it was judged under is found by all three reads."""
+    catalog = load_rules(tmp_path / "no-cfg")
+    facts = Facts(total_years_experience=5)
+    pv_id = _seed_posting_version(engine, JD_5YR, slug=f"t188b-{recorded}")
+    posting_id = _posting_of(engine, pv_id)
+    _record_gate(engine, catalog, facts, pv_id, posting_id, verdict_override=_senior(posting_id),
+                 provider="claude-code-agent", model="sonnet", target_band=recorded)
+
+    assert _freshness_read(engine, facts, pv_id, model="sonnet", band="entry") == {}
+    assert _value_read(engine, catalog, facts, [pv_id], band="entry") == {}
+    assert _seniority(engine, [pv_id], facts, band="entry") == {}
+    if recorded is not None:
+        assert _freshness_read(engine, facts, pv_id, model="sonnet", band=recorded) == {
+            posting_id: "eligible"
+        }
+        assert _value_read(engine, catalog, facts, [pv_id], band=recorded) == {
+            posting_id: "eligible"
+        }
+        assert _seniority(engine, [pv_id], facts, band=recorded) == {posting_id: "no"}
 
 
 def test_no_profile_reads_no_gate_verdict(engine: Engine, tmp_path: Path) -> None:

@@ -317,6 +317,7 @@ def _write_gate_verdict(
             evidence=GATE_EVIDENCE, confidence="high",
         ),
         model=settings.gate.model,
+        target_band="any",
     )
 
 

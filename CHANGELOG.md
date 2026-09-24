@@ -962,6 +962,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The judge's seniority question is asked against the profile's band; the Indeed country and the
+  GitHub lists come from tenant data (2026-09-24, T188).** The judge asked whether a role was
+  entry-level for every user; it now asks against the profile's target band, skips the question and
+  records it as skipped under `any`, and keys every stored verdict on the band it was asked against, so a
+  band edit re-asks. The prompt version moves, so every stored gate verdict re-judges once through the
+  refresh. The Indeed lane searches the profile's target countries on one shared page budget and refuses,
+  by name, a country Indeed has no site for; the GitHub job lists are a `lane_github_lists` setting
+  (default none, the lane reports the abstain) instead of two hard-coded repositories. DESIGN-T183
+  phases D1, E1, E2.
+
 - **A disagreeing funnel cross-check is soft-alerted, and a lead's location class is the location
   gate's verdict for the profile's target countries (2026-09-24, T203, T204).** A cross-check whose
   in-memory and store counts differ now raises one soft alert per run into the morning digest and the

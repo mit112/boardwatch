@@ -33,10 +33,6 @@ TenantGate = Literal[
     "location", "foreign_ad", "role", "zero_signal", "seniority_field", "judge_seniority"
 ]
 
-# The one band the final gate's `seniority_fit` question is written for ("is this an
-# entry-level / new-grad / early-career role", `eligibility/oracle.py`).
-_JUDGE_QUESTION_BAND = "entry"
-
 
 def ungrounded_reasons(
     *,
@@ -72,8 +68,10 @@ def ungrounded_reasons(
         seniority = None if field in field_tiers else f"missing_field_tier:{field}"
     if not seniority_hold:
         judge: str | None = "disarmed:gate.seniority_hold"
-    elif target_seniority_band != _JUDGE_QUESTION_BAND:
-        judge = f"question_band:{_JUDGE_QUESTION_BAND}!={target_seniority_band}"
+    elif target_seniority_band == "any":
+        # The final gate's `seniority_fit` question is asked against the declared band
+        # (`oracle.judging_policy`); `any` declares none, so it is not asked (T188).
+        judge = "not_asked:target_seniority_band=any"
     else:
         judge = None
     # Both location gates read the profile's `target_countries` (DESIGN-T183 B3) and are INERT
@@ -159,6 +157,9 @@ class TenantAssumptionReport:
     ranker: TenantAssumptionTally
     # `None` when the lane split did not run this run (no leads reached it).
     review: TenantAssumptionTally | None
+    # Lane name -> `LaneResult.not_attemptable`, for every lane that abstained on undeclared
+    # tenant data this run (T188). A lane that had everything it searches with is absent.
+    lanes: dict[str, str] = field(default_factory=dict)
 
 
 def tenant_assumptions_to_dict(report: TenantAssumptionReport | None) -> dict[str, object] | None:
@@ -168,4 +169,5 @@ def tenant_assumptions_to_dict(report: TenantAssumptionReport | None) -> dict[st
     return {
         "ranker": report.ranker.to_dict(),
         "review": None if report.review is None else report.review.to_dict(),
+        "lanes": dict(sorted(report.lanes.items())),
     }

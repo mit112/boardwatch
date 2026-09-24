@@ -102,6 +102,43 @@ class LaneCompanySnapshot:
     watch: bool = False
 
 
+#: Why a lane requested nothing for a search this run: the tenant data it searches with is
+#: undeclared, so that search is inert rather than run on a built-in default (DESIGN-T183).
+LaneNotAttemptable = Literal[
+    # The profile declares no `target_countries`, so a country-scoped search has no country.
+    "no_target_countries",
+    # `lane_github_lists` is empty, so there is no public list to discover seeds from.
+    "no_lists",
+    # A declared target country the source has no site for, so it cannot be searched there.
+    "unsupported_country",
+]
+
+NOT_ATTEMPTABLE: tuple[str, ...] = get_args(LaneNotAttemptable)
+
+
+class UnknownNotAttempted(ValueError):
+    """Raised at construction for a `NotAttempted` reason outside the closed catalog."""
+
+
+@dataclass(frozen=True)
+class NotAttempted:
+    """One part of the tenant's search nothing was requested for, and why: a declared country the
+    source does not serve, or a source list that is not configured. A NOTE, not an abstain -- the
+    lane may still have made every other request -- so it rides beside `LaneResult.not_attemptable`,
+    which is set only when the lane requested nothing at all. Renders `reason` or `reason:subject`.
+    """
+
+    reason: LaneNotAttemptable
+    subject: str = ""
+
+    def __post_init__(self) -> None:
+        if self.reason not in NOT_ATTEMPTABLE:
+            raise UnknownNotAttempted(f"unknown not-attempted reason: {self.reason!r}")
+
+    def __str__(self) -> str:
+        return f"{self.reason}:{self.subject}" if self.subject else self.reason
+
+
 SearchEnd = Literal[
     # The search ran to its end: a last page, a page adding no new id, or the page ceiling. The
     # ceiling is not a member of its own -- `LaneResult.search_pages` already says it.
@@ -188,6 +225,14 @@ class LaneResult:
     # Indeed repeats one URL for every facet. Empty -- never absent -- for a lane that makes no
     # search, or one that does not report it (LinkedIn has no late-failure concept).
     search_outcomes: tuple[SearchOutcome, ...] = ()
+    # Set when tenant data this lane searches with is undeclared, so nothing was requested for
+    # it, and why. Without it an inert search returns an empty result that reads as a quiet day.
+    # `None` when the lane had everything it searches with.
+    not_attemptable: LaneNotAttemptable | None = None
+    # Every PART of the search nothing was requested for, whether or not the lane requested
+    # anything else (T188b): a mix of served and unserved countries searches the served ones and
+    # names the rest here. Empty -- never absent -- when nothing was left out.
+    not_attempted: tuple[NotAttempted, ...] = ()
     # Posting URLs this lane FOUND and cannot resolve itself, for `lane_seeds`. RETURNED rather
     # than written, and that is the whole point: `collect` runs in a fetch worker while
     # `apply_board` is the pipeline's single writer, so a lane that wrote its own seeds would be
@@ -356,6 +401,10 @@ class LaneContext:
     # unaffected and no test of them had to move. Empty is also the honest reading for a store
     # with no watched boards: ask nothing, rather than fail.
     watched_companies: tuple[str, ...] = ()
+    # The profile's `target_countries` (ISO-3166 alpha-3), for a country-scoped search. From the
+    # STORE for the reason `facets` is. Empty is UNDECLARED, and a lane that needs a country
+    # reports itself `not_attemptable` on it rather than choosing one.
+    target_countries: tuple[str, ...] = ()
     # How a lane READS `lane_seeds`, without ever holding a `Connection`. The runner owns the
     # connection and supplies this closure, exactly as it supplies `CompanyAdmission` — and for
     # the same recorded reason: the decision needs store access, and a lane opening its own

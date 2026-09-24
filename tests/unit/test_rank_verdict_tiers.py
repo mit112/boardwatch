@@ -104,7 +104,7 @@ def _mark_gate_eligible(engine: Engine, tmp_path: Path, *, posting_id: int) -> N
                 label=str(posting_id), decision="eligible", reason=None, evidence="",
                 confidence="high",
             ),
-            model=_settings(tmp_path).gate.model,
+            model=_settings(tmp_path).gate.model, target_band="any",
         )
 
 

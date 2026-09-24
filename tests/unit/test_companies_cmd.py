@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
-from boardwatch.lanes.github_lists import LIST_URLS
+from boardwatch.lanes.github_lists import list_urls
 from boardwatch.providers.base import BoardHealth
 from boardwatch.store import tables
 from boardwatch.store.db import DB_FILENAME, get_engine
@@ -50,6 +50,19 @@ def _no_gha(monkeypatch, tmp_path):
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
 
 
+#: The two lists `companies discover` was built against, named in config as a tenant would (T188).
+LISTS = ("SimplifyJobs/New-Grad-Positions", "vanshb03/New-Grad-2027")
+
+
+def _arm_lists(tmp_path):
+    cfg = tmp_path / "cfg"
+    cfg.mkdir(exist_ok=True)
+    (cfg / "config.toml").write_text(
+        "lane_github_lists = [" + ", ".join(f'"{repo}"' for repo in LISTS) + "]\n",
+        encoding="utf-8",
+    )
+
+
 def _base(tmp_path):
     return ["--data-dir", str(tmp_path / "data")]
 
@@ -83,7 +96,8 @@ def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> N
     permanently failing board and there is no quarantine for one. `companies import`, unchanged,
     does the watched-write on the file the human read.
     """
-    for (_repo, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True):
+    _arm_lists(tmp_path)
+    for (_repo, url), shape in zip(list_urls(LISTS), ("S1", "S2"), strict=True):
         respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
     base = _base(tmp_path)
     out = tmp_path / "candidates.yaml"
@@ -138,7 +152,8 @@ def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> N
 def test_discover_defaults_to_stdout_and_the_cap_from_settings(tmp_path) -> None:
     """No `--out`, no `--limit`: the document goes to stdout unmangled and the cap is the
     setting the lane path already uses, so there is one knob rather than two."""
-    for (_repo, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True):
+    _arm_lists(tmp_path)
+    for (_repo, url), shape in zip(list_urls(LISTS), ("S1", "S2"), strict=True):
         respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
 
     result = runner.invoke(app, [*_base(tmp_path), "companies", "discover"])

@@ -87,7 +87,9 @@ def test_build_gate_request_one_item_per_visible_posting_label_is_posting_id(tmp
     }
     facts = Facts(highest_degree="bachelor")
 
-    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-1")
+    request = build_gate_request(
+        ranked_visible, versions, facts, catalog, request_id="req-1", target_band="entry"
+    )
 
     assert request["request_id"] == "req-1"
     items = request["items"]
@@ -110,7 +112,9 @@ def test_build_gate_request_skips_a_posting_missing_from_versions(tmp_path: Path
     }
     facts = Facts()
 
-    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-2")
+    request = build_gate_request(
+        ranked_visible, versions, facts, catalog, request_id="req-2", target_band="entry"
+    )
 
     assert [item["label"] for item in request["items"]] == ["1"]
 
@@ -155,7 +159,9 @@ def test_build_gate_request_facts_bytes_for_a_fully_set_profile_are_unchanged_by
         1: CurrentVersion(posting_version_id=10, posting_id=1, body_text="JD", captured_at=utcnow()),
     }
 
-    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-full")
+    request = build_gate_request(
+        ranked_visible, versions, facts, catalog, request_id="req-full", target_band="entry"
+    )
 
     assert request["items"][0]["facts"] == facts_payload(facts)
 
@@ -275,7 +281,7 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
     with engine.begin() as conn:
         result = apply_gate_verdicts(
             conn, [verdict], versions=versions, facts=stored_facts,
-            policy=stored_policy, catalog=catalog, model="sonnet",
+            policy=stored_policy, catalog=catalog, model="sonnet", target_band="any",
         )
     assert result.judged == 1
     assert result.ineligible == 1
@@ -299,11 +305,11 @@ def test_apply_gate_verdicts_writes_under_the_supplied_facts_and_policy(tmp_path
         ).all()
         under_stored = current_gate_verdicts(
             conn, [pv_id], stored_facts, catalog, model="sonnet",
-            effort=gate_effort_key(None),
+            effort=gate_effort_key(None), target_band="any",
         )
         under_other_facts = current_gate_verdicts(
             conn, [pv_id], Facts(highest_degree="master"), catalog, model="sonnet",
-            effort=gate_effort_key(None),
+            effort=gate_effort_key(None), target_band="any",
         )
     assert [tuple(row) for row in written] == [
         (stored_identity.profile_hash, stored_identity.rules_hash)

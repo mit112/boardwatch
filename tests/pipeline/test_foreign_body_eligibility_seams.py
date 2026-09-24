@@ -139,6 +139,7 @@ def test_the_send_boundary_never_hands_a_foreign_body_to_the_judge(
         Facts(),
         _catalog(tmp_path),
         request_id="r1",
+        target_band="entry",
     )
 
     labels = [item["label"] for item in request["items"]]

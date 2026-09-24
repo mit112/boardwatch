@@ -168,7 +168,7 @@ def test_build_request_excludes_hint_includes_policy(tmp_path):
     )
     rows = read_worksheet(ws)
     assert len(rows) == 2  # includes the null-verdict row (load_labeled_set would drop it)
-    req = build_label_request(rows, CAT, request_id="r1")
+    req = build_label_request(rows, CAT, request_id="r1", target_band="any")
     assert req["request_id"] == "r1"
     assert req["policy"] == {"families": {f.id: "blocker" for f in CAT.families}}  # M3
     assert set(req["reason_catalog"]) == {f.id for f in CAT.families}
@@ -189,7 +189,7 @@ def test_build_request_marks_applied_as_hard_negative(tmp_path):
         )
         + "\n"
     )
-    req = build_label_request(read_worksheet(ws), CAT, request_id="r")
+    req = build_label_request(read_worksheet(ws), CAT, request_id="r", target_band="any")
     assert req["items"][0]["bucket"] == "hard_negative"  # H1: applied/ prefix
 
 

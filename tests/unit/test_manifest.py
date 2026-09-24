@@ -411,3 +411,15 @@ def test_a_permanent_disposition_survives_a_hold_flip(tmp_path: Path) -> None:
         assert job_id in live_dispositions(conn, now=now)
         assert stale_dispositions(conn, policy_version=after, now=now) == {}
     assert before == after
+
+
+def test_the_github_lists_setting_moves_neither_config_hash_nor_routing_hash(
+    tmp_path: Path,
+) -> None:
+    """T188: `lane_github_lists` decides which corpus ARRIVES, never how it is judged or routed,
+    so arming it must not stale every permanent disposition through `policy_version`."""
+    armed = _settings(
+        tmp_path, lane_github_lists=("SimplifyJobs/New-Grad-Positions", "vanshb03/New-Grad-2027")
+    )
+    assert config_hash(armed) == config_hash(_settings(tmp_path))
+    assert routing_hash(armed) == routing_hash(_settings(tmp_path))

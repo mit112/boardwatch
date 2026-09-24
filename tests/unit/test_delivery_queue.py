@@ -4558,7 +4558,7 @@ def _judge(
                 label=str(posting_id), decision=decision, reason=reason,
                 evidence=evidence, confidence="high",
             ),
-            model=load_settings().gate.model,
+            model=load_settings().gate.model, target_band="any",
         )
 
 

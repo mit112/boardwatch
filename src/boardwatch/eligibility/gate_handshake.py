@@ -48,6 +48,7 @@ def build_gate_request(
     catalog: RulesCatalog,
     *,
     request_id: str,
+    target_band: str,
 ) -> dict[str, Any]:
     """One synthetic row per visible posting: `{"label": str(posting_id), "facts":
     judge_facts_payload(facts), "body_text": <current OPEN version body>, "expected_verdict":
@@ -64,6 +65,9 @@ def build_gate_request(
     cannot happen when `versions` comes from `current_posting_versions(conn, None)`
     (every open posting), but a caller-supplied narrower map should not crash the
     request build over one stale id.
+
+    `target_band` is the profile's `target_seniority_band`, the band `seniority_fit` is asked
+    against (`oracle.judging_policy`).
     """
     payload = judge_facts_payload(facts)
     rows = [
@@ -83,7 +87,7 @@ def build_gate_request(
         # preflight sweep both do, so the bucket is never short.
         and is_employer_body(versions[posting.posting_id].body_text)
     ]
-    return build_label_request(rows, catalog, request_id=request_id)
+    return build_label_request(rows, catalog, request_id=request_id, target_band=target_band)
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,7 @@ def apply_gate_verdicts(
     provider: str | None = None,
     model: str | None = None,
     effort: str | None = None,
+    target_band: str | None = None,
 ) -> ApplyGateResult:
     """Run every verdict through `record_gate_verdict` against the posting's CURRENT
     OPEN version body (`versions`, re-read by the caller at apply time — this is the
@@ -142,8 +147,9 @@ def apply_gate_verdicts(
     supplied map means the caller's own map disagreed with its verdict list, which is a
     fact worth leaving visible rather than papering over with a sentinel.
 
-    `provider`/`model`/`effort` name the judge and level that reached these verdicts and are
-    threaded straight to `record_gate_verdict`, whose docstring holds why they default to `None`
+    `provider`/`model`/`effort`/`target_band` name the judge, level and band that reached these
+    verdicts and are threaded straight to `record_gate_verdict`, whose docstring holds why they
+    default to `None`
     and what a row that names no model costs.
     """
     # The WRITE boundary of the lane-body precondition (D-406), and the one that matters most:
@@ -187,6 +193,7 @@ def apply_gate_verdicts(
             provider=provider,
             model=model,
             effort=effort,
+            target_band=target_band,
         )
         judged += 1
         if persisted == "ineligible":

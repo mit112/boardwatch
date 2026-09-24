@@ -587,6 +587,7 @@ def rank_open_postings(
             load_rules(settings.config_dir),
             model=settings.gate.model,
             effort=gate_effort_key(settings.gate.effort),
+            target_band=profile_row.target_seniority_band,
         )
         new_ids = _new_posting_ids(conn) if only_new else None
         # The leads ALREADY in front of the owner, keyed the way the slate cap keys a run

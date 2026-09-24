@@ -16,6 +16,7 @@ by default; see core.features for the user-facing surface.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
@@ -296,6 +297,10 @@ class Settings(BaseModel):
     # so existing users' request shapes and counts stay unchanged, and no country's metros are
     # encoded in the default.
     lane_search_hubs: tuple[str, ...] = ()
+    # The public GitHub job lists (`owner/repo`) that `companies discover` and the JSON-LD lane's
+    # seed discovery read (`lanes/github_lists.py`). Empty is inert: nothing is fetched and both
+    # report `no_lists`, because which lists fit is a tenant's field and seniority, not code.
+    lane_github_lists: tuple[str, ...] = ()
     lane_hub_combos_per_run: int = Field(default=12, ge=0)
     lane_hub_distance_miles: int = Field(default=25, ge=0)
     # How many per-COMPANY LinkedIn search cells a run buys: one target title asked at one
@@ -404,6 +409,16 @@ class Settings(BaseModel):
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)
     gate: GateTier = Field(default_factory=GateTier)
+
+    @field_validator("lane_github_lists")
+    @classmethod
+    def _github_lists_are_owner_repo(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        # Refused at the edit, not at the fetch: each entry is spliced into a raw.githubusercontent
+        # URL path, and a value that is not one `owner/repo` pair would address some other file.
+        for repo in value:
+            if re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+", repo) is None:
+                raise ValueError(f"lane_github_lists entry {repo!r} is not an owner/repo pair")
+        return value
 
     @field_validator("lane_new_companies_per_run_overrides")
     @classmethod
