@@ -76,7 +76,8 @@ def _stub_judge(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     unreadable = gate_judge._SENIORITY_UNREADABLE
 
     def judge(
-        batch: list[dict[str, object]], judging_policy: str, settings: Settings
+        batch: list[dict[str, object]], judging_policy: str, settings: Settings,
+        *, seniority_asked: bool = True,
     ) -> tuple[list[OracleVerdict] | None, str | None, tuple[str, ...]]:
         labels = [str(item["label"]) for item in batch]
         batches.append(labels)

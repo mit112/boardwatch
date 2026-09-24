@@ -88,7 +88,7 @@ def test_build_label_request_refuses_a_foreign_body_but_keeps_a_clean_one() -> N
         _foreign_row("hard_stop/jobright"),
         {"label": "hard_stop/clean", "expected_verdict": None, "facts": {}, "body_text": CLEAN_JD},
     ]
-    req = build_label_request(rows, CAT, request_id="r1")
+    req = build_label_request(rows, CAT, request_id="r1", target_band="any")
     labels = [item["label"] for item in req["items"]]
     assert labels == ["hard_stop/clean"], "the foreign body must not be sent to the judge"
 
@@ -136,7 +136,7 @@ def test_apply_sanitizes_a_current_stamped_foreign_ineligible() -> None:
     row["confidence"] = "high"
     row["downgraded"] = False
     # The actual empty request/apply flow: nothing names this already-labeled row.
-    assert build_label_request([dict(row)], CAT, request_id="r1")["items"] == []
+    assert build_label_request([dict(row)], CAT, request_id="r1", target_band="any")["items"] == []
     merged, res = apply_oracle_verdicts([row], [], CAT)
     assert merged[0]["expected_verdict"] is None, "a current-stamped foreign row must be cleaned"
     assert merged[0].get("label_provenance") is None

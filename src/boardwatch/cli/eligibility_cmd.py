@@ -669,7 +669,9 @@ def label_request_cmd(
     for path in sorted(worksheet_dir.glob("*.jsonl")):
         rows.extend(read_worksheet(path))
     request_id = uuid.uuid4().hex
-    request = build_label_request(rows, catalog, request_id=request_id)
+    # `any`: the answer key scores the seven families only, never `seniority_fit`, so the
+    # labeling pass does not ask it.
+    request = build_label_request(rows, catalog, request_id=request_id, target_band="any")
     out_path = out if out is not None else worksheet_dir / "label_request.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(request, indent=2), encoding="utf-8")
@@ -783,7 +785,10 @@ def gate_request_cmd(
     with app_ctx.engine.connect() as conn:
         versions = current_posting_versions(conn, None)
     request_id = uuid.uuid4().hex
-    request = build_gate_request(results.visible, versions, facts, catalog, request_id=request_id)
+    request = build_gate_request(
+        results.visible, versions, facts, catalog, request_id=request_id,
+        target_band=profile_row.target_seniority_band,
+    )
     out_path = out if out is not None else settings.data_dir / "gate_request.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(request, indent=2), encoding="utf-8")

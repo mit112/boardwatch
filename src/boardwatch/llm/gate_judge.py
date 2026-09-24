@@ -106,6 +106,10 @@ class GateStageResult:
     seniority_answered: int = 0
     seniority_unclear: int = 0
     seniority_unreadable: int = 0
+    # T188 — verdicts whose `seniority_fit` was NOT ASKED, because the profile's
+    # `target_seniority_band` is `any`. Counted apart from the three above: each carries the inert
+    # `"unclear"`, and neither a judge's real `unclear` nor an unreadable answer is what happened.
+    seniority_skipped: int = 0
     # Posting ids this run persisted a gate `ineligible` verdict for — the ONLY ones the caller
     # must drop from the slate before tailoring. Everything else (eligible, uncertain, unjudged
     # because already current) stays exactly where the ranker put it.
@@ -117,13 +121,17 @@ def _chunks(items: list[dict[str, object]], size: int) -> list[list[dict[str, ob
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
-def _prompt(judging_policy: str, batch: list[dict[str, object]]) -> str:
+def _prompt(
+    judging_policy: str, batch: list[dict[str, object]], *, seniority_asked: bool = True
+) -> str:
     """Byte-shape-compatible with the calibration harness's prompt (2026-09-08 session,
     `calib_judge.sh`), which was run successfully against real headless `claude`. `slim` drops
     `bucket` — the judge sees `label`/`facts`/`jd_text` ONLY, never a hint about which bucket a
-    posting fell in."""
+    posting fell in. With `seniority_asked` off the contract does not name `seniority_fit`,
+    matching a `judging_policy` rendered for band `any`."""
     slim = [{k: item[k] for k in ("label", "facts", "jd_text")} for item in batch]
     count = len(batch)
+    seniority = ', "seniority_fit": "yes"|"no"|"unclear"' if seniority_asked else ""
     return (
         f"{judging_policy}\n\n"
         "OUTPUT CONTRACT: Judge every item below from its jd_text and facts ONLY. Output ONLY "
@@ -131,7 +139,7 @@ def _prompt(judging_policy: str, batch: list[dict[str, object]]) -> str:
         'the form {"label": <the item\'s label>, "decision": "eligible"|"ineligible"|'
         '"uncertain", "reason": <a reason_catalog family id or null>, "evidence": <verbatim '
         'substring of jd_text, required when ineligible, else "">, "confidence": '
-        '"high"|"medium"|"low", "seniority_fit": "yes"|"no"|"unclear"}. No prose before or '
+        '"high"|"medium"|"low"' f"{seniority}}}. No prose before or "
         "after, no code fences.\n\n"
         f"ITEMS:\n{json.dumps(slim)}"
     )
@@ -208,6 +216,9 @@ _SENIORITY_FIT = frozenset({"yes", "no", "unclear"})
 _SENIORITY_ANSWERED = "answered"
 _SENIORITY_UNCLEAR = "unclear"
 _SENIORITY_UNREADABLE = "unreadable"
+#: Not produced by `_seniority_fit`: the question was not asked (band `any`, T188), so whatever
+#: the judge sent is not read at all.
+_SENIORITY_SKIPPED = "skipped"
 
 
 def _seniority_fit(value: object) -> tuple[str, str]:
@@ -245,7 +256,7 @@ def _in_vocabulary(value: object, vocabulary: frozenset[str], field: str) -> str
 
 
 def _parse_verdicts(
-    stdout: str, expected_labels: Sequence[str]
+    stdout: str, expected_labels: Sequence[str], *, seniority_asked: bool = True
 ) -> tuple[list[OracleVerdict], tuple[str, ...], tuple[str, ...]]:
     """The two-stage envelope `--output-format json` wraps every headless response in: the
     outer JSON's `result` key holds the model's text, which is itself the JSON array this
@@ -286,7 +297,11 @@ def _parse_verdicts(
         # a mapping raises `TypeError` here, which the caller catches and fails the batch open,
         # where `.get` would raise `AttributeError` and leave the stage entirely.
         label = str(item["label"])
-        fit, quality = _seniority_fit(item.get("seniority_fit"))
+        fit, quality = (
+            _seniority_fit(item.get("seniority_fit"))
+            if seniority_asked
+            else (_SENIORITY_UNCLEAR, _SENIORITY_SKIPPED)
+        )
         verdicts.append(
             OracleVerdict(
                 label=label,
@@ -309,7 +324,8 @@ def _parse_verdicts(
 
 
 def _judge_batch(
-    batch: list[dict[str, object]], judging_policy: str, settings: Settings
+    batch: list[dict[str, object]], judging_policy: str, settings: Settings,
+    *, seniority_asked: bool = True,
 ) -> tuple[list[OracleVerdict] | None, str | None, tuple[str, ...]]:
     """Run one batch through headless claude. `(verdicts, None, ...)` on success,
     `(None, note, ())` on any failure this stage must fail open on — a note describing WHAT
@@ -320,7 +336,7 @@ def _judge_batch(
     The third element is one `_SENIORITY_*` token per verdict returned (T107), and it is EMPTY
     on every fail-open path: a batch that answered nothing contributes nothing to the field
     coverage denominator, or a process outage would read as a parse-quality failure."""
-    prompt = _prompt(judging_policy, batch)
+    prompt = _prompt(judging_policy, batch, seniority_asked=seniority_asked)
     try:
         stdout = _call_claude(
             prompt,
@@ -348,7 +364,7 @@ def _judge_batch(
         )
     try:
         verdicts, missing, seniority = _parse_verdicts(
-            stdout, [str(item["label"]) for item in batch]
+            stdout, [str(item["label"]) for item in batch], seniority_asked=seniority_asked
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, OracleVerdictError) as exc:
         return None, f"unusable response ({type(exc).__name__}): {exc}", ()
@@ -496,9 +512,13 @@ def run_gate_stage(
     if not to_judge:
         return leads, GateStageResult(candidates=candidates, cached=len(already_gated))
 
-    request = build_gate_request(to_judge, versions, facts, catalog, request_id=f"run-{run_id}")
+    request = build_gate_request(
+        to_judge, versions, facts, catalog, request_id=f"run-{run_id}",
+        target_band=profile_row.target_seniority_band,
+    )
     items = request["items"]
     judging_policy = request["judging_policy"]
+    seniority_asked = request["target_band"] != "any"
     verdicts: list[OracleVerdict] = []
     failed_batches = 0
     missing_items = 0
@@ -506,7 +526,9 @@ def run_gate_stage(
     errors: list[str] = []
     batches = _chunks(items, max(1, settings.gate.batch_size))
     for index, batch in enumerate(batches):
-        batch_verdicts, note, batch_seniority = _judge_batch(batch, judging_policy, settings)
+        batch_verdicts, note, batch_seniority = _judge_batch(
+            batch, judging_policy, settings, seniority_asked=seniority_asked
+        )
         # Derived rather than reported back out of the parser, which already guarantees the
         # arithmetic: no verdict names a label the batch did not carry and no label is answered
         # twice, so the shortfall IS the count of labels nobody answered. A failed batch
@@ -536,6 +558,7 @@ def run_gate_stage(
         seniority_answered=seniority.count(_SENIORITY_ANSWERED),
         seniority_unclear=seniority.count(_SENIORITY_UNCLEAR),
         seniority_unreadable=seniority.count(_SENIORITY_UNREADABLE),
+        seniority_skipped=seniority.count(_SENIORITY_SKIPPED),
         errors=tuple(errors),
     )
     if not verdicts:

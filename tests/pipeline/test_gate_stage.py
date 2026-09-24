@@ -171,6 +171,13 @@ def _ready(data_dir: Path) -> None:
     write_test_resume_template(load_settings(data_dir=data_dir).config_dir)
 
 
+def _entry_band(data_dir: Path) -> None:
+    """`init` leaves `target_seniority_band` at `any`, under which `seniority_fit` is not asked
+    at all (T188); a test of how its answers read needs a declared band."""
+    with get_engine(data_dir).begin() as conn:
+        conn.execute(tables.profile.update().values(target_seniority_band="entry"))
+
+
 def _seed(data_dir: Path, *, slug: str = "acme-gate1", body: str = BODY) -> int:
     engine = get_engine(data_dir)
     ensure_schema(engine)
@@ -888,7 +895,9 @@ def test_gate_rejudges_a_lead_whose_only_gate_row_is_a_superseded_policy(
     policy = parse_policy(profile_row.eligibility_policy_json)
     current = versions[posting_id]
 
-    stale_version = f"{final_gate_mod.GATE_VERSION_PREFIX}p5-oracle-0:p5-oracle-1"
+    stale_version = (
+        f"{final_gate_mod.GATE_VERSION_PREFIX}p5-oracle-0:{final_gate_mod.PROMPT_VERSION}"
+    )
     with monkeypatch.context() as patched:
         # Plant the row as a PRIOR POLICY would have written it. Patched on `final_gate` rather
         # than `oracle` because `gate_engine_version` closes over this module's own binding.
@@ -1325,6 +1334,7 @@ def test_a_seniority_field_absent_from_every_answer_raises_a_field_coverage_alar
     default, which is exactly the pre-`p5-oracle-2` judge's shape.
     """
     _ready(env)
+    _entry_band(env)
     posting_id = _seed(env)
     _arm_gate(env, seniority_hold=True)
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1355,6 +1365,7 @@ def test_the_seniority_alarm_is_silent_when_the_hold_is_not_armed(
     leaves the column inert — so an unreadable answer costs nothing and must not alarm. The
     counter still records it: the measurement is unconditional, only the alert is gated."""
     _ready(env)
+    _entry_band(env)
     _seed(env)
     _arm_gate(env)  # seniority_hold defaults False
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1376,6 +1387,7 @@ def test_an_explicit_unclear_is_a_real_answer_and_is_never_counted_malformed(
     would fire this alarm on a judge doing exactly what it was asked.
     """
     _ready(env)
+    _entry_band(env)
     _seed(env)
     _arm_gate(env, seniority_hold=True)
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")
@@ -1397,6 +1409,7 @@ def test_a_clean_batch_raises_neither_alert_and_leaves_the_existing_gate_numbers
     coverage alert, no field alarm, and the six gate numbers the funnel already published
     read exactly what they read before this instrumentation existed."""
     _ready(env)
+    _entry_band(env)
     _seed(env)
     _arm_gate(env, seniority_hold=True)
     monkeypatch.setenv("GATE_FAKE_MODE", "ok")

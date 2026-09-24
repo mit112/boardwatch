@@ -48,6 +48,7 @@ def build_gate_request(
     catalog: RulesCatalog,
     *,
     request_id: str,
+    target_band: str,
 ) -> dict[str, Any]:
     """One synthetic row per visible posting: `{"label": str(posting_id), "facts":
     judge_facts_payload(facts), "body_text": <current OPEN version body>, "expected_verdict":
@@ -64,6 +65,9 @@ def build_gate_request(
     cannot happen when `versions` comes from `current_posting_versions(conn, None)`
     (every open posting), but a caller-supplied narrower map should not crash the
     request build over one stale id.
+
+    `target_band` is the profile's `target_seniority_band`, the band `seniority_fit` is asked
+    against (`oracle.judging_policy`).
     """
     payload = judge_facts_payload(facts)
     rows = [
@@ -83,7 +87,7 @@ def build_gate_request(
         # preflight sweep both do, so the bucket is never short.
         and is_employer_body(versions[posting.posting_id].body_text)
     ]
-    return build_label_request(rows, catalog, request_id=request_id)
+    return build_label_request(rows, catalog, request_id=request_id, target_band=target_band)
 
 
 @dataclass(frozen=True)

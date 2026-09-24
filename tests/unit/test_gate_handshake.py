@@ -87,7 +87,9 @@ def test_build_gate_request_one_item_per_visible_posting_label_is_posting_id(tmp
     }
     facts = Facts(highest_degree="bachelor")
 
-    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-1")
+    request = build_gate_request(
+        ranked_visible, versions, facts, catalog, request_id="req-1", target_band="entry"
+    )
 
     assert request["request_id"] == "req-1"
     items = request["items"]
@@ -110,7 +112,9 @@ def test_build_gate_request_skips_a_posting_missing_from_versions(tmp_path: Path
     }
     facts = Facts()
 
-    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-2")
+    request = build_gate_request(
+        ranked_visible, versions, facts, catalog, request_id="req-2", target_band="entry"
+    )
 
     assert [item["label"] for item in request["items"]] == ["1"]
 
@@ -155,7 +159,9 @@ def test_build_gate_request_facts_bytes_for_a_fully_set_profile_are_unchanged_by
         1: CurrentVersion(posting_version_id=10, posting_id=1, body_text="JD", captured_at=utcnow()),
     }
 
-    request = build_gate_request(ranked_visible, versions, facts, catalog, request_id="req-full")
+    request = build_gate_request(
+        ranked_visible, versions, facts, catalog, request_id="req-full", target_band="entry"
+    )
 
     assert request["items"][0]["facts"] == facts_payload(facts)
 
