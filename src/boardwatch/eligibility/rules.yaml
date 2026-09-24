@@ -1003,6 +1003,14 @@ families:
       #  * `(?<!to\s)`, inherited from the activity twin. "Up to 3 years web development"
       #    bounds from ABOVE; read as a floor it rejects exactly the new-grad postings this
       #    tool exists to find.
+      #  * NO HEDGE IN THE TAIL (T211), the `bar_hedges` words retyped. The `{0,4}` tail took "3+
+      #    years of Kubernetes preferred" whole, so the hedge sat inside the span, where no hedge
+      #    test looks, and a stated preference read as a floor. A tail token stops before the hedge
+      #    itself, and before a comma or slash with a hedge ahead in its clause, so the hedge is read
+      #    as after any bar: "Kubernetes and Terraform preferred" hedges the bar, "Java, Python
+      #    preferred" hedges Python only (`detect._hedged_tail`'s open list). Not before `and`/`or`:
+      #    cut there, the bar "stops short of its head" and the tail test's list exception would
+      #    reach past a `with` adjunct's second head (pv 69669).
       #
       # It takes `activity_years_minimum`, NOT `scoped_years_minimum`, and the reason is the
       # one written out at `scoped_years_activity`: group membership is collected
@@ -1023,7 +1031,7 @@ families:
         # The sentence-scoped degree escape, as on scoped_years_minimum.
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
-        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>(?<!between\s\d\sand\s)(?<!between\s\d\d\sand\s)(?<!\d\s[-–—]\s)(?<!\d[-–—]\s)(?:[2-9]|1[0-9]))\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to|or|older)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
+        pattern: '(?<![-–—\d])(?<!to\s)\b(?P<years>(?<!between\s\d\sand\s)(?<!between\s\d\d\sand\s)(?<!\d\s[-–—]\s)(?<!\d[-–—]\s)(?:[2-9]|1[0-9]))\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to|or|older)\b)[A-Za-z][\w.+#/-]*(?:(?!\s*[,/](?:[^.\n;:]|\.(?=\S))*?(?:\b(?:preferred|desirable|a\s+plus|nice(?:\s+|-)to(?:\s+|-)have|ideally|bonus|advantageous|an\s+advantage|would\s+be\s+nice|if\s+possible|strongly\s+desired|we\s+(?:would\s+)?prefer|preference\s+for)\b|\bdesired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|\s+(?:\b(?:preferred|desirable|a\s+plus|nice(?:\s+|-)to(?:\s+|-)have|ideally|bonus|advantageous|an\s+advantage|would\s+be\s+nice|if\s+possible|strongly\s+desired|we\s+(?:would\s+)?prefer|preference\s+for)\b|\bdesired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)))\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
 
       # The domain pattern's RANGE twin: "minimum 5 – 7 years in related Business Field",
       # "Minimum of 5 – 8+ years in management consulting". Its tail is the domain pattern's,

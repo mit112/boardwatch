@@ -195,8 +195,12 @@ GUARD_TWINS = [
 
 
 def _bar_rows(body: str, catalog) -> list[tuple[str, str, str]]:  # type: ignore[no-untyped-def]
-    # The spelled twin never reaches the digits-only `domain_years_minimum`, so it is not compared.
-    return [row[:3] for row in _read(body, catalog)[1] if "domain_years_minimum" not in row[0]]
+    # The spelled twin never reaches the digits-only `domain_years_minimum`, so it is not compared,
+    # nor is the `scoped_years_preferred` row a hedged domain bar is carried as since T211.
+    return [
+        row[:3] for row in _read(body, catalog)[1]
+        if "domain_years_minimum" not in row[0] and "scoped_years_preferred" not in row[0]
+    ]
 
 
 @pytest.mark.parametrize("spelled,digits", GUARD_TWINS)
