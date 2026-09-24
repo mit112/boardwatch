@@ -46,11 +46,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.lanes.base import SearchOutcome
 from boardwatch.projection.run import ProjectionLeadOutcome
-from boardwatch.rank.location_gate import LocationClass, classify_location
+from boardwatch.rank.location_gate import TargetClass, location_target
 from boardwatch.rank.tenant_assumptions import TenantAssumptionReport, tenant_assumptions_to_dict
 from boardwatch.reports.abstain import AbstainReport
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
@@ -251,7 +252,20 @@ _TOP_MISSING = 10
 # and `LaneReport.snapshots` is not emitted in the `lanes` block. `reconciles` keeps its meaning
 # (every cross-check agrees); there are just more of them. `cli/verify_cmd.py` reads cross-checks
 # by name, so new names are invisible to it.
-ARTIFACT_VERSION = 8
+#
+# **v9 is a lead's `location_class` read against the run's `target_countries` (T204).** It bumps
+# for the v5 reason: an existing key changed MEANING. Since T186 (D-583) the hard location gate
+# asks "is this posting in the tenant's target countries", while `location_class` went on
+# answering "is it in the US" — so for a tenant targeting another country every lead carried a
+# verdict from a question the run never asked. The values move from `us`/`non_us`/`unknown` to
+# the gate's own `in_target`/`out_of_target`/`unknown`, plus `abstain` where the gate is INERT
+# (no declared targets, or a target with no shipped pack), which is never folded into `unknown`.
+# `manifest.target_countries` comes with it, because the classes are unreadable without the set
+# they were read against; `null` means the funnel was built without one, and reads `abstain`.
+ARTIFACT_VERSION = 9
+
+#: A lead's location class: the gate's `TargetClass`, or `abstain` where the gate cannot decide.
+LeadLocationClass = TargetClass | Literal["abstain"]
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
 # rename is visible rather than scattered through the renderers as a string literal.
@@ -390,17 +404,19 @@ class Lead:
     # normal, pre-T43 artifact carries `False` on every lead, which is the old behaviour.
     pending_tailor: bool = False
 
-    @property
-    def location_class(self) -> LocationClass:
-        """The hard gate's own verdict, from the production classifier — not a second copy.
+    def location_class(self, target_countries: Sequence[str] | None) -> LeadLocationClass:
+        """The hard gate's own verdict for the run's target countries — not a second copy.
 
         DERIVED rather than stored so the pair in the artifact cannot disagree: a stored class
-        beside stored locations is two facts that can drift, and a lead labelled `us` over a
-        French address is worse than no label at all. A posting naming no place is `unknown`,
-        which is what the gate FAIL-OPENS on (never silently delete a real US role, Mit's
-        ruling) — and reporting it is the point: `unknown` is not `us`.
+        beside stored locations is two facts that can drift, and a lead labelled in-target over
+        an address outside the targets is worse than no label at all. A posting naming no place
+        is `unknown`, which is what the gate FAIL-OPENS on (never silently delete a real role,
+        Mit's ruling) — and reporting it is the point: `unknown` is not `in_target`. Where the
+        gate abstains (T204: no targets recorded or declared, or a target with no pack) the lead
+        reads `abstain`, never a location verdict the gate did not give.
         """
-        return classify_location(self.locations or ())
+        verdict = location_target(target_countries or ()).classify(self.locations or ())
+        return "abstain" if verdict is None else verdict
 
 
 @dataclass(frozen=True)
@@ -545,11 +561,11 @@ class RunManifest:
 
     `location_filter_mode` is the one setting reported in PLAIN TEXT as well as inside
     `config_hash` (D-323). It is not a second hash and it is not redundant: it is what makes
-    each lead's `location_class` readable. `soft` means the hard US gate never ran, so a
-    `non_us` lead is the documented behaviour rather than a leak; `hard` means the run claims
-    every lead is `us` or `unknown`. Without it a reader has a column of verdicts and no way to
-    know which claim the run was making — and re-deriving the mode from `config_hash` is not
-    possible, that being what a hash is for.
+    each lead's `location_class` readable. `soft` means the hard location gate never ran, so an
+    `out_of_target` lead is the documented behaviour rather than a leak; `hard` means the run
+    claims every lead is `in_target`, `unknown` or `abstain`. Without it a reader has a column
+    of verdicts and no way to know which claim the run was making — and re-deriving the mode
+    from `config_hash` is not possible, that being what a hash is for.
     """
 
     code_fingerprint: str
@@ -560,6 +576,10 @@ class RunManifest:
     status: str
     location_filter_mode: str
     routing_hash: str | None = None
+    # T204. The profile's `target_countries` as the run read them, in plain text for the reason
+    # `location_filter_mode` is: each lead's `location_class` is read against this set and is a
+    # verdict with no question attached without it. `None` is a funnel built without one.
+    target_countries: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -2704,6 +2724,12 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             # T111. A SIXTH value, not a sixth component of any hash above it. null means the
             # funnel was built without one; a run that computed it always publishes it.
             "routing_hash": funnel.manifest.routing_hash,
+            # T204. What each lead's `location_class` was read against; null when unrecorded.
+            "target_countries": (
+                None
+                if funnel.manifest.target_countries is None
+                else list(funnel.manifest.target_countries)
+            ),
         },
         # T137. Beside `manifest`, not inside it: the manifest publishes exactly what it did, and
         # this says whether that END reading held for the whole run. `[]` held; `null` unmeasured.
@@ -2930,7 +2956,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 # (D-323). Read `manifest.location_filter_mode` before reading `location_class`
                 # — in `soft` mode the hard gate never ran.
                 "locations": list(lead.locations) if lead.locations is not None else None,
-                "location_class": lead.location_class,
+                "location_class": lead.location_class(funnel.manifest.target_countries),
             }
             for lead in funnel.leads
         ],
@@ -3154,8 +3180,9 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "*What this run ran AS. Two runs sharing every hash below should turn the same corpus "
         "into the same leads. A hash tied to the profile is `—` on a run with no profile. "
         "`location filter mode` is not a hash — it is already inside `config hash`, and is "
-        "repeated in plain text because it is what makes each lead's `US gate` verdict "
-        "readable: in `soft` the hard US gate never ran.*",
+        "repeated in plain text because it is what makes each lead's `location gate` verdict "
+        "readable: in `soft` the hard location gate never ran. `target countries` is what "
+        "that verdict was read against.*",
         "",
         *_identity_drift_lines(funnel.identity_drift),
         "| field | value |",
@@ -3168,6 +3195,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"| rules hash | {m.rules_hash or '—'} |",
         f"| routing hash | {m.routing_hash or '—'} |",
         f"| location filter mode | {m.location_filter_mode} |",
+        f"| target countries | "
+        f"{'—' if m.target_countries is None else ', '.join(m.target_countries) or '(none)'} |",
         "",
         "*`config hash` covers the decision-relevant `Settings`; `profile row hash` covers the "
         "five profile columns the ranker reads (incl. `exclude_titles`) plus the two "
@@ -3343,13 +3372,16 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             # non-US" is worth nothing without both, and the retracted metric this replaces was
             # a grep that returned the same number whether the French city was there or not.
             f"*`location` is what the posting itself named — `—` where it named nothing, which "
-            f"is not the same as naming an empty place. `US gate` is "
-            f"`rank/location_gate.classify_location` over exactly those strings, evaluated over "
-            f"all {len(funnel.leads)} lead(s) in this table. It is a positive US allowlist, so "
-            f"it drops only a CONFIRMED `non_us` and keeps `us` and `unknown` — and it only ran "
-            f"at all if the manifest's location filter mode above reads `hard`.*",
+            f"is not the same as naming an empty place. `location gate` is "
+            f"`rank/location_gate.location_target(target countries).classify` over exactly "
+            f"those strings, against the manifest's target countries above, evaluated over all "
+            f"{len(funnel.leads)} lead(s) in this table. It is a positive allowlist, so it drops "
+            f"only a CONFIRMED `out_of_target` and keeps `in_target` and `unknown`; `abstain` "
+            f"means it could not decide (no targets, or a target with no country pack) — and it "
+            f"only ran at all if the manifest's location filter mode above reads `hard`.*",
             "",
-            "| posting | title | company | location | US gate | source board | registry/user "
+            "| posting | title | company | location | location gate | source board "
+            "| registry/user "
             "| PDF | folder |",
             "|---:|---|---|---|---|---|---|---|---|",
         ]
@@ -3357,7 +3389,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             lines.append(
                 f"| {lead.posting_id} | {lead.title} | {lead.company} | "
                 f"{'; '.join(lead.locations) if lead.locations else '—'} | "
-                f"{lead.location_class} | "
+                f"{lead.location_class(m.target_countries)} | "
                 f"{lead.provider}:{lead.board_slug} | {lead.company_source} | "
                 f"{'yes' if lead.pdf_built else '**no**'} | {lead.out_dir} |"
             )

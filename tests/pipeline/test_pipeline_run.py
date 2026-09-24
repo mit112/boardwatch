@@ -2508,3 +2508,105 @@ def test_the_degraded_scan_alert_reaches_the_MORNING_DIGEST(  # noqa: N802
         "the degraded-scan alert is missing from the morning digest — the call sits BELOW "
         "`_emit_morning`, where it fires, is recorded, and is invisible to an absent owner"
     )
+
+
+# --- T203: a funnel cross-check that DISAGREES is soft-alerted ----------------------------
+#
+# The funnel records every disagreeing cross-check (run 475's `lane:hiringcafe:persisted_new`,
+# 9 in memory against 10 in the store) and, until this, nothing in the finalize block alerted on
+# one — so a disagreement reached only someone who opened the artifact.
+
+_CROSS_CHECK_LINE = "funnel cross-check disagreement"
+
+
+def _one_disagreeing_cross_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Append ONE disagreeing check to the funnel the real collector built, so every other
+    number in the artifact stays the run's own."""
+    from dataclasses import replace
+
+    import boardwatch.pipeline.runner as runner_mod
+    from boardwatch.reports.run_funnel import CrossCheck
+
+    real = runner_mod.collect_run_funnel
+
+    def collecting(*args: object, **kwargs: object) -> object:
+        funnel = real(*args, **kwargs)  # type: ignore[arg-type]
+        probe = CrossCheck(name="probe:persisted_new", in_memory=9, from_store=10)
+        return replace(funnel, cross_checks=(*funnel.cross_checks, probe))
+
+    monkeypatch.setattr(runner_mod, "collect_run_funnel", collecting)
+
+
+def test_a_disagreeing_cross_check_is_alerted_into_the_MORNING_DIGEST(  # noqa: N802
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One alert, naming the check as `name in_memory/from_store`, in `summary.errors`, the
+    digest and `runs.errors_json` — the digest assertion is what pins the call site ABOVE
+    `_emit_morning`."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    _one_disagreeing_cross_check(monkeypatch)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None, raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    alerts = [e for e in summary.errors if e.startswith(_CROSS_CHECK_LINE)]
+    assert len(alerts) == 1, summary.errors
+    assert "probe:persisted_new 9/10" in alerts[0], alerts[0]
+    assert summary.morning is not None, "guard: the digest must have been written"
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "probe:persisted_new 9/10" in rendered, (
+        "the cross-check alert is missing from the morning digest — the call sits BELOW "
+        "`_emit_morning`, where it fires, is recorded, and is invisible to an absent owner"
+    )
+    with get_engine(env).connect() as conn:
+        stored = conn.execute(
+            select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
+        ).scalar_one()
+    assert stored is not None and any(_CROSS_CHECK_LINE in e for e in stored), stored
+
+
+def test_a_run_whose_cross_checks_all_agree_raises_no_cross_check_alert(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: the seeded run's own cross-checks agree, so nothing fires."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None, raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.funnel is not None, "guard: the funnel must have been written"
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["cross_checks"] and all(c["agrees"] for c in payload["cross_checks"]), (
+        "guard: the control needs a funnel whose checks all agree"
+    )
+    assert not [e for e in summary.errors if e.startswith(_CROSS_CHECK_LINE)], summary.errors
+
+
+def test_a_cross_check_alert_that_cannot_be_recorded_does_not_take_the_digest_with_it(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guarded like its siblings (T129): a store fault on the alert's one write must cost the
+    write, never `_emit_morning` or the heartbeat decision below it."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    _one_disagreeing_cross_check(monkeypatch)
+    _store_refuses(monkeypatch, _CROSS_CHECK_LINE)
+    pings: list[int] = []
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: pings.append(1), raising=False)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.fatal is None, f"guard: the run must be otherwise clean — {summary.fatal}"
+    assert any(e.startswith(_CROSS_CHECK_LINE) for e in summary.errors), "guard: no alert fired"
+    assert summary.morning is not None, (
+        "a store fault on the cross-check alert aborted finalization before the digest"
+    )
+    assert pings == [1], "the heartbeat decision was never reached"

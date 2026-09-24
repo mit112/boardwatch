@@ -947,6 +947,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A disagreeing funnel cross-check is soft-alerted, and a lead's location class is the location
+  gate's verdict for the profile's target countries (2026-09-24, T203, T204).** A cross-check whose
+  in-memory and store counts differ now raises one soft alert per run into the morning digest and the
+  heartbeat, above `_emit_morning` like its siblings. The funnel manifest carries `target_countries` and
+  each lead's `location_class` reads `in_target` / `out_of_target` / `unknown` / `abstain` through
+  `location_target(...).classify`, no longer the US-only classifier; `ARTIFACT_VERSION` 8 → 9.
+
 - **The standing-queue refresh re-judges released holds first (2026-09-24, T195).** After a gate-key
   change, a delivered lead whose newest off-key verdict is `ineligible` (a hold the lane released when the
   key moved) is now re-judged ahead of never-judged leads instead of waiting its turn for several runs; the

@@ -755,8 +755,8 @@ def test_the_artifact_version_is_bumped() -> None:
     v8 (T60) is the same ruling one step on: no new section, but on a projected run
     `tailor.entered` stops meaning `projection.advanced` and becomes that plus the review-lane
     leads, and `projected_leads.in_memory` narrows to the apply lane."""
-    assert ARTIFACT_VERSION == 8
-    assert funnel_to_dict(funnel(outcomes=FOUR_TERMINAL_STATES))["artifact_version"] == 8
+    assert ARTIFACT_VERSION == 9
+    assert funnel_to_dict(funnel(outcomes=FOUR_TERMINAL_STATES))["artifact_version"] == 9
 
 
 def test_the_stage_sits_between_shortlist_and_tailor() -> None:

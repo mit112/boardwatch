@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
-from boardwatch.rank.location_gate import classify_location
+from boardwatch.rank.location_gate import location_target
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.board_coverage import BoardCoverage
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
@@ -111,6 +111,7 @@ def run_manifest(
     status: str = "ok",
     location_filter_mode: str = "soft",
     routing_hash: str | None = None,
+    target_countries: tuple[str, ...] | None = ("USA",),
 ) -> RunManifest:
     return RunManifest(
         code_fingerprint=code_fingerprint,
@@ -121,6 +122,7 @@ def run_manifest(
         status=status,
         location_filter_mode=location_filter_mode,
         routing_hash=routing_hash,
+        target_countries=target_countries,
     )
 
 
@@ -789,8 +791,8 @@ def test_the_artifact_version_does_not_move_for_the_board_split() -> None:
     """
     from boardwatch.reports.run_funnel import ARTIFACT_VERSION
 
-    assert ARTIFACT_VERSION == 8
-    assert funnel_to_dict(funnel())["artifact_version"] == 8
+    assert ARTIFACT_VERSION == 9
+    assert funnel_to_dict(funnel())["artifact_version"] == 9
 
 
 def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -> None:
@@ -910,8 +912,9 @@ def test_a_lead_that_names_no_place_reports_null_rather_than_an_empty_list() -> 
 
 def test_the_verdict_beside_a_lead_is_the_production_classifier_s_own() -> None:
     """Not a second implementation living in the report layer. The artifact's claim is only
-    worth reading if it is the same function the ranker vetoed with — `classify_location` —
-    so it is asserted against that function rather than against transcribed answers."""
+    worth reading if it is the same function the ranker vetoed with — `location_target(...)
+    .classify`, against the manifest's target countries (T204) — so it is asserted against that
+    function rather than against transcribed answers."""
     cases: tuple[tuple[str, ...], ...] = (
         ("Austin, TX",),
         ("Berlin, Germany",),
@@ -920,16 +923,16 @@ def test_the_verdict_beside_a_lead_is_the_production_classifier_s_own() -> None:
     )
     for locations in cases:
         (row,) = funnel_to_dict(funnel(leads=[lead(locations=locations)]))["leads"]
-        assert row["location_class"] == classify_location(locations), locations
+        assert row["location_class"] == location_target(("USA",)).classify(locations), locations
 
 
 def test_the_verdict_field_can_carry_the_value_the_gate_is_supposed_to_drop() -> None:
-    """Without this the audit is vacuous. A field that can only ever say `us`/`unknown` makes
-    "no lead classifies non_us" true by construction, which is the D-267/D-268 failure mode:
+    """Without this the audit is vacuous. A field that can only ever say `in_target`/`unknown`
+    makes "no lead classifies out_of_target" true by construction, which is the D-267/D-268 failure mode:
     a metric that reads healthy whether or not the thing it measures is present."""
     (row,) = funnel_to_dict(funnel(leads=[lead(locations=("Buc, France",))]))["leads"]
 
-    assert row["location_class"] == "non_us"
+    assert row["location_class"] == "out_of_target"
 
 
 def test_the_markdown_leads_table_names_each_lead_s_location_and_verdict() -> None:
@@ -941,7 +944,7 @@ def test_the_markdown_leads_table_names_each_lead_s_location_and_verdict() -> No
 
     rows = [line for line in body.splitlines() if line.startswith(("| 7 |", "| 9 |"))]
     assert len(rows) == 2, body
-    assert "Austin, TX" in rows[0] and "| us |" in rows[0]
+    assert "Austin, TX" in rows[0] and "| in_target |" in rows[0]
     # The absent case renders as an em dash and `unknown`, never as an empty cell that reads
     # like a rendering bug.
     assert "| — |" in rows[1] and "| unknown |" in rows[1]
@@ -950,17 +953,17 @@ def test_the_markdown_leads_table_names_each_lead_s_location_and_verdict() -> No
 def test_the_leads_section_records_its_match_rule_and_its_corpus_size() -> None:
     """D-268's rule, applied where the claim is made: a ratio records its match rule AND its
     corpus size beside it, or only the numerator is quotable later. "0 leads classify
-    non_us" is worthless without "over these 2 leads, by classify_location"."""
+    out_of_target" is worthless without "over these 2 leads, by location_target(...).classify"."""
     body = funnel_to_markdown(funnel(leads=[lead(7), lead(9)]))
 
-    (rule_line,) = [line for line in body.splitlines() if "classify_location" in line]
+    (rule_line,) = [line for line in body.splitlines() if "location_target" in line]
     assert "location_gate" in rule_line, rule_line
     assert "2 lead" in rule_line, rule_line
 
 
 def test_the_manifest_says_whether_the_location_gate_was_armed_at_all() -> None:
     """The verdicts are unreadable without it. `location_filter_mode` is `soft` by default, and
-    in `soft` mode a `non_us` lead is not a leak — it is the documented behaviour. A reader who
+    in `soft` mode an `out_of_target` lead is not a leak — it is the documented behaviour. A reader who
     cannot see the mode cannot tell a passing gate from a disarmed one."""
     payload = funnel_to_dict(funnel(manifest=run_manifest(location_filter_mode="hard")))["manifest"]
 
@@ -973,7 +976,7 @@ def test_the_manifest_says_whether_the_location_gate_was_armed_at_all() -> None:
 def test_the_hard_gate_s_claim_is_checkable_from_the_artifact_alone() -> None:
     """The whole point of v7. Nothing here reads the store, the settings or the ranker — it is
     the check an operator can run over a `funnel-N.json` months later, and it must be able to
-    FAIL, which the `non_us` lead below is there to prove."""
+    FAIL, which the `out_of_target` lead below is there to prove."""
     payload = funnel_to_dict(
         funnel(
             manifest=run_manifest(location_filter_mode="hard"),
@@ -982,7 +985,9 @@ def test_the_hard_gate_s_claim_is_checkable_from_the_artifact_alone() -> None:
     )
 
     armed = payload["manifest"]["location_filter_mode"] == "hard"
-    leaked = [row["posting_id"] for row in payload["leads"] if row["location_class"] == "non_us"]
+    leaked = [
+        row["posting_id"] for row in payload["leads"] if row["location_class"] == "out_of_target"
+    ]
     assert armed and leaked == [9], payload["leads"]
 
 
@@ -1151,8 +1156,8 @@ def test_both_halves_are_written_and_named_by_run(tmp_path: Path) -> None:
     # projected run; to 6 by D-274, which added the `board_coverage` section so a scheduled
     # run reports the discovery coverage it was already persisting; to 7 by D-267, which put
     # each lead's `locations` and the hard US gate's verdict on them into the record the gate
-    # itself produces.
-    assert payload["artifact_version"] == 8
+    # itself produces; to 9 by T204, which reads that verdict against the run's target countries.
+    assert payload["artifact_version"] == 9
     assert written.markdown_path.read_text().startswith("# boardwatch run 42")
 
 
@@ -1408,6 +1413,8 @@ def test_manifest_renders_in_both_halves() -> None:
         # T111. The SIXTH value, beside the five and folded into none of them. Asserted in the
         # exact-dict form the rest of this block uses, so it cannot be dropped silently.
         "routing_hash": "ROUTINGHASH",
+        # T204. What each lead's `location_class` is read against.
+        "target_countries": ["USA"],
     }
     body = funnel_to_markdown(report)
     config_row = next(line for line in body.splitlines() if line.startswith("| config hash |"))

@@ -449,6 +449,10 @@ def collect_run_funnel(
         # `location_class` is a verdict with no claim attached to it.
         location_filter_mode=settings.location_filter_mode,
         routing_hash=end_identity.routing_hash,
+        # T204. What each lead's `location_class` is derived against — the set the gates read.
+        target_countries=(
+            None if profile_row is None else tuple(profile_row.target_countries_json)
+        ),
     )
 
     leads = [
