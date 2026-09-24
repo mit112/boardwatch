@@ -157,6 +157,9 @@ class TenantAssumptionReport:
     ranker: TenantAssumptionTally
     # `None` when the lane split did not run this run (no leads reached it).
     review: TenantAssumptionTally | None
+    # Lane name -> `LaneResult.not_attemptable`, for every lane that abstained on undeclared
+    # tenant data this run (T188). A lane that had everything it searches with is absent.
+    lanes: dict[str, str] = field(default_factory=dict)
 
 
 def tenant_assumptions_to_dict(report: TenantAssumptionReport | None) -> dict[str, object] | None:
@@ -166,4 +169,5 @@ def tenant_assumptions_to_dict(report: TenantAssumptionReport | None) -> dict[st
     return {
         "ranker": report.ranker.to_dict(),
         "review": None if report.review is None else report.review.to_dict(),
+        "lanes": dict(sorted(report.lanes.items())),
     }

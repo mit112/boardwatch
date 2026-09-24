@@ -102,6 +102,14 @@ class LaneCompanySnapshot:
     watch: bool = False
 
 
+#: Why a lane requested nothing for a search this run: the tenant data it searches with is
+#: undeclared, so that search is inert rather than run on a built-in default (DESIGN-T183).
+LaneNotAttemptable = Literal[
+    # The profile declares no `target_countries`, so a country-scoped search has no country.
+    "no_target_countries",
+]
+
+
 SearchEnd = Literal[
     # The search ran to its end: a last page, a page adding no new id, or the page ceiling. The
     # ceiling is not a member of its own -- `LaneResult.search_pages` already says it.
@@ -188,6 +196,10 @@ class LaneResult:
     # Indeed repeats one URL for every facet. Empty -- never absent -- for a lane that makes no
     # search, or one that does not report it (LinkedIn has no late-failure concept).
     search_outcomes: tuple[SearchOutcome, ...] = ()
+    # Set when tenant data this lane searches with is undeclared, so nothing was requested for
+    # it, and why. Without it an inert search returns an empty result that reads as a quiet day.
+    # `None` when the lane had everything it searches with.
+    not_attemptable: LaneNotAttemptable | None = None
     # Posting URLs this lane FOUND and cannot resolve itself, for `lane_seeds`. RETURNED rather
     # than written, and that is the whole point: `collect` runs in a fetch worker while
     # `apply_board` is the pipeline's single writer, so a lane that wrote its own seeds would be
@@ -356,6 +368,10 @@ class LaneContext:
     # unaffected and no test of them had to move. Empty is also the honest reading for a store
     # with no watched boards: ask nothing, rather than fail.
     watched_companies: tuple[str, ...] = ()
+    # The profile's `target_countries` (ISO-3166 alpha-3), for a country-scoped search. From the
+    # STORE for the reason `facets` is. Empty is UNDECLARED, and a lane that needs a country
+    # reports itself `not_attemptable` on it rather than choosing one.
+    target_countries: tuple[str, ...] = ()
     # How a lane READS `lane_seeds`, without ever holding a `Connection`. The runner owns the
     # connection and supplies this closure, exactly as it supplies `CompanyAdmission` — and for
     # the same recorded reason: the decision needs store access, and a lane opening its own

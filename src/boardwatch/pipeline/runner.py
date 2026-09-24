@@ -350,6 +350,7 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
         search_facets=ctx.facets.profile,
         search_pages=ctx.settings.indeed_search_pages,
         results_per_page=ctx.settings.indeed_results_per_page,
+        target_countries=ctx.target_countries,
     ),
     # The JSON-LD resolver is the FIRST lane to read `ctx.pending_seeds`, and it takes no facet
     # at all — it resolves posting URLs other passes discovered rather than composing a search,
@@ -769,6 +770,8 @@ def _fetch_lanes(
     # would put the knob in two places.
     with engine.connect() as conn:
         watched_companies = watched_company_names(conn)
+        profile_row = get_profile(conn)
+    target_countries = () if profile_row is None else tuple(profile_row.target_countries_json)
     # ONE fetcher for the whole stage. Pacing is per-host inside it, so lanes on different hosts
     # do not block each other, and two lanes that ever shared a host would correctly serialize.
     fetcher = _lane_fetcher(settings)
@@ -801,6 +804,7 @@ def _fetch_lanes(
         facets=facets,
         rotation_index=_rotation_index(run_id),
         watched_companies=watched_companies,
+        target_countries=target_countries,
         pending_seeds=pending_seeds,
     )
 
@@ -1246,6 +1250,7 @@ def _apply_lane(
             snapshots=len(result.snapshots),
             search_pages=result.search_pages,
             search_outcomes=result.search_outcomes,
+            not_attemptable=result.not_attemptable,
             fetch_seconds=fetched.fetch_seconds,
             apply_seconds=perf_counter() - apply_started,
         ),
@@ -3994,7 +3999,13 @@ def _emit_funnel(
         tenant_assumptions=(
             None
             if summary.tenant_ranker is None
-            else TenantAssumptionReport(ranker=summary.tenant_ranker, review=summary.tenant_review)
+            else TenantAssumptionReport(
+                ranker=summary.tenant_ranker, review=summary.tenant_review,
+                lanes={
+                    lane.name: lane.not_attemptable
+                    for lane in summary.lanes if lane.not_attemptable is not None
+                },
+            )
         ),
         errors=summary.errors,
         fatal=summary.fatal,

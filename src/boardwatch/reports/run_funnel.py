@@ -253,6 +253,10 @@ _TOP_MISSING = 10
 # (every cross-check agrees); there are just more of them. `cli/verify_cmd.py` reads cross-checks
 # by name, so new names are invisible to it.
 #
+# **T188's `lanes[].not_attemptable` and `tenant_assumptions.lanes` do NOT bump it either**, on the
+# same precedent: additive keys that change no existing key's meaning. A funnel written before them
+# lacks both, which reads as `null`: NOT MEASURED.
+#
 # **v9 is a lead's `location_class` read against the run's `target_countries` (T204).** It bumps
 # for the v5 reason: an existing key changed MEANING. Since T186 (D-583) the hard location gate
 # asks "is this posting in the tenant's target countries", while `location_class` went on
@@ -1540,6 +1544,9 @@ class LaneReport:
     persisted_new: tuple[tuple[str, str], ...]
     search_pages: tuple[tuple[str, int], ...] = ()
     search_outcomes: tuple[SearchOutcome, ...] = ()
+    # `LaneResult.not_attemptable`: tenant data the lane searches with is undeclared, so nothing
+    # was requested for it (T188). `None` when the lane had everything it searches with.
+    not_attemptable: str | None = None
     fetch_seconds: float | None = None
     apply_seconds: float | None = None
     stage_elapsed_seconds: float | None = None
@@ -2920,6 +2927,8 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                     }
                     for outcome in lane.search_outcomes
                 ],
+                # The undeclared tenant data nothing was requested for (T188), or `null`.
+                "not_attemptable": lane.not_attemptable,
                 # The lane's cost, split at the fetch/apply boundary. `null` means NOT
                 # MEASURED, never 0.0 — a lane that raised before it was timed reports
                 # absence rather than a free lane.
@@ -3098,6 +3107,15 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
             f"{len(lane.persisted_new)} persisted · "
             f"{len(lane.refused)} refused by the cap{outage}",
             "",
+            *(
+                [
+                    f"**not attemptable: `{lane.not_attemptable}`** — undeclared tenant data, "
+                    "so nothing was requested for it.",
+                    "",
+                ]
+                if lane.not_attemptable is not None
+                else []
+            ),
             _lane_cost_line(lane),
             "",
             "| outcome | count |",

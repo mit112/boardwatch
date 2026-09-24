@@ -60,9 +60,9 @@ from boardwatch.lanes.base import Lane, LaneContext, SearchOutcome
 from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.indeed import (
     LANE_PROVIDER,
-    SEARCH_URL,
     IndeedLane,
     SearchPageError,
+    search_url,
 )
 from boardwatch.pipeline.runner import _collect_lane, _refused_seed_note
 from boardwatch.store import tables
@@ -70,6 +70,10 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import get_watched_companies, insert_run
 
 runner = CliRunner()
+
+#: The profile every lane below is built for, unless a test is about the countries themselves.
+US = ("USA",)
+SEARCH_URL = search_url("USA")
 
 
 @pytest.fixture(autouse=True)
@@ -227,7 +231,7 @@ def test_the_request_is_a_graphql_post_with_the_hours_form_date_filter(tmp_path)
     """
     route = _mock_one(search_hits(1))
 
-    _collect(IndeedLane(), tmp_path)
+    _collect(IndeedLane(target_countries=US), tmp_path)
 
     query = _query_of(route.calls[0].request)
     assert 'filters: { date: { field: "dateOnIndeed", start: "24h" } }' in query
@@ -248,7 +252,7 @@ def test_no_location_argument_is_ever_sent(tmp_path):
     """
     route = _mock({("software engineer", None): (search_hits(1), None)})
 
-    _collect(IndeedLane(search_facets=("software engineer",)), tmp_path)
+    _collect(IndeedLane(target_countries=US, search_facets=("software engineer",)), tmp_path)
 
     query = _query_of(route.calls[0].request)
     assert "location:" not in query
@@ -262,7 +266,7 @@ def test_the_indeed_app_headers_are_sent_on_the_request(tmp_path):
     """
     route = _mock_one(search_hits(1))
 
-    _collect(IndeedLane(), tmp_path)
+    _collect(IndeedLane(target_countries=US), tmp_path)
 
     headers = route.calls[0].request.headers
     assert headers["indeed-api-key"] == indeed._INDEED_APP_IDENT
@@ -299,7 +303,7 @@ def test_no_facet_omits_the_what_argument_rather_than_sending_an_empty_one():
 def test_the_results_per_page_ceiling_reaches_the_wire(tmp_path):
     route = _mock_one(search_hits(1))
 
-    _collect(IndeedLane(results_per_page=25), tmp_path)
+    _collect(IndeedLane(target_countries=US, results_per_page=25), tmp_path)
 
     assert "limit: 25" in _query_of(route.calls[0].request)
 
@@ -308,9 +312,9 @@ def test_a_results_per_page_above_the_measured_maximum_is_clamped():
     """100 is the only page size measured against this endpoint. Above it is a guess, and a lane
     constructed directly must not send one.
     """
-    assert IndeedLane(results_per_page=500)._results_per_page == 100
-    assert IndeedLane(results_per_page=0)._results_per_page == 1
-    assert IndeedLane(search_pages=0)._search_pages == 1
+    assert IndeedLane(target_countries=US, results_per_page=500)._results_per_page == 100
+    assert IndeedLane(target_countries=US, results_per_page=0)._results_per_page == 1
+    assert IndeedLane(target_countries=US, search_pages=0)._search_pages == 1
 
 
 # ---------------------------------------------------------------------------------------
@@ -325,7 +329,7 @@ def test_a_view_job_url_that_resolves_registers_under_the_real_provider(tmp_path
     """
     _mock_one(DEREFERENCE_HITS)
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert {(s.provider, s.slug) for s in result.snapshots} == {
         ("greenhouse", "vertexsystems"),
@@ -351,7 +355,7 @@ def test_the_dereference_is_load_bearing_not_incidental(tmp_path, monkeypatch):
     monkeypatch.setattr(indeed, "board_posting_target", lambda apply_url: None)
     _mock_one(DEREFERENCE_HITS)
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert {s.provider for s in result.snapshots} == {LANE_PROVIDER}
     assert {s.slug for s in result.snapshots} == {
@@ -381,7 +385,7 @@ def test_a_converged_hit_declares_every_declarable_field_secondhand(tmp_path):
     """
     _mock_one(DEREFERENCE_HITS)
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     declared = {frozenset(s.snapshot.postings[0].secondhand) for s in result.snapshots}
     assert declared == {
@@ -404,7 +408,7 @@ def test_an_indeed_keyed_hit_declares_nothing_secondhand(tmp_path):
     """
     _mock_one(search_hits(2, companies=2))
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.snapshots
     assert all(s.snapshot.postings[0].secondhand == frozenset() for s in result.snapshots)
@@ -420,7 +424,7 @@ def test_a_tier1_convergence_asks_for_its_board_to_be_watched(tmp_path):
     """
     _mock_one(DEREFERENCE_HITS)
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert {s.provider for s in result.snapshots} == {"greenhouse", "lever", "ashby"}
     assert all(s.watch is True for s in result.snapshots)
@@ -434,7 +438,7 @@ def test_a_tier2_indeed_keyed_hit_does_not_ask_for_watching(tmp_path):
     """
     _mock_one(search_hits(2, companies=2))
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.snapshots
     assert all(s.provider == LANE_PROVIDER and s.watch is False for s in result.snapshots)
@@ -452,7 +456,7 @@ def test_a_tier1_convergence_is_watched_after_the_lane_applies_end_to_end(tmp_pa
     settings = Settings(data_dir=tmp_path / "store", config_dir=tmp_path / "cfg")
     _mock_one(DEREFERENCE_HITS)
 
-    _collect_lane(engine, settings, IndeedLane(), _fetcher(tmp_path), insert_run(engine))
+    _collect_lane(engine, settings, IndeedLane(target_countries=US), _fetcher(tmp_path), insert_run(engine))
 
     with engine.connect() as conn:
         watched = {(r.provider, r.slug) for r in get_watched_companies(conn)}
@@ -474,7 +478,7 @@ def test_a_tier2_hit_lands_unwatched_after_the_lane_applies_end_to_end(tmp_path)
     settings = Settings(data_dir=tmp_path / "store", config_dir=tmp_path / "cfg")
     _mock_one(search_hits(2, companies=2))
 
-    _collect_lane(engine, settings, IndeedLane(), _fetcher(tmp_path), insert_run(engine))
+    _collect_lane(engine, settings, IndeedLane(target_countries=US), _fetcher(tmp_path), insert_run(engine))
 
     with engine.connect() as conn:
         watched = [r.slug for r in get_watched_companies(conn)]
@@ -537,7 +541,7 @@ def test_a_tier1_hit_is_admitted_under_its_own_bound_once_the_lane_cap_is_spent(
     report = _collect_lane(
         engine,
         _tiered_settings(tmp_path, lane=1, tier1=3),
-        IndeedLane(),
+        IndeedLane(target_countries=US),
         _fetcher(tmp_path),
         insert_run(engine),
     )
@@ -574,7 +578,7 @@ def test_a_tier1_hit_beyond_the_tier1_bound_is_refused(tmp_path):
     report = _collect_lane(
         engine,
         _tiered_settings(tmp_path, lane=0, tier1=1),
-        IndeedLane(),
+        IndeedLane(target_countries=US),
         _fetcher(tmp_path),
         insert_run(engine),
     )
@@ -595,7 +599,7 @@ def test_a_tier2_hit_at_the_lane_cap_stays_refused_however_large_the_tier1_bound
     report = _collect_lane(
         engine,
         _tiered_settings(tmp_path, lane=1, tier1="unlimited"),
-        IndeedLane(),
+        IndeedLane(target_countries=US),
         _fetcher(tmp_path),
         insert_run(engine),
     )
@@ -617,7 +621,7 @@ def test_without_the_tier1_key_a_tier1_hit_still_charges_the_lane_cap(tmp_path):
     report = _collect_lane(
         engine,
         _tiered_settings(tmp_path, lane=1),
-        IndeedLane(),
+        IndeedLane(target_countries=US),
         _fetcher(tmp_path),
         insert_run(engine),
     )
@@ -635,7 +639,7 @@ def test_a_trailing_apply_segment_falls_back_to_indeed_rather_than_keying_on_app
     """
     _mock_one([TRAILING_CHROME_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     (snapshot,) = result.snapshots
     assert (snapshot.provider, snapshot.slug) == (LANE_PROVIDER, "Beacon-Labs")
@@ -649,7 +653,7 @@ def test_a_hit_with_no_apply_url_uses_indeeds_own_employer_key(tmp_path):
     """
     _mock_one(search_hits(2, companies=2))
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert {(s.provider, s.slug) for s in result.snapshots} == {
         (LANE_PROVIDER, "Acme-00"),
@@ -665,7 +669,7 @@ def test_two_employers_sharing_a_display_name_form_two_companies(tmp_path):
     """
     _mock_one(NAME_COLLISION_HITS)
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert {(s.provider, s.slug) for s in result.snapshots} == {
         (LANE_PROVIDER, "Vertex-Analytics"),
@@ -680,7 +684,7 @@ def test_a_hit_with_no_employer_page_is_counted_not_dropped(tmp_path):
     """
     _mock_one([NO_EMPLOYER_PAGE_HIT, *search_hits(1)])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.tally.counts["not_attemptable"] == 1
     assert [s.slug for s in result.snapshots] == ["Acme-00"]
@@ -690,7 +694,7 @@ def test_a_hit_with_no_employer_page_is_counted_not_dropped(tmp_path):
 def test_a_hit_with_no_title_is_counted_not_dropped(tmp_path):
     _mock_one([replace(search_hits(1)[0], title="")])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.tally.counts["not_attemptable"] == 1
     assert result.snapshots == ()
@@ -709,7 +713,7 @@ def test_a_second_hit_for_one_posting_is_dropped_before_it_reaches_apply_board(t
     })
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "backend engineer")), tmp_path
+        IndeedLane(target_countries=US, search_facets=("software engineer", "backend engineer")), tmp_path
     )
 
     stored = [p.provider_posting_id for s in result.snapshots for p in s.snapshot.postings]
@@ -743,7 +747,7 @@ def test_a_hit_whose_view_job_url_is_unrecognized_is_seeded_through_collect(tmp_
     """
     _mock_one([TENANT_SEED_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9601",)
     assert {(s.provider, s.slug) for s in result.snapshots} == {
@@ -758,7 +762,7 @@ def test_a_view_job_url_that_resolves_is_not_seeded(tmp_path):
     """
     _mock_one(DEREFERENCE_HITS)
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ()
 
@@ -772,7 +776,7 @@ def test_a_control_character_view_job_url_never_reaches_the_seed_queue(tmp_path)
     hit = replace(TENANT_SEED_HIT, key="key9900", view_job_url="https://a.test/job/\x00x")
     _mock_one([hit])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ()
     assert {(s.provider, s.slug) for s in result.snapshots} == {
@@ -789,7 +793,7 @@ def test_a_recognized_board_url_with_no_evidenced_reference_is_not_seeded(tmp_pa
     """
     _mock_one([TRAILING_CHROME_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ()
 
@@ -799,7 +803,7 @@ def test_a_hit_with_no_apply_url_is_not_seeded(tmp_path):
     """Nothing to hand a resolver: an absent `viewJobUrl` is not a URL of any kind."""
     _mock_one(search_hits(1))
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ()
 
@@ -813,7 +817,7 @@ def test_an_unidentifiable_hit_is_still_seeded(tmp_path):
     """
     _mock_one([UNIDENTIFIABLE_TENANT_SEED_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9701",)
     assert result.tally.counts["not_attemptable"] == 1
@@ -827,7 +831,7 @@ def test_a_refused_companys_hit_is_still_seeded(tmp_path):
     """
     _mock_one([TENANT_SEED_HIT])
 
-    result = _collect(IndeedLane(), tmp_path, admits=False)
+    result = _collect(IndeedLane(target_countries=US), tmp_path, admits=False)
 
     assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9601",)
     assert result.snapshots == ()
@@ -841,7 +845,7 @@ def test_two_hits_naming_the_same_unresolved_tenant_url_seed_it_once(tmp_path):
     second = replace(TENANT_SEED_HIT, key="key9602", title="Software Engineer II")
     _mock_one([TENANT_SEED_HIT, second])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ("https://careers.example-hcm.com/en/sites/CX_1/job/9601",)
 
@@ -863,7 +867,7 @@ def test_a_known_providers_url_with_no_extractable_slug_is_not_seeded(tmp_path):
 def test_a_known_providers_unroutable_hit_is_not_seeded_through_collect(tmp_path):
     _mock_one([KNOWN_PROVIDER_UNROUTABLE_SEED_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ()
 
@@ -885,7 +889,7 @@ def test_a_malformed_view_job_url_is_not_seeded_through_collect(tmp_path):
     through to tier 2 and is applied normally."""
     _mock_one([MALFORMED_VIEW_JOB_URL_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.discovered_seeds == ()
     assert {(s.provider, s.slug) for s in result.snapshots} == {
@@ -907,7 +911,7 @@ def test_a_malformed_view_job_url_surfaces_as_a_visible_refusal_note(tmp_path):
     ip_hit = replace(TENANT_SEED_HIT, key="key9700", view_job_url="https://127.0.0.1:443/job/1")
     _mock_one([ip_hit, MALFORMED_VIEW_JOB_URL_HIT, KNOWN_PROVIDER_UNROUTABLE_SEED_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     # Both malformed URLs are carried, in first-seen order; neither becomes a discovered seed, and
     # the ordinary known-provider shortlink is NOT treated as a refusal.
@@ -924,7 +928,7 @@ def test_an_ordinary_unseedable_hit_produces_no_refusal_note(tmp_path):
     a malformed producer value -- so NOTHING rides `refused_seeds` and no note is produced."""
     _mock_one([KNOWN_PROVIDER_UNROUTABLE_SEED_HIT, *search_hits(1)])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.refused_seeds == ()
     assert _refused_seed_note("indeed", result) is None
@@ -1051,6 +1055,7 @@ def test_the_lane_satisfies_the_protocol():
         "search_facets",
         "search_pages",
         "results_per_page",
+        "target_countries",
     ]
 
 
@@ -1064,7 +1069,7 @@ def test_admits_is_asked_once_per_distinct_company_never_once_per_posting(tmp_pa
         asked.append((provider, slug))
         return False
 
-    result = IndeedLane().collect(_fetcher(tmp_path), _admits)
+    result = IndeedLane(target_countries=US).collect(_fetcher(tmp_path), _admits)
 
     assert len(asked) == 4
     assert set(asked) == {(LANE_PROVIDER, f"Acme-{index:02d}") for index in range(4)}
@@ -1082,7 +1087,7 @@ def test_every_body_arrives_inline_and_costs_no_second_request(tmp_path):
     """
     route = _mock_one(search_hits())
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert route.call_count == 1
     assert len(respx.calls) == 1  # no body GET follows, at all
@@ -1099,7 +1104,7 @@ def test_the_snapshot_is_partial_and_cites_the_endpoint_it_requested(tmp_path):
     """
     _mock_one(search_hits(2, companies=1))
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     (snapshot,) = result.snapshots
     assert snapshot.snapshot.status == "partial"
@@ -1113,7 +1118,7 @@ def test_the_snapshot_is_partial_and_cites_the_endpoint_it_requested(tmp_path):
 def test_a_posting_carries_the_employer_apply_url_location_title_and_key(tmp_path):
     _mock_one([DEREFERENCE_HITS[0]])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
     posting = result.snapshots[0].snapshot.postings[0]
 
     assert posting.url == DEREFERENCE_HITS[0].view_job_url
@@ -1131,7 +1136,7 @@ def test_a_hit_with_no_apply_url_falls_back_to_indeeds_own_permalink(tmp_path):
     """A display URL built from the posting key, never a URL this lane requests."""
     _mock_one(search_hits(1))
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.snapshots[0].snapshot.postings[0].url == (
         "https://www.indeed.com/viewjob?jk=key0000"
@@ -1145,7 +1150,7 @@ def test_a_hit_with_no_description_is_extracted_empty_and_yields_no_snapshot(tmp
     """
     _mock_one([NO_BODY_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.tally.counts["extracted_empty"] == 1
     assert result.tally.counts["body_inline"] == 0
@@ -1161,7 +1166,7 @@ def test_posted_at_is_read_in_utc_not_the_machines_local_zone(tmp_path):
     """
     _mock_one([LOCAL_MIDNIGHT_HIT])
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
     posted_at = result.snapshots[0].snapshot.postings[0].posted_at
 
     assert posted_at is not None
@@ -1173,7 +1178,7 @@ def test_posted_at_is_read_in_utc_not_the_machines_local_zone(tmp_path):
 def test_an_unparseable_date_published_leaves_posted_at_unset_rather_than_raising(tmp_path):
     _mock_one([replace(search_hits(1)[0], published_ms="yesterday")])  # type: ignore[arg-type]
 
-    result = _collect(IndeedLane(), tmp_path)
+    result = _collect(IndeedLane(target_countries=US), tmp_path)
 
     assert result.snapshots[0].snapshot.postings[0].posted_at is None
 
@@ -1188,7 +1193,7 @@ def test_the_default_ceiling_requests_exactly_one_page_per_facet(tmp_path):
     """`indeed_search_pages = 1` is the measured shape: one request, no cursor anywhere."""
     route = _mock({("software engineer", None): (search_hits(2), "cursor-2")})
 
-    result = _collect(IndeedLane(search_facets=("software engineer",), search_pages=1), tmp_path)
+    result = _collect(IndeedLane(target_countries=US, search_facets=("software engineer",), search_pages=1), tmp_path)
 
     assert route.call_count == 1
     assert _cursor_of(route.calls[0].request) is None
@@ -1208,7 +1213,7 @@ def test_paging_follows_next_cursor_up_to_the_configured_ceiling(tmp_path):
         # Page three must never be requested at a ceiling of 2.
     })
 
-    result = _collect(IndeedLane(search_facets=("software engineer",), search_pages=2), tmp_path)
+    result = _collect(IndeedLane(target_countries=US, search_facets=("software engineer",), search_pages=2), tmp_path)
 
     assert route.call_count == 2
     assert [_cursor_of(call.request) for call in route.calls] == [None, "cursor-2"]
@@ -1221,7 +1226,7 @@ def test_an_absent_next_cursor_ends_the_facet_before_the_ceiling(tmp_path):
     """Running out of results is the EXPECTED outcome of a ceiling above 1, not an outage."""
     route = _mock({("software engineer", None): (search_hits(2), None)})
 
-    result = _collect(IndeedLane(search_facets=("software engineer",), search_pages=5), tmp_path)
+    result = _collect(IndeedLane(target_countries=US, search_facets=("software engineer",), search_pages=5), tmp_path)
 
     assert route.call_count == 1
     assert result.search_pages == ((SEARCH_URL, 1),)
@@ -1239,7 +1244,7 @@ def test_a_repeat_page_ends_the_facet_and_is_not_counted_twice(tmp_path):
         ("software engineer", "cursor-2"): (hits, "cursor-3"),
     })
 
-    result = _collect(IndeedLane(search_facets=("software engineer",), search_pages=5), tmp_path)
+    result = _collect(IndeedLane(target_countries=US, search_facets=("software engineer",), search_pages=5), tmp_path)
 
     assert route.call_count == 2
     assert result.search_pages == ((SEARCH_URL, 2),)
@@ -1262,7 +1267,7 @@ def test_a_later_page_that_is_refused_keeps_the_pages_already_paid_for(tmp_path)
 
     respx.post(SEARCH_URL).mock(side_effect=_respond)
 
-    result = _collect(IndeedLane(search_facets=("software engineer",), search_pages=3), tmp_path)
+    result = _collect(IndeedLane(target_countries=US, search_facets=("software engineer",), search_pages=3), tmp_path)
 
     assert result.search_pages == ((SEARCH_URL, 1),)
     assert result.tally.counts["body_inline"] == 2
@@ -1289,7 +1294,7 @@ def test_the_page_counts_are_positional_one_per_facet(tmp_path):
     })
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "data engineer"), search_pages=2), tmp_path
+        IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer"), search_pages=2), tmp_path
     )
 
     assert result.search_pages == ((SEARCH_URL, 1), (SEARCH_URL, 2))
@@ -1316,7 +1321,7 @@ def test_hits_from_several_facets_are_interleaved_round_robin(tmp_path):
     })
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "data engineer")), tmp_path
+        IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer")), tmp_path
     )
 
     assert [s.slug for s in result.snapshots] == [
@@ -1337,7 +1342,7 @@ def test_graphql_errors_inside_a_200_raise_rather_than_reading_as_a_quiet_day(tm
     respx.post(SEARCH_URL).mock(return_value=httpx.Response(200, text=error_response()))
 
     with pytest.raises(SearchPageError, match="GraphQL errors"):
-        _collect(IndeedLane(), tmp_path)
+        _collect(IndeedLane(target_countries=US), tmp_path)
 
 
 @respx.mock
@@ -1347,7 +1352,7 @@ def test_a_response_with_no_job_search_object_raises(tmp_path):
     )
 
     with pytest.raises(SearchPageError, match="data.jobSearch"):
-        _collect(IndeedLane(), tmp_path)
+        _collect(IndeedLane(target_countries=US), tmp_path)
 
 
 @respx.mock
@@ -1356,7 +1361,7 @@ def test_the_unfaceted_search_yielding_nothing_raises(tmp_path):
     _mock_one([])
 
     with pytest.raises(SearchPageError, match="unfaceted"):
-        _collect(IndeedLane(), tmp_path)
+        _collect(IndeedLane(target_countries=US), tmp_path)
 
 
 @respx.mock
@@ -1367,7 +1372,7 @@ def test_every_facet_yielding_nothing_raises_instead_of_reporting_a_quiet_day(tm
     _mock({("software engineer", None): ([], None), ("data engineer", None): ([], None)})
 
     with pytest.raises(SearchPageError, match="every role facet"):
-        _collect(IndeedLane(search_facets=("software engineer", "data engineer")), tmp_path)
+        _collect(IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer")), tmp_path)
 
 
 @respx.mock
@@ -1379,7 +1384,7 @@ def test_one_empty_facet_among_several_is_tolerated_rather_than_fatal(tmp_path):
     })
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "zzq not a real role")), tmp_path
+        IndeedLane(target_countries=US, search_facets=("software engineer", "zzq not a real role")), tmp_path
     )
 
     assert result.tally.counts["body_inline"] == 2
@@ -1401,7 +1406,7 @@ def test_one_facet_whose_request_fails_does_not_cost_the_others_their_results(tm
     respx.post(SEARCH_URL).mock(side_effect=_respond)
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "data engineer")), tmp_path
+        IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer")), tmp_path
     )
 
     assert result.tally.counts["body_inline"] == 2
@@ -1416,7 +1421,7 @@ def test_every_facet_request_failing_raises_rather_than_reporting_a_quiet_day(tm
     respx.post(SEARCH_URL).mock(return_value=httpx.Response(403, text=""))
 
     with pytest.raises(SearchPageError, match="2 request failures"):
-        _collect(IndeedLane(search_facets=("software engineer", "data engineer")), tmp_path)
+        _collect(IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer")), tmp_path)
 
 
 @respx.mock
@@ -1439,7 +1444,7 @@ def test_every_facet_failing_after_its_first_page_keeps_every_first_page(tmp_pat
     respx.post(SEARCH_URL).mock(side_effect=_respond)
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "data engineer"), search_pages=3),
+        IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer"), search_pages=3),
         tmp_path,
     )
 
@@ -1472,7 +1477,7 @@ def test_a_search_that_ran_out_and_one_cut_short_report_different_outcomes(tmp_p
     respx.post(SEARCH_URL).mock(side_effect=_respond)
 
     result = _collect(
-        IndeedLane(search_facets=("software engineer", "data engineer"), search_pages=3),
+        IndeedLane(target_countries=US, search_facets=("software engineer", "data engineer"), search_pages=3),
         tmp_path,
     )
 
@@ -1503,6 +1508,7 @@ def test_first_page_outcomes_are_recorded_beside_their_zero_depth(tmp_path):
 
     result = _collect(
         IndeedLane(
+            target_countries=US,
             search_facets=("software engineer", "zzq not a real role", "ios engineer", "data engineer"),
             search_pages=3,
         ),
@@ -1530,7 +1536,7 @@ def test_the_unfaceted_search_records_a_later_page_failure(tmp_path):
 
     respx.post(SEARCH_URL).mock(side_effect=_respond)
 
-    result = _collect(IndeedLane(search_pages=3), tmp_path)
+    result = _collect(IndeedLane(target_countries=US, search_pages=3), tmp_path)
 
     assert result.tally.counts["body_inline"] == 2
     assert result.search_pages == ((SEARCH_URL, 1),)
@@ -1543,7 +1549,7 @@ def test_the_unfaceted_first_page_failure_still_propagates(tmp_path):
     respx.post(SEARCH_URL).mock(return_value=httpx.Response(403, text=""))
 
     with pytest.raises(FetchFailure):
-        _collect(IndeedLane(search_pages=3), tmp_path)
+        _collect(IndeedLane(target_countries=US, search_pages=3), tmp_path)
 
 
 # ---------------------------------------------------------------------------------------

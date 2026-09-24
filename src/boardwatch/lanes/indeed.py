@@ -2,15 +2,15 @@
 
 One request shape, and no others:
 
-    POST https://apis.indeed.com/graphql?co=US   -- search, every body inline
+    POST https://apis.indeed.com/graphql?co=<country>   -- search, every body inline
 
 There is no second request. That is the whole reason this lane is worth its cost: the search
 response carries `description.html` for every hit, measured at 100 of 100 hits with a full JD
 (1,595-7,506 chars) in one 0.57 s request. Against the LinkedIn lane's measured 2.39 s per body
 GET that is ~420x cheaper per JD, and it is why this lane takes no `lane_posting_budget` -- a
 budget on "JD-body requests one lane may make in a run" would bound a number that is always zero.
-What bounds this lane is `indeed_search_pages` x `indeed_results_per_page` x facets, all three of
-which an operator can see.
+What bounds this lane is `indeed_search_pages` x `indeed_results_per_page` x facets x target
+countries, all four of which an operator can see.
 
 **THIS LANE IMPERSONATES INDEED'S OWN iOS APP, AND THAT IS STATED HERE RATHER THAN BURIED.**
 `apis.indeed.com/robots.txt` is `User-agent: * / Disallow: /`, and the endpoint answers only to
@@ -57,13 +57,13 @@ the one that would still apply if the value came from the profile, it is the arg
 fact boardwatch judges downstream with a rule that must be able to return
 `ABSTAIN(missing_profile_field:X)`, and a query parameter that removes postings before any rule
 sees them makes the search string, not the eligibility engine, the thing that decided. The
-`?co=US` scope is a country, not a metro, and it is named as a limitation below.
+`?co=` scope is a country, not a metro.
 
-`?co=US` IS A HARDCODED COUNTRY AND IS THE ONE MULTI-TENANCY EDGE THIS LANE HAS. It is the endpoint
-that was probed and approved, and boardwatch's own location gate is US-shaped today, so the two
-agree. A user outside the US gets a lane that searches the wrong country -- which is why it is a
-named module constant rather than an inline literal, and why the honest fix is a settings field
-added when a non-US user actually exists, not a guessed default now.
+`?co=` COMES FROM THE PROFILE'S `target_countries` (DESIGN-T183 E1), each alpha-3 code mapped to
+Indeed's two-letter one. One search per country, each on the same page and result ceilings, and
+the company admission cap is the run's one cap across all of them. A profile declaring no country
+makes NO request: the lane reports `not_attemptable="no_target_countries"` rather than search a
+country nobody chose.
 
 THE FACETS COME FROM THE PROFILE, NEVER FROM THIS MODULE. They are `profile.target_titles_json`
 read through `lanes.facets` and handed to the constructor, exactly as both aggregator lanes take
@@ -200,17 +200,20 @@ from boardwatch.lanes.dereference import (
     parse_posting_target,
 )
 from boardwatch.lanes.outcomes import AcquisitionOutcome, AcquisitionTally
+from boardwatch.rank.location_data import ISO3166_ALPHA2
 
 LANE_NAME = "indeed"
 
 # The provider a hit is keyed under when `recruit.viewJobUrl` names no board this repo can parse.
 LANE_PROVIDER = "indeed"
 
-# The country the endpoint is scoped to. Named rather than inlined because it is this lane's one
-# multi-tenancy limitation (see the module docstring): a non-US user needs this to move, and a
-# reader has to be able to find the single place it lives.
-SEARCH_COUNTRY = "US"
-SEARCH_URL = f"https://apis.indeed.com/graphql?co={SEARCH_COUNTRY}"
+SEARCH_ENDPOINT = "https://apis.indeed.com/graphql"
+
+
+def search_url(country: str) -> str:
+    """The search URL for one ISO-3166 alpha-3 `target_countries` code."""
+    return f"{SEARCH_ENDPOINT}?co={ISO3166_ALPHA2[country]}"
+
 
 # How far back the search reaches, in HOURS -- the only unit this filter accepts. An ISO timestamp
 # is refused with `BAD_USER_INPUT`. Lane-mechanical: it states this lane's cadence (daily), not
@@ -767,11 +770,16 @@ class IndeedLane:
         search_facets: Sequence[str] = (),
         search_pages: int = DEFAULT_SEARCH_PAGES,
         results_per_page: int = DEFAULT_RESULTS_PER_PAGE,
+        *,
+        target_countries: Sequence[str],
     ) -> None:
         # Injected rather than read here, for the reason the registry comment in `runner.py`
-        # gives: the facets come from the user's profile row, which lives in the store, and a
-        # lane must not reach into the store to find its own configuration.
+        # gives: the facets and the countries come from the user's profile row, which lives in
+        # the store, and a lane must not reach into the store to find its own configuration.
+        # The countries have no default: an empty default would silently disarm the lane for
+        # any caller that forgot them, and a non-empty one is a tenant nobody declared.
         self._search_facets = tuple(search_facets)
+        self._search_urls = tuple(search_url(country) for country in target_countries)
         self._search_pages = max(1, search_pages)
         self._results_per_page = min(MAX_RESULTS_PER_PAGE, max(1, results_per_page))
 
@@ -784,6 +792,10 @@ class IndeedLane:
         elsewhere -- a refused company must cost nothing, which is why the postings for one are
         never built.
         """
+        if not self._search_urls:
+            return LaneResult(
+                snapshots=(), tally=AcquisitionTally(), not_attemptable="no_target_countries"
+            )
         entries, search_pages, search_outcomes = self._search(fetcher)
         # Computed off the raw entries, before grouping or admission touch them: a seed costs
         # nothing extra to collect (`viewJobUrl` already rode in with the search response this
@@ -851,21 +863,24 @@ class IndeedLane:
         give: companies are worked in iteration order, so concatenating would let the first facet
         consume the run and every later target title contribute nothing.
 
-        **EVERY ENTRY IN THE RETURNED PAGE COUNTS NAMES THE SAME URL, AND THAT IS NOT A BUG.**
-        The facet travels in the POST BODY, so there is exactly one URL this lane ever requests.
-        The entries are POSITIONAL: one per facet, in the order the facets were configured, which
+        **EVERY FACET'S ENTRY IN THE RETURNED PAGE COUNTS NAMES ITS COUNTRY'S URL, AND THAT IS NOT
+        A BUG.** The facet travels in the POST BODY, so each target country has exactly one URL.
+        The entries are POSITIONAL: one per (country, facet), in configured order, which
         is what makes "facet 2 ran out at page 1 while facet 3 filled the ceiling" still readable
         in the funnel. Encoding the facet into the URL to make the table prettier would name a
         request this lane never made. The third return value is positional the same way: how each
         facet's search ENDED, because one the host cut short reports the same depth as one that
         ran out.
         """
-        terms = self._search_facets or ("",)
-        if not self._search_facets:
+        searches = [
+            (url, term) for url in self._search_urls for term in self._search_facets or ("",)
+        ]
+        if len(searches) == 1 and not self._search_facets:
             # The unfaceted fallback keeps the single-search contract: a transport or structural
             # failure on its FIRST page propagates, because with one search there are no other
             # results for it to cost.
-            entries, pages, outcome = self._facet_pages(fetcher, "")
+            url = searches[0][0]
+            entries, pages, outcome = self._facet_pages(fetcher, url, "")
             if not entries:
                 # The same all-empty check the faceted branch runs, and for the same reason.
                 # Returning here instead would let an empty HTTP-200 page read as a quiet day:
@@ -875,15 +890,15 @@ class IndeedLane:
                     "the unfaceted search yielded nothing: the query has been rejected, or the "
                     "host is refusing us"
                 )
-            return entries, ((SEARCH_URL, pages),), (outcome,)
+            return entries, ((url, pages),), (outcome,)
 
         per_facet: list[list[_SearchEntry]] = []
         page_counts: list[tuple[str, int]] = []
         outcomes: list[SearchOutcome] = []
         failed = 0
-        for term in terms:
+        for url, term in searches:
             try:
-                entries, pages, outcome = self._facet_pages(fetcher, term)
+                entries, pages, outcome = self._facet_pages(fetcher, url, term)
             except (FetchFailure, SearchPageError) as exc:
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure inside a
                 # scan. One search per target title means a run makes many, so the seventh must
@@ -892,11 +907,11 @@ class IndeedLane:
                 # all-empty check below is for.
                 failed += 1
                 per_facet.append([])
-                page_counts.append((SEARCH_URL, 0))
+                page_counts.append((url, 0))
                 outcomes.append(failed_search("first_page_failed", exc))
                 continue
             per_facet.append(entries)
-            page_counts.append((SEARCH_URL, pages))
+            page_counts.append((url, pages))
             outcomes.append(outcome)
 
         # EVERY facet failing after its first page is NOT raised here (T144), for the reason
@@ -920,7 +935,7 @@ class IndeedLane:
         return interleaved, tuple(page_counts), tuple(outcomes)
 
     def _facet_pages(
-        self, fetcher: Fetcher, term: str
+        self, fetcher: Fetcher, url: str, term: str
     ) -> tuple[list[_SearchEntry], int, SearchOutcome]:
         """One facet's hits over at most `self._search_pages` pages, the pages fetched, and how
         the facet ended.
@@ -953,7 +968,7 @@ class IndeedLane:
         for page_index in range(self._search_pages):
             body = search_body(term, cursor=cursor, limit=self._results_per_page)
             try:
-                result = fetcher.post_json(SEARCH_URL, body, headers=_API_HEADERS)
+                result = fetcher.post_json(url, body, headers=_API_HEADERS)
                 page = parse_search_page(result.content)
             except (FetchFailure, SearchPageError) as exc:
                 if page_index == 0:
@@ -967,7 +982,7 @@ class IndeedLane:
                 key = _text(job.get("key"))
                 if key and key in seen:
                     continue
-                fresh.append((SEARCH_URL, job))
+                fresh.append((url, job))
                 if key:
                     new_keys.add(key)
             entries.extend(fresh)
