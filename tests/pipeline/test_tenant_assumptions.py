@@ -87,7 +87,14 @@ def _add_posting(data_dir: Path, slug: str, title: str, locations: list[str]) ->
 
 
 def _run(data_dir: Path, out_root: Path, *, mode: str) -> dict[str, Any]:
-    settings = load_settings(data_dir=data_dir).model_copy(update={"location_filter_mode": mode})
+    # Written to `config.toml`, not `model_copy`'d: the finalize-time read sites load the file
+    # themselves, so an in-memory override is a second config the run never ran under (T207).
+    config = load_settings(data_dir=data_dir).config_dir / "config.toml"
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    assert "location_filter_mode" not in original, "guard: the line below is the only one"
+    config.write_text(f'location_filter_mode = "{mode}"\n' + original, encoding="utf-8")
+    settings = load_settings(data_dir=data_dir)
+    assert settings.location_filter_mode == mode, "guard: the run must see the mode"
     summary = run_pipeline(
         get_engine(data_dir),
         settings,
@@ -97,7 +104,10 @@ def _run(data_dir: Path, out_root: Path, *, mode: str) -> dict[str, Any]:
         skip_scan=True,
     )
     assert summary.funnel is not None, "guard: the funnel must have been written"
-    return json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    funnel: dict[str, Any] = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    # T207. The run's config and the file the finalize-time read sites load must be one config.
+    assert funnel["identity_drift"] == []
+    return funnel
 
 
 def _seed_tenant2(data_dir: Path) -> None:
