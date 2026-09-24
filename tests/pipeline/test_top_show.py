@@ -17,6 +17,7 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
+from tests.conftest import write_bundled_role_taxonomy
 
 runner = CliRunner()
 
@@ -25,6 +26,7 @@ runner = CliRunner()
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "cfg"
     cfg.mkdir()
+    write_bundled_role_taxonomy(cfg)
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(cfg))
     return tmp_path
 

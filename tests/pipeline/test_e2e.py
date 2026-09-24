@@ -28,6 +28,7 @@ INIT_INPUT = (
     "\n"
     "n\n"  # remote only? no
     "n\n"  # set up eligibility now? no
+    "software\n"  # role taxonomy: the bundled field
 )
 
 

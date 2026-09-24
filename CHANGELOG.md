@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The role gate reads a per-user role taxonomy gathered at onboarding (2026-09-23, T184).** The
+  ranker's "is this a software title" filter was a bundled software vocabulary applied to every user.
+  Each user now has a `role-taxonomy.yaml` in their config directory, written by `boardwatch init`
+  (asked last) or `boardwatch profile role-taxonomy`: a technology user keeps the bundled `software`
+  classifier byte for byte; any other field names its own role families and exclude words. With no file
+  the gate returns `unmeasured`, counted and reported per run and never a drop; the delivery lane holds
+  such a lead for review as `role_gate_unmeasured` and routes on the same taxonomy verdict the ranker
+  used, so the two can no longer disagree. A malformed file is refused, never defaulted. Words with
+  punctuation (`c++`, `c#`, `.net`) match. Existing installs must write the file once before their next
+  run. P2 item 8, owner ruling 2026-09-23.
+
 - **Every ranker and review gate now reports whether it decided on the tenant's own data
   (2026-09-23, T185).** The location, foreign-ad, role, zero-signal and seniority gates hard-code a US,
   software, entry-level user and could never abstain, so a second tenant's silent fall-through looked

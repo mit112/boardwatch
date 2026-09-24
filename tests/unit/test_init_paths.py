@@ -44,7 +44,7 @@ def _watches(tmp_path):
 
 
 # profile answers reused by every path (text, targets, excludes, locations, remote?)
-_PROFILE = "Backend engineer: Python, Go.\nBackend Engineer\n\n\nn\nn\n"  # trailing n: skip eligibility
+_PROFILE = "Backend engineer: Python, Go.\nBackend Engineer\n\n\nn\nn\nsoftware\n"  # n: skip eligibility; then the role taxonomy
 
 
 def test_starter_path_watches_all_starter_as_registry(tmp_path) -> None:
@@ -90,7 +90,7 @@ def test_zero_skill_warning_fires_for_skilless_profile(tmp_path) -> None:
     from boardwatch.cli.profile_cmd import ZERO_SKILL_WARNING
 
     base = _base(tmp_path)
-    skilless = "1\nqqzz nonsense lorem ipsum\nBackend Engineer\n\n\nn\nn\n"
+    skilless = "1\nqqzz nonsense lorem ipsum\nBackend Engineer\n\n\nn\nn\nsoftware\n"
     result = runner.invoke(app, [*base, "init"], input=skilless)
     assert result.exit_code == 0
     # Rich wraps at 80 cols and may split the warning across lines — collapse whitespace on

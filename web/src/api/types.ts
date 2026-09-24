@@ -58,6 +58,12 @@ export type ReviewReason =
   | "non_us_location"
   | "role_vetoed"
   | "role_unconfirmed"
+  /*
+   * The role gate's third non-pass answer (T184b): the user has no role taxonomy, so the gate
+   * never read the title. Not a veto and not `role_unconfirmed` — nothing looked — and the
+   * reader's next step is to give boardwatch a taxonomy, not to read the title.
+   */
+  | "role_gate_unmeasured"
   | "unevaluated"
   | "no_requirements_found"
   | "eligibility_unconfirmed"

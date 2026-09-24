@@ -376,7 +376,8 @@ def test_a_missing_init_module_is_reported() -> None:
 def test_the_init_prompt_snapshot_is_not_empty() -> None:
     """Second lock, matching test_the_heuristic_parameter_default_is_pinned: if the extractor
     were narrowed AND the snapshot emptied to match, both R11 tests would pass on nothing."""
-    assert len(snap.EXPECTED_INIT_PROMPTS) == 14
+    # 18 = the 14 pre-T184 prompts + the four role-taxonomy prompts `init` asks last (T184).
+    assert len(snap.EXPECTED_INIT_PROMPTS) == 18
 
 
 def test_prompt_reprs_are_the_source_segment_not_unparse() -> None:

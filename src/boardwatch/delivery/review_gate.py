@@ -45,7 +45,7 @@ from collections.abc import Sequence
 from typing import Literal, NamedTuple, get_args
 
 from boardwatch.rank.location_gate import classify_location
-from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.role_gate import RoleVerdict
 
 #: The review-lane drain directory. Registered in ``delivery.names.DRAIN_DIRS``.
 REVIEW_DIR = "_review"
@@ -75,6 +75,14 @@ CLOSED_DIR = "_closed"
 #: while a hard-family abstain means a blocking rule could not be decided at all and the JD needs
 #: reading before anything is spent on it. Reporting either as ``role_unconfirmed`` would name the
 #: wrong gate; adding one member for both would lose the distinction the reader needs.
+#:
+#: ``role_gate_unmeasured`` is the role gate's THIRD non-pass answer and is kept apart from both
+#: for the same reason: the user has no role taxonomy, so the gate never looked at the title
+#: (``missing_profile_field:role_taxonomy``). It is not a veto — nothing decided the title is off
+#: target — and it is not ``role_unconfirmed`` either, which says the gate read the title against
+#: a taxonomy and found no signal. The reader's next action differs: that one reads the title,
+#: this one gives boardwatch a taxonomy (``boardwatch profile role-taxonomy``). Folding it into
+#: either neighbour would hide a gate that cannot fire, which is a monitoring failure.
 #:
 #: ``no_requirements_found`` and ``unevaluated`` are the two absences, and they are separate from
 #: each other for the same test: what the reader does next differs. A zero-row lead HAS a current
@@ -143,6 +151,7 @@ ReviewReason = Literal[
     "non_us_location",
     "role_vetoed",
     "role_unconfirmed",
+    "role_gate_unmeasured",
     "unevaluated",
     "no_requirements_found",
     "eligibility_unconfirmed",
@@ -178,7 +187,7 @@ def classify(
     *,
     verdict: str | None,
     locations: Sequence[str],
-    title: str,
+    role: RoleVerdict,
     experience_unconfirmed: bool,
     eligibility_unconfirmed: bool,
     no_requirement_rows: bool,
@@ -222,6 +231,12 @@ def classify(
     ``store.delivery_queries.revised_since_build_ids``, and passed by both call sites — never
     recomputed here — for the reason every fact beside it is: two derivations of the same
     question disagree the first time one of them is changed (D-332).
+
+    ``role`` is the role gate's verdict against the USER's role taxonomy
+    (``rank.role_gate.taxonomy_role_verdict``), derived by the caller once per read — the verdict
+    ``top`` ranks on, never re-derived here from the title. Deriving it here meant the bundled
+    software classifier for every user, so a user without ``bundled: true`` saw the ranker and
+    this lane disagree about the same title (T184b).
 
     ``eligible`` is blindly-appliable and always promotes. ``ineligible`` is excluded
     upstream and is not expected here; if one arrives it is held for review, never
@@ -303,9 +318,10 @@ def classify(
         return LaneDecision(REVIEW_DIR, "ineligible_verdict")
     if classify_location(list(locations)) == "non_us":
         return LaneDecision(REVIEW_DIR, "non_us_location")
-    role = role_verdict(title)[0]
     if role == "not_swe":
         return LaneDecision(REVIEW_DIR, "role_vetoed")
+    if role == "unmeasured":
+        return LaneDecision(REVIEW_DIR, "role_gate_unmeasured")
     if role != "swe":
         return LaneDecision(REVIEW_DIR, "role_unconfirmed")
     # T44. TITLE-only, like the two gates just above, and for the same reason it sits here rather
@@ -483,7 +499,7 @@ def lane(
     *,
     verdict: str | None,
     locations: Sequence[str],
-    title: str,
+    role: RoleVerdict,
     experience_unconfirmed: bool,
     eligibility_unconfirmed: bool,
     no_requirement_rows: bool,
@@ -505,7 +521,7 @@ def lane(
     return classify(
         verdict=verdict,
         locations=locations,
-        title=title,
+        role=role,
         experience_unconfirmed=experience_unconfirmed,
         eligibility_unconfirmed=eligibility_unconfirmed,
         no_requirement_rows=no_requirement_rows,

@@ -1642,7 +1642,9 @@ def _lead_lanes(
         decision = classify(
             verdict=posting.verdict,
             locations=locations_by_posting.get(posting.posting_id, ()),
-            title=posting.title,
+            # T184b. The ranker's own taxonomy verdict on this lead, so the lane this run
+            # tailors for is the one `top` ranked it under — never re-derived here.
+            role=posting.role,
             seniority_above_band=band_reader.above_band(
                 posting.title, company_of.get(posting.posting_id)
             ),
@@ -1669,7 +1671,15 @@ def _lead_lanes(
         if review_gate_reached("location", reason):
             tenant.observe("location", fired=reason == "non_us_location")
         if review_gate_reached("role", reason):
-            tenant.observe("role", fired=reason in ("role_vetoed", "role_unconfirmed"))
+            tenant.observe(
+                "role",
+                fired=reason in ("role_vetoed", "role_unconfirmed"),
+                # T184: no taxonomy file — the gate held the lead without reading a field.
+                own_abstain=(
+                    "missing_profile_field:role_taxonomy"
+                    if reason == "role_gate_unmeasured" else None
+                ),
+            )
         if review_gate_reached("judge_seniority", reason):
             seniority_fit = gate_seniority.get(posting.posting_id)
             tenant.observe(
@@ -2466,6 +2476,7 @@ def _run_pipeline_leased(
             hidden_non_swe=ranked.hidden_non_swe,
             hidden_zero_signal=ranked.hidden_zero_signal,
             signal_unmeasured=ranked.signal_unmeasured,
+            role_unmeasured=ranked.role_unmeasured,
             hidden_ineligible=ranked.hidden_ineligible,
             hidden_below_cutoff=ranked.hidden_below_cutoff,
             skipped_not_new=ranked.skipped_not_new,

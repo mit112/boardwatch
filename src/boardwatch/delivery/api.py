@@ -89,7 +89,8 @@ from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import profile_view_from_row, score_posting
-from boardwatch.rank.role_gate import role_verdict
+from boardwatch.rank.role_gate import taxonomy_role_verdict
+from boardwatch.rank.role_taxonomy import load_role_taxonomy
 from boardwatch.store.applications import (
     APPLIED_STATUSES,
     ApplicationStatus,
@@ -662,6 +663,7 @@ def _live_facts(
     settings = ctx.settings
     now = utcnow()
     taxonomy = _taxonomy(settings.config_dir)
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
     resume_skills = _resume_skills(settings.config_dir, taxonomy)
     taxonomy_version = "" if taxonomy is None else taxonomy.version
     identity: CacheIdentity = (
@@ -677,7 +679,7 @@ def _live_facts(
 
     facts: dict[int, LiveFacts] = {}
     for row in rows:
-        role, role_reason = role_verdict(row.title)
+        role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
         score: float | None = None
         why: str | None = None
         source = inputs.get(row.posting_id)

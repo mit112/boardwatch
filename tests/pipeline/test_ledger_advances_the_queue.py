@@ -33,7 +33,7 @@ from boardwatch.store.ledger_queries import (
 )
 from tests.conftest import write_test_resume_template
 
-runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 
 # T43 appended the trailing clause: it trips the (non-blocking, default `preference`)
 # `degree` family's `degree_preferred` pattern, which is enough on its own — one row, no

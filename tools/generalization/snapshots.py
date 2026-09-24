@@ -256,6 +256,17 @@ EXPECTED_PARAM_DEFAULTS: dict[str, str] = {
 # ast.get_source_segment), not an ast.unparse rendering: unparse re-quotes nested-quote
 # f-strings differently across CPython patch releases and made this snapshot flake on CI.
 EXPECTED_INIT_PROMPTS: tuple[tuple[str, str, str | None], ...] = (
+    # P2 item 8, the role-taxonomy gatherer (defined above `init`, so first in source order).
+    # The only vocabulary shown is the bundled-field catalog; every family and word is the
+    # user's own answer, and blank skips (the role gate then abstains).
+    (
+        "prompt",
+        'f"Your field, for the role filter [{bundled_hint}, or your own id; blank to skip]"',
+        '""',
+    ),
+    ("prompt", '"Role families in your field (comma separated ids)"', None),
+    ("prompt", 'f"Title words for {family_id} (comma separated)"', None),
+    ("prompt", '"Title words that rule a posting out (comma separated, blank for none)"', '""'),
     ("prompt", '"Companies: [1] Starter set  [2] Search registry  [3] Paste slugs/URLs"', '"1"'),
     ("prompt", '"Search registry"', None),
     ("confirm", 'f"Watch {e.name} ({e.provider}:{e.slug})?"', "True"),

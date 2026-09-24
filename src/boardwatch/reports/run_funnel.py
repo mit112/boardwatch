@@ -489,6 +489,10 @@ class ShortlistCounts:
     # that never got the input it reads — and that ambiguity is the only reason this counter
     # exists, so a value that never leaves memory would defeat it.
     signal_unmeasured: int = 0
+    # The role gate's abstain rate (P2 item 8): postings it could not classify because the user
+    # has no role taxonomy. REPORTED, NEVER DROPPED, for exactly the reasons `signal_unmeasured`
+    # gives, and appended to the shortlist `note` the same way.
+    role_unmeasured: int = 0
     # D-246, the seniority gate's abstain rate: a level token it could not resolve, because no
     # scheme is bound for the company or the rung falls outside the bound one. REPORTED, NEVER
     # DROPPED, and deliberately NOT part of the identity above — these postings are inside
@@ -2110,7 +2114,10 @@ def build_run_funnel(
                 "the current taxonomy version, or a JD body that was empty — so it declined to "
                 "fire and passed the posting through unfiltered). A non-zero value here is the "
                 "ONLY thing in this artifact that tells `zero_signal_uncertain: 0` apart from a "
-                "gate that never got the input it reads."
+                "gate that never got the input it reads; "
+                f"`role_unmeasured`: {shortlist.role_unmeasured} (postings the role gate could "
+                "not classify because there is no role taxonomy — "
+                "missing_profile_field:role_taxonomy — passed through unclassified)."
             ),
         )
 

@@ -30,6 +30,7 @@ from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import current_posting_versions, save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = utcnow()
 
@@ -42,6 +43,7 @@ def _catalog(tmp_path: Path) -> RulesCatalog:
 
 
 def _settings(data_dir: Path) -> Settings:
+    write_bundled_role_taxonomy(data_dir)
     return Settings(data_dir=data_dir, config_dir=data_dir)
 
 

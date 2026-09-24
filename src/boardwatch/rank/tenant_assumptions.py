@@ -125,7 +125,8 @@ _REVIEW_REASONS_BEFORE: dict[str, frozenset[str]] = {
     "role": frozenset({"form_question_hard_stop", "ineligible_verdict", "non_us_location"}),
     "judge_seniority": frozenset({
         "form_question_hard_stop", "ineligible_verdict", "non_us_location", "role_vetoed",
-        "role_unconfirmed", "seniority_above_band", "judged_ineligible_verdict",
+        "role_gate_unmeasured", "role_unconfirmed", "seniority_above_band",
+        "judged_ineligible_verdict",
     }),
 }
 

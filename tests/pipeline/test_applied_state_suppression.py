@@ -23,7 +23,7 @@ from boardwatch.store.applications import create_application, set_application_st
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition
 
-runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
 
 

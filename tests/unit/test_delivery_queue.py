@@ -120,6 +120,7 @@ from boardwatch.store.tables import (
     quarantined_bodies,
     runs,
 )
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 OWNER = "Mit Sheth"
@@ -190,6 +191,8 @@ def _save_identity(conn: Connection) -> None:
 def _scratch_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
+    # A software user (T184b): the lane reads the role gate from the user's taxonomy.
+    write_bundled_role_taxonomy(tmp_path / "config")
 
 
 @pytest.fixture()
@@ -251,6 +254,7 @@ def _queue_row(posting_id: int, company: str, title: str) -> QueueRow:
         tex_uri="file:///lead.tex",
         pdf_uri="file:///lead.pdf",
         target_flag=None,
+        role="swe",
     )
 
 
@@ -4122,7 +4126,11 @@ def _run_lane(engine: Engine, row: QueueRow) -> tuple[str, int]:
     deterministic verdict the ranker would carry for the lead, which is the row's own."""
     lanes, absent, _tenant = runner_mod._lead_lanes(
         engine, load_settings(),
-        [SimpleNamespace(posting_id=row.posting_id, verdict=row.verdict, title=row.title)],  # type: ignore[list-item]
+        [
+            SimpleNamespace(  # type: ignore[list-item]
+                posting_id=row.posting_id, verdict=row.verdict, title=row.title, role=row.role
+            )
+        ],
     )
     return lanes[row.posting_id][0], absent
 
@@ -4241,7 +4249,7 @@ def test_with_no_profile_no_reader_finds_a_gate_verdict(engine: Engine, apps: Pa
     assert (row.judge_verdict, detail.row.judge_verdict) == (None, None)
     lanes, absent, _tenant = runner_mod._lead_lanes(
         engine, load_settings(),
-        [SimpleNamespace(posting_id=judged, verdict=None, title=row.title)],  # type: ignore[list-item]
+        [SimpleNamespace(posting_id=judged, verdict=None, title=row.title, role=row.role)],  # type: ignore[list-item]
     )
     assert absent == 1
     assert lanes[judged][0] == REVIEW_DIR

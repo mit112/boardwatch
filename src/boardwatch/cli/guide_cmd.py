@@ -206,7 +206,8 @@ ENTRIES: dict[str, Entry] = {
         ("interactive", "writes store", "writes files"),
         """First-run setup. Prompts for the boards to watch, the profile text and the filters,
 writes them into the store, and seeds a résumé template into the config dir when none exists
-(never overwriting one). Run it with the person at the keyboard, once.""",
+(never overwriting one). Last it asks for the role taxonomy (`profile role-taxonomy`), unless
+one is already there. Run it with the person at the keyboard, once.""",
     ),
     "scan": Entry(
         ("network", "writes store"),
@@ -439,6 +440,12 @@ Takes `--json`.""",
     "profile edit": Entry(
         ("interactive", "writes store"),
         "Opens the profile in an editor and re-derives skills on save. Re-keys every verdict.",
+    ),
+    "profile role-taxonomy": Entry(
+        ("interactive", "writes files"),
+        """Asks for the person's field and, unless it is one boardwatch ships role knowledge for,
+their role families and title words; writes role-taxonomy.yaml into the config dir, replacing
+it. With no file the role gate abstains on every posting. Re-keys the ranker's identity.""",
     ),
     # ---- eligibility ------------------------------------------------------------------------
     "eligibility facts": Entry(

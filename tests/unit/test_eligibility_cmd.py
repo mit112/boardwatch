@@ -17,7 +17,7 @@ from boardwatch.store.queries import get_profile
 runner = CliRunner()
 
 INIT_INPUT = (
-    "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+    "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 )
 
 

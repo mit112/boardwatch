@@ -40,6 +40,7 @@ from boardwatch.rank.role_gate import role_verdict, zero_signal_verdict
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from tests.conftest import write_bundled_role_taxonomy
 
 NOW = utcnow()
 
@@ -75,6 +76,7 @@ EMPTY_BODY = " \t\n\r "
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    write_bundled_role_taxonomy(tmp_path / "data")
     return tmp_path / "data"
 
 

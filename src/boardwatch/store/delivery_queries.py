@@ -69,6 +69,8 @@ from boardwatch.eligibility.read import (
     current_verdicts,
 )
 from boardwatch.providers.registry import PROVIDER_NAMES
+from boardwatch.rank.role_gate import RoleVerdict, taxonomy_role_verdict
+from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
 from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
 from boardwatch.store.ledger_queries import live_dispositions
@@ -153,6 +155,12 @@ class QueueRow:
     tex_uri: str
     pdf_uri: str | None
     target_flag: bool | None
+    #: T184b. The role gate's verdict on `title` against the USER's role taxonomy — the one `top`
+    #: ranks on — computed ONCE per read by `_queue_row` from a taxonomy loaded once per read, so
+    #: the ranker and every standing lane reader answer one question one way (D-332). Required,
+    #: not defaulted: no value is inert here (`unmeasured` holds, `swe` releases), so a fixture
+    #: has to say which user it stands in for.
+    role: RoleVerdict
     #: What the CURRENT evaluation's requirement rows say: which kinds it left unconfirmed, and
     #: whether it produced any row at all. Read from the same evaluation as `verdict` above, in
     #: the same call, so the lane can never hold a lead for a requirement a newer verdict beside
@@ -516,6 +524,7 @@ def _queue_row(
     judge_verdict: str | None = None,
     judge_seniority_fit: str = "unclear",
     form_question_hit: str | None = None,
+    role_taxonomy: RoleTaxonomy | None,
     band: TitleBandReader | None = None,
     revised_since_build: bool = False,
 ) -> QueueRow:
@@ -541,6 +550,7 @@ def _queue_row(
         tex_uri=str(row.tex_uri),
         pdf_uri=str(row.pdf_uri) if row.pdf_uri is not None else None,
         target_flag=_target_flag(row.tags_json),
+        role=taxonomy_role_verdict(str(row.title), role_taxonomy)[0],
         requirement_flags=requirement_flags,
         judge_verdict=judge_verdict,
         judge_seniority_fit=judge_seniority_fit,
@@ -592,7 +602,7 @@ def lane_decision(row: QueueRow) -> LaneDecision:
     return classify(
         verdict=row.verdict,
         locations=row.locations,
-        title=row.title,
+        role=row.role,
         experience_unconfirmed=row.requirement_flags.experience_unconfirmed,
         eligibility_unconfirmed=row.requirement_flags.eligibility_unconfirmed,
         no_requirement_rows=row.requirement_flags.no_requirement_rows,
@@ -1174,6 +1184,11 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
     # the band depends on the leveling catalog and the profile's TARGET, neither of which is part
     # of `profile_hash`, which is exactly why it must be recomputed here rather than stored.
     band = _title_band(conn, settings)
+    # T184b. Loaded ONCE for the whole read, like the band above, and from the same bound
+    # `settings`: the role gate `top` ranks on, so the lane never re-derives it from the bundled
+    # software classifier. A malformed file raises `RoleTaxonomyError` here exactly as it does in
+    # the ranker — never a silent default.
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
     now = utcnow()
     # T119. Bounded by the same winner list as every read above it, and read here rather than
     # per row: the ledger and the version history are two more tables, and a per-row derivation
@@ -1190,6 +1205,7 @@ def delivered_unapplied(conn: Connection, *, skipped: set[int]) -> list[QueueRow
             judge_verdict=gate.get(int(row.posting_id)),
             judge_seniority_fit=seniority.get(int(row.posting_id), "unclear"),
             form_question_hit=form_questions.get(int(row.posting_id)),
+            role_taxonomy=role_taxonomy,
             band=band,
             revised_since_build=int(row.posting_id) in revised,
         )
@@ -1652,6 +1668,8 @@ def queue_detail(conn: Connection, posting_id: int) -> QueueDetail | None:
             # reported no hold for a lead the LIST holds as `seniority_above_band` -- the same
             # field, the same lead, two answers, on the surface where the reader decides.
             band=_title_band(conn, settings),
+            # T184b, for the same reason: the pane and the list must read one role verdict.
+            role_taxonomy=load_role_taxonomy(settings.config_dir),
             revised_since_build=posting_id in revised,
         ),
         jd_body=None if version is None or quarantined else version.body_text,

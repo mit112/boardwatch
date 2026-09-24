@@ -4,6 +4,7 @@ search / paste, then the P0 profile + filter flow (unchanged)."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -17,8 +18,18 @@ from boardwatch.cli.eligibility_cmd import (
 )
 from boardwatch.cli.profile_cmd import persist_profile, split_csv
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.core.settings import load_settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import Facts, Policy, facts_payload
+from boardwatch.rank.role_taxonomy import (
+    BUNDLED_FIELDS,
+    MISSING_ROLE_TAXONOMY,
+    ROLE_TAXONOMY_FILE,
+    ROLE_TAXONOMY_VERSION,
+    RoleTaxonomyError,
+    role_token,
+    write_role_taxonomy,
+)
 from boardwatch.registry.loader import load_catalog, starter_entries
 from boardwatch.registry.validate import CompanyEntry
 from boardwatch.store.queries import save_eligibility, upsert_watch
@@ -52,6 +63,75 @@ def _seed_resume_template(config_dir: Path) -> bool:
     config_dir.mkdir(parents=True, exist_ok=True)
     candidate.write_text(resolve_template(None), encoding="utf-8")
     return True
+
+
+def gather_role_taxonomy(config_dir: Path) -> None:
+    """Ask for the user's role taxonomy and write it, validated (P2 item 8, D-054).
+
+    The prompts are field-neutral and suggest no content: the only vocabulary shown is the set of
+    fields boardwatch ships role knowledge for, the way the career-field prompt shows its catalog.
+    Naming one of those fields IS the answer (the bundled taxonomy); any other field's families
+    and words are the user's own. A bad answer re-prompts; blank skips, and the role gate then
+    abstains rather than guessing.
+    """
+    path = config_dir / ROLE_TAXONOMY_FILE
+    bundled_hint = ", ".join(sorted(BUNDLED_FIELDS))
+    while True:
+        field = typer.prompt(
+            f"Your field, for the role filter [{bundled_hint}, or your own id; blank to skip]",
+            default="",
+        ).strip()
+        if not field:
+            if path.exists():
+                console.print(f"Role taxonomy unchanged at {path}.")
+            else:
+                console.print(
+                    f"No role taxonomy set, so the role filter abstains ({MISSING_ROLE_TAXONOMY})"
+                    " — set one with `boardwatch profile role-taxonomy`."
+                )
+            return
+        try:
+            role_token(field, "field")
+        except RoleTaxonomyError as exc:
+            console.print(str(exc), markup=False)
+            continue
+        document: dict[str, Any] = {"version": ROLE_TAXONOMY_VERSION, "field": field}
+        if field in BUNDLED_FIELDS:
+            document["bundled"] = True
+        else:
+            family_ids = split_csv(
+                typer.prompt("Role families in your field (comma separated ids)")
+            )
+            document["role_families"] = [
+                {
+                    "id": family_id,
+                    "title_words": split_csv(
+                        typer.prompt(f"Title words for {family_id} (comma separated)")
+                    ),
+                }
+                for family_id in family_ids
+            ]
+            excludes = split_csv(
+                typer.prompt(
+                    "Title words that rule a posting out (comma separated, blank for none)",
+                    default="",
+                )
+            )
+            if excludes:
+                document["exclude_words"] = excludes
+        try:
+            taxonomy = write_role_taxonomy(config_dir, document)
+        except RoleTaxonomyError as exc:
+            console.print(str(exc), markup=False)
+            continue
+        console.print(f"Role taxonomy for {taxonomy.field!r} written to {path}.", markup=False)
+        return
+
+
+def role_taxonomy(ctx: typer.Context) -> None:
+    """Set the role taxonomy the ranker's role filter reads, replacing the current one."""
+    # load_settings, not build_context: this writes one config file and never opens the store.
+    gather_role_taxonomy(load_settings(data_dir=ctx.obj).config_dir)
 
 
 def init(ctx: typer.Context) -> None:
@@ -182,5 +262,17 @@ def init(ctx: typer.Context) -> None:
                 facts_json=facts_payload(facts),
                 policy_json=policy.model_dump(mode="json"),
             )
+
+    # Asked whatever the eligibility answer: the role taxonomy is a RANKER input. Never
+    # overwritten here, because `init` is re-runnable and the file is the user's answer.
+    role_taxonomy_path = app_ctx.settings.config_dir / ROLE_TAXONOMY_FILE
+    if role_taxonomy_path.exists():
+        console.print(
+            f"Keeping your role taxonomy at {role_taxonomy_path}; change it with "
+            "`boardwatch profile role-taxonomy`.",
+            markup=False,
+        )
+    else:
+        gather_role_taxonomy(app_ctx.settings.config_dir)
 
     console.print(f"Watching {len(targets)} companies. Run `boardwatch scan` next.")

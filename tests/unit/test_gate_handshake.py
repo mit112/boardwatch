@@ -39,7 +39,7 @@ from boardwatch.store.tables import (
 
 runner = CliRunner()
 
-INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 
 
 def _catalog(tmp_path: Path) -> RulesCatalog:

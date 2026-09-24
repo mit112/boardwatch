@@ -60,7 +60,7 @@ from boardwatch.store.db import ensure_schema, get_engine
 from tests.conftest import write_test_resume_template
 
 # `init` answers: 3 = skip the board wizard, then the profile prompts.
-INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\n"
+INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
 #: The stated requirement is load-bearing, not decoration. The pipeline evaluates this body for
 #: real, and since A3 an evaluation that produces NO requirement row holds the lead in `_review` —
 #: so a body the catalog reads nothing out of would put every lead in a drain and no assertion

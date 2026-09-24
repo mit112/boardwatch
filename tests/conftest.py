@@ -62,6 +62,18 @@ def write_test_resume_template(config_dir: Path) -> None:
     target.write_text(TEST_RESUME_TEMPLATE, encoding="utf-8")
 
 
+def write_bundled_role_taxonomy(config_dir: Path) -> None:
+    """Give a fixture's config dir the answer a tech user gives at onboarding (P2 item 8).
+
+    With no `role-taxonomy.yaml` the role gate abstains on every title, so a fixture standing in
+    for a software user — the population the ranker tests are written against — must carry the
+    bundled-software answer explicitly, exactly as `boardwatch init` would have written it.
+    """
+    from boardwatch.rank.role_taxonomy import write_role_taxonomy
+
+    write_role_taxonomy(config_dir, {"version": 1, "field": "software", "bundled": True})
+
+
 # ---------------------------------------------------------------------------------------
 # Make rich agree that captured test output is not a terminal.
 #

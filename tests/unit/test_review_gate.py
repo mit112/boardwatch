@@ -47,6 +47,20 @@ _INERT: dict[str, object] = {
 }
 
 
+def _software_user(kwargs: dict[str, object]) -> dict[str, object]:
+    """A `title=` becomes the `role` a `bundled: true` software user's taxonomy gives it.
+
+    T184b: `classify` takes the caller's taxonomy verdict instead of deriving one from the title.
+    For the bundled software taxonomy that verdict IS `role_verdict(title)`
+    (`taxonomy_role_verdict`'s bundled branch returns it verbatim), so every test below keeps
+    stating a title and routes exactly as it did when `classify` called `role_verdict` itself.
+    """
+    if "title" in kwargs:
+        kwargs = {**kwargs, "role": role_verdict(str(kwargs["title"]))[0]}
+        del kwargs["title"]
+    return kwargs
+
+
 def classify(**kwargs: object) -> LaneDecision:
     """`review_gate.classify` with every unstated input at its inert value.
 
@@ -54,12 +68,12 @@ def classify(**kwargs: object) -> LaneDecision:
     `TypeError` on the next run rather than a silent pass — which is the drift a hand-copied
     default list would otherwise reintroduce here.
     """
-    return _classify(**{**_INERT, **kwargs})  # type: ignore[arg-type]
+    return _classify(**{**_INERT, **_software_user(kwargs)})  # type: ignore[arg-type]
 
 
 def lane(**kwargs: object) -> str:
     """`review_gate.lane`, defaulted exactly as `classify` above is."""
-    return _lane(**{**_INERT, **kwargs})  # type: ignore[arg-type]
+    return _lane(**{**_INERT, **_software_user(kwargs)})  # type: ignore[arg-type]
 
 
 def test_eligible_still_faces_the_location_and_role_gates() -> None:

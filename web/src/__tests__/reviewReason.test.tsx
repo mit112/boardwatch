@@ -76,6 +76,20 @@ describe("the requirement-hold badges", () => {
     expect(text).toMatch(/vetoed this title/i);
   });
 
+  // T184b. With no role taxonomy the gate never read the title, so the copy may claim neither a
+  // veto nor "not software" — and it names the one command that makes the gate able to fire.
+  it("reports an unmeasured role gate as a missing taxonomy, never as a veto", () => {
+    const { container } = render(
+      <ReviewReasonBadge reason="role_gate_unmeasured" showReason />,
+    );
+    screen.getByText("role gate unmeasured");
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/no role taxonomy/i);
+    expect(text).toMatch(/not a veto/i);
+    expect(text).not.toMatch(/not software/i);
+    expect(text).toMatch(/profile role-taxonomy/);
+  });
+
   // T119. This reason is the only one that is NOT a reading of the posting as it stands: it says
   // the version the résumé was tailored against is no longer the one on the board. Wording it as
   // a finding about the job ("this posting changed its requirements") would assert a reading of
@@ -100,6 +114,7 @@ describe("the requirement-hold badges", () => {
       "non_us_location",
       "role_vetoed",
       "role_unconfirmed",
+      "role_gate_unmeasured",
       "eligibility_unconfirmed",
       "experience_requirement",
       "no_requirements_found",

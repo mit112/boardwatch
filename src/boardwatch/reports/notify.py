@@ -22,7 +22,8 @@ from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
-from boardwatch.rank.role_gate import role_verdict, zero_signal_verdict
+from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
+from boardwatch.rank.role_taxonomy import load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import body_is_empty, current_posting_versions
@@ -139,6 +140,7 @@ def select_new_matches(
     leveling = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
     tier = leveling.fields["software"]
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
     target_band = cast(TargetBand, profile.target_seniority_band)
     items: list[NotifyItem] = []
     for row in rows:
@@ -149,7 +151,7 @@ def select_new_matches(
             continue
         if verdicts.get(int(row.id)) == "ineligible":
             continue
-        role = role_verdict(row.title)[0]
+        role = taxonomy_role_verdict(row.title, role_taxonomy)[0]
         # Same default as `top`: a non-software title is not a "new match" worth a push.
         # Suppressed rather than dropped — `top --include-non-swe` still shows it.
         if not include_non_swe and role == "not_swe":
