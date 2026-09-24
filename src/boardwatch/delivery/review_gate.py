@@ -184,6 +184,29 @@ class LaneDecision(NamedTuple):
     reason: ReviewReason | None
 
 
+def _conflicts_with_employment_preference(
+    provider_value: str,
+    *,
+    employment_type_preference: str | None,
+    internship_preference: str | None,
+) -> bool:
+    """Whether the provider's non-``FullTime`` ``employmentType`` (T92) conflicts with the
+    seeker's OWN declared preference, mirroring how ``resolve._resolve_contract_not_fte`` and
+    ``resolve._resolve_internship`` read the identical two facts against the JD body.
+
+    ``Intern`` reads ``internship_preference``; every other value the provider writes
+    (``Contract``, ``PartTime``, ``Temporary``, and anything not yet seen) reads
+    ``employment_type_preference``, the same one-bucket "non-permanent" reading
+    ``_resolve_contract_not_fte`` already applies. Either preference undeclared, or
+    ``"prefer_not_to_say"``, or the compatible choice (``open_to_contract``/``contract_only``,
+    ``open``) all fall through to ``False`` here -- no hold, exactly the keystone's "a rule that
+    cannot fire abstains" applied to this gate.
+    """
+    if provider_value == "Intern":
+        return internship_preference == "exclude"
+    return employment_type_preference == "fte_only"
+
+
 def classify(
     *,
     verdict: str | None,
@@ -201,6 +224,8 @@ def classify(
     form_question_hit: str | None = None,
     provider_employment_type: str | None = None,
     location_packs: Sequence[CountryPack] = BUNDLED_PACKS,
+    employment_type_preference: str | None = None,
+    internship_preference: str | None = None,
 ) -> LaneDecision:
     """Decide the lane AND, in the same pass, which of the reasons held the lead.
 
@@ -218,6 +243,14 @@ def classify(
     the provider stated no ``employmentType``, or it stated a full-time one. Measured 2026-09-22
     the field is present on 23,630 of 260,581 open postings and on a single provider, so absence
     is the normal case rather than a dropped argument.
+
+    ``employment_type_preference`` and ``internship_preference`` (F8, 2026-09-23 review) are the
+    SEEKER's own declared preferences, read the same way ``resolve._resolve_contract_not_fte`` /
+    ``_resolve_internship`` read them for the JD-body families beside this one. Both keep their
+    default for the same reason ``provider_employment_type`` does: a caller with no profile in
+    hand is not dropping an argument, it is stating "undeclared", and undeclared must ABSTAIN
+    from this hold rather than silently assume ``fte_only`` -- the keystone's "a rule that
+    cannot fire abstains", applied to a hold rather than a verdict.
 
     ``judge_verdict`` is the gate's verdict VERBATIM — ``eligible``, ``ineligible``, ``uncertain``
     or ``None`` for no current gate row — replacing the ``judge_eligible`` boolean every call site
@@ -430,7 +463,18 @@ def classify(
     #
     # `None` covers "not an Ashby lead", "provider stated nothing" and "stated FullTime" alike:
     # the caller normalises, so only a genuine non-full-time value can move anything.
-    if provider_employment_type is not None:
+    #
+    # F8 (2026-09-23 review). The hold used to fire unconditionally, which assumed every tenant
+    # seeks full-time employment -- correct for Mit's own profile and wrong for a contract or
+    # intern seeker, whose Ashby leads all went to review regardless of what they asked for.
+    # `_conflicts_with_employment_preference` reads the SAME two facts the JD-body families
+    # (`contract_not_fte`, `internship`) already read, so a stated preference this gate agrees
+    # with is not held, and an undeclared one abstains rather than defaulting to `fte_only`.
+    if provider_employment_type is not None and _conflicts_with_employment_preference(
+        provider_employment_type,
+        employment_type_preference=employment_type_preference,
+        internship_preference=internship_preference,
+    ):
         return LaneDecision(REVIEW_DIR, "provider_employment_type")
     if revised_since_build:
         return LaneDecision(REVIEW_DIR, "revised_since_build")
@@ -521,6 +565,8 @@ def lane(
     form_question_hit: str | None = None,
     provider_employment_type: str | None = None,
     location_packs: Sequence[CountryPack] = BUNDLED_PACKS,
+    employment_type_preference: str | None = None,
+    internship_preference: str | None = None,
 ) -> str:
     """Return ``""`` for the apply queue, :data:`REVIEW_DIR`, or :data:`CLOSED_DIR`.
 
@@ -545,4 +591,6 @@ def lane(
         form_question_hit=form_question_hit,
         provider_employment_type=provider_employment_type,
         location_packs=location_packs,
+        employment_type_preference=employment_type_preference,
+        internship_preference=internship_preference,
     ).lane

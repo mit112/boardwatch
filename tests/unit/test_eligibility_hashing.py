@@ -410,3 +410,28 @@ def test_the_snapshot_does_not_embed_the_catalog(tmp_path: Path) -> None:
     scale to recover what the hash already carries."""
     snapshot = _identity(tmp_path).rules_snapshot
     assert set(snapshot) == {"catalog_version", "policy"}
+
+
+# ---- F9 (2026-09-23 review): the graduation hemisphere enters the rules snapshot DIFFERING-ONLY,
+# ---- the identical `near_miss_years_ceilings` rule and for the identical reason.
+
+
+def test_declaring_northern_is_not_a_second_fingerprint(tmp_path: Path) -> None:
+    """`northern` is the catalog's declared default and today's only behaviour, so a tenant
+    who states it explicitly must hash byte-identically to one who never landed this field."""
+    base = _identity(tmp_path)
+    stated = _identity(tmp_path, policy=Policy(graduation_hemisphere="northern"))
+    assert stated.rules_hash == base.rules_hash
+    assert stated.rules_snapshot == base.rules_snapshot
+    assert set(base.rules_snapshot) == {"catalog_version", "policy"}
+
+
+def test_a_southern_hemisphere_re_keys_the_rules_hash(tmp_path: Path) -> None:
+    """The other direction: a real change of behaviour MUST re-key (D-P2-22), or the
+    anti-join returns a Northern verdict forever for a tenant who declared Southern."""
+    base = _identity(tmp_path)
+    southern = _identity(tmp_path, policy=Policy(graduation_hemisphere="southern"))
+    assert southern.rules_hash != base.rules_hash
+    assert southern.rules_snapshot["graduation_hemisphere"] == "southern"
+    assert digest(southern.rules_snapshot) == southern.rules_hash
+    verify_identity(southern, posting_version_id=1)

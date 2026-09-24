@@ -60,6 +60,23 @@ LADDER_261677_INLINE = (
 BOUND_CONTROL = (
     "Nice to have:\n- 5 years of experience.\nRequirements:\n- 8 years of experience."
 )
+# Posting 129842's preferred section verbatim (T181): the citizenship bar is its last plain line,
+# and it was the posting's only reason for `ineligible`.
+PREFERRED_129842 = (
+    'Preferred Qualifications\n'
+    'Ph.D.; or M.S. plus 5 years of experience; or B.S. plus 10 years of experience in biochemistry, biophysics, computational biology, structural biology, or a closely related field\n'
+    'Deep expertise in computational protein engineering, including AI/ML enabled protein design, structural modeling, or optimization\n'
+    'Extensive expertise using protein design tools (e.g. RFdiffusion, ProteinMPNN, AlphaFold, Rosetta based workflows, etc.) for protein-binder and enzyme design\n'
+    'Demonstrated ability to reproducibly script and code using Python and/or Bash/Unix shell\n'
+    'Experience with scientific computing and data analysis libraries (e.g., NumPy, pandas, SciPy, PyTorch/JAX, matplotlib)\n'
+    'Hands on experience installing, maintaining, and operating open source protein modeling and simulation tools\n'
+    'Experience with containerized software environments (e.g., Conda, Docker, Apptainer/ Singularity)\n'
+    'Strong fundamental understanding of protein biochemistry and common laboratory procedures relevant to protein expression, purification, and characterization\n'
+    'Proven ability to work effectively in multidisciplinary team environments\n'
+    'Ability to independently troubleshoot technical challenges and rapidly adopt new modeling tools or workflows\n'
+    'Strong written and oral communication skills\n'
+    'U.S. citizenship with the ability to obtain and maintain required security clearances'
+)
 
 # (label, body, facts, policy, verdict, [[rule_id, requiredness, disposition], ...])
 HEADING_CASES: list[tuple] = [
@@ -91,6 +108,8 @@ HEADING_CASES: list[tuple] = [
     ('h26:a field label opening a bullet is read through by the hedge', 'Nice to have:\n- Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h27:a field label after an inline bullet is read through by the hedge', 'Nice to have: • Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h28:CONTROL a Required label inside a hedged list keeps its bar', 'Nice to have:\n- Required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h29:129842 a hedge heading reaches a bare citizenship bar', PREFERRED_129842, P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown'], ['experience_years:total_years_minimum', 'required', 'unknown']]),
+    ('h30:CONTROL the same citizenship line under the posting\'s own Key Qualifications heading keeps its bar', 'Key Qualifications\nU.S. citizenship with the ability to obtain and maintain required security clearances', P_FACTS, ALL_BLOCKERS, 'ineligible', [['work_auth:us_citizen_standalone_required', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -106,7 +125,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "9a6b9b68984251bf69a11666e3e3d306f6d7879b14251db180afeda1bed205fb"
+SPLIT_UNITS_DIGEST = "f20b3b07fa37b829f12db915b7876ba9affad4032cb608b156f8ebaa3e22881c"
 
 
 @pytest.fixture(scope="module")
@@ -173,4 +192,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 28
+    assert len(HEADING_CASES) == 30

@@ -28,7 +28,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,11 @@ class PatternSpec:
     # The `preferred` pattern of this family a tail-hedged bar is carried as, so its one-line
     # form and its split form write the same row; None drops it, as the unit-scoped hedge does.
     hedged_as: str | None
+    # An upper-bound cue TOUCHING this bar -- whitespace only between them -- makes its number a
+    # CEILING ("Less than 2 years of experience", "2 years of experience or less"), and the bar is
+    # carried as the `bounded_above_as` pattern of this family, a required ceiling (T178).
+    bounded_above_by: tuple[re.Pattern[str], ...]
+    bounded_above_as: str | None
 
     @property
     def rule_id(self) -> str:
@@ -169,6 +175,17 @@ class FamilySpec:
     fields_of_study: tuple[StudyFieldSpec, ...] = ()
     related_fields_of_study: tuple[frozenset[str], ...] = ()
     related_field_escapes: tuple[re.Pattern[str], ...] = ()
+    # F9 (T156, 2026-09-23 review). The season->month mapping as HEMISPHERE-keyed catalog DATA
+    # (CLAUDE.md "taxonomy as versioned DATA, not code"), replacing the module-level constant
+    # `resolve._SEASON_MONTHS` used to be. Every catalog-declared hemisphere table, empty for
+    # every family that declares none -- a family or an override without any behaves exactly as
+    # before. `season_months` is the EFFECTIVE table a resolver actually reads: parsed to the
+    # `northern` table (today's only behaviour) and only ever replaced by `effective_family`
+    # when the user's policy names a hemisphere the catalog also declares a table for.
+    season_months_by_hemisphere: Mapping[str, Mapping[str, tuple[int, int]]] = field(
+        default_factory=dict
+    )
+    season_months: Mapping[str, tuple[int, int]] = field(default_factory=dict)
 
     @property
     def ranks(self) -> dict[str, int]:
@@ -254,19 +271,36 @@ class RulesCatalog:
     def effective_family(self, family_id: str, policy: Policy) -> FamilySpec:
         """The family spec as the USER's policy leaves it.
 
-        A resolver is handed a FamilySpec and nothing else, so a per-user ceiling has to reach
-        it as a spec. Routing it through the catalog rather than adding a policy argument to
-        `resolve()` keeps every resolver signature where it is.
+        A resolver is handed a FamilySpec and nothing else, so a per-user ceiling -- or, since
+        F9, a per-user hemisphere -- has to reach it as a spec. Routing it through the catalog
+        rather than adding a policy argument to `resolve()` keeps every resolver signature where
+        it is.
 
-        The declared spec is returned UNCHANGED when the policy states nothing or states the
-        value it already has: `replace` on a frozen dataclass rebuilds all seventeen fields,
-        and this runs once per detection over the whole open-posting set.
+        The declared spec is returned UNCHANGED when the policy states nothing, or states the
+        value it already has, for EITHER override: `replace` on a frozen dataclass rebuilds every
+        field, and this runs once per detection over the whole open-posting set. `season_months`
+        stays the catalog's `northern` table (the declared default) unless the policy names a
+        hemisphere AND the family actually declares a table for it -- a family with no table for
+        the stated hemisphere reads as if none were stated, matching the F9 rule that an
+        unresolvable input defaults to the CURRENT (northern) behaviour. The hemisphere itself
+        is a closed choice on `Policy`, so an unrecognised value never reaches here.
         """
         family = self.family(family_id)
         ceiling = policy.near_miss_years_ceilings.get(family_id)
-        if ceiling is None or ceiling == family.near_miss_years_ceiling:
+        season_months = family.season_months
+        if policy.graduation_hemisphere is not None:
+            season_months = family.season_months_by_hemisphere.get(
+                policy.graduation_hemisphere, season_months
+            )
+        effective_ceiling = family.near_miss_years_ceiling if ceiling is None else ceiling
+        if (
+            effective_ceiling == family.near_miss_years_ceiling
+            and season_months == family.season_months
+        ):
             return family
-        return replace(family, near_miss_years_ceiling=ceiling)
+        return replace(
+            family, near_miss_years_ceiling=effective_ceiling, season_months=season_months
+        )
 
 
 def bundled_rules_text() -> str:
@@ -421,6 +455,7 @@ def _family(
             f"{where} has negative near_miss_years_ceiling {raw_ceiling!r}"
         )
     near_miss_years_ceiling = raw_ceiling
+    season_months_by_hemisphere = _season_months(raw.get("season_months"), where)
 
     tier = str(raw.get("tier", "")).strip()
     if not tier:
@@ -503,6 +538,23 @@ def _family(
                 "preferred pattern of this family that captures what it captures, beside a "
                 "non-empty hedged_by_tail"
             )
+    for pattern in patterns:
+        if pattern.bounded_above_as is None and not pattern.bounded_above_by:
+            continue
+        target = by_id.get(pattern.bounded_above_as or "")
+        # The carried row takes the target's rule id, implies and resolver branch, so it must be a
+        # real `required` ceiling here, and one that is not itself a bar a ceiling can reach.
+        if (
+            target is None
+            or target.requiredness != "required"
+            or target.bounded_above_by
+            or not pattern.bounded_above_by
+        ):
+            raise CatalogError(
+                f"{where}: pattern {pattern.id!r} bounded_above_as "
+                f"{pattern.bounded_above_as!r} must name a required pattern of this family that "
+                "carries no bounded_above_by itself, beside a non-empty bounded_above_by"
+            )
 
     relations: list[dict[str, str]] = []
     for relation in raw.get("superset_relations") or []:
@@ -528,7 +580,66 @@ def _family(
         related_field_escapes=_regex_list(
             raw.get("related_field_escapes"), where, "related_field_escapes"
         ),
+        season_months_by_hemisphere=season_months_by_hemisphere,
+        # The declared default IS `northern`: today's only behaviour, and the F9 rule for an
+        # absent or unresolvable hemisphere alike. A family that declares no table parses this
+        # to `{}`, exactly the `near_miss_years_ceiling`-style "absent behaves as before" rule.
+        season_months=season_months_by_hemisphere.get("northern", {}),
     )
+
+
+#: F9's closed hemisphere vocabulary. A `season_months` table under any other key is a catalog
+#: authoring error, not a new bucket -- caught here rather than silently never selected.
+_HEMISPHERES = frozenset({"northern", "southern"})
+
+#: The closed season vocabulary a `season_months` table may declare. `resolve._season_ordinal`
+#: reads a posting's season word straight against the table's keys, so an unknown key would be
+#: a new bucket the catalog invented at load -- and a misspelt one (`sumer`) a season the
+#: resolver could never match, a permanent abstain that raises nothing.
+_SEASONS = frozenset({"spring", "summer", "fall", "autumn", "winter"})
+
+
+def _season_months(raw: object, where: str) -> dict[str, dict[str, tuple[int, int]]]:
+    """F9 (T156, 2026-09-23 review): the season->month mapping as hemisphere-keyed catalog data.
+
+    `{}` for a family that declares none, the same "absent behaves as before" rule
+    `near_miss_years_ceiling` follows. Validated rather than coerced, for the identical reason:
+    a malformed window would silently mis-resolve a graduation bound and the family's own
+    verdict is the only place that would ever show it.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or not raw:
+        raise CatalogError(f"{where}: 'season_months' must be a non-empty mapping")
+    result: dict[str, dict[str, tuple[int, int]]] = {}
+    for hemisphere, seasons in raw.items():
+        if hemisphere not in _HEMISPHERES:
+            raise CatalogError(
+                f"{where}: 'season_months' has unknown hemisphere {hemisphere!r}"
+            )
+        if not isinstance(seasons, dict) or not seasons:
+            raise CatalogError(
+                f"{where}: 'season_months.{hemisphere}' must be a non-empty mapping"
+            )
+        parsed: dict[str, tuple[int, int]] = {}
+        for season, window in seasons.items():
+            if not isinstance(season, str) or season not in _SEASONS:
+                raise CatalogError(
+                    f"{where}: 'season_months.{hemisphere}' has unknown season {season!r}"
+                )
+            if (
+                not isinstance(window, list)
+                or len(window) != 2
+                or any(isinstance(month, bool) or not isinstance(month, int) for month in window)
+                or any(month < 1 or month > 12 for month in window)
+            ):
+                raise CatalogError(
+                    f"{where}: 'season_months.{hemisphere}.{season}' must be "
+                    "[first_month, last_month], each 1-12"
+                )
+            parsed[season] = (window[0], window[1])
+        result[hemisphere] = parsed
+    return result
 
 
 def _study_fields(raw: object, where: str) -> tuple[StudyFieldSpec, ...]:
@@ -718,6 +829,8 @@ def _pattern(
         cue_idioms=idioms,
         hedged_by_tail=_regex_list(raw.get("hedged_by_tail"), at, "hedged_by_tail"),
         hedged_as=_optional_str(raw.get("hedged_as")),
+        bounded_above_by=_regex_list(raw.get("bounded_above_by"), at, "bounded_above_by"),
+        bounded_above_as=_optional_str(raw.get("bounded_above_as")),
     )
 
 

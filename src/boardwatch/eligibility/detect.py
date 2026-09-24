@@ -20,10 +20,18 @@ The scopes, all applied per match:
                           separated from its clause by delimiters only ("Nice to have: ...").
                           A hedge inside a parenthetical that states its own duration bar
                           belongs to THAT bar and reaches nothing outside the aside.
+                          On a pattern with a tail hedge, applied (inline and as a heading)
+                          only to a bar no abstain waived, as the tail hedge is.
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
                           abstain waived: an abstaining bar keeps its UNKNOWN row.
+                          A pattern declaring this but no `suppressed_by_unit` takes a hedge
+                          heading's hedge by the introducer allowance ALONE: its clause is
+                          never searched, so "(MBA preferred)" beside the bar cannot drop it.
+  bounded_above_by        A cue TOUCHING the span (whitespace only between them), before it or
+                          after it: the bar's number is a CEILING (`_bounded_above`). Carries
+                          the bar as the `bounded_above_as` pattern, `abstained` intact.
   subject_suppressors     CLAUSE-scoped grammatical subject that must PRECEDE the span.
   abstain_by              DOCUMENT-scoped, and does NOT drop: it marks the row undecidable
                           so the resolver renders UNKNOWN. Dropping would return `eligible`
@@ -61,6 +69,13 @@ _CLAUSE_SPLIT = re.compile(r"[;:,]")
 _CLAUSE_BOUNDARY = re.compile(r"[;:,]|(?<!\w)(?:and|but|while|whereas)(?!\w)", re.IGNORECASE)
 
 _ONLY_DELIMS = re.compile(r"^[\s;:,()\[\]\-–—]*$")
+# The same gap may hold one aside that negates the bar, `Preferred (not required): 5 years ...`:
+# it restates the hedge, it does not interrupt it.
+_NEGATED_ASIDE_GAP = re.compile(
+    r"^[\s;:,()\[\]\-–—]*\(\s*not\s+(?:strictly\s+|necessarily\s+)?"
+    r"(?:required|mandatory|necessary)\s*\)[\s;:,()\[\]\-–—]*$",
+    re.IGNORECASE,
+)
 
 # A parenthetical aside, and the shape that makes one a requirement in its own right.
 # "0-1 years of professional software development experience (1+ years of internship
@@ -174,16 +189,18 @@ _TAIL_OXFORD = re.compile(r"\s*(?:and/or|and|or|&)(?!\w)", re.IGNORECASE)
 def _tail_predicate(hedges: tuple[re.Pattern[str], ...]) -> re.Pattern[str]:
     """The sentence-final predicate over the catalog's hedge words: `, preferred.`,
     ` is highly preferred`, `, not required but preferred.`, ` a plus`, ` (preferred)`,
-    ` – Highly preferred`."""
+    ` – Highly preferred`, `; preferred.`. A bare negated bar (`, but not required.`) is the
+    `negated` group: it says the bar is not required and states no preference."""
     hedge = "(?:" + "|".join(rx.pattern for rx in hedges) + ")"
     return re.compile(
-        r"(?P<pred>\s*[,–—-]?\s*(?:"
+        r"(?P<pred>\s*[,;:–—-]?\s*(?:"
         r"(?:(?:is|are|would\s+be|will\s+be|(?:is\s+|are\s+)?considered)\s+)?"
         rf"{_TAIL_INTENSITY}(?:an?\s+)?{hedge}"
         rf"(?:\s*,?\s*(?:but|though|although)?\s*{_TAIL_NEGATED_BAR})?"
         rf"|{_TAIL_NEGATED_BAR}\s*,?\s*(?:but|though|although)\s+(?:(?:is|are)\s+)?"
         rf"{_TAIL_INTENSITY}(?:an?\s+)?{hedge}"
         rf"|\(\s*{_TAIL_INTENSITY}{hedge}\s*\)"
+        rf"|(?P<negated>(?:(?:but|though|although)\s+)?{_TAIL_NEGATED_BAR})"
         r"))[\s.!?]*\Z",
         re.IGNORECASE,
     )
@@ -191,17 +208,18 @@ def _tail_predicate(hedges: tuple[re.Pattern[str], ...]) -> re.Pattern[str]:
 
 def _hedged_tail(
     unit: str, lo: int, hi: int, hedges: tuple[re.Pattern[str], ...]
-) -> int | None:
-    """Where the hedge that predicates the WHOLE bar at [lo, hi) ends in `unit`, or None."""
+) -> tuple[int, bool] | None:
+    """Where the hedge that predicates the WHOLE bar at [lo, hi) ends in `unit`, and whether it
+    states a preference (False for a bare negated bar), or None."""
     tail = unit[hi:]
     found = _tail_predicate(hedges).search(tail)
     if found is None:
         return None
-    end = hi + found.end("pred")
+    hedged = hi + found.end("pred"), found.group("negated") is None
     bar = unit[lo:hi]
     complement = tail[: found.start()]
     if not complement.strip():
-        return end
+        return hedged
     # A bare aside glued to a word, `Pega(Preferred)`, hedges that word, not the bar.
     if found.group("pred").startswith("(") and complement[-1].isalnum():
         return None
@@ -255,7 +273,78 @@ def _hedged_tail(
         )
         if not closed:
             return None
-    return end
+    return hedged
+
+
+# The splitter cuts a spaced ASCII hyphen as an inline bullet, so `5+ years of experience - nice
+# to have` put its predicate in the NEXT unit, where `– nice to have` keeps it in the bar's own.
+_INLINE_DASH = re.compile(r"[ \t]+-[ \t]+")
+
+
+def _through_inline_dash(text: str, units: list[tuple[int, str]], index: int) -> str:
+    """The unit, extended across an inline ` - ` cut to the unit after it on the same line: a raw
+    slice of `text` from the unit's own offset, so a position in it maps back unchanged. The tail
+    test then reads that unit as it reads anything after `–`: only a bare predicate hedges."""
+    offset, unit = units[index]
+    if index + 1 < len(units):
+        start, following = units[index + 1]
+        if _INLINE_DASH.fullmatch(text, offset + len(unit), start):
+            return text[offset : start + len(following)]
+    return unit
+
+
+def _bounded_above(
+    unit: str, lo: int, hi: int, cues: tuple[re.Pattern[str], ...]
+) -> tuple[int, int] | None:
+    """The bar at [lo, hi) widened over an upper-bound cue that touches it, or None (T178).
+
+    Touching -- whitespace only between the cue and the span -- is the whole scope: the cue
+    qualifies THIS number, so "Less than 2 years of management experience and 5 years of
+    experience." keeps its 5-year floor. The cue words and which side each may sit on are the
+    catalog's (`years_ceiling`); only the adjacency is decided here.
+    """
+    for rx in cues:
+        for match in rx.finditer(unit):
+            if match.end() <= lo and not unit[match.end():lo].strip():
+                return match.start(), hi
+            if match.start() >= hi and not unit[hi:match.start()].strip():
+                return lo, match.end()
+    return None
+
+
+def _hedged_tail_end(
+    body_text: str,
+    sentences: list[tuple[int, str]],
+    pattern: PatternSpec,
+    unit: str,
+    lo: int,
+    hi: int,
+    at: Callable[[int], int],
+    join: int | None,
+    units: list[tuple[int, str]],
+    index: int,
+) -> tuple[int, bool] | None:
+    """Where a tail hedge on the bar at [lo, hi) of `unit` ends in `body_text` (an ABSOLUTE
+    offset) and whether it states a preference, or None.
+
+    The predicate is sentence-final, so a CLAUSE-scoped pattern reads it over the sentence that
+    holds its clause: "Ability to obtain a Secret clearance, preferred." splits at the comma and
+    the clause alone never shows the hedge (T181). A sentence-scoped unit is that sentence
+    already; an unjoined one is read across an inline ` - ` cut to the unit after it (T174).
+    `sentences` is filled on first use and shared across patterns.
+    """
+    if pattern.scope == "sentence" or join is not None:
+        text = unit if join is not None else _through_inline_dash(body_text, units, index)
+        hedged = _hedged_tail(text, lo, hi, pattern.hedged_by_tail)
+        return None if hedged is None else (at(hedged[0]), hedged[1])
+    if not sentences:
+        sentences.extend(split_units(body_text, "sentence"))
+    start, stop = at(lo), at(hi)
+    for offset, sentence in sentences:
+        if offset <= start and stop <= offset + len(sentence):
+            hedged = _hedged_tail(sentence, start - offset, stop - offset, pattern.hedged_by_tail)
+            return None if hedged is None else (offset + hedged[0], hedged[1])
+    return None
 
 
 @dataclass(frozen=True)
@@ -475,6 +564,8 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
     ends it after a bulleted one, or after a BLANK LINE once the heading has governed something
     (a list of plain lines). A bulleted line after a blank one continues it, since a loose list
     separates its items that way, and an OR link line never ends it, since it joins two items.
+    A plain line that reads as a section of its own (`_SECTION_BREAK`) ends it too, without
+    becoming a heading, so it can never govern what follows.
     """
     governing: list[int | None] = []
     current: int | None = None
@@ -489,8 +580,11 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
                 governed = listed = False
         elif current is not None and line != prev_line:
             marked = _LIST_MARK.match(text, line) is not None
+            end = text.find("\n", line)
             if not marked and _OR_LEAD.match(unit) is None and (
-                listed or (governed and _BLANK_LINE.search(text, prev_end, offset))
+                listed
+                or (governed and _BLANK_LINE.search(text, prev_end, offset))
+                or _SECTION_BREAK.fullmatch(text[line : len(text) if end < 0 else end].strip())
             ):
                 current = None
             listed = listed or marked
@@ -501,6 +595,19 @@ def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | No
 
 
 _LIST_MARK = re.compile(r"[ \t]*[•‣●\-\*]")
+# An unmarked line that opens a new section which `_looks_like_header` does not recognise: a
+# label alone (`What you'll bring:`, `Who you are:`), or a requirement-section phrase written
+# without its colon (`Required skills`, `Must haves`, `What we're looking for`). In a list of
+# plain lines nothing else separates two sections, so a hedge heading's reach ran through it
+# and demoted the next section's bars. It only ENDS a reach -- a hedge it holds (`Nice to have
+# but not required:`) reaches nothing -- so a wrong match keeps a bar required, the fail-safe.
+_SECTION_BREAK = re.compile(
+    r"[A-Za-z][A-Za-z /&'’-]{0,58}:"
+    r"|(?:required(?:\s+(?:skills?|qualifications?|experience|knowledge))?|must[\s-]haves?|"
+    r"what\s+(?:you|we)(?:['’]ll|\s+will|['’]re|\s+are)?\s+(?:bring|need|looking\s+for)|"
+    r"who\s+you\s+are)\s*:?",
+    re.IGNORECASE,
+)
 _BLANK_LINE = re.compile(r"\n[ \t]*\n")
 
 
@@ -692,7 +799,10 @@ def _suppressed(
             intro = (
                 introducer
                 and match.end() <= clo
-                and _ONLY_DELIMS.match(text[match.end():clo]) is not None
+                and any(
+                    gap.match(text[match.end():clo]) is not None
+                    for gap in (_ONLY_DELIMS, _NEGATED_ASIDE_GAP)
+                )
             )
             if not (inside or intro):
                 continue
@@ -706,13 +816,20 @@ def _suppressed(
 
 
 def _hedged_by_heading(
-    heading: str, unit: str, lo: int, hi: int, hedges: tuple[re.Pattern[str], ...]
+    heading: str,
+    unit: str,
+    lo: int,
+    hi: int,
+    hedges: tuple[re.Pattern[str], ...],
+    introducer_only: bool = False,
 ) -> str | None:
     """The hedge introducer allowance, read over the inline twin `heading + " " + unit`.
 
     "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would. The
     caller passes `_heading_text`, so `Preferred Qualifications:` reads as `Preferred:`, and a
     field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
+    `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
+    caller's list was never run over that clause, so a match there is not the heading's.
     """
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
     start = _item_start(unit)
@@ -721,9 +838,10 @@ def _hedged_by_heading(
     intro = f"{heading} {unit[:lead]}{unit[start:]}"
     shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
+    clo, chi = _clause_bounds(intro, lo, hi)
     return _suppressed(
         intro, lo, hi, hedges,
-        bounds=_clause_bounds(intro, lo, hi), introducer=True, aside_owned=True,
+        bounds=(clo, clo if introducer_only else chi), introducer=True, aside_owned=True,
     )
 
 
@@ -777,8 +895,9 @@ def detect(
     caller passes a pre-sorted list rather than setting ordinals itself.
     """
     found: list[Detection] = []
-    # Tail-hedged bars carried as their family's `preferred` twin, merged after the loop so a
-    # twin that already reached the same hedge is not written twice.
+    # Tail-hedged bars carried as their family's `preferred` twin, and bounded bars carried as its
+    # ceiling, merged after the loop so a row that already reached the same span is not written
+    # twice.
     carried: list[Detection] = []
     # `split_units` is pure in (text, scope) and this loop only READS `offset` and `unit`,
     # never mutating the list or the tuples, so one split per scope is shared across every
@@ -788,6 +907,8 @@ def detect(
     units_by_scope: dict[str, list[tuple[int, str]]] = {}
     # Heading context, computed once per scope beside the units and never folded into them.
     context_by_scope: dict[str, tuple[list[int | None], list[str | None]]] = {}
+    # The sentence split a narrower-scoped pattern's tail hedge is read over, split on first use.
+    sentences: list[tuple[int, str]] = []
     for family in catalog.families:
         if family.id not in enabled_families:
             continue
@@ -820,17 +941,6 @@ def detect(
                     if _suppressed(unit, lo, hi, pattern.suppressed_by_sentence):
                         continue
                     bounds = _clause_bounds(unit, lo, hi)
-                    if _suppressed(
-                        unit, lo, hi, pattern.suppressed_by_unit,
-                        bounds=bounds, introducer=True, aside_owned=True,
-                    ):
-                        continue
-                    heading = governing[index]
-                    if join is None and heading is not None and _hedged_by_heading(
-                        _heading_text(units[heading][1]), unit, lo, hi,
-                        pattern.suppressed_by_unit,
-                    ):
-                        continue
                     if _suppressed(
                         unit, lo, hi, pattern.subject_suppressors,
                         bounds=bounds, before_only=True,
@@ -883,21 +993,58 @@ def detect(
                             pattern.abstain_by_sentence + pattern.abstain_by_adjacent,
                             inside_span=True,
                         )
+                    # A bar that reads its tail hedge after its abstains reads its clause and
+                    # heading hedges after them too, so "Bachelor degree or 5 years of experience
+                    # preferred." keeps the `unknown` row its split form keeps (T175).
+                    waived = abstained is not None and bool(pattern.hedged_by_tail)
+                    if not waived and _suppressed(
+                        unit, lo, hi, pattern.suppressed_by_unit,
+                        bounds=bounds, introducer=True, aside_owned=True,
+                    ):
+                        continue
+                    heading = governing[index]
+                    if not waived and join is None and heading is not None and _hedged_by_heading(
+                        _heading_text(units[heading][1]), unit, lo, hi,
+                        pattern.suppressed_by_unit or pattern.hedged_by_tail,
+                        introducer_only=not pattern.suppressed_by_unit,
+                    ):
+                        continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row
                     # whatever the tail says, so an abstain is never folded into a carried or
                     # dropped row.
                     if abstained is None and pattern.hedged_by_tail and (
-                        end := _hedged_tail(unit, lo, hi, pattern.hedged_by_tail)
+                        hedged := _hedged_tail_end(
+                            body_text, sentences, pattern, unit, lo, hi, at, join, units, index
+                        )
                     ) is not None:
-                        if pattern.hedged_as is not None:
+                        # A bare negated bar drops it: it is not required, and nothing says it
+                        # is preferred.
+                        end, preference = hedged
+                        if preference and pattern.hedged_as is not None:
                             carried.append(
                                 Detection(
                                     family=family.id,
                                     pattern=twins[pattern.hedged_as],
-                                    span=(at(lo), at(end)),
+                                    span=(at(lo), end),
                                     values={k: v for k, v in match.groupdict().items() if v},
                                 )
                             )
+                        continue
+                    # A ceiling is not a floor, whether or not an escape waived it: the bar is
+                    # carried as its family's ceiling with `abstained` intact, so a waived bar
+                    # keeps its `unknown` row and only its reading changes.
+                    if pattern.bounded_above_as is not None and (
+                        bounded := _bounded_above(unit, lo, hi, pattern.bounded_above_by)
+                    ) is not None:
+                        carried.append(
+                            Detection(
+                                family=family.id,
+                                pattern=twins[pattern.bounded_above_as],
+                                span=(at(bounded[0]), at(bounded[1])),
+                                values={k: v for k, v in match.groupdict().items() if v},
+                                abstained=abstained,
+                            )
+                        )
                         continue
                     values = {name: value for name, value in match.groupdict().items() if value}
                     # Checked after every drop, so a suppressed own-view match hides nothing.
@@ -918,7 +1065,9 @@ def detect(
                         Detection(
                             family=family.id,
                             pattern=pattern,
-                            span=(at(lo), at(hi)),
+                            # A heading-view row quotes its bar from the bullet on: the heading
+                            # and every line between them are not the requirement.
+                            span=(at(lo if join is None else join), at(hi)),
                             values=values,
                             abstained=abstained,
                         )

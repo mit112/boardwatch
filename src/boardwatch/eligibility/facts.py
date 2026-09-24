@@ -141,6 +141,17 @@ class Policy(BaseModel):
     near_miss_years_ceilings: dict[str, Annotated[int, Field(ge=0)]] = Field(
         default_factory=dict
     )
+    # F9 (T156, 2026-09-23 review). The `student_status` family's graduation-season window used
+    # to read a Northern-Hemisphere-only month table baked into `resolve.py`. This selects which
+    # of the catalog's DECLARED hemisphere tables (`rules.yaml`'s `season_months`) a graduation
+    # window resolves against -- a PER-USER setting, not a property of the catalog, for the
+    # identical reason the ceiling above is. `None` means undeclared and reads as `northern`,
+    # the catalog's declared default and today's only behaviour, so landing this field re-keys
+    # nobody until they set it (D-P2-2). A CLOSED choice: a misspelt hemisphere is a malformed
+    # document and is refused by `parse_policy` like any other, because reading `souhtern` as
+    # undeclared would decide a southern graduate's Spring window against the northern months
+    # and never say so (T182 review).
+    graduation_hemisphere: Literal["northern", "southern"] | None = None
 
 
 class ProfileRowInvalid(ValueError):

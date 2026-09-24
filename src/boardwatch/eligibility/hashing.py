@@ -118,6 +118,15 @@ def build_identity(
     }
     if differing:
         rules_snapshot["near_miss_years_ceilings"] = differing
+    # F9 (T156, 2026-09-23 review). DIFFERING-ONLY, the identical `near_miss_years_ceilings`
+    # rule and for the identical reason: `northern` is the catalog's declared default and
+    # today's only behaviour, so a tenant who states nothing -- or states `northern` itself --
+    # must hash byte-identically to one who never landed this field, or one behaviour gets two
+    # fingerprints and every row keyed on the old one goes stale for no reason (D-P2-2). A real
+    # `southern` declaration DOES change what a graduation-season window resolves to, so it
+    # MUST re-key (D-P2-22) -- which is what makes landing the feature free and using it honest.
+    if policy.graduation_hemisphere is not None and policy.graduation_hemisphere != "northern":
+        rules_snapshot["graduation_hemisphere"] = policy.graduation_hemisphere
     profile_hash = digest(profile_snapshot)
     rules_hash = digest(rules_snapshot)
     return InputIdentity(

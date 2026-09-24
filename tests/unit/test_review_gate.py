@@ -1249,6 +1249,13 @@ def test_lane_projects_the_revision_hold_too() -> None:
 # `provider_employment_type` is absent from `_INERT` for the reason `form_question_hit` is: it
 # keeps a real default in production, because `None` there is a genuine third state (not an Ashby
 # lead / provider stated nothing / stated a full-time value) rather than a dropped argument.
+# `employment_type_preference` / `internship_preference` are absent from `_INERT` for the same
+# reason (F8, 2026-09-23 review): `None` on either is a real state -- "undeclared" -- and every
+# assertion below that wants the hold to actually FIRE has to state Mit's own shape explicitly,
+# which is what makes those assertions the multi-tenant CONTROL rather than an assumed default.
+
+#: Mit's own profile shape (F8's control): seeks full-time only, excludes internships.
+_FTE_ONLY = {"employment_type_preference": "fte_only", "internship_preference": "exclude"}
 
 
 def test_a_non_full_time_provider_field_holds_an_otherwise_eligible_lead() -> None:
@@ -1259,27 +1266,83 @@ def test_a_non_full_time_provider_field_holds_an_otherwise_eligible_lead() -> No
     at all, and 10 of THOSE read `eligible` — so ten leads were reaching the blind-apply queue
     against a provider field that contradicts them. Below the short-circuit this gate would be
     inert for exactly that population, which is the trap T119's comment records.
+
+    `**_FTE_ONLY` is Mit's own declared preference (F8's control): the hold still fires for a
+    tenant who actually asked for full-time only.
     """
     assert classify(
-        verdict="eligible", **_US_SWE, provider_employment_type="Contract"
+        verdict="eligible", **_US_SWE, provider_employment_type="Contract", **_FTE_ONLY
     ) == LaneDecision(REVIEW_DIR, "provider_employment_type")
 
 
 @pytest.mark.parametrize("value", ["Contract", "Intern", "PartTime", "Temporary"])
 def test_every_non_full_time_value_the_live_fleet_carries_holds(value: str) -> None:
     """The four values actually present, not a hand-picked one (Contract 808, Intern 216,
-    PartTime 38, Temporary 28 open postings on 2026-09-22)."""
+    PartTime 38, Temporary 28 open postings on 2026-09-22), against Mit's own `**_FTE_ONLY`
+    shape (F8's control)."""
     assert classify(
-        verdict="eligible", **_US_SWE, provider_employment_type=value
+        verdict="eligible", **_US_SWE, provider_employment_type=value, **_FTE_ONLY
     ) == LaneDecision(REVIEW_DIR, "provider_employment_type")
 
 
 def test_the_provider_field_is_inert_when_it_states_nothing() -> None:
     """`None` is the normal case: the field is written by ONE provider and is present on 23,630 of
     260,581 open postings, so absence must cost the owner nothing."""
-    assert classify(verdict="eligible", **_US_SWE) == LaneDecision("", None)
+    assert classify(verdict="eligible", **_US_SWE, **_FTE_ONLY) == LaneDecision("", None)
     assert classify(
-        verdict="eligible", **_US_SWE, provider_employment_type=None
+        verdict="eligible", **_US_SWE, provider_employment_type=None, **_FTE_ONLY
+    ) == LaneDecision("", None)
+
+
+# --- F8 (2026-09-23 review): the hold reads the SEEKER's own preference, never assumes one -------
+
+
+@pytest.mark.parametrize("value", ["Contract", "PartTime", "Temporary"])
+def test_a_contract_seeking_profile_is_not_held_on_a_non_full_time_posting(value: str) -> None:
+    """The multi-tenant defect this fixes: a contract seeker's own Ashby leads used to go to
+    review regardless of what they asked for. `open_to_contract` is compatible with every
+    non-full-time value the live fleet carries except `Intern` (a separate preference)."""
+    assert classify(
+        verdict="eligible",
+        **_US_SWE,
+        provider_employment_type=value,
+        employment_type_preference="open_to_contract",
+    ) == LaneDecision("", None)
+
+
+def test_an_internship_seeking_profile_is_not_held_on_an_intern_posting() -> None:
+    assert classify(
+        verdict="eligible",
+        **_US_SWE,
+        provider_employment_type="Intern",
+        internship_preference="open",
+    ) == LaneDecision("", None)
+
+
+def test_an_undeclared_employment_type_preference_abstains_from_the_hold() -> None:
+    """The keystone, applied to a hold rather than a verdict: a rule that cannot fire abstains.
+    RED before the fix -- the hold used to fire unconditionally, assuming `fte_only` for every
+    tenant regardless of what their own profile said (or did not say)."""
+    assert classify(
+        verdict="eligible", **_US_SWE, provider_employment_type="Contract"
+    ) == LaneDecision("", None)
+    assert classify(
+        verdict="eligible",
+        **_US_SWE,
+        provider_employment_type="Contract",
+        employment_type_preference="prefer_not_to_say",
+    ) == LaneDecision("", None)
+
+
+def test_an_undeclared_internship_preference_abstains_from_the_hold() -> None:
+    assert classify(
+        verdict="eligible", **_US_SWE, provider_employment_type="Intern"
+    ) == LaneDecision("", None)
+    assert classify(
+        verdict="eligible",
+        **_US_SWE,
+        provider_employment_type="Intern",
+        internship_preference="prefer_not_to_say",
     ) == LaneDecision("", None)
 
 
@@ -1295,7 +1358,7 @@ def test_the_provider_employment_type_hold_can_never_yield_ineligible() -> None:
     for verdict in (None, "eligible", "uncertain", "ineligible"):
         for value in ("Contract", "Intern", "PartTime", "Temporary"):
             decision = classify(
-                verdict=verdict, **_US_SWE, provider_employment_type=value
+                verdict=verdict, **_US_SWE, provider_employment_type=value, **_FTE_ONLY
             )
             if decision.reason == "provider_employment_type":
                 seen = True
@@ -1363,6 +1426,7 @@ def test_the_provider_field_outranks_revised_since_build() -> None:
             **_US_SWE,
             revised_since_build=True,
             provider_employment_type="Contract",
+            **_FTE_ONLY,
         ).reason
         == "provider_employment_type"
     )
@@ -1379,6 +1443,7 @@ def test_lane_and_classify_agree_about_the_provider_hold() -> None:
         "verdict": "eligible",
         **_US_SWE,
         "provider_employment_type": "Contract",
+        **_FTE_ONLY,
     }
     decision = classify(**kwargs)  # type: ignore[arg-type]
     assert decision.lane == lane(**kwargs)  # type: ignore[arg-type]

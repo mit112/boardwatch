@@ -119,7 +119,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     # 2026-09-05: 59 -> 60. `labeled_years_minimum`: every pattern above it reads left to right
     # from the NUMBER, so "Experience Required: 3 to 5 years" -- the noun first, nothing after
     # the count -- gave none of them a tail to anchor on and wrote no row at all.
-    assert sum(len(f.patterns) for f in catalog.families) == 60
+    # T178: 60 -> 62. `total_years_maximum` and `scoped_years_maximum`, the ceiling readings an
+    # upper-bound cue carries a minimum bar into.
+    assert sum(len(f.patterns) for f in catalog.families) == 62
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -372,6 +374,19 @@ def test_each_malformed_shape_has_its_own_raise_site(
         load_rules(tmp_path)
     assert message in str(exc.value)
     assert "rules.yaml" in str(exc.value)  # the message names the offending document
+
+
+def test_a_season_outside_the_closed_vocabulary_is_refused_at_load(tmp_path: Path) -> None:
+    """The resolver reads a posting's season word straight against the table's keys, so a key
+    the catalog did not declare would be a bucket invented at load, and a misspelt one a season
+    no posting could ever match (T182 review)."""
+    body = bundled_rules_text().replace(
+        "        summer: [6, 8]\n", "        summer: [6, 8]\n        monsoon: [6, 8]\n", 1
+    )
+    assert "monsoon" in body
+    _write(tmp_path, body)
+    with pytest.raises(CatalogError, match="unknown season 'monsoon'"):
+        load_rules(tmp_path)
 
 
 def test_a_structured_family_needs_at_least_two_fields(tmp_path: Path) -> None:

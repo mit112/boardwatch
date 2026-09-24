@@ -87,7 +87,7 @@ def test_every_catalog_rule_appears_even_with_no_rows() -> None:
     report = build_abstain_report(cat, {})
 
     assert [rule.rule_id for rule in report.rules] == rule_ids(cat)
-    assert len(report.rules) == 60  # 57 -> 59: the two months patterns (2026-09-04); 59 -> 60: `labeled_years_minimum` (2026-09-05)
+    assert len(report.rules) == 62  # 57 -> 59: the two months patterns (2026-09-04); 59 -> 60: `labeled_years_minimum` (2026-09-05); 60 -> 62: the two T178 ceilings
 
 
 def test_a_rule_that_never_fired_has_no_rate_rather_than_zero() -> None:
@@ -144,7 +144,7 @@ def test_never_fired_is_not_counted_as_fully_abstaining() -> None:
     report = build_abstain_report(cat, {})
 
     assert report.fully_abstaining == ()
-    assert len(report.never_fired) == 60  # 57 -> 59: the two months patterns (2026-09-04); 59 -> 60: `labeled_years_minimum` (2026-09-05)
+    assert len(report.never_fired) == 62  # 57 -> 59: the two months patterns (2026-09-04); 59 -> 60: `labeled_years_minimum` (2026-09-05); 60 -> 62: the two T178 ceilings
 
 
 def test_the_formerly_exempt_rules_decide_and_are_not_flagged_undecidable() -> None:

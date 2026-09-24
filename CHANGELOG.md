@@ -917,6 +917,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Second engine batch: the hedges, ceilings and clause bounds the 2026-09-23 reviews found, as one
+  re-key (2026-09-24, T174, T175, T178, T180, T181, T182).** A preferred years twin stops at its bar's
+  clause boundary, and an abstaining bar's clause and heading hedges are read only after its abstains,
+  so a waived bar keeps its `unknown` row (T174, T175). An experience upper bound ("less than 2 years")
+  reads as a ceiling, never a minimum (T178). A hedge heading's reach ends at an unrecognised section
+  line, one-line years hedge shapes read as their comma twins, a heading-view preferred row is quoted from
+  its bar, and five known-wrong corpus rows carry their plain reading (T180). A hedge heading and a tail
+  hedge reach every family's bare-noun bar, and the new families hedge by tail and heading only (T181).
+  The employment-terms hold reads the seeker's own preference, and the graduation seasons are
+  hemisphere-keyed catalog data with closed choices (T182). `engine_version` and `rules_hash` move once;
+  the two-arm reading over the pinned 126,854 postings is in the merge message.
+
 - **The ranker's field-dependent gates read the user's field (2026-09-23, T187).** The zero-signal
   veto, the role verdict tables, the title filler words and the seniority word tier assumed a
   software user. Each now reads the field the user's role taxonomy declares: a software user gets
