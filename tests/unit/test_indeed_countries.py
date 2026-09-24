@@ -64,6 +64,70 @@ def test_a_canadian_profile_searches_canada(tmp_path: Path) -> None:
     assert result.search_pages == ((search_url("CAN"), 1),)
 
 
+def _hits_then_more(prefix: str) -> list[httpx.Response]:
+    """Two pages for one country, each naming a next page, so only the page budget can stop it."""
+    def page(n: int) -> httpx.Response:
+        hits = [
+            replace(hit, key=f"{prefix}{n}{hit.key}", employer_name=f"{prefix} {hit.employer_name}",
+                    employer_page=f"/cmp/{prefix}-{hit.employer_page.rsplit('-', 1)[-1]}")
+            for hit in search_hits(4, companies=2)
+        ]
+        return httpx.Response(200, text=search_response(hits, next_cursor=f"{prefix}-c{n}"))
+    return [page(1), page(2)]
+
+
+def test_two_countries_share_one_page_budget_round_robin(tmp_path: Path) -> None:
+    """T188b: the page budget is the run's, not each country's. Two countries under
+    `search_pages=2`, every page offering a next one, send exactly two POSTs — one per country,
+    round-robin — where giving each country the whole budget sent four."""
+    with respx.mock(assert_all_called=True) as router:
+        us = router.post("https://apis.indeed.com/graphql?co=US").mock(
+            side_effect=_hits_then_more("us")
+        )
+        ca = router.post("https://apis.indeed.com/graphql?co=CA").mock(
+            side_effect=_hits_then_more("ca")
+        )
+        result = IndeedLane(search_pages=2, target_countries=("USA", "CAN")).collect(
+            _fetcher(tmp_path), _admit_all
+        )
+
+    assert (us.call_count, ca.call_count) == (1, 1)
+    assert result.search_pages == ((search_url("USA"), 1), (search_url("CAN"), 1))
+
+
+def test_the_page_budget_is_shared_across_countries_and_facets(tmp_path: Path) -> None:
+    """Two facets × two pages is a budget of four whatever the country count: two countries get
+    one page per (facet, country) search, not two."""
+    with respx.mock(assert_all_called=True) as router:
+        us = router.post("https://apis.indeed.com/graphql?co=US").mock(
+            side_effect=_hits_then_more("us") + _hits_then_more("ux")
+        )
+        ca = router.post("https://apis.indeed.com/graphql?co=CA").mock(
+            side_effect=_hits_then_more("ca") + _hits_then_more("cx")
+        )
+        IndeedLane(
+            search_facets=("backend engineer", "data engineer"), search_pages=2,
+            target_countries=("USA", "CAN"),
+        ).collect(_fetcher(tmp_path), _admit_all)
+
+    assert us.call_count + ca.call_count == 4
+    assert (us.call_count, ca.call_count) == (2, 2)
+
+
+def test_one_country_keeps_its_whole_page_budget_per_facet(tmp_path: Path) -> None:
+    """CONTROL: the owner's single-country run is unchanged — every facet pages to the ceiling."""
+    with respx.mock(assert_all_called=True) as router:
+        us = router.post("https://apis.indeed.com/graphql?co=US").mock(
+            side_effect=_hits_then_more("us") + _hits_then_more("ux")
+        )
+        IndeedLane(
+            search_facets=("backend engineer", "data engineer"), search_pages=2,
+            target_countries=("USA",),
+        ).collect(_fetcher(tmp_path), _admit_all)
+
+    assert us.call_count == 4
+
+
 def test_two_countries_are_each_searched_under_one_company_cap(tmp_path: Path) -> None:
     """One search per country; the admission callback — the run's one company budget — is the
     same one for both, so a cap of one company admits one across the two countries, not one each."""
@@ -82,7 +146,7 @@ def test_two_countries_are_each_searched_under_one_company_cap(tmp_path: Path) -
         ca = router.post("https://apis.indeed.com/graphql?co=CA").mock(
             return_value=httpx.Response(200, text=_hits("ca"))
         )
-        result = IndeedLane(target_countries=("USA", "CAN")).collect(
+        result = IndeedLane(search_pages=2, target_countries=("USA", "CAN")).collect(
             _fetcher(tmp_path), admit_one
         )
 

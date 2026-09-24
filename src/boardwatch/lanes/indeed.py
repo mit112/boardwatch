@@ -9,8 +9,8 @@ response carries `description.html` for every hit, measured at 100 of 100 hits w
 (1,595-7,506 chars) in one 0.57 s request. Against the LinkedIn lane's measured 2.39 s per body
 GET that is ~420x cheaper per JD, and it is why this lane takes no `lane_posting_budget` -- a
 budget on "JD-body requests one lane may make in a run" would bound a number that is always zero.
-What bounds this lane is `indeed_search_pages` x `indeed_results_per_page` x facets x target
-countries, all four of which an operator can see.
+What bounds this lane is `indeed_search_pages` x `indeed_results_per_page` x facets, all three
+of which an operator can see; the target countries share that page budget rather than multiply it.
 
 **THIS LANE IMPERSONATES INDEED'S OWN iOS APP, AND THAT IS STATED HERE RATHER THAN BURIED.**
 `apis.indeed.com/robots.txt` is `User-agent: * / Disallow: /`, and the endpoint answers only to
@@ -863,24 +863,40 @@ class IndeedLane:
         give: companies are worked in iteration order, so concatenating would let the first facet
         consume the run and every later target title contribute nothing.
 
+        **THE PAGE BUDGET IS THE RUN'S, NOT EACH COUNTRY'S.** `search_pages` pages per facet is
+        the ceiling a single-country run has always had, so the whole lane may send at most
+        `search_pages * facets` search POSTs however many countries the profile declares. It is
+        dealt out round-robin over the `(facet, country)` searches — facet-major, every country
+        once per facet — so each search gets `budget // searches` pages and the first
+        `budget % searches` one more. A search dealt nothing is never made and has no entry
+        below. With one country every search gets exactly `search_pages`, as before; with more
+        countries than pages a facet's later countries go unsearched, which is the budget
+        holding rather than being multiplied.
+
         **EVERY FACET'S ENTRY IN THE RETURNED PAGE COUNTS NAMES ITS COUNTRY'S URL, AND THAT IS NOT
         A BUG.** The facet travels in the POST BODY, so each target country has exactly one URL.
-        The entries are POSITIONAL: one per (country, facet), in configured order, which
+        The entries are POSITIONAL: one per search made, in the order above, which
         is what makes "facet 2 ran out at page 1 while facet 3 filled the ceiling" still readable
         in the funnel. Encoding the facet into the URL to make the table prettier would name a
         request this lane never made. The third return value is positional the same way: how each
         facet's search ENDED, because one the host cut short reports the same depth as one that
         ran out.
         """
+        terms = self._search_facets or ("",)
+        pairs = [(url, term) for term in terms for url in self._search_urls]
+        budget = self._search_pages * len(terms)
+        share, extra = divmod(budget, len(pairs))
         searches = [
-            (url, term) for url in self._search_urls for term in self._search_facets or ("",)
+            (url, term, share + (1 if index < extra else 0))
+            for index, (url, term) in enumerate(pairs)
+            if share or index < extra
         ]
         if len(searches) == 1 and not self._search_facets:
             # The unfaceted fallback keeps the single-search contract: a transport or structural
             # failure on its FIRST page propagates, because with one search there are no other
             # results for it to cost.
-            url = searches[0][0]
-            entries, pages, outcome = self._facet_pages(fetcher, url, "")
+            url, _, ceiling = searches[0]
+            entries, pages, outcome = self._facet_pages(fetcher, url, "", ceiling)
             if not entries:
                 # The same all-empty check the faceted branch runs, and for the same reason.
                 # Returning here instead would let an empty HTTP-200 page read as a quiet day:
@@ -896,9 +912,9 @@ class IndeedLane:
         page_counts: list[tuple[str, int]] = []
         outcomes: list[SearchOutcome] = []
         failed = 0
-        for url, term in searches:
+        for url, term, ceiling in searches:
             try:
-                entries, pages, outcome = self._facet_pages(fetcher, url, term)
+                entries, pages, outcome = self._facet_pages(fetcher, url, term, ceiling)
             except (FetchFailure, SearchPageError) as exc:
                 # Per-facet isolation, the same shape D-307 gave a board's apply failure inside a
                 # scan. One search per target title means a run makes many, so the seventh must
@@ -935,10 +951,10 @@ class IndeedLane:
         return interleaved, tuple(page_counts), tuple(outcomes)
 
     def _facet_pages(
-        self, fetcher: Fetcher, url: str, term: str
+        self, fetcher: Fetcher, url: str, term: str, ceiling: int
     ) -> tuple[list[_SearchEntry], int, SearchOutcome]:
-        """One facet's hits over at most `self._search_pages` pages, the pages fetched, and how
-        the facet ended.
+        """One facet's hits over at most `ceiling` pages (its share of the run's page budget,
+        `_search`), the pages fetched, and how the facet ended.
 
         **A PAGE WITH NO HITS MEANS TWO DIFFERENT THINGS AND THIS IS WHERE THEY SEPARATE.** On the
         FIRST page it is returned rather than raised, because one target title matching nothing is
@@ -965,7 +981,7 @@ class IndeedLane:
         pages = 0
         outcome = SearchOutcome("ended")
         cursor: str | None = None
-        for page_index in range(self._search_pages):
+        for page_index in range(ceiling):
             body = search_body(term, cursor=cursor, limit=self._results_per_page)
             try:
                 result = fetcher.post_json(url, body, headers=_API_HEADERS)
