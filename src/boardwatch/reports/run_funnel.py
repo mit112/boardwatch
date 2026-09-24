@@ -255,7 +255,7 @@ _TOP_MISSING = 10
 #
 # **T188's `lanes[].not_attemptable` and `tenant_assumptions.lanes` do NOT bump it either**, on the
 # same precedent: additive keys that change no existing key's meaning. A funnel written before them
-# lacks both, which reads as `null`: NOT MEASURED.
+# lacks both, which reads as `null`: NOT MEASURED. T188b's `lanes[].not_attempted` likewise.
 #
 # **v9 is a lead's `location_class` read against the run's `target_countries` (T204).** It bumps
 # for the v5 reason: an existing key changed MEANING. Since T186 (D-583) the hard location gate
@@ -1547,6 +1547,9 @@ class LaneReport:
     # `LaneResult.not_attemptable`: tenant data the lane searches with is undeclared, so nothing
     # was requested for it (T188). `None` when the lane had everything it searches with.
     not_attemptable: str | None = None
+    # `LaneResult.not_attempted`, rendered (`unsupported_country:ATA`): parts of the search nothing
+    # was requested for, whether or not the lane requested anything else (T188b).
+    not_attempted: tuple[str, ...] = ()
     fetch_seconds: float | None = None
     apply_seconds: float | None = None
     stage_elapsed_seconds: float | None = None
@@ -2929,6 +2932,8 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                 ],
                 # The undeclared tenant data nothing was requested for (T188), or `null`.
                 "not_attemptable": lane.not_attemptable,
+                # The parts of the search left out while the rest ran (T188b), or `[]`.
+                "not_attempted": list(lane.not_attempted),
                 # The lane's cost, split at the fetch/apply boundary. `null` means NOT
                 # MEASURED, never 0.0 — a lane that raised before it was timed reports
                 # absence rather than a free lane.
@@ -3114,6 +3119,16 @@ def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
                     "",
                 ]
                 if lane.not_attemptable is not None
+                else []
+            ),
+            *(
+                [
+                    "not attempted: "
+                    + ", ".join(f"`{note}`" for note in lane.not_attempted)
+                    + " — nothing was requested for these.",
+                    "",
+                ]
+                if lane.not_attempted
                 else []
             ),
             _lane_cost_line(lane),

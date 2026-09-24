@@ -431,3 +431,20 @@ def test_a_lane_abstaining_on_undeclared_tenant_data_says_so_in_both_renderings(
     assert [lane["not_attemptable"] for lane in lanes] == ["no_target_countries", None]
     markdown = funnel_to_markdown(funnel)
     assert markdown.count("not attemptable: `no_target_countries`") == 1
+
+
+def test_a_part_of_the_search_left_out_is_named_in_both_renderings() -> None:
+    """T188b: a lane that searched the US and refused `ATA` did NOT abstain, so
+    `not_attemptable` stays null and the refusal is a note beside it, naming the country."""
+    from dataclasses import replace
+
+    partial = replace(_report("indeed"), not_attempted=("unsupported_country:ATA",))
+    funnel = _funnel((partial, _report("ran")))
+
+    lanes = funnel_to_dict(funnel)["lanes"]
+    assert isinstance(lanes, list)
+    assert [lane["not_attempted"] for lane in lanes] == [["unsupported_country:ATA"], []]
+    assert [lane["not_attemptable"] for lane in lanes] == [None, None]
+    markdown = funnel_to_markdown(funnel)
+    assert markdown.count("not attempted: `unsupported_country:ATA`") == 1
+    assert "not attemptable:" not in markdown

@@ -190,6 +190,7 @@ from boardwatch.lanes.base import (
     CompanyAdmission,
     LaneCompanySnapshot,
     LaneResult,
+    NotAttempted,
     SearchOutcome,
     failed_search,
     lane_snapshot,
@@ -210,8 +211,22 @@ LANE_PROVIDER = "indeed"
 SEARCH_ENDPOINT = "https://apis.indeed.com/graphql"
 
 
+#: The countries Indeed runs a job site for, as ISO-3166 alpha-3 codes: CLOSED. A target outside
+#: it is refused by name with no request (`NotAttempted("unsupported_country", code)`) rather than
+#: POSTed as a `co=` Indeed has no site for, which came back as a failed first page and read as an
+#: outage. Transcribed from https://www.indeed.com/countries on 2026-09-24 (63 countries; a
+#: multi-language site is one country). `co=` is the ISO alpha-2 code for every one of them.
+INDEED_COUNTRIES: frozenset[str] = frozenset({
+    "ARE", "ARG", "AUS", "AUT", "BEL", "BHR", "BRA", "CAN", "CHE", "CHL", "CHN", "COL", "CRI",
+    "CZE", "DEU", "DNK", "ECU", "EGY", "ESP", "FIN", "FRA", "GBR", "GRC", "HKG", "HUN", "IDN",
+    "IND", "IRL", "ISR", "ITA", "JPN", "KOR", "KWT", "LUX", "MAR", "MEX", "MYS", "NGA", "NLD",
+    "NOR", "NZL", "OMN", "PAK", "PAN", "PER", "PHL", "POL", "PRT", "QAT", "ROU", "RUS", "SAU",
+    "SGP", "SWE", "THA", "TUR", "TWN", "UKR", "URY", "USA", "VEN", "VNM", "ZAF",
+})
+
+
 def search_url(country: str) -> str:
-    """The search URL for one ISO-3166 alpha-3 `target_countries` code."""
+    """The search URL for one ISO-3166 alpha-3 `target_countries` code in `INDEED_COUNTRIES`."""
     return f"{SEARCH_ENDPOINT}?co={ISO3166_ALPHA2[country]}"
 
 
@@ -779,7 +794,13 @@ class IndeedLane:
         # The countries have no default: an empty default would silently disarm the lane for
         # any caller that forgot them, and a non-empty one is a tenant nobody declared.
         self._search_facets = tuple(search_facets)
-        self._search_urls = tuple(search_url(country) for country in target_countries)
+        self._search_urls = tuple(
+            search_url(country) for country in target_countries if country in INDEED_COUNTRIES
+        )
+        self._unserved = tuple(
+            NotAttempted("unsupported_country", country)
+            for country in target_countries if country not in INDEED_COUNTRIES
+        )
         self._search_pages = max(1, search_pages)
         self._results_per_page = min(MAX_RESULTS_PER_PAGE, max(1, results_per_page))
 
@@ -794,7 +815,9 @@ class IndeedLane:
         """
         if not self._search_urls:
             return LaneResult(
-                snapshots=(), tally=AcquisitionTally(), not_attemptable="no_target_countries"
+                snapshots=(), tally=AcquisitionTally(),
+                not_attemptable="unsupported_country" if self._unserved else "no_target_countries",
+                not_attempted=self._unserved,
             )
         entries, search_pages, search_outcomes = self._search(fetcher)
         # Computed off the raw entries, before grouping or admission touch them: a seed costs
@@ -850,7 +873,7 @@ class IndeedLane:
                 )
         return LaneResult(
             snapshots=tuple(snapshots), tally=tally, search_pages=search_pages,
-            search_outcomes=search_outcomes,
+            search_outcomes=search_outcomes, not_attempted=self._unserved,
             discovered_seeds=discovered_seeds, refused_seeds=refused_seeds,
         )
 

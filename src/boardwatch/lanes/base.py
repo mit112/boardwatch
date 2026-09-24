@@ -109,7 +109,34 @@ LaneNotAttemptable = Literal[
     "no_target_countries",
     # `lane_github_lists` is empty, so there is no public list to discover seeds from.
     "no_lists",
+    # A declared target country the source has no site for, so it cannot be searched there.
+    "unsupported_country",
 ]
+
+NOT_ATTEMPTABLE: tuple[str, ...] = get_args(LaneNotAttemptable)
+
+
+class UnknownNotAttempted(ValueError):
+    """Raised at construction for a `NotAttempted` reason outside the closed catalog."""
+
+
+@dataclass(frozen=True)
+class NotAttempted:
+    """One part of the tenant's search nothing was requested for, and why: a declared country the
+    source does not serve, or a source list that is not configured. A NOTE, not an abstain -- the
+    lane may still have made every other request -- so it rides beside `LaneResult.not_attemptable`,
+    which is set only when the lane requested nothing at all. Renders `reason` or `reason:subject`.
+    """
+
+    reason: LaneNotAttemptable
+    subject: str = ""
+
+    def __post_init__(self) -> None:
+        if self.reason not in NOT_ATTEMPTABLE:
+            raise UnknownNotAttempted(f"unknown not-attempted reason: {self.reason!r}")
+
+    def __str__(self) -> str:
+        return f"{self.reason}:{self.subject}" if self.subject else self.reason
 
 
 SearchEnd = Literal[
@@ -202,6 +229,10 @@ class LaneResult:
     # it, and why. Without it an inert search returns an empty result that reads as a quiet day.
     # `None` when the lane had everything it searches with.
     not_attemptable: LaneNotAttemptable | None = None
+    # Every PART of the search nothing was requested for, whether or not the lane requested
+    # anything else (T188b): a mix of served and unserved countries searches the served ones and
+    # names the rest here. Empty -- never absent -- when nothing was left out.
+    not_attempted: tuple[NotAttempted, ...] = ()
     # Posting URLs this lane FOUND and cannot resolve itself, for `lane_seeds`. RETURNED rather
     # than written, and that is the whole point: `collect` runs in a fetch worker while
     # `apply_board` is the pipeline's single writer, so a lane that wrote its own seeds would be

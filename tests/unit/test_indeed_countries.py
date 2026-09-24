@@ -202,7 +202,7 @@ def test_the_run_reads_the_countries_off_the_profile_and_reports_an_undeclared_o
     assert errors == []
     assert [(r.name, r.not_attemptable) for r in reports] == [("indeed", "no_target_countries")]
 
-    engine = _store(tmp_path / "declared", ["CAN"])
+    engine = _store(tmp_path / "declared", ["CAN", "ATA"])
     settings = settings.model_copy(update={"data_dir": tmp_path / "declared" / "store"})
     with respx.mock(assert_all_called=True) as router:
         route = router.post("https://apis.indeed.com/graphql?co=CA").mock(
@@ -211,7 +211,9 @@ def test_the_run_reads_the_countries_off_the_profile_and_reports_an_undeclared_o
         reports, errors = _run_lanes(engine, settings, insert_run(engine))
 
     assert route.call_count == 1, errors
-    assert [(r.name, r.not_attemptable) for r in reports] == [("indeed", None)]
+    assert [(r.name, r.not_attemptable, r.not_attempted) for r in reports] == [
+        ("indeed", None, ("unsupported_country:ATA",))
+    ]
 
 
 def test_the_tenant_assumption_report_carries_the_lane_abstain() -> None:
@@ -222,3 +224,41 @@ def test_the_tenant_assumption_report_carries_the_lane_abstain() -> None:
     assert tenant_assumptions_to_dict(report) == {
         "ranker": {}, "review": None, "lanes": {"indeed": "no_target_countries"},
     }
+
+
+def test_a_country_indeed_does_not_serve_is_refused_by_name_and_never_posted(
+    tmp_path: Path,
+) -> None:
+    """T188b. `ATA` is a valid ISO code Indeed has no site for: it used to go out as `co=AQ` and
+    come back `first_page_failed`, indistinguishable from an outage. Now it is a recorded refusal
+    naming it, with no request, and the served country is still searched."""
+    with respx.mock(assert_all_called=True, assert_all_mocked=True) as router:
+        us = router.post("https://apis.indeed.com/graphql?co=US").mock(
+            return_value=httpx.Response(200, text=_hits("us"))
+        )
+        result = IndeedLane(target_countries=("USA", "ATA")).collect(
+            _fetcher(tmp_path), _admit_all
+        )
+        assert router.calls.call_count == 1
+
+    assert us.call_count == 1
+    assert result.search_pages == ((search_url("USA"), 1),)
+    assert [str(note) for note in result.not_attempted] == ["unsupported_country:ATA"]
+    assert result.not_attemptable is None, "the lane searched the US; it did not abstain"
+
+
+def test_only_unserved_countries_make_no_request_and_the_lane_abstains(tmp_path: Path) -> None:
+    with respx.mock(assert_all_mocked=True) as router:
+        result = IndeedLane(target_countries=("ATA",)).collect(_fetcher(tmp_path), _admit_all)
+        assert router.calls.call_count == 0
+
+    assert result.not_attemptable == "unsupported_country"
+    assert [str(note) for note in result.not_attempted] == ["unsupported_country:ATA"]
+
+
+def test_every_served_country_is_an_iso_country() -> None:
+    from boardwatch.lanes.indeed import INDEED_COUNTRIES
+
+    assert INDEED_COUNTRIES <= ISO3166_ALPHA3
+    assert {"USA", "CAN", "GBR", "IND"} <= INDEED_COUNTRIES
+    assert "ATA" not in INDEED_COUNTRIES

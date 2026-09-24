@@ -1253,6 +1253,7 @@ def _apply_lane(
             search_pages=result.search_pages,
             search_outcomes=result.search_outcomes,
             not_attemptable=result.not_attemptable,
+            not_attempted=tuple(str(note) for note in result.not_attempted),
             fetch_seconds=fetched.fetch_seconds,
             apply_seconds=perf_counter() - apply_started,
         ),
