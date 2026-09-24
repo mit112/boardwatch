@@ -320,6 +320,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A contended queue refresh is retried and, if still held, recorded; the web server's writes take
+  the lock at begin; a mid-run config edit reports as drift (2026-09-23, T190).** A run whose queue
+  refresh lost the queue lock to the web server used to skip the whole sync silently; it now asks
+  four times, ten seconds apart, and a sync still held is recorded in the run's errors, the digest
+  and the escalation channel without failing the run. The web server's write routes take the store's
+  write lock at begin, and the batch skip reads its standing set before taking it, so a run can no
+  longer be refused with a busy-snapshot error. The funnel writer reads the config beside its
+  apply-lane read and reports a mid-run edit as identity drift, the identical-JD annotation ignores
+  the empty-body hash, and the run's code provenance is read before the scan. Review 2026-09-23
+  (delivery), F5, F6, F7, F9, F11.
+
 - **One trickling host can no longer pin a run (2026-09-23, T192).** Run 473 sat 55 minutes on a single
   SmartRecruiters board whose server dribbled bytes: the fetcher's timeout is per read, so it never
   tripped, and the scan had no per-board deadline. A request is now bounded end to end by
