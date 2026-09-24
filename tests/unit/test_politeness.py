@@ -588,3 +588,29 @@ def test_a_chunked_body_that_finishes_in_time_is_returned_unchanged(tmp_path: Pa
         200, b'{"a": 1}', False, ResponseValidators(etag='"v1"', last_modified=None),
         "https://quick.example/x",
     )
+
+
+def test_a_non_200_whose_body_read_fails_is_retried_as_a_transport_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T192b. The eager read consumed every body before the status was looked at, so a 404
+    whose body read raised was a TRANSPORT error: retried, and on exhaustion `status_code=None`
+    (UNREACHABLE). Classifying the 404 before its body is read would make it DEAD instead."""
+    monkeypatch.setattr(politeness.time, "sleep", lambda _seconds: None)
+    calls: list[int] = []
+
+    def broken_body() -> Iterator[bytes]:
+        yield b"<html>"
+        raise httpx.ReadError("connection reset mid-body")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(404, content=broken_body())
+
+    fetcher = Fetcher(
+        _settings(tmp_path, retries=3), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with pytest.raises(FetchFailure, match="transport error after 3 attempts") as info:
+        fetcher.get("https://reset.example/x")
+    assert info.value.status_code is None
+    assert calls == [1, 1, 1]

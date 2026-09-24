@@ -333,8 +333,7 @@ class Fetcher:
                 headers["If-Modified-Since"] = validators.last_modified
         # Streamed so the body is read in a loop that can look at the clock. httpx has no total
         # deadline — its timeout is per OPERATION, and a host trickling a byte every few seconds
-        # never trips it. Only a 200's body is read; every other branch below raises or returns
-        # without it, exactly as it did when the whole response was read eagerly.
+        # never trips it.
         with self._client.stream(method, url, headers=headers, json=json_body) as response:
             return self._classify(response, url, deadline)
 
@@ -349,6 +348,13 @@ class Fetcher:
             )
 
     def _classify(self, response: httpx.Response, url: str, deadline: float) -> FetchResult:
+        # EVERY body is read before the status is looked at, as the eager read did (T192b): a
+        # transport error mid-body is then a transport error — retried, and UNREACHABLE on
+        # exhaustion — whatever the status, rather than a 404 classified DEAD from its headers.
+        chunks: list[bytes] = []
+        for chunk in response.iter_bytes():
+            chunks.append(chunk)
+            self._check_deadline(url, deadline)
         if response.status_code == 304:
             return FetchResult(304, b"", True, None)
         if response.status_code in _RETRYABLE_STATUSES:
@@ -382,10 +388,6 @@ class Fetcher:
             if etag or last_modified
             else None
         )
-        chunks: list[bytes] = []
-        for chunk in response.iter_bytes():
-            chunks.append(chunk)
-            self._check_deadline(url, deadline)
         return FetchResult(200, b"".join(chunks), False, observed, str(response.url))
 
 
