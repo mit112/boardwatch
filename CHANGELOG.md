@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Every lane's self-reported reach is recounted from the store (2026-09-23, T191).** The funnel's lane
+  numbers were the lane's own tally; a lane that admitted a company whose board never landed read the
+  same as one that delivered. The funnel now carries one cross-check row per reporting lane (the lane's
+  `persisted_new` against the companies first captured under it in this run, keyed on the lane scan rows
+  and the run's new-posting events) and one row for the lanes' snapshot count against the run's lane
+  scan rows; a disagreement shows in the existing cross-check table and turns `reconciles` false. A lane
+  that did not run has no row. Review 2026-09-23 (delivery), F8.
+
 - **Target countries are profile data, and the location gates read them (2026-09-23, T186).** The ranker's
   hard location veto, the foreign-ad marker drop and the review gate's location hold assumed a US user in
   code. Each user now declares `target_countries` (ISO-3, a closed vocabulary) on their profile; the location
